@@ -1,6 +1,6 @@
 # ADR 0001: UI スタックに Tailwind CSS v4 + shadcn/ui（Radix UI 明示指定）を採用する
 
-- **状態**: 承認
+- **状態**: **承認（条件付き）** — §7 の未確認事項 #1（shadcn/ui × Next.js 16 の互換性）が `SP-1` で確認できるまでは暫定。不成立なら本 ADR を supersede する
 - **日付**: 2026-08-17 JST
 - **対応要件**: `TR-5`（UI コンポーネントライブラリの採否）/ `NFR-3` / `NFR-10` / `NFR-27` / `NFR-28`
 - **関連**: Issue #16 / [UI/UX リサーチ](../03_design/ui-ux/20260817-ui-ux-research.md) / [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md)

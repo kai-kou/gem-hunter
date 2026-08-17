@@ -159,7 +159,7 @@ GitHub の検索では有名なリポジトリが上位を占めやすい一方�
 | **TR-2** | App Router を使用する（Pages Router は使用しない） | `P1-MVP` | 与件 §2（必須） |
 | **TR-3** | TypeScript を使用する | `P1-MVP` | 与件 §2 では「推奨」だが、`NFR-19`（API レスポンスを型安全に扱う）が前提とするため **必須に格上げ** する |
 | **TR-4** | データソースは GitHub API のリポジトリ検索エンドポイント（`GET /search/repositories`）とする | `P1-MVP` | 与件 §2（必須）。詳細取得の `GET /repos/{owner}/{repo}` は §4.3 |
-| **TR-5** | UI コンポーネントライブラリの採否は問わない | — | 与件 §2（任意）。🔵 **採用を決定した**: Tailwind CSS v4 + shadcn/ui（基盤プリミティブは **Radix UI を明示指定**）。理由は [ADR 0001](../adr/0001-ui-stack.md)、実装指針は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) |
+| **TR-5** | UI コンポーネントライブラリの採否は問わない | — | 与件 §2（任意）。🔵 **暫定決定**: Tailwind CSS v4 + shadcn/ui（基盤プリミティブは **Radix UI を明示指定**）。理由は [ADR 0001](../adr/0001-ui-stack.md)、実装指針は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md)。⚠️ **`SP-1` での Next.js 16 実機確認待ち**（shadcn/ui 公式は Next.js 15 が主対象で 16 固有の互換性表明が未確認）。不成立なら ADR 0001 を supersede する |
 
 ---
 
@@ -568,7 +568,8 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | テストのレイヤー分担と手段 | Next.js 16 App Router 環境での Server Component テスト手法の一次確認 | `NFR-23`〜`NFR-25` / `R-11` |
 | i18n ライブラリの選定 | `next-intl` を第一候補とするが、Next.js 16 での推奨構成を一次確認する | `AR-4` / `R-7` |
 | `use cache` / `cacheLife` / `cacheTag` の適用範囲 | 外部 API レスポンスのキャッシュという用途での実挙動が未検証 | `NFR-5` / `R-7` |
-| 配色の **実値**（コントラスト比 4.5:1 の実測） | 🔵 トークン構成（セマンティック 8 種 × ライト/ダーク）と検証手順は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §2 で確定済み。**実値の実測確定は `SP-2`（`E-9`）で行う**。🔴 `SP-2` を越えて未確定のまま進めない | `NFR-13` |
+| **shadcn/ui × Next.js 16 の互換性**（`TR-5` の暫定決定の前提） | 🔴 `SP-1` で実際に導入して動作確認する。**満たせない場合は [ADR 0001](../adr/0001-ui-stack.md) を supersede する新 ADR を書く**（影響度: 大 — UI 実装全体に波及） | `TR-5` / `TR-1` |
+| 配色の **実値**（コントラスト比 4.5:1 の実測） | 🔵 トークン構成（セマンティック 9 トークン × ライト/ダーク）と検証手順は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §2 で確定済み。**実値の実測確定は `SP-2`（`E-9`）で行う**。🔴 `SP-2` を越えて未確定のまま進めない | `NFR-13` |
 | GitHub 利用規約の一次確認 | **第三者へ公開する時点** で実施する（Phase 番号ではなく公開の有無で判断する） | `R-8` |
 | プレビュー環境のデプロイ先（サービス選定） | 実装着手時に決める。`NFR-21` の維持により、選定を誤ってもアプリコードの書き換えは発生しない | `D-11` / `NFR-21` |
 | Phase 2 の各パラメータ（母集団・しきい値・配信件数） | 実データのサイズと分布 | `GR-1` / `Q-3` |

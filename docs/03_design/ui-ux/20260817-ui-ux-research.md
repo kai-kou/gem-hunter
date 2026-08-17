@@ -62,10 +62,10 @@
 
 ## 2. アクセシビリティ実装（WCAG 2.2 AA + Lighthouse 100）
 
-### 2.1. 🔴 Lighthouse Accessibility 100 は AA 達成を意味しない（確認済み）
+### 2.1. 🔴 Lighthouse Accessibility 100 は AA 達成を意味しない（一部確認済み）
 
 - Lighthouse の a11y カテゴリは **axe-core の全ルール（約 96）のうち約 50 ルールのみ** を実行するサブセット（出典: [unlighthouse: accessibility](https://unlighthouse.dev/learn-lighthouse/accessibility) / [GoogleChrome/lighthouse#15215](https://github.com/GoogleChrome/lighthouse/issues/15215)）
-- 自動ツールが検出できる WCAG 違反は **全体の 30〜40% 程度** という指摘が複数の実務情報で一致（出典: [AFixt](https://afixt.com/why-your-lighthouse-score-of-100-means-almost-nothing/) / [BOIA](https://www.boia.org/blog/why-google-lighthouse-scores-arent-useful-for-evaluating-accessibility)）
+- ⚠️ **未確認（二次情報の一致どまり）**: 自動ツールが検出できる WCAG 違反は「全体の 30〜40% 程度」という指摘が複数の実務情報で一致している（[AFixt](https://afixt.com/why-your-lighthouse-score-of-100-means-almost-nothing/) / [BOIA](https://www.boia.org/blog/why-google-lighthouse-scores-arent-useful-for-evaluating-accessibility)）。ただし **いずれもアクセシビリティ是正サービスを提供するベンダーのブログ** であり、W3C / axe-core 公式の一次データでは裏取りできていない。**この数値を対外的な説明（README 等）に一次情報として引用しない**
 
 🔵 **含意**: `prd.md` の `NFR-10` が「**完全準拠とは名乗らない**」「自動検証可能な範囲を CI で担保し、残りは手動チェックリスト」としているのは、この事実と整合している。**手動チェックリストが本質** であり、Lighthouse 100 は下限にすぎない。
 
