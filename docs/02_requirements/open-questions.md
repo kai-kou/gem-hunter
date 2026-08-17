@@ -202,6 +202,76 @@ READMEでは両方併記されているが、正式名称が未確定。ドメ�
 
 ---
 
+## 4.1. R-2 / R-3 / R-4 の調査結果（2026-08-17 実施）と Q-1 / Q-2 の推奨解
+
+### R-2: GitHub 純正検索での代替可能性（実測）
+
+`mcp__github__search_repositories` で以下のクエリを実行した。
+
+```
+pdf parser language:python stars:10..500 pushed:>2026-05-01 archived:false
+```
+
+**結果: `total_count = 31`。** 「Python の PDF パーサで、star 10〜500、直近 3 ヶ月以内に更新、アーカイブ済みでない」という条件が、**GitHub 純正検索の 1 クエリで完全に再現できた**（上位は py-pdf-parser 426★ 等、いずれも妥当な候補）。
+
+→ **`initial-concept.md` のコア機能「マイクロ・スイートスポット検索（star 10〜500 に限定）」は、単独では差別化にならないことが実測で確定した**（`Q-1` の懸念は事実）。
+
+### R-3: 既存スコアとの差分（車輪の再発明リスク）
+
+OpenSSF `criticality_score` は既に 10 シグナルの加重和で 0〜1 のスコアを算出しており、**公開 BigQuery データセット** (`openssf.criticality_score_cron.criticality-score-v0-latest`) として全世界のリポジトリ分が配布されている。
+
+| シグナル | 重み | `initial-concept.md` の Gem Score との重複 |
+|---|---|---|
+| created_since | 1 | — |
+| updated_since | -1 | Maintenance Score と重複 |
+| contributor_count | 2 | — |
+| org_count | 1 | — |
+| commit_frequency | 1 | **Maintenance Score（コミット密度）と重複** |
+| recent_releases_count | 0.5 | — |
+| closed_issues_count | 0.5 | **Maintenance Score（Issue クローズ率）と重複** |
+| updated_issues_count | 0.5 | 同上 |
+| comment_frequency | 1 | — |
+| dependents_count | 2 | **Dependency Signal と重複** |
+
+→ **Gem Score を「メンテナンス健全性スコア」として設計すると、`criticality_score` の再実装になる**（`R-3` の懸念は事実）。ただし重要な差異が 1 つある: **`criticality_score` が測るのは「重要度の絶対値」であり、「注目度に対して過小評価されているか」ではない。**
+
+### R-4: 被依存データの入手経路
+
+| データ源 | 被依存数 | 認証 | レート制限 | データライセンス |
+|---|---|---|---|---|
+| **deps.dev (Google)** | **提供なし**（Scorecard・ライセンス・脆弱性・依存グラフは提供） | 不要 | 明記なし | 生成データは CC-BY 4.0 / Google API ToS。**キャッシュは明示的に許可** |
+| **Ecosyste.ms** | **提供あり**（packages / repos の 293M リポジトリ・14.4M パッケージ） | **不要** | **5,000 req/h（IP 単位）** | コード AGPL-3 / **データ CC BY-SA 4.0**。別途「商用ライセンス」の窓口あり |
+| OpenSSF criticality_score | 代理指標（コミットメッセージ内の言及数） | BigQuery アカウント | BigQuery 課金 | 公開データセット |
+
+> ⚠️ **要注意（`D-3` が「収益化」の場合）**: Ecosyste.ms の **データが CC BY-SA 4.0（継承ライセンス）** である点。これを取り込んで作った派生データセットには同ライセンスの継承義務が生じうるため、商用プロダクトのコア資産にする場合は商用ライセンスの取得可否を先に確認する必要がある（`R-8` に統合して扱う）。deps.dev（CC-BY 4.0・継承義務なし）とは条件が異なる。
+
+### Q-1 / Q-2 の推奨解: 「Gem = 実利用に対する注目度の不足（残差）」
+
+上記 3 点から、Hidden Gem の操作的定義として以下を推奨する。
+
+> **Gem とは、「実際に使われている度合い（被依存数）」に対して「注目度（star 数）」が不釣り合いに小さいリポジトリである。**
+>
+> `Gem Index = 実利用シグナルの順位 − 注目度シグナルの順位`（または対数回帰の残差）
+
+この定義を推す根拠は以下の 4 点。
+
+1. **star 単純ランキングを回避できる**（`competitive-analysis.md` の「やめるべきこと」に抵触しない）。star は分子ではなく **分母** として使う。
+2. **GitHub 純正検索で原理的に再現できない**（被依存数は GitHub API に存在しない）。`R-2` で判明した差別化の欠如を、**唯一直接的に解決する軸**。
+3. **`criticality_score` の再実装にならない**。criticality は「重要度の絶対値」、Gem Index は「重要度に対する注目度の不足＝残差」。**既存に同等品が見当たらない**。むしろ criticality_score を実利用シグナルの入力としてそのまま利用できる。
+4. **偽 star に対して構造的に頑健**。star を水増しすると Gem Index は **下がる**（＝ランキングから外れる）ため、`competitive-analysis.md` が指摘した偽 star 問題が攻撃面にならない。
+
+**この定義から導かれる要件上の制約（重要）**:
+
+- 被依存数はパッケージレジストリ単位でしか取得できないため、**Phase 2 の対象は「パッケージとして公開されているリポジトリ」に限定される**（アプリ・設定集・学習用リポジトリは対象外になる）。これは同時に、`initial-concept.md` が排除したがっていたノイズ（チュートリアル・課題提出用リポジトリ）を **自動的に除外できる** という利点でもある。
+- 対象エコシステムの選定（npm / PyPI / crates.io / Go 等のどれから始めるか）が新たな決定事項になる（→ `D-10` として追加）。
+- **Phase 1（検索 Web アプリ）はこの定義を実装しない**。与件（`D-2`）のスコープを侵さず、Phase 2 の中核として設計する。
+
+### D-10（追加）Phase 2 の対象エコシステム
+
+**推奨**: **npm と PyPI の 2 つから開始**（Ecosyste.ms のカバレッジが厚く、`initial-concept.md` のペルソナ＝個人開発者の利用言語と一致するため）。
+
+---
+
 ## 5. 推奨する進め方
 
 1. **`D-1` と `D-2` に回答をもらう**（この 2 つで要件定義書の骨格が決まる。他の `D-n` は推奨案どおりで進めても手戻りは小さい）。
