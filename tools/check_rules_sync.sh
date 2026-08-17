@@ -38,6 +38,7 @@ ESSENTIAL_RULES=(
   "session-concurrency-rules.md"
   "session-safety-rules.md"
   "session-sprint-rules.md"
+  "sprint-development-rules.md"
   "user-confirmation-minimization.md"
   "user-instruction-issue-rules.md"
   "user-notification-triage.md"
