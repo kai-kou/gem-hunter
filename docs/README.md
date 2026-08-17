@@ -3,12 +3,14 @@
 本プロジェクト（gem-hunter）のドキュメントは、要件定義・リサーチから実装・リリースまでのフェーズに沿って以下のディレクトリで管理する。
 
 > **要件の正本は [`02_requirements/prd.md`](./02_requirements/prd.md)**。各決定の理由・経緯は [`02_requirements/open-questions.md`](./02_requirements/open-questions.md) の決定ログが正本であり、同じ事実を 2 箇所に書かず ID（`D-n` / `Q-n` / `FR-n` / `AR-n` / `NFR-n` / `GR-n`）で参照して結ぶ。
+>
+> 派生ドキュメントの正本責務（`D-8`）: **事業仮説** = [リーンキャンバス](./00_concept/lean-canvas.md) / **やらないこと・トレードオフ・リスク** = [インセプションデッキ](./00_concept/inception-deck.md) / **実装単位への分解・リリーススライス** = [ユーザーストーリーマップ](./02_requirements/user-story-map.md)。時間軸（ロードマップ）は期日確定後に作成する。
 
 | ディレクトリ | 用途 |
 |---|---|
-| [`00_concept/`](./00_concept) | 初期コンセプト・プロダクトビジョン |
+| [`00_concept/`](./00_concept) | 初期コンセプト・プロダクトビジョン（[リーンキャンバス](./00_concept/lean-canvas.md)・[インセプションデッキ](./00_concept/inception-deck.md)） |
 | [`01_research/`](./01_research) | 市場・競合・ユーザーリサーチ（`market/`, `user/`） |
-| [`02_requirements/`](./02_requirements) | 要件定義（PRD、ユーザーストーリー等） |
+| [`02_requirements/`](./02_requirements) | 要件定義（[PRD](./02_requirements/prd.md)・[ユーザーストーリーマップ](./02_requirements/user-story-map.md)等） |
 | [`03_design/`](./03_design) | 設計ドキュメント（`architecture/`, `ui-ux/`, `data-model/`） |
 | [`04_development/`](./04_development) | 開発者向けドキュメント（環境構築、API仕様等） |
 | [`05_release/`](./05_release) | リリースノート・デプロイ手順 |

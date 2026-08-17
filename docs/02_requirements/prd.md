@@ -20,10 +20,10 @@
 | 与件（外部から与えられた仕様） | [`minimum-requirements.md`](./minimum-requirements.md)（**編集しない**） |
 | 初期コンセプト | [`initial-concept.md`](../00_concept/initial-concept.md)（**編集しない**） |
 | 技術的意思決定の詳細 | `docs/adr/`（本書からは ADR 番号を参照するのみ） |
-| やらないことリスト・トレードオフ | インセプションデッキ（未作成） |
-| 事業仮説（課題・価値提案・顧客セグメント） | リーンキャンバス（未作成） |
-| 実装単位への分解 | ユーザーストーリー（未作成・**要件 ID を参照し受け入れ条件を再掲しない**） |
-| 時間軸・リリース単位 | ロードマップ（未作成） |
+| やらないことリスト・トレードオフ・リスク | [`inception-deck.md`](../00_concept/inception-deck.md) |
+| 事業仮説（課題・価値提案・顧客セグメント） | [`lean-canvas.md`](../00_concept/lean-canvas.md) |
+| 実装単位への分解 | [`user-story-map.md`](./user-story-map.md)（**要件 ID を参照し受け入れ条件を再掲しない**） |
+| 時間軸・リリース単位 | ロードマップ（未作成・期日確定後） |
 
 ### 0.2. ID 体系
 
@@ -576,6 +576,9 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | ドキュメント | 関係 |
 |---|---|
 | [`open-questions.md`](./open-questions.md) | 各決定の理由・経緯の正本（`D-n` / `Q-n` / `R-n`） |
+| [`lean-canvas.md`](../00_concept/lean-canvas.md) | 事業仮説の正本（§1.1 / §1.3 はこれを要約参照する） |
+| [`inception-deck.md`](../00_concept/inception-deck.md) | やらないこと・トレードオフ・リスクの正本（§3.2 はこれを参照する） |
+| [`user-story-map.md`](./user-story-map.md) | 実装単位への分解とリリーススライス（本書の要件 ID を参照する） |
 | [`minimum-requirements.md`](./minimum-requirements.md) | 与件の原本（編集しない） |
 | [`project-mission.md`](../project-mission.md) | ミッション・KPI・判断基準・品質ゲートの正本 |
 | [`initial-concept.md`](../00_concept/initial-concept.md) | 初期コンセプトの原本（編集しない・旧称 IndieGems） |
