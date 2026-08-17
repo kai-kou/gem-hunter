@@ -23,7 +23,7 @@
 | やらないことリスト・トレードオフ・リスク | [`inception-deck.md`](../00_concept/inception-deck.md) |
 | 事業仮説（課題・価値提案・顧客セグメント） | [`lean-canvas.md`](../00_concept/lean-canvas.md) |
 | 実装単位への分解 | [`user-story-map.md`](./user-story-map.md)（**要件 ID を参照し受け入れ条件を再掲しない**） |
-| 時間軸・リリース単位 | ロードマップ（未作成・期日確定後） |
+| 時間軸・リリース単位・マイルストーン | [`roadmap.md`](./roadmap.md)（`M-n`。🔴 期日は未確定のため絶対日付を持たない・`D-9`） |
 
 ### 0.2. ID 体系
 
@@ -584,6 +584,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | [`lean-canvas.md`](../00_concept/lean-canvas.md) | 事業仮説の正本（§1.1 / §1.3 はこれを要約参照する） |
 | [`inception-deck.md`](../00_concept/inception-deck.md) | やらないこと・トレードオフ・リスクの正本（§3.2 はこれを参照する） |
 | [`user-story-map.md`](./user-story-map.md) | 実装単位への分解とリリーススライス（本書の要件 ID を参照する） |
+| [`roadmap.md`](./roadmap.md) | 時間軸・マイルストーン（`M-n`）の正本。本書の優先度ラベルを到達順序へ射影したもの |
 | [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) | UI 実装の判断基準の正本（`TR-5` / `NFR-13` / `R-10` の決定内容） |
 | [UI/UX リサーチ](../03_design/ui-ux/20260817-ui-ux-research.md) | 上記の根拠・出典・未確認項目 |
 | [ADR 0001](../adr/0001-ui-stack.md) | UI スタックの採用理由と却下案 |
