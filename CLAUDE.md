@@ -78,6 +78,7 @@ gem-hunter
 | `session-safety-rules.md` | ユーザー確認前コミット・タイムアウト対策（要点サマリー） |
 | `session-compression-rules.md` | 圧縮後の挙動・symlink 同期 |
 | `session-sprint-rules.md` | 1 セッション = 1 スプリント運用・SP 付与（要点サマリー） |
+| `sprint-development-rules.md` | スプリント開発の 4 規律（動作確認 URL・TDD 主体・確認の発火ライン・ドキュメント自律参照） |
 | `user-instruction-issue-rules.md` | ユーザー指示の Issue 化基準 |
 | `pr-review-flow-summary.md` | PR 作成 → AI レビュー → 自動マージのフロー |
 | `completion-report-rules.md` | セッション完了報告の構造（初回指示の再掲 + アウトカム中心） |
@@ -155,6 +156,15 @@ gem-hunter
 - 見積もり: `sp:1` / `sp:2` / `sp:3` / `sp:5` / `sp:8`（`session-sprint-rules.md` §3）。AI Agent が全工程（リサーチ・判断・実装・レビュー）を実行する前提のため、ベーススケールに **Dynamic 補正（不確実性 +1〜2 SP・§3.1.5）** を重ねる。工程別標準値は `docs/project-mission.md`、推定 ↔ 実測の較正は `content/analytics/sprint/`（§5/§6）
 - 種別: `type:feature` / `type:bug` / `type:improvement` / `type:docs` / `type:retro-try`
 - **Done Criteria（完了条件）**: Issue 着手前に「何ができたら完了とするか」を Issue 本文または最初のコミットメッセージに 1 行以上記載する。検証可能な形（テスト通過・出力確認・動作確認）で書くことが望ましい（Goal-Driven Execution）
+
+## スプリント開発の 4 規律（SSOT: `sprint-development-rules.md`）
+
+実装フェーズのスプリントは以下を **必ず** 満たす。詳細・完了条件・チェックリストは `docs/rules/sprint-development-rules.md`（Hot 層で常駐）。
+
+- **SD-1 動作確認できる状態で終わる**: スプリントの PR には **開けるプレビュー URL** を貼る。ユーザーはリンクを開くだけで、`user-story-map.md` §5.3 の操作レビュー手順を完走できる。出せないときは理由とローカル起動手順を PR に書く（沈黙禁止）
+- **SD-2 TDD 主体・常に動作担保**: Red → Green → Refactor。**テストを先に書く**。操作レビュー手順は E2E テストに写す。テストのスキップ・無効化で緑にしない。「動作担保されている」は実行結果を見てから言う（L-113）
+- **SD-3 曖昧点を残さない**: 🔴 **仕様解釈が 2 通り以上あり選択で成果物が変わるときは確認する**（`AskUserQuestion`・選択肢 2 つ・推奨明示）。実装手段・ライブラリ選定・命名は確認せず自律実行し、仮定を 1 行記録する。A-1〜A-6 の扱いは変わらない（CP-6 は維持）
+- **SD-4 ドキュメントを読んで自律的に動く**: 着手時に `user-story-map.md` §5.3 → `prd.md` の参照要件と §6 `AC-n` → `prd.md` §13 未決事項 → `inception-deck.md` Q4 → `project-mission.md` を読む。**書いてあることを聞かない**。ドキュメント間の矛盾は権威順（ユーザー明示 > 仕様 > テスト > 現行コード）で解決し放置しない
 
 ## Agent Skills（`.claude/skills/`）
 
