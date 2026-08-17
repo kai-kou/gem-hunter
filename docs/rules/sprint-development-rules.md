@@ -103,6 +103,7 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 | 3 | `docs/02_requirements/prd.md` §13 | そのスプリントに関わる **未決事項** |
 | 4 | `docs/00_concept/inception-deck.md` Q4 | やらないこと / 今は決めないこと（スコープの侵食防止） |
 | 5 | `docs/project-mission.md` | 品質ゲート・判断基準 |
+| 6 | `docs/03_design/ui-ux/ui-ux-guidelines.md`（**UI を触るスプリントのみ**） | 技術スタック・デザイントークン・状態表現・a11y の実装指針 |
 
 🔴 **`SD-3` の確認は「ドキュメントを読んでも決まらないこと」にのみ発火する。** 読めば分かることを聞くのは `CP-6` 違反。
 
