@@ -17,7 +17,7 @@
 | 要件 ID / 要件内容 / 受け入れ条件 / 優先度 | [`prd.md`](../02_requirements/prd.md) |
 | 各決定の理由・検討経緯・却下案 | [`open-questions.md`](../02_requirements/open-questions.md) の決定ログ（`D-n` / `Q-n` / `R-n`） |
 | KPI の目標値・計測方法 | [`project-mission.md`](../project-mission.md) |
-| やらないことリスト・トレードオフ・リスク | インセプションデッキ（本書の次に作成） |
+| やらないことリスト・トレードオフ・リスク | [`inception-deck.md`](./inception-deck.md) |
 | 初期コンセプト（旧称 IndieGems） | [`initial-concept.md`](./initial-concept.md)（**編集しない**） |
 
 ### 0.2. 🔴 本書の全ブロックは「仮説」である
@@ -271,4 +271,4 @@ Ecosyste.ms のデータは CC BY-SA 4.0 であり、**出典表示の義務が�
 | [`project-mission.md`](../project-mission.md) | ミッション・KPI の正本。本書のブロック ③ / ⑧ はこれを参照する |
 | [`initial-concept.md`](./initial-concept.md) | 初期コンセプトの原本（編集しない・旧称 IndieGems） |
 | [競合調査](../01_research/market/20260817-github-repo-search-competitive-analysis.md) | ブロック ① の既存の代替手段・偽 star の出典 |
-| インセプションデッキ | 本書の次に作成（やらないこと・トレードオフ・リスクの正本） |
+| [`inception-deck.md`](./inception-deck.md) | やらないこと・トレードオフ・リスクの正本。本書 §11 の次のアクションを引き取る |

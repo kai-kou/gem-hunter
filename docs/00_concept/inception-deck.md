@@ -18,7 +18,7 @@
 | 各決定の理由・検討経緯・却下案 | [`open-questions.md`](../02_requirements/open-questions.md) の決定ログ（`D-n` / `Q-n` / `R-n`） |
 | 課題・顧客セグメント・価値提案・主要指標 | [`lean-canvas.md`](./lean-canvas.md) |
 | ミッション・KPI・判断基準・品質ゲート | [`project-mission.md`](../project-mission.md) |
-| 実装単位への分解・リリーススライス | ユーザーストーリーマップ（本書の次に作成） |
+| 実装単位への分解・リリーススライス | [`user-story-map.md`](../02_requirements/user-story-map.md) |
 
 ### 0.2. 構成
 
@@ -361,4 +361,4 @@ star は注目度の指標であって利用実績ではない。約 600 万個�
 | [`lean-canvas.md`](./lean-canvas.md) | 事業仮説の正本。本書 Q1 / Q2 / Q3 はこれを前提とする |
 | [`project-mission.md`](../project-mission.md) | ミッション・KPI・判断基準の正本。本書 Q9 はこれを射影したもの |
 | [`minimum-requirements.md`](../02_requirements/minimum-requirements.md) | 与件の原本（編集しない） |
-| ユーザーストーリーマップ | 本書の次に作成（実装単位への分解・リリーススライス） |
+| [`user-story-map.md`](../02_requirements/user-story-map.md) | 実装単位への分解・リリーススライスの正本。スライス境界は本書 Q4 に従う |
