@@ -1,6 +1,8 @@
 # ドキュメント構成
 
-本プロジェクト（IndieGems）のドキュメントは、要件定義・リサーチから実装・リリースまでのフェーズに沿って以下のディレクトリで管理する。
+本プロジェクト（gem-hunter）のドキュメントは、要件定義・リサーチから実装・リリースまでのフェーズに沿って以下のディレクトリで管理する。
+
+> **要件の正本は [`02_requirements/prd.md`](./02_requirements/prd.md)**。各決定の理由・経緯は [`02_requirements/open-questions.md`](./02_requirements/open-questions.md) の決定ログが正本であり、同じ事実を 2 箇所に書かず ID（`D-n` / `Q-n` / `FR-n` / `AR-n` / `NFR-n` / `GR-n`）で参照して結ぶ。
 
 | ディレクトリ | 用途 |
 |---|---|
