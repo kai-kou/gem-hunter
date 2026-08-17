@@ -19,7 +19,7 @@
 | 課題・顧客セグメント・価値提案・主要指標 | [`lean-canvas.md`](./lean-canvas.md) |
 | ミッション・KPI・判断基準・品質ゲート | [`project-mission.md`](../project-mission.md) |
 | 実装単位への分解・リリーススライス | [`user-story-map.md`](../02_requirements/user-story-map.md) |
-| 時間軸・マイルストーン（`M-n`） | [`roadmap.md`](../02_requirements/roadmap.md)（🔴 **期日そのものは本書 Q8 が正本**） |
+| 時間軸・マイルストーン（`M-n`）・**確定した日付の記入先** | [`roadmap.md`](../02_requirements/roadmap.md)（⚠️ 記入先であって、**期日を確定する場所は Q8 = 本書**） |
 
 ### 0.2. 構成
 
