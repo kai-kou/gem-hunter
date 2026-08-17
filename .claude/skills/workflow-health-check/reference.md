@@ -1,0 +1,264 @@
+# workflow-health-check 詳細リファレンス
+
+> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウド実行環境では `gh` がプリインストールされず、
+> 導入しても repo スコープ REST が 403 になる。**本ファイル内の `gh ...` コマンドはローカル実行専用** で、
+> クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
+> ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
+
+
+> `SKILL.md` は日次の軽量版（Step 1〜2）を中心に構成している。本ファイルは
+> **完全版限定の Step 3〜6・週次レポート雛形・実行コマンド例** を保持する
+> （完全版として起動された時のみ Read する）。
+
+## Step 3: パイプライン整合性監査（完全版のみ）
+
+```
+3-a: ブランチ孤立検出
+  └─ 制作ブランチ（例: content/{ID}-*・プロジェクト定義）が存在するが、対応する Issue / PR がない場合 → Slack 警告
+  └─ claude/* ブランチが 7 日以上前のコミットで止まっている → Slack 警告
+
+3-b: 成果物整合性チェック（フェーズ構成はプロジェクト定義）
+  └─ 先行フェーズ完了（PR マージ済み）なのに後続フェーズ Issue がない → 後続フェーズ Issue を自動作成
+  └─ 並行フェーズが両方完了なのに次フェーズ Issue がない → 自動作成
+
+3-c: 重複 PR 検出
+  └─ 同一エンティティ ID + 同一フェーズ（例: [{ID}] {フェーズ名}）のオープン PR が複数存在 → Slack 通知
+  └─ 古い PR（先に作成された方）に「重複の可能性」コメント + status:blocked 付与
+```
+
+## Step 4: 根本原因記録・再発防止（完全版のみ）
+
+```
+4-a: 問題パターン集計
+  └─ 今週検出した問題を種別・頻度・影響範囲でサマリー化
+
+4-b: retro-try Issue 自動生成
+  └─ 同じ問題が 2 週連続で検出された場合 → type:retro-try Issue を作成（assignee:claude）
+  └─ 例: 「ベースブランチ不整合が継続的に発生。PR 作成前チェックを強化する」
+
+4-c: セルフレビュー学習ログ更新
+  └─ P-XX / I-XX パターンに該当する新問題を docs/rules/self-review-checklist.md に追記提案
+  └─ ルールファイルへの反映は commit + PR で行う（CLAUDE.md 直接変更は禁止）
+
+4-d: 週次レポート生成
+  └─ 下記「週次レポートフォーマット」の形式で Slack 通知（完全版のみ）
+```
+
+## Step 5: フィードバックループ健全性チェック（完全版のみ）
+
+retro-try Issue の消化率・重複状況・パイプラインカバレッジを自動監査し、フィードバックループ自体を改善する。
+
+```
+5-a: retro-try Issue 消化率チェック
+  └─ `type:retro-try` ラベルの Issue を全件取得（open + closed）
+  └─ 消化率（closed / total）を算出
+  └─ 消化率 50% 未満 → Warning（Slack 通知 + 改善提案）
+  └─ オープン件数が 30 件超 → Warning（バックログ肥大化）
+
+5-b: 重複 Issue 自動検出・統合
+  └─ `type:retro-try` のオープン Issue を全件取得
+  └─ タイトルからキーワードを抽出し、同一テーマの Issue グループを特定
+     判定基準: 同じツール名・フィールド名（プロジェクト定義）、同じファイルパス、または同じ問題パターン
+  └─ 3 件以上の同テーマ Issue が存在 → メイン Issue にコメント追記 + 残りを duplicate クローズ
+  └─ 1 回の実行で統合するグループは最大 3 グループまで（サーキットブレーカー）
+
+5-c: パイプライン別カバレッジチェック
+  └─ 各パイプライン（プロジェクト定義）の retro-try Issue 件数を集計
+  └─ 過去 7 日間にパイプライン PR がマージされたのにレトロスペクティブ Issue が 0 件 → Warning
+     例: あるパイプラインの PR がマージされたが [Retro][{pipeline}] Issue が存在しない → レトロスペクティブ未実行の可能性
+  └─ Warning の場合は Issue コメントまたは Slack 通知で報告
+
+5-b2: waiting-user 重複 Issue 検出（完全版のみ）
+  └─ status:waiting-user のオープン Issue を全件取得（バックログ分類〔例: ネタ候補・phase:1-*〕は除外）
+  └─ タイトルの [{ID}] + フェーズキーワードで正規表現マッチし、同一エンティティ ID + 同一フェーズの Issue グループを検出
+     例: 「[{ID}] {フェーズ名}: ...」が 2 件以上存在 → 重複候補
+  └─ 検出した場合は Slack 通知のみ（自動クローズは禁止。ユーザー判断に委ねる）
+     通知例: 「⚠️ waiting-user 重複 Issue を検出しました: {ID} {フェーズ名} が 2 件 → #{N1}, #{N2}」
+  └─ 1 回の実行で通知するグループは最大 5 グループまで（サーキットブレーカー）
+
+5-d: スケジュール最適化提案（自動実行なし・レポートのみ）
+  └─ retro-try-handler の消化ペース（件/週）と生成ペース（件/週）を比較
+  └─ 生成 > 消化 × 1.5 → 「retro-try-handler の実行頻度を上げることを検討」とレポート
+  └─ 消化 > 生成 × 2 → 「実行頻度を下げてコスト削減可能」とレポート
+
+5-e: retro-try グローバル沈黙検出（完全版のみ・#397）
+  └─ type:retro-try の Issue を open + closed 全件取得し、最新の created_at を求める
+  └─ 最新の生成から 30 日超（該当 Issue が 1 件も無い場合はリポジトリ初回コミットから 30 日超）
+     → Warning: 「振り返りレーンが N 日間 1 件も Try を生成していない。retrospective の起動経路を確認」
+  └─ 5-a（消化率）・5-c（パイプライン別カバレッジ）では検出できない状態を拾うための独立条件:
+     5-a は closed/total の比率を見るため「全件 closed で新規ゼロ」は 100% と評価されて発火しない。
+     5-c は「過去 7 日にパイプライン PR がマージされたのに retro Issue 0 件」というパイプライン単位・
+     7 日窓の条件のため、総数のグローバルな沈黙は対象外（#394 の議論で実測確認）
+  └─ report-only（Issue の自動生成はしない。retrospective を代行実行もしない）
+
+5-f: スケジュールルーティン生存確認（heartbeat・完全版のみ・#397）
+  └─ 前提: プロジェクトがスケジュールルーティンを使っている場合のみ実行する。ルーティンの
+     構成記録ファイル（トリガー名・cron・用途を記録したもの。プロジェクト側に置く）が無ければスキップする
+  └─ mcp__Claude_Code_Remote__list_triggers を実行し、構成記録の各ルーティンをトリガー名で突き合わせる
+  └─ Warning 条件（いずれか 1 つでも該当したら報告）:
+     ・next_run_at が現在時刻を過ぎている
+     ・last_fired_at からの経過が「cron 間隔 × 2 + 起動ジッター上限（既定 30 分）」を超える
+       （1 回分の遅延では発火させず false positive を避ける。ジッター分を上乗せするのは、
+        早発→遅発が連続すると純粋な 2 倍閾値を正常系でも超えうるため）
+     ・enabled が false、または enabled フィールドが欠落している
+     ・suspension_reason が空でない
+  └─ 構成記録にあるのに list_triggers に該当エントリが無い → Warning（トリガー未作成）
+  └─ 🔴 自動再有効化・自動再作成は禁止（report-only）。ended_reason と suspension_reason が
+     ともに空の停止は list_triggers の仕様上「user-paused」＝ユーザーが意図的に止めた状態を含み、
+     機械的に障害と区別できないため（#394 の実測で R-1 がこの状態だった）
+  └─ 報告は Slack 通知 + 対象 Issue へのコメント。ユーザー操作が必要と判断した場合のみ
+     user-notification-triage.md に従い A-6 として @mention する
+  └─ 既知の限界: 本チェック自体もルーティン経由で実行されるため、全ルーティンが同時に停止した
+     状態は自己検知できない（監視の監視は積まない・#397 で合意）。その場合は
+     [Run list](https://claude.ai/code/routines) の目視が唯一の経路
+```
+
+## Step 6: CLAUDE.md / 常駐ルール肥大化監査（完全版のみ・P-7）
+
+公式ベストプラクティス「CLAUDE.md が長すぎると Claude が半分無視する」（[best-practices](https://code.claude.com/docs/en/best-practices)）に基づき、CLAUDE.md と常駐ルール（`.claude/rules/` symlink 群）のトークン肥大化を監査する。**report-only（自動編集しない）** — 削除候補を提示するのみで、CLAUDE.md の編集はユーザー判断または別 Issue で実施する（rule-loading 構造変更のリスク回避）。
+
+```
+6-0: /doctor による棚卸し（Claude Code 公式の診断コマンド・#327）
+  └─ 対話セッションなら /doctor を実行する（スキル・CLAUDE.md のサイズ適正化を含むフルチェックアップ）
+  └─ 出力を 6-a〜6-d の判断材料の1つとして扱う（後述の注意を必ず適用する）
+
+6-a: CLAUDE.md（プロジェクトの主要指示ファイル）サイズチェック
+  └─ wc -c -l CLAUDE.md を取得
+  └─ 600 行超 → Warning（「肥大化。プルーニング or @import 分割を検討」）
+
+6-b: プルーニング候補の提示（公式判定基準）
+  └─ 各セクションについて「この行を消したら Claude がミスするか？」を自問
+  └─ NO（= Claude が既に正しくやっている / 自明 / フックで強制済み）の行 → 削除 or hook 昇格の候補としてレポート
+  └─ 重複記述（同一ルールが CLAUDE.md と docs/rules/*.md の両方に冗長定義）→ SSOT 化候補としてレポート
+  └─ 本体が既に持っている情報（本体システムプロンプトの汎用規範・本体が description 付きで
+     自動列挙するスキル一覧など）→ 削除候補としてレポート（#326 の判定軸）
+
+6-c: 常駐ルール合算サイズチェック
+  └─ cat .claude/rules/*.md | wc -c で symlink 先の実体合算を集計
+  └─ token-optimization-rules.md の Hot 層予算（現行 ~65KB / ~16,300 トークン・#324 改定）と突き合わせ
+  └─ 予算超過 → Warning（Warm 降格 or 既存ファイルの追加圧縮を提案）
+  └─ 降格提案には必ず「代替の強制レイヤ（ハーネス / スキル / ツール）が実在するか」の確認を添える
+
+6-d: @import 分割の提案（report-only・自動実行しない）
+  └─ CLAUDE.md 内で「大きく・低頻度更新・独立性が高い」セクション（例: プロジェクト定義のドメイン詳細節）を検出
+  └─ `@docs/...md` インクルードでの分割候補としてレポート（実装はユーザー承認後に別 PR。圧縮時保持挙動・symlink 運用への影響評価が必要なため自動適用しない）
+```
+
+> **`/doctor` の実測仕様（2026-07-26・Claude Code v2.1.220 で確認）**:
+> - **CLI 版 `claude doctor`** が返すのは **インストール健全性のみ**（native/npm の併存・パス破損・自動更新チャネル等）。
+>   スキルや CLAUDE.md のサイズ適正化は **含まれない**。`claude doctor --help` の実出力（逐語）:
+>   `Check the health of your Claude Code installation. Reads settings files in the current directory without a trust prompt. For a full checkup that can also fix issues, run /doctor in a session.`
+> - **セッション内 `/doctor`** が設定・スキル・CLAUDE.md を含むフルチェックアップと修正を担当する。
+>   公式ドキュメント（[memory](https://code.claude.com/docs/en/memory)）によれば、**checked-in の CLAUDE.md に対して
+>   trim を提案する**（v2.1.206 以降）: *コードベースから導出できる内容（ディレクトリ構成・依存リスト・
+>   アーキテクチャ概要）を削り、落とし穴・根拠・ツール既定と異なる規約を残す*。これは 6-b の判定軸と同方向。
+>   自律セッション（非対話）では起動できないことがあるため、その場合は 6-a〜6-d の機械チェックで代替し、
+>   「`/doctor` 未実行」をレポートに明記する（実行していないものを実行したと書かない・L-113）
+>
+> **出力の扱い**: `/doctor` は汎用ツールであり、**本リポジトリの Hot 層は運用規律（Issue ロック・通知トリアージ・
+> 完了報告構造）が主** で、汎用的な「削れる」判定と本プロジェクトの必要性判定は一致しないことがある。
+> 判断材料の 1 つとして扱い、削除の可否は 6-b / 6-c の判定軸（代替の強制レイヤが実在するか）で決める。
+
+> **安全方針（P-7）**: 本ステップは **監査・提案のみ**。CLAUDE.md の `@import` 分割や行削除は rule-loading 構造・セッション圧縮時保持挙動に影響するため、health-check では自動実行せず、検出結果を週次レポートに記載してユーザー/別 Issue の判断に委ねる。
+
+> **検討メモ（#164）**: Step 6 は「ワークフロー健全性」というスキル名から見ると責務越境気味（CLAUDE.md 肥大化監査は別領域）。将来 workflow-health-check のさらなる分割・統合を検討する際は、本ステップを独立スキルへ切り出す案も候補に入れること。
+
+## 週次レポートフォーマット
+
+```
+## 🔍 ワークフロー健全性チェック週次レポート
+
+### 今週の検出サマリー
+| カテゴリ | 検出件数 | 自動修正 | 要確認 |
+|---------|---------|---------|--------|
+| PR 健全性 | N件 | N件 | N件 |
+| Issue 状態 | N件 | N件 | N件 |
+| パイプライン | N件 | N件 | N件 |
+
+### 自動修正した問題
+- ✅ スタック Issue {N}件 → ラベルリセット
+- ✅ ラベル不整合 {N}件 → 修正済み
+
+### 要確認事項（ユーザーアクション必要）
+- ⚠️ {問題の概要}: #{Issue番号 or PR番号}
+
+### 検出された繰り返しパターン
+- {パターン}: {今週N回目} → {対応中 or retro-try Issue #N に記録}
+
+### フィードバックループ健全性（Step 5）
+| 指標 | 値 | 判定 |
+|------|-----|------|
+| retro-try 消化率 | {closed}/{total} ({N}%) | OK / Warning |
+| オープン件数 | {N}件 | OK / Warning（30件超で Warning） |
+| 重複統合 | {N}グループ統合 | — |
+| パイプラインカバレッジ | 各パイプライン:{N}（プロジェクト定義） | OK / Warning（0件で Warning） |
+| 生成/消化バランス | 生成{N}件/週 vs 消化{N}件/週 | OK / 要調整 |
+| retro-try 最新生成からの経過 | {N}日 | OK / Warning（30日超で Warning・5-e） |
+| ルーティン生存（heartbeat） | {ルーティン名}: 最終発火 {N}時間前 | OK / Warning（cron 間隔の2倍超・停止・未作成で Warning・5-f） |
+
+### 次週への改善アクション
+- {type:retro-try Issue があれば一覧}
+- {フィードバックループの改善提案があれば記載}
+```
+
+> 自動修正の安全範囲（全ステップ共通）は `SKILL.md` に定義する（軽量版の Step 1〜2 にも適用される
+> 共通ルールのため、軽量版でも読み込まれる本文側に一本化・重複させない）。
+
+## Claude Code による実行手順・実行コマンド例
+
+### 手動実行（完全版）
+
+```bash
+# workflow-health-check を手動で実行（全6ステップ）
+# 「/workflow-health-check」または「ワークフロー健全性チェックして」で起動
+```
+
+### 軽量版（project-sync から呼び出し）
+
+```bash
+# project-sync の Step 0 として以下を実行（Step 1〜2 のみ）
+# PR 健全性 + Issue 状態監査
+```
+
+### 実行コマンド例
+
+MCP（クラウド・一次経路。repo スコープの `gh` はクラウドで 403・L-114。SSOT: `docs/rules/github-mcp-fallback-patterns.md`）:
+```
+# PR 健全性確認（ベースブランチ・マージ可能性）
+mcp__github__list_pull_requests(owner, repo, state="open")
+
+# スタック Issue 確認（in-progress かつ 4h 超）
+mcp__github__list_issues(owner, repo, state="OPEN", labels=["status:in-progress"])
+
+# ラベル不整合確認（status: が 2 つ以上）
+mcp__github__list_issues(owner, repo, state="OPEN")
+  → 応答の labels 配列を client-side で判定（status: 開始のラベルが 2 つ以上の Issue を抽出）
+
+# ワークフロー実行状況の確認（gh run / workflow list 相当）
+mcp__github__actions_list(method="list_workflow_runs", owner, repo)
+mcp__github__actions_list(method="list_workflows", owner, repo)
+```
+
+ローカル環境（gh CLI 到達可能時）の代替:
+```bash
+# PR 健全性確認（ベースブランチ・マージ可能性）
+gh pr list -R kai-kou/gem-hunter \
+  --state open \
+  --json number,title,baseRefName,mergeable,isDraft,updatedAt \
+  --limit 100 \
+  --jq '.[] | {number, title, base: .baseRefName, mergeable, isDraft, updatedAt}'
+
+# スタック Issue 確認（in-progress かつ 4h 超）
+gh issue list -R kai-kou/gem-hunter \
+  --label "status:in-progress" \
+  --state open \
+  --json number,title,updatedAt \
+  --limit 100
+
+# ラベル不整合確認（status: が 2 つ以上）
+gh issue list -R kai-kou/gem-hunter \
+  --state open \
+  --json number,title,labels \
+  --limit 200 \
+  --jq '[.[] | select([.labels[].name | select(startswith("status:"))] | length > 1)] | .[] | {number, title, status_labels: [.labels[].name | select(startswith("status:"))]}'
+```
