@@ -243,7 +243,7 @@ D. CSS のみ（JS なし）         … daisyUI, Tailwind Plus
 | **Material UI** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | △ | ○ | 安心と物量 |
 | **Ant Design** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | △ | ○ | 業務データ |
 | **Chakra UI v3** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | △ | ○ | 書き味 |
-| **daisyUI** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ◎ | ✗ | 最軽量 |
+| **daisyUI** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ◎ | △ | 最軽量 |
 | **Base UI** | — | ⭐⭐⭐ | ⭐⭐⭐⭐ | ◎ | ○ | 次世代の土台 |
 | **Radix UI** | — | ⭐⭐⭐ | ⭐⭐⭐⭐ | ◎ | ◎ | 枯れた土台 |
 | **React Aria** | — | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ◎ | ◎◎ | a11y 最強 |
@@ -342,6 +342,8 @@ D. CSS のみ（JS なし）         … daisyUI, Tailwind Plus
 
 - `https://registry.npmjs.org/<package>`（版数・公開日・peerDependencies・ライセンス表記）
 - `https://api.npmjs.org/downloads/point/last-week/<package>`（週次ダウンロード数）
+
+🟢 **ライセンス表記は全 12 パッケージを npm メタデータで個別に確認済み**（React Aria Components のみ Apache-2.0、他は MIT。PrimeReact v11 は §4.10 のとおり独自表記）。
 
 **二次情報（⚠️ 記載箇所を明示している。誤りは §8 に記録）**
 
