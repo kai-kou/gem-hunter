@@ -320,14 +320,16 @@ OpenSSF `criticality_score` は既に 10 シグナルの加重和で 0〜1 の�
 | **D-16** | 🔴 **インフラを Cloudflare に確定する（プレビュー・本番とも Cloudflare Workers）。** ユーザー明示決定（2026-08-18）により `D-5` / `D-7`（デプロイ先未決）と `D-11`（プレビュー環境の事業者未決）をクローズする。`M-4` は廃止せず「事業者を選定するゲート」から「**第三者へ公開するか否かを決めるゲート**」へ性質を変えて維持する（独自ドメインの要否・GitHub 利用規約の一次確認・コスト撤退ラインの確定はここに残す）。運用の一次経路は **wrangler CLI**（Cloudflare MCP は読み取り 4 ツールのみ許可・書き込み系は使わない）。CI は **GitHub Actions + `cloudflare/wrangler-action`** とし Workers Builds は採用しない | 2026-08-18 |
 | **D-17** | **ランタイムは `@opennextjs/cloudflare` アダプタとし、`next` を 16.2.11 以上にピンする。** `Node.js Middleware` と `proxy.ts` は一切使わない（アダプタ未対応・動作未確認のため、`/` → `/ja` のリダイレクトはルート Server Component の `redirect()` で実装する）。`next/image` の最適化も使わない（`INF-11`） | 2026-08-18 |
 | **D-18** | **MVP のキャッシュは HTTP `Cache-Control` + Workers Caching のみとし、永続ストア（R2 / D1 / Durable Objects / KV）を採用しない。** `NFR-17` Cache Port は維持し、実装位置を **`lib/infra/`** と定める（`open-next.config.ts` ではない）。L3 の導入条件は [インフラ設計](../03_design/infrastructure/infrastructure-design.md) §6.2 の観測条件を変更せずに維持する | 2026-08-18 |
+| **D-19** | **Workers Free の実測で上限（p95 CPU 10 ms / Worker バンドル 3 MB gzip）を超えた場合は Workers Paid（$5/月）へ上げる（事前承認済み）。** Claude は `limits.cpu_ms` の設定と監視の準備まで確認なしで進め、**支払い方法の登録と Paid 切替の操作だけ** を `A-6` としてユーザーへ即時依頼する（Free → Paid に CLI / API 経路は存在しない）。あわせて **コストの撤退ラインを月額 $10** とし、Billable Usage API の監視閾値に用いる（`infrastructure-design.md` §14 の未決事項をクローズ） | 2026-08-18 |
 
-### D-16 / D-17 / D-18 の決定から従属的に確定する事項
+### D-16 / D-17 / D-18 / D-19 の決定から従属的に確定する事項
 
 - 🔴 **Cloudflare 前提の構成の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md)**。`INF-n` 契約（[インフラ設計](../03_design/infrastructure/infrastructure-design.md)）は引き続き契約の正本であり、新ドキュメントは「その契約を Cloudflare のどの機能で満たすか」だけを持つ。
 - **`D-16` の帰結**: `INF-2`（超過時は課金ではなく停止に倒す）は **Workers Free を維持すること自体** で構造的に満たされる（超過は HTTP Error 1027 で停止し課金されない）。逆に Paid へ上げるとハードキャップは消滅し、`limits.cpu_ms` と Billable Usage API による後追い監視しか残らない。
 - **`D-17` の帰結**: Free の **CPU 10 ms / Worker バンドル 3 MB（gzip）** に収まるかが `INF-3`（与件の技術スタックが動くこと）の成否を決める。`SP-1` で実測し、閾値超過が確定した場合のみ Workers Paid への切替を `A-6` としてユーザーへ依頼する（Free → Paid に CLI / API 経路は存在しない）。
 - **`D-18` の帰結**: `NFR-7`（request coalescing）が **補助から主要な防波堤へ格上げ** される（Workers Caching のリクエスト合体はエッジで効くため、`D-13` の「インスタンス内でしか効かない」という前提が変わる）。一方で **キャッシュヒットも Worker のリクエスト枠を消費する** ため、「キャッシュヒット率向上 = コスト削減」は Cloudflare では成立しない（効くのは CPU-ms と GitHub レート枠の 2 軸のみ）。
 - **`INF-5` の帰結**: Cloudflare bindings へのアクセスを **`lib/infra/` 配下に限定** し、grep 2 本（bindings の直接参照 / Cloudflare 環境変数による実行時分岐）で機械検出する。目視判断だった `NFR-21` の遵守がセルフレビューで自動判定できるようになる。
+- **`D-19` の帰結**: 実測が閾値超過を示したとき、セッションは `status:waiting-user` で止まらずに「支払い方法を登録してください」という **1 手だけの依頼** を出して待つ（判断は事前に済んでいるため A/B/C/D 分類をやり直さない）。撤退ライン $10 は Billable Usage API（`GET /accounts/{id}/billable-usage`）のポーリング閾値として実装する。⚠️ Budget alerts は通知のみで停止しないため、これに依存しない。
 - **人間に残る作業**: ① Cloudflare API トークンの初回発行 ② その値を GitHub Actions Secrets と Claude.ai 環境変数の 2 箇所へ貼る、の 2 つだけ（いずれも一度きり）。以降のリソース作成・デプロイ・プレビュー URL 生成・シークレット投入は Claude が非対話で実行する。
 
 ### D-13 / D-14 / D-15 の決定から従属的に確定する事項
