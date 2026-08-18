@@ -1,0 +1,331 @@
+---
+name: sprint-cycle-router
+description: 単一ルーティン（1 時間ごと・cron 起動）でスプリント開発を自走させる決定木ルーター。破壊的変更対応・自 PR 回収・進行中スプリント再開・SP→Issue 同期・新規スプリント着手（TDD・縦切り・専門チーム編成）・改善Issue消化・衛生・週次リファインメント・spec-sync 検証の 9 ブランチから、1 firing につき該当する最初の 1 つだけを実行する。「スプリント自走ルーティン」「N 時間ごとの開発を進めて」「スプリントサイクルを回して」「/sprint-cycle-router」と依頼された時、またはルーティン設定（`docs/routines/sprint-cycle-routine.md`）から自動起動する時に使用する。各ブランチの実処理は既存パイプラインスキル（`claude-code-spec-sync` / `pr-review-watcher` / `self-improvement-loop` / `workflow-health-check` / `project-sync`）に委譲し、本スキル自身は「今どのブランチを実行すべきか」の判定と Step4（新規スプリント着手）の内部手順だけを持つ。改善Issueの発見・棚卸し自体は `self-improvement-loop`、リポジトリ衛生の監査自体は `workflow-health-check` の担当（本スキルはそれらの呼び出し元）。
+effort: medium
+---
+
+> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウド実行環境では `gh` がプリインストールされず、
+> 導入しても repo スコープ REST が 403 になりうる。**本ファイル内の `gh ...` コマンドはローカル実行専用**
+> で、クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md`）。
+> 本スキルは無人 cron 起動が既定のため、**Step 0.0 で毎 firing チャネルを再判定する**（§0 参照。
+> 「前回動いたから今回も」という恒久判断はしない）。
+
+# sprint-cycle-router スキル
+
+## 目的
+
+飼い主が単一のルーティン設定内で「N 時間ごとに開発が進む」状態を作れるよう、**1 本の決定木** で
+「今 firing で何を実行すべきか」を判定し、実処理は既存パイプラインスキルに委譲するルーター。
+新規スプリント着手（Step 4）だけは本スキルが内部手順を持つ（`sprint-development-rules.md` の
+`SD-1`〜`SD-4` を実行する主体がここに要るため）。
+
+設計の経緯・却下案・被害の非対称性の議論全文は
+`content/discussions/sprint-cycle-design-20260818/whiteboard.md`（本スキルは判定ロジックの実体。
+議論ログは変更しない）。
+
+## 他レーンとの境界
+
+- 破壊的変更対応の実処理 → `claude-code-spec-sync`
+- PR レビュー・マージ・公開反映の実処理 → `pr-review-watcher`
+- 改善 Issue の発見・棚卸し・消化の実処理 → `self-improvement-loop`
+- リポジトリ衛生（Stale/Orphan/ラベル不整合）の実処理 → `workflow-health-check` → `project-sync`
+- 本スキルはこれらの **呼び出し順序と、どれも該当しないときの新規スプリント着手（Step 4）** だけを担う。
+  Step 4 の実装フローが既存 4 レーンと並ぶ「第 4 レーン（スプリント開発レーン）」であることの境界定義は
+  `docs/rules/improvement-lane-map.md` を参照する（本スキルでは再定義しない）。
+
+---
+
+## §0 実行モデル
+
+- **1 firing = 上から該当する最初の 1 ブランチだけを実行する。** スプリントは複数 firing にまたがってよい
+  （SD-1 の完了条件は「マージされた PR にプレビュー URL があり操作レビューを完走できる」ことであって
+  「1 firing で完結する」ことではない）。
+- **毎回新規セッション・エフェメラル VM**。前回 firing のメモリ・ローカル state は引き継がれない。
+  次回 firing が状態を知る手段は **GitHub 上のアーティファクト（Issue ラベル・コメント・PR・ブランチ・
+  コミット）だけ**。日次・毎 firing の判定に新規 state ファイルを作らない（§9 の週次ゲートのみ既存パターンを流用可）。
+- 早期リターン（§2）を安く済ませることで、cron を 1 時間ごとに回しても空振りコストを抑える。
+  **N（cron 間隔）は完了保証の単位ではなく健全性チェックの再訪頻度**。
+
+---
+
+## §1 Step 0.0: API チャネル判定（毎 firing 必須・1 回だけ判定して使い回す）
+
+無人 cron 起動では `mcp__github__*` が届かない firing がありうる（実測事例あり）。以下の
+4 段で **毎 firing** 判定し、以降の全ステップで同じチャネルを使い回す。
+
+```
+1. mcp__github__list_issues(perPage=1) を試す → 成功なら MCP モード（既定・以降はこれを使う）
+2. 失敗 → `gh api user` を試す → 成功なら gh モード
+   （tools/check_pending_pr_reviews.py 等の既存 gh 依存ツールをそのまま使ってよい）
+3. 失敗 → `curl -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+   https://api.github.com/repos/{owner}/{repo}` を試す
+   ⚠️ `docs/rules/github-mcp-fallback-patterns.md` は「直叩きは通常 403 でフォールバックにならない」
+      と明記済み。この段が 200 を返しても **恒久前提にしない**（CP-2）。この firing 限定で
+      curl モードに落ちてよいが、次回 firing は必ず 1 → 3 を再度順に試す。
+      curl が 200 を返す事実自体が SSOT の記述と矛盾する場合は、矛盾を検証フラグ付きで
+      `type:bug`（`lane:github-api-proxy` 等の既存ラベル体系があれば流用）Issue に記録し、
+      本firingの判定はそのまま続行する（記録と実行を両立させる。記録のために止まらない）。
+   curl モードで Step 2（自分の PR 回収）を判定する場合、`check_pending_pr_reviews.py` に
+   curl 経由の第 3 層は無いため、`GET /repos/{owner}/{repo}/pulls?state=open` を直叩きし、
+   PR 本文の `Session-Id:` トレーラーをクライアント側で grep して `--mine` 相当を素朴に再実装する。
+4. 全滅 → GitHub API 完全不通。Issue/PR 依存の Step 1〜8 は実行不能と判定し、
+   git 単独で判定できる範囲（ローカルに push 漏れのコミットが無いか等）だけ確認して **安全側 no-op**。
+   ログを残さず何もしない（永続化先が無い。次回 firing が独立に再判定するのが ephemeral 前提と一致する。
+   中途半端なローカル state ファイルを新設しない）。
+```
+
+---
+
+## §2 Step 0.1: 早期リターン判定
+
+数クエリで「今回やることが無い」を判定して安く抜ける。**a〜d のいずれかが該当した時点で該当ステップに
+進み、全て非該当なら Step 9（no-op）へ**。
+
+```
+a) [CC-Sync 破壊的変更] `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue の存在チェック（1 クエリ）
+b) 自分の in-progress Issue / open PR の存在チェック（`check_pending_pr_reviews.py --mine --actionable-only`
+   相当・1 クエリ。§1 のチャネルに応じて MCP/gh/curl 手動実装のいずれかで実行）
+c) `status:waiting-claude` の `type:improvement`/`type:bug` 在庫チェック（1 クエリ）
+d) 当日の衛生スロット実施済みか（`project-sync` のログ相当・当日の Issue コメント日付や
+   `workflow-health-check` 実行痕跡から判定・1 クエリ。新規 state ファイルは作らない）
+```
+
+早期リターンのコストが数クエリに収まるからこそ cron を 1 時間ごとに回せる（§0）。
+
+---
+
+## §3 決定木 Step 1〜9
+
+**1 firing = 上から該当する最初の 1 ブランチだけ実行する。** 優先順位の設計原則: 「今動いている作業を
+完走させる（Step 1〜3）」>「新しい価値を作る（Step 4）」>「バックログの健全性を保つ（Step 5〜8）」。
+
+| Step | 判定条件（機械的に書く） | 実行内容 | 委譲先スキル |
+|---|---|---|---|
+| **1** | `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue が存在する | 即対応（他ブランチより最優先・既存仕様どおり） | `claude-code-spec-sync` Step1 |
+| **2** | `check_pending_pr_reviews.py --mine --actionable-only`（相当）が非空 | レビュー対応・自動マージ・公開反映まで継続。新規スプリント着手より優先（CP-4: 中途 PR を放置して新規に手を広げない） | `pr-review-watcher` |
+| **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名}まで完了」1 行）から続きを判定し再開（手順は §7 の中断条件と対）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
+| **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py`（別担当実装・並行 PR で追加） <!-- refcheck:ignore --> |
+| **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
+| **5** | `status:waiting-claude` の `type:improvement`/`type:bug` が存在する | 改善 Issue 消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
+| **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
+| **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
+| **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
+| **9** | 全部空 | no-op。`routine-idle` 通知は既存の 1 日 1 回自己抑制のまま | — |
+
+### エージング（Step 4 の飢餓防止・§5 で詳述）
+
+Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造的リスクがある。Ready な `SP-n` があるのに
+直近 **3 日** Step 4 が一度も実行されていなければ、**その firing だけ Step 2 を 1 回後回しにして Step 4 を
+差し込む**（判定手段は §5）。
+
+### Ready の定義（着手可能条件・5 条件・Step 3.5 / Step 4 共通）
+
+- [ ] `type:feature` + `sp:{N}` + 優先度ラベル（`P1-MVP` / `P1-積み上げ` / `P2`）が付いている
+- [ ] 本文が `docs/02_requirements/user-story-map.md` §5.3 の該当 `SP-n` を **ID で参照** している（本文をコピーしない）
+- [ ] 数値昇順で先行する `SP-n` の Issue がすべて Closed（またはその PR が `state=MERGED`）
+- [ ] `C-5`（1 `SP-n` = 1 Issue・技術レイヤー別に分割しない）に違反する分割 Issue になっていない
+- [ ] `status:blocked` が付いていない
+
+---
+
+## §4 Step 4（開発レーン）の内部手順
+
+```
+4-0. SP-4 ハードゲート: 着手先が SP-4 以降 かつ SP-4（テスト基盤・CI）が未 Closed なら、
+     着手対象を SP-4 に強制上書きする（SP-4 が終わらないと以降のスプリントの TDD 検証・
+     プレビュー確認が成立しないため）。
+
+4-1. 対象選定: 未 Closed の SP-n のうち **数値昇順で最小の番号**を選ぶ（4-0 のハードゲート適用後）。
+     `user-story-map.md` §5.3 の Markdown を毎 firing パースしない（Ready 判定は Issue ラベル・
+     本文の ID 参照・先行 SP-n の Closed 状態から機械判定する）。
+
+4-2. `status:in-progress` 付与（処理の最初のアクション・CP-4 論理ロック）。
+
+4-3. Sprint Planning コメント投稿（`session-sprint-rules.md` §2 の書式そのまま。**編成欄を含む**）:
+     - ゴール / 対象（sp:N）に加え、`編成:` 行でチーム構成を確定して記録する
+       （新規欄を増やさない。既存書式の '編成:' 行がそのままチーム編成の記録先）
+     - **既定は役割分担型 fan-out**。`sp:5` 以上は並列（`agent-team-summary.md` のファイル非重複
+       分割ルール厳守）、`sp:1`〜`3` は単独実行（チーム化のオーバーヘッドが割に合わない）
+     - 議論型（`discussion-review`）は (a) 既存 Layer2 自動トリガー（diff 300 行超・security・
+       breaking）と (b) 下記「無人 firing の SD-3」のグレーゾーン精査に限定する（毎スプリント
+       起動しない・コスト理由）
+
+4-4. `sprint-development-rules.md` の `SD-1`〜`SD-4` をそのまま実行する:
+     - `SD-4`（ドキュメントを読んで自律的に動く）: 着手時に `user-story-map.md` §5.3 の該当
+       `SP-n` → `prd.md` の参照要件 ID と該当 `AC-n` → `prd.md` §13 未決事項 → `inception-deck.md`
+       Q4 → `project-mission.md` の順で読む
+     - `SD-2`（TDD 主体）: Red → Green → Refactor。操作レビュー手順を E2E に写す
+     - **縦切りの判定境界（3 層・BRIEF 確定事項）**は下表のとおり。`tools/self_review_check.py`
+       が PR 前チェックで機械判定する（本スキルは判定ロジックを持たず、判定結果に従う）:
+
+       | 段 | 対象 | 強制力 |
+       |---|---|---|
+       | (a) `C-5` 違反（同一 `SP-n` の技術レイヤー別分割 Issue） | 全 `SP-n` | **blocking** |
+       | (b) `SP-1` のみ 3 層すべてに diff が無い | `SP-1` のみ | **blocking** |
+       | (c) `US-n` を含む機能スプリントが 3 層中 2 層以上に触れていない | `US-n` を含むスプリント | **warning**（block しない） |
+       | (d) イネイブラー単独スプリント（含むが `E-n` のみ）は判定除外 | 該当スプリント | **exempt**（操作レビュー手順が書けることが条件） |
+
+       3 層の判定境界（ディレクトリ・成果物）:
+
+       | 層 | diff に含まれるか判定する対象 |
+       |---|---|
+       | フロントエンド | `app/**/page.tsx` / `app/**/layout.tsx` / `src/ui/**` |
+       | バックエンド | `app/**/route.ts` / `src/usecases/**` / `src/domain/**` / `src/infrastructure/**` |
+       | インフラ | `.github/workflows/**` / プレビューデプロイ設定 / `.env.example` 等の環境変数宣言 / `next.config.*` のランタイム契約部 |
+
+       ⚠️ 「インフラ」は運用基盤の契約であって、クリーンアーキテクチャ用語の `src/infrastructure/`
+       （アダプタ層）ではない。混同しない。
+
+     - **無人 firing での SD-3 第 2 系統（仕様解釈の分岐）**: §5 の手順に従う。
+     - `SP-8`（ログイン）の E2E は `infrastructure-design.md` §8.1 の記載どおり、プレビュー URL
+       では実行不能なため、ダミー OAuth 設定の **ローカルビルド**に対して実行する（この 1 件だけ
+       実行対象を切り替える）。
+
+4-5. PR 本文の必須項目: `Sprint Goal:` 1 行 / `sp:N` / `Session-Id: $CLAUDE_CODE_SESSION_ID` /
+     プレビュー URL（出せない場合は理由とローカル起動手順） / 参照要件 ID（既存必須項目そのまま。
+     `session-sprint-rules.md` §2 / `sprint-development-rules.md` SD-1 準拠）。
+
+4-6. `pr-review-watcher` へ継続（Layer1 セルフレビュー → 指摘対応 → マージ → 公開反映）。
+     ここで firing のセッション予算が尽きたら、コミット済みの内容と `status:in-progress` ラベルだけが
+     生き残る。次の該当 firing は Step 2（自分の PR）または Step 3（stale 再開）で拾う。
+```
+
+---
+
+## §5 飢餓防止（エージング）
+
+**判定手段は GitHub 上の情報だけ**（新規 state ファイル禁止）:
+
+```
+1. Step 3.5 / Step 4 の対象クエリで Ready な SP-n の Issue の有無を確認する
+2. Step 4 の最終実行時刻を、直近の `SP-{n}:` タイトルを持つ Issue の
+   `status:in-progress` 付与コメント（Sprint Planning コメント）の投稿日時、または
+   直近のマージ済み SP-n PR のマージ日時のうち新しい方から推定する
+   （専用ログを持たず、既存アーティファクトの日付を読むだけで再計算できる）
+3. Ready な SP-n が存在し、かつ 2 の推定時刻から 3 日以上経過していれば、
+   この firing に限り Step 2 の判定を 1 回後回しにして Step 4 を実行する
+   （Step 2 の対象 PR は次回 firing 以降に持ち越しても CP-4 上問題ない
+   ＝ pr-review-watcher の active_session 判定・stale 判定がそのまま安全弁になる）
+```
+
+---
+
+## §6 無人 firing での `SD-3`（仕様解釈分岐）
+
+`sprint-development-rules.md` SD-3 は「仕様解釈が 2 通り以上あり成果物が変わる場合は
+`AskUserQuestion` で確認する」と定めるが、**無人 cron 起動では応答するユーザーがいない**。
+
+**確定事項（飼い主が `AskUserQuestion` に回答済み・逸脱禁止）**: 原則は待つ。極小 3 条件を
+すべて満たす場合のみ続行してよい。
+
+```
+SD-3 グレーゾーンに遭遇（無人 firing 内）:
+  続行してよいか、次の 3 条件を機械的に判定する:
+    [ ] 変更が単一 Issue のスコープに閉じている（後続 SP-n がこの解釈に依存しない）
+    [ ] 画面に見える挙動・API 契約・データモデル・キャッシュキー命名に触れない（内部実装の細部に限る）
+    [ ] 差し戻しコストが sp:1〜sp:2 相当（数十行・単一ファイル）に収まる
+
+  3 条件すべてを満たす → 推奨案を採用し実装を続行する。
+    PR 本文と Issue コメントに次の 1 行を必ず記録する:
+    「仮定: {曖昧だった点} → {採用した解釈}（無人実行のため推奨案を採用。ユーザー判断で訂正可）」
+
+  1 つでも満たさない → 実装せず `status:waiting-user` Issue を起票し、
+    そのスプリントは飛ばして次の Ready な SP-n へフォールスルーする（ルーティン全体は止めない）。
+    Issue 本文テンプレート（選択肢は最大 2 つ・各 1 行の判断材料・推奨明示。
+    `user-confirmation-minimization.md` §3 item 8 準拠）:
+
+    ## 仕様解釈の分岐（無人 firing のため実装を保留）
+    **対象**: SP-{n}（{Issue番号}）
+    **曖昧点**: {1 文}
+    **選択肢**:
+    - A: {解釈A}（{判断材料 1 行}）
+    - B: {解釈B}（{判断材料 1 行}）
+    **推奨**: {A または B}（理由 1 行）
+    **保留理由**: 3 条件のうち {不成立の条件} を満たさないため無人実行では続行しない
+```
+
+🔴 **Claude 内部の議論（`discussion-review`）の結論を「ユーザーの答え」の代わりにしない**（`D-12` 違反）。
+グレーゾーンの精査に `discussion-review` を使ってよいのは「3 条件のどれに該当するかの判定が曖昧なとき」
+に限り、判定結果が「待つ」なら `discussion-review` の結論でユーザー確認を省略しない。
+
+---
+
+## §7 健全な中断（満たさずに firing を終えない）
+
+```
+[ ] 直前のコミットが壊れた状態を含まない（Red で止まるのは可。Green の途中で止めない。
+    止まりそうになったら、そのコミットを Red 状態に戻してから中断する）
+[ ] Issue を Close していない・完了ラベルを付けていない（status:in-progress のまま）
+[ ] Issue コメントに「進捗: {SD ステップ名} まで完了。次は {次にやること}」の 1 行がある
+    （TDD のコミット規約〔test:/feat: 分離〕と組み合わせれば、この 1 行は直前のコミット
+    メッセージから機械的に生成できる＝儀式化しない）
+[ ] PR がある場合はタイトルに `[WIP]` が付き、自動マージ対象になっていない
+```
+
+firing のセッション予算が尽きそうになったら、上記 4 条件を満たす状態に整えてから終える。
+次に該当 firing が来たとき Step 3（stale 再開）がここから続きを拾う。
+
+---
+
+## §8 失敗モード別の自己回復
+
+| 失敗モード | 検知 | 次回 firing の回復経路 |
+|---|---|---|
+| プレビュー URL 不出 | PR 本文に「プレビュー URL なし」明記（`sprint-development-rules-detail.md` §1.3 既定動作） | Step 2 で `pr-review-watcher` が継続。A-6 相当なら waiting-user Issue 化済みのはずなので Step 5 の対象にもなる |
+| CI 赤 | `pr-review-watcher` Step 2 が検知 | Step 2 で継続対応。放置なら次々回 firing でも同じ Step 2 が拾う（PR が閉じない限り自然回復） |
+| A-4 サーキットブレーカー発動（修正サイクル 2 回超） | 該当箇所での修正試行回数 | 該当 Issue/PR に `status:blocked` を付与。**Step 3 / Step 4 の対象クエリから除外**（`status:blocked` を除外条件に必ず含める・`self-improvement-loop` の除外リストと同じ書式）。waiting-user 通知は `user-notification-triage.md` の A 区分基準どおり必要時のみ |
+| セッション圧縮（コンテキスト 95%） | `post-compact.sh` フックが自動コミット | 元々 ephemeral なので特別対応不要。圧縮後もその firing 内で継続。firing 自体が尽きたら Step 3 の再開経路に合流 |
+| スプリントが 1 firing に収まらない | Step 3 の stale 判定（4 時間） | §7 の健全な中断状態から §3 の Step 3 の再開手順で続きを判定（git log と Sprint Planning コメントから SD ステップを特定して再開）。恒常的に収まらないなら Issue 側での分割を Step 4 着手時に検討する |
+
+---
+
+## §9 在庫枯渇（`M-3` 到達）
+
+`roadmap.md` の `M-3`（積み上げマイルストーン・`SP-12` 以降）に対応する全 `SP-n` が Closed になり、
+Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなった時点で **在庫枯渇** と判定する。
+
+```
+在庫枯渇を検知したら:
+  1. `[Milestone] M-3 到達` Issue が既にオープンでないか確認する（重複起票防止）
+  2. 無ければ 1 回だけ起票する（A-5 相当・@mention）。本文に roadmap.md M-4（公開判断ゲート）が
+     要求する Claude が自己生成できない入力（R-5 逆算の TTL 反映・R-6 運用コスト試算・
+     R-8 GitHub 利用規約確認）を列挙し、飼い主に公開判断を促す
+  3. 以後は「この Issue が open か」だけで在庫枯渇状態を判定する（state ファイル不要）。
+     open のままなら Step 4 は恒常的に空振りし、決定木は Step 5（改善 Issue 消化）へ
+     フォールスルーし続ける（ルーティンは止まらない）
+```
+
+---
+
+## §10 完了・成功の定義
+
+- [ ] 1 firing で決定木の該当ブランチが正しく特定でき、上位ステップを飛ばして実行していない
+- [ ] Step 0.0 のチャネル判定を毎 firing 実施している（前回の判定結果を恒久前提にしていない）
+- [ ] Step 4 着手時、`SD-1`〜`SD-4` を省略していない（プレビュー URL・TDD・縦切り・ドキュメント参照）
+- [ ] 無人 firing で `AskUserQuestion` を使っていない（§6 の 3 条件判定で代替している）
+- [ ] `status:blocked` の Issue/PR が Step 3 / Step 4 の対象から除外されている
+- [ ] 健全な中断の 4 条件（§7）を満たさずに firing を終えていない
+- [ ] `[Milestone] M-3 到達` Issue が重複起票されていない（既存 open Issue の有無で判定済み）
+
+---
+
+## §11 参照
+
+| ドキュメント | 関係 |
+|---|---|
+| `docs/routines/sprint-cycle-routine.md` | 本スキルを起動するルーティン設定（cron・貼り付けプロンプト） |
+| `docs/rules/sprint-development-rules.md` | `SD-1`〜`SD-4`（Step 4 が実行する 4 規律の本体） |
+| `docs/rules/sprint-development-rules-detail.md` | 中断時チェックリスト・無人実行モードの詳細補足 |
+| `docs/rules/session-sprint-rules.md` | スプリントの単位・`sp:N`・Sprint Planning コメント書式（編成欄含む） |
+| `docs/02_requirements/user-story-map.md` | `SP-n` の仕様本体（§5.3）・`C-5`・Ready/Done の定義（§7） |
+| `docs/02_requirements/roadmap.md` | `M-3`（積み上げ）・`M-4`（公開判断ゲート）の定義 |
+| `docs/rules/improvement-lane-map.md` | 既存 4 レーンとの責務境界（本スキルの Step 4 が第 4 レーン） |
+| `docs/rules/user-confirmation-minimization.md` | `AskUserQuestion` の書式規約（§6 の Issue テンプレートが準拠） |
+| `docs/rules/github-mcp-fallback-patterns.md` | Step 0.0 の API チャネル判定の根拠 SSOT |
+| `.claude/skills/claude-code-spec-sync/SKILL.md` | Step 1 / Step 8 の委譲先 |
+| `.claude/skills/pr-review-watcher/SKILL.md` | Step 2 / Step 3（PR 済み）/ Step 4-6 の委譲先 |
+| `.claude/skills/self-improvement-loop/SKILL.md` | Step 5（消化モード）/ Step 7（整理モード）の委譲先 |
+| `.claude/skills/workflow-health-check/SKILL.md` / `.claude/skills/project-sync/SKILL.md` | Step 6（衛生）の委譲先 |
+| `tools/sprint_backlog_sync.py` | Step 3.5 の SP→Issue 同期スクリプト（本スキルは呼び出し方のみ持つ・並行 PR で追加） <!-- refcheck:ignore --> |
+| `tools/self_review_check.py` | 縦切り・`C-5`・TDD 順序の機械判定（PR 前チェック） |
+| `content/discussions/sprint-cycle-design-20260818/whiteboard.md` | 本設計の議論全文・却下案・合意経緯 |

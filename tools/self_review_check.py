@@ -16,6 +16,7 @@ Error 検出時（exit 1）に PR 作成をブロックする「Lv3 ハードコ
 """
 from __future__ import annotations
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -69,6 +70,266 @@ except Exception as _e:  # noqa: BLE001
     print(f"[self-review] Warning: scan_dangerous_patterns の読み込みに失敗（危険パターン検査を無効化）: {_e}",
           file=sys.stderr)
     _scan_py = None
+
+
+# ============================================================================
+# TDD コミット順序 / 縦切り(3層) / C-5（レイヤー分割禁止）検査
+#
+# 根拠: content/discussions/sprint-cycle-design-20260818/whiteboard.md
+#   arch_tdd round2 §1（3 層再定義）・§2.2（Tier1 は git diff --name-only の
+#   みで判定するゼロコスト静的検査。テスト実行や worktree checkout はしない・
+#   Tier2 の実測は CI 側の責務で本ツールの担当外）。
+#   round3 決定 4（C-5 新設・違反は blocking）・決定 6（TDD 検証は 2 段構成）。
+# いずれも「判定材料が無ければスキップ（黙って通す）」を徹底し、アプリコード
+# 未着手のドキュメント変更ブランチ等で誤検知しないようにする。
+# ============================================================================
+
+SP_PATTERN = re.compile(r"SP-(\d+)")
+US_PATTERN = re.compile(r"US-\d+")
+LAYER_LABEL_PATTERN = re.compile(r"layer:(frontend|backend|infra(?:structure)?)", re.IGNORECASE)
+
+# `SD-2`（TDD 主体）緩和対象外になった段階で使う、イネイブラー単独スプリント既定
+# exempt リスト。`user-story-map.md` §5.2 が `C-2` を満たす単独スプリントとして
+# 明示的に許可済み（whiteboard round2 §1.3）。
+ENABLER_ONLY_EXEMPT_SP = {"4", "5"}
+
+# テストパス判定（whiteboard 確定パターン）
+TEST_PATH_GLOBS = (
+    "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx",
+    "e2e/**", "**/__tests__/**", "**/*_test.py", "tests/**",
+)
+
+# 3 層の判定対象（BRIEF.md 3 層定義テーブル・whiteboard round2 §1.2 と完全一致）
+FRONTEND_GLOBS = ("app/**/page.tsx", "app/**/layout.tsx", "src/ui/**")
+BACKEND_GLOBS = ("app/**/route.ts", "src/usecases/**", "src/domain/**", "src/infrastructure/**")
+INFRA_GLOBS = (".github/workflows/**",)
+
+_GLOB_CACHE: dict[str, "re.Pattern[str]"] = {}
+
+
+def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """`**`（0 個以上のパス階層）/ `*`（1 階層内の任意文字列）だけを解釈する簡易 glob。
+
+    pathlib.PurePosixPath.match() は `**` を解釈しないため自前で用意する。
+    """
+    segments = pattern.split("/")
+    regex = "^"
+    for idx, seg in enumerate(segments):
+        is_last = idx == len(segments) - 1
+        if seg == "**":
+            regex += ".*" if is_last else "(?:.*/)?"
+        else:
+            regex += re.escape(seg).replace(r"\*", "[^/]*")
+            if not is_last:
+                regex += "/"
+    regex += "$"
+    return re.compile(regex)
+
+
+def _glob_match(pattern: str, path: str) -> bool:
+    rx = _GLOB_CACHE.get(pattern)
+    if rx is None:
+        rx = _glob_to_regex(pattern)
+        _GLOB_CACHE[pattern] = rx
+    return bool(rx.match(path))
+
+
+def is_test_path(path: str) -> bool:
+    """テストパス判定（`TEST_PATH_GLOBS` のいずれかに一致するか）。"""
+    return any(_glob_match(g, path) for g in TEST_PATH_GLOBS)
+
+
+def _is_infra_path(path: str) -> bool:
+    """インフラ層判定。運用基盤の契約（`INF-n`）であり `src/infrastructure/`
+    （クリーンアーキテクチャのアダプタ層＝バックエンド層扱い）とは別物（混同禁止・BRIEF.md 注記）。
+    """
+    if any(_glob_match(g, path) for g in INFRA_GLOBS):
+        return True
+    name = Path(path).name
+    if name == ".env.example" or name.startswith("next.config."):
+        return True
+    return False
+
+
+def touched_layers(files: list[str]) -> set[str]:
+    """diff ファイル一覧から触れている層（frontend/backend/infra）集合を返す。"""
+    layers: set[str] = set()
+    for f in files:
+        if any(_glob_match(g, f) for g in FRONTEND_GLOBS):
+            layers.add("frontend")
+        if any(_glob_match(g, f) for g in BACKEND_GLOBS):
+            layers.add("backend")
+        if _is_infra_path(f):
+            layers.add("infra")
+    return layers
+
+
+def branch_commits() -> list[str]:
+    """`origin/{default}..HEAD` のコミット SHA 一覧（古い→新しい順）。取得不可なら空。"""
+    base = f"origin/{default_branch()}"
+    r = sh(["git", "rev-list", "--reverse", f"{base}..HEAD"])
+    if r.returncode != 0:
+        return []
+    return [line for line in r.stdout.splitlines() if line.strip()]
+
+
+def commit_message(sha: str) -> str:
+    r = sh(["git", "log", "-1", "--format=%s", sha])
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def commit_files(sha: str) -> list[str]:
+    r = sh(["git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha])
+    return r.stdout.splitlines() if r.returncode == 0 else []
+
+
+def current_branch_name() -> str:
+    r = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def branch_sp_number() -> str | None:
+    """ブランチ名から `SP-n` を拾う（`git branch -r` 重複検査専用。命名確定値・BRIEF.md）。"""
+    m = SP_PATTERN.search(current_branch_name())
+    return m.group(1) if m else None
+
+
+def _sp_signal_text() -> str:
+    """SP-n / US-n / レイヤーラベル検出用に、ブランチ名 + 全コミットメッセージを連結して返す。
+    PR 本文は PR 作成前（pre-pr-create-check.sh フック）には存在しないため対象外（「相当」の範囲）。
+    """
+    return current_branch_name() + "\n" + "\n".join(commit_message(sha) for sha in branch_commits())
+
+
+def tdd_commit_order_warnings() -> list[str]:
+    """検査A: TDD コミット順序（Tier1・静的・ゼロコスト。テストは実行しない）。根拠: `SD-2`。
+
+    - `test:` コミットの diff がテストパス以外を含む → Warning
+    - `feat:`/`fix:` コミットの diff がテストパスのみ → Warning（コミット種別と中身の不一致）
+    - ブランチ内にテストパスの diff が 1 つも無ければ（アプリ未着手）検査自体をスキップ
+    """
+    commits = branch_commits()
+    if not commits:
+        return []
+    commit_info = []
+    any_test = False
+    for sha in commits:
+        files = commit_files(sha)
+        if any(is_test_path(f) for f in files):
+            any_test = True
+        commit_info.append((sha, commit_message(sha), files))
+    if not any_test:
+        return []
+
+    out: list[str] = []
+    for sha, msg, files in commit_info:
+        if not files:
+            continue
+        test_files = [f for f in files if is_test_path(f)]
+        non_test_files = [f for f in files if not is_test_path(f)]
+        short = sha[:7]
+        if msg.startswith("test:") and non_test_files:
+            out.append(
+                f"TDD コミット順序: {short} `{msg}` は test: コミットですがテスト以外の"
+                f"ファイルを含みます: {', '.join(non_test_files[:5])}"
+            )
+        elif (msg.startswith("feat:") or msg.startswith("fix:")) and test_files and not non_test_files:
+            kind = msg.split(":", 1)[0]
+            out.append(
+                f"TDD コミット順序: {short} `{msg}` は {kind}: コミットですがテストパスのみを"
+                "変更しています（コミット種別と中身が不一致）"
+            )
+    return out
+
+
+def vertical_slice_check(files: list[str]) -> tuple[list[str], list[str]]:
+    """検査B: 縦切り(3 層タッチ)判定。根拠: `user-story-map.md` §5.2 / whiteboard round2 §1。
+
+    - `app/`・`src/` がどちらも無ければ（アプリ未着手）検査自体をスキップ
+    - ブランチ名/コミットメッセージから `SP-n` を拾えなければスキップ
+    - `SP-1`: 3 層すべてに diff が無ければ Error（blocking）
+    - `SP-4`/`SP-5`（既定 exempt リスト）: 判定しない
+    - `US-n` 参照が無い（イネイブラー単独扱い・判定不能を含む）: exempt
+    - それ以外（`US-n` を含む機能スプリント）: 3 層中 2 層未満なら Warning
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not (Path("app").is_dir() or Path("src").is_dir()):
+        return errors, warnings
+
+    text = _sp_signal_text()
+    sp_match = SP_PATTERN.search(text)
+    if not sp_match:
+        return errors, warnings
+    sp_num = sp_match.group(1)
+    layers = touched_layers(files)
+
+    if sp_num == "1":
+        missing = {"frontend", "backend", "infra"} - layers
+        if missing:
+            errors.append(
+                "縦切り(SP-1): 歩く骨格の確立スプリントですが未着手の層があります: "
+                f"{', '.join(sorted(missing))}（3 層すべての diff が必要）"
+            )
+        return errors, warnings
+
+    if sp_num in ENABLER_ONLY_EXEMPT_SP:
+        return errors, warnings
+
+    if not US_PATTERN.search(text):
+        return errors, warnings
+
+    if len(layers) < 2:
+        touched = "、".join(sorted(layers)) if layers else "なし"
+        warnings.append(
+            f"縦切り(SP-{sp_num}): US-n を含む機能スプリントですが 3 層中 2 層以上に"
+            f"触れていません（触れている層: {touched}）"
+        )
+    return errors, warnings
+
+
+def layer_split_check() -> list[str]:
+    """検査C 前段: `C-5`（技術レイヤー別 Issue 分割の禁止）違反痕跡（Error・blocking）。"""
+    m = LAYER_LABEL_PATTERN.search(_sp_signal_text())
+    if not m:
+        return []
+    return [
+        f"C-5 違反の疑い: ブランチ名/コミットメッセージにレイヤー分割ラベルの痕跡があります"
+        f"（`{m.group(0)}`）。1 SP-n = 1 Issue とし、技術レイヤー別に Issue を分割しないでください"
+    ]
+
+
+def duplicate_sp_branch_warning() -> str | None:
+    """検査C 後段: 同一 `SP-n` の作業ブランチが複数存在する形跡（Warning）。"""
+    sp_num = branch_sp_number()
+    if not sp_num:
+        return None
+    r = sh(["git", "branch", "-r"])
+    if r.returncode != 0:
+        return None
+    pattern = re.compile(rf"SP-{re.escape(sp_num)}(?!\d)")
+    matches = [b.strip() for b in r.stdout.splitlines() if pattern.search(b)]
+    if len(matches) >= 2:
+        return (
+            f"C-5: 同一 SP-{sp_num} に対する作業ブランチが複数存在する形跡があります: "
+            f"{', '.join(matches)} → 技術レイヤー別に分割していないか確認してください"
+        )
+    return None
+
+
+def tdd_and_sprint_checks(files: list[str]) -> tuple[list[str], list[str]]:
+    """検査 A(TDD 順序)/B(縦切り)/C(`C-5`) をまとめて実行する（PR 作成前の Tier1 静的検査）。"""
+    errors: list[str] = []
+    warnings: list[str] = []
+    warnings.extend(tdd_commit_order_warnings())
+    b_errors, b_warnings = vertical_slice_check(files)
+    errors.extend(b_errors)
+    warnings.extend(b_warnings)
+    errors.extend(layer_split_check())
+    dup_warn = duplicate_sp_branch_warning()
+    if dup_warn:
+        warnings.append(dup_warn)
+    return errors, warnings
 
 
 def cjk_violation_lines(text: str) -> list[int]:
@@ -229,6 +490,11 @@ def main() -> int:
                         warnings.append(entry)
             except Exception as e:  # noqa: BLE001
                 warnings.append(f"危険パターン検査でエラー: {f}: {e}")
+
+    # TDD コミット順序 / 縦切り(3層) / C-5 検査（whiteboard sprint-cycle-design-20260818 確定内容）
+    tdd_errors, tdd_warnings = tdd_and_sprint_checks(files)
+    errors.extend(tdd_errors)
+    warnings.extend(tdd_warnings)
 
     # base-update-notes 追記リマインド（Issue #211・Warning 一本。Error 化は実測後に再検討）
     note_warn = update_notes_reminder(files)
