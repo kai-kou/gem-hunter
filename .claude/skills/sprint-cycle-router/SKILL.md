@@ -139,41 +139,22 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
 
 4-2. `status:in-progress` 付与（処理の最初のアクション・CP-4 論理ロック）。
 
-4-3. Sprint Planning コメント投稿（`session-sprint-rules.md` §2 の書式そのまま。**編成欄を含む**）:
-     - ゴール / 対象（sp:N）に加え、`編成:` 行でチーム構成を確定して記録する
-       （新規欄を増やさない。既存書式の '編成:' 行がそのままチーム編成の記録先）
-     - **既定は役割分担型 fan-out**。`sp:5` 以上は並列（`agent-team-summary.md` のファイル非重複
-       分割ルール厳守）、`sp:1`〜`3` は単独実行（チーム化のオーバーヘッドが割に合わない）
-     - 議論型（`discussion-review`）は (a) 既存 Layer2 自動トリガー（diff 300 行超・security・
-       breaking）と (b) 下記「無人 firing の SD-3」のグレーゾーン精査に限定する（毎スプリント
-       起動しない・コスト理由）
+4-3. Sprint Planning コメントを投稿する。**書式と `編成` 欄の記入規則（既定の協調モード・並列化の
+     しきい値・議論型を使う条件）の正本は `docs/rules/session-sprint-rules.md` の
+     「スプリントプランニング」節**。本スキルには複製しない（しきい値を片方だけ直すと、
+     無人ルーティンが古い基準で並列/単独を判定し続ける）。チーム編成の記録先は既存の `編成` 欄であり、
+     新しい記録先は作らない。
 
 4-4. `sprint-development-rules.md` の `SD-1`〜`SD-4` をそのまま実行する:
      - `SD-4`（ドキュメントを読んで自律的に動く）: 着手時に `user-story-map.md` §5.3 の該当
        `SP-n` → `prd.md` の参照要件 ID と該当 `AC-n` → `prd.md` §13 未決事項 → `inception-deck.md`
        Q4 → `project-mission.md` の順で読む
      - `SD-2`（TDD 主体）: Red → Green → Refactor。操作レビュー手順を E2E に写す
-     - **縦切りの判定境界（3 層・BRIEF 確定事項）**は下表のとおり。`tools/self_review_check.py`
-       が PR 前チェックで機械判定する（本スキルは判定ロジックを持たず、判定結果に従う）:
-
-       | 段 | 対象 | 強制力 |
-       |---|---|---|
-       | (a) `C-5` 違反（同一 `SP-n` の技術レイヤー別分割 Issue） | 全 `SP-n` | **blocking** |
-       | (b) `SP-1` のみ 3 層すべてに diff が無い | `SP-1` のみ | **blocking** |
-       | (c) `US-n` を含む機能スプリントが 3 層中 2 層以上に触れていない | `US-n` を含むスプリント | **warning**（block しない） |
-       | (d) イネイブラー単独スプリント（含むが `E-n` のみ）は判定除外 | 該当スプリント | **exempt**（操作レビュー手順が書けることが条件） |
-
-       3 層の判定境界（ディレクトリ・成果物）:
-
-       | 層 | diff に含まれるか判定する対象 |
-       |---|---|
-       | フロントエンド | `app/**/page.tsx` / `app/**/layout.tsx` / `src/ui/**` |
-       | バックエンド | `app/**/route.ts` / `src/usecases/**` / `src/domain/**` / `src/infrastructure/**` |
-       | インフラ | `.github/workflows/**` / プレビューデプロイ設定 / `.env.example` 等の環境変数宣言 / `next.config.*` のランタイム契約部 |
-
-       ⚠️ 「インフラ」は運用基盤の契約であって、クリーンアーキテクチャ用語の `src/infrastructure/`
-       （アダプタ層）ではない。混同しない。
-
+     - **縦切りの判定境界（3 層・強制力の 4 段）**: 正本は
+       `docs/02_requirements/user-story-map.md` §5.2（層ごとの対象パスと、`C-5` 違反 = blocking /
+       `SP-1` の 3 層必須 = blocking / 機能スプリントの 2 層以上 = warning / イネイブラー単独 = exempt）。
+       本スキルには複製しない。判定は `tools/self_review_check.py` が PR 前チェックで機械実行するため、
+       本スキルは **判定結果に従うだけ**でよい。
      - **無人 firing での SD-3 第 2 系統（仕様解釈の分岐）**: §6 の手順に従う。
      - `SP-8`（ログイン）の E2E は `infrastructure-design.md` §8.1 の記載どおり、プレビュー URL
        では実行不能なため、ダミー OAuth 設定の **ローカルビルド**に対して実行する（この 1 件だけ
@@ -181,7 +162,7 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
 
 4-5. PR 本文の必須項目: `Sprint Goal:` 1 行 / `sp:N` / `Session-Id: $CLAUDE_CODE_SESSION_ID` /
      プレビュー URL（出せない場合は理由とローカル起動手順） / 参照要件 ID（既存必須項目そのまま。
-     `session-sprint-rules.md` §2 / `sprint-development-rules.md` SD-1 準拠）。
+     `session-sprint-rules.md` の「スプリントプランニング」節 / `sprint-development-rules.md` `SD-1` 準拠）。
 
 4-6. `pr-review-watcher` へ継続（Layer1 セルフレビュー → 指摘対応 → マージ → 公開反映）。
      ここで firing のセッション予算が尽きたら、コミット済みの内容と `status:in-progress` ラベルだけが

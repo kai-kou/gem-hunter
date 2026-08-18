@@ -113,7 +113,7 @@ src/
 
 **機械強制**: `E-7`（Lint 導入）のスコープ内に dependency-cruiser を追加し、`domain` から外向きの参照・`usecases` から `infrastructure` への直接参照を禁止ルールとして定義する。`package.json` の `lint:arch` スクリプトから実行し、`E-12`（CI）のゲートに含める。新しいイネイブラー ID は作らず、既存 `E-7`/`E-12` の実装詳細として位置づける。
 
-⚠️ **用語の注意**: 本節の `src/infrastructure/`（データアクセス・キャッシュのアダプタ層）と、`infrastructure-design.md` の `INF-n`（運用基盤の契約＝デプロイ・CI・環境変数・プレビュー）は **別物**。前者はコードの一層、後者は運用基盤の契約であり、混同しない（3 層判定境界は `sprint-cycle-router` スキルの正本を参照。本ファイルでは再掲しない）。
+⚠️ **用語の注意**: 本節の `src/infrastructure/`（データアクセス・キャッシュのアダプタ層）と、`infrastructure-design.md` の `INF-n`（運用基盤の契約＝デプロイ・CI・環境変数・プレビュー）は **別物**。前者はコードの一層、後者は運用基盤の契約であり、混同しない（3 層判定境界の正本は `docs/02_requirements/user-story-map.md` §5.2。本ファイルでは再掲しない）。
 
 ### 2.5. TDD のコミット規約と 2 段検証
 
@@ -234,7 +234,7 @@ Issue コメントまたは最初のコミットメッセージに 1 行:
 [ ] Issue を作成し status:in-progress を付与（CP-4 の論理ロック）
 [ ] Hot 層 §4 の 1〜5 を読み、対象 SP-n のゴール・操作レビュー手順・対応 AC を確認
 [ ] 仕様解釈の分岐があれば Hot 層 §3 の書式でまとめて確認（依存しない作業は先に進める）
-[ ] PR 本文に書く Sprint Goal / sp:N / Session-Id を決める（session-sprint-rules.md §2）
+[ ] PR 本文に書く Sprint Goal / sp:N / Session-Id を決める（session-sprint-rules.md の「スプリントプランニング」節）
 
 実装
 [ ] Red: 失敗するテストを先に書く（SP-1〜SP-3 は書ける対象から）

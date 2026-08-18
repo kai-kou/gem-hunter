@@ -476,6 +476,226 @@ def base_sync_state_reminder() -> str | None:
     )
 
 
+# ============================================================================
+# --self-test（ネットワーク・git 不要のユニットテスト）
+#
+# 対象は検査 A/B/C の追加関数（TDD コミット順序・縦切り・C-5）。commit_info /
+# app_or_src_exists / sp_signal_text / remote_branches を注入して git 呼び出しを
+# 一切行わずに判定ロジックだけを検証する（合成 git リポジトリは作らない・遅くて壊れやすいため）。
+# 呼び出し側（tools/sprint_backlog_sync.py run_self_test()）と同じ流儀:
+# `_self_test_<name>() -> list[str]`（失敗メッセージの列挙）をグループごとに定義し、
+# `run_self_test()` がグループ名付きで `FAIL[...]` を出す。
+# ============================================================================
+
+def _self_test_glob_match() -> list[str]:
+    failures = []
+    # ** はゼロ階層にもマッチする（意図的固定仕様。_glob_to_regex のコメント参照）
+    if not _glob_match("app/**/page.tsx", "app/page.tsx"):
+        failures.append("app/**/page.tsx は app/page.tsx（ゼロ階層）にマッチする想定")
+    # ** は複数階層にもマッチする
+    if not _glob_match("app/**/page.tsx", "app/foo/bar/page.tsx"):
+        failures.append("app/**/page.tsx は app/foo/bar/page.tsx（多階層）にマッチする想定")
+    # 先頭一致と部分一致の取り違え防止（アンカー漏れがあると誤ってマッチしてしまう）
+    if _glob_match("app/**/page.tsx", "xapp/page.tsx"):
+        failures.append("xapp/page.tsx は app/**/page.tsx にマッチしない想定（先頭アンカー）")
+    if _glob_match("app/**/page.tsx", "app/foo/page.tsxx"):
+        failures.append("app/foo/page.tsxx は app/**/page.tsx にマッチしない想定（末尾一致・拡張子違い）")
+    # 拡張子一致（page.tsx であって page.ts ではない）
+    if _glob_match("app/**/page.tsx", "app/foo/page.ts"):
+        failures.append("app/foo/page.ts は app/**/page.tsx にマッチしない想定（拡張子違い）")
+    # 単一 * は 1 階層内のみ（ディレクトリを跨がない）
+    if _glob_match("src/ui/*", "src/ui/foo/bar.tsx"):
+        failures.append("src/ui/* は多階層 src/ui/foo/bar.tsx にマッチしない想定（* は1階層限定）")
+    return failures
+
+
+def _self_test_is_test_path() -> list[str]:
+    failures = []
+    true_cases = [
+        "src/foo.test.ts", "src/foo.test.tsx", "src/foo.spec.ts", "src/foo.spec.tsx",
+        "e2e/login.spec.ts", "src/__tests__/foo.ts", "scripts/foo_test.py", "tests/unit/foo.py",
+    ]
+    for p in true_cases:
+        if not is_test_path(p):
+            failures.append(f"is_test_path({p!r}) は True を期待したが False")
+    false_cases = [
+        "src/domain/foo.ts", "app/foo/page.tsx", "src/usecases/handler.ts",
+        "tools/self_review_check.py", "src/infrastructure/db.ts",
+    ]
+    for p in false_cases:
+        if is_test_path(p):
+            failures.append(f"is_test_path({p!r}) は False を期待したが True")
+    return failures
+
+
+def _self_test_touched_layers() -> list[str]:
+    failures = []
+    cases = [
+        ("app/foo/page.tsx", "frontend"),
+        ("app/page.tsx", "frontend"),
+        ("app/foo/layout.tsx", "frontend"),
+        ("src/ui/Button.tsx", "frontend"),
+        ("app/api/foo/route.ts", "backend"),
+        ("src/usecases/create_foo.ts", "backend"),
+        ("src/domain/foo.ts", "backend"),
+        ("src/infrastructure/db_adapter.ts", "backend"),  # アダプタ層＝バックエンド（INF-n とは別物）
+        (".github/workflows/ci.yml", "infra"),
+        (".env.example", "infra"),
+        ("next.config.mjs", "infra"),
+    ]
+    for path, expect in cases:
+        layers = touched_layers([path])
+        if expect not in layers:
+            failures.append(f"touched_layers([{path!r}]) に {expect!r} を期待したが {layers}")
+        others = {"frontend", "backend", "infra"} - {expect}
+        leaked = layers & others
+        if leaked:
+            failures.append(f"touched_layers([{path!r}]) が余分な層に分類された: {leaked}")
+    return failures
+
+
+def _self_test_vertical_slice_check() -> list[str]:
+    failures = []
+
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx"], app_or_src_exists=True, sp_signal_text="SP-1-walking-skeleton"
+    )
+    if not (len(errs) == 1 and warns == []):
+        failures.append(f"SP-1 で3層欠落は Error 1件を期待したが errs={errs} warns={warns}")
+
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx", "src/domain/entity.ts", ".github/workflows/ci.yml"],
+        app_or_src_exists=True, sp_signal_text="SP-1-walking-skeleton",
+    )
+    if not (errs == [] and warns == []):
+        failures.append(f"SP-1 で3層充足は Error/Warning 無しを期待したが errs={errs} warns={warns}")
+
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx"], app_or_src_exists=True, sp_signal_text="SP-9-US-12-feature-branch"
+    )
+    if not (errs == [] and len(warns) == 1):
+        failures.append(f"US-n機能スプリントで1層のみは Warning 1件を期待したが errs={errs} warns={warns}")
+
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx", "src/domain/entity.ts"],
+        app_or_src_exists=True, sp_signal_text="SP-9-US-12-feature-branch",
+    )
+    if not (errs == [] and warns == []):
+        failures.append(f"US-n機能スプリントで2層以上は Warning 無しを期待したが errs={errs} warns={warns}")
+
+    for exempt_sp in ("4", "5"):
+        errs, warns = vertical_slice_check(
+            ["app/foo/page.tsx"], app_or_src_exists=True,
+            sp_signal_text=f"SP-{exempt_sp}-enabler-only US-99",
+        )
+        if not (errs == [] and warns == []):
+            failures.append(f"SP-{exempt_sp} は既定 exempt を期待したが errs={errs} warns={warns}")
+
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx"], app_or_src_exists=True, sp_signal_text="no-sp-number-here"
+    )
+    if not (errs == [] and warns == []):
+        failures.append(f"SP-n を拾えない場合はスキップを期待したが errs={errs} warns={warns}")
+
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx"], app_or_src_exists=False, sp_signal_text="SP-1-walking-skeleton"
+    )
+    if not (errs == [] and warns == []):
+        failures.append(f"app/src 両方無しはスキップを期待したが errs={errs} warns={warns}")
+
+    return failures
+
+
+def _self_test_layer_split_check() -> list[str]:
+    failures = []
+    errs = layer_split_check("SP-9-layer:frontend-split-attempt")
+    if not (len(errs) == 1 and "C-5" in errs[0]):
+        failures.append(f"layer:frontend 痕跡は Error 1件を期待したが {errs}")
+    errs = layer_split_check("SP-9-normal-branch-name")
+    if errs != []:
+        failures.append(f"痕跡が無ければ検出なしを期待したが {errs}")
+    return failures
+
+
+def _self_test_duplicate_sp_branch_warning() -> list[str]:
+    failures = []
+    if duplicate_sp_branch_warning(sp_num=None, remote_branches=[]) is not None:
+        failures.append("sp_num=None は None を期待した")
+    dup = duplicate_sp_branch_warning(
+        sp_num="3", remote_branches=["origin/SP-3-branch-a", "origin/SP-3-branch-b", "origin/main"]
+    )
+    if dup is None or "SP-3" not in dup:
+        failures.append(f"同一SP-nの複数リモートブランチは Warning 文字列を期待したが {dup!r}")
+    if duplicate_sp_branch_warning(sp_num="3", remote_branches=["origin/SP-3-branch-a"]) is not None:
+        failures.append("重複ブランチ1本のみは None を期待した")
+    return failures
+
+
+def _self_test_tdd_commit_order_warnings() -> list[str]:
+    failures = []
+    # ブランチ内にテストパスが1つも無ければスキップ（アプリ未着手の誤検知抑制）
+    no_test_commits = [
+        ("aaa1111", "feat: add foo", ["src/domain/foo.ts"]),
+        ("bbb2222", "fix: bar", ["src/usecases/bar.ts"]),
+    ]
+    warns = tdd_commit_order_warnings(no_test_commits)
+    if warns != []:
+        failures.append(f"テストパスが1つも無ければ Warning 0件を期待したが {warns}")
+
+    ok_commits = [
+        ("ccc3333", "test: add unit test", ["tests/foo_test.py"]),
+        ("ddd4444", "feat: implement foo", ["src/domain/foo.py"]),
+    ]
+    warns = tdd_commit_order_warnings(ok_commits)
+    if warns != []:
+        failures.append(f"正しい test:/feat: 分離は Warning 0件を期待したが {warns}")
+
+    mixed_commits = [
+        ("eee5555", "test: add unit test", ["tests/bar_test.py", "src/domain/bar.py"]),
+    ]
+    warns = tdd_commit_order_warnings(mixed_commits)
+    if len(warns) != 1:
+        failures.append(f"test: コミットへの非テストファイル混入は Warning 1件を期待したが {warns}")
+
+    feat_only_test_commits = [
+        ("fff6666", "feat: add baz test only", ["tests/baz_test.py"]),
+    ]
+    warns = tdd_commit_order_warnings(feat_only_test_commits)
+    if len(warns) != 1 or "不一致" not in warns[0]:
+        failures.append(f"feat: コミットがテストパスのみは Warning 1件（不一致）を期待したが {warns}")
+
+    return failures
+
+
+def run_self_test() -> int:
+    # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
+    groups = [
+        ("glob マッチャー境界", _self_test_glob_match),
+        ("テストパス判定", _self_test_is_test_path),
+        ("3 層タッチ判定", _self_test_touched_layers),
+        ("縦切り(vertical_slice_check)", _self_test_vertical_slice_check),
+        ("C-5 レイヤー分割検出", _self_test_layer_split_check),
+        ("C-5 重複SPブランチ検出", _self_test_duplicate_sp_branch_warning),
+        ("TDD コミット順序", _self_test_tdd_commit_order_warnings),
+    ]
+    failed_groups = 0
+    total_failures = 0
+    for name, fn in groups:
+        failures = fn()
+        if failures:
+            failed_groups += 1
+            total_failures += len(failures)
+            for f in failures:
+                print(f"FAIL[{name}]: {f}")
+
+    if total_failures:
+        print(f"\nセルフテスト: {len(groups)} グループ中 {failed_groups} グループ失敗 "
+              f"({total_failures} 件の不一致)")
+        return 1
+    print(f"セルフテスト: {len(groups)} グループ全て PASS")
+    return 0
+
+
 def main() -> int:
     if not Path(".git").exists() and sh(["git", "rev-parse", "--git-dir"]).returncode != 0:
         return 2
@@ -631,6 +851,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _parser = argparse.ArgumentParser(add_help=True)
+    _parser.add_argument(
+        "--self-test", action="store_true",
+        help="git・ネットワーク不要のユニットテストを実行する（検査 A/B/C のロジック検証）",
+    )
+    _args = _parser.parse_args()
+    if _args.self_test:
+        sys.exit(run_self_test())
     try:
         sys.exit(main())
     except Exception as e:
