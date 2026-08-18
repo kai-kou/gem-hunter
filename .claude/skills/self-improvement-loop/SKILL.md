@@ -300,7 +300,10 @@ ELSE（{{...}} 雛形のまま＝bootstrap 直後のプロジェクト）:
    ローカル環境（gh CLI 到達可能時）の代替:
      gh issue list -R kai-kou/gem-hunter --state open --limit 1000 \
        --label "status:waiting-claude" --json number,title,labels,milestone,updatedAt
-   → type:improvement / type:bug でフィルタし、priority ラベル順（high → medium → なし → low）でソート
+   → `type:retro-try`（振り返りレーンの担当）と `SP-n` タイトル規約（`^SP-(\d+):`・スプリント開発レーンの
+     担当）を除外し、残り全件を priority ラベル順（high → medium → なし → low）でソート。
+     🔴 **`type` で絞らない**（`type:docs` / `SP-n` 以外の `type:feature` を落とすと、どのレーンも
+     拾わない孤児 Issue が生まれる・CP-3。`sprint-cycle-router` SKILL.md Step 5 と対）
      （同 priority 内の順序は下記タイブレークのみで決める。「古い順」は単独では適用しない）
    → **監査バックログ（プロジェクト定義のマイルストーン例: 「監査 P0〜P3」）**: 監査 Issue は
      priority ラベル（P0/P1=high・P2=medium・P3=low）とマイルストーンを起票時に付与済みのため、

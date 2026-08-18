@@ -1,6 +1,6 @@
 ---
 name: sprint-cycle-router
-description: 単一ルーティン（1 時間ごと・cron 起動）でスプリント開発を自走させる決定木ルーター。破壊的変更対応・自 PR 回収・進行中スプリント再開・SP→Issue 同期・新規スプリント着手（TDD・縦切り・専門チーム編成）・改善Issue消化・衛生・週次リファインメント・spec-sync 検証の 9 ブランチから、1 firing につき該当する最初の 1 つだけを実行する。「スプリント自走ルーティン」「N 時間ごとの開発を進めて」「スプリントサイクルを回して」「/sprint-cycle-router」と依頼された時、またはルーティン設定（`docs/routines/sprint-cycle-routine.md`）から自動起動する時に使用する。各ブランチの実処理は既存パイプラインスキル（`claude-code-spec-sync` / `pr-review-watcher` / `self-improvement-loop` / `workflow-health-check` / `project-sync`）に委譲し、本スキル自身は「今どのブランチを実行すべきか」の判定と Step4（新規スプリント着手）の内部手順だけを持つ。改善Issueの発見・棚卸し自体は `self-improvement-loop`、リポジトリ衛生の監査自体は `workflow-health-check` の担当（本スキルはそれらの呼び出し元）。
+description: 単一ルーティン（N 時間ごとの cron 起動）でスプリント開発を自走させる決定木ルーター。破壊的変更対応・自 PR 回収・進行中スプリント再開・SP→Issue 同期・新規スプリント着手（TDD・縦切り・専門チーム編成）・改善Issue消化・衛生・週次リファインメント・spec-sync 検証の 9 ブランチから、1 firing につき該当する最初の 1 つだけを実行する。「スプリント自走ルーティン」「N 時間ごとの開発を進めて」「スプリントサイクルを回して」「/sprint-cycle-router」と依頼された時、またはルーティン設定（`docs/routines/sprint-cycle-routine.md`）から自動起動する時に使用する。各ブランチの実処理は既存パイプラインスキル（`claude-code-spec-sync` / `pr-review-watcher` / `self-improvement-loop` / `workflow-health-check` / `project-sync`）に委譲し、本スキル自身は「今どのブランチを実行すべきか」の判定と Step4（新規スプリント着手）の内部手順だけを持つ。改善Issueの発見・棚卸し自体は `self-improvement-loop`、リポジトリ衛生の監査自体は `workflow-health-check` の担当（本スキルはそれらの呼び出し元）。
 effort: medium
 ---
 
@@ -43,7 +43,8 @@ effort: medium
 - **毎回新規セッション・エフェメラル VM**。前回 firing のメモリ・ローカル state は引き継がれない。
   次回 firing が状態を知る手段は **GitHub 上のアーティファクト（Issue ラベル・コメント・PR・ブランチ・
   コミット）だけ**。日次・毎 firing の判定に新規 state ファイルを作らない（§9 の週次ゲートのみ既存パターンを流用可）。
-- 早期リターン（§2）を安く済ませることで、cron を 1 時間ごとに回しても空振りコストを抑える。
+- 早期リターン（§2）を安く済ませることで、cron を短い間隔で回しても空振りコストを抑える
+  （実際の間隔は `docs/routines/sprint-cycle-routine.md` が正本・可変）。
   **N（cron 間隔）は完了保証の単位ではなく健全性チェックの再訪頻度**。
 
 ---
@@ -90,7 +91,7 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
    `workflow-health-check` 実行痕跡から判定・1 クエリ。新規 state ファイルは作らない）
 ```
 
-早期リターンのコストが数クエリに収まるからこそ cron を 1 時間ごとに回せる（§0）。
+早期リターンのコストが数クエリに収まるからこそ、cron を短い間隔で回せる（§0）。
 
 ---
 
@@ -120,8 +121,9 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 **`SP-n` 以外のすべての `status:waiting-claude` Issue** とし、`type` では絞らない。
 
 - **二重取得はしない**: `SP-n` タイトル規約（`^SP-(\d+):`）に一致する Issue は Step 3.5 / Step 4 の
-  担当であり、Step 5 の対象から除外する（委譲先の `self-improvement-loop` 消化モードは
-  `status:waiting-claude` のみで絞るため、除外はこの Step 5 の判定側で行う）
+  担当であり、Step 5 の対象から除外する。委譲先の `self-improvement-loop` 消化モードも同じ除外を
+  実装しているため（`type:retro-try` と `SP-n` だけを落とし `type` では絞らない）、Step 5 が渡した
+  孤児 Issue はそのまま処理される。責務境界の正本は `improvement-lane-map.md` §2 ルール 1
 - **着手できないものは `status:blocked`**: 前提が未成立の Issue（例: `SP-4` 完了が前提の CI 作業）は
   `status:waiting-claude` ではなく `status:blocked` を付け、解除条件を本文に書く。`status:blocked` は
   Step 5 の対象外である（§10 の完了定義）

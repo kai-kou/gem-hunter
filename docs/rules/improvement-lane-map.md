@@ -22,12 +22,12 @@
 
 | レーン | スキル | 担当フェーズ | 主な起動 |
 |--------|--------|------------|---------|
-| **スプリント開発レーン** | `sprint-cycle-router`（決定木 Step 3.5 / Step 4） | SP → Issue 同期（Step 3.5）→ Issue 選定・実装（TDD）・PR・Layer 1 セルフレビュー・マージ（Step 4） | 単一ルーティン（cron `0 * * * *`）の決定木。ただし Step 1〜3 が埋まっていると Step 4 に到達しないため、飢餓防止のエージング（Ready な `SP-n` があるのに直近 3 日 Step 4 未実行なら差し込む）がある |
+| **スプリント開発レーン** | `sprint-cycle-router`（決定木 Step 3.5 / Step 4） | SP → Issue 同期（Step 3.5）→ Issue 選定・実装（TDD）・PR・Layer 1 セルフレビュー・マージ（Step 4） | 単一ルーティン（cron 式の正本は `docs/routines/sprint-cycle-routine.md`・可変）の決定木。ただし Step 1〜3 が埋まっていると Step 4 に到達しないため、飢餓防止のエージング（Ready な `SP-n` があるのに直近 3 日 Step 4 未実行なら差し込む）がある |
 
 **対象**: `type:feature` の `SP-n`（プロダクト機能開発）のみ。`type:improvement` / `type:retro-try` / 衛生対象は既存 3 レーンの担当のまま（本レーンは奪わない）。
 
 **既存 3 レーンとの責務境界（1 行ずつ）**:
-- vs 改善 Issue レーン: あちらは `type:improvement`/`type:bug` の横断課題、こちらは `type:feature` の `SP-n` 実装。在庫枯渇（`M-3` 到達）時のみ主従を改善 Issue レーンへ切り替える
+- vs 改善 Issue レーン: あちらは `SP-n` 規約を持たない単発課題（`type` は問わない）、こちらは `SP-n` 規約を持つスプリント実装。在庫枯渇（`M-3` 到達）時のみ主従を改善 Issue レーンへ切り替える
 - vs 振り返りレーン: あちらは `type:retro-try`（振り返り由来の Try）の実装、こちらはプロダクト機能開発。対象 type が排他
 - vs 監査・衛生レーン: あちらは Issue/PR の **状態**（Stale・Orphan・ラベル不整合）の是正、こちらは新規価値を作る実装そのもの
 
@@ -40,7 +40,10 @@
 
 ## 2. 一意判定ルール（迷ったときはこの順で決める）
 
-1. 対象が `type:improvement` / `type:bug`（横断的な改善課題）→ **改善 Issue レーン**
+1. 対象が **実装・修正で片が付く単一の課題**（横断的な改善・不具合・ドキュメント作業など）→ **改善 Issue レーン**。
+   `type:improvement` / `type:bug` が典型だが **`type` では絞らない**（`type:docs` や `SP-n` 規約を持たない
+   `type:feature` を落とすと、どのレーンも拾わない孤児 Issue が生まれる。ルール 5 が `type` 非依存なのと同じ理由・CP-3）。
+   除外するのは次の 2 つだけ: `type:retro-try`（ルール 2）と `SP-n` タイトル規約を持つ Issue（スプリント開発レーン）
 2. 対象が `type:retro-try`（振り返り由来の Try）→ **振り返りレーン**（改善 Issue レーンは扱わない・#160）
 3. 対象が Issue / PR / ブランチの **状態**（ラベル不整合・滞留・孤児・Stale ロック）→ **監査・衛生レーン**
 4. 対象が「溜まった改善 Issue の山そのもの」（分類・重複統合・Epic 境界の判断）→ 改善 Issue レーンの **整理モード**
