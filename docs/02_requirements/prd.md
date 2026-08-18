@@ -505,7 +505,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 | 変数 | 用途 | 必須 |
 |---|---|---|
-| GitHub App ID（または Client ID） | installation token を取る JWT の `iss`（`D-20`） | 実質必須（未設定時は未認証となりレート枠が 10 req/分に落ちる） |
+| GitHub App Client ID | installation token を取る JWT の `iss`（`D-20`）。数値の App ID も受理されるが **Client ID に統一する**（変数名 `GITHUB_APP_CLIENT_ID` と揃える） | 実質必須（**3 つ揃って初めて認証される**。欠けると未認証となりレート枠が 10 req/分に落ちる） |
 | GitHub App 秘密鍵 | JWT の RS256 署名に使う（`D-20`）。⚠️ **PKCS#8 形式で注入する**（Web Crypto の `importKey` は PKCS#1 を受け付けない） | 同上 |
 | GitHub App Installation ID | `POST /app/installations/{id}/access_tokens` の対象（`D-20`） | 同上 |
 | OAuth クライアント ID | 任意ログイン（`AR-5`） | ログイン機能を有効化する場合 |

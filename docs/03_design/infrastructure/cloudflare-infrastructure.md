@@ -348,7 +348,9 @@ printf '%s' "$GITHUB_APP_INSTALLATION_ID" | npx wrangler secret put GITHUB_APP_I
 printf '%s' "$RATE_LIMIT_SALT"            | npx wrangler secret put RATE_LIMIT_SALT
 
 # 秘密鍵は PKCS#8 へ変換して投入する（理由は §7.6）。中間ファイルを作らずパイプで渡す
-printf '%s' "$GITHUB_APP_PRIVATE_KEY" \
+# ⚠️ 供給元によっては改行がリテラルの \n にエスケープされているため、先に正規化する
+set -o pipefail   # openssl の失敗をパイプに埋もれさせない（空シークレット登録の防止）
+printf '%s\n' "${GITHUB_APP_PRIVATE_KEY//\\n/$'\n'}" \
   | openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
   | npx wrangler secret put GITHUB_APP_PRIVATE_KEY_PKCS8
 
@@ -403,6 +405,7 @@ openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
 ```
 
 - 🔴 **変換結果をファイルに書かない**。上記のようにパイプで `wrangler secret put` へ直接渡す（`INF-5` / 秘密のディスク残留を避ける）
+- 🔴 **改行がリテラルの `\n` にエスケープされた形で供給される経路がある**（複数行の鍵をシークレット UI へ貼る場合）。そのまま `openssl` に渡すと `Could not read key from <stdin>` で失敗し、**空のシークレットが登録されて実行時まで気づけない**。§7.2 のとおり正規化と `set -o pipefail` をセットで使う（2026-08-18 に実測確認済み）
 - Worker 側は `importKey("pkcs8", …, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"])` で読み、`iat` / `exp` / `iss`（App の Client ID）を含む JWT を RS256 で署名する
 - **`exp` は最大 10 分**（GitHub 側の上限）。時計ずれ対策として `iat` を 60 秒戻す
 - installation token（`POST /app/installations/{id}/access_tokens`）は **TTL 1 時間**。毎リクエストで取り直さず、**失効前まで再利用する**（安全マージンを引いて再取得）
