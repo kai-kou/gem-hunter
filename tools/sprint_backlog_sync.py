@@ -8,11 +8,7 @@
 
 【いつ起票しないか（Ready 条件③）】
 `user-story-map.md` §7-9 の Ready 条件③「先行する `SP-n` の Issue がすべて Closed」を満たさない
-あいだは **起票しない**（`noop`）。着手中（`status:in-progress`）の `SP-n` は open のままなので
-自然にこの条件でブロックされ、「1 スプリント進行中に次のスプリント Issue が積まれる」ことを防ぐ。
-在庫枯渇（`[Milestone] M-3 到達`）の判定より **前** に評価する（`sprint-cycle-router` SKILL.md §9 が
-「全 `SP-n` が Closed になった時点で在庫枯渇」と定めており、着手中の `SP-n` が残ったまま
-プロダクト完成の通知を発火させてはならないため）。
+あいだは **起票しない**（`noop`）。判定の詳細は `decide()` 内のコメントを正本とする。
 
 【なぜ 1 件だけ起票するのか】
 `docs/rules/session-concurrency-rules.md`（CP-4）の Issue 論理ロックと相性が悪いため。
@@ -203,9 +199,8 @@ def determine_next_sp(existing_numbers: set[int], sprints: dict[int, dict]) -> i
     既に Issue が存在する SP-n は状態（open/closed）を問わず対象外にする
     （Closed 済みでも再起票しない。重複防止が目的）。
 
-    ⚠️ 本関数は「次の候補番号」を返すだけで、**着手可能条件（Ready）は判定しない**。
-    Ready 条件③（先行する `SP-n` がすべて Closed）は `decide()` が
-    `open_sp_numbers()` の結果を使って判定する（`user-story-map.md` §7-9 / §7-10）。
+    ⚠️ 本関数は「次の候補番号」を返すだけで、**着手可能条件（Ready）は判定しない**
+    （Ready 条件③の判定は `decide()` の責務・`user-story-map.md` §7-9 / §7-10）。
     """
     for n in sorted(sprints.keys()):
         if n not in existing_numbers:
@@ -213,31 +208,29 @@ def determine_next_sp(existing_numbers: set[int], sprints: dict[int, dict]) -> i
     return None
 
 
-def extract_existing_sp_numbers(issue_titles: list[str]) -> set[int]:
-    numbers = set()
-    for title in issue_titles:
-        m = SP_TITLE_RE.match(title.strip())
-        if m:
-            numbers.add(int(m.group(1)))
-    return numbers
+def sp_numbers(issues: list[dict], *, open_only: bool = False) -> set[int]:
+    """`SP-n` タイトル規約に一致する Issue の番号集合を返す。
 
+    タイトルから番号を取り出す規則をここ 1 箇所に集約する（重複防止のための「既存番号」と
+    Ready 条件③のための「未 Closed 番号」が別基準で動き出さないようにするため）。
 
-def open_sp_numbers(issues: list[dict]) -> set[int]:
-    """まだ Closed になっていない `SP-n` Issue の番号集合を返す（Ready 条件③の材料）。
+    Args:
+        open_only: True なら Closed 以外（= 未完了）に絞る。`state` は gh（`OPEN`/`CLOSED`）と
+            REST（`open`/`closed`）で表記が異なるため小文字で比較する。`state` が欠落・空文字の
+            ときは **未完了側に倒す**（誤って次を起票するより、止まって人が気づく方が安全）。
 
-    `state` は gh（`OPEN`/`CLOSED`）と REST（`open`/`closed`）で表記が異なるため小文字で比較する。
-    `status:in-progress`（着手中）は open のままなので自然に本集合へ含まれ、
-    「着手中の SP-n があるあいだは次を起票しない」という CP-4 の論理ロックと一致する。
-
-    ⚠️ 本関数は **番号を集めるだけ**で「先行かどうか」は判定しない。Ready 条件③が言う
-    「先行する `SP-n`」は §5.5 の順序制約＝番号昇順を指すため、**起票候補より大きい番号を
-    ブロック要因にしてはならない**（絞り込みは `decide()` 側の責務）。
+    ⚠️ 本関数は番号を集めるだけで「先行かどうか」は判定しない。Ready 条件③が言う
+    「先行する `SP-n`」は §5.5 の順序制約＝番号昇順を指すため、起票候補より大きい番号を
+    ブロック要因にしてはならない（その絞り込みは `decide()` の責務）。
     """
     numbers = set()
     for issue in issues:
         m = SP_TITLE_RE.match(str(issue.get("title", "")).strip())
-        if m and str(issue.get("state", "")).lower() != "closed":
-            numbers.add(int(m.group(1)))
+        if not m:
+            continue
+        if open_only and str(issue.get("state", "")).lower() == "closed":
+            continue
+        numbers.add(int(m.group(1)))
     return numbers
 
 
@@ -388,7 +381,7 @@ def decide(md_text: str, existing_issues: list[dict], repo: str = "kai-kou/gem-h
             "reason": f"SP-n={parsed['parse_errors']} のパースに失敗（該当 SP-n の起票はスキップ）",
         }
 
-    existing_numbers = extract_existing_sp_numbers(existing_issue_titles)
+    existing_numbers = sp_numbers(existing_issues)
     next_n = determine_next_sp(existing_numbers, parsed["sprints"])
 
     # Ready 条件③（`user-story-map.md` §7-9): 先行する SP-n の Issue がすべて Closed。
@@ -400,7 +393,7 @@ def decide(md_text: str, existing_issues: list[dict], repo: str = "kai-kou/gem-h
     # 「全 SP-n が Closed になった時点で在庫枯渇」と定めており、着手中の SP-n が残ったまま
     # `[Milestone] M-3 到達`（= プロダクト完成の通知）を発火させてはならない。
     still_open = {
-        n for n in open_sp_numbers(existing_issues)
+        n for n in sp_numbers(existing_issues, open_only=True)
         if next_n is None or n < next_n
     }
     if still_open:
