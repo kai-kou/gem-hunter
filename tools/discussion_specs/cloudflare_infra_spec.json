@@ -1,0 +1,57 @@
+{
+  "topic": "gem-hunter のインフラを Cloudflare 前提で確定させ、CLI 一次運用で自律開発できる形に落とす",
+  "brief": "ユーザー決定: (1) インフラは Cloudflare ベースで進める (2) 既存の Cloudflare アカウントを使い必要リソースを作成する (3) 自律開発のため MCP ではなく CLI（wrangler）を主経路にする。制約: docs/03_design/infrastructure/infrastructure-design.md の INF-1（サーバー側に個人情報を保持しない）/ INF-2（定常コストをゼロに近づける・超過時は課金ではなく停止に倒す）/ INF-3（Next.js 標準機能の範囲・TR-1〜TR-4）/ INF-4（人手の定常運用ゼロ）/ INF-5（事業者を決め打たない = アプリコードに事業者固有 API を持ち込まない・NFR-21）と、INF-6〜INF-22 の契約を壊さないこと。DB を持たない（D-5 追補）。SD-1 により全スプリントの PR に開けるプレビュー URL が要る。リサーチ結果は docs/01_research/infra/20260818-cloudflare-research.md（一次情報・2026-08-18 取得）にある。争点は少なくとも次の 5 つ: A) Workers Free（CPU 10ms・バンドル 3MB 圧縮後）のまま Next.js 16 の SSR を成立させられるか、それとも Workers Paid $5/月 を前提にすべきか（INF-2 と INF-6 の衝突・課金は A-6 でユーザー権限が要る） B) キャッシュ実装をどこに置くか（Workers Caching の cache.enabled / HTTP Cache-Control / OpenNext incremental cache（R2/D1/DO）/ KV）と、それが NFR-17 Cache Port・INF-5・D-5 追補（DB を持たない）と両立するか C) OpenNext アダプタ + wrangler.jsonc の採用が INF-5 / NFR-21 に違反しないか、違反しないと言える境界はどこか D) CLI 一次経路の具体形（GitHub Actions + wrangler-action か Workers Builds か、プレビュー URL の生成と機械取得、トークンの供給経路とローテーション、人間の GUI 作業をどこまで削れるか） E) 本番デプロイ先（D-7）も今この場で Cloudflare に確定すべきか、プレビュー（D-11）だけに留めるべきか。",
+  "participants": [
+    {
+      "name": "cf_platform",
+      "model": "sonnet",
+      "lens": "Cloudflare プラットフォーム適合性（OpenNext 1.20.2 + Workers で INF-6〜INF-14 を実際に満たせるか / CPU 10ms・Worker 3MB・subrequest 50 の Free 制約が Next.js 16 App Router の SSR で現実的か / proxy.ts 未確認問題の回避可否 / compatibility_date と nodejs_compat の設定 / next/image の扱い / 実測で潰すべき項目の切り分け）"
+    },
+    {
+      "name": "cost_guard",
+      "model": "sonnet",
+      "lens": "コストと停止設計（INF-2 の『超過時は課金ではなく停止』を Cloudflare でどう構造的に担保するか / Free 維持 vs Paid $5 の損得と撤退ライン / キャッシュヒットもリクエスト課金という事実の影響 / R2・D1・KV を足した瞬間に何が壊れるか / limits.cpu_ms と Billable Usage API の実効性 / A-6 としてユーザーに何を依頼すべきか）"
+    },
+    {
+      "name": "cli_autonomy",
+      "model": "sonnet",
+      "lens": "CLI 一次運用と自律性（wrangler 非対話実行の成立条件 / CLOUDFLARE_API_TOKEN の供給経路とクラウドセッションでの制約 / GitHub Actions + wrangler-action vs Workers Builds / SD-1 のプレビュー URL を PR に貼るまでの機械的経路 / トークンのローテーションと最小権限 / 人間の GUI 作業を何個まで削れるか / Cloudflare MCP を残す価値があるか）"
+    },
+    {
+      "name": "privacy_lockin",
+      "model": "sonnet",
+      "lens": "プライバシーとロックイン（INF-1 と D-14 を Cloudflare 上で守れるか・invocation ログと Audit ログの扱い / レート制限で IP をどう扱うか / INF-5 と NFR-21 に照らして OpenNext・wrangler.jsonc・Workers Caching・Rate Limiting binding のどれが『アプリコードへの染み出し』でどれが許容範囲か / 移行手順 §13 のチェックリストが Cloudflare 採用後も成立するか / 退避コストの実測）"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合（INF-n / D-5 / D-7 / D-11 / D-13〜D-15 / NFR-17 / NFR-21 / AC-n / SP-1〜SP-5 / M-1〜M-5 / prd.md §10 環境変数 §13 未決事項 との矛盾を機械的に洗い出す。SSOT を増やしていないか・どのドキュメントのどの行を更新する必要があるかを列挙する。新しい事実を主張せず、既存記述との突合に徹する）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて『採用する設計』を 1 つに決める。決定は必ず『どのファイルに何を書くか（新規/改修）』と『どの CLI コマンドを叩くか』まで落とす。INF-1 > INF-3 > INF-5 > INF-2 > INF-4 の優先順位（infrastructure-design.md §1）を衝突解決に使う。議論で否定された案は採用しない。未確認事項は断定せず『実装時に潰す』として残す。ユーザー確認が要る仕様分岐（成果物が変わるもの・A-6 に該当するもの）は open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T-n",
+        "title": "実行タスク",
+        "actor": "claude | user",
+        "depends_on": ["T-n"],
+        "sp": "sp:1|2|3|5|8"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）"]
+  }
+}
