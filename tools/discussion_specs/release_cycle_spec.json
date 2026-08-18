@@ -1,0 +1,59 @@
+{
+  "topic": "gem-hunter のリリースサイクル: dev ブランチ = プレビュー環境 / main = 本番環境 という環境・ブランチ分離を採用すべきか",
+  "brief": "ユーザーの相談（原文）: 『最低限の要件の中にプロダクションを意識するという事項があったかと思いますが、それを踏まえて、リリースサイクルとして dev リポジトリはプレビュー環境へのデプロイ、main は本番環境へのデプロイと環境を分けるべきか悩んでいます』。\n\n現状（確定済み）: (1) minimum-requirements.md §4 が『プロダクション運用を想定した実装とする』と定める（非機能要件の前置き。ブランチ戦略やデプロイ環境の分離は明示していない）。 (2) D-16 でデプロイ先はプレビュー・本番とも Cloudflare Workers に確定。 (3) cloudflare-infrastructure.md §6.1 で 3 環境（local / preview / production）を既に定義済み。preview は『同一 Worker の version + preview alias（pr-<N>）』で、Wrangler Environments（[env.*]）は Worker 数上限と棚卸しコストを理由に不採用。 (4) §8.3 で CI は deploy-preview.yml（trigger: pull_request）と deploy-production.yml（trigger: push to main）の 2 本。 (5) CLAUDE.md のブランチ運用は main 保護 + 作業ブランチ（feat/ fix/ docs/ claude/）→ PR → セルフレビュー → 自動マージ（squash）。dev ブランチは存在しない。 (6) SD-1 により全スプリントの PR に開けるプレビュー URL が要る。 (7) D-3 によりプロジェクトの主目的はポートフォリオ（与件充足 + 設計判断の説明可能性）で、M-4 が『第三者へ公開するか否か』の判断ゲート。現時点で公開判断は未通過。 (8) MVP のドメインは *.workers.dev。独自ドメインは M-4 で判断。 (9) OAuth は preview では無効化する方針（§6.2）。 (10) INF-2（定常コストをゼロに）・INF-4（人手の定常運用ゼロ）・INF-20（デプロイのトリガーは git push / マージのみ）。 (11) 開発は Claude の自律ルーティン（sprint-cycle-router）が 1 時間ごとに自走し、PR は自動マージされる。人間のレビュー待ちは発生しない設計。\n\n争点は少なくとも次の 5 つ:\nA) 常設の dev ブランチ（= 常設プレビュー環境）を追加すべきか。現行の『PR ごとの preview alias + main マージで本番』で『プロダクションを意識する』要件は満たせているか、それとも不足があるか。\nB) 与件『プロダクション運用を想定した実装とする』は何を要求しているか。ブランチ戦略・環境分離まで含む解釈は妥当か、それとも実装品質（エラー処理・秘匿情報・型・テスト・CI）を指すのか。過剰解釈による YAGNI 違反のリスク。\nC) Cloudflare Workers 上で dev 常設環境を作る場合の実装コストと制約（別 Worker（[env.*]）を作るのか、versions + 固定 preview alias（例 dev）にするのか。Worker 数上限・シークレット分離・OAuth コールバック URL・独自ドメイン・Free 枠への影響・wrangler.jsonc の複雑化）。\nD) 単一開発者 + AI 自律ルーティンという運用実態でのプロセス負荷（dev→main の 2 段マージが自動マージフロー・CP-6・SD-1・sprint-cycle-router とどう衝突するか。リリース遅延・コンフリクト・cherry-pick・ホットフィックス経路。trunk-based development との比較）。\nE) 採用するとしたら『今』か『M-4 公開判断の後』か。段階導入の設計（今は何もせず、公開時に何を足せば dev/main 分離相当の安全性が得られるか。gradual deployment / wrangler versions / rollback で代替できないか）。",
+  "participants": [
+    {
+      "name": "release_eng",
+      "model": "sonnet",
+      "lens": "リリースエンジニアリング（trunk-based development vs GitFlow / 環境昇格モデル（branch-per-env）の既知のアンチパターンと、それでも branch-per-env が正当化される条件 / デプロイ頻度・リードタイム・変更失敗率・MTTR（DORA）の観点で dev 追加が何を改善し何を悪化させるか / Cloudflare の versions + gradual deployment + rollback が『本番前の安全確認』をどこまで代替できるか / ホットフィックス経路の設計）"
+    },
+    {
+      "name": "cf_platform",
+      "model": "sonnet",
+      "lens": "Cloudflare 実装コスト（dev 常設環境を作るなら [env.*] 別 Worker か versions + 固定 preview alias か / cloudflare-infrastructure.md §6.1 の『[env.*] を使わない』決定を dev 用途で覆す価値があるか / シークレットの環境別管理（wrangler secret put --env）/ OAuth コールバック URL の登録可否と *.workers.dev の制約 / Free 枠（Worker 数 100・リクエスト 10万/日）への影響 / wrangler.jsonc と GitHub Actions がどれだけ複雑化するか / 具体的なコマンドとファイル差分まで落とす）"
+    },
+    {
+      "name": "autonomy_ops",
+      "model": "sonnet",
+      "lens": "自律運用との整合（CLAUDE.md の『作業ブランチ → PR → セルフレビュー → 自動マージ（squash）』と dev ブランチの共存可否 / sprint-cycle-router が 1 時間ごとに自走する前提で 2 段マージが増やす作業量と失敗モード（dev→main の PR を誰がいつ作るか・滞留・コンフリクト）/ CP-6（ユーザー介入最小化）・INF-4（人手の定常運用ゼロ）に照らした判定 / A-1（main 直 push 禁止）の保護は dev 追加で変わるか / stop-pr-check.sh 等のハーネスへの影響）"
+    },
+    {
+      "name": "req_trace",
+      "model": "sonnet",
+      "lens": "要件解釈と過剰設計の防止（minimum-requirements.md §4『プロダクション運用を想定した実装とする』が実際に要求している範囲を原文から確定する / §7 受け入れ基準チェックリスト 11 項目にデプロイ環境分離が含まれるか / D-3（ポートフォリオ目的）・M-4（公開判断未通過）・project-mission.md の優先順位（与件充足 > 積み上げ > 説明可能性）に照らして dev 追加が何位のタスクか / YAGNI・『1 箇所しか使わない抽象化を先回りしない』に抵触しないか / 逆に『採用しないと説明できない』評価上のリスクがあるか（ポートフォリオとしての見え方））"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合（新しい事実を主張せず既存記述との突合に徹する。dev/main 分離を採用した場合・しなかった場合それぞれで更新が必要なファイルと行を列挙する: CLAUDE.md「Git / PR 運用ルール」/ docs/03_design/infrastructure/cloudflare-infrastructure.md §6.1 §6.2 §6.3 §8.3 / infrastructure-design.md の INF-20 / docs/02_requirements/open-questions.md（新規決定 ID は D-21 が次番号）/ docs/02_requirements/roadmap.md M-4 / docs/02_requirements/user-story-map.md SP-1 の E-22 / docs/rules/sprint-development-rules.md SD-1 / docs/rules/pr-review-flow-summary.md。SSOT が増えていないか・矛盾する記述が残らないかを機械的に判定する）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて結論を 1 つに決める。最終的に『dev/main 分離を採用する / しない / 条件付きで後から採用する』のいずれかを推奨として明示し、対抗案を 1 つだけ添える（選択肢は最大 2 つ・各 1 行の判断材料・推奨を先頭）。決定は『どのファイルに何を書くか』『どのコマンドを叩くか』まで落とす。優先順位は project-mission.md（与件充足 > 積み上げ可能性 > 説明可能性 > 差別化）と INF-1 > INF-3 > INF-5 > INF-2 > INF-4 を使う。議論で否定された案は採用しない。未確認事項は断定せず『実装時に潰す』として残す。ユーザー確認が要る仕様分岐（成果物が変わるもの・A-6）は open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "recommendation": "採用する / 採用しない / 条件付きで後から採用する のいずれか + 1 文の理由",
+    "alternative": "対抗案 1 つ + それを選ぶ条件",
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "conclusion": "結論の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T-n",
+        "title": "実行タスク",
+        "actor": "claude | user",
+        "depends_on": ["T-n"],
+        "sp": "sp:1|2|3|5|8"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）"]
+  }
+}
