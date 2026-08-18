@@ -11,11 +11,13 @@
 | [`00_concept/`](./00_concept) | 初期コンセプト・プロダクトビジョン（[リーンキャンバス](./00_concept/lean-canvas.md)・[インセプションデッキ](./00_concept/inception-deck.md)） |
 | [`01_research/`](./01_research) | 市場・競合・ユーザーリサーチ（`market/`, `user/`） |
 | [`02_requirements/`](./02_requirements) | 要件定義（[PRD](./02_requirements/prd.md)・[ユーザーストーリーマップ](./02_requirements/user-story-map.md)・[ロードマップ](./02_requirements/roadmap.md)等） |
-| [`03_design/`](./03_design) | 設計ドキュメント（`architecture/`, `ui-ux/`, `data-model/`） |
-| [`04_development/`](./04_development) | 開発者向けドキュメント（環境構築、API仕様等） |
+| [`03_design/`](./03_design) | 設計ドキュメント（[アプリケーションアーキテクチャ](./03_design/architecture/application-architecture.md)・[ドメインモデル](./03_design/data-model/domain-model.md)・[UI/UX ガイドライン](./03_design/ui-ux/ui-ux-guidelines.md)・`infrastructure/`） |
+| [`04_development/`](./04_development) | 開発者向けドキュメント（[テスト戦略](./04_development/testing-strategy.md)・API 仕様・環境構築） |
 | [`05_release/`](./05_release) | リリースノート・デプロイ手順 |
 | [`adr/`](./adr) | Architecture Decision Records（技術的意思決定の記録） |
 | [`meeting-notes/`](./meeting-notes) | 議事録・ミーティングメモ |
+
+> **実装時に読む 3 つの正本**（クリーンアーキテクチャ / DDD / TDD）: [アプリケーションアーキテクチャ](./03_design/architecture/application-architecture.md)（層・依存規則）/ [ドメインモデル](./03_design/data-model/domain-model.md)（ユビキタス言語）/ [テスト戦略](./04_development/testing-strategy.md)（層分担・道具）。実装中の判断チェックリストは [`docs/rules/architecture-rules.md`](./rules/architecture-rules.md)。
 
 ## 運用ルール（暫定）
 

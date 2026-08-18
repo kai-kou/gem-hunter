@@ -282,10 +282,10 @@
 | 層 | diff に含まれるか判定する対象 | 対応する既存 ID |
 |---|---|---|
 | フロントエンド | `app/**/page.tsx` / `app/**/layout.tsx` / `src/ui/**` | `E-8` / `NFR-3` |
-| バックエンド | `app/**/route.ts` / `src/usecases/**` / `src/domain/**` / `src/infrastructure/**` | `E-2` / `E-5` / `TR-4` |
+| バックエンド | `app/**/route.ts` / `src/usecases/**` / `src/domain/**` / `src/infrastructure/**` / `src/composition/**` | `E-2` / `E-5` / `TR-4` |
 | インフラ | `.github/workflows/**` / プレビューデプロイ設定 / `.env.example` 等の環境変数宣言 / `next.config.*` のランタイム契約部 | `E-12` / `E-22` / `E-6` / `INF-6`〜`INF-14` |
 
-⚠️ **「インフラ」は運用基盤の契約（`INF-n`）であって、クリーンアーキテクチャ用語の `src/infrastructure/`（アダプタ層）ではない。** `src/infrastructure/` はバックエンド層の一部として数える。混同しないこと。
+⚠️ **層の定義とディレクトリ構造の正本は [アプリケーションアーキテクチャ](../03_design/architecture/application-architecture.md) §1**（本表は 3 層判定のための写し）。「インフラ」は運用基盤の契約（`INF-n`）であって、クリーンアーキテクチャ用語の `src/infrastructure/`（アダプタ層）ではない。** `src/infrastructure/` はバックエンド層の一部として数える。混同しないこと。
 
 **適用範囲（飼い主が確定・2026-08-18）**: `C-5` 違反（技術レイヤー別の分割 Issue）は **全スプリントで blocking**。加えて `SP-1` のみ **3 層すべてに diff が無ければ blocking**。`US-n` を含む機能スプリントは **3 層中 2 層以上に触れていなければ warning**（block しない）。イネイブラー単独スプリント（Issue の `含む` が `E-n` のみ）は **exempt**（操作レビュー手順が書けることが条件）。この適用範囲は `AskUserQuestion` による飼い主の明示確認を経て確定した（`content/discussions/sprint-cycle-design-20260818/whiteboard.md` round 3）。
 

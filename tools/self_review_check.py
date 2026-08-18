@@ -112,7 +112,10 @@ TEST_PATH_GLOBS = (
 
 # 3 層の判定対象（BRIEF.md 3 層定義テーブル・whiteboard round2 §1.2 と完全一致）
 FRONTEND_GLOBS = ("app/**/page.tsx", "app/**/layout.tsx", "src/ui/**")
-BACKEND_GLOBS = ("app/**/route.ts", "src/usecases/**", "src/domain/**", "src/infrastructure/**")
+BACKEND_GLOBS = (
+    "app/**/route.ts", "src/usecases/**", "src/domain/**", "src/infrastructure/**",
+    "src/composition/**",
+)
 INFRA_GLOBS = (".github/workflows/**",)
 
 _GLOB_CACHE: dict[str, "re.Pattern[str]"] = {}
@@ -886,6 +889,25 @@ def main() -> int:
             tail = detail[-1] if detail else "(出力なし)"
             warnings.append(
                 f"サブエージェント定義チェックが異常終了しました（exit={proc.returncode}）: {tail[:200]}"
+            )
+
+    # クリーンアーキテクチャの依存規則（#47・#32）
+    # アプリコードが無い期間はチェッカー側が自動スキップするため、無条件呼び出しでも誤検知しない。
+    if any(f.startswith(("app/", "src/")) and f.endswith((".ts", ".tsx")) for f in files):
+        proc = sh([sys.executable, "tools/check_architecture_boundaries.py"], timeout=60)
+        matched = False
+        for line in (proc.stdout or "").splitlines():
+            if line.startswith("❌"):
+                errors.append(f"依存規則: {line[1:].strip()}")
+                matched = True
+            elif line.startswith("⚠️"):
+                warnings.append(f"依存規則: {line[2:].strip()}")
+                matched = True
+        if proc.returncode not in (0, 1) and not matched:
+            detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+            tail = detail[-1] if detail else "(出力なし)"
+            warnings.append(
+                f"依存規則チェックが異常終了しました（exit={proc.returncode}）: {tail[:200]}"
             )
 
     # 月次コストテレメトリの feature PR 混入チェック（#106・#242 回帰検知）

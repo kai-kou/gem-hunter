@@ -38,7 +38,7 @@ git fetch origin +main:refs/remotes/origin/main && git diff origin/main...HEAD &
 
 **観点ごとに独立のサブエージェント（`general-purpose`、探索中心なら `Explore`）を並列起動** し、
 事前文脈なしで差分を「第三者の PR」として読ませる（自己修正盲点 64.5% の回避が目的。
-メインセッションが自分でレビューして代替しない）。観点は次の 5 系統を既定とし、
+メインセッションが自分でレビューして代替しない）。観点は次の 5 系統（+ 条件付き 1 系統）を既定とし、
 差分の性質に応じて追減してよい:
 
 | 観点 | 焦点 |
@@ -48,6 +48,7 @@ git fetch origin +main:refs/remotes/origin/main && git diff origin/main...HEAD &
 | 簡素化・再利用 | 既存関数での代替・コピペ重複・YAGNI 違反（1 箇所しか使わない抽象化） |
 | テスト・検証 | 変更が実行結果で証明可能か・テスト欠落・`bash -n`/`py_compile` |
 | ドキュメント整合 | ルール・SKILL.md・README との desync・参照切れ |
+| アーキテクチャ・ドメイン整合（**差分が `app/` か `src/` を含むときだけ追加**） | 層の依存規則違反（`docs/rules/architecture-rules.md` §2 の A-1〜A-7）・ユビキタス言語との不一致（`domain-model.md` §2 に無い語・`subscribers_count` 等の変換漏れ）・生の `string`/`number` をユースケースへ渡している・テスト配置が `testing-strategy.md` §3 と食い違う |
 
 各ファインダーへの指示テンプレート（`agent-team-summary.md` の出力ルールを先頭に付ける）:
 
@@ -162,7 +163,7 @@ mcp__github__pull_request_review_write(method="submit_pending", owner, repo, pul
 ```markdown
 ## Layer 1 セルフレビュー結果（{YYYY-MM-DD HH:MM JST}）
 
-観点: 正確性 / セキュリティ / 簡素化・再利用 / テスト・検証 / ドキュメント整合（5 系統実施）
+観点: 正確性 / セキュリティ / 簡素化・再利用 / テスト・検証 / ドキュメント整合（+ アプリコード差分ならアーキテクチャ・ドメイン整合）
 
 - CONFIRMED: {件数}件（🔴{n} 🟡{n} ⚪{n}）→ 各インラインコメント参照
 - PLAUSIBLE: {件数}件

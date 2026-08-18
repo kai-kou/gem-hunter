@@ -78,15 +78,16 @@ src/
       github-repository-query.ts    #   RepositoryQueryPort の実装
       dto.ts                        #   API レスポンスのスキーマ（zod）
       mapper.ts                     #   DTO → ドメインモデル変換
-    cache/                          # CachePort の実装（キー規約は NFR-18）
-    platform/                       # 🔴 事業者固有バインディングに触れてよい唯一の場所（NFR-21）
+    platform/                       # 🔴 事業者固有バインディング・キャッシュ実装に触れてよい唯一の場所（NFR-21）
+      cache.ts                      #   CachePort の実装（キー規約は NFR-18）
+      rate-limit.ts                 #   RateLimitPort の実装
   ui/                               # 表示コンポーネント
   composition/                      # 実装の組み立て（composition root）
   shared/
 e2e/                                # Playwright（操作レビュー手順の写し）
 ```
 
-🔴 **旧表記からの移行（`D-19`）**: 以前のドキュメントにあった `lib/infra/` は **`src/infrastructure/platform/`**、`lib/data/` は **`src/infrastructure/github/`** に読み替える。表記は本ファイルに統一済みで、旧表記は使わない。
+🔴 **旧表記からの移行（`D-22`）**: 以前のドキュメントにあった `lib/infra/` は **`src/infrastructure/platform/`**、`lib/data/` は **`src/infrastructure/github/`** に読み替える。表記は本ファイルに統一済みで、旧表記は使わない。
 
 ---
 
@@ -97,7 +98,7 @@ e2e/                                # Playwright（操作レビュー手順の�
 | ポート | 面積（これ以上広げない） | 実装 | 根拠 |
 |---|---|---|---|
 | `RepositoryQueryPort` | `search(query): Promise<SearchResult>` / `findOne(id): Promise<RepositoryDetail>` | `infrastructure/github/` | `NFR-16` / `TR-4` |
-| `CachePort` | `get(key)` / `set(key, value, ttl)` / `invalidate(key)` | `infrastructure/cache/` | `NFR-17`（YAGNI の意図的な例外。面積を広げない） |
+| `CachePort` | `get(key)` / `set(key, value, ttl)` / `invalidate(key)` | `infrastructure/platform/` | `NFR-17`（YAGNI の意図的な例外。面積を広げない） |
 | `RateLimitPort` | `consume(key): Promise<Decision>` | `infrastructure/platform/` | `INF-n` / `NFR-7` |
 | `ClockPort` | `now(): Date` | `infrastructure/` | テスト決定性（`SD-2`） |
 

@@ -200,7 +200,7 @@ READMEでは両方併記されているが、正式名称が未確定。ドメ�
 | **R-8** | **GitHub 利用規約・法務の一次確認** | `competitive-analysis.md` の Caveats が「実装前に最新の Terms/AUP を個別確認すべき」と明記して終わっている。**商用化（D-3）なら必須** | GitHub ToS / AUP / API Terms の該当節を確認。アバター画像の再配信可否も含む |
 | **R-9** | **競合調査の「未確認」項目のクローズ** | 同 Caveats に Bloop.ai の現状、grep.app の動向、Tavily 買収額、Pinecone 最新料金、DeepWiki のコストが「未確認」として残っている | 要件定義書には影響が小さいため **優先度低**。(c) を選ぶ場合のみ再調査 |
 | **R-10** | **UI/UX の参照設計** | `03_design/ui-ux/` が空で、画面要件は表形式の記述のみ。**カード 1 件に何を出すか**（説明文・言語・最終更新・トピック）が未定 | 競合（GitHub 検索結果・Libraries.io・OSS Insight）の画面を 3 つ比較し、表示項目を決める |
-| **R-11** | **テスト戦略の具体化** | 「モック化する」とあるが、手段（MSW / fetch モック / Playwright）とレイヤー分担（ユニット / 統合 / E2E）が未定 | Next.js 16 App Router 環境での推奨構成を確認（Server Component のテスト手法が要注意） |
+| ~~**R-11**~~ | ~~**テスト戦略の具体化**~~ | ✅ **クローズ済み（2026-08-18）**: 手段とレイヤー分担を確定し [テスト戦略](../04_development/testing-strategy.md) を正本として作成した（Vitest 4 + RTL / ACL のみ MSW 2 / E2E は Playwright + axe）。🔴 **`async` Server Component はユニットで描画できない**（Next.js 公式が E2E を推奨）ため、データ取得を伴う画面の検証は E2E に置き、ロジックはユースケースへ出す | — |
 
 ---
 
@@ -321,10 +321,11 @@ OpenSSF `criticality_score` は既に 10 シグナルの加重和で 0〜1 の�
 | **D-15** | **インフラ設計の第 4 の評価軸として「運用の手離れ」を置く。** デプロイは git push / マージのみをトリガーとし、手動デプロイ経路を作らない。人手が残る定常作業は一覧化し、増やす変更には自動化の手当てを同時に付ける | 2026-08-18 |
 | **D-16** | 🔴 **インフラを Cloudflare に確定する（プレビュー・本番とも Cloudflare Workers）。** ユーザー明示決定（2026-08-18）により `D-5` / `D-7`（デプロイ先未決）と `D-11`（プレビュー環境の事業者未決）をクローズする。`M-4` は廃止せず「事業者を選定するゲート」から「**第三者へ公開するか否かを決めるゲート**」へ性質を変えて維持する（独自ドメインの要否・GitHub 利用規約の一次確認・コスト撤退ラインの確定はここに残す）。運用の一次経路は **wrangler CLI**（Cloudflare MCP は読み取り 4 ツールのみ許可・書き込み系は使わない）。CI は **GitHub Actions + `cloudflare/wrangler-action`** とし Workers Builds は採用しない | 2026-08-18 |
 | **D-17** | **ランタイムは `@opennextjs/cloudflare` アダプタとし、`next` を 16.2.11 以上にピンする。** `Node.js Middleware` と `proxy.ts` は一切使わない（アダプタ未対応・動作未確認のため、`/` → `/ja` のリダイレクトはルート Server Component の `redirect()` で実装する）。`next/image` の最適化も使わない（`INF-11`） | 2026-08-18 |
-| **D-18** | **MVP のキャッシュは HTTP `Cache-Control` + Workers Caching のみとし、永続ストア（R2 / D1 / Durable Objects / KV）を採用しない。** `NFR-17` Cache Port は維持し、実装位置を **`lib/infra/`** と定める（`open-next.config.ts` ではない）。L3 の導入条件は [インフラ設計](../03_design/infrastructure/infrastructure-design.md) §6.2 の観測条件を変更せずに維持する | 2026-08-18 |
+| **D-18** | **MVP のキャッシュは HTTP `Cache-Control` + Workers Caching のみとし、永続ストア（R2 / D1 / Durable Objects / KV）を採用しない。** `NFR-17` Cache Port は維持し、実装位置を **`src/infrastructure/platform/`** と定める（`open-next.config.ts` ではない）。L3 の導入条件は [インフラ設計](../03_design/infrastructure/infrastructure-design.md) §6.2 の観測条件を変更せずに維持する | 2026-08-18 |
 | **D-19** | **Workers Free の実測で上限（p95 CPU 10 ms / Worker バンドル 3 MB gzip）を超えた場合は Workers Paid（$5/月）へ上げる（事前承認済み）。** Claude は `limits.cpu_ms` の設定と監視の準備まで確認なしで進め、**支払い方法の登録と Paid 切替の操作だけ** を `A-6` としてユーザーへ即時依頼する（Free → Paid に CLI / API 経路は存在しない）。あわせて **コストの撤退ラインを月額 $10** とし、Billable Usage API の監視閾値に用いる（`infrastructure-design.md` §14 の未決事項をクローズ） | 2026-08-18 |
 | **D-20** | 🔴 **サーバー側の GitHub 認証を「GitHub App の installation token」に改訂する（`D-6` の方式部分を上書き）。** Fine-grained PAT を既定とした `D-6` の決定を、**実測検証（2026-08-18・Cloudflare Workers 上）** に基づいて置き換える。採用理由は ① Core 枠が **8,800 req/h**（PAT の 5,000 req/h の約 1.76 倍・公式式 `5,000 + 20 リポジトリ超過分 × 50`・上限 12,500 と整合）② トークンが **1 時間で自動失効** するため、`INF-4`（定常運用ゼロ）を壊す「PAT の有効期限更新」が発生しない ③ 秘密として保持するのが **署名鍵** であり、漏洩時の影響範囲を権限セット（`contents:read` / `issues:read` / `metadata:read`）に閉じ込められる。**`D-6` のうち「任意の GitHub OAuth ログイン」「ログインで変わるのはレート枠だけ」「複数トークンのローテーションを行わない」は変更しない** | 2026-08-18 |
 | **D-21** | **リリースサイクルは trunk-based（PR ごとのプレビュー + `main` = 本番）を維持し、常設の dev ブランチ / dev 環境を持たない。** `minimum-requirements.md` §4「プロダクション運用を想定した実装とする」は §4.1〜4.4 でアプリ実装品質（信頼性・性能・a11y・保守性）を列挙しており、環境構成・ブランチ戦略は **与件充足の判定範囲外**（禁止でも要求でもない任意の上乗せ）。単一開発者 + 完全自走という体制では dev を見る人間も実トラフィックも存在せず、dev は CI 以上の検証を追加しないまま「誰が・いつ dev→main を昇格させるか」という未定義の判断点だけを増やす。代わりに ① **`main` マージ後のテストゲート**（合成状態の検証・#39）② **README への判断根拠の明記** ③ **`M-4` での再判定** の 3 点で「プロダクション運用を意識している」ことを担保する。⚠️ 仮に将来 dev 相当の環境を持つ場合は **`[env.dev]`（別 Worker）一択**（`versions` + 固定 preview alias 方式は、シークレットが Worker 1 本の版チェーン全体で線形継承されるため dev 専用シークレットの分離を構造的に保証できない）。**理由と却下案の正本は [ADR 0004](../adr/0004-release-cycle-trunk-based.md)**（本行はサマリー）。README「設計上の判断」にも要点を転記済みのため、改訂時は ADR・README の両方を更新する | 2026-08-18 |
+| **D-22** | **アプリケーションのディレクトリ命名をクリーンアーキテクチャの層名に統一する**（`src/domain/` / `src/usecases/` / `src/infrastructure/` / `src/ui/` / `src/composition/` / `src/shared/`）。旧表記の `lib/infra/` は **`src/infrastructure/platform/`**、`lib/data/` は **`src/infrastructure/github/`** へ読み替える。理由は ① [ユーザーストーリーマップ](./user-story-map.md) §5.2 の 3 層判定と `tools/self_review_check.py` が既に `src/` 系で実装されており、インフラ設計 2 本だけが `lib/` 系で **同一概念に 2 つの名前がある状態** だった（`SD-4` の権威解決対象） ② 層名がそのままディレクトリ名になっていれば依存規則を grep で機械検査できる。🔵 **命名は `D-12` により確認不要の自律判断**（実装手段・命名は確認しない）。境界の効力（`NFR-21` / `INF-5` の bindings 限定）は名前が変わるだけで **変更しない**。正本は [アプリケーションアーキテクチャ](../03_design/architecture/application-architecture.md) | 2026-08-18 |
 
 ### D-16 / D-17 / D-18 / D-19 の決定から従属的に確定する事項
 
@@ -332,7 +333,7 @@ OpenSSF `criticality_score` は既に 10 シグナルの加重和で 0〜1 の�
 - **`D-16` の帰結**: `INF-2`（超過時は課金ではなく停止に倒す）は **Workers Free を維持すること自体** で構造的に満たされる（超過は HTTP Error 1027 で停止し課金されない）。逆に Paid へ上げるとハードキャップは消滅し、`limits.cpu_ms` と Billable Usage API による後追い監視しか残らない。
 - **`D-17` の帰結**: Free の **CPU 10 ms / Worker バンドル 3 MB（gzip）** に収まるかが `INF-3`（与件の技術スタックが動くこと）の成否を決める。`SP-1` で実測し、閾値超過が確定した場合のみ Workers Paid への切替を `A-6` としてユーザーへ依頼する（Free → Paid に CLI / API 経路は存在しない）。
 - **`D-18` の帰結**: `NFR-7`（request coalescing）が **補助から主要な防波堤へ格上げ** される（Workers Caching のリクエスト合体はエッジで効くため、`D-13` の「インスタンス内でしか効かない」という前提が変わる）。一方で **キャッシュヒットも Worker のリクエスト枠を消費する** ため、「キャッシュヒット率向上 = コスト削減」は Cloudflare では成立しない（効くのは CPU-ms と GitHub レート枠の 2 軸のみ）。
-- **`INF-5` の帰結**: Cloudflare bindings へのアクセスを **`lib/infra/` 配下に限定** し、grep 2 本（bindings の直接参照 / Cloudflare 環境変数による実行時分岐）で機械検出する。目視判断だった `NFR-21` の遵守がセルフレビューで自動判定できるようになる。
+- **`INF-5` の帰結**: Cloudflare bindings へのアクセスを **`src/infrastructure/platform/` 配下に限定** し、grep 2 本（bindings の直接参照 / Cloudflare 環境変数による実行時分岐）で機械検出する。目視判断だった `NFR-21` の遵守がセルフレビューで自動判定できるようになる。
 - **`D-19` の帰結**: 実測が閾値超過を示したとき、セッションは `status:waiting-user` で止まらずに「支払い方法を登録してください」という **1 手だけの依頼** を出して待つ（判断は事前に済んでいるため A/B/C/D 分類をやり直さない）。撤退ライン $10 は Billable Usage API（`GET /accounts/{id}/billable-usage`）のポーリング閾値として実装する。⚠️ Budget alerts は通知のみで停止しないため、これに依存しない。
 - **人間に残る作業**: ① Cloudflare API トークンの初回発行 ② その値を GitHub Actions Secrets と Claude.ai 環境変数の 2 箇所へ貼る、の 2 つだけ（いずれも一度きり）。以降のリソース作成・デプロイ・プレビュー URL 生成・シークレット投入は Claude が非対話で実行する。
 
@@ -350,7 +351,7 @@ OpenSSF `criticality_score` は既に 10 シグナルの加重和で 0〜1 の�
 - **`SD-1` の帰結**: スプリントの完了条件に「PR のプレビュー URL 上で操作レビュー手順を完走できること」が加わる（[`user-story-map.md`](./user-story-map.md) §7 運用ルール 2）。URL を出せない場合は理由とローカル起動手順を PR に書く（沈黙禁止）。
 - **`SD-2` の帰結**: [`user-story-map.md`](./user-story-map.md) §5.3 の各スプリントの「操作レビュー」手順は **E2E テストに写す**。手動確認と自動テストを一致させ、以降のスプリントでの回帰を自動検知する。テストのスキップ・無効化による緑化は禁止。
 - **`D-12` の帰結**: `user-confirmation-minimization.md` §3 item 0 の 4 分岐のうち **(c) の適用範囲が「仕様解釈の分岐」まで広がる**（従来は不可逆リスクのあるものに限っていた）。逆に (a)(b) は実装手段の領域に限定される。
-- ✅ **プレビュー環境のサービス選定は完了した**（`D-16`）。Cloudflare Workers の **version + preview alias**（`wrangler versions upload --preview-alias pr-<N>`）で PR ごとの URL を出す。Worker を増やさないため Free の Worker 数上限を消費しない。`NFR-21` は維持され、差し替え時に書き換えるのは `lib/infra/` と設定ファイルのみ。
+- ✅ **プレビュー環境のサービス選定は完了した**（`D-16`）。Cloudflare Workers の **version + preview alias**（`wrangler versions upload --preview-alias pr-<N>`）で PR ごとの URL を出す。Worker を増やさないため Free の Worker 数上限を消費しない。`NFR-21` は維持され、差し替え時に書き換えるのは `src/infrastructure/platform/` と設定ファイルのみ。
 
 ### D-1 / D-2 の決定から従属的に確定する事項
 
@@ -410,7 +411,7 @@ OpenSSF `criticality_score` は既に 10 シグナルの加重和で 0〜1 の�
 
 ### D-5 / D-7 の決定から従属的に確定する事項
 
-> ⚠️ **本ブロックは `D-5` / `D-7` 決定時点（2026-08-17）の記録である。** デプロイ先そのものは `D-16`（2026-08-18）で Cloudflare に確定してクローズ済み。以下のうち **Cache Port など「決めないを成立させるために作った構造」の帰結は引き続き有効**（`D-18` で実装位置が `lib/infra/` に確定した）。
+> ⚠️ **本ブロックは `D-5` / `D-7` 決定時点（2026-08-17）の記録である。** デプロイ先そのものは `D-16`（2026-08-18）で Cloudflare に確定してクローズ済み。以下のうち **Cache Port など「決めないを成立させるために作った構造」の帰結は引き続き有効**（`D-18` で実装位置が `src/infrastructure/platform/` に確定した）。
 
 **「決めない」を成立させるために、決めておくべきこと**（先送りは無条件では成立しない）:
 

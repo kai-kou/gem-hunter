@@ -42,7 +42,7 @@
 | `src/domain/`（値オブジェクト・エンティティ・ドメインサービス・エラー） | ユニット | Vitest | `src/domain/**/*.test.ts`（併置） | モックを使わない（依存が無いのだから要らない） |
 | `src/usecases/` | ユニット（フェイク注入） | Vitest | `src/usecases/*.test.ts` | MSW を使わない。ネットワークを触らない |
 | `src/infrastructure/github/`（ACL・DTO 検証・mapper） | 結合 | Vitest + **MSW 2** | `src/infrastructure/github/*.test.ts` | 実 API を叩かない。**実レスポンスを縮めた固定 JSON** を fixture に置く |
-| `src/infrastructure/cache/`・`platform/` | 結合 | Vitest（必要なら Workers pool） | 併置 | 事業者 SDK を上位層でモックしない（境界はここで閉じる） |
+| `src/infrastructure/platform/`（キャッシュ・レート制限） | 結合 | Vitest（必要なら Workers pool） | 併置 | 事業者 SDK を上位層でモックしない（境界はここで閉じる） |
 | `src/ui/`（コンポーネント） | コンポーネント | Vitest + RTL | 併置 | スナップショットを主たる assert にしない |
 | `app/`（同期 Server Component・Route Handler） | ユニット | Vitest | `app/**/*.test.tsx` | ロジックを持たせない（持たせたら設計側を直す） |
 | `app/`（`async` Server Component・画面遷移・URL 状態） | **E2E** | Playwright | `e2e/*.spec.ts` | ユニットで描画しようとしない（公式に未対応・§1） |
