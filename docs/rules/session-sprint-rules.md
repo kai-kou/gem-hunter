@@ -22,6 +22,8 @@
 PR 本文に必須: `Sprint Goal:` 1 行・`sp:N`・`Session-Id: {UUID}`（`echo $CLAUDE_CODE_SESSION_ID`）。
 `Session-Id:` は sprint_session_metrics.py の突合と `--mine` 所有判定に使う（省略禁止）。
 
+**`編成` 欄は必須**（省略禁止）。チーム編成の記録先はこの欄そのものであり、別の記録先を作らない。粒度は 1〜2 行: 既定は役割分担型 fan-out（`sp:5` 以上はファイル非重複分割で並列 / `sp:1`〜`sp:3` は単独実行）。議論型 `discussion-review` は既存 Layer 2 トリガーと `SD-3` グレーゾーン精査に限定し、使う場合のみ理由を添える。
+
 ## SP スケール（複雑性 × レビュー負荷 × リスク）
 
 | ラベル | 目安 |
