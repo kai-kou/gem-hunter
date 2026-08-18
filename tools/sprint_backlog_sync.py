@@ -28,7 +28,7 @@ CP-4 の多層防御（論理ロック・discover スクリプトの排他チェ
 （無人 firing で機械分解しない、という BRIEF の判断木「無人 firing の仕様分岐」と同じ思想）。
 
 【API チャネルの多段フォールバック】
-`gh` があれば `gh` を使い、失敗（非 0 終了・例外）したら `curl` + `GH_TOKEN`
+`gh` があれば `gh` を使い、失敗（非 0 終了・例外）したら `urllib` + `GH_TOKEN`
 （`https://api.github.com`）にフォールバックする。両方失敗したら **起票せず** exit code 2 で
 理由を出力する（`docs/rules/github-mcp-fallback-patterns.md` §4「取れなかったことを正確に
 伝える」原則に従う。呼び出し元の Claude セッションが `mcp__github__*` で引き取る）。
@@ -40,7 +40,7 @@ CP-4 の多層防御（論理ロック・discover スクリプトの排他チェ
 終了コード:
     0 = 正常（起票した / 起票不要）
     1 = 起票すべきだが失敗した（API 到達はしたが作成が失敗した等）
-    2 = API 到達不可（gh・curl 双方失敗。呼び出し元は MCP で引き取ること）
+    2 = API 到達不可（gh・REST 直接呼び出しの双方失敗。呼び出し元は MCP で引き取ること）
 """
 from __future__ import annotations
 
@@ -50,6 +50,8 @@ import os
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -361,7 +363,7 @@ def decide(md_text: str, existing_issue_titles: list[str], repo: str = "kai-kou/
 
 
 # ──────────────────────────────────────────────
-# API チャネル（gh → curl + GH_TOKEN の多段フォールバック）
+# API チャネル（gh → urllib + GH_TOKEN の多段フォールバック）
 # GH_TOKEN の値はログ・エラー出力に一切出さない。
 # ──────────────────────────────────────────────
 
@@ -391,57 +393,38 @@ def _run_gh(args: list[str]) -> tuple[bool, str]:
     return True, result.stdout.strip()
 
 
-def _run_curl_get(url: str, token: str) -> tuple[bool, str]:
-    try:
-        result = subprocess.run(
-            [
-                "curl", "-sS", "-w", "\n%{http_code}",
-                "-H", f"Authorization: Bearer {token}",
-                "-H", "Accept: application/vnd.github+json",
-                "-H", "X-GitHub-Api-Version: 2022-11-28",
-                url,
-            ],
-            capture_output=True, text=True, timeout=30,
-        )
-    except FileNotFoundError:
-        return False, "curl コマンドが見つかりません"
-    except subprocess.TimeoutExpired:
-        return False, "curl コマンドがタイムアウトしました"
-    if result.returncode != 0:
-        return False, f"curl 実行失敗（exit {result.returncode}）"
-    body, _, code = result.stdout.rpartition("\n")
-    if not code.strip().startswith("2"):
-        return False, f"HTTP {code.strip()}"
-    return True, body
+def _http_request(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+    """GitHub REST を叩く（GET / POST）。
 
-
-def _run_curl_post(url: str, token: str, payload: str) -> tuple[bool, str]:
+    🔴 token を **サブプロセスの引数に載せない**。`curl -H "Authorization: Bearer <token>"` は
+    同一ホストの他プロセスから `ps` / `/proc/<pid>/cmdline` で読めてしまい、無人ルーティンで
+    毎 firing 実行されるぶん露出機会が積み上がる。Python プロセス内でヘッダを組み立てる。
+    """
+    data = payload.encode("utf-8") if payload is not None else None
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "gem-hunter-sprint-backlog-sync",
+    }
+    if data is not None:
+        headers["Content-Type"] = "application/json; charset=utf-8"
+    req = urllib.request.Request(url, data=data, headers=headers,
+                                 method="POST" if data is not None else "GET")
     try:
-        result = subprocess.run(
-            [
-                "curl", "-sS", "-w", "\n%{http_code}", "-X", "POST",
-                "-H", f"Authorization: Bearer {token}",
-                "-H", "Accept: application/vnd.github+json",
-                "-H", "X-GitHub-Api-Version: 2022-11-28",
-                "-d", "@-",
-                url,
-            ],
-            input=payload, capture_output=True, text=True, timeout=30,
-        )
-    except FileNotFoundError:
-        return False, "curl コマンドが見つかりません"
-    except subprocess.TimeoutExpired:
-        return False, "curl コマンドがタイムアウトしました"
-    if result.returncode != 0:
-        return False, f"curl 実行失敗（exit {result.returncode}）"
-    body, _, code = result.stdout.rpartition("\n")
-    if not code.strip().startswith("2"):
-        return False, f"HTTP {code.strip()}"
-    return True, body
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return True, res.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        # 本文にトークンは含まれないが、念のため詳細は載せずステータスのみ返す
+        return False, f"HTTP {e.code}"
+    except urllib.error.URLError as e:
+        return False, f"接続失敗（{type(e).__name__}）"
+    except TimeoutError:
+        return False, "リクエストがタイムアウトしました"
 
 
 def list_all_issue_titles() -> tuple[list[str], str | None]:
-    """全 Issue（state=all）のタイトル一覧を取得する。gh → curl+GH_TOKEN の順に試す。
+    """全 Issue（state=all）のタイトル一覧を取得する。gh → urllib+GH_TOKEN の順に試す。
 
     Returns (titles, error_reason)。取得失敗時は titles=[] で error_reason に理由を入れる
     （「取得失敗」を「0 件」と混同しない・github-mcp-fallback-patterns.md §4）。
@@ -465,16 +448,16 @@ def list_all_issue_titles() -> tuple[list[str], str | None]:
 
     titles: list[str] = []
     for page in range(1, 4):  # 100件 x 3ページ = 最大300件（gh 経路と同等の上限）
-        ok2, out2 = _run_curl_get(
+        ok2, out2 = _http_request(
             f"https://api.github.com/repos/{REPO}/issues?state=all&per_page=100&page={page}",
             token,
         )
         if not ok2:
-            return [], f"gh 失敗（{gh_err}）・curl も失敗（{out2}）"
+            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
         try:
             batch = json.loads(out2)
         except json.JSONDecodeError:
-            return [], f"gh 失敗（{gh_err}）・curl 応答のパースに失敗"
+            return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
         if not batch:
             break
         # /issues エンドポイントは PR も含むため pull_request キーで除外する
@@ -485,7 +468,7 @@ def list_all_issue_titles() -> tuple[list[str], str | None]:
 
 
 def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
-    """gh → curl+GH_TOKEN の順で Issue を起票する。成功時 (True, issue_url)。"""
+    """gh → urllib+GH_TOKEN の順で Issue を起票する。成功時 (True, issue_url)。"""
     args = ["issue", "create", "-R", REPO, "--title", title, "--body", body]
     for label in labels:
         args += ["--label", label]
@@ -499,13 +482,13 @@ def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
         return False, f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
     payload = json.dumps({"title": title, "body": body, "labels": labels}, ensure_ascii=False)
-    ok2, out2 = _run_curl_post(f"https://api.github.com/repos/{REPO}/issues", token, payload)
+    ok2, out2 = _http_request(f"https://api.github.com/repos/{REPO}/issues", token, payload)
     if not ok2:
-        return False, f"gh 失敗（{gh_err}）・curl も失敗（{out2}）"
+        return False, f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
     try:
         data = json.loads(out2)
     except json.JSONDecodeError:
-        return False, f"gh 失敗（{gh_err}）・curl 応答のパースに失敗"
+        return False, f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
     return True, data.get("html_url", "")
 
 
