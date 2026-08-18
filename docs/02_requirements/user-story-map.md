@@ -187,7 +187,7 @@
 | **E-9** | 🔴 配色の確定（コントラスト比 4.5:1 以上）。トークン構成と検証手順は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §2 に従い、**実値を実測して確定させる** | `NFR-13` |
 | **E-11** | テスト基盤と外部 API のモック化、コマンド 1 つでの実行。⚠️ **検索・詳細 API のモックは `SP-4`、OAuth フローのモックは `SP-8`**（OAuth の仕様が固まる前にモックを組むと手戻りになる） | `NFR-23`〜`NFR-25` / `AC-10` |
 | **E-12** | CI での自動テスト実行 | `NFR-25` / `AC-10` |
-| **E-22** | PR ごとの自動プレビューデプロイを設定し、PR 本文からプレビュー URL を辿れるようにする | `D-11` / `SD-1` |
+| **E-22** | PR ごとの自動プレビューデプロイを設定し、PR 本文からプレビュー URL を辿れるようにする。🔵 **実装先は Cloudflare Workers に確定**（`D-16`。`wrangler versions upload --preview-alias pr-<N>` + GitHub Actions。手順の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §8） | `D-11` / `D-16` / `SD-1` |
 
 > 🔴 **E-3 / E-4 / E-9 を S-0 に置く理由**: いずれも **後から変えると全体に波及する**。キャッシュキーを変えると全キャッシュが無効化され外部キャッシュへの移行時に移植できない、locale セグメントを足すと既存 URL が全部変わる、配色を変えると全画面に波及する（`D-9` / `NFR-18` / `AR-4` / `NFR-13`）。
 >
@@ -310,6 +310,11 @@
 > プレビュー URL が前提になるため、ここで確立できないと `SD-1` が成立しない。1 セッションに収まらない場合は
 > §5.4 の規則に従い **`E-22` + `E-1` を先行スプリントとして末尾番号で分割** する。
 
+> 🔵 **`SP-1` に加わる Cloudflare 固有の作業**（`D-16`〜`D-18`・手順の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md)）:
+> ① `@opennextjs/cloudflare` の導入と `wrangler.jsonc` / `open-next.config.ts` の作成 ② プレビュー版のアップロードと URL の PR 反映 ③ GitHub Actions（preview / production）④ 🔴 **Workers Free の実測ゲート**（p95 CPU・gzip バンドル）。
+> ⚠️ **CI 整備前のブートストラップ期間に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**（`INF-20` の例外。`SP-4` 以降は GitHub Actions 経由に一本化する）。
+> 🔴 **前提となる人間の作業**（一度きり・`A-6`）: Cloudflare API トークンの発行と、その値を GitHub Actions Secrets / Claude.ai 環境変数へ登録すること。これが済むまで ② 以降は実行できない。
+
 #### SP-2: URL とロケールの形が決まる（`S-0`）
 
 - **ゴール**: 🔴 **後から変えると全体に波及する境界を固定する** — URL のパラメータ名・ロケールの置き場所・配色
@@ -352,7 +357,7 @@
 - **含む**: `E-3`
 - **操作レビュー**:
   1. 同じキーワードで 2 回続けて検索する
-  2. **2 回目は GitHub API を呼んでいない**（`x-ratelimit-remaining` が減らない／ログに外部リクエストが出ない）
+  2. **2 回目は GitHub API を呼んでいない**（🔵 **確認手段の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §4.5**: レスポンスヘッダ `X-Cache-Status: HIT` を主経路とし、`X-GitHub-RateLimit-Remaining` が変わらないことで裏を取る）
   3. 詳細ページでも同様に 2 回目が外部リクエストなしで表示される
 - **対応 `AC`**: なし（`NFR-5` / `NFR-17` / `NFR-18`。`SP-4` のテストで担保する）
 - **見積もり**: `sp:8`（`use cache` の実挙動が未検証・`R-7`。`project-mission.md` の Dynamic 補正の実例と同型）

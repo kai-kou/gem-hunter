@@ -1,0 +1,14 @@
+{
+  "id": "cloudflare-infra-20260818",
+  "topic": "gem-hunter のインフラを Cloudflare 前提で確定させ、CLI 一次運用で自律開発できる形に落とす",
+  "brief": "ユーザー決定: (1) インフラは Cloudflare ベースで進める (2) 既存の Cloudflare アカウントを使い必要リソースを作成する (3) 自律開発のため MCP ではなく CLI（wrangler）を主経路にする。制約: docs/03_design/infrastructure/infrastructure-design.md の INF-1（サーバー側に個人情報を保持しない）/ INF-2（定常コストをゼロに近づける・超過時は課金ではなく停止に倒す）/ INF-3（Next.js 標準機能の範囲・TR-1〜TR-4）/ INF-4（人手の定常運用ゼロ）/ INF-5（事業者を決め打たない = アプリコードに事業者固有 API を持ち込まない・NFR-21）と、INF-6〜INF-22 の契約を壊さないこと。DB を持たない（D-5 追補）。SD-1 により全スプリントの PR に開けるプレビュー URL が要る。リサーチ結果は docs/01_research/infra/20260818-cloudflare-research.md（一次情報・2026-08-18 取得）にある。争点は少なくとも次の 5 つ: A) Workers Free（CPU 10ms・バンドル 3MB 圧縮後）のまま Next.js 16 の SSR を成立させられるか、それとも Workers Paid $5/月 を前提にすべきか（INF-2 と INF-6 の衝突・課金は A-6 でユーザー権限が要る） B) キャッシュ実装をどこに置くか（Workers Caching の cache.enabled / HTTP Cache-Control / OpenNext incremental cache（R2/D1/DO）/ KV）と、それが NFR-17 Cache Port・INF-5・D-5 追補（DB を持たない）と両立するか C) OpenNext アダプタ + wrangler.jsonc の採用が INF-5 / NFR-21 に違反しないか、違反しないと言える境界はどこか D) CLI 一次経路の具体形（GitHub Actions + wrangler-action か Workers Builds か、プレビュー URL の生成と機械取得、トークンの供給経路とローテーション、人間の GUI 作業をどこまで削れるか） E) 本番デプロイ先（D-7）も今この場で Cloudflare に確定すべきか、プレビュー（D-11）だけに留めるべきか。",
+  "participants": [
+    "cf_platform",
+    "cost_guard",
+    "cli_autonomy",
+    "privacy_lockin",
+    "docs_trace"
+  ],
+  "created_at": "2026-08-18T11:29:43+09:00",
+  "updated_at": "2026-08-18T11:29:43+09:00"
+}
