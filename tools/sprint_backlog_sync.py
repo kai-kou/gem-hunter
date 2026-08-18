@@ -196,8 +196,29 @@ def extract_existing_sp_numbers(issue_titles: list[str]) -> set[int]:
 # Issue 本文の組み立て
 # ──────────────────────────────────────────────
 
+# Issue タイトルから落とす装飾（ゴール行は Markdown なので強調・絵文字・コード記法を含む）
+_TITLE_DECORATION_RE = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u27BF\uFE0F]")
+# GitHub の Issue タイトル上限は 256 文字。余裕を見て 120 文字で切る
+TITLE_MAX_LEN = 120
+
+
+def sanitize_goal_for_title(goal: str) -> str:
+    """ゴール行を Issue タイトルに載る 1 行へ整える。
+
+    ゴールは Markdown の本文なので `**強調**`・`` `コード` ``・絵文字・装飾が混ざる。
+    そのままタイトルにすると `SP-2: 🔴 **後から...** — ...` のような読みにくい見出しになり、
+    一覧で番号以外を判別できなくなる。記法だけを落とし、文言は変えない。
+    """
+    text = goal.replace("**", "").replace("`", "")
+    text = _TITLE_DECORATION_RE.sub("", text)
+    text = " ".join(text.split())
+    if len(text) > TITLE_MAX_LEN:
+        text = text[: TITLE_MAX_LEN - 1].rstrip() + "…"
+    return text
+
+
 def build_issue_title(sprint: dict) -> str:
-    return f"SP-{sprint['number']}: {sprint['goal']}"
+    return f"SP-{sprint['number']}: {sanitize_goal_for_title(sprint['goal'])}"
 
 
 def build_issue_labels(sprint: dict) -> list[str]:
@@ -626,6 +647,35 @@ def _self_test_labels() -> list[str]:
     return failures
 
 
+def _self_test_title() -> list[str]:
+    """Issue タイトル整形（Markdown 記法・絵文字の除去と長さ制限）を検証する。"""
+    failures = []
+    cases = [
+        ("🔴 **境界を固定する** — URL の形", "境界を固定する — URL の形"),
+        ("`use cache` を入れる", "use cache を入れる"),
+        ("普通のゴール", "普通のゴール"),
+        ("  余白   が   多い  ", "余白 が 多い"),
+    ]
+    for src, want in cases:
+        got = sanitize_goal_for_title(src)
+        if got != want:
+            failures.append(f"タイトル整形: {src!r} → {got!r}（期待 {want!r}）")
+
+    long_title = sanitize_goal_for_title("あ" * 300)
+    if len(long_title) != TITLE_MAX_LEN:
+        failures.append(f"タイトル整形: 長文が {TITLE_MAX_LEN} 文字に収まっていない（{len(long_title)}）")
+    if not long_title.endswith("…"):
+        failures.append("タイトル整形: 切り詰め時に省略記号が付いていない")
+
+    parsed = parse_sprint_backlog(_FIXTURE_MD_OK)["sprints"]
+    title = build_issue_title(parsed[1])
+    if not title.startswith("SP-1: "):
+        failures.append(f"タイトル整形: 接頭辞が不正: {title!r}")
+    if not SP_TITLE_RE.match(title):
+        failures.append(f"タイトル整形: 既存判定用の正規表現に一致しない: {title!r}")
+    return failures
+
+
 def _self_test_decide() -> list[str]:
     failures = []
     r = decide(_FIXTURE_MD_OK, existing_issue_titles=[])
@@ -661,21 +711,30 @@ def _self_test_decide() -> list[str]:
 
 
 def run_self_test() -> int:
-    all_failures: list[str] = []
-    all_failures += _self_test_parser_ok()
-    all_failures += _self_test_parser_broken()
-    all_failures += _self_test_next_sp()
-    all_failures += _self_test_labels()
-    all_failures += _self_test_decide()
+    # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
+    groups = [
+        ("パーサ（正常系）", _self_test_parser_ok),
+        ("パーサ（異常系）", _self_test_parser_broken),
+        ("次に着手する SP の決定", _self_test_next_sp),
+        ("ラベル決定", _self_test_labels),
+        ("タイトル整形", _self_test_title),
+        ("decide 統合", _self_test_decide),
+    ]
+    failed_groups = 0
+    total_failures = 0
+    for name, fn in groups:
+        failures = fn()
+        if failures:
+            failed_groups += 1
+            total_failures += len(failures)
+            for f in failures:
+                print(f"FAIL[{name}]: {f}")
 
-    total_checks = 5
-    if all_failures:
-        for f in all_failures:
-            print(f"FAIL: {f}")
-        print(f"\nセルフテスト: {total_checks - len(set())} グループ中 失敗あり "
-              f"({len(all_failures)} 件の不一致)")
+    if total_failures:
+        print(f"\nセルフテスト: {len(groups)} グループ中 {failed_groups} グループ失敗 "
+              f"({total_failures} 件の不一致)")
         return 1
-    print(f"セルフテスト: {total_checks} グループ全て PASS")
+    print(f"セルフテスト: {len(groups)} グループ全て PASS")
     return 0
 
 
