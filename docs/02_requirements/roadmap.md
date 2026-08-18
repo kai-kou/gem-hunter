@@ -162,6 +162,8 @@
   - [ ] `R-6`: 運用コストが無料枠に収まることを試算済み（`inception-deck.md` Q10）
   - [ ] **独自ドメインの要否を決定済み**（MVP は `*.workers.dev`。Cloudflare 公式は workers.dev を business-critical 用途には非推奨としている）
   - [ ] **コスト撤退ラインの実額が確定している**（Workers Paid へ移行している場合。Budget alerts は通知のみで停止しないため、Billable Usage API の監視閾値として使う・`A-6`）
+  - [ ] **OAuth 検証用の `[env.dev]`（別 Worker）を持つかを決定済み**（`D-21`。プレビューは PR ごとに URL が変わりコールバック URL を事前登録できないため、OAuth 経路は固定 URL の環境でしか事前検証できない）
+  - [ ] **gradual deployment（`wrangler versions deploy --percentage`）を導入するかを決定済み**（`D-21`。`INF-21` はロールバックであって段階的展開ではないため、導入には新規決定が要る）
 - **通過しない場合の扱い**: 公開しない。🔴 **プロダクトの完成度とは無関係**（未通過は欠陥ではない）
 
 > 🔵 **`M-4` を `M-3` の後に置かない。** 公開判断は積み上げの進捗と独立しており、`M-2` 到達後いつでも通せる。
