@@ -255,10 +255,10 @@
 |---|---|---|
 | `T-1` | Cloudflare MCP の読み取り限定を `permissions` に反映 | ✅ 本 PR |
 | `T-2` | 本節（採否の決定）の記録 | ✅ 本 PR |
-| `T-3` | `CLAUDE.md` 破壊対策 3 点セットと検知ゲート | 骨格確立スプリント |
-| `T-4` | 自作スキル `opennext-cloudflare-deploy` | 骨格確立スプリント |
-| `T-5` | shadcn MCP + `next-devtools-mcp` の追加 | `SP-1`（ADR 確定後） |
-| `T-6` | Playwright Agents 導入 + 機械ゲート義務化 | `SP-4` |
-| `T-7` | `tdd-guard` の 4 条件付き導入 | `SP-4` |
-| `T-8` | 自作スキル `stack-testing` + `tools/check_a11y.py` | `SP-4` |
-| `T-9` | masuP9 の a11y 技法を移植 | `SP-10` |
+| `T-3` | `CLAUDE.md` 破壊対策 3 点セットと検知ゲート | 骨格確立スプリント（#50） |
+| `T-4` | 自作スキル `opennext-cloudflare-deploy` | 骨格確立スプリント（#50） |
+| `T-5` | shadcn MCP + `next-devtools-mcp` の追加 | `SP-1`（ADR 確定後・#51） |
+| `T-6` | Playwright Agents 導入 + 機械ゲート義務化 | `SP-4`（#52） |
+| `T-7` | `tdd-guard` の 4 条件付き導入 | `SP-4`（#52） |
+| `T-8` | 自作スキル `stack-testing` + `tools/check_a11y.py` | `SP-4`（#52） |
+| `T-9` | masuP9 の a11y 技法を移植 | `SP-10`（#53） |

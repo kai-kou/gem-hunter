@@ -16,14 +16,14 @@
 
 ### 前提: 「技術スタック適合性」の判定軸
 
-このレンズでは「star 数」「導入の手軽さ」ではなく、**追随の実態（バージョン表記・最終更新・実行時の依存関係）が本プロジェクトの確定スタックと一致しているか**だけで採否を判定する。リサーチ §1.1 の事実（アプリコード 0 行・`package.json` 未作成）が全争点の前提を変える点に注意。
+このレンズでは「star 数」「導入の手軽さ」ではなく、**追随の実態（バージョン表記・最終更新・実行時の依存関係）が本プロジェクトの確定スタックと一致しているか** だけで採否を判定する。リサーチ §1.1 の事実（アプリコード 0 行・`package.json` 未作成）が全争点の前提を変える点に注意。
 
 ---
 
 ### 争点A: 公式MCPをどれだけ足すか → **段階導入（今は不採用、SP到達時に個別追加）**
 
 - **`next-devtools-mcp`**: `/_next/mcp` は `next dev` の実行時エンドポイント（リサーチ §2.2）。**`next dev` を1度も回していない現時点では接続先が存在せず、機能しない**。加えて `get_errors` / `get_compilation_issues` は Next.js のコンパイル層のエラーであり、**Workers ランタイム（`@opennextjs/cloudflare` 経由の実行）固有の失敗を検出しない**。`cloudflare-infrastructure.md` 7.4 が定める「CLI（wrangler）が一次経路」の実行時検証は `wrangler dev` / `wrangler versions upload` で行うものであり、`next-devtools-mcp` はそれを代替しない。**リサーチ §2.3 が明記する「`@opennextjs/cloudflare` 向け公式資産は存在しない」という欠落を `next-devtools-mcp` は埋めない**（あくまで Next.js dev サーバー層の道具）。→ `SP-1`（Next.js 導入）以降に追加は妥当だが、「これで Workers 実行時の型・コンパイルエラーが拾える」という誤認は禁止すべき。
-- **shadcn MCP**: context7 とは役割が重複しない（context7 は汎用ドキュメント取得、shadcn MCP はレジストリの search/install という**操作**）。ただし `ui-ux-guidelines.md` 35 行目が「`-b radix` を付けずに `shadcn init` を実行する」ことを ADR 0001 が名指しする最大の運用リスクとして明記している。MCP 経由の `add` はプロジェクトが既に `-b radix` で初期化済みの `components.json` を読むだけなので `init` 自体を MCP に任せない限り安全 — **`init` は CLI で必ず先に実行し、MCP は `init` 後の `add` のみに限定使用**という運用条件を付けるべき。
+- **shadcn MCP**: context7 とは役割が重複しない（context7 は汎用ドキュメント取得、shadcn MCP はレジストリの search/install という **操作**）。ただし `ui-ux-guidelines.md` 35 行目が「`-b radix` を付けずに `shadcn init` を実行する」ことを ADR 0001 が名指しする最大の運用リスクとして明記している。MCP 経由の `add` はプロジェクトが既に `-b radix` で初期化済みの `components.json` を読むだけなので `init` 自体を MCP に任せない限り安全 — **`init` は CLI で必ず先に実行し、MCP は `init` 後の `add` のみに限定使用** という運用条件を付けるべき。
 - **Playwright MCP**: 争点D（Playwright Agents）採用時に `npx playwright init-agents` が `.mcp.json` を自動生成する（リサーチ §2.4）ため、**単体で先に足すと Agents 導入時に二重定義・競合の恐れ**。D の可否とセットで判断すべきで、A 単体では先送りが妥当。
 - **Cloudflare Documentation MCP**: 認証不要かつ既にセッション側で稼働中（リサーチ §1.5・§2.3）。`.mcp.json` への追加コストはほぼゼロで、`cloudflare-infrastructure.md` 7.4 の読み取り許可リストとも整合する。**これだけは今すぐ `.mcp.json` に固定してよい**（他の3つは「今は使えない/条件付き」）。
 
@@ -33,7 +33,7 @@
 
 ### 争点B: 外部スキル/プラグイン vs 自作スキル → **自作を主、公式個別資産のみ例外的に併用**
 
-リサーチ §3.3 の事実は決定的: **Next.js 16 に明示追随しているコミュニティ資産は2件のみ（★60 と ★22）で、wshobson（★38,899）・VoltAgent 等の大手コレクションは軒並み Next.js 14+/React 18+ のまま**。React 18 前提の記述は React 19 の変更点（例: Server Actions の扱い・`use` フック等）と食い違う可能性があり、**採用すれば「間違った書き方を教えるスキル」を自分で常駐させることになる**。さらに `@opennextjs/cloudflare` を扱うコミュニティ skill はゼロ、MSW2/zod 主題の skill もゼロ（§3.3）。つまり**本プロジェクトの技術的な肝（Next.js on Workers・MSW2 での ACL テスト）に届く外部資産は存在しない**。
+リサーチ §3.3 の事実は決定的: **Next.js 16 に明示追随しているコミュニティ資産は2件のみ（★60 と ★22）で、wshobson（★38,899）・VoltAgent 等の大手コレクションは軒並み Next.js 14+/React 18+ のまま**。React 18 前提の記述は React 19 の変更点（例: Server Actions の扱い・`use` フック等）と食い違う可能性があり、**採用すれば「間違った書き方を教えるスキル」を自分で常駐させることになる**。さらに `@opennextjs/cloudflare` を扱うコミュニティ skill はゼロ、MSW2/zod 主題の skill もゼロ（§3.3）。つまり **本プロジェクトの技術的な肝（Next.js on Workers・MSW2 での ACL テスト）に届く外部資産は存在しない**。
 
 一方 `application-architecture.md`(209行)/`testing-strategy.md`(148行)/`ui-ux-guidelines.md`(307行)/`cloudflare-infrastructure.md`(585行) は §1.2 の通り **What/Why/Constraints を高密度に確定済み**。空白は Why ではなく How の手順化。ここに星の多い汎用コレクションを入れても、確定済みの決定と矛盾する記述が紛れ込むリスクの方が「早く書ける」利益より大きい。
 
@@ -43,25 +43,25 @@
 
 ### 争点C: `tdd-guard` → **保留（Vitest 4 実追随が未確認）**
 
-リサーチは「Vitest レポーター実装済み」（★2,304・2026-08-16 更新）と書くが、**「Vitest 4 で動作確認済み」とは書いていない**（`vitest@latest` 指定で「実質追随」という推測表現に留まる・§3.3）。`testing-strategy.md` は Vitest 4 の Browser Mode stable 化を前提に採用を決めている（新しい API 面）。PreToolUse hook で Write/Edit を実際にブロックする常駐コードである以上、レポーター実装が Vitest 4 の新しいテスト実行フローと非互換なら **`SD-2`(TDD強制) を助けるはずが実装そのものを止める障害になる**。stack_fit の観点では「メンテ頻度は高いが対象バージョンの一致が文書上確認できない」ため、**採用は Vitest 4 導入後（`SP-4`）に実機で動作検証してから**が筋。今の時点での断定的な採用/不採用は時期尚早。
+リサーチは「Vitest レポーター実装済み」（★2,304・2026-08-16 更新）と書くが、**「Vitest 4 で動作確認済み」とは書いていない**（`vitest@latest` 指定で「実質追随」という推測表現に留まる・§3.3）。`testing-strategy.md` は Vitest 4 の Browser Mode stable 化を前提に採用を決めている（新しい API 面）。PreToolUse hook で Write/Edit を実際にブロックする常駐コードである以上、レポーター実装が Vitest 4 の新しいテスト実行フローと非互換なら **`SD-2`(TDD強制) を助けるはずが実装そのものを止める障害になる**。stack_fit の観点では「メンテ頻度は高いが対象バージョンの一致が文書上確認できない」ため、**採用は Vitest 4 導入後（`SP-4`）に実機で動作検証してから** が筋。今の時点での断定的な採用/不採用は時期尚早。
 
 ---
 
 ### 争点D: Playwright Agents → **最も適合度が高い。SP-4での採用を推奨**
 
-`npx playwright init-agents` は **Playwright 本体 v1.56+ に同梱**され、プロジェクトが実際にインストールする Playwright のバージョンに直接紐づく（リサーチ §2.4）。これは今回のリサーチで洗い出された資産の中で**唯一「別リポジトリの更新頻度に依存せず、自動的にプロジェクトの実バージョンに追随する」構造を持つ**（wshobson・secondsky 等は全て「そのリポジトリが更新されるか」に運命を握られている）。stack_fit レンズでは他のどの選択肢よりリスクが低い。`testing-strategy.md` が Playwright を `SP-4` で導入すると明記しているため、**導入は SP-4 と同時**が妥当（争点F にも直結）。
+`npx playwright init-agents` は **Playwright 本体 v1.56+ に同梱** され、プロジェクトが実際にインストールする Playwright のバージョンに直接紐づく（リサーチ §2.4）。これは今回のリサーチで洗い出された資産の中で **唯一「別リポジトリの更新頻度に依存せず、自動的にプロジェクトの実バージョンに追随する」構造を持つ**（wshobson・secondsky 等は全て「そのリポジトリが更新されるか」に運命を握られている）。stack_fit レンズでは他のどの選択肢よりリスクが低い。`testing-strategy.md` が Playwright を `SP-4` で導入すると明記しているため、**導入は SP-4 と同時** が妥当（争点F にも直結）。
 
 ---
 
 ### 争点E: アクセシビリティ → **実行ゲートは自作（決定済み）、外部資産は技法の参考のみ**
 
-`testing-strategy.md` は既に **`@axe-core/playwright` を `NFR-26` の実行機構として確定**している（§2 道具表）。つまり「E2E の各主要画面で axe を回す」という**強制の仕組み自体は決定済みで、外部プラグインを入れる余地がそもそもない**（Community-Access の37 agents・axe MCP 等は Deque 有料サブスク必須で A-6 相当・§2.4）。stack_fit として外部 a11y 資産に残る役割は「axe-core が拾わない技法（フォーカスインジケーター・320px リフロー・テキスト間隔・ターゲットサイズ）をどう検証するか」という **How の補完**のみ（§3.2・masuP9）。ここは争点Bと同じ結論: **skill/plugin として依存を増やすのではなく、確認された技法だけを自作 E2E テストに移植する**。masuP9 は日本の WAIC 準拠を謳うが、本プロジェクトの `NFR-26` は WCAG 2.2 AA（英語圏基準）を指しているため、**準拠先の基準が一致するかは移植時に個別確認が必要**（無条件の技法採用は避ける）。
+`testing-strategy.md` は既に **`@axe-core/playwright` を `NFR-26` の実行機構として確定** している（§2 道具表）。つまり「E2E の各主要画面で axe を回す」という **強制の仕組み自体は決定済みで、外部プラグインを入れる余地がそもそもない**（Community-Access の37 agents・axe MCP 等は Deque 有料サブスク必須で A-6 相当・§2.4）。stack_fit として外部 a11y 資産に残る役割は「axe-core が拾わない技法（フォーカスインジケーター・320px リフロー・テキスト間隔・ターゲットサイズ）をどう検証するか」という **How の補完** のみ（§3.2・masuP9）。ここは争点Bと同じ結論: **skill/plugin として依存を増やすのではなく、確認された技法だけを自作 E2E テストに移植する**。masuP9 は日本の WAIC 準拠を謳うが、本プロジェクトの `NFR-26` は WCAG 2.2 AA（英語圏基準）を指しているため、**準拠先の基準が一致するかは移植時に個別確認が必要**（無条件の技法採用は避ける）。
 
 ---
 
 ### 争点F: 導入タイミング → **「今」入れられるものはほぼ無い。SP到達ゲート方式を推奨**
 
-リサーチ §1.1 の事実（`package.json` / `src/` / `app/` / `.github/workflows/` が全て未作成）は F の結論を強く規定する。**争点A・C・D で挙げた資産はすべて `npx <パッケージ>` が対象パッケージ（Next.js・Playwright・shadcn CLI）を前提にした実行**であり、**依存パッケージが存在しない今は物理的に動作しない**。唯一の例外は Cloudflare Documentation MCP（依存パッケージ不要・リモートURL型）。
+リサーチ §1.1 の事実（`package.json` / `src/` / `app/` / `.github/workflows/` が全て未作成）は F の結論を強く規定する。**争点A・C・D で挙げた資産はすべて `npx <パッケージ>` が対象パッケージ（Next.js・Playwright・shadcn CLI）を前提にした実行** であり、**依存パッケージが存在しない今は物理的に動作しない**。唯一の例外は Cloudflare Documentation MCP（依存パッケージ不要・リモートURL型）。
 
 推奨マッピング:
 
@@ -82,41 +82,41 @@
 # conflict_guard 第1ラウンド主張
 
 ## 総論
-本リサーチが提示する外部資産の多くは「決定はドキュメントに確定済み、外部資産は How の手順化」という前提（research §1.2 結論）に反し、**確定済み SSOT と矛盾する初期値・慣行を持ち込む**ものが複数ある。SSOT を増やさない観点で最大リスクは B（shadcn/tailwind/clean-arch 系スキル）と F（`next dev` の AGENTS.md 自動生成）。
+本リサーチが提示する外部資産の多くは「決定はドキュメントに確定済み、外部資産は How の手順化」という前提（research §1.2 結論）に反し、**確定済み SSOT と矛盾する初期値・慣行を持ち込む** ものが複数ある。SSOT を増やさない観点で最大リスクは B（shadcn/tailwind/clean-arch 系スキル）と F（`next dev` の AGENTS.md 自動生成）。
 
 ## A: 公式 MCP 追加 — context7 との重複はないが、`.mcp.json` 運用規律との衝突あり
 - context7（`resolve-library-id`/`query-docs`）は静的ドキュメント参照、`next-devtools-mcp`（dev サーバー実行時イントロスペクション）・shadcn MCP（コンポーネント install）・Playwright MCP（ブラウザ操作）は役割が異なり **重複ではない**。
-- ただし `cloudflare-infrastructure.md` §7.4 が Cloudflare MCP を「読み取り 4 ツールのみ許可・書き込み禁止」と定めているのに `.claude/settings.json` の `permissions` に未反映という **既存ドリフト**が research §1.5 で既に指摘されている（`/home/user/gem-hunter/.claude/settings.json`）。ここに新規 MCP（shadcn/next-devtools/playwright）を追加すると、同じパターン（ドキュメントで定めた可否がpermissionsに反映されない）を再生産する。**新規 MCP を足すなら、同一 PR で `.claude/settings.json` の許可範囲を明示すること**を条件にすべき。
-- **A と D の衝突**: research §2.4 は `microsoft/playwright-mcp` と Playwright Agents（`npx playwright init-agents` が独自に `.mcp.json` を生成）を **別項目として両方リストしている**が、両方導入すると Playwright 用 MCP サーバーが二重登録される。どちらか一方に決めるべきで、両方を「導入候補」のまま残すのは危険。
+- ただし `cloudflare-infrastructure.md` §7.4 が Cloudflare MCP を「読み取り 4 ツールのみ許可・書き込み禁止」と定めているのに `.claude/settings.json` の `permissions` に未反映という **既存ドリフト** が research §1.5 で既に指摘されている（`/home/user/gem-hunter/.claude/settings.json`）。ここに新規 MCP（shadcn/next-devtools/playwright）を追加すると、同じパターン（ドキュメントで定めた可否がpermissionsに反映されない）を再生産する。**新規 MCP を足すなら、同一 PR で `.claude/settings.json` の許可範囲を明示すること** を条件にすべき。
+- **A と D の衝突**: research §2.4 は `microsoft/playwright-mcp` と Playwright Agents（`npx playwright init-agents` が独自に `.mcp.json` を生成）を **別項目として両方リストしている** が、両方導入すると Playwright 用 MCP サーバーが二重登録される。どちらか一方に決めるべきで、両方を「導入候補」のまま残すのは危険。
 
 ## B: 外部スキル vs 自作スキル（SSOT 保全の核心）
 🔴 **最大の具体的衝突**: `/home/user/gem-hunter/docs/adr/0001-ui-stack.md` §3 は shadcn/ui の新規既定が Radix UI ではなく Base UI に変わったことを把握した上で、a11y 保証の一次情報がある Radix を **明示的に選び直した**（`npx shadcn init -b radix`）。`/home/user/gem-hunter/docs/03_design/ui-ux/ui-ux-guidelines.md` §1「やってはいけないこと」の先頭は「`-b radix` を付けずに `shadcn init` を実行する」ことを名指しで禁止している。
-  - secondsky/claude-skills の `tailwind-v4-shadcn` や wshobson の `tailwind-design-system` を **そのまま導入**すると、その skill 本文は一般的な `shadcn init`（= 現在の既定 Base UI）を案内している可能性が高い。中身を読まずに導入すれば、ADR 0001 が最も警戒した運用リスクをスキルが自動的に踏み抜く。**導入するなら中身を全文レビューし、`-b radix` 指定に書き換えてから採用する（外部の記述をそのまま信じない）**。
+  - secondsky/claude-skills の `tailwind-v4-shadcn` や wshobson の `tailwind-design-system` を **そのまま導入** すると、その skill 本文は一般的な `shadcn init`（= 現在の既定 Base UI）を案内している可能性が高い。中身を読まずに導入すれば、ADR 0001 が最も警戒した運用リスクをスキルが自動的に踏み抜く。**導入するなら中身を全文レビューし、`-b radix` 指定に書き換えてから採用する（外部の記述をそのまま信じない）**。
   - `nathankim0/clean-architecture-skills` は research §3.5 で「導入しない」と既に結論済み。理由も的確（総コミット2・自リポジトリの `architecture-rules.md` + `check_architecture_boundaries.py` で足りる）。この結論は維持すべき。一般に外部の Clean Architecture 系スキルは「集約ルート・リポジトリパターン」を推奨しがちだが、`/home/user/gem-hunter/docs/rules/architecture-rules.md` §3 は「🔴 採らないもの: 集約ルート・リポジトリパターン（永続化）・ドメインイベント・CQRS」と明示している。wshobson の `architecture-patterns` を導入する場合も同じ地雷がある。
-- **判定**: B は「自作に落とす」を既定にすべき。外部スキルを採る場合は **導入前の全文レビューで ADR 0001 / `architecture-rules.md` の禁止事項と矛盾しないことを確認**するゲートを必須にする。
+- **判定**: B は「自作に落とす」を既定にすべき。外部スキルを採る場合は **導入前の全文レビューで ADR 0001 / `architecture-rules.md` の禁止事項と矛盾しないことを確認** するゲートを必須にする。
 
 ## C: tdd-guard — 二重にはならないが、責務境界が曖昧になる
-- 既存の TDD 検査は `/home/user/gem-hunter/docs/04_development/testing-strategy.md` §4（フェイク優先・MSW はACLのみ・`vi.mock`最終手段）+ `architecture-rules.md` §4「test: コミット → feat: コミットの順」を **`self_review_check.py`（PR 前・事後・Warning）** が検査する仕組み。
-- `tdd-guard` は **PreToolUse hook で Write/Edit を実際にブロックする**（事前・予防）。検査タイミングが違うため機械的な二重実行にはならないが、**「TDD を誰が強制するか」の権威が 2 箇所に分裂**する（self_review_check.py と tdd-guard）。矛盾した判定が出た場合にどちらを正とするか未定義になる。
-- `.claude/settings.json`（`/home/user/gem-hunter/.claude/settings.json` 118〜154 行）の `PreToolUse` は既に `matcher: "Bash|mcp__github__create_pull_request"` で `pre-tool-use-router.sh` を配線済み。tdd-guard を追加するには新規 matcher（`Write|Edit`）のエントリを追加する形になり、配列としては技術的に共存可能だが、**19 hooks を「グループ別に整理した表」（CLAUDE.md ハーネス節）に新規グループが増える**ため CLAUDE.md の更新が必須。
+- 既存の TDD 検査は `/home/user/gem-hunter/docs/04_development/testing-strategy.md` §4（フェイク優先・MSW はACLのみ・`vi.mock` 最終手段）+ `architecture-rules.md` §4「test: コミット → feat: コミットの順」を **`self_review_check.py`（PR 前・事後・Warning）** が検査する仕組み。
+- `tdd-guard` は **PreToolUse hook で Write/Edit を実際にブロックする**（事前・予防）。検査タイミングが違うため機械的な二重実行にはならないが、**「TDD を誰が強制するか」の権威が 2 箇所に分裂** する（self_review_check.py と tdd-guard）。矛盾した判定が出た場合にどちらを正とするか未定義になる。
+- `.claude/settings.json`（`/home/user/gem-hunter/.claude/settings.json` 118〜154 行）の `PreToolUse` は既に `matcher: "Bash|mcp__github__create_pull_request"` で `pre-tool-use-router.sh` を配線済み。tdd-guard を追加するには新規 matcher（`Write|Edit`）のエントリを追加する形になり、配列としては技術的に共存可能だが、**19 hooks を「グループ別に整理した表」（CLAUDE.md ハーネス節）に新規グループが増える** ため CLAUDE.md の更新が必須。
 - 追加コスト: tdd-guard は編集のたびに追加のモデル呼び出しが発生する（research §3.1 の注記）。Hot 層は既に +16% 超過（research §1.3）というコンテキスト予算問題とは別軸だが、**セッションコストの二重投資**（self_review_check.py は無料の静的チェック、tdd-guard は都度LLM検証）になる点は要検討。
 - **判定**: 導入するなら self_review_check.py の「事後・コミット順序」チェックとの役割分担（tdd-guard=予防、self_review_check.py=最終防衛線）を明文化しないと、SSOT が 2 つに割れる。
 
 ## D: Playwright Agents — `.claude/agents/` と `check_agent_definitions.py` への実害あり
-- 現状 `/home/user/gem-hunter/.claude/agents/` には `owner.md`（PO ロール）が 1 件のみ。`npx playwright init-agents --loop=claude` は **planner / generator / healer の3ファイルを無条件生成**し、かつ `.mcp.json` も生成する。
-- `/home/user/gem-hunter/tools/check_agent_definitions.py` は `.claude/agents/*.md` の `tools` フィールドを公式フィルタ仕様と突合し、zero tools（ERROR）や MCP-only（WARN）を検出する。**Playwright Agents が生成する frontmatter がこのチェックを通る保証はない**（外部ツールが Claude Code の tools フィルタ仕様を意識して生成しているとは限らない）。導入したら **必ず `python3 tools/check_agent_definitions.py` を実行してから commit する**運用ゲートが要る。
+- 現状 `/home/user/gem-hunter/.claude/agents/` には `owner.md`（PO ロール）が 1 件のみ。`npx playwright init-agents --loop=claude` は **planner / generator / healer の3ファイルを無条件生成** し、かつ `.mcp.json` も生成する。
+- `/home/user/gem-hunter/tools/check_agent_definitions.py` は `.claude/agents/*.md` の `tools` フィールドを公式フィルタ仕様と突合し、zero tools（ERROR）や MCP-only（WARN）を検出する。**Playwright Agents が生成する frontmatter がこのチェックを通る保証はない**（外部ツールが Claude Code の tools フィルタ仕様を意識して生成しているとは限らない）。導入したら **必ず `python3 tools/check_agent_definitions.py` を実行してから commit する** 運用ゲートが要る。
 - `.mcp.json` の生成が既存の `context7`/`github` 登録済み `.mcp.json`（research §1.5）を **上書きするか追記するか未検証**。上書きなら A の「MCP 二重登録」問題と合わせて実質的なデータ損失リスク。導入前に `git diff` で必ず確認すべき。
 - **判定**: 「採る」なら generator/healer だけを個別評価し、無条件の一括 init コマンドは使わない（生成物を精査してから commit）。
 
 ## E: アクセシビリティ — 自作ゲートを主、外部資産は参考限定
 - ADR 0001 §3 の判断基準は「品質保証が一次情報で明文化されているか」。これは **外部 skill/agent パッケージそのものにも同じ基準で適用すべき**。`Community-Access/accessibility-agents`（37 agents 全部同梱）は research §3.2 が自ら「過剰」と注記済み。37 エージェントを丸ごと入れると `skill-audit`（`/home/user/gem-hunter/.claude/skills/skill-audit/SKILL.md`）が検出対象にしている「トリガー衝突」「責務重複」を確実に誘発する（既存 `code-review` スキルの「観点別フレッシュ文脈レビュー」と役割が被る a11y 系エージェントが複数入る）。
-- `/home/user/gem-hunter/docs/01_research/tooling/20260818-claude-code-assets-research.md` §1.4 は「フロントエンド品質ゲート（ESLint / TypeScript strict / axe / Lighthouse 相当）が1つも存在しない」ことを明確な空白と認めている。ここは **真の空白**であり、既存資産との衝突はない。
+- `/home/user/gem-hunter/docs/01_research/tooling/20260818-claude-code-assets-research.md` §1.4 は「フロントエンド品質ゲート（ESLint / TypeScript strict / axe / Lighthouse 相当）が1つも存在しない」ことを明確な空白と認めている。ここは **真の空白** であり、既存資産との衝突はない。
 - 判定: 空白を埋める主手段は **`check_architecture_boundaries.py` と同型の自作機械ゲート**（`tools/check_a11y.py` 等、axe MCP か Playwright MCP を叩く）にすべき。masuP9（4 skill・小粒）はスクリプトの参考実装としてのみ読む。37 agent パッケージ（Community-Access）は導入対象から外す。
 
 ## F: 導入タイミング — 最優先で押さえるべきは AGENTS.md 自動生成の副作用
-- research §4 が指摘する **Next.js 16.3 `next dev` の `AGENTS.md`/`CLAUDE.md` 自動生成/upsert** は、外部資産の中で唯一「明示的に導入していないのに、既存 SSOT（`CLAUDE.md` 本体）を書き換えうる」項目。CLAUDE.md はこのリポジトリの最上位 SSOT（本メッセージの前提コンテキストそのもの）であり、**衝突ではなく「上書き」レベルの実害**になる。
-- 対策は `next.config.ts` に `agentRules: false` を **`SP-1` の依存導入と同一コミットで先に設定**すること。これは「決定してから入れる」のではなく「入れる前に無効化する」順序が必要な唯一の項目。
-- ADR 0001 §7 の未確認事項#1（shadcn/ui × Next.js 16 互換性、`SP-1` で確認予定）が確定するまでは、B で懸念した shadcn/tailwind 系の外部スキル本文を書き込む・調整する作業は **確定後に着手**すべき（ADR が supersede された場合、外部スキルの記述と自リポジトリの決定が二重にずれる）。
+- research §4 が指摘する **Next.js 16.3 `next dev` の `AGENTS.md`/`CLAUDE.md` 自動生成/upsert** は、外部資産の中で唯一「明示的に導入していないのに、既存 SSOT（`CLAUDE.md` 本体）を書き換えうる」項目。CLAUDE.md はこのリポジトリの最上位 SSOT（本メッセージの前提コンテキストそのもの）であり、**衝突ではなく「上書き」レベルの実害** になる。
+- 対策は `next.config.ts` に `agentRules: false` を **`SP-1` の依存導入と同一コミットで先に設定** すること。これは「決定してから入れる」のではなく「入れる前に無効化する」順序が必要な唯一の項目。
+- ADR 0001 §7 の未確認事項#1（shadcn/ui × Next.js 16 互換性、`SP-1` で確認予定）が確定するまでは、B で懸念した shadcn/tailwind 系の外部スキル本文を書き込む・調整する作業は **確定後に着手** すべき（ADR が supersede された場合、外部スキルの記述と自リポジトリの決定が二重にずれる）。
 - 結論: 導入順序は ①`agentRules:false` の先行設定 → ②MCP（A, 低リスクなものから）→ ③ ADR 0001 #1 確定後に B（スタック特化スキル、全文レビュー必須）→ ④ D（Playwright Agents、生成物精査必須）→ ⑤ E（自作ゲート）。C（tdd-guard）は責務分担が明文化できた場合のみ。
 
 ### `risk_ops` — 主張
@@ -131,31 +131,31 @@
 - `IS_SANDBOX=yes` / `CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE=cloud_default` を確認。`security-posture-controls.md` の「クラウドの実効防御は ①コンテナ隔離 ②permissions ACL ③PreToolUse フックの3層」という記述と整合。
 
 ### A: 公式 MCP をどれだけ足すか
-- npx 起動型（`next-devtools-mcp` / shadcn MCP / Playwright MCP）は **技術的にはクラウドで動く**（上記検証）。ただし `.mcp.json` はリポジトリ管理でありローカル実行者とも共有される。`npx -y <pkg>@latest` は **バージョン無指定=毎回最新を取得**する構成で、サプライチェーン上は「破壊的変更・悪意あるパッケージ更新を無条件に取り込む」経路になる。**主張**: 追加する場合は `@latest` を使わず、動作確認済みのバージョンをピン留めして `.mcp.json` に記載する（`agent-team.md` のモデルエイリアス方針とは逆で、MCP パッケージはピン留めが原則）。
+- npx 起動型（`next-devtools-mcp` / shadcn MCP / Playwright MCP）は **技術的にはクラウドで動く**（上記検証）。ただし `.mcp.json` はリポジトリ管理でありローカル実行者とも共有される。`npx -y <pkg>@latest` は **バージョン無指定=毎回最新を取得** する構成で、サプライチェーン上は「破壊的変更・悪意あるパッケージ更新を無条件に取り込む」経路になる。**主張**: 追加する場合は `@latest` を使わず、動作確認済みのバージョンをピン留めして `.mcp.json` に記載する（`agent-team.md` のモデルエイリアス方針とは逆で、MCP パッケージはピン留めが原則）。
 - 認証要否の切り分け（A-6 該当）:
   - **不要**: Cloudflare Documentation MCP（既に稼働中）、`next-devtools-mcp`（dev サーバーのローカル `/_next/mcp` に接続するだけ）、shadcn MCP（レジストリ browse は無認証）
   - **A-6 該当（ユーザー操作が物理的に必要）**: Cloudflare Workers Bindings/Builds/Observability MCP（OAuth）、Vercel plugin 内 MCP（Vercel トークン）、axe MCP（後述 E）
-  - Cloudflare 16 MCP のうち `cloudflare-infrastructure.md` §7.4 が定めた「読み取り4ツールのみ許可」が `.claude/settings.json` の `permissions` に未反映というドリフトは、**新規 MCP を足す前に埋めるべき既存負債**として扱う（新規追加のたびに同じドリフトを重ねない）。
+  - Cloudflare 16 MCP のうち `cloudflare-infrastructure.md` §7.4 が定めた「読み取り4ツールのみ許可」が `.claude/settings.json` の `permissions` に未反映というドリフトは、**新規 MCP を足す前に埋めるべき既存負債** として扱う（新規追加のたびに同じドリフトを重ねない）。
 
 ### B: 外部スキル/プラグインか自作か
 - 公式マーケット（`anthropics/claude-plugins-official` 経由の `/plugin install`）は一次配布であり、`skill-audit` の監査対象にもなる正規経路。**リスクは低いと判断**。
-- 非公式（`secondsky/claude-skills` 142件・`wshobson/agents` 181 skills 等）は SKILL.md 内に **任意の Bash コマンド列**を含みうる。本リポジトリは `bypassPermissions: true`（確認プロンプトなし）で運用しているため、大量の外部スキルを導入するとは「未読の外部コードに実行許可を事前付与する」のと同義になる。`security-posture-controls.md` の deny リスト・PreToolUse フックは秘密情報アクセスと main push は塞ぐが、**スキル本文が指示する任意の通常コマンド実行そのものは止めない**設計（意図的な補償統制であって漏れではない）。**主張**: 個別スキル単位で導入するなら SKILL.md 全文を読んでから import し、142件一括導入のような形は取らない。
-- 保守コストの試算: `wshobson/agents`（202 agents）は `nextjs-app-router-patterns` が "Next.js 14+" 表記のまま（リサーチ文書 §3.1 で確認済み）。**外部資産は本プロジェクトの Next.js 16 追随速度より遅い**ため、導入すれば「本体より古い情報源を保守し続ける」コストが恒久的に発生する。`architecture-rules.md` + `check_architecture_boundaries.py` という自前の機械ゲートが既にあるアーキテクチャ領域は、**自作の勝ち**（リサーチ文書 §3.5 の `nathankim0` 判断と同結論）。
+- 非公式（`secondsky/claude-skills` 142件・`wshobson/agents` 181 skills 等）は SKILL.md 内に **任意の Bash コマンド列** を含みうる。本リポジトリは `bypassPermissions: true`（確認プロンプトなし）で運用しているため、大量の外部スキルを導入するとは「未読の外部コードに実行許可を事前付与する」のと同義になる。`security-posture-controls.md` の deny リスト・PreToolUse フックは秘密情報アクセスと main push は塞ぐが、**スキル本文が指示する任意の通常コマンド実行そのものは止めない** 設計（意図的な補償統制であって漏れではない）。**主張**: 個別スキル単位で導入するなら SKILL.md 全文を読んでから import し、142件一括導入のような形は取らない。
+- 保守コストの試算: `wshobson/agents`（202 agents）は `nextjs-app-router-patterns` が "Next.js 14+" 表記のまま（リサーチ文書 §3.1 で確認済み）。**外部資産は本プロジェクトの Next.js 16 追随速度より遅い** ため、導入すれば「本体より古い情報源を保守し続ける」コストが恒久的に発生する。`architecture-rules.md` + `check_architecture_boundaries.py` という自前の機械ゲートが既にあるアーキテクチャ領域は、**自作の勝ち**（リサーチ文書 §3.5 の `nathankim0` 判断と同結論）。
 
 ### C: `tdd-guard` を入れるか
-- PreToolUse(Write|Edit) で編集経路に外部コードが常駐する。現行 `pre-tool-use-router.sh` は `matcher: "Bash|mcp__github__create_pull_request"` のみなので **マッチャーは衝突しない**（別エントリとして追加可能）が、「フックが最終防衛線」という `security-posture-controls.md` §1.3 の設計思想に **サードパーティが加わる**ことは明記すべき変更。
-- 追加のモデル呼び出しコストは、本リポジトリが `env.DISABLE_NON_ESSENTIAL_MODEL_CALLS: 1` を明示設定している方針と**目的が相反**する（tdd-guard の検証呼び出しは非必須モデル呼び出しの典型）。**主張**: 導入するなら `DISABLE_NON_ESSENTIAL_MODEL_CALLS` の例外として明示的に許可する判断が要る。バージョンピン必須（★2,304・MIT・2026-08-16 更新で活性は高いが、PreToolUse ブロック権限を持つコードなので diff レビューなしの自動追従は禁止）。
+- PreToolUse(Write|Edit) で編集経路に外部コードが常駐する。現行 `pre-tool-use-router.sh` は `matcher: "Bash|mcp__github__create_pull_request"` のみなので **マッチャーは衝突しない**（別エントリとして追加可能）が、「フックが最終防衛線」という `security-posture-controls.md` §1.3 の設計思想に **サードパーティが加わる** ことは明記すべき変更。
+- 追加のモデル呼び出しコストは、本リポジトリが `env.DISABLE_NON_ESSENTIAL_MODEL_CALLS: 1` を明示設定している方針と **目的が相反** する（tdd-guard の検証呼び出しは非必須モデル呼び出しの典型）。**主張**: 導入するなら `DISABLE_NON_ESSENTIAL_MODEL_CALLS` の例外として明示的に許可する判断が要る。バージョンピン必須（★2,304・MIT・2026-08-16 更新で活性は高いが、PreToolUse ブロック権限を持つコードなので diff レビューなしの自動追従は禁止）。
 - 保守コスト: Vitest レポーター実装済みなので技術スタックとの整合は良いが、「誰が `tdd-guard` の破壊的変更に追随するか」の担当（`claude-code-spec-sync` 相当のレーン）が未定。担当を決めずに入れると陳腐化リスクを他資産と同じく抱える。
 
 ### D: Playwright Agents
-- 上記実地検証の通り、**ブラウザバイナリ既存でクラウド実行の技術的障壁は当初想定より低い**。`npx playwright init-agents --loop=claude` は `.claude/agents/` に 3 ファイル + `.mcp.json` を **生成**する（＝リポジトリの構成ファイルを書き換える）ため、生成後は差分を人間可読な状態でレビューしてからコミットする（生成物をそのまま無検証コミットしない）。
+- 上記実地検証の通り、**ブラウザバイナリ既存でクラウド実行の技術的障壁は当初想定より低い**。`npx playwright init-agents --loop=claude` は `.claude/agents/` に 3 ファイル + `.mcp.json` を **生成** する（＝リポジトリの構成ファイルを書き換える）ため、生成後は差分を人間可読な状態でレビューしてからコミットする（生成物をそのまま無検証コミットしない）。
 - 認証・課金は不要（A-6 非該当）。**主張**: D は技術的には採用可能だが、生成ファイルのレビュー工程を SD-2（TDD 主体）のワークフローに組み込むまでが導入の完了条件。
 
 ### E: アクセシビリティ — axe MCP（有料）は不要、自作機械ゲートで足りる
 - axe MCP（Deque 公式）は **axe DevTools 有料サブスク必須 = A-6 相当**。一方 `testing-strategy.md` が既に選定している `@axe-core/playwright` は **無料の OSS ライブラリ**（axe-core 本体）であり、axe MCP とは別物。**主張**: E は「有料 MCP を採る/A-6 確認する」ではなく、**既に決定済みの `@axe-core/playwright` を Playwright E2E テストの中で機械ゲート化する**（自作）だけで要件を満たす。A-6 の課金確認自体が不要になる設計を推奨。
 
 ### F: 導入タイミング
-- Hot 層予算が既に基準比 +16% 超過（リサーチ文書 §1.3）。**主張**: MCP/skill/subagent 形態（常駐は `description` のみ）に限定するなら Hot 層は圧迫しないが、`.mcp.json` へのサーバー追加は **セッション起動時に毎回 npx を叩く**ため、追加数に比例してセッション起動レイテンシと失敗点が増える。段階導入（`SP-1`〜`SP-4` で確定した範囲だけ先に入れ、以降は各 SP 着手時に必要な分だけ足す）を推奨。
+- Hot 層予算が既に基準比 +16% 超過（リサーチ文書 §1.3）。**主張**: MCP/skill/subagent 形態（常駐は `description` のみ）に限定するなら Hot 層は圧迫しないが、`.mcp.json` へのサーバー追加は **セッション起動時に毎回 npx を叩く** ため、追加数に比例してセッション起動レイテンシと失敗点が増える。段階導入（`SP-1`〜`SP-4` で確定した範囲だけ先に入れ、以降は各 SP 着手時に必要な分だけ足す）を推奨。
 - 🔴 **`CLAUDE.md` 破壊リスクの回避策（具体・必須）**:
   1. `SP-1`（Next.js scaffold 作成コミット）で **`next.config.ts` に `agentRules: false` を最初のコミットから含める**。「後で無効化する」ではなく「有効化させたことがない」状態を最初から作る。
   2. 機械ゲートを追加する: `grep -q '^@AGENTS.md$' CLAUDE.md && exit 1` 相当のチェックを `tools/check_rules_sync.sh` 等の既存衛生スクリプトに 1 行追加し、`next dev` を一度でも実行した後に `CLAUDE.md` が意図せず書き換わっていないか機械検知する。
@@ -238,7 +238,7 @@
 | **自作ルール + `self_review_check.py` 拡張** | ルール追加 ~500B | インハウス管理。`sprint-development-rules.md` に統合可 |
 | **superpower skill（Anthropic 公式）** | description ~600B | **既に公式マーケットにあり、追加導入で新規コストなし** |
 
-**判定**: `tdd-guard` は「実装を行う前にテストを**強制**する」外部 hook。**削減対象外②（実観測ベースの行動規範）** と衝突する（本リポジトリは既に SD-2 で TDD を規律化・実施してから修正検出する設計）。実装拒否フック化するなら追加のモデル呼び出しコスト（推定 +1〜2% 出力トークン）が発生する点も勘案し、スキル形式での検証ルール提供に留めるのが現実的。
+**判定**: `tdd-guard` は「実装を行う前にテストを **強制** する」外部 hook。**削減対象外②（実観測ベースの行動規範）** と衝突する（本リポジトリは既に SD-2 で TDD を規律化・実施してから修正検出する設計）。実装拒否フック化するなら追加のモデル呼び出しコスト（推定 +1〜2% 出力トークン）が発生する点も勘案し、スキル形式での検証ルール提供に留めるのが現実的。
 
 ---
 
@@ -374,7 +374,7 @@
 | `SP-1`〜`SP-3` | ❌ 導入しない。`testing-strategy.md` §5 が **明示的にテスト基盤未整備期間の緩和**（「書ける対象から書く」）を認めており、`tdd-guard` が hard block すると **この飼い主承認済みの緩和規定と正面衝突** する |
 | **`SP-4`（回帰を検知できるスプリント）** | ✅ ここで初めて導入する。Vitest レポーター実装済みで本スタック（Vitest 4）と直結。`SD-2`「テストを先に書く」を機械強制でき、以降 `SP-5`〜`SP-11` 全スプリントに効く |
 
-**結論**: `tdd-guard` は「今すぐ入れるべき」の代表候補に見えるが、**導入タイミングを誤ると既存ルールと矛盾する**ため `SP-4` 固定とする。
+**結論**: `tdd-guard` は「今すぐ入れるべき」の代表候補に見えるが、**導入タイミングを誤ると既存ルールと矛盾する** ため `SP-4` 固定とする。
 
 ---
 
@@ -442,24 +442,24 @@
 
 **budget_meta の「14,506B ≒ 15,000 文字上限にほぼ到達」は単位の取り違え**。research §3.4 が明示する上限は `15,000 文字`（`SLASH_COMMAND_TOOL_CHAR_BUDGET` の既定値・secondsky README 由来）であり **文字数上限であってバイト数上限ではない**。日本語 description は 1 文字が UTF-8 で平均 2.2〜3 バイトを占めるため、現在の消費は上限の **6,394/15,000 ≒ 43%** に過ぎず、「ほぼ到達」は誤り。**残り約 8,600 文字の余地がある。**
 
-この誤りは budget_meta のシナリオ表自体にも既に矛盾として出ている: シナリオB「SP-1〜4 で +4 skill・+1,800B」の累積を budget_meta は「16,306 ✓」と判定しているが、16,306 はバイト換算なら 15,000 の基準を **超過している**のに `✓`（許容）としている。バイトと文字を混同したまま両方の値を使っており、判定の整合性が取れていない。
+この誤りは budget_meta のシナリオ表自体にも既に矛盾として出ている: シナリオB「SP-1〜4 で +4 skill・+1,800B」の累積を budget_meta は「16,306 ✓」と判定しているが、16,306 はバイト換算なら 15,000 の基準を **超過している** のに `✓`（許容）としている。バイトと文字を混同したまま両方の値を使っており、判定の整合性が取れていない。
 
 **断定**: 実測（文字数基準）に基づけば、**自作スキルは 6 本どころか、現行 19 skill の description 平均文字数（約 337 文字/本）で計算すると `8,600 ÷ 337 ≒ 25 本` 追加できる**。ただし「予算に入るから足してよい」わけではない（私のレンズ＝トリガー衝突・責務重複は別制約として残る）。budget_meta が示した **B の「自作6本+参考2本」という数自体は妥当な範囲**（予算的には十分に収まる）だが、根拠として引用した「上限にほぼ到達」という前提は撤回されるべき。**衝突しない真の空白の主張（R1 §E: フロントエンド品質ゲートの空白）と予算制約は両立する**（予算はむしろ想定より緩い）。
 
 ## 2. @stack_fit「Playwright Agents は唯一バージョンドリフトしない構造で最もリスクが低い」に部分譲歩し、条件を強化する（concession + rebuttal）
 
-stack_fit の指摘（Playwright 本体 v1.56+ 同梱 = 別リポジトリの更新頻度に運命を握られない）は**技術的に正しく、B で懸念した secondsky/wshobson のような陳腐化リスクは Playwright Agents には当てはまらない**点は譲歩する。
+stack_fit の指摘（Playwright 本体 v1.56+ 同梱 = 別リポジトリの更新頻度に運命を握られない）は **技術的に正しく、B で懸念した secondsky/wshobson のような陳腐化リスクは Playwright Agents には当てはまらない** 点は譲歩する。
 
-ただし risk_ops と budget_meta が独立に同じ懸念（生成物の検証必須・`next dev` の AGENTS.md 生成との競合検証）を挙げている点は無視できない。**「生成物をレビューしてから commit する」という運用だけでは不十分**と断定する。理由:
+ただし risk_ops と budget_meta が独立に同じ懸念（生成物の検証必須・`next dev` の AGENTS.md 生成との競合検証）を挙げている点は無視できない。**「生成物をレビューしてから commit する」という運用だけでは不十分** と断定する。理由:
 
-- `check_agent_definitions.py`（`/home/user/gem-hunter/tools/check_agent_definitions.py`）は tools フィルタの **機械検証**であり、目視レビューでは第1フィルタ・background フィルタでの黙った消失（silent removal）を見逃す設計上の理由でこのツールが存在する（ツール自身の docstring が「目視では気づけないため機械検出する」と明記）。目視レビューで足りるなら、そもそもこのツールは要らない。
-- したがって導入条件は「読んでから commit」ではなく **「`python3 tools/check_agent_definitions.py` が PASS することを commit 前に確認する」を機械ゲートとして義務化**する。加えて `.mcp.json` は `git diff` で上書きでなく差分追記になっていることを確認する（risk_ops も同旨）。
+- `check_agent_definitions.py`（`/home/user/gem-hunter/tools/check_agent_definitions.py`）は tools フィルタの **機械検証** であり、目視レビューでは第1フィルタ・background フィルタでの黙った消失（silent removal）を見逃す設計上の理由でこのツールが存在する（ツール自身の docstring が「目視では気づけないため機械検出する」と明記）。目視レビューで足りるなら、そもそもこのツールは要らない。
+- したがって導入条件は「読んでから commit」ではなく **「`python3 tools/check_agent_definitions.py` が PASS することを commit 前に確認する」を機械ゲートとして義務化** する。加えて `.mcp.json` は `git diff` で上書きでなく差分追記になっていることを確認する（risk_ops も同旨）。
 
 **判定**: 採用可（stack_fit に同意）。ただし D の「導入完了条件」に上記2つの機械検証を明記しない限り、私のレンズでは「採らない方が安全」側に倒す。
 
 ## 3. @risk_ops「非公式スキル大量導入は未読外部コードへの実行権限の事前付与と同義」に同意し、条件を1文で定義する（concession）
 
-risk_ops の指摘（`bypassPermissions: true` 運用下ではスキル本文の任意コマンドをフックが止めない設計）は SSOT 衝突の話とは別軸だが、私の B の主張（「導入するなら全文レビューしてから」）を **セキュリティ側から補強する独立の論拠**であり、全面的に同意する。
+risk_ops の指摘（`bypassPermissions: true` 運用下ではスキル本文の任意コマンドをフックが止めない設計）は SSOT 衝突の話とは別軸だが、私の B の主張（「導入するなら全文レビューしてから」）を **セキュリティ側から補強する独立の論拠** であり、全面的に同意する。
 
 外部資産を採ってよい条件を統合して 1 文で定義する:
 
@@ -467,13 +467,13 @@ risk_ops の指摘（`bypassPermissions: true` 運用下ではスキル本文の
 
 ①③は SSOT/衝突観点（私）、②も SSOT 観点、④は risk_ops のサプライチェーン懸念の反映。4条件すべてが揃わない限り「採らない」を既定にする。
 
-## 4. @sprint_value「死蔵を作らない」と私の「skill-audit のトリガー衝突検出」は同じ結論に**部分的にしか**向かわない（rebuttal）
+## 4. @sprint_value「死蔵を作らない」と私の「skill-audit のトリガー衝突検出」は同じ結論に **部分的にしか** 向かわない（rebuttal）
 
 sprint_value の SP 到達ゲート方式（各スキルを使うスプリントの着手時にのみ導入）は「保持コストの無駄」（死蔵）を防ぐという点で私の主張と方向性は一致する。しかし **完全には一致しない**。
 
-理由: `skill-audit`（`/home/user/gem-hunter/.claude/skills/skill-audit/SKILL.md`）が検出するトリガー衝突・責務重複は「**その時点で同時に存在する description 同士の文言重複**」を問題にする。sprint_value の段階導入は「同時に存在するスキルの絶対数」を減らすので衝突確率は下がるが、**SP-10 到達時点では SP-1〜SP-10 で導入した資産が全て累積して同時に存在する**ため、最終形（SP-11 完了時点）でのトリガー衝突リスクは段階導入でもビッグバン導入でも **量的には変わらない**。段階導入が防ぐのは「今すぐ使われないスキルの保持コスト（死蔵）」であって、「将来のトリガー衝突」ではない。
+理由: `skill-audit`（`/home/user/gem-hunter/.claude/skills/skill-audit/SKILL.md`）が検出するトリガー衝突・責務重複は「**その時点で同時に存在する description 同士の文言重複**」を問題にする。sprint_value の段階導入は「同時に存在するスキルの絶対数」を減らすので衝突確率は下がるが、**SP-10 到達時点では SP-1〜SP-10 で導入した資産が全て累積して同時に存在する** ため、最終形（SP-11 完了時点）でのトリガー衝突リスクは段階導入でもビッグバン導入でも **量的には変わらない**。段階導入が防ぐのは「今すぐ使われないスキルの保持コスト（死蔵）」であって、「将来のトリガー衝突」ではない。
 
-**結論**: 両者は独立した制約であり、段階導入（sprint_value）は死蔵を防ぐが衝突を防がない。衝突を防ぐには、私が§2で強化した条件（B の全文レビュー・非対象の明記）を **各 SP 到達時の導入ゲートに追加**する必要がある。「段階導入すれば衝突リスクも自動的に下がる」という読み方をするなら、それは誤りとして訂正する。
+**結論**: 両者は独立した制約であり、段階導入（sprint_value）は死蔵を防ぐが衝突を防がない。衝突を防ぐには、私が§2で強化した条件（B の全文レビュー・非対象の明記）を **各 SP 到達時の導入ゲートに追加** する必要がある。「段階導入すれば衝突リスクも自動的に下がる」という読み方をするなら、それは誤りとして訂正する。
 
 ### `stack_fit` — 反論
 <sub>2026-08-19T08:32:47+09:00</sub>
@@ -492,9 +492,9 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 
 ### 2. @risk_ops「`/opt/pw-browsers` にプリインストール済みで低リスク」への一部concession + 残るrebuttal
 
-**concession**: risk_ops の実地検証（Chromium/`chromium_headless_shell` 既存プリインストール）は、リサーチ §4 が挙げた「Playwright はブラウザ実体前提でハードルが最も高い」という一般論を、少なくともこのクラウドコンテナに関しては弱める具体的な反証であり、正当な指摘として受け入れる。round1 で私はこの点を検証せず「実行環境依存」とだけ書いたが、risk_ops の検証によって**ブラウザバイナリ起動の運用障壁は解消済み**と修正する。
+**concession**: risk_ops の実地検証（Chromium/`chromium_headless_shell` 既存プリインストール）は、リサーチ §4 が挙げた「Playwright はブラウザ実体前提でハードルが最も高い」という一般論を、少なくともこのクラウドコンテナに関しては弱める具体的な反証であり、正当な指摘として受け入れる。round1 で私はこの点を検証せず「実行環境依存」とだけ書いたが、risk_ops の検証によって **ブラウザバイナリ起動の運用障壁は解消済み** と修正する。
 
-**しかし rebuttal**: これは私が round1 の争点Dで挙げた適合度評価の根拠（「Playwright 本体のバージョンに直接紐づく」）とは**別の障壁**を消しただけで、D の導入タイミングの結論は変わらない。`npx playwright init-agents --loop=claude` は Playwright 本体（`playwright` パッケージ）が対象プロジェクトの依存関係として存在することを前提にした操作であり、リサーチ §1.1 の事実（`package.json` が1つも存在しない）が解消されない限り、**「ブラウザが起動できる」ことと「Playwright Agents が意味のある成果物を生成できる」ことは別問題**である。ブラウザバイナリはコンテナ側の準備、Playwright 依存関係はプロジェクト側の準備であり、後者は `SP-4` まで存在しない。→ **D の導入タイミングは `SP-4` のまま変更なし**（sprint_value の表と同結論）。
+**しかし rebuttal**: これは私が round1 の争点Dで挙げた適合度評価の根拠（「Playwright 本体のバージョンに直接紐づく」）とは **別の障壁** を消しただけで、D の導入タイミングの結論は変わらない。`npx playwright init-agents --loop=claude` は Playwright 本体（`playwright` パッケージ）が対象プロジェクトの依存関係として存在することを前提にした操作であり、リサーチ §1.1 の事実（`package.json` が1つも存在しない）が解消されない限り、**「ブラウザが起動できる」ことと「Playwright Agents が意味のある成果物を生成できる」ことは別問題** である。ブラウザバイナリはコンテナ側の準備、Playwright 依存関係はプロジェクト側の準備であり、後者は `SP-4` まで存在しない。→ **D の導入タイミングは `SP-4` のまま変更なし**（sprint_value の表と同結論）。
 
 ---
 
@@ -502,7 +502,7 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 
 技術的な答えを出す: **Playwright Agents が生成する `.mcp.json` エントリのみを採用し、`microsoft/playwright-mcp` を単体で `.mcp.json` に追加してはならない。**
 
-理由は round1 の私の主張と直結する。争点Dで「Playwright Agents は Playwright 本体に同梱され、プロジェクトが実際にインストールする Playwright バージョンに直接紐づく」ことを最大の強みとして挙げた。`npx playwright init-agents` が生成する `.mcp.json` エントリは、その**同一バージョンの Playwright に紐づいた MCP 定義**である。一方、単体の `microsoft/playwright-mcp`（`@playwright/mcp` パッケージ）は **別リポジトリ・別リリースサイクル**を持ち、`playwright` 本体との版ズレが起こりうる — これはまさに round1 の争点Bで批判した「コミュニティ資産は本体の更新速度から独立してドリフトする」構造と同型のリスクを、公式資産内に持ち込むことになる。
+理由は round1 の私の主張と直結する。争点Dで「Playwright Agents は Playwright 本体に同梱され、プロジェクトが実際にインストールする Playwright バージョンに直接紐づく」ことを最大の強みとして挙げた。`npx playwright init-agents` が生成する `.mcp.json` エントリは、その **同一バージョンの Playwright に紐づいた MCP 定義** である。一方、単体の `microsoft/playwright-mcp`（`@playwright/mcp` パッケージ）は **別リポジトリ・別リリースサイクル** を持ち、`playwright` 本体との版ズレが起こりうる — これはまさに round1 の争点Bで批判した「コミュニティ資産は本体の更新速度から独立してドリフトする」構造と同型のリスクを、公式資産内に持ち込むことになる。
 
 したがって争点A（MCP追加）における Playwright 関連の答えは「単体 MCP を候補に残す」ではなく「**D を採用した時点で自動的に手に入るものだけを使う**」に一本化すべき。budget_meta の「2本（next-devtools/playwright）」という数え方も、この観点では「playwright MCP を独立候補として数えるべきではない」ため訂正が必要（1.の指摘と合わせて、budget_metaの数え方には二重の修正が要る）。
 
@@ -512,7 +512,7 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 
 **(a) `tailwind-v4-shadcn` を `SP-2` 着手時に無条件で導入可としている点は @conflict_guard の指摘を反映していない**: conflict_guard は round1 で「secondsky の `tailwind-v4-shadcn` は本文が一般的な `shadcn init`（= 現在の既定 Base UI）を案内している可能性が高く、`-b radix` 指定に書き換えてから採用する全文レビューが必須」と具体的に指摘した。sprint_value の表（B節）はこれを「`SP-1`/`SP-2` 着手時」と時期だけを示し、**全文レビューという前提条件を表に明記していない**。stack_fit のレンズでは「バージョン表記が新しい（Tailwind v4 追随）」ことと「本プロジェクトの確定済み決定（ADR 0001 の `-b radix`）と一致する」ことは別軸であり、混同すると危険。sprint_value の表に conflict_guard のレビュー条件を統合すべきと主張する。
 
-**(b) `tdd-guard` を「Vitest 4 と直結」と言い切っている点は根拠過剰**: sprint_value は争点Cで「Vitest レポーター実装済みで本スタック（Vitest 4）と**直結**」と書くが、リサーチ本文（§3.3）が明記しているのは「`vitest@latest` 指定で**実質追随**」という推測表現までであり、Vitest 4 の新API（Browser Mode 等）との実動作確認は取れていない。round1 で私が指摘した通り、この差は無視できない: PreToolUse hook として Write/Edit を実際にブロックするコードが対象バージョンと非互換なら実装作業そのものが止まる。sprint_value の「`SP-4` で導入」という**タイミングの結論には同意する**が、「直結」という言葉は言い過ぎであり、**`SP-4` 導入時に実機動作検証を行うことを条件として明記すべき**（無条件の直結扱いは撤回を求める）。
+**(b) `tdd-guard` を「Vitest 4 と直結」と言い切っている点は根拠過剰**: sprint_value は争点Cで「Vitest レポーター実装済みで本スタック（Vitest 4）と **直結**」と書くが、リサーチ本文（§3.3）が明記しているのは「`vitest@latest` 指定で **実質追随**」という推測表現までであり、Vitest 4 の新API（Browser Mode 等）との実動作確認は取れていない。round1 で私が指摘した通り、この差は無視できない: PreToolUse hook として Write/Edit を実際にブロックするコードが対象バージョンと非互換なら実装作業そのものが止まる。sprint_value の「`SP-4` で導入」という **タイミングの結論には同意する** が、「直結」という言葉は言い過ぎであり、**`SP-4` 導入時に実機動作検証を行うことを条件として明記すべき**（無条件の直結扱いは撤回を求める）。
 
 ### `risk_ops` — 反論
 <sub>2026-08-19T08:33:16+09:00</sub>
@@ -523,7 +523,7 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 
 @budget_meta は C の判定を「スキル化（plugin 不採用）」と断定した。**この結論に反対する**。
 
-理由: budget_meta 自身の表が認める通り、`tdd-guard` の固有価値は「実装を行う前にテストを**強制**する」PreToolUse ブロック（予防層）にある。これを「スキル化」に置き換えると、実体は @conflict_guard が既に指摘した `self_review_check.py`（PR 前・**事後**の静的チェック）と同じ検知タイミングの層をもう一枚重ねるだけになり、tdd-guard を導入する理由そのもの（事前ブロック）が消える。budget_meta の「削減対象外②（実観測ベースの行動規範）と衝突する」という理由も再検討が必要: 衝突しているのは「モデル呼び出しコストの発生」であって「予防的ブロックという仕組み自体」ではない。私が Round 1 で指摘したのは前者（`DISABLE_NON_ESSENTIAL_MODEL_CALLS=1` との整合）であり、これは**不採用の理由ではなく「採用するなら明示的な例外を切る」という運用条件**に過ぎない。
+理由: budget_meta 自身の表が認める通り、`tdd-guard` の固有価値は「実装を行う前にテストを **強制** する」PreToolUse ブロック（予防層）にある。これを「スキル化」に置き換えると、実体は @conflict_guard が既に指摘した `self_review_check.py`（PR 前・**事後** の静的チェック）と同じ検知タイミングの層をもう一枚重ねるだけになり、tdd-guard を導入する理由そのもの（事前ブロック）が消える。budget_meta の「削減対象外②（実観測ベースの行動規範）と衝突する」という理由も再検討が必要: 衝突しているのは「モデル呼び出しコストの発生」であって「予防的ブロックという仕組み自体」ではない。私が Round 1 で指摘したのは前者（`DISABLE_NON_ESSENTIAL_MODEL_CALLS=1` との整合）であり、これは **不採用の理由ではなく「採用するなら明示的な例外を切る」という運用条件** に過ぎない。
 
 **3 者の理由は収束しない。断定する**:
 - budget_meta = 不採用（plugin 形態そのものを却下）
@@ -537,20 +537,20 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 
 これは Round 1 で私だけが実地検証した事実であり、他 4 名の分析はいずれも「sandbox の network allowlist が防波堤として機能する」ことを暗黙の前提にしている（誰も明示的に否定していない）。**影響は 2 点で断定できる**:
 
-1. **@conflict_guard の A 論点の指摘（Cloudflare MCP の読み取り限定ポリシーが `permissions` に未反映というドリフト）は「直したほうがいい」ではなく「新規 MCP を 1 本でも足す前の必須前提」に格上げすべき**。`security-posture-controls.md` の設計が正しく機能するのはローカル環境だけで、本リポジトリの主戦場であるクラウドでは network allowlist が完全に無効（`command -v bwrap` で不在確認済み）。つまりクラウドでの実効防御は `permissions.allow/deny` の ACL と PreToolUse フックの 2 層のみであり、Cloudflare MCP の書き込み系ツールが `permissions` で塞がれていない限り、**「ドキュメントで読み取り専用と決めた」ことに実効力がない**。新規 MCP（A の next-devtools/shadcn/playwright を含む）を追加する PR は、このドリフト修正を同一 PR に含めることを **必須条件**とすべきで、conflict_guard の「望ましい」から一段強い要求に修正する。
-2. **@conflict_guard の B 論点（外部スキル全文レビュー）も同様に格上げが必要**。「中身を読まずに導入すれば ADR 0001 の運用リスクを踏み抜く」という conflict_guard の指摘は shadcn/tailwind の設定ミスの話だったが、sandbox が無効という事実を足すと射程が広がる: 外部スキル本文の Bash コマンドは `bypassPermissions: true` 下で確認プロンプトなしに実行され、かつ sandbox のドメイン制限も効かない。**唯一の防波堤は deny リスト（cwd 内の秘密ファイルパターンのみ）と PreToolUse フック（main push・PR 作成前検査止まり）**であり、「任意の通常コマンド実行」自体は誰も止めない設計だと `security-posture-controls.md` 自身が明記している。したがって 142 件一括導入のような形（secondsky・wshobson）は「description 予算超過だから不採用」（budget_meta の理由）だけでなく、**「未読の外部コードに無制限の実行権限を事前付与する」という独立したリスク理由でも不採用**であるべきで、budget_meta のコンテキスト予算論だけを根拠にすると「予算さえ空けば少数なら一括導入してよい」という誤読を招く。
+1. **@conflict_guard の A 論点の指摘（Cloudflare MCP の読み取り限定ポリシーが `permissions` に未反映というドリフト）は「直したほうがいい」ではなく「新規 MCP を 1 本でも足す前の必須前提」に格上げすべき**。`security-posture-controls.md` の設計が正しく機能するのはローカル環境だけで、本リポジトリの主戦場であるクラウドでは network allowlist が完全に無効（`command -v bwrap` で不在確認済み）。つまりクラウドでの実効防御は `permissions.allow/deny` の ACL と PreToolUse フックの 2 層のみであり、Cloudflare MCP の書き込み系ツールが `permissions` で塞がれていない限り、**「ドキュメントで読み取り専用と決めた」ことに実効力がない**。新規 MCP（A の next-devtools/shadcn/playwright を含む）を追加する PR は、このドリフト修正を同一 PR に含めることを **必須条件** とすべきで、conflict_guard の「望ましい」から一段強い要求に修正する。
+2. **@conflict_guard の B 論点（外部スキル全文レビュー）も同様に格上げが必要**。「中身を読まずに導入すれば ADR 0001 の運用リスクを踏み抜く」という conflict_guard の指摘は shadcn/tailwind の設定ミスの話だったが、sandbox が無効という事実を足すと射程が広がる: 外部スキル本文の Bash コマンドは `bypassPermissions: true` 下で確認プロンプトなしに実行され、かつ sandbox のドメイン制限も効かない。**唯一の防波堤は deny リスト（cwd 内の秘密ファイルパターンのみ）と PreToolUse フック（main push・PR 作成前検査止まり）** であり、「任意の通常コマンド実行」自体は誰も止めない設計だと `security-posture-controls.md` 自身が明記している。したがって 142 件一括導入のような形（secondsky・wshobson）は「description 予算超過だから不採用」（budget_meta の理由）だけでなく、**「未読の外部コードに無制限の実行権限を事前付与する」という独立したリスク理由でも不採用** であるべきで、budget_meta のコンテキスト予算論だけを根拠にすると「予算さえ空けば少数なら一括導入してよい」という誤読を招く。
 
 ### 論点3: @stack_fit の「Cloudflare Documentation MCP のみ即採用可」— MCP は何本まで即採用してよいか断定する
 
 **断定: 今すぐ `.mcp.json` に追加してよい MCP は 1 本のみ（Cloudflare Documentation MCP）。**
 
-理由を stack_fit の主張に一段補強する: 判定軸は「認証要否」ではなく「認証不要 **かつ** 接続先が今すでに存在する（リモート URL 型 or 依存パッケージ不要）」の AND 条件である。`next-devtools-mcp` と shadcn MCP はどちらも認証不要だが、前者は `next dev` の実行時エンドポイント（存在しない）、後者は `shadcn init` 実行後の `components.json` に依存し、どちらも `package.json` が 0 行の現状では**接続先が物理的に存在しない**（stack_fit の A 論点・sprint_value の対応表と同結論）。budget_meta の見積表も「SP-3」時点の着手可否として書いており「今すぐ」とは主張していない（表現が紛らわしいが矛盾ではない）。**5 名の主張は実質的に一致する**: 即採用 = 1 本、残りは全て SP ゲート待ち。認証要否だけで切ると next-devtools-mcp/shadcn MCP も「今すぐ足せる」と誤読されるため、stack_fit の結論を「認証不要」ではなく「認証不要 AND 接続先実在」の二条件で確定させる。
+理由を stack_fit の主張に一段補強する: 判定軸は「認証要否」ではなく「認証不要 **かつ** 接続先が今すでに存在する（リモート URL 型 or 依存パッケージ不要）」の AND 条件である。`next-devtools-mcp` と shadcn MCP はどちらも認証不要だが、前者は `next dev` の実行時エンドポイント（存在しない）、後者は `shadcn init` 実行後の `components.json` に依存し、どちらも `package.json` が 0 行の現状では **接続先が物理的に存在しない**（stack_fit の A 論点・sprint_value の対応表と同結論）。budget_meta の見積表も「SP-3」時点の着手可否として書いており「今すぐ」とは主張していない（表現が紛らわしいが矛盾ではない）。**5 名の主張は実質的に一致する**: 即採用 = 1 本、残りは全て SP ゲート待ち。認証要否だけで切ると next-devtools-mcp/shadcn MCP も「今すぐ足せる」と誤読されるため、stack_fit の結論を「認証不要」ではなく「認証不要 AND 接続先実在」の二条件で確定させる。
 
 ### 論点4: `agentRules: false` 先行設定案は十分か（@conflict_guard も同懸念）— 一部 concession
 
-**concession**: 私の Round 1 の対策 1（`SP-1` の最初のコミットから `next.config.ts` に `agentRules: false` を含める）は、**`next.config.ts` がスキャフォールド時点（`next dev` を一度も実行する前）に生成されることを前提**にしている。標準の `create-next-app` フローはこの前提を満たす（スキャフォールドは dev サーバーを起動しない）が、`cloudflare-infrastructure.md` が指定する Cloudflare 向けスキャフォールド経路（`@opennextjs/cloudflare` 初期化・C3 CLI 等）が同じ順序（config 生成 → 未実行）を保証するかは、**本ラウンドの手元情報だけでは確認できていない**（対象ファイル再読禁止の制約内で断定できない）。したがって「対策 1 だけで十分」という Round 1 の言い方は言い過ぎで、撤回・格下げする。
+**concession**: 私の Round 1 の対策 1（`SP-1` の最初のコミットから `next.config.ts` に `agentRules: false` を含める）は、**`next.config.ts` がスキャフォールド時点（`next dev` を一度も実行する前）に生成されることを前提** にしている。標準の `create-next-app` フローはこの前提を満たす（スキャフォールドは dev サーバーを起動しない）が、`cloudflare-infrastructure.md` が指定する Cloudflare 向けスキャフォールド経路（`@opennextjs/cloudflare` 初期化・C3 CLI 等）が同じ順序（config 生成 → 未実行）を保証するかは、**本ラウンドの手元情報だけでは確認できていない**（対象ファイル再読禁止の制約内で断定できない）。したがって「対策 1 だけで十分」という Round 1 の言い方は言い過ぎで、撤回・格下げする。
 
-その上で反論: だからこそ対策 2（機械ゲート: `CLAUDE.md` に `@AGENTS.md` 相当の upsert 痕跡が無いかを検知する grep チェック）と対策 3（`next dev` 初回実行前後で `git diff CLAUDE.md` を取る運用）を**対策 1 の代替ではなく必須の後備え（backstop）として明記すべき**であり、sprint_value の F 節が言う「`next dev` 初回実行時に検証する」という**事後検知だけに頼る設計は不十分**（`git` 管理下なので revert は可能だが、検知が漏れれば「壊れた `CLAUDE.md` のまま次のコミットが積まれる」ウィンドウが生まれる）。**結論**: `agentRules: false` 先行設定（可能な経路では実施）+ 機械ゲート（恒常的な検知）+ 初回実行前後の diff 確認、の **3 点セット全部が必須**であり、どれか 1 つで足りるという主張（私自身の Round 1 を含む）は修正する。`SP-1` の Done Criteria に「Cloudflare 向けスキャフォールド経路で `next.config.ts` が dev 実行前に生成されるか」の実地確認を追加項目として求める。
+その上で反論: だからこそ対策 2（機械ゲート: `CLAUDE.md` に `@AGENTS.md` 相当の upsert 痕跡が無いかを検知する grep チェック）と対策 3（`next dev` 初回実行前後で `git diff CLAUDE.md` を取る運用）を **対策 1 の代替ではなく必須の後備え（backstop）として明記すべき** であり、sprint_value の F 節が言う「`next dev` 初回実行時に検証する」という **事後検知だけに頼る設計は不十分**（`git` 管理下なので revert は可能だが、検知が漏れれば「壊れた `CLAUDE.md` のまま次のコミットが積まれる」ウィンドウが生まれる）。**結論**: `agentRules: false` 先行設定（可能な経路では実施）+ 機械ゲート（恒常的な検知）+ 初回実行前後の diff 確認、の **3 点セット全部が必須** であり、どれか 1 つで足りるという主張（私自身の Round 1 を含む）は修正する。`SP-1` の Done Criteria に「Cloudflare 向けスキャフォールド経路で `next.config.ts` が dev 実行前に生成されるか」の実地確認を追加項目として求める。
 
 ### `budget_meta` — 反論
 <sub>2026-08-19T08:33:24+09:00</sub>
@@ -577,7 +577,7 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 上限超過量 = 19,084 - 15,000 = +4,084 B（+27%）
 ```
 
-**修正**: R1 で「自作ならスキル 29 本・description ~18.7KB で可視化上限以内」と述べたが、実際は **4,084 B = 27% 超過**する。本修正は `budget_meta` からの誤断定。
+**修正**: R1 で「自作ならスキル 29 本・description ~18.7KB で可視化上限以内」と述べたが、実際は **4,084 B = 27% 超過** する。本修正は `budget_meta` からの誤断定。
 
 ### 許容できる追加本数
 
@@ -706,7 +706,7 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 
 1. **現状は可視化上限到達状態**。「自作 6 本」「外部 plugin」いずれも実現不可
 2. **段階導入が予算・死蔵・SSOT 3 軸で最適**。sprint_value / conflict_guard の実利判定と予算判定が一致している点に注目
-3. **description 計測を SP ごとに再実施する運用**が必須（今後も追加候補が出てくるため）
+3. **description 計測を SP ごとに再実施する運用** が必須（今後も追加候補が出てくるため）
 
 ---
 
@@ -735,15 +735,15 @@ budget_meta は §争点ごとの予算判定で **A: 2本（next-devtools/playw
 
 ## 1. stack_fit への確認（対立というより用語のズレを解消）
 
-stack_fit は争点A/Fで next-devtools-mcp / shadcn MCP の導入を一律「`SP-1`」としているが、私の round 1 対応表は **`SP-13`（分割された場合の骨格スプリント）** を先に置いている。これは矛盾ではなく **条件分岐**として決着させる: `user-story-map.md` §5.3 は「`SP-13` に切り出すかは着手セッションの実測判断」であり、切り出さなければ `SP-1` 自体が `E-1`（骨格）を含む。したがって **正しい命題は「`next dev` が初めて起動するスプリント（`SP-13` が起票されていればそちら、なければ `SP-1`）」** であり、固定で「`SP-1`」と書くのは分割ケースを見落とす。stack_fit の結論の骨格は支持するが、**用語を「骨格確立スプリント」に統一すべき**と主張する。
+stack_fit は争点A/Fで next-devtools-mcp / shadcn MCP の導入を一律「`SP-1`」としているが、私の round 1 対応表は **`SP-13`（分割された場合の骨格スプリント）** を先に置いている。これは矛盾ではなく **条件分岐** として決着させる: `user-story-map.md` §5.3 は「`SP-13` に切り出すかは着手セッションの実測判断」であり、切り出さなければ `SP-1` 自体が `E-1`（骨格）を含む。したがって **正しい命題は「`next dev` が初めて起動するスプリント（`SP-13` が起票されていればそちら、なければ `SP-1`）」** であり、固定で「`SP-1`」と書くのは分割ケースを見落とす。stack_fit の結論の骨格は支持するが、**用語を「骨格確立スプリント」に統一すべき** と主張する。
 
-shadcn MCP の運用条件（「`init` は CLI 先行、MCP は `add` のみ」）は私の表になかった具体化であり、**concession として採用**する。
+shadcn MCP の運用条件（「`init` は CLI 先行、MCP は `add` のみ」）は私の表になかった具体化であり、**concession として採用** する。
 
 ## 2. budget_meta への反論（2 点、両方とも事実誤り）
 
 ### 2-1. 「`SP-3` で MCP 確定」は SSOT と矛盾する
 
-budget_meta は §「導入タイミング」表で **「`SP-3`（品質ゲート実装）」に `next-devtools-mcp`/`playwright-mcp` を確定**と書いているが、これは誤り。`user-story-map.md` §5.3 の一次情報を名指しする:
+budget_meta は §「導入タイミング」表で **「`SP-3`（品質ゲート実装）」に `next-devtools-mcp`/`playwright-mcp` を確定** と書いているが、これは誤り。`user-story-map.md` §5.3 の一次情報を名指しする:
 
 - `SP-3` のゴールは「一覧 → 詳細 → 一覧の往復が通る」（`US-16`/`US-17`/`US-20`）。テストや品質ゲートは含まれない。
 - 「回帰を検知できる」＝品質ゲート実装は **`SP-4`** であり、`testing-strategy.md` §2 が Playwright 導入を「`SP-4` で導入する」と明記している。
@@ -752,16 +752,16 @@ budget_meta は §「導入タイミング」表で **「`SP-3`（品質ゲー�
 
 ### 2-2. 「自作スキル 6 本」は budget_meta 自身の表とも矛盾し、YAGNI 超過
 
-budget_meta の「シナリオB」表は `SP-1〜4` で +4・`SP-5〜11` で +6 の **合計 10 本**を示すが、争点別判定表では「自作 6 本」と書いており、**自己矛盾**している（どちらが正か本人に確認が要る）。
+budget_meta の「シナリオB」表は `SP-1〜4` で +4・`SP-5〜11` で +6 の **合計 10 本** を示すが、争点別判定表では「自作 6 本」と書いており、**自己矛盾** している（どちらが正か本人に確認が要る）。
 
-いずれにせよ、**「スプリントで 2 回以上使われるものだけに絞る」という YAGNI 基準で数え直すと、正当化できる自作資産は 2 本のみ**と断定する:
+いずれにせよ、**「スプリントで 2 回以上使われるものだけに絞る」という YAGNI 基準で数え直すと、正当化できる自作資産は 2 本のみ** と断定する:
 
 | 自作資産 | 使用スプリント | 2 回以上か |
 |---|---|---|
 | `@opennextjs/cloudflare` デプロイ手順スキル | `SP-13`（初期構築）+ `SP-1` 残りの Cloudflare 作業 ④⑤ + `SP-4` の GitHub Actions 移行（`INF-20` 例外終了時） | ✅ 3 回 |
 | TDD/テスト運用スキル（Vitest/Playwright の本スタック規約をまとめる） | `SP-4`〜`SP-11` の全実装スプリントで毎回参照 | ✅ 8 回 |
 | 「architecture-check」skill（budget_meta 案） | — | ❌ **既存の `architecture-rules.md` + `check_architecture_boundaries.py` と完全重複**（stack_fit §B・研究 §3.5 の `nathankim0` 判断と同型）。新規に作る意味がない |
-| 「UI / state / API / form / cache / error-handling」の 6 分割 skill（budget_meta 案） | 各領域は `SD-4` の着手時読み順（`user-story-map.md` §5.3 →`ui-ux-guidelines.md` 等）で **既に SSOT として読まれる設計**になっている | ❌ 同じ知識を skill として二重化するだけで、conflict_guard が B で警告した「SSOT を割る」問題を**自作資産自身が引き起こす**。ドキュメントを読めば済むものをパッケージ化しない |
+| 「UI / state / API / form / cache / error-handling」の 6 分割 skill（budget_meta 案） | 各領域は `SD-4` の着手時読み順（`user-story-map.md` §5.3 →`ui-ux-guidelines.md` 等）で **既に SSOT として読まれる設計** になっている | ❌ 同じ知識を skill として二重化するだけで、conflict_guard が B で警告した「SSOT を割る」問題を **自作資産自身が引き起こす**。ドキュメントを読めば済むものをパッケージ化しない |
 | a11y チェック | `SP-10`（主）+ `SP-2`/`SP-9` の軽量接触 | 🔶 2 回以上使うが、**conflict_guard の提案どおり `tools/check_a11y.py`（機械ゲート）として作るべきでスキル形態は不要**。masuP9 は参考実装に留める（budget_meta も同じ結論だが形態は skill 化と書いており、ここは訂正） |
 
 **結論**: 自作は **2 本（デプロイスキル・テスト運用スキル）+ 1 本の機械ゲートスクリプト（`tools/check_a11y.py`、skill 本数にカウントしない）**。budget_meta の 6〜10 本は死蔵確定資産（architecture-check の重複・6 分割 skill の SSOT 二重化）を含んでおり、YAGNI 基準で棄却する。
@@ -775,7 +775,7 @@ conflict_guard の指摘（ADR 0001 #1 = shadcn/ui × Next.js 16 互換性確認
 1. `SP-1` 着手直後: `E-1`/`E-2` 実装 → **ADR 0001 未確認事項 #1（shadcn × Next.js 16 互換性）を確認・確定**
 2. ADR 確定後: shadcn MCP の `add` 運用（stack_fit の条件付き）/ secondsky `tailwind-v4-shadcn` 等の外部資産を検討する場合はここで初めて着手
 
-これにより、私が round 1 で「`SP-2` 着手時」としていた `tailwind-v4-shadcn` の導入判断は **`SP-1` 内の ADR 確定後**に前倒しではなく「確定を待ってから」に条件を明確化する（時期そのものは `SP-1`〜`SP-2` の範囲で変わらないが、**順序がゲート付きになる**点が変更点）。
+これにより、私が round 1 で「`SP-2` 着手時」としていた `tailwind-v4-shadcn` の導入判断は **`SP-1` 内の ADR 確定後** に前倒しではなく「確定を待ってから」に条件を明確化する（時期そのものは `SP-1`〜`SP-2` の範囲で変わらないが、**順序がゲート付きになる** 点が変更点）。
 
 ## 4. 統合実行順序表（今やること / SP-n 到達時にやること・最終版）
 
@@ -793,7 +793,7 @@ risk_ops の段階導入案（`agentRules:false` 先行・MCP バージョンピ
 
 ## 総括
 
-争点Fの最終線引きは **「今日入れるのは permissions ドリフト修正のみ」「`SP-13` で `agentRules:false` + デプロイスキル」「ADR 確定後の `SP-1` で shadcn/next-devtools MCP」「`SP-4` で Playwright 系一式 + `tdd-guard` + テスト運用スキル + a11y ゲート」「`SP-10` で a11y 技法移植」**の 5 段階に収束する。自作スキルは 2 本、機械ゲートスクリプトは 1 本のみで足り、budget_meta が示した 6〜10 本は死蔵資産を含む過大見積もりである。
+争点Fの最終線引きは **「今日入れるのは permissions ドリフト修正のみ」「`SP-13` で `agentRules:false` + デプロイスキル」「ADR 確定後の `SP-1` で shadcn/next-devtools MCP」「`SP-4` で Playwright 系一式 + `tdd-guard` + テスト運用スキル + a11y ゲート」「`SP-10` で a11y 技法移植」** の 5 段階に収束する。自作スキルは 2 本、機械ゲートスクリプトは 1 本のみで足り、budget_meta が示した 6〜10 本は死蔵資産を含む過大見積もりである。
 
 ## ラウンド 3
 
@@ -810,7 +810,7 @@ risk_ops の段階導入案（`agentRules:false` 先行・MCP バージョンピ
 既存 19 スキルの description 合計: 14,240 B / 6,394 文字
 ```
 
-`research §3.4` が引く上限は `SLASH_COMMAND_TOOL_CHAR_BUDGET`（**文字数**基準）の既定 15,000。したがって現在の消費は **6,394 / 15,000 ≒ 43%** であり、**`budget_meta` の「上限にほぼ到達・追加 0 本」は単位取り違えによる誤り**。`conflict_guard` の反証が正しい。
+`research §3.4` が引く上限は `SLASH_COMMAND_TOOL_CHAR_BUDGET`（**文字数** 基準）の既定 15,000。したがって現在の消費は **6,394 / 15,000 ≒ 43%** であり、**`budget_meta` の「上限にほぼ到達・追加 0 本」は単位取り違えによる誤り**。`conflict_guard` の反証が正しい。
 
 🔴 **ただし結論は変わらない**: 予算は **拘束制約ではなくなった** が、代わりに **YAGNI（死蔵を作らない・`sprint_value`）** と **SSOT 二重化の回避（`conflict_guard`）** が拘束制約になる。「予算に余裕があるから足してよい」という読み替えはしない。
 
@@ -826,12 +826,12 @@ risk_ops の段階導入案（`agentRules:false` 先行・MCP バージョンピ
 
 | 対立 | 決着 |
 |---|---|
-| `tdd-guard` を採るか（`budget_meta` = 不採用 vs 他 4 名 = 条件付き採用） | **4 対 1 で条件付き採用**。`risk_ops` の反論が決定的: 「スキル化」に置き換えると `self_review_check.py` と同じ **事後**層を重ねるだけで、`tdd-guard` を採る理由（**事前**ブロック）そのものが消える。`budget_meta` の懸念（モデル呼び出しコスト）は **不採用の理由ではなく運用条件**（明示例外を切る）に過ぎない |
+| `tdd-guard` を採るか（`budget_meta` = 不採用 vs 他 4 名 = 条件付き採用） | **4 対 1 で条件付き採用**。`risk_ops` の反論が決定的: 「スキル化」に置き換えると `self_review_check.py` と同じ **事後** 層を重ねるだけで、`tdd-guard` を採る理由（**事前** ブロック）そのものが消える。`budget_meta` の懸念（モデル呼び出しコスト）は **不採用の理由ではなく運用条件**（明示例外を切る）に過ぎない |
 | Playwright MCP を単体で足すか（`conflict_guard` の二重登録懸念） | **単体では足さない**。`SP-4` の Playwright Agents（`init-agents`）が生成する `.mcp.json` に一本化する（`stack_fit` が断定・`conflict_guard` 同意） |
-| Playwright Agents の導入条件（`stack_fit` = 生成物レビューで足りる vs `conflict_guard` = 不十分） | **`conflict_guard` の強化条件を採用**。目視レビューでは tools フィルタの silent removal を見逃すため `check_agent_definitions.py` が存在する。**機械ゲート PASS を導入完了条件に義務化**する |
+| Playwright Agents の導入条件（`stack_fit` = 生成物レビューで足りる vs `conflict_guard` = 不十分） | **`conflict_guard` の強化条件を採用**。目視レビューでは tools フィルタの silent removal を見逃すため `check_agent_definitions.py` が存在する。**機械ゲート PASS を導入完了条件に義務化** する |
 | MCP 追加のタイミング（`budget_meta` = `SP-3` vs `sprint_value` = `SP-4`） | **`sprint_value` が正**。`SP-3` のゴールは「一覧 → 詳細 → 一覧の往復」で品質ゲートを含まない。`testing-strategy.md` が Playwright 導入を `SP-4` と明記している |
 | 自作スキルの本数（`budget_meta` = 6〜10 本 vs `sprint_value` = 2 本） | **`sprint_value` の 2 本 + 機械ゲート 1 本**。`budget_meta` 案の architecture-check skill は `architecture-rules.md` + `check_architecture_boundaries.py` と完全重複、6 分割 skill は `SD-4` の読み順で既に SSOT として読まれる知識の二重化 |
-| 段階導入すれば衝突リスクも下がるか | **下がらない**（`conflict_guard`）。段階導入が防ぐのは死蔵であって、`SP-11` 到達時点の累積衝突量は変わらない。**各 SP 到達時の導入ゲートに衝突レビューを別途組み込む**必要がある |
+| 段階導入すれば衝突リスクも下がるか | **下がらない**（`conflict_guard`）。段階導入が防ぐのは死蔵であって、`SP-11` 到達時点の累積衝突量は変わらない。**各 SP 到達時の導入ゲートに衝突レビューを別途組み込む** 必要がある |
 | `agentRules: false` の先行設定だけで足りるか | **足りない**（`risk_ops` が自説を撤回・格下げ）。Cloudflare 向けスキャフォールド経路が「config 生成 → dev 未実行」の順序を保証するか未確認。**3 点セット全部必須** |
 
 ## 3. `risk_ops` だけが持っていた事実（他 4 名の前提を覆した）
@@ -840,7 +840,7 @@ risk_ops の段階導入案（`agentRules:false` 先行・MCP バージョンピ
 
 影響: クラウドでの実効防御は **`permissions.allow/deny` の ACL と PreToolUse フックの 2 層のみ**。したがって:
 
-- 🔴 **`cloudflare-infrastructure.md` §7.4（読み取り 4 ツール限定）が `.claude/settings.json` に未反映というドリフトは「直したほうがいい」ではなく「新規 MCP を 1 本でも足す前の必須前提」に格上げ**される。ドキュメントで読み取り専用と決めただけでは実効力がない
+- 🔴 **`cloudflare-infrastructure.md` §7.4（読み取り 4 ツール限定）が `.claude/settings.json` に未反映というドリフトは「直したほうがいい」ではなく「新規 MCP を 1 本でも足す前の必須前提」に格上げ** される。ドキュメントで読み取り専用と決めただけでは実効力がない
 - 外部資産の一括導入は「予算超過だから不採用」ではなく **「未読の外部コードに無制限の実行権限を事前付与するから不採用」**。予算論だけを根拠にすると「予算が空けば少数なら一括導入してよい」という誤読を招く
 
 ## 4. 外部資産を採ってよい条件（`conflict_guard` が 1 文に統合・`risk_ops` が補強）
