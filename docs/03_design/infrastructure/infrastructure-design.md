@@ -101,8 +101,8 @@ flowchart TB
     A --> G
     R --> O
 
-    classDef none fill:#fff,stroke:#999,stroke-dasharray: 4 3
-    class L3 none
+    classDef optional stroke-dasharray: 4 3
+    class L3 optional
 ```
 
 🔴 **この図に「データベース」が存在しないことが本設計の核心** である（`D-5` 追補）。サーバー側は **リクエストを処理して捨てる** だけで、次のリクエストへ持ち越す状態を持たない。
