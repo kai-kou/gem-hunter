@@ -228,6 +228,10 @@ def open_sp_numbers(issues: list[dict]) -> set[int]:
     `state` は gh（`OPEN`/`CLOSED`）と REST（`open`/`closed`）で表記が異なるため小文字で比較する。
     `status:in-progress`（着手中）は open のままなので自然に本集合へ含まれ、
     「着手中の SP-n があるあいだは次を起票しない」という CP-4 の論理ロックと一致する。
+
+    ⚠️ 本関数は **番号を集めるだけ**で「先行かどうか」は判定しない。Ready 条件③が言う
+    「先行する `SP-n`」は §5.5 の順序制約＝番号昇順を指すため、**起票候補より大きい番号を
+    ブロック要因にしてはならない**（絞り込みは `decide()` 側の責務）。
     """
     numbers = set()
     for issue in issues:
@@ -388,12 +392,17 @@ def decide(md_text: str, existing_issues: list[dict], repo: str = "kai-kou/gem-h
     next_n = determine_next_sp(existing_numbers, parsed["sprints"])
 
     # Ready 条件③（`user-story-map.md` §7-9): 先行する SP-n の Issue がすべて Closed。
-    # next_n は「Issue が存在しない最小番号」なので、open な SP-n は必ず next_n より小さい
-    # ＝ open が 1 つでもあれば先行スプリントが未完了であり、次を先読み起票しない（§7-10・CP-4）。
+    # 「先行する」は §5.5 の順序制約＝番号昇順を指すため、**起票候補 next_n より小さい番号だけ**を
+    # ブロック要因にする。ドキュメント §5.3 の範囲外の番号（旧番号の残骸・先出しされた SP-12 等）で
+    # 起票が恒久停止するのを防ぐ（そのまま数えると無人 firing がサイレントに止まり続ける）。
+    # next_n が None（全 SP-n に Issue がある）の場合だけは全 open を数える —
     # 🔴 在庫枯渇（next_n is None）判定より前に置く: `sprint-cycle-router` SKILL.md §9 は
     # 「全 SP-n が Closed になった時点で在庫枯渇」と定めており、着手中の SP-n が残ったまま
     # `[Milestone] M-3 到達`（= プロダクト完成の通知）を発火させてはならない。
-    still_open = open_sp_numbers(existing_issues)
+    still_open = {
+        n for n in open_sp_numbers(existing_issues)
+        if next_n is None or n < next_n
+    }
     if still_open:
         return {
             "action": "noop",
@@ -842,6 +851,21 @@ def _self_test_ready_condition() -> list[str]:
     r = decide(_FIXTURE_MD_OK, existing_issues=[_issue(f"SP-{n}: x") for n in (1, 2, 3)])
     if r["action"] != "create_milestone_issue":
         failures.append(f"Ready③: 全 SP-n が Closed なら在庫枯渇判定を期待したが {r}")
+
+    # 🔴 起票候補より大きい番号の open Issue はブロック要因にしない
+    # （旧番号の残骸・先出しされた SP-12 等で無人 firing がサイレント停止するのを防ぐ）
+    r = decide(_FIXTURE_MD_OK, existing_issues=[
+        _issue("SP-1: a"), _issue("SP-2: b"), _issue("SP-99: 旧番号の残骸", "open"),
+    ])
+    if r["action"] != "create_sp_issue" or r.get("sp_number") != 3:
+        failures.append(f"Ready③: 候補（SP-3）より後ろの SP-99 が open でも起票を止めない: {r}")
+
+    # ドキュメント §5.3 の範囲外（SP-12 以降）の先出し Issue でも同じ
+    r = decide(_FIXTURE_MD_OK, existing_issues=[
+        _issue("SP-1: a"), _issue("SP-12: 先出しした積み上げスプリント", "open"),
+    ])
+    if r["action"] != "create_sp_issue" or r.get("sp_number") != 2:
+        failures.append(f"Ready③: 範囲外の SP-12 が open でも SP-2 の起票を止めない: {r}")
 
     return failures
 
