@@ -85,7 +85,7 @@ effort: medium
 a) [CC-Sync 破壊的変更] `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue の存在チェック（1 クエリ）
 b) 自分の in-progress Issue / open PR の存在チェック（`check_pending_pr_reviews.py --mine --actionable-only`
    相当・1 クエリ。§1 のチャネルに応じて MCP/gh/curl 手動実装のいずれかで実行）
-c) `status:waiting-claude` の `type:improvement`/`type:bug` 在庫チェック（1 クエリ）
+c) `status:waiting-claude` の **非 `SP-n`** Issue の在庫チェック（1 クエリ・`type` は問わない）
 d) 当日の衛生スロット実施済みか（`project-sync` のログ相当・当日の Issue コメント日付や
    `workflow-health-check` 実行痕跡から判定・1 クエリ。新規 state ファイルは作らない）
 ```
@@ -106,11 +106,27 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名}まで完了」1 行）から続きを判定し再開（手順は §7 の中断条件と対）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
-| **5** | `status:waiting-claude` の `type:improvement`/`type:bug` が存在する | 改善 Issue 消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
+| **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
 | **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
 | **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
 | **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
 | **9** | 全部空 | no-op。`routine-idle` 通知は既存の 1 日 1 回自己抑制のまま | — |
+
+### Step 5 が `type` で絞らない理由（孤児 Issue の回収）
+
+`type:improvement` / `type:bug` だけを対象にすると、`SP-n` 規約を持たない `type:feature` や
+`type:docs` の `status:waiting-claude` Issue が **どのブランチにも該当せず永久に放置される**
+（CP-3「Issue / PR ゼロ放置」に反する構造。実測で 2 件検出）。よって Step 5 の対象は
+**`SP-n` 以外のすべての `status:waiting-claude` Issue** とし、`type` では絞らない。
+
+- **二重取得はしない**: `SP-n` タイトル規約（`^SP-(\d+):`）に一致する Issue は Step 3.5 / Step 4 の
+  担当であり、Step 5 の対象から除外する（委譲先の `self-improvement-loop` 消化モードは
+  `status:waiting-claude` のみで絞るため、除外はこの Step 5 の判定側で行う）
+- **着手できないものは `status:blocked`**: 前提が未成立の Issue（例: `SP-4` 完了が前提の CI 作業）は
+  `status:waiting-claude` ではなく `status:blocked` を付け、解除条件を本文に書く。`status:blocked` は
+  Step 5 の対象外である（§10 の完了定義）
+- `type:retro-try` は振り返りレーン（`retro-try-handler`）の担当なので従来どおり除外する
+  （`improvement-lane-map.md`）
 
 ### エージング（Step 4 の飢餓防止・§5 で詳述）
 
@@ -278,7 +294,8 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 - [ ] Step 0.0 のチャネル判定を毎 firing 実施している（前回の判定結果を恒久前提にしていない）
 - [ ] Step 4 着手時、`SD-1`〜`SD-4` を省略していない（プレビュー URL・TDD・縦切り・ドキュメント参照）
 - [ ] 無人 firing で `AskUserQuestion` を使っていない（§6 の 3 条件判定で代替している）
-- [ ] `status:blocked` の Issue/PR が Step 3 / Step 4 の対象から除外されている
+- [ ] `status:blocked` の Issue/PR が Step 3 / Step 4 / Step 5 の対象から除外されている
+- [ ] Step 5 で `SP-n` 以外の `status:waiting-claude` Issue を `type` で取りこぼしていない
 - [ ] 健全な中断の 4 条件（§7）を満たさずに firing を終えていない
 - [ ] `[Milestone] M-3 到達` Issue が重複起票されていない（既存 open Issue の有無で判定済み）
 
