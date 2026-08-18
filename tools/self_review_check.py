@@ -637,12 +637,82 @@ def _self_test_vertical_slice_check() -> list[str]:
 
 def _self_test_layer_split_check() -> list[str]:
     failures = []
-    errs = layer_split_check("SP-9-layer:frontend-split-attempt")
+    # 行頭の箇条書き記号直後にラベルトークンだけが並ぶ「本物の宣言」は検出する
+    errs = layer_split_check("SP-9-branch\nfeat: initial commit\n- layer:frontend")
     if not (len(errs) == 1 and "C-5" in errs[0]):
-        failures.append(f"layer:frontend 痕跡は Error 1件を期待したが {errs}")
+        failures.append(f"行頭の layer:frontend 宣言は Error 1件を期待したが {errs}")
+    errs = layer_split_check("SP-9-branch\nLabels: layer:frontend, layer:backend")
+    if not (len(errs) == 1 and "C-5" in errs[0]):
+        failures.append(f"Labels: layer:frontend, layer:backend 宣言は Error 1件を期待したが {errs}")
+
+    # issue1 回帰: 説明文中にたまたま同じ文字列が出ただけでは検出しない（実測repro固定）
+    errs = layer_split_check("feat: 過去の layer:frontend 対応 Issue を統合する改修")
+    if errs != []:
+        failures.append(f"説明文中の layer:frontend は検出なしを期待したが {errs}（issue1 の回帰）")
+
     errs = layer_split_check("SP-9-normal-branch-name")
     if errs != []:
         failures.append(f"痕跡が無ければ検出なしを期待したが {errs}")
+    return failures
+
+
+def _self_test_sp_us_word_boundary() -> list[str]:
+    # issue2 回帰: 直前が英字の場合は誤検出しない（実測repro固定）。SP_PATTERN は
+    # tools/self_review_check.py の主要な検出入口のため vertical_slice_check 経由でも確認する。
+    failures = []
+    if SP_PATTERN.search("WASP-1 の調査メモを追記") is not None:
+        failures.append("WASP-1 は SP-1 として誤検出しない想定（issue2 の回帰）")
+    if US_PATTERN.search("BONUS-3 keys の話") is not None:
+        failures.append("BONUS-3 は US-3 として誤検出しない想定（issue2 の回帰）")
+    if SP_PATTERN.search("feat: SP-9 do something") is None:
+        failures.append("直前が空白/記号の正当な SP-9 は引き続き検出する想定")
+    if US_PATTERN.search("参照: US-9 の対応") is None:
+        failures.append("直前が空白/記号の正当な US-9 は引き続き検出する想定")
+
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx"], app_or_src_exists=True,
+        sp_signal_text="chore: WASP-1 の調査メモを追記",
+    )
+    if not (errs == [] and warns == []):
+        failures.append(
+            f"WASP-1 を含むブランチは SP-1 と誤判定せずスキップを期待したが errs={errs} warns={warns}"
+        )
+    return failures
+
+
+def _self_test_commit_files_root_flag() -> list[str]:
+    """issue3 回帰: commit_files が --root 付きで git diff-tree を呼ぶことを固定する。
+
+    実 git リポジトリは使わず、モジュールの `sh()` を一時的に差し替えて呼び出し引数だけを
+    検証する（ルートコミット特有の挙動を毎回合成 git リポジトリで再現するのは遅くて壊れやすい）。
+    """
+    failures = []
+    captured: dict = {}
+
+    class _FakeResult:
+        returncode = 0
+        stdout = "tests/foo_test.py\n"
+
+    def _fake_sh(args, timeout=20):
+        captured["args"] = args
+        return _FakeResult()
+
+    global sh
+    orig_sh = sh
+    sh = _fake_sh
+    try:
+        result = commit_files("deadbeef")
+    finally:
+        sh = orig_sh
+
+    called_args = captured.get("args", [])
+    if "--root" not in called_args:
+        failures.append(
+            f"commit_files は --root 付き git diff-tree を呼ぶ想定だが呼び出し引数: {called_args}"
+            "（issue3 の回帰: ルートコミットで空を返すバグの再発）"
+        )
+    if result != ["tests/foo_test.py"]:
+        failures.append(f"commit_files の戻り値が想定と異なる: {result}")
     return failures
 
 
@@ -706,6 +776,8 @@ def run_self_test() -> int:
         ("C-5 レイヤー分割検出", _self_test_layer_split_check),
         ("C-5 重複SPブランチ検出", _self_test_duplicate_sp_branch_warning),
         ("TDD コミット順序", _self_test_tdd_commit_order_warnings),
+        ("SP-n/US-n 単語境界（issue2 回帰）", _self_test_sp_us_word_boundary),
+        ("commit_files --root（issue3 回帰）", _self_test_commit_files_root_flag),
     ]
     failed_groups = 0
     total_failures = 0
