@@ -4,8 +4,8 @@
 - 議題ID: `cloudflare-infra-20260818`
 - 論点: ユーザー決定: (1) インフラは Cloudflare ベースで進める (2) 既存の Cloudflare アカウントを使い必要リソースを作成する (3) 自律開発のため MCP ではなく CLI（wrangler）を主経路にする。制約: docs/03_design/infrastructure/infrastructure-design.md の INF-1（サーバー側に個人情報を保持しない）/ INF-2（定常コストをゼロに近づける・超過時は課金ではなく停止に倒す）/ INF-3（Next.js 標準機能の範囲・TR-1〜TR-4）/ INF-4（人手の定常運用ゼロ）/ INF-5（事業者を決め打たない = アプリコードに事業者固有 API を持ち込まない・NFR-21）と、INF-6〜INF-22 の契約を壊さないこと。DB を持たない（D-5 追補）。SD-1 により全スプリントの PR に開けるプレビュー URL が要る。リサーチ結果は docs/01_research/infra/20260818-cloudflare-research.md（一次情報・2026-08-18 取得）にある。争点は少なくとも次の 5 つ: A) Workers Free（CPU 10ms・バンドル 3MB 圧縮後）のまま Next.js 16 の SSR を成立させられるか、それとも Workers Paid $5/月 を前提にすべきか（INF-2 と INF-6 の衝突・課金は A-6 でユーザー権限が要る） B) キャッシュ実装をどこに置くか（Workers Caching の cache.enabled / HTTP Cache-Control / OpenNext incremental cache（R2/D1/DO）/ KV）と、それが NFR-17 Cache Port・INF-5・D-5 追補（DB を持たない）と両立するか C) OpenNext アダプタ + wrangler.jsonc の採用が INF-5 / NFR-21 に違反しないか、違反しないと言える境界はどこか D) CLI 一次経路の具体形（GitHub Actions + wrangler-action か Workers Builds か、プレビュー URL の生成と機械取得、トークンの供給経路とローテーション、人間の GUI 作業をどこまで削れるか） E) 本番デプロイ先（D-7）も今この場で Cloudflare に確定すべきか、プレビュー（D-11）だけに留めるべきか。
 - 参加者: `cf_platform`, `cost_guard`, `cli_autonomy`, `privacy_lockin`, `docs_trace`
-- 投稿数: 5
-- 更新: 2026-08-18T11:34:38+09:00
+- 投稿数: 12
+- 更新: 2026-08-18T11:42:24+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -523,3 +523,534 @@ PR コメントではなく **PR 本文更新**（`SD-1` は「PR 本文に URL�
 ### 7. SP-1（CI 前）でもプレビュー URL は出せるか
 
 **成立する。** §1 のブートストラップ手順どおり、Claude がクラウドセッションから直接 `npx wrangler versions upload --env preview --preview-alias <branch-or-pr>` を叩けば、GitHub Actions が無くても即座に URL が得られる。`sprint-development-rules.md` の SP-1〜3 例外規定（プレビュー環境確立前は「開発サーバー起動」で代替可）よりも一歩進んで、**SP-1 の時点で本物のプレビュー URL を出せる**ので、代替手段に頼る必要すらない。ただし `INF-20`（デプロイトリガーは git push/マージのみ）は定常運用の契約であり、SP-1 のこの手動実行は「ブートストラップ期間の例外」と明示し、`SP-4`（CI 整備）以降は GitHub Actions 経由のみに一本化する、と Issue に 1 行残すことを推奨する。
+
+## ラウンド 2
+
+### `cf_platform` — 反論
+<sub>2026-08-18T11:36:31+09:00</sub>
+
+# cf_platform: Round 2 rebuttal
+
+## 1. `privacy_lockin` への反論: incremental cache 未設定時の Data Cache 挙動と SP-5 の成立可否
+
+**部分的に concede しつつ、結論（incremental cache = Cache Port 実装位置）には反対する。**
+
+### ランタイム挙動（concede する点）
+
+OpenNext incremental cache を設定しない構成では、Next.js の `fetch` Data Cache / `use cache` は **OpenNext のデフォルトである isolate 内メモリキャッシュ**にフォールバックする。これは `infrastructure-design.md` §6.1 が L2 の定義に自ら書いている「事業者依存（**インスタンス**/事業者のキャッシュ基盤）」のうち「インスタンス」側そのものであり、実質的には L1（リクエスト内メモ化）の寿命が少し延びただけの代物にすぎない。**Worker isolate はリクエストごとに再利用される保証がなく、同一 colo でも新しい isolate に着地すれば即座に消える**。したがって「Data Cache だけで SP-5（同じ検索で 2 回目は GitHub API を呼ばない・`x-ratelimit-remaining` が減らない）を証明する」のは **不安定で再現性がない**。ここは privacy_lockin の懸念の裏付けとして認める。
+
+### しかし「incremental cache（R2/D1/DO）が必要」という結論には反対
+
+SP-5 が要求しているのは「Data Cache が効くこと」ではなく「**同じ検索で GitHub API を二度叩かないこと**」。この 2 つはイコールではない。**HTTP レスポンスキャッシュ層（`wrangler.jsonc` の `cache.enabled: true` + Route Handler の `Cache-Control` ヘッダ）だけで、DB を一切持たずに満たせる**:
+
+- リサーチ §4.1 の通り、Workers Caching は **2 層 tiered**（実質グローバル）かつ **リクエスト合体あり**。Route Handler / ページのレスポンスに `Cache-Control: public, s-maxage=N, stale-while-revalidate=M` を付ければ、GitHub API 呼び出し結果そのものがエッジでキャッシュされ、2 回目のリクエストは Worker の JS すら実行せずにヒットしうる（§2 参照）。これは isolate の生存に依存しないため、Data Cache より **むしろ堅牢**。
+- privacy_lockin 自身が同じ投稿内で「Cache-Control ヘッダは RFC 9111 準拠で事業者非依存・`NFR-17` の対象外でよい」と整理している。この整理を採用するなら、**MVP で L3（外部 KV/R2）を入れる必要はまだない**（`infrastructure-design.md` §6.1 も L3 を「❌ 未採用」と明記）。SP-5 の動作担保は「Data Cache」ではなく「Workers Caching + Cache-Control」の組で説明し直すべき。
+
+### 結論（Cache Port の実装位置への異議）
+
+`open-next.config.ts` の incremental cache バックエンド選択を「Cache Port の実装位置」と決め打つのは時期尚早。**MVP の Cache Port 実装は「Route Handler が返すレスポンスに正しい `Cache-Control` を付ける薄いラッパー」で足り、`open-next.config.ts` に事業者依存バックエンド（R2/D1/DO）を書く必要は `infrastructure-design.md` §6.2 の L3 導入条件（レート制限起因のエラー実発生 / ヒット率不足の観測 / Phase 2 の静的配信要件）を満たすまで発生しない**。この境界を守れば `D-5` 追補（DB を持たない）と衝突しない。§6.2 の条件を満たした時点で初めて ADR とともに R2 incremental cache を検討すればよく、今の設計判断としては不要（YAGNI）。
+
+---
+
+## 2. `cost_guard` への同意 + ランタイム視点の補足（CPU への影響）
+
+**cost_guard の指摘（キャッシュヒットもリクエスト課金 = レート制限対策とコスト対策は Cloudflare では完全には同一の打ち手ではない）は正しい。** ランタイム観点から 1 点補足する。
+
+- リサーチ §3.2 は「CPU 時間はキャッシュミス時のみ課金」と明記している。これは裏を返すと、**Workers Caching のヒットは Worker isolate 自体は起動するが、キャッシュ検索 → 即返却という極めて軽い処理で完結し、実測 CPU はほぼゼロ**（≪ 10ms）ということ。つまり `A` の CPU 10ms 制約に対しては、**キャッシュヒット率を上げることは依然として極めて有効な打ち手**であり続ける — cost_guard の指摘は「リクエスト数課金」の話であって「CPU 課金 / CPU 上限」の話ではない、という軸の分離を明確にしておきたい。
+- まとめると Cloudflare では **キャッシュヒット率向上が効くのは「CPU-ms（`A` の Free 上限 / Paid の従量コスト）」と「GitHub レート枠（`NFR-7`）」の 2 つ**で、**「リクエスト数そのもの（Free の 10 万/日・Paid の $0.30/百万）」には効かない**という cost_guard の三分割に完全同意する。`infrastructure-design.md` §10.2 の「同じ打ち手」という一枚岩の記述は、Cloudflare 選定時に上記 3 軸へ分解して書き直すべきという点も同意する。
+
+---
+
+## 3. 自分の i18n 提案（middleware なし `redirect()`）への未確認リスクとフォールバック
+
+**未確認のまま `SP-2` に組み込むリスクは認める。フォールバックを 1 つ提示する。**
+
+`next-intl` の現行版がミドルウェアレスのルーティング構成を公式サポートしているかは Round 1 で明記した通り未検証。この不確実性を SP-2 着手直前まで持ち越さないためのフォールバック:
+
+> **`next-intl` のルーティング機能（`createNavigation` / `routing.ts` の middleware 連携部分）は使わない。** ロケール切り替えは自前実装に閉じる — ① URL 構造は `app/[locale]/...` のファイルシステムルーティングのみで表現 ② `/` へのアクセスは middleware ではなく **ルート `app/page.tsx`（Server Component）から `redirect()`** で処理（Round 1 提案どおり）③ メッセージカタログ・フォーマッティング（複数形・日付等）だけを `next-intl` の **非ルーティング API**（`NextIntlClientProvider` + `useTranslations` / `getTranslations`）で使う。これらは middleware 非依存で動作する（Provider ベースの通常の RSC/CSR API であり、公式ドキュメント上もルーティング機能と分離されているコア機能）。
+
+この分割により、「`next-intl` のミドルウェアレス構成が現行版で未サポートだった」場合でも **ルーティング部分を自作しているので影響を受けない**。逆に将来 `next-intl` が正式にミドルウェアレスルーティングをサポートすれば、自作 `redirect()` ロジックを `next-intl` 標準に置き換える移行コストは小さい（ロケール判定ロジックの置き場所が変わるだけで `proxy.ts` は依然として使わない）。**`SP-2` 着手前に context7 で `next-intl` の現行版ドキュメントを一次確認し、この分割が本当に必要か（標準機能で足りるか）を確定させる**タスクを Issue に残すことを推奨する。
+
+### `cost_guard` — 反論
+<sub>2026-08-18T11:37:15+09:00</sub>
+
+# cost_guard — Round 2（rebuttal）
+
+## 1. `privacy_lockin` の OpenNext incremental cache（R2 + D1 tag cache + DO queue）案への反論
+
+**構造的な位置づけ（Cache Port の実装先として `open-next.config.ts` が適切）には同意する。** ただし「今それを R2/D1/DO で埋めてよいか」は別の判断で、コスト面では **反対**。
+
+### (a) 内部矛盾を指摘する
+`privacy_lockin` は自分の round 1 の A への一言で「Free 継続の副次的利点 = 支払い方法を登録しない限りアカウントに課金 PII（カード情報）が乗らない」と書いた。ところが同じ投稿の B 回答では **R2 を Cache Port の実装先として推す**。研究メモ §3.1 は R2 について明記している: 「🔴 有効化に支払い方法の登録が必要」。つまり R2 を採用した瞬間、その「副次的利点」は自分で潰すことになる。両立しない。
+
+### (b) 未確認のコストリスクを 3 製品分に増やす
+- **R2**: 超過時に Free 相当で止まるか課金されるかが研究メモ §3.1・§8-6 で **未確認**。
+- **D1**: 書き込み枠 10 万行/日（Free）。低トラフィックの tag cache なら足りる可能性は高いが、超過時の挙動は研究メモに記載なし。
+- **DO（Durable Objects）**: 研究メモ §3.1 の無料枠表に **項目自体が存在しない**。`DOShardedTagCache` を使うなら DO 自体の料金・無料枠・超過挙動を **まだ誰も一次情報で確認していない**。`INF-2` の判定条件（「超過時は課金ではなく停止に倒す設定になっている」）を満たすかどうか、答えようがない状態でアーキテクチャに組み込む提案になっている。
+
+`infrastructure-design.md` §6.2 は L3（外部 KV）採用の判定条件を明示している——①レート制限起因のエラーが実利用で発生 ②ヒット率不足で `INF-2`/`NFR-7` を満たせない ③Phase 2 の配信要件、の **いずれかを観測してから ADR を起票する**。gem-hunter はまだ MVP 前で、いずれの条件も観測されていない。R2/D1/DO を「Cache Port の実装先として今から確定する」ことは、この §6.2 のゲートを **先取りして無効化する** ことに等しい。
+
+### (c) A-6 が何件増えるか（数える）
+現行の Round 1 で私が挙げた A-6 は 2 件（① Paid 切替の事前承認ライン ② 月額撤退ライン）。ここに R2 を足すと:
+- **③ R2 有効化＝支払い方法の登録**（研究メモ §3.1）が新規の A-6 になる。これは Workers Paid ($5/月) への加入とは **別のトリガー**（R2 は Workers の課金プランと独立して支払い方法登録を要求する）。つまり①のPaid承認をもらっても③は別途必要。
+- D1 単体は支払い方法登録が明記されていないため A-6 が増えるとは断定しない（要確認）。
+- DO は無料枠自体が未確認のため、採用するなら **その前に一次情報リサーチが要る**（B/C分類の「実装 Issue」であり、いきなり A-6 相当の判断を仰ぐ話にすらまだ到達していない）。
+
+**結論**: R2/D1/DO を今 Cache Port の実装先に確定すると、A-6 が最低 1 件（③）増え、かつ DO は判定不能なリスクを抱えたまま設計に組み込むことになる。**`open-next.config.ts` という「差し替え可能な1箇所」構造そのものには賛成しつつ、中身（R2/D1/DO の実装）は §6.2 のトリガーが発火するまで空けておく**のが `INF-2` と整合する。MVP のキャッシュ実装は Cache-Control ヘッダ + Workers Caching（`wrangler.jsonc` の `cache.enabled`、支払い方法不要）で足りるはずで、これは `privacy_lockin` 自身が「NFR-17 の対象外でよい」と整理した層と同じもの。
+
+## 2. `cli_autonomy` の「GUI タッチ3回」と自分の A-6 依頼2件 — 合計は1回のやり取りに収まるか
+
+**性質が違う2種類のカウントなので単純合算ではないが、ユーザーから見た「今回まとめて対応してほしいこと」としては合計5点になる。1回のメッセージには収まる。**
+
+内訳:
+| # | 種別 | 内容 | 判断が要るか |
+|---|---|---|---|
+| 1〜3 | 手続き（`cli_autonomy` 分） | トークン発行 1 回 + 値貼り付け 2 箇所 | 判断不要・作業のみ |
+| 4 | 判断（自分の①） | Paid 切替の事前承認 | Yes/No |
+| 5 | 判断（自分の②） | 月額撤退ラインの実額 | 数値回答 |
+
+`user-confirmation-minimization.md` §3 item 8 の「選択肢は最大2つ・推奨明示」は **質問1つあたりの制約**であり、1メッセージに含められる質問の数を制限していない。したがって:
+- 手続き 1〜3 はそのまま指示文として並べる（判断を求めない）。
+- 判断 4 は「Paid へ確認なしで切替てよいか（推奨: Yes・理由1行）」の二択で `AskUserQuestion` の1問。
+- 判断 5 は自由記述（金額）だが、選ばせる形にするなら「撤退ラインの目安: $10 / $20（推奨: $10・Free超過は稀な想定のため）」の二択に変換できる。
+
+→ **1回の `AskUserQuestion` 呼び出し（2問・各最大2択・推奨明示）+ 手続き3点の指示** を1メッセージにまとめれば、`user-confirmation-minimization.md` の書式要件を満たしたまま1往復で完結する。5点あるからといって複数回に分割する必要はない。ただし §1 で指摘した「R2 有効化＝支払い方法登録」を仮に採用するなら、これが6点目（判断か手続きかは登録先UIの形式次第）として同じメッセージに追加できるかは要検討——現時点では §1 の結論どおり R2 採用自体を保留するため、この6点目は発生しない。
+
+## 3. 自分の主張の曖昧点の解消: Paid切替は「誰が」「いつ」決めるか
+
+`SP-1` は止まらない。整理すると2段階ある。
+
+**段階1（Claude が自律・A-6 不要）**: SP-1 でのCPU ms実測・閾値判定（p95 > 7〜8ms またはバンドル > 3MB）は **支払い方法もWorkers Paid加入も不要**（Free のまま計測できる）。ここは `problem-investigation-protocol.md` の範疇で完結し、ユーザーの判断も操作も要らない。
+
+**段階2（ユーザーが必ず実行・A-6・自律化不可）**: 閾値を超えたと判定した **その時点で初めて**、Workers Paid への加入（支払い方法登録）が必要になる。ここは研究メモ H-4 のとおり「支払い手段の登録はアカウント所有者の権限が物理的に必要」であり、**Round 1 で私が「事前承認があれば確認なしで自律的に切り替える」と書いたのは不正確だった**。訂正する: 事前承認（A-6依頼①）が変えるのは「切替の実行そのものをClaudeが自律で行えるか」ではなく、「閾値到達時に `status:waiting-user` で止めて A/B/C/D 分類からやり直すか、それとも即座に『登録してください、これだけで再開します』という具体的な1手だけを提示できるか」という **止まり方の質**。実行アクション（カード情報入力・Paidプラン加入クリック）自体は常にユーザーが行う。
+
+これは §1 の反論とも整合する: R2 の支払い方法登録も、Workers Paid の支払い方法登録も、**その製品の必要性が実測で確定するまでは行わない**（前倒しで登録しない）。事前承認は「実測で確定したら即座にユーザーへ1点だけの具体的依頼を出してよい」という **通知の許可**であって、「Claude がカード登録を代行してよい」という **実行の許可ではない**（そもそも代行する手段がない)。
+
+**したがって SP-1 の実行順序を明確化する**: ① Free のまま実装・実測 → ② 閾値内に収まれば Paid の話は不要のまま完了 → ③ 閾値超過が実測で確定した場合のみ、事前承認済みの1文言で `waiting-user`（A-6）を起票し、ユーザーの登録操作を待つ。SP-1 自体はこの③に到達しない限り止まらない。
+
+### `docs_trace` — 反論
+<sub>2026-08-18T11:37:17+09:00</sub>
+
+# docs_trace Round 2 — ドキュメント突合と権威判定
+
+## 問 1: キャッシュ実装の正面衝突（OpenNext incremental cache vs HTTP Cache-Control only）
+
+### 権威は **既存ドキュメントで D-5 追補 / infrastructure-design.md §6.2 が明確に支持する**
+
+**privacy_lockin 主張**: `open-next.config.ts` で `r2IncrementalCache` / `d1IncrementalCache` を設定し、ISR・`revalidateTag` のバックエンド を Cloudflare R2/D1 に寄せる（≒ persistent store 導入）
+
+**cost_guard / cf_platform 主張**: HTTP Cache-Control + Workers Caching だけで MVP 完結。L2 cache（Next.js Data Cache）のみ。R2/D1 は Phase 2 以降。
+
+### 既存ドキュメントの記述
+
+**§A: D-5 追補（権威最上位・ユーザー明示決定・2026-08-17 記録）**
+```
+【D-5 追補】「DB を持たない」を MVP の都合ではなく設計原則に格上げする。
+状態はクライアント側（localStorage / Cookie / URL）に寄せ、
+サーバー側ストアを持たない構成を Phase 2 まで可能な限り貫く。
+```
+
+**§B: infrastructure-design.md §6.2「L3（外部 KV）を入れる判定条件」（権威：仕様・設計規約）**
+```
+「なんとなく不安だから」で入れない。以下のいずれかを【観測】したときに初めて検討し、ADR を起票する:
+1. レート制限起因のエラーが実利用で発生した
+2. キャッシュヒット率が想定を下回り、INF-2 または NFR-7 を満たせない
+3. Phase 2 の静的データ配信（GR-5）で、配信物の置き場所が必要になった
+```
+
+**§C: infrastructure-design.md §6.1「キャッシュ層の 3 分類」（権威：設計規約）**
+```
+| L2 | Next.js のデータキャッシュ | ... | ✅ 採用。MVP の主役 |
+| L3 | 外部 KV | 全インスタンス共有・永続的 | ❌ 未採用（D-5）。
+                                         Cache Port の実装差し替えだけで入れられる状態に保つ |
+```
+
+### 権威順による判定（intent-gate-rules.md）
+
+権威順: **ユーザー明示 > 仕様 > テスト > 現行コード**
+
+1. **ユーザー明示**: D-5 追補（2026-08-17 記録）が「サーバー側ストアを持たない」と明言。これは最高権威。
+2. **仕様**: infrastructure-design.md §6.1・§6.2 が L3「未採用」「観測条件なしに入れない」と明記。
+3. **テスト**: SP-5 の操作レビュー「2 回目の検索が外部リクエストを発生させない」は HTTP Cache-Control 層だけで満たせる（L2 で十分）。L3 が必須ではない。
+4. **現行コード**: 実装なし（まだ）。
+
+### 結論
+
+**既存ドキュメントは cost_guard / cf_platform を支持する**。privacy_lockin の「Cache Port は open-next.config.ts に実装する」案は、D-5 追補を読み違えている（「Cache Port の実装位置」≠「persistent store の採用」）。
+
+🔴 **privacy_lockin への指摘**: 
+- NFR-17 の Cache Port はデータアクセス層から事業者固有 KV を隔離するための **抽象** であり、その実装位置の具体化（`open-next.config.ts` など）ではない。
+- D-5 追補が「サーバー側ストアを持たない」と格上げした今、Cache Port はあくまで「破棄可能なキャッシュ」の切り分け点として機能すべき。
+- 「後から R2/D1 を差し込めるようにしておく」と「最初から R2/D1 を使う」は別物。前者なら NFR-17 の分界だけで足り、後者は D-5 追補に矛盾する。
+
+---
+
+## 問 2: Preview URL 要件（SD-1）と Free 初期値の両立
+
+### 質問の意図
+
+cost_guard が「Free 初期値 + 実測 CPU で判定」案を提示したとき、「それでも SD-1（全スプリント PR に開けるプレビュー URL が要る）は成立するか」。
+
+### 既存ドキュメント (infrastructure-design.md §8 環境構成）
+
+```
+環境ごとの仕様（プレビュー環境のみ先行決定・D-11）:
+- プレビュー環境: Cloudflare Workers Free で動作可能か？ → 【要実測】SP-1 で確認
+
+本番環境: 支払い方法の登録（A-6）でオプション化される
+```
+
+### SD-1 と preview URL の依存関係
+
+SD-1「動作確認できる状態で終わる」の定義:
+- 「スプリントの PR には **開けるプレビュー URL** が貼られている」
+- OR「出せない場合は理由とローカル起動手順を PR に書く」（妥協許容）
+
+cost_guard の「Free 初期値」シナリオ:
+1. **SP-1 で実測** して CPU ms / バンドルサイズ をプレビュー環境で確認
+2. **その時点で「Free で十分か / Paid が必須か」を判定**
+
+### 整合性の判定
+
+✅ **両立する**。理由:
+
+- cost_guard の「Free 初期値」は **プレビュー環境の初期構成** として合理的。
+- SD-1 が求める「開けるプレビュー URL」は、**環境のランタイムコスト（Free/Paid）に依存しない**。Workers のランタイムが動けば URL は生成される。
+- Paid 昇格の判定が「SP-1 実測後」でも、その時点までは Free でプレビュー URL を出力し続けられる。
+- Paid 昇格が必要になった場合、cost_guard の「確認なしで Paid に切り替える」ルール（INF-2/INF-3 優先順位）に従えば、UI には影響なく、請求金額のみが変わる。
+
+🔵 **付加情報**: D-11「プレビュー環境のデプロイ先だけは先行決定」は、本番先は未決のまま。プレビューの選定ガイド（Free/Paid の判定ロジック）が cost_guard で明確化されたことで、**D-11 は「決めない」から「実測に基づき自動判定」へ進化** する。これは破壊的変更ではなく、未決事項の詳細化である。
+
+---
+
+## 問 3: D-16 ～ D-18 の最終文言確定（ユーザー明示決定を権威として記録）
+
+ユーザー明示決定（whiteboard の論点冒頭）:
+1. インフラは **Cloudflare ベースで進める**
+2. 既存 Cloudflare アカウントを使い必要リソース作成
+3. **CLI（wrangler）を主経路にする**（MCP ではなく）
+
+### 最終的な D-n 記録案
+
+**D-16: デプロイ先・エッジランタイム・キャッシュ基盤を Cloudflare に確定**
+
+```
+ユーザー明示決定（2026-08-18）により、プレビュー環境・本番環境ともに
+Cloudflare Workers + @opennextjs/cloudflare の構成で進める。
+キャッシュ層は HTTP Cache-Control + Workers Caching (L2) で MVP 完結。
+L3（R2/D1 等 persistent store）は D-5 追補の「未採用」を維持し、
+観測条件（レート制限エラー発生 / ヒット率不足 / Phase 2）を満たしてから検討。
+D-15「人手ゼロの自動化」の前提として、wrangler CLI を運用一次経路に統一し、
+GitHub Actions + wrangler-action によるデプロイパイプラインを標準化する。
+移植性（NFR-21）は @opennextjs/cloudflare adapter と wrangler.jsonc の分離で確保。
+```
+
+**D-17: @opennextjs/cloudflare adapter と wrangler.jsonc の採用基準**
+
+```
+OpenNext + adapter 単体では NFR-21（vendor lock-in 最小化）を破らない。
+禁止対象は「app/ 配下のコードが Cloudflare 固有バインディング 
+（KV/R2/D1/Cache API 等）を直接呼ぶこと」であり、
+wrangler.jsonc の設定ファイルや Cache Port 内の 1 ファイル（Rate Limit / 
+Incremental Cache）に閉じ込めるなら許容される。
+違反判定の境界線は infrastructure-design.md §3.2「禁止リスト」を更新し、
+以下を追加する:
+  - getCloudflareContext() は Cache Port と Rate Limit 実装ファイルのみで呼ぶ
+  - env.* バインディング（KV/R2 等）への直接アクセスを禁止
+  - wrangler.jsonc / open-next.config.ts はアプリの実行時分岐条件にしない
+移行時の チェックリスト（infrastructure-design.md §13）に 
+「wrangler.jsonc と open-next.config.ts の破棄」を追加。
+```
+
+**D-18: キャッシュ戦略と TTL の初期値**
+
+```
+MVP は 2 層: (1) Next.js Data Cache（L2・プロセス内・短 TTL）
+(2) HTTP Cache-Control + Workers Caching（公開 CDN・中 TTL）。
+初期 TTL は検索結果 5 分・詳細 30 分（cost_guard の §8-6 未確認項目により調整）。
+L3（R2/D1）は未採用。Cache Port（NFR-17）は「差し替え可能な 1 箇所」として
+open-next.config.ts に集約させるか app 内に 1 ファイル として実装するかは
+SP-1 の実装時に決め、ADR で記録する。
+D-5 追補「サーバー側ストアを持たない」の原則を Phase 2 まで維持。
+```
+
+---
+
+## 🔴 unresolved（他者の実測待ち）
+
+- privacy_lockin への質問: invocation log の IP 含有有無 / Rate Limiting binding の課金有無 → **確定後に禁止リスト文言を更新**
+- cost_guard の Billable Usage API 実装 → monitoring 手段確定までは cost_guard/cli_autonomy にしてほしい
+- cf_platform の CPU ms 実測値（3MB バンドル / p95 CPU time）→ SP-1 未確認項目リストに明記し、SD-1 通過前に取得
+
+### `cli_autonomy` — 反論
+<sub>2026-08-18T11:38:16+09:00</sub>
+
+## Round 2: rebuttal（`cli_autonomy`）
+
+### 1. `privacy_lockin` の R2 + D1/DO incremental cache — CLI 手順の実測とINF-4判定
+
+**結論: ステップは増えるが一時的（bootstrap）で完結し、`INF-4`（定常運用ゼロ）は破れない。ただし `privacy_lockin` に 1 点、重要な見落としを指摘する。**
+
+前提として round 1 で私が示した「preview は per-PR で別 Worker を作らず、1 つの共有 preview Worker のバージョン群として扱う」設計を維持する限り、R2/D1/DO の bootstrap は **PR 数に比例しない**。増える具体コマンドは以下（すべて非対話・一度きり）:
+
+```bash
+npx wrangler r2 bucket create gem-hunter-cache-preview
+npx wrangler r2 bucket create gem-hunter-cache-production
+npx wrangler d1 create gem-hunter-tagcache-preview --json
+npx wrangler d1 create gem-hunter-tagcache-production --json
+npx wrangler d1 migrations apply gem-hunter-tagcache-preview --remote
+npx wrangler d1 migrations apply gem-hunter-tagcache-production --remote
+```
+→ **+6 コマンド、+2 環境ぶんの `wrangler.jsonc` バインディング追記（1 回コミット）**。`DOShardedTagCache` を選ぶ場合は D1 の create/migrate 4 行が不要になり（DO namespace は `wrangler.jsonc` の `durable_objects` バインディング定義だけで初回デプロイ時に自動生成される）、**むしろ D1 案より CLI ステップは少ない**。ここは cost/design 側の判断材料として投げる。
+
+定常運用（`INF-4` の射程）で人手が要る場面は探した限りゼロ: D1 のスキーマ変更（OpenNext のバージョンアップ時のみ発生・稀）は `wrangler d1 migrations apply` を **CI ジョブに 1 行入れておけば** デプロイのたびに自動追従する。R2 バケットは保守レス。よって `INF-4` は守れる、という round 1 の私の立場を維持する。
+
+**ただし `privacy_lockin` への指摘（見落とし 1 点）**: 研究メモ §3.1 に **「R2 は有効化に支払い方法の登録が必要」**（🔴）とある。これは Free プラン内の話であり、CPU ms とは無関係。つまり **R2 + D1/DO 案を採用した瞬間、`cost_guard` の CPU 実測ゲートを待たずに `A-6`（カード登録）が発生する**。「Workers Caching + Cache-Control のみ」（round 1 §5 の 1 行構成）なら A-6 はゼロのまま `SP-1` に進める。この非対称性は `privacy_lockin` の主張には明記されていなかったので、`§14` の A-6 依頼事項に **「R2 有効化」を独立した 3 件目の A-6 として追加**することを提案する（`cost_guard` の 2 件と束ねて一度にユーザーへ確認するのが CP-6 上も効率的）。
+
+### 2. `cost_guard` の Free→Paid 判定式 — CLI 側で何が変わるか
+
+**support（大筋で支持）+ 1 点訂正。** `cost_guard` の「実測ゲート → 判定基準に従い確認なしで切り替え」は CLI/自律運用の観点からもそのまま成立する。**訂正点**: Free→Paid の切り替えそのものは **wrangler / API に「プラン変更」コマンドが存在しない**（研究メモにも記載なし。既知の Cloudflare API にも billing plan upgrade のエンドポイントはなく、Dashboard の課金画面が唯一の経路）。つまり Claude 側が「自律的に切り替える」とは正確には **「切り替えの前提条件を先に全部整えておき、人間のカード登録クリック 1 回だけを残す」** という意味になる。
+
+Claude が非対話で完結できること:
+- `wrangler.jsonc` に **安全キャップとして** `"limits": {"cpu_ms": N}` を追加する（Paid化で Free の構造的ハードキャップ = HTTP 1027 停止が消えるため、`cost_guard` が指摘した「denial-of-wallet 対策」を **Paid切替と同じコミットで即座に埋める**。これは switch の *必須条件* ではなく Claude が能動的に足す残余リスク対策）
+- デプロイコマンド（`versions upload` / `versions deploy`）は Free/Paid で **一切変わらない**
+- APIトークンのスコープも Free/Paid で変わらない（再発行不要）— `whoami` 疎通確認だけで Paid 移行後も継続動作を確認できる
+
+Claude が完結できないこと（`A-6` として残る）:
+- 支払い方法の登録そのもの（Dashboard 操作）
+- 「Free → Paid」への切替ボタン押下自体（API 経路が存在しないため CLI では代行不可。ここは `cost_guard` の想定より不可分な人間作業）
+
+→ **`cost_guard` の①番の依頼文言を微修正することを提案する**: 「確認なしで切り替えを進めてよいか」ではなく、「実測 NG が確定したら、Claude は `limits.cpu_ms` 設定・監視体制を確認なしで先に整え、**カード登録の実行だけ**を A-6 として即時通知する（それまでの準備作業に承認は不要）」という書き方の方が、CP-6 の「判断は自律・操作だけが人間」という原則に忠実になる。
+
+### 3. 自分の round 1 主張の補強: stdout 正規表現抽出の失敗検知
+
+`SD-1`（PR に開けるプレビュー URL があること）を **サイレントに欠落させない**ため、抽出失敗を CI の赤 X として扱う具体形を出す。
+
+```bash
+URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' wrangler-out.log | head -1)
+if [ -z "$URL" ]; then
+  echo "::error::wrangler versions upload did not emit a *.workers.dev URL (stdout format may have changed) — see wrangler-out.log"
+  exit 1   # ジョブを fail-closed にする。空URLのままPRコメントへ進ませない
+fi
+
+# 到達性チェック（プロパゲーションのラグを許容する軽いリトライ）
+for i in 1 2 3; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$URL") && [ "$code" -lt 500 ] && break
+  sleep 5
+done
+[ "$code" -ge 500 ] && { echo "::error::preview URL returned $code after retries: $URL"; exit 1; }
+
+echo "url=$URL" >> "$GITHUB_OUTPUT"
+```
+
+さらに **投稿後の自己検証**を追加する（コメント/本文更新そのものの失敗も拾うため）:
+```bash
+gh pr comment "$PR_NUMBER" --body "Preview: $URL"
+gh pr view "$PR_NUMBER" --json comments -q '.comments[].body' | grep -qF "$URL" \
+  || { echo "::error::posted comment did not persist the preview URL"; exit 1; }
+```
+
+round 1 で「ND-JSON は監査用に並置」と書いたが、これを **一次シグナルではなく検証専用**へ格下げし直す: ND-JSON のパース成功可否は warning のみで exit しない（フィールド名が不確定なため false negative でジョブを落とすリスクの方が大きい）。**fail-closed にするのは正規表現抽出（主経路）と URL 到達性・PR 反映確認（後段）だけ**、というのが round 2 での精緻化。これにより「URL が取れなかったのに緑で通る」経路は構造的に塞がる。
+
+### `privacy_lockin` — 反論
+<sub>2026-08-18T11:38:32+09:00</sub>
+
+# privacy_lockin: Round 2 rebuttal / concession
+
+## 1. R2 = NFR-17 実装位置という round1 の主張を撤回する（`cost_guard` / `D-5` 追補との衝突を認める）
+
+**譲歩**: round1 で「OpenNext incremental cache（R2）が `NFR-17` Cache Port の実装位置そのものになる」と書いたのは踏み込みすぎだった。`cost_guard` は明示しなかったが研究メモ §3.1 に「R2 は **有効化に支払い方法の登録が必要**」とあり、これは `cost_guard` 自身が §3.3「Free plan のまま・支払い方法を登録しない」を **「最強のハードキャップ」** と位置づけた主張と正面衝突する。カードを登録した瞬間、`cost_guard` が拠り所にした構造的ハードキャップ（`HTTP 1027` で無課金停止）の前提そのものが揺らぐ。私自身も round1 で「Free 継続＝カード情報という PII をアカウントに乗せない」と書いており、R2 採用は **自分の主張と矛盾する**。
+
+さらに `D-5` 追補「サーバー側はリクエストを処理して捨てるだけで、次のリクエストへ持ち越す状態を持たない」を厳密に読むと、R2 は **ライフサイクルルールで管理する永続オブジェクトストア** であり、Workers Caching のような TTL 秒単位のエッジキャッシュとは質が違う（`infrastructure-design.md` §6.1 の L3 と同格）。§6.1 は L3（外部 KV）を明確に「❌ 未採用（`D-5`）」としており、R2 も同じ扱いを受けるべきだった。
+
+**選択（保留しない）**: **B「別の形で残す」を選ぶ**。理由:
+- `NFR-17` の Cache Port（`get`/`set`/`invalidate` + TTL）は **gem-hunter が独自に持つアプリレベルの抽象**であり、OpenNext の incremental cache（Next.js の ISR/`revalidateTag` 機構そのもの）に必ずしも配線する必要がない。gem-hunter の検索結果ページは検索条件依存の動的レンダリングが主で、静的再生成（ISR）を前提にした設計ではない（`infrastructure-design.md` §6.1 は L2＝「Next.js のデータキャッシュ」を MVP の主役としており、ISR タグキャッシュの話とは別軸）。
+- よって MVP の `NFR-17` 実装は **Workers Caching（`cache.enabled`）+ `Cache-Control` ヘッダ**（エッジ・TTL 秒単位・支払い方法不要・§5.4 の「キャッシュは全利用者で共有・一時的」という記述とも整合）に一本化してよい。`invalidate` はキー設計（TTL 短縮 or キャッシュキーへのバージョン接尾辞）で代替し、`revalidateTag` の永続タグストア（D1/DO）には踏み込まない。
+- **R2（あるいは D1 の incremental cache 用途）を入れるのは `infrastructure-design.md` §6.2 の L3 判定条件（レート制限起因のエラーが実利用で発生 / ヒット率が想定を下回る）を **観測してから****。これは既存ドキュメントの L3 ゲートと完全に一致する運用であり、新規ルールを増やさずに済む。
+- **新規提案**: R2 の有効化は「支払い方法の登録」を伴うため、§6.2 の判定条件を満たして L3 導入 ADR を起票するタイミングで、**`INF-2`/§10.3 の「課金設定変更は `A-6`」に明示的に紐づける**（現行の §10.3 はコスト上限の文脈でしか `A-6` に触れていないが、R2 有効化も同じ理由でユーザー承認が要ることを `docs/03_design/infrastructure/cloudflare-infrastructure.md` に一行追加すべき）。
+
+「やはり R2 が要る」は選ばない。ISR タグキャッシュが本当に必要になった実測が出るまで、`D-5` の精神（サーバー側に持ち越す状態を最小化する）を守る側に倒す。
+
+## 2. Cloudflare MCP 読み取り専用の残置に実害はあるか
+
+`cli_autonomy` の提案（書き込み系はゼロ・読み取り系のみ残す）に **賛成する**。ロックイン / 監査の両観点で実害を見つけられなかった。
+
+- **ロックイン（`INF-5`/§11 軸8「退避コスト」）への影響: ゼロ**。MCP の読み取り呼び出し（`search_cloudflare_documentation` / `workers_get_worker_code` / `workers_list`）は `app/` にも `wrangler.jsonc` にも **何の成果物も残さない**。§13 の移行チェックリストに MCP が一度も登場しないのはこのため — 消すものが最初から存在しない。事業者を差し替えても「MCP で何を読んだか」は移行作業に影響しない。
+- **監査への影響: ほぼゼロ、ただし 1 点だけ運用規律が要る**。書き込みをしない以上、状態変更の監査ログという意味では対象外（変更していないので追う必要がない）。唯一の懸念は、**MCP の読み取り結果（例: 実際の namespace ID）をコードや `wrangler.jsonc` に反映せず「Claude が知っているだけ」の状態で進めてしまう二重の真実化**（`cli_autonomy` が D1/KV 作成の文脈で指摘したのと同型のリスク）。ここは「MCP で見た値は必ず `wrangler.jsonc` かコミットに落とす」という 1 行ルールで潰せる。
+- **`INF-1` への影響: なし**。MCP が触るのは Cloudflare アカウント側の運用情報（Worker のコード・ログ一覧等）であり、`INF-1` が守る対象（gem-hunter の**エンドユーザー**の個人情報）とは別レイヤー。
+- **ユーザー指示「MCP よりも CLI」との整合**: 指示の文言は「自律開発のため MCP ではなく CLI を主経路にする」— **理由が明記されている**（自律開発 = 非対話で完結する実行ループの主経路をどちらにするか、という話）。これは絶対禁止ではなく **優先順位の指定**であり、書き込み・デプロイ・シークレット投入という「自律開発の主経路」に該当する操作を CLI に一本化すれば指示の目的は満たされる。読み取り専用の確認利用は「主経路」ではなく補助であり、指示の射程外と読むのが自然（本プロジェクトの `CLAUDE.md` 自体が GitHub 操作で「MCP が一次経路・gh は当てにしない」という **同型の優先順位表現**を使っており、gh CLI を完全排除していないのと同じ構造）。
+- **条件付き賛成**: `cli_autonomy` が提案した「運用ルールに明記する」は必須にすべき。書かないと「読み取りだけのつもりが、便利だからと書き込み系ツールへ範囲が広がる」スコープクリープが起きやすい（ロックインの本質的リスクは「便利な事業者固有機能に少しずつ依存が染み出す」ことなので、MCP の書き込み解禁も同じパターンで起こりうる）。境界は次項の grep 化と同じ発想で、**許可する MCP ツール名のアローリスト**（`search_cloudflare_documentation` / `workers_list` / `workers_get_worker` / `workers_get_worker_code` の 4 つのみ）をルールファイルに列挙し、それ以外（`*_create` / `*_delete` / `*_edit` / `*_query`）を使った形跡があればセルフレビューで検知できる形にする。
+
+## 3. 自分の §3.2 追加提案の自己検証: grep 1 本で判定できるか → **できていなかった。書き直す**
+
+正直に自己採点する。round1 の文言「`getCloudflareContext()` は Cache Port の実装ファイル 1 つと Rate Limit の実装ファイル 1 つの内部でのみ呼んでよい」は、**具体パスを 1 つも名指ししていない**ため機械検出できない。「1 つのファイル」という数量表現は grep のホワイトリストにできず、セルフレビューの精度は結局レビュアーの目視判断に戻ってしまう。これは自分が §3.2 に対して求めた「セルフレビューで機械的に当てる」という基準を、自分の追加提案自身が満たしていなかったということ。
+
+**書き直し**: 具体パスをディレクトリで固定する。
+
+> 追加規約: Cloudflare bindings（`getCloudflareContext()` の戻り値・`env.KV` / `env.R2` / `env.D1` / `env.RATE_LIMITER` / `env.CACHE` / `env.IMAGES` 等）へのアクセスは **`lib/infra/` 配下のファイルからのみ**行ってよい。`app/`（Server Component / Route Handler）・`lib/data/`（`NFR-16` のデータアクセス層）からの直接アクセスを禁止する。
+
+**grep パターン（このまま CI / セルフレビューに組み込める）**:
+
+```bash
+# 違反候補: getCloudflareContext または env.<binding> への言及が lib/infra/ の外にある
+grep -rnE 'getCloudflareContext\(|env\.(KV|R2|D1|RATE_LIMITER|CACHE|IMAGES)\b' \
+  --include='*.ts' --include='*.tsx' app/ lib/ \
+  | grep -v '^lib/infra/'
+# 出力がゼロ行なら合格
+```
+
+新設 #7（`wrangler.jsonc`/`open-next.config.ts` を分岐条件にしない）も同様に書ける:
+
+```bash
+# 違反候補: Cloudflare 環境変数を条件分岐に使っている
+grep -rnE 'process\.env\.(CF_|CLOUDFLARE_)|context\.env\.' \
+  --include='*.ts' --include='*.tsx' app/ \
+  | grep -v '^app/.*/lib/infra/'
+# 出力がゼロ行なら合格
+```
+
+この 2 本を `tools/self_review_check.py`（`pre-pr-create-check.sh` が既に自動実行している）に足すことを実装 Issue として提案する。`lib/infra/` というディレクトリ名は round1 では存在しなかった新規の取り決めなので、`infrastructure-design.md` §3.2 に追加する際は **「Cloudflare bindings への唯一の合法アクセス経路は `lib/infra/` 配下」** という 1 行を先に明文化してから、上記 grep を機械ゲートとして添える順序にする。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-18T11:41:14+09:00</sub>
+
+# lead: 合意と対立の整理（Round 3）
+
+## 1. 合意に達した点
+
+| # | 合意事項 | 経緯 |
+|---|---|---|
+| 1 | **ランタイムは `@opennextjs/cloudflare` + Workers 一択**。`next-on-pages` は npm 上で deprecated、静的エクスポートは `NFR-9`（トークンをサーバーに隠す）と衝突 | 全員異論なし |
+| 2 | **`next` は 16.2.11 以上にピンする**（アダプタ 1.20.2 の peerDep 実測値） | `cf_platform` 提示・異論なし |
+| 3 | 🔴 **MVP のキャッシュは「HTTP `Cache-Control` + Workers Caching」のみ。R2 / D1 / DO / KV は採用しない** | `privacy_lockin` が round 2 で R2 案を **撤回**。`cost_guard`（R2 有効化＝支払い方法登録が必要で Free のハードキャップが崩れる・DO は無料枠自体が未確認）、`cli_autonomy`（R2 採用は CPU 実測を待たずに `A-6` を発生させる）、`docs_trace`（`D-5` 追補と §6.2 の L3 ゲートが「観測してから」と明記）が一致 |
+| 4 | **`NFR-17` Cache Port は維持する**が、実装位置は `open-next.config.ts` ではなく **`lib/infra/` 配下の薄いラッパー**（`Cache-Control` の付与とキャッシュキー生成に責務を限定） | `privacy_lockin` の譲歩案 B を採用。`docs_trace` の「Cache Port は抽象であって persistent store の採用ではない」が決め手 |
+| 5 | 🔴 **キャッシュヒットは「CPU-ms」と「GitHub レート枠」には効くが「リクエスト数枠」には効かない**（3 軸に分解する）。`infrastructure-design.md` §10.2 の「同じ打ち手」という記述は Cloudflare 前提では不正確 | `cost_guard` の指摘に `cf_platform` が全面同意（CPU はヒット時ほぼゼロと補足） |
+| 6 | **Free を初期値とし、`SP-1` の実測ゲート（p95 CPU / gzip バンドルサイズ）で Paid 要否を判定する**。前倒しで Paid にしない | `cost_guard` / `cf_platform` / `docs_trace` が一致。`SD-1` のプレビュー URL は Free でも出るため `SP-1` は止まらない |
+| 7 | **`proxy.ts` / Node middleware を一切使わない**。`/` → `/ja` はルート `app/page.tsx` の Server Component 内 `redirect()` + `headers()` の Accept-Language 判定で実装する | `cf_platform`。フォールバックとして `next-intl` のルーティング機能を使わずメッセージカタログ API のみ利用する分割案も提示済み |
+| 8 | **Workers Builds は採用せず GitHub Actions + `cloudflare/wrangler-action` に一本化**する | `cli_autonomy` 主導・異論なし（初回接続が GUI 必須という非対称性が CLI 一次方針と噛み合わない） |
+| 9 | **プレビューは Worker を増やさず `wrangler versions upload --preview-alias pr-<N>`** で回す（Free の Worker 数上限 100 と棚卸しコストを避ける） | `cli_autonomy`・異論なし |
+| 10 | **プレビュー URL の取得は stdout の正規表現抽出を主経路にし、取れなければ CI を fail-closed で落とす**。ND-JSON は検証専用に格下げ | `cli_autonomy` round 2 の精緻化。`SD-1` の「URL 無しで緑になる」経路を構造的に塞ぐ |
+| 11 | **Cloudflare bindings へのアクセスは `lib/infra/` 配下のみに限定し、grep 2 本で機械検出する** | `privacy_lockin` が自分の round 1 案を「機械検出できない」と自己批判して書き直したもの |
+| 12 | **Cloudflare MCP は読み取り 4 ツールのみアローリストで残し、書き込み系は使わない** | `cli_autonomy` 提案 → `privacy_lockin` が条件付き賛成（アローリストの明文化を要求）。ユーザー指示「MCP よりも CLI」は絶対禁止ではなく主経路の指定と解釈 |
+| 13 | **`INF-1` を守る Cloudflare 側設定**: `observability.logs.invocation_logs: false` / Rate Limiting の key を HMAC 化して生 IP を渡さない / Bot Fight Mode を有効化しない / WAF Rate limiting rules は使わない（Free は IP 固定で `AR-5` の枠分けができない） | `privacy_lockin`・異論なし |
+
+## 2. 議論を経て否定された案
+
+| 案 | 誰が出したか | なぜ否定されたか |
+|---|---|---|
+| OpenNext incremental cache（R2 + `withRegionalCache` / D1 tag cache / DO queue）を MVP から入れる | `privacy_lockin`（round 1） | 提案者自身が round 2 で撤回。①R2 有効化に支払い方法の登録が必要で「Free のまま = 構造的ハードキャップ」を自ら壊す ②DO の無料枠が一次情報で未確認 ③`D-5` 追補（サーバー側ストアを持たない）と §6.2 の L3 ゲート（観測してから）に反する |
+| Cache Port の実装位置を `open-next.config.ts` に固定する | `privacy_lockin`（round 1） | `NFR-17` は「事業者固有ストアをデータアクセス層から隔離する抽象」であって ISR バックエンドの選択ではない（`docs_trace`）。ISR を前提にしない gem-hunter では配線先が違う |
+| 実測前に Workers Paid を既定にする | （検討案） | `INF-3` と `INF-2` が本当に衝突するかは実測しないと分からない。前倒しは根拠のない decision（`cost_guard`） |
+| Workers Builds（Git 連携ビルド）を使う | （検討案） | 初回接続が GitHub App の GUI 承認で、CLI 一次方針と非対称。ビルド無料枠 3,000 分/月を捨てる代償は小さい（`cli_autonomy`） |
+| `WRANGLER_OUTPUT_FILE_PATH` の ND-JSON を URL 取得の主経路にする | `cli_autonomy`（round 1 の一部） | フィールド名が未確認で false negative のリスク。round 2 で検証専用に格下げ |
+| Cloudflare MCP を完全に捨てる | （ユーザー指示の厳格解釈） | 読み取り専用の利用は移行チェックリストに何も残さず退避コストゼロ（`privacy_lockin`）。指示の趣旨は「自律開発の主経路を CLI にする」ことなので射程外 |
+
+## 3. 残った対立点と lead の裁定
+
+### 争点 E（本番デプロイ先 `D-7` も今確定するか）
+
+- **確定すべき**: `cli_autonomy`（プレビューと別基盤にすると CLI 経路・シークレット・CI が二重化し `INF-4` に反する）
+- **開けておくべき**: `privacy_lockin` / `cf_platform`（§14 の `D-7` は `M-4` で決める設計。急ぐ理由がない）
+
+🔴 **lead 裁定: 事業者は Cloudflare に確定する（プレビュー・本番とも）。**
+
+理由は権威順（`intent-gate-rules.md`: **ユーザー明示 > 仕様 > テスト > 現行コード**）。ユーザーの指示は「**インフラについて Cloudflare ベースで進めたい**」であり、プレビューに限定していない。仕様（§14 の `M-4` 判断）より上位の権威がすでに与えられている以上、「開けておく」は仕様の惰性であって判断の保留ではない。
+
+ただし `M-4`（公開判断ゲート）は **廃止せず性質を変える**: 「事業者を選定するゲート」ではなく「**第三者に公開するか否かを決めるゲート**」として維持する（独自ドメインの要否・GitHub 利用規約の一次確認・コスト撤退ラインの確定はここに残る）。
+
+### 争点 A の残余（Paid 切替の実行主体）
+
+`cost_guard` が round 2 で自ら訂正したとおり、**Free → Paid の切替に CLI/API 経路は存在せず、カード登録は不可分の人間作業**（`cli_autonomy` が裏取り）。したがって「事前承認」が変えるのは実行の代行可否ではなく **止まり方の質** — 閾値超過が実測で確定した瞬間に、`A/B/C/D` 分類をやり直さず「この 1 手だけ実行してください」と即時通知できるかどうか。これは `A-6` に該当するため、**ユーザーへの確認事項として残す**（open_questions）。
+
+## 4. 未確認のまま残すもの（実装時に潰す・断定しない）
+
+| # | 未確認事項 | 潰し方 |
+|---|---|---|
+| 1 | Next.js 16 App Router + shadcn/ui の実バンドルが Free の 3 MB（gzip）に収まるか | `SP-1` で `opennextjs-cloudflare build` 後に gzip サイズを計測 |
+| 2 | RSC レンダリングの p95 CPU が Free の 10 ms に収まるか | `SP-1` で `wrangler tail` / Workers Logs から計測 |
+| 3 | Workers invocation log にクライアント IP が含まれるか | 含まれる前提で `invocation_logs: false` に倒す（設計で回避） |
+| 4 | Rate Limiting binding の課金有無 | 実装直前に料金ページを再確認（`SP-9` 相当） |
+| 5 | `next-intl` のミドルウェアレス構成が現行版でサポートされるか | `SP-2` 着手前に context7 で一次確認。ダメならルーティングは自作に閉じる |
+| 6 | `WRANGLER_OUTPUT_FILE_PATH` の `version-upload` エントリのフィールド名 | 初回 CI 実行で実物を確認（主経路にしないので blocking ではない） |
+| 7 | workers.dev サブドメインの初期登録を非対話で完結できるか | 初回デプロイで確認。失敗したら Dashboard で 1 回だけ設定（`H-1` に同梱） |
+
+### `lead` — 判定
+<sub>2026-08-18T11:42:24+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: Workers Free か Workers Paid か",
+      "design": "Free を初期値にする。SP-1 で (1) p95 CPU 時間 (2) gzip 後の Worker バンドルサイズ を実測し、p95 CPU > 7〜8ms または バンドル > 3MB のときだけ Paid へ上げる。Claude は判定と limits.cpu_ms 等の準備まで自律実行し、支払い方法の登録だけを A-6 としてユーザーへ即時通知する（Free→Paid の切替に CLI/API 経路は存在しない）。Free のままなら超過は課金ではなく HTTP 1027 停止に倒れ、INF-2 の『停止側に倒す』が構造的に満たされる。",
+      "artifacts": [
+        "docs/03_design/infrastructure/cloudflare-infrastructure.md（新規・実測ゲートの判定式）",
+        "docs/03_design/infrastructure/infrastructure-design.md（改修・§14 に CPU/バンドル実測を追加）"
+      ],
+      "rejected": "実測前に Paid を既定にする案。INF-3 と INF-2 が実際に衝突するかは実測しないと決まらず、前倒しは根拠のない decision（cost_guard）"
+    },
+    {
+      "issue": "B: キャッシュ実装の置き場所",
+      "design": "MVP は HTTP Cache-Control（RFC 9111・事業者非依存）+ Workers Caching（wrangler.jsonc の cache.enabled）だけで構成する。永続ストア（R2 / D1 / DO / KV）は採用しない。NFR-17 Cache Port は lib/infra/ 配下の薄いラッパー（キャッシュキー生成 + Cache-Control 付与、面積は get/set/invalidate + TTL）として維持し、L3 は infrastructure-design.md §6.2 の観測条件を満たしたときだけ ADR とともに導入する。",
+      "artifacts": [
+        "docs/03_design/infrastructure/cloudflare-infrastructure.md（新規）",
+        "wrangler.jsonc（新規・cache.enabled）",
+        "lib/infra/cache.ts（新規・SP-5 で実装）"
+      ],
+      "rejected": "OpenNext incremental cache（R2 + regional cache / D1 tag cache / DO queue）を MVP から入れる案。提案者自身が撤回。R2 有効化に支払い方法の登録が要り Free のハードキャップを自壊させる / DO の無料枠が未確認 / D-5 追補と §6.2 の L3 ゲートに反する"
+    },
+    {
+      "issue": "C: OpenNext + wrangler.jsonc は INF-5 / NFR-21 に違反するか",
+      "design": "違反しない。境界は『アプリコードが Cloudflare bindings を直接触るか』の一点に置く。Cloudflare bindings（getCloudflareContext() の戻り値・env.KV / env.R2 / env.D1 / env.RATE_LIMITER / env.CACHE / env.IMAGES 等）へのアクセスは lib/infra/ 配下からのみ許可し、app/ と lib/data/ からの直接アクセスを禁止する。grep 2 本（bindings 直接参照 / Cloudflare 環境変数による実行時分岐）を tools/self_review_check.py に追加して機械検出する。wrangler.jsonc と open-next.config.ts は app/ の外に置き、実行時の分岐条件として読まない。",
+      "artifacts": [
+        "docs/03_design/infrastructure/infrastructure-design.md（改修・§3.2 に禁止 #7 #8 を追加、§13 に破棄項目を追加）",
+        "tools/self_review_check.py（改修・grep 2 本を機械ゲート化）",
+        "docs/adr/0002-cloudflare-workers-infrastructure.md（新規）"
+      ],
+      "rejected": "『1 ファイルに閉じ込める』という数量表現での規約化。提案者が自己批判したとおり grep でホワイトリスト化できず目視判断に戻る"
+    },
+    {
+      "issue": "D: CLI 一次経路の具体形",
+      "design": "GitHub Actions + cloudflare/wrangler-action に一本化する（Workers Builds は不採用）。プレビューは Worker を増やさず wrangler versions upload --preview-alias pr-<N> で回す。URL は stdout の正規表現抽出を主経路にし、取得失敗・到達性 5xx・PR への反映失敗のいずれでも CI を fail-closed で落とす（SD-1 がサイレントに欠落する経路を塞ぐ）。非対話化は CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID + WRANGLER_SEND_METRICS=false + WRANGLER_SEND_ERROR_REPORTS=false。Cloudflare MCP は読み取り 4 ツール（search_cloudflare_documentation / workers_list / workers_get_worker / workers_get_worker_code）のみアローリストで残し、書き込み系は使わない。SP-1 のブートストラップ期間に限り Claude がセッションから直接 wrangler versions upload を叩いてよい（INF-20 の例外として明記し、SP-4 以降は CI 経由に一本化）。",
+      "artifacts": [
+        ".github/workflows/deploy-preview.yml（新規）",
+        ".github/workflows/deploy-production.yml（新規）",
+        "docs/03_design/infrastructure/cloudflare-infrastructure.md（新規・CLI 運用規約と MCP アローリスト）"
+      ],
+      "rejected": "Workers Builds（初回接続が GitHub App の GUI 承認で CLI 一次方針と非対称）/ ND-JSON を URL 取得の主経路にする案（フィールド名未確認で false negative リスク）"
+    },
+    {
+      "issue": "E: 本番デプロイ先（D-7）も今確定するか",
+      "design": "確定する。プレビュー・本番とも Cloudflare Workers。権威順（ユーザー明示 > 仕様）に従い、ユーザー指示『インフラについて Cloudflare ベースで進めたい』はプレビューに限定されていない。M-4 は廃止せず『第三者へ公開するか否かを決めるゲート』として性質を変えて維持する（独自ドメインの要否・GitHub 利用規約の一次確認・コスト撤退ラインの確定はここに残す）。",
+      "artifacts": [
+        "docs/02_requirements/open-questions.md（改修・D-16 / D-17 / D-18 を追加し D-7 / D-11 を決定済みに更新）",
+        "docs/02_requirements/roadmap.md（改修・M-4 の性質変更）",
+        "docs/02_requirements/prd.md（改修・§13 のプレビュー環境デプロイ先をクローズ）"
+      ],
+      "rejected": "D-7 を M-4 まで開けておく案。ユーザー明示決定が既にある以上、保留は判断ではなく仕様の惰性"
+    }
+  ],
+  "tasks": [
+    { "id": "T-1", "title": "Cloudflare API トークンを 1 本発行する（Edit Cloudflare Workers テンプレート）", "actor": "user", "depends_on": [], "sp": "sp:1" },
+    { "id": "T-2", "title": "トークンと Account ID を GitHub Actions Secrets と Claude.ai 環境変数の 2 箇所に登録する", "actor": "user", "depends_on": ["T-1"], "sp": "sp:1" },
+    { "id": "T-3", "title": "wrangler の疎通確認と workers.dev サブドメインの確定（whoami / 初回 upload）", "actor": "claude", "depends_on": ["T-2"], "sp": "sp:1" },
+    { "id": "T-4", "title": "@opennextjs/cloudflare 導入・wrangler.jsonc / open-next.config.ts 追加・next を 16.2.11+ にピン", "actor": "claude", "depends_on": ["T-3"], "sp": "sp:3" },
+    { "id": "T-5", "title": "プレビュー版をアップロードして PR にプレビュー URL を貼る（SD-1 の成立）", "actor": "claude", "depends_on": ["T-4"], "sp": "sp:2" },
+    { "id": "T-6", "title": "GitHub Actions（preview / production）を作成し fail-closed の URL 検証を組み込む", "actor": "claude", "depends_on": ["T-5"], "sp": "sp:3" },
+    { "id": "T-7", "title": "p95 CPU 時間と gzip バンドルサイズを実測し Free/Paid を判定する", "actor": "claude", "depends_on": ["T-5"], "sp": "sp:2" },
+    { "id": "T-8", "title": "lib/infra/ 境界を作り Cache Port（Cache-Control ラッパー）を実装する", "actor": "claude", "depends_on": ["T-4"], "sp": "sp:3" },
+    { "id": "T-9", "title": "bindings 直接参照と Cloudflare 環境変数分岐の grep 2 本を self_review_check.py に追加する", "actor": "claude", "depends_on": [], "sp": "sp:2" },
+    { "id": "T-10", "title": "observability.invocation_logs 無効化・シークレット投入・Rate Limiting（HMAC key）を設定する", "actor": "claude", "depends_on": ["T-4"], "sp": "sp:3" },
+    { "id": "T-11", "title": "Workers Paid へ切り替える（T-7 が閾値超過を実測で確定した場合のみ）", "actor": "user", "depends_on": ["T-7"], "sp": "sp:1" }
+  ],
+  "critical": [
+    "Free の CPU 10ms / バンドル 3MB（gzip）に Next.js 16 App Router の SSR が収まるかは一次情報で確定できず、実測するまで Free 運用の成立は断定できない。SP-1 の実測ゲートを通過するまで『月額 0 円で動く』と報告してはならない",
+    "キャッシュヒットも Workers のリクエスト枠を消費するため、Free の 100,000 req/日 に対してキャッシュは防波堤にならない。infrastructure-design.md §10.2 の『キャッシュヒット率向上はコスト削減とレート制限対策の同じ打ち手』という記述は Cloudflare 前提では不正確で、3 軸（CPU-ms / GitHub レート枠 / リクエスト数）に分解して書き直す必要がある",
+    "Paid へ移行するとハードキャップが消滅し、リクエスト数課金の暴走を止める native な手段が存在しない（Budget alerts は通知のみ・Spend limit は AI Gateway 専用）。limits.cpu_ms と Billable Usage API の日次ポーリングによる後追い封じ込めしか残らない"
+  ],
+  "open_questions": [
+    "SP-1 の実測で Free の上限（p95 CPU > 7〜8ms または gzip バンドル > 3MB）を超えた場合、Workers Paid（$5/月）へ上げてよいか。上げない場合は SSR を削る等の設計変更で Free に留める必要があり、成果物が変わる（A-6: 支払い方法の登録はユーザー権限が物理的に必要）",
+    "Paid へ移行した場合の月額撤退ライン（Billable Usage API の監視閾値に使う実額）。infrastructure-design.md §14 で未決のまま残っている"
+  ]
+}
