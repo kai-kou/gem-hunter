@@ -166,8 +166,15 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
 4-4. `sprint-development-rules.md` の `SD-1`〜`SD-4` をそのまま実行する:
      - `SD-4`（ドキュメントを読んで自律的に動く）: 着手時に `user-story-map.md` §5.3 の該当
        `SP-n` → `prd.md` の参照要件 ID と該当 `AC-n` → `prd.md` §13 未決事項 → `inception-deck.md`
-       Q4 → `project-mission.md` の順で読む
-     - `SD-2`（TDD 主体）: Red → Green → Refactor。操作レビュー手順を E2E に写す
+       Q4 → `project-mission.md` の順で読む。**アプリコードを書く firing では続けて
+       `docs/rules/architecture-rules.md` を読む**（層の判定・依存規則 7 項目・DDD の語彙規律・
+       TDD の最低ライン。定義の正本である `application-architecture.md` / `domain-model.md` /
+       `testing-strategy.md` への入口になっている）
+     - `SD-2`（TDD 主体）: Red → Green → Refactor。操作レビュー手順を E2E に写す。
+       **道具・層分担・フレームワーク由来の制約の正本は `docs/04_development/testing-strategy.md`**
+       （本スキルには複製しない）
+     - **新しいドメイン語を導入したら `docs/03_design/data-model/domain-model.md` を同じ PR で更新する**
+       （ユビキタス言語はコードと同時に更新されて初めて機能する）
      - **縦切りの判定境界（3 層・強制力の 4 段）**: 正本は
        `docs/02_requirements/user-story-map.md` §5.2（層ごとの対象パスと、`C-5` 違反 = blocking /
        `SP-1` の 3 層必須 = blocking / 機能スプリントの 2 層以上 = warning / イネイブラー単独 = exempt）。

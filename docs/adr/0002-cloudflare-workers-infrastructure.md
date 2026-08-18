@@ -28,7 +28,7 @@
 | 1 | **デプロイ先はプレビュー・本番とも Cloudflare Workers**（`D-16`）。`D-7` / `D-11` をクローズする |
 | 2 | **ランタイムは `@opennextjs/cloudflare`**。`next` は **16.2.11 以上** にピンする（`D-17`） |
 | 3 | **MVP のキャッシュは HTTP `Cache-Control` + Workers Caching のみ**。R2 / D1 / Durable Objects / KV は採用しない（`D-18`） |
-| 4 | **`NFR-17` Cache Port は維持** し、実装位置を **`lib/infra/`** と定める |
+| 4 | **`NFR-17` Cache Port は維持** し、実装位置を **`src/infrastructure/platform/`** と定める |
 | 5 | **運用の一次経路は wrangler CLI**。Cloudflare MCP は読み取り 4 ツールのみアローリストで許可する |
 | 6 | **CI は GitHub Actions + `cloudflare/wrangler-action`**。Workers Builds は採用しない |
 | 7 | **Workers Free を初期値** とし、`SP-1` の実測ゲート（p95 CPU / gzip バンドル）で Paid 要否を判定する |
@@ -86,7 +86,7 @@ Workers Builds は初回接続に **GitHub App のインストール承認（GUI
 - **`INF-2` が構造的に満たされる**: Free を維持する限り、超過は課金ではなく停止に倒れる。「青天井の課金リスクを負わない」（§10.3）が設定ではなく **プラン選択そのもの** で担保される
 - **`NFR-7`（request coalescing）が補助から主役級へ格上げされる**: Workers Caching のリクエスト合体は **エッジで効く**。`infrastructure-design.md` §4 が「インスタンス内でしか効かない」として補助扱いにしていた前提が変わる
 - **静的アセットのコストがゼロになる**: Workers Static Assets へのリクエストは無料・無制限（`INF-10` / §10.1 のコストドライバ 2 が消える）
-- **`INF-5` が目視判断から機械判定になる**: `lib/infra/` 限定 + grep 2 本により、セルフレビューで自動検出できる
+- **`INF-5` が目視判断から機械判定になる**: `src/infrastructure/platform/` 限定 + grep 2 本により、セルフレビューで自動検出できる
 - **`INF-1` の留保が 1 段階解消される**: §5.3 が「事業者標準のアクセスログはアプリの制御外」としていた唯一の領域について、Workers の invocation ログは設定で無効化できる
 
 ### 受け入れる代償
@@ -122,8 +122,8 @@ Workers Builds は初回接続に **GitHub App のインストール承認（GUI
 
 | 層 | Cloudflare 依存 | 判定 |
 |---|---|---|
-| `app/` / `lib/data/`（アプリランタイム層） | 🔴 **禁止**（bindings の直接参照・Cloudflare 環境変数による分岐） | grep 2 本で検出 |
-| `lib/infra/` | 🟢 許容（bindings への唯一の合法アクセス経路） | 差し替え時はここだけ書き換える |
+| `app/` / `src/infrastructure/github/`（アプリランタイム層） | 🔴 **禁止**（bindings の直接参照・Cloudflare 環境変数による分岐） | grep 2 本で検出 |
+| `src/infrastructure/platform/` | 🟢 許容（bindings への唯一の合法アクセス経路） | 差し替え時はここだけ書き換える |
 | `wrangler.jsonc` / `open-next.config.ts` / `.github/workflows/` | 🟢 許容（デプロイ・運用層。`app/` の外） | 差し替え時は破棄する |
 
 🔵 `NFR-21` は `D-11` の時点で既に「アプリのランタイムに対する制約であり、開発フローの道具への依存は対象外」と限定されている。本 ADR はその限定を **ディレクトリ境界と grep** に翻訳したものである。

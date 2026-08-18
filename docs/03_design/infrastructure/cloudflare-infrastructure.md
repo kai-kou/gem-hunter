@@ -104,7 +104,7 @@ flowchart TB
 | `INF-2` 定常コストをゼロに | Free plan を維持する限り超過は課金ではなく停止（§5） | ⚠️ 実測待ち |
 | `INF-3` 与件の技術スタック | Next.js 16 App Router が動く。⚠️ Free の CPU / バンドル上限に収まるかは実測待ち（§5.3） | ⚠️ 実測待ち |
 | `INF-4` 人手の定常運用ゼロ | ブートストラップ以外の定常作業はゼロ（**トークンに TTL を設定しない** ことが条件・§11.3） | ✅ 条件付き |
-| `INF-5` 事業者を決め打たない | §10 の境界（`lib/infra/` 限定 + grep 2 本）で機械的に守る | ✅ |
+| `INF-5` 事業者を決め打たない | §10 の境界（`src/infrastructure/platform/` 限定 + grep 2 本）で機械的に守る | ✅ |
 
 ---
 
@@ -187,7 +187,7 @@ flowchart TB
 
 ### 4.3. `NFR-17` Cache Port の実装位置
 
-Cache Port は **維持する**（撤廃しない）。ただし実装は `open-next.config.ts` ではなく **`lib/infra/cache.ts`** に置く。
+Cache Port は **維持する**（撤廃しない）。ただし実装は `open-next.config.ts` ではなく **`src/infrastructure/platform/cache.ts`** に置く。
 
 - 面積は `get` / `set` / `invalidate` + TTL のみ（`NFR-17` のとおり。汎用キャッシュライブラリを自作しない）
 - 実体は「キャッシュキーの生成（`NFR-18`）+ レスポンスへの `Cache-Control` 付与」の薄いラッパー
@@ -208,11 +208,11 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 | 経路 | 手段 | 位置づけ |
 |---|---|---|
-| **主** | レスポンスヘッダ `X-Cache-Status: HIT` / `MISS` を **アプリ側で付与する**（`lib/infra/cache.ts`） | 🟢 **事業者非依存**。ブラウザの DevTools で誰でも確認でき、E2E テストからも assert できる（`SD-2`） |
+| **主** | レスポンスヘッダ `X-Cache-Status: HIT` / `MISS` を **アプリ側で付与する**（`src/infrastructure/platform/cache.ts`） | 🟢 **事業者非依存**。ブラウザの DevTools で誰でも確認でき、E2E テストからも assert できる（`SD-2`） |
 | 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの GitHub App installation token** の残量・`D-20`） |
 | 補助 | `wrangler tail --format json` のライブストリーム | ⚠️ `invocation_logs: false` でも tail が拾えるかは **未確認**（§12 の 9）。主経路にしない |
 
-🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`lib/infra/` の実装が付け替わるだけ）。
+🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`src/infrastructure/platform/` の実装が付け替わるだけ）。
 
 ---
 
@@ -469,7 +469,7 @@ done
 | # | 設定 | 場所 |
 |---|---|---|
 | 1 | **invocation ログを無効化する** | `wrangler.jsonc` の `observability.logs.invocation_logs: false` |
-| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | `lib/infra/rate-limit.ts`。salt は `wrangler secret put RATE_LIMIT_SALT` |
+| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | `src/infrastructure/platform/rate-limit.ts`。salt は `wrangler secret put RATE_LIMIT_SALT` |
 | 3 | **Bot Fight Mode を有効化しない** | Dashboard（既定オフのまま触らない） |
 | 4 | **WAF Rate limiting rules を使わない** | Free は 1 ルール・IP 固定で `AR-5`（ログイン有無での枠分け）に使えない |
 
@@ -494,16 +494,16 @@ done
 
 ### 10.1. 規約
 
-> 🔴 **Cloudflare bindings（`getCloudflareContext()` の戻り値・`env.KV` / `env.R2` / `env.D1` / `env.RATE_LIMITER` / `env.CACHE` / `env.IMAGES` 等）へのアクセスは `lib/infra/` 配下のファイルからのみ行ってよい。** `app/`（Server Component / Route Handler）と `lib/data/`（`NFR-16` のデータアクセス層）からの直接アクセスを禁止する。
+> 🔴 **Cloudflare bindings（`getCloudflareContext()` の戻り値・`env.KV` / `env.R2` / `env.D1` / `env.RATE_LIMITER` / `env.CACHE` / `env.IMAGES` 等）へのアクセスは `src/infrastructure/platform/` 配下のファイルからのみ行ってよい。** `app/`（Server Component / Route Handler）と `src/infrastructure/github/`（`NFR-16` のデータアクセス層）からの直接アクセスを禁止する。
 
 > 🔴 **`wrangler.jsonc` / `open-next.config.ts` はリポジトリルートに置き、アプリの実行時分岐条件として読まない。**
 
 ### 10.2. 機械ゲート（`tools/self_review_check.py` に追加する）
 
 ```bash
-# 違反 1: bindings への直接アクセスが lib/infra/ の外にある
+# 違反 1: bindings への直接アクセスが src/infrastructure/platform/ の外にある
 grep -rnE 'getCloudflareContext\(|env\.(KV|R2|D1|RATE_LIMITER|CACHE|IMAGES)\b' \
-  --include='*.ts' --include='*.tsx' app/ lib/ | grep -v '^lib/infra/'
+  --include='*.ts' --include='*.tsx' app/ src/ | grep -v '^src/infrastructure/platform/'
 # 出力ゼロなら合格
 
 # 違反 2: Cloudflare 環境変数を実行時の分岐条件にしている
@@ -519,10 +519,10 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 - [ ] `wrangler.jsonc` を破棄する（bindings 定義・`observability` 設定を含む）
 - [ ] `open-next.config.ts` と `@opennextjs/cloudflare` 依存を破棄する
 - [ ] `.github/workflows/deploy-*.yml` を新事業者向けに置き換える
-- [ ] `lib/infra/` の実装を差し替える（**インターフェースと呼び出し側は変更しない**）
+- [ ] `src/infrastructure/platform/` の実装を差し替える（**インターフェースと呼び出し側は変更しない**）
 - [ ] `Cache-Control` ヘッダ制御は **破棄不要**（RFC 9111 準拠で事業者非依存）
 
-🔵 **`app/` と `lib/data/` に手を入れないことが合格条件**（`NFR-21`）。
+🔵 **`app/` と `src/infrastructure/github/` に手を入れないことが合格条件**（`NFR-21`）。
 
 ---
 

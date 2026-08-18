@@ -144,7 +144,7 @@ flowchart TB
 | 4 | cron / キュー / 常駐ワーカーへの依存 | MVP では使わない。必要になったら ADR を起票する（Phase 2 の論点） |
 | 5 | 事業者固有のリライト・リダイレクト設定に依存したルーティング | `next.config` とファイルシステムルーティングで表現する |
 | 6 | プレビュー環境固有の API・環境変数をアプリの分岐条件にする | 環境差は **環境変数の値** だけで表現する（`D-11` の但し書き） |
-| 7 | 事業者固有のバインディング（`env.*` で参照するもの全般。KV / R2 / D1 / Rate Limiting / Cache / Images 等）への **`app/` および `lib/data/` からの直接アクセス** | **`lib/infra/` 配下からのみ触る**（唯一の合法アクセス経路）。Cache Port（`NFR-17`）と Rate Limit の呼び出しもここに閉じ込める |
+| 7 | 事業者固有のバインディング（`env.*` で参照するもの全般。KV / R2 / D1 / Rate Limiting / Cache / Images 等）への **`app/` および `src/infrastructure/github/` からの直接アクセス** | **`src/infrastructure/platform/` 配下からのみ触る**（唯一の合法アクセス経路）。Cache Port（`NFR-17`）と Rate Limit の呼び出しもここに閉じ込める |
 | 8 | インフラ設定ファイル（`wrangler.jsonc` / `open-next.config.ts` 等）を **アプリの実行時分岐条件として読む** | 設定ファイルはリポジトリルートに置き、アプリからは参照しない（禁止 6 と同じ理由） |
 
 🔵 **禁止 7・8 は機械判定できる**（目視レビューに戻さない）。Cloudflare 構成での具体的な grep は [Cloudflare インフラ設計](./cloudflare-infrastructure.md) §10.2 にあり、`tools/self_review_check.py` に組み込む。
@@ -228,7 +228,7 @@ flowchart TB
 | **L2** | Next.js のデータキャッシュ | 事業者依存（インスタンス / 事業者のキャッシュ基盤） | ✅ 採用。MVP の主役 |
 | **L3** | 外部 KV | 全インスタンス共有・永続的 | ❌ 未採用（`D-5`）。Cache Port の実装差し替えだけで入れられる状態に保つ |
 
-> 🔵 **Cloudflare での L2 の実体（`D-18`）**: Next.js のデータキャッシュではなく **HTTP `Cache-Control` + Workers Caching**（エッジ・リクエスト合体あり）に置く。OpenNext で incremental cache を設定しない構成では Next.js の Data Cache が isolate 内メモリに退化するため、`SP-5` の担保を Data Cache で説明しない。Cache Port の実装位置は `lib/infra/`（[Cloudflare インフラ設計](./cloudflare-infrastructure.md) §4）。
+> 🔵 **Cloudflare での L2 の実体（`D-18`）**: Next.js のデータキャッシュではなく **HTTP `Cache-Control` + Workers Caching**（エッジ・リクエスト合体あり）に置く。OpenNext で incremental cache を設定しない構成では Next.js の Data Cache が isolate 内メモリに退化するため、`SP-5` の担保を Data Cache で説明しない。Cache Port の実装位置は `src/infrastructure/platform/`（[Cloudflare インフラ設計](./cloudflare-infrastructure.md) §4）。
 
 - **Cache Port の面積は `get` / `set` / `invalidate` + TTL に限定する**（`NFR-17`）。汎用キャッシュライブラリを自作しない。
 - キー命名規約は `NFR-18` に従い、**検索結果** と **単一リポジトリ** で名前空間を分ける。
@@ -432,10 +432,10 @@ OAuth のコールバック URL は **事前登録が必要** だが、プレビ
 - [ ] `wrangler.jsonc` を破棄する（bindings 定義・`observability` 設定を含む）
 - [ ] `open-next.config.ts` と `@opennextjs/cloudflare` 依存を破棄する
 - [ ] `.github/workflows/deploy-*.yml` を新事業者向けに置き換える
-- [ ] `lib/infra/` の **実装のみ** 差し替える（インターフェースと呼び出し側は変更しない）
+- [ ] `src/infrastructure/platform/` の **実装のみ** 差し替える（インターフェースと呼び出し側は変更しない）
 - [ ] `Cache-Control` ヘッダ制御は **破棄不要**（RFC 9111 準拠で事業者非依存）
 
-🔵 **`app/` と `lib/data/` に手が入らないことが合格条件**（§3.2 の禁止 7 を守っていれば自動的に満たされる）。
+🔵 **`app/` と `src/infrastructure/github/` に手が入らないことが合格条件**（§3.2 の禁止 7 を守っていれば自動的に満たされる）。
 
 ---
 

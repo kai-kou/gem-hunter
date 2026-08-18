@@ -73,47 +73,13 @@
 - OAuth フロー: 必須。ただし **`SP-8` で OAuth 実装と同時に組む**（仕様が固まる前にモックを作ると手戻りになる）
 - 時刻依存（レート制限の復帰時刻表示）: 固定値を注入できる形にする
 
-### 2.4. アーキテクチャレイヤーと依存方向（クリーンアーキテクチャの具体形）
+### 2.4. アーキテクチャレイヤーと依存方向（正本への参照）
 
-`E-2`（データアクセス層の隔離）・`E-3`（Cache Port）・`E-5`（型検証）・`E-8`（Server Components 既定）・`NFR-16`（データ源差し替え）を、ディレクトリ構成として具体化する。
+🔴 **層・ディレクトリ構成・依存規則の正本は [`docs/03_design/architecture/application-architecture.md`](../03_design/architecture/application-architecture.md)**（`E-2` / `E-3` / `E-5` / `E-8` / `NFR-16` / `NFR-17` / `NFR-21` の具体形）。実装中に読む要約は [`architecture-rules.md`](./architecture-rules.md)、ドメイン語彙は [`domain-model.md`](../03_design/data-model/domain-model.md)。**本ファイルには構成図を再掲しない**（二重定義すると片方だけ古くなる。実際に旧構成が残置して新 SSOT と矛盾した経緯がある・#47）。
 
-```
-app/                                  # フレームワーク層（Composition Root）
-  [locale]/
-    page.tsx                          # 検索一覧（Server Component・薄い。usecase を呼ぶだけ）
-    [owner]/[repo]/page.tsx           # 詳細ページ
-    layout.tsx
+**機械強制**: `tools/check_architecture_boundaries.py`（`ARCH-1`〜`ARCH-7`）を `self_review_check.py` が PR 前に変更ファイルへ実行する。dependency-cruiser 等の追加導入は **必須ではない**（必要になった時点で `E-7` の実装詳細として検討する。新しいイネイブラー ID は作らない）。
 
-src/
-  domain/                             # ドメイン層（フレームワーク非依存・外部 import 禁止）
-    entities/repository.ts            # 内部モデル
-    ports/
-      github-repository-port.ts       # interface: search(), getDetail()
-      cache-port.ts                   # interface: get/set/invalidate + TTL（NFR-17）
-    errors/classify-error.ts          # prd.md §7 対応表 → エラー種別（純粋関数）
-
-  usecases/                           # アプリケーション層（ports にのみ依存）
-    search-repositories.ts
-    get-repository-detail.ts
-
-  infrastructure/                     # E-2「データアクセス層への隔離」の実体
-    github/
-      github-repository-adapter.ts    # github-repository-port を implements
-      github-response-schema.ts       # ランタイム検証（NFR-19）
-    cache/
-      nextjs-cache-adapter.ts         # cache-port を implements（NFR-17）
-      cache-key.ts                    # キー命名規約（NFR-18）
-
-  ui/
-    server/                           # Server Components（E-8 既定）
-    client/                           # "use client" 境界のみ
-```
-
-**依存方向**: `app/` → `usecases/` → `domain/ports/`（interface のみ）。`infrastructure/` は `domain/ports/` を implements する側で、`usecases/` からは注入されるだけ（`app/page.tsx` が Composition Root）。`domain/` は何にも依存しない。
-
-**機械強制**: `E-7`（Lint 導入）のスコープ内に dependency-cruiser を追加し、`domain` から外向きの参照・`usecases` から `infrastructure` への直接参照を禁止ルールとして定義する。`package.json` の `lint:arch` スクリプトから実行し、`E-12`（CI）のゲートに含める。新しいイネイブラー ID は作らず、既存 `E-7`/`E-12` の実装詳細として位置づける。
-
-⚠️ **用語の注意**: 本節の `src/infrastructure/`（データアクセス・キャッシュのアダプタ層）と、`infrastructure-design.md` の `INF-n`（運用基盤の契約＝デプロイ・CI・環境変数・プレビュー）は **別物**。前者はコードの一層、後者は運用基盤の契約であり、混同しない（3 層判定境界の正本は `docs/02_requirements/user-story-map.md` §5.2。本ファイルでは再掲しない）。
+⚠️ **用語の注意**: `src/infrastructure/`（アダプタ層）と `infrastructure-design.md` の `INF-n`（運用基盤の契約）は別物（3 層判定境界の正本は `docs/02_requirements/user-story-map.md` §5.2）。
 
 ### 2.5. TDD のコミット規約と 2 段検証
 

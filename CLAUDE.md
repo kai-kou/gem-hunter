@@ -94,6 +94,7 @@ gem-hunter
 （他の Hot ファイルに `-detail.md` は存在しない・Hot 層予算の棚卸し・Issue #146）。
 
 タスク依存ルール（必要時に Read）: `docs/rules/` の
+`architecture-rules.md`（**アプリコードを書くスプリントは必読**。クリーンアーキテクチャの依存規則・DDD の語彙規律・TDD の最低ライン。定義の正本は `docs/03_design/architecture/application-architecture.md` / `docs/03_design/data-model/domain-model.md` / `docs/04_development/testing-strategy.md`）/
 `progress-reporting-rules.md`（制作系の長時間処理時に該当パイプラインスキルが冒頭で Read）/
 `autonomous-operation-policy.md`（Warm 降格・#89）/
 `ai-reviewer-strategy.md`（FAIR 構成詳細・Warm 降格・#88）/

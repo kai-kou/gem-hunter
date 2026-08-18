@@ -49,6 +49,9 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 
 🔴 **実装を先に書いてテストを後から足す順序を取らない。**
 
+🔵 **道具・層分担・二重ループ・フレームワーク由来の制約は [`docs/04_development/testing-strategy.md`](../04_development/testing-strategy.md)（SSOT・`R-11` の回答）に従う。**
+本節は規律だけを定め、制約の中身は再掲しない（片方だけ古くなるため）。
+
 | 層 | 対象 | 対応要件 |
 |---|---|---|
 | **単体 / 結合** | データアクセス層・エラー判別・キャッシュキー・型検証・UI コンポーネント | `NFR-23` / `NFR-24` |
@@ -104,6 +107,7 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 | 4 | `docs/00_concept/inception-deck.md` Q4 | やらないこと / 今は決めないこと（スコープの侵食防止） |
 | 5 | `docs/project-mission.md` | 品質ゲート・判断基準 |
 | 6 | `docs/03_design/ui-ux/ui-ux-guidelines.md`（**UI を触るスプリントのみ**） | 技術スタック・デザイントークン・状態表現・a11y の実装指針 |
+| 7 | 🔴 `docs/rules/architecture-rules.md`（**アプリコードを書くスプリントは必読**） | 層の判定・依存規則 7 項目・DDD で守る 3 点・TDD の最低ライン（各 SSOT への入口） |
 
 🔴 **`SD-3` の確認は「ドキュメントを読んでも決まらないこと」にのみ発火する。** 読めば分かることを聞くのは `CP-6` 違反。
 
@@ -114,6 +118,7 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 - [ ] Issue / PR に参照した要件 ID（`US-n` / `E-n` / `AC-n` / `NFR-n` 等）が書かれている
 - [ ] スコープ外（`inception-deck.md` Q4.2）の項目を混ぜていない
 - [ ] 見つけたドキュメントの矛盾を修正したか、別 Issue を起票した
+- [ ] （アプリコードを触った場合）`python3 tools/check_architecture_boundaries.py` が PASS し、新しいドメイン語を導入したなら `domain-model.md` を同じ PR で更新した
 
 ---
 
@@ -122,6 +127,8 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 毎スプリントで使う **実行チェックリスト**・例外の詳細・フォールバック手順は
 `docs/rules/sprint-development-rules-detail.md`。
 
-関連: `docs/02_requirements/user-story-map.md` §5（`SP-n` の正本）/ `session-sprint-rules.md`（単位と `sp:N`）/
+関連: `architecture-rules.md`（実装時の判断チェックリスト）/ `docs/03_design/architecture/application-architecture.md`（層・依存規則の正本）/
+`docs/03_design/data-model/domain-model.md`（ユビキタス言語の正本）/ `docs/04_development/testing-strategy.md`（テストの正本）/
+`docs/02_requirements/user-story-map.md` §5（`SP-n` の正本）/ `session-sprint-rules.md`（単位と `sp:N`）/
 `user-confirmation-minimization.md`（確認要否の SSOT）/ `intent-gate-rules.md`（権威解決）/
 `docs/02_requirements/open-questions.md`（`D-11` / `D-12` の決定ログ）
