@@ -204,18 +204,29 @@ def build_issue_labels(sprint: dict) -> list[str]:
     return ["type:feature", f"sp:{sprint['sp']}", sprint["priority"]]
 
 
-def build_issue_body(sprint: dict) -> str:
+def build_doc_url(repo: str, anchor: str) -> str:
+    """Issue 本文へ埋めるドキュメントリンクを組み立てる。
+
+    GitHub の Issue 本文はリポジトリ相対リンクを解決しない（`docs/...` と書くと
+    `https://github.com/{owner}/{repo}/docs/...` になり 404）。したがって
+    blob URL の絶対 URL を生成する。ブランチは既定ブランチ `main` に固定する
+    （SP-n の定義はマージ済みの正本を指すため）。
+    """
+    return f"https://github.com/{repo}/blob/main/{DOC_PATH}#{anchor}"
+
+
+def build_issue_body(sprint: dict, repo: str) -> str:
     includes = "、".join(f"`{x}`" for x in sprint["includes"]) or "（§5.3 参照）"
     ac = "、".join(f"`{x}`" for x in sprint["ac"]) or "（本スプリントに対応 AC なし。§5.3 参照）"
-    anchor_link = f"{DOC_PATH}#{sprint['anchor']}"
+    anchor_link = build_doc_url(repo, sprint["anchor"])
     return (
         f"## ゴール\n\n{sprint['goal']}\n\n"
         f"## 含む\n\n{includes}\n\n"
         f"## 対応 AC\n\n{ac}\n\n"
         f"## 見積もり\n\n`sp:{sprint['sp']}`\n\n"
         f"## 参照\n\n"
-        f"[{DOC_PATH} §5.3 SP-{sprint['number']}]({anchor_link})"
-        "（操作レビュー手順・受け入れ条件の本文はここにコピーしない。ID 参照が正本）\n\n"
+        f"- {DOC_PATH} §5.3 SP-{sprint['number']}: {anchor_link}\n"
+        "- 操作レビュー手順・受け入れ条件の本文はここにコピーしない（ID 参照が正本）\n\n"
         f"## Done の判定\n\n"
         "`docs/rules/sprint-development-rules.md` の `SD-1`（動作確認できる状態で終わる）・"
         "`SD-2`（TDD 主体・常に動作担保）の完了条件に従う。\n\n"
@@ -269,7 +280,7 @@ def build_milestone_issue_body() -> str:
 # 意思決定（純関数・self-test 対象）
 # ──────────────────────────────────────────────
 
-def decide(md_text: str, existing_issue_titles: list[str]) -> dict:
+def decide(md_text: str, existing_issue_titles: list[str], repo: str = "kai-kou/gem-hunter") -> dict:
     """今回の firing で何をすべきかを決定する。ネットワークに触れない純関数。
 
     Returns:
@@ -322,7 +333,7 @@ def decide(md_text: str, existing_issue_titles: list[str]) -> dict:
         "action": "create_sp_issue",
         "sp_number": next_n,
         "title": build_issue_title(sprint),
-        "body": build_issue_body(sprint),
+        "body": build_issue_body(sprint, repo),
         "labels": build_issue_labels(sprint),
         "reason": f"SP-{next_n} の Issue が未存在（既存 SP 番号: {sorted(existing_numbers)}）",
     }
@@ -711,7 +722,7 @@ def main() -> None:
             print(f"ERROR: gh_unavailable: {err}", file=sys.stderr)
         sys.exit(2)
 
-    decision = decide(md_text, titles)
+    decision = decide(md_text, titles, REPO)
 
     if args.dry_run:
         out = {**decision, "dry_run": True, "checked_at": now_jst_str(), "repo": REPO}
