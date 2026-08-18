@@ -247,6 +247,8 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 2. それでも超えるなら、Claude が `limits.cpu_ms` の設定と監視の準備を **確認なしで** 済ませる
 3. **支払い方法の登録とプラン切替だけ** を `A-6` としてユーザーへ通知する（Free → Paid に CLI/API 経路は存在しない）
 
+🟢 **切替の可否はユーザーから事前承認済み（`D-19`・2026-08-18）**。閾値超過が実測で確定したら、判断を仰ぎ直さずに「支払い方法を登録してください」という 1 手だけを依頼する。
+
 ⚠️ **`SP-1` はこの手順の 3 に到達しない限り止まらない**（Free のままプレビュー URL は出せる）。
 
 ### 5.4. Paid へ移行した場合に失うもの
@@ -257,7 +259,9 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 | Billable Usage API（日次） | 製品別コストの事後取得 | バースト検知のラグ |
 | Budget alerts | 閾値到達の通知 | 🔴 **停止しない**（公式に "informational only" と明記） |
 
-🔴 **残余リスク**: Paid 移行後は、大量アクセスによるリクエスト数課金の急増を止める native な手段が存在しない。Billable Usage API のポーリングによる後追い封じ込めしか残らない（`M-4` で撤退ラインを確定する）。
+🔴 **残余リスク**: Paid 移行後は、大量アクセスによるリクエスト数課金の急増を止める native な手段が存在しない。Billable Usage API のポーリングによる後追い封じ込めしか残らない。
+
+🟢 **撤退ラインは月額 $10**（`D-19`・ユーザー決定）。Billable Usage API（`GET /accounts/{id}/billable-usage`）の日次ポーリングでこの閾値を監視し、超えたら Issue を起票して通知する。⚠️ Budget alerts は通知のみで停止しないため、これに依存しない。
 
 ---
 
@@ -281,10 +285,10 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 **MVP は `*.workers.dev` で運用する**（独自ドメイン不要）。理由:
 
-- Workers のカスタムドメインには **active な Cloudflare zone が必要** → レジストラでのネームサーバー変更（人間作業・`H-3`）が発生する
+- Workers の Custom Domain には **active な Cloudflare zone とその所有が必要**（公式の要件・[リサーチ §6.1.1](../../01_research/infra/20260818-cloudflare-research.md)）→ レジストラでのネームサーバー変更（人間作業・`H-3`）が発生する
 - ポートフォリオ用途（`D-3`）では `*.workers.dev` で足りる
 
-⚠️ Cloudflare 公式は workers.dev を「個人・ホビー向け。business-critical には非推奨」としている。**独自ドメインの要否は `M-4`（公開判断ゲート）で決める**。
+⚠️ Cloudflare 公式は workers.dev を「Free website 扱いで、business-critical でない個人・ホビー用途を想定したもの」と明記し、本番は Workers route か Custom Domain で動かすことを推奨している（[リサーチ §6.1.1](../../01_research/infra/20260818-cloudflare-research.md) に原文）。**独自ドメインの要否は `M-4`（公開判断ゲート）で決める**。
 
 ---
 
@@ -298,6 +302,11 @@ export CLOUDFLARE_ACCOUNT_ID="<account_id>"
 export WRANGLER_SEND_METRICS=false         # 未設定だと初回に対話プロンプトが出て非 TTY で失敗する
 export WRANGLER_SEND_ERROR_REPORTS=false
 npx wrangler whoami                        # 疎通確認
+```
+
+🔴 **トークンの実値をシェルへ直接打ち込まない**（履歴・`ps` 出力・スクロールバックに残る）。値は必ず **供給済みの環境変数から参照する**（CI は `${{ secrets.CLOUDFLARE_API_TOKEN }}`、Claude Code のセッションは供給済みの env）。上の `export` は「wrangler がこの変数名を読む」ことを示すための表記であり、値を手打ちする手順ではない。
+
+```bash
 ```
 
 - 🔵 **本リポジトリのクラウドセッションから `api.cloudflare.com` に到達できることは実測済み**（リサーチ §7）。トークンが env に供給されれば Claude が直接 wrangler を叩ける

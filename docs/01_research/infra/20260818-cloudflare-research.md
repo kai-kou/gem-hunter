@@ -279,6 +279,15 @@ Free 向けのオプトイン機能で **既定オフ**。有効化すると **W
 **H-1 さえ済めば、Worker 作成・デプロイ・プレビュー URL・KV/R2/D1 作成・シークレット投入・削除・2 本目以降のトークン発行はすべて非対話で自動化できる。**
 ⚠️ workers.dev サブドメインの **初期登録** は、初回 `wrangler deploy` の対話プロンプトで登録される経路しか確認できておらず、非 TTY で完結するかは未確認（Dashboard の Workers & Pages > Your subdomain でも設定可）。
 
+### 6.1.1. ドメイン（`*.workers.dev` と独自ドメイン）
+
+公式ドキュメントの記述（2026-08-18 に本文を直接確認）。
+
+- **workers.dev を本番用途に使うことは推奨されていない**: [workers.dev](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/) に「It's recommended to run production Workers on a Workers route or custom domain, rather than on your workers.dev subdomain. Your workers.dev subdomain is treated as a Free website and is intended for personal or hobby projects that aren't business-critical.」と明記されている
+- **Custom Domain には active な Cloudflare zone と、その zone の所有が必要**: [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) が要件として「An active Cloudflare zone.」を挙げ、注意書きで「You cannot create a Custom Domain on a hostname with an existing CNAME DNS record or on a zone you do not own.」としている
+
+🔵 **含意**: 独自ドメインを使うなら **レジストラでネームサーバーを Cloudflare へ向けて zone を active にする**（`H-3`）ところまでが前提条件になる。MVP を `*.workers.dev` で運用する判断は、この人間作業を回避する代わりに「公式が本番用途に推奨していない URL で出す」ことを受け入れる、というトレードオフである。
+
 ### 6.2. 環境分離の公式パターン
 
 | 方式 | 内容 | 向き |
@@ -322,6 +331,7 @@ Free の Worker 数上限は 100/アカウント。**PR プレビューを `[env
 | 6 | R2 無料枠超過時に停止するか課金されるか | R2 を使わない構成なら不要 |
 | 7 | Budget alerts の API 経由設定可否 | Free 運用なら不要 |
 | 8 | workers.dev サブドメインの初期登録を非対話で完結できるか | 初回デプロイ時に確認（失敗したら Dashboard で 1 回だけ設定） |
+| 9 | `next-intl` のミドルウェアレス構成が現行版でサポートされるか（`proxy.ts` を使わない i18n ルーティングの成否） | `SP-2` 着手前に context7 で一次確認。ダメならロケール判定を自作に閉じる |
 
 ---
 
