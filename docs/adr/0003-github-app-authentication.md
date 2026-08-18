@@ -1,0 +1,150 @@
+# ADR 0003: サーバー側の GitHub 認証を GitHub App の installation token にする
+
+- **状態**: **承認**（実測検証済み・2026-08-18）
+- **日付**: 2026-08-18 JST
+- **対応要件**: `D-6`（改訂元）/ `D-20`（本 ADR の決定）/ `Q-10` / `NFR-7` / `NFR-9` / `INF-4` / `INF-5`
+- **関連**: [未決事項・決定ログ](../02_requirements/open-questions.md) / [PRD](../02_requirements/prd.md) §10 / [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §7.6 / §11 / Issue #31 / Issue #34
+
+---
+
+## 1. 文脈
+
+`D-6`（2026-08-17）は、サーバー側の GitHub 認証を **単一の Fine-grained PAT** と決めていた。当時の比較表で GitHub App は「一般公開・多ユーザー運用時に必要」と位置づけられ、MVP では過剰と判断されていた。
+
+一方で、確定済みの他の決定と噛み合わない点が残っていた。
+
+- `INF-4`（[インフラ設計](../03_design/infrastructure/infrastructure-design.md)）は **定常運用の人手作業をゼロにする** ことを求めており、[Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §11.3 は同じ理由で Cloudflare API トークンに TTL を付けない選択をしていた。**Fine-grained PAT は有効期限が切れるたびに人手の更新作業が発生する**（無期限にすれば回避できるが、今度は漏洩時の影響が無期限に続く）。
+- `NFR-7`（レート制限耐性）に対して、PAT の Core 枠 5,000 req/h は上限が固定で、伸ばす手段がない。
+
+2026-08-18、`gem-hunter-kai-kou` として GitHub App を作成し、**方式を切り替えられるか実測で確認した**。本 ADR はその結果に基づく。
+
+---
+
+## 2. 決定
+
+**サーバー側の GitHub API 認証を、GitHub App の installation access token に切り替える。**
+
+| # | 決定 |
+|---|---|
+| 1 | サーバー側の認証は **GitHub App の installation token**（`D-20`）。Fine-grained PAT は採用しない |
+| 2 | App の権限は **`contents:read` / `issues:read` / `metadata:read`** に限定する |
+| 3 | 秘密として保持するのは **署名鍵（PKCS#8 に変換したもの）** と App の識別子のみ |
+| 4 | installation token は **失効前まで再利用する**（毎リクエストで取り直さない） |
+| 5 | 詳細取得は **検索 API が返した正規の `full_name`** で行う（改名リダイレクトを踏まない） |
+| 6 | **`D-6` のうち「任意の GitHub OAuth ログイン」「ログインで変わるのはレート枠だけ」「複数トークンのローテーションを行わない」は変更しない** |
+
+🔴 **GitHub App を「認証方式」として採る決定であって、Webhook 受信・イベント購読を採る決定ではない。** 後者は引き続き不採用（[PRD](../02_requirements/prd.md) §3 やらないこと・`Q-6`）。本プロダクトは他人の公開リポジトリを読むだけで、監視対象リポジトリを持たない。
+
+---
+
+## 3. 理由（実測値）
+
+検証は **本番と同じ実行環境（Cloudflare Workers）** で行った。セッションのコンテナからは `api.github.com` の `/app/*` `/repos/*` がプロキシに 403 で遮断されるため、ローカル実行では方式の可否を判定できない。
+
+### 3.1. レート枠が 1.76 倍になる
+
+| 枠 | GitHub App（実測） | Fine-grained PAT（公式値） |
+|---|---|---|
+| Core API（詳細取得） | **8,800 req/h** | 5,000 req/h |
+| GraphQL | 8,800 req/h | 5,000 req/h |
+| 検索 API | 30 req/分 | 30 req/分 |
+| Code search | 10 req/分 | 10 req/分 |
+
+実測の 8,800 は公式の算出式（`5,000 + 20 リポジトリを超えた分 × 50`・上限 12,500）と整合する。
+
+⚠️ **律速は変わらない**。検索枠は 30 req/分で PAT と同じであり、アプリ全体のスループット上限はここで決まる。**Core 枠の拡大が効くのは詳細取得側** であり、「GitHub App にすれば検索が速くなる」わけではない。
+
+### 3.2. 有効期限の更新という定常作業が消える（`INF-4`）
+
+installation token の TTL は **1 時間** で、アプリが自動で取り直す。人が保持するのは期限のない署名鍵だけになるため、**`INF-4` が禁じる「人手の定常作業」が発生しない**。Fine-grained PAT では「期限を付けて更新作業を抱える」か「無期限にして漏洩リスクを無期限に負う」かの二択になっていた。
+
+### 3.3. 漏洩時の影響範囲が権限セットに閉じる（`NFR-9`）
+
+installation token は権限（`contents:read` / `issues:read` / `metadata:read`）が固定され、1 時間で失効する。PAT のようにアカウント全体のスコープを引きずらない。
+
+### 3.4. 副次的に判明した設計上の事実
+
+🔴 **リポジトリ改名の 301 リダイレクトは Core 枠を 1 消費し、ETag も効かない。**
+
+| 経路 | 消費（実測・2 回再現） |
+|---|---|
+| コントロール（何も挟まない） | 0 |
+| 正規名 `GET /repos/{owner}/{repo}` → 200 | 1 |
+| 正規名 `If-None-Match` → 304 | **0** |
+| 旧名 `GET /repos/{旧owner}/{repo}` → 301 → 200 | **2** |
+| 旧名 `If-None-Match` → 301 → 304 | **1** |
+| 旧名 `redirect: manual` → 301 単体 | **1** |
+
+当初の測定では「304 が枠を消費する」ように見えたが、これは検証対象に選んだ `facebook/react` が `react/react` へ改名済みで、**リダイレクトの分を 304 の消費と読み違えていた**。コントロール群（何も挟まずに残量を 2 回読む）を足して切り分けた結果、GitHub 公式ドキュメントの記述（正しく認証された条件付きリクエストの 304 は primary rate limit を消費しない）が正しいことを確認した。
+
+→ **詳細取得は検索 API が返した正規の `full_name` で行う**（`Q-10` 従属事項）。利用者が URL 直接アクセス（`FR-5`）で旧名を渡しうるため、301 を受けたら正規名へ寄せてキャッシュキーを揃える。
+
+---
+
+## 4. 実測の記録（再現手順）
+
+```
+1. RS256 JWT を生成（iss = App の Client ID / iat = now-60 / exp = now+540）
+2. GET  /app                                        -> 200（権限セットの確認）
+3. POST /app/installations/{id}/access_tokens       -> 201（TTL 1 時間 / repository_selection: all）
+4. GET  /repos/{他人の公開リポジトリ}                 -> 200（stars / license / pushed_at）
+5. GET  /repos/{同上}/readme                        -> 200（Base64 デコード可）
+6. GET  /search/repositories?q=stars:10..500+language:rust -> 200（search 枠 30 req/分）
+7. GET  /rate_limit                                 -> core 8,800 / search 30 / code_search 10 / graphql 8,800
+8. 条件付きリクエストと 301 の消費量を、残量の前後差で測定（§3.4）
+```
+
+🔵 **他人の公開リポジトリの詳細・README を installation token で読めることを実測で確認した**（本 ADR の前提。GitHub App の権限は自リポジトリに閉じるのではないか、という懸念がここで解消された）。
+
+⚠️ 検証に使った Worker は測定後に削除済み。**秘密鍵はディスクに書かず、変換から投入までパイプで完結させた**（`INF-5`）。
+
+---
+
+## 5. 結果
+
+### 5.1. 良くなること
+
+- Core 枠が 5,000 → 8,800 req/h（`NFR-7`）
+- PAT の有効期限更新という定常作業が発生しない（`INF-4`）
+- 秘密の権限範囲と生存期間が限定される（`NFR-9`）
+
+### 5.2. 引き換えに増えること
+
+- **実装が増える**: JWT の署名 → installation token の取得 → 失効前の再利用、という手順がデータアクセス層に必要になる（PAT なら環境変数を 1 つ読むだけだった）
+- **秘密の取り回しに制約が付く**: 秘密鍵は **PKCS#8 に変換して** 注入する必要がある（Web Crypto の `importKey` は PKCS#1 を受け付けない）。詳細は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §7.6
+- **環境変数が 1 個から 3 個に増える**（App ID / 秘密鍵 / Installation ID・[PRD](../02_requirements/prd.md) §10）
+
+### 5.3. 変わらないこと
+
+- 検索枠 30 req/分（アプリの律速）
+- キャッシュ・request coalescing・直列化・ETag・残量監視による degraded 表示（`D-6` で要件化済み）
+- 任意 OAuth ログインの設計（`AR-5`）
+
+---
+
+## 6. 却下した選択肢
+
+| 選択肢 | 却下理由 |
+|---|---|
+| Fine-grained PAT（`D-6` の当初決定） | 枠が固定 5,000 req/h。有効期限の更新が定常作業になり `INF-4` と衝突する。無期限化すれば回避できるが漏洩リスクを無期限に負う |
+| 未認証 | Core 60 req/h・検索 10 req/分。`NFR-7` を満たせない |
+| 複数トークンのローテーション | レート制限の回避とみなされる恐れがある（`D-6` / [PRD](../02_requirements/prd.md) §3 で不採用済み・本 ADR でも維持） |
+| ユーザーの OAuth トークンをサーバー側の既定にする | 未ログインで全機能が使えるという `D-6` の原則が壊れる |
+
+---
+
+## 7. 撤回条件
+
+以下のいずれかを観測したら本決定を見直す。
+
+1. installation token の取得（`POST /app/installations/{id}/access_tokens`）が、実運用のレイテンシ予算（`NFR-1` 系）を圧迫することが計測で確認された場合 → トークンのキャッシュ戦略を先に見直し、それでも解決しなければ PAT へ戻す
+2. GitHub App の Core 枠が 5,000 req/h まで縮小した場合（インストール先のリポジトリ数の変動で起こりうる）→ 枠の優位がなくなるため、実装の単純さを理由に PAT を再評価する
+3. 署名鍵の取り回し（PKCS#8 変換・Workers Secrets への投入）が CI で破綻した場合 → §7.6 の手順を先に修正する
+
+---
+
+## 8. 補足: 人間に残る作業への影響
+
+[Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §11.1 の `H-3` は「Fine-grained PAT を発行して登録する」から「**GitHub App を作成して App ID / 秘密鍵 / Installation ID を登録する**」に変わった。**本リポジトリでは既に対応済み**（Issue #31）。
+
+以降のトークン取得・更新はすべてアプリが自動で行うため、`H-3` は一度きりの作業のまま増えていない。
