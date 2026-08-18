@@ -6,6 +6,14 @@
 見積もり）をパースし、GitHub 上に対応する Issue（タイトル `SP-{n}: {ゴール}`）が
 まだ存在しない最小番号の `SP-n` を見つけて **その 1 件だけ** 起票する。
 
+【いつ起票しないか（Ready 条件③）】
+`user-story-map.md` §7-9 の Ready 条件③「先行する `SP-n` の Issue がすべて Closed」を満たさない
+あいだは **起票しない**（`noop`）。着手中（`status:in-progress`）の `SP-n` は open のままなので
+自然にこの条件でブロックされ、「1 スプリント進行中に次のスプリント Issue が積まれる」ことを防ぐ。
+在庫枯渇（`[Milestone] M-3 到達`）の判定より **前** に評価する（`sprint-cycle-router` SKILL.md §9 が
+「全 `SP-n` が Closed になった時点で在庫枯渇」と定めており、着手中の `SP-n` が残ったまま
+プロダクト完成の通知を発火させてはならないため）。
+
 【なぜ 1 件だけ起票するのか】
 `docs/rules/session-concurrency-rules.md`（CP-4）の Issue 論理ロックと相性が悪いため。
 先読みで複数 Issue を積むと、後続 `SP-n` に他セッションが着手できる余地を作ってしまい、
@@ -190,10 +198,14 @@ def priority_label(n: int) -> str:
 
 
 def determine_next_sp(existing_numbers: set[int], sprints: dict[int, dict]) -> int | None:
-    """未 Closed 云々ではなく「Issue が存在しない最小番号の SP-n」を返す（数値昇順・§5.5 非解釈）。
+    """「Issue が存在しない最小番号の SP-n」を返す（数値昇順・§5.5 非解釈）。
 
     既に Issue が存在する SP-n は状態（open/closed）を問わず対象外にする
     （Closed 済みでも再起票しない。重複防止が目的）。
+
+    ⚠️ 本関数は「次の候補番号」を返すだけで、**着手可能条件（Ready）は判定しない**。
+    Ready 条件③（先行する `SP-n` がすべて Closed）は `decide()` が
+    `open_sp_numbers()` の結果を使って判定する（`user-story-map.md` §7-9 / §7-10）。
     """
     for n in sorted(sprints.keys()):
         if n not in existing_numbers:
@@ -206,6 +218,21 @@ def extract_existing_sp_numbers(issue_titles: list[str]) -> set[int]:
     for title in issue_titles:
         m = SP_TITLE_RE.match(title.strip())
         if m:
+            numbers.add(int(m.group(1)))
+    return numbers
+
+
+def open_sp_numbers(issues: list[dict]) -> set[int]:
+    """まだ Closed になっていない `SP-n` Issue の番号集合を返す（Ready 条件③の材料）。
+
+    `state` は gh（`OPEN`/`CLOSED`）と REST（`open`/`closed`）で表記が異なるため小文字で比較する。
+    `status:in-progress`（着手中）は open のままなので自然に本集合へ含まれ、
+    「着手中の SP-n があるあいだは次を起票しない」という CP-4 の論理ロックと一致する。
+    """
+    numbers = set()
+    for issue in issues:
+        m = SP_TITLE_RE.match(str(issue.get("title", "")).strip())
+        if m and str(issue.get("state", "")).lower() != "closed":
             numbers.add(int(m.group(1)))
     return numbers
 
@@ -319,13 +346,17 @@ def build_milestone_issue_body() -> str:
 # 意思決定（純関数・self-test 対象）
 # ──────────────────────────────────────────────
 
-def decide(md_text: str, existing_issue_titles: list[str], repo: str = "kai-kou/gem-hunter") -> dict:
+def decide(md_text: str, existing_issues: list[dict], repo: str = "kai-kou/gem-hunter") -> dict:
     """今回の firing で何をすべきかを決定する。ネットワークに触れない純関数。
+
+    Args:
+        existing_issues: `{"title": str, "state": "open"|"closed"}` の一覧（PR は含めない）。
 
     Returns:
         {"action": "create_sp_issue" | "create_milestone_issue" | "create_bug_issue" | "noop",
          ...action 別の追加フィールド, "reason": str}
     """
+    existing_issue_titles = [str(i.get("title", "")) for i in existing_issues]
     parsed = parse_sprint_backlog(md_text)
 
     if not parsed["ok"]:
@@ -355,6 +386,24 @@ def decide(md_text: str, existing_issue_titles: list[str], repo: str = "kai-kou/
 
     existing_numbers = extract_existing_sp_numbers(existing_issue_titles)
     next_n = determine_next_sp(existing_numbers, parsed["sprints"])
+
+    # Ready 条件③（`user-story-map.md` §7-9): 先行する SP-n の Issue がすべて Closed。
+    # next_n は「Issue が存在しない最小番号」なので、open な SP-n は必ず next_n より小さい
+    # ＝ open が 1 つでもあれば先行スプリントが未完了であり、次を先読み起票しない（§7-10・CP-4）。
+    # 🔴 在庫枯渇（next_n is None）判定より前に置く: `sprint-cycle-router` SKILL.md §9 は
+    # 「全 SP-n が Closed になった時点で在庫枯渇」と定めており、着手中の SP-n が残ったまま
+    # `[Milestone] M-3 到達`（= プロダクト完成の通知）を発火させてはならない。
+    still_open = open_sp_numbers(existing_issues)
+    if still_open:
+        return {
+            "action": "noop",
+            "reason": (
+                f"先行する {'・'.join(f'SP-{n}' for n in sorted(still_open))} が未 Closed のため "
+                f"Ready 条件③（先行 SP-n がすべて Closed）を満たさない"
+            ),
+            "blocked_by_open_sp": sorted(still_open),
+            "next_sp_candidate": next_n,
+        }
 
     if next_n is None:
         if MILESTONE_ISSUE_TITLE in existing_issue_titles:
@@ -439,11 +488,15 @@ def _http_request(url: str, token: str, payload: str | None = None) -> tuple[boo
         return False, "リクエストがタイムアウトしました"
 
 
-def list_all_issue_titles() -> tuple[list[str], str | None]:
-    """全 Issue（state=all）のタイトル一覧を取得する。gh → urllib+GH_TOKEN の順に試す。
+def list_all_issues() -> tuple[list[dict], str | None]:
+    """全 Issue（state=all）の `{"title", "state"}` 一覧を取得する。gh → urllib+GH_TOKEN の順に試す。
 
-    Returns (titles, error_reason)。取得失敗時は titles=[] で error_reason に理由を入れる
+    Returns (issues, error_reason)。取得失敗時は issues=[] で error_reason に理由を入れる
     （「取得失敗」を「0 件」と混同しない・github-mcp-fallback-patterns.md §4）。
+
+    `state` は Ready 条件③（先行 `SP-n` がすべて Closed）の判定に使うため、タイトルだけに
+    落とさずそのまま保持する（gh は `OPEN`/`CLOSED`、REST は `open`/`closed` を返すので
+    比較側で小文字化する）。
     """
     ok, out = _run_gh([
         "issue", "list", "-R", REPO, "--state", "all",
@@ -452,7 +505,9 @@ def list_all_issue_titles() -> tuple[list[str], str | None]:
     if ok:
         try:
             issues = json.loads(out)
-            return [i.get("title", "") for i in issues], None
+            return [
+                {"title": i.get("title", ""), "state": i.get("state", "")} for i in issues
+            ], None
         except json.JSONDecodeError:
             ok = False
             out = "gh の JSON 応答が不正"
@@ -462,7 +517,7 @@ def list_all_issue_titles() -> tuple[list[str], str | None]:
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
-    titles: list[str] = []
+    issues: list[dict] = []
     for page in range(1, 4):  # 100件 x 3ページ = 最大300件（gh 経路と同等の上限）
         ok2, out2 = _http_request(
             f"https://api.github.com/repos/{REPO}/issues?state=all&per_page=100&page={page}",
@@ -477,10 +532,14 @@ def list_all_issue_titles() -> tuple[list[str], str | None]:
         if not batch:
             break
         # /issues エンドポイントは PR も含むため pull_request キーで除外する
-        titles.extend(i.get("title", "") for i in batch if "pull_request" not in i)
+        issues.extend(
+            {"title": i.get("title", ""), "state": i.get("state", "")}
+            for i in batch
+            if "pull_request" not in i
+        )
         if len(batch) < 100:
             break
-    return titles, None
+    return issues, None
 
 
 def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
@@ -694,36 +753,95 @@ def _self_test_title() -> list[str]:
     return failures
 
 
+def _issue(title: str, state: str = "closed") -> dict:
+    """セルフテスト用の Issue スタブ（既定は Closed = Ready 条件③を満たす側）。"""
+    return {"title": title, "state": state}
+
+
 def _self_test_decide() -> list[str]:
     failures = []
-    r = decide(_FIXTURE_MD_OK, existing_issue_titles=[])
+    r = decide(_FIXTURE_MD_OK, existing_issues=[])
     if r["action"] != "create_sp_issue" or r.get("sp_number") != 1:
         failures.append(f"decide: 既存 Issue なしで SP-1 起票を期待したが {r}")
 
-    r = decide(_FIXTURE_MD_OK, existing_issue_titles=["SP-1: 検索して一覧が出る"])
+    r = decide(_FIXTURE_MD_OK, existing_issues=[_issue("SP-1: 検索して一覧が出る")])
     if r["action"] != "create_sp_issue" or r.get("sp_number") != 2:
-        failures.append(f"decide: SP-1既存で SP-2 起票を期待したが {r}")
+        failures.append(f"decide: SP-1 が Closed なら SP-2 起票を期待したが {r}")
 
-    all_titles = [f"SP-{n}: dummy" for n in (1, 2, 3)]
-    r = decide(_FIXTURE_MD_OK, existing_issue_titles=all_titles)
+    all_issues = [_issue(f"SP-{n}: dummy") for n in (1, 2, 3)]
+    r = decide(_FIXTURE_MD_OK, existing_issues=all_issues)
     if r["action"] != "create_milestone_issue":
         failures.append(f"decide: 全SP既存で在庫枯渇（マイルストーン起票）を期待したが {r}")
 
-    r = decide(_FIXTURE_MD_OK, existing_issue_titles=all_titles + [MILESTONE_ISSUE_TITLE])
+    r = decide(_FIXTURE_MD_OK, existing_issues=all_issues + [_issue(MILESTONE_ISSUE_TITLE)])
     if r["action"] != "noop":
         failures.append(f"decide: マイルストーン Issue 既存で noop を期待したが {r}")
 
-    r = decide(_FIXTURE_MD_BROKEN, existing_issue_titles=[])
+    r = decide(_FIXTURE_MD_BROKEN, existing_issues=[])
     if r["action"] != "create_bug_issue" or r["title"] != BUG_ISSUE_TITLE:
         failures.append(f"decide: パース失敗で bug Issue 起票を期待したが {r}")
 
-    r = decide(_FIXTURE_MD_BROKEN, existing_issue_titles=[BUG_ISSUE_TITLE])
+    r = decide(_FIXTURE_MD_BROKEN, existing_issues=[_issue(BUG_ISSUE_TITLE)])
     if r["action"] != "noop":
         failures.append(f"decide: bug Issue 既存で noop（重複起票しない）を期待したが {r}")
 
-    r = decide(_FIXTURE_MD_NO_SECTION, existing_issue_titles=[])
+    r = decide(_FIXTURE_MD_NO_SECTION, existing_issues=[])
     if r["action"] != "create_bug_issue":
         failures.append(f"decide: セクション欠落で bug Issue 起票を期待したが {r}")
+
+    return failures
+
+
+def _self_test_ready_condition() -> list[str]:
+    """Ready 条件③（先行 SP-n がすべて Closed）— `user-story-map.md` §7-9 / §7-10。"""
+    failures = []
+
+    # open な SP-1 がある間は SP-2 を先読み起票しない（本条件の中核・実測バグの回帰テスト）
+    r = decide(_FIXTURE_MD_OK, existing_issues=[_issue("SP-1: 検索して一覧が出る", "open")])
+    if r["action"] != "noop":
+        failures.append(f"Ready③: SP-1 が open なら noop を期待したが {r}")
+    elif r.get("blocked_by_open_sp") != [1] or r.get("next_sp_candidate") != 2:
+        failures.append(f"Ready③: noop の内訳が不正: {r}")
+
+    # 着手中（status:in-progress）も open なので同じ扱いになる
+    r = decide(_FIXTURE_MD_OK, existing_issues=[
+        _issue("SP-1: 検索して一覧が出る", "OPEN"),  # gh 経路の大文字表記
+    ])
+    if r["action"] != "noop":
+        failures.append(f"Ready③: state の大文字表記（OPEN）を open と判定できていない: {r}")
+
+    # 途中の SP-n が open でも止まる（SP-1 Closed / SP-2 open → SP-3 を起票しない）
+    r = decide(_FIXTURE_MD_OK, existing_issues=[
+        _issue("SP-1: a"), _issue("SP-2: b", "open"),
+    ])
+    if r["action"] != "noop" or r.get("blocked_by_open_sp") != [2]:
+        failures.append(f"Ready③: SP-2 が open なら noop を期待したが {r}")
+
+    # すべて Closed なら通常どおり次の 1 件を起票する
+    r = decide(_FIXTURE_MD_OK, existing_issues=[_issue("SP-1: a", "CLOSED")])
+    if r["action"] != "create_sp_issue" or r.get("sp_number") != 2:
+        failures.append(f"Ready③: 全 Closed（大文字表記）で SP-2 起票を期待したが {r}")
+
+    # SP-n 以外の open Issue はブロック要因にならない
+    r = decide(_FIXTURE_MD_OK, existing_issues=[
+        _issue("SP-1: a"), _issue("bug: 何かが壊れている", "open"),
+    ])
+    if r["action"] != "create_sp_issue" or r.get("sp_number") != 2:
+        failures.append(f"Ready③: SP-n 以外の open Issue に反応してはいけない: {r}")
+
+    # 在庫枯渇より Ready 条件③が先に効く（着手中の SP-n が残る限り M-3 到達を通知しない）
+    r = decide(_FIXTURE_MD_OK, existing_issues=[
+        _issue("SP-1: a"), _issue("SP-2: b"), _issue("SP-3: c", "open"),
+    ])
+    if r["action"] != "noop" or r.get("blocked_by_open_sp") != [3]:
+        failures.append(
+            f"Ready③: SP-3 が open のあいだは在庫枯渇（M-3 到達）と判定してはいけない: {r}"
+        )
+
+    # 全 SP-n が Closed になってはじめて在庫枯渇（SKILL.md §9）
+    r = decide(_FIXTURE_MD_OK, existing_issues=[_issue(f"SP-{n}: x") for n in (1, 2, 3)])
+    if r["action"] != "create_milestone_issue":
+        failures.append(f"Ready③: 全 SP-n が Closed なら在庫枯渇判定を期待したが {r}")
 
     return failures
 
@@ -738,6 +856,7 @@ def run_self_test() -> int:
         ("タイトル整形", _self_test_title),
         ("ID 抽出", _self_test_id_extraction),
         ("decide 統合", _self_test_decide),
+        ("Ready 条件③（先行 SP-n が Closed）", _self_test_ready_condition),
     ]
     failed_groups = 0
     total_failures = 0
@@ -792,7 +911,7 @@ def main() -> None:
         sys.exit(2)
 
     md_text = _read_doc_text()
-    titles, err = list_all_issue_titles()
+    issues, err = list_all_issues()
     if err is not None:
         if args.json:
             print(json.dumps({"action": "error", "reason": err}, ensure_ascii=False))
@@ -800,7 +919,7 @@ def main() -> None:
             print(f"ERROR: gh_unavailable: {err}", file=sys.stderr)
         sys.exit(2)
 
-    decision = decide(md_text, titles, REPO)
+    decision = decide(md_text, issues, REPO)
 
     if args.dry_run:
         out = {**decision, "dry_run": True, "checked_at": now_jst_str(), "repo": REPO}
