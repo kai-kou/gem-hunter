@@ -85,14 +85,24 @@ except Exception as _e:  # noqa: BLE001
 # 未着手のドキュメント変更ブランチ等で誤検知しないようにする。
 # ============================================================================
 
-SP_PATTERN = re.compile(r"SP-(\d+)")
-US_PATTERN = re.compile(r"US-\d+")
-LAYER_LABEL_PATTERN = re.compile(r"layer:(frontend|backend|infra(?:structure)?)", re.IGNORECASE)
+# 直前が英字だと "WASP-1" の "SP-1" / "BONUS-3" の "US-3" のような誤検出を招くため、
+# 直前が英字でないことを要求する（Layer 1 セルフレビュー指摘・実測: WASP-1 → SP-1 誤爆）。
+SP_PATTERN = re.compile(r"(?<![A-Za-z])SP-(\d+)")
+US_PATTERN = re.compile(r"(?<![A-Za-z])US-\d+")
 
-# `SD-2`（TDD 主体）緩和対象外になった段階で使う、イネイブラー単独スプリント既定
-# exempt リスト。`user-story-map.md` §5.2 が `C-2` を満たす単独スプリントとして
-# 明示的に許可済み（whiteboard round2 §1.3）。
-ENABLER_ONLY_EXEMPT_SP = {"4", "5"}
+# `layer:frontend` 等の単純な部分文字列一致は、コミットメッセージの説明文中にたまたま
+# 同じ文字列が出ただけ（例:「過去の layer:frontend 対応 Issue を統合する」）でも Error に
+# なってしまう（Layer 1 セルフレビュー指摘・実測確認済み）。「誤検知で作業を止めないことを
+# 優先する」方針（BRIEF.md）に反するため、行全体（先頭の箇条書き記号・`Labels:` 前置きのみ
+# 許容）が label トークンのカンマ区切り列である場合に限定する（行頭・箇条書き記号直後のみ
+# ヒットする、実質的な「ラベル宣言」だけを検出対象にする）。
+_LAYER_LABEL_TOKEN = r"layer:(?:frontend|backend|infra(?:structure)?)"
+LAYER_LABEL_PATTERN = re.compile(
+    rf"^[ \t]*(?:[-*・]\s*)?(?:labels?\s*[:：]\s*)?"
+    rf"({_LAYER_LABEL_TOKEN}(?:\s*[,、]\s*{_LAYER_LABEL_TOKEN})*)"
+    r"[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 # テストパス判定（whiteboard 確定パターン）
 TEST_PATH_GLOBS = (
@@ -188,7 +198,10 @@ def commit_message(sha: str) -> str:
 
 
 def commit_files(sha: str) -> list[str]:
-    r = sh(["git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha])
+    # --root: 親を持たないコミット（ルートコミット）は素の diff-tree だと常に空を返す
+    # （Layer 1 セルフレビュー指摘・実測確認済み）。--root は親付きコミットの挙動は変えない
+    # （空木との差分になるのはルートコミットのときだけ）ため安全に付与できる。
+    r = sh(["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha])
     return r.stdout.splitlines() if r.returncode == 0 else []
 
 
@@ -264,9 +277,12 @@ def vertical_slice_check(
     - `app/`・`src/` がどちらも無ければ（アプリ未着手）検査自体をスキップ
     - ブランチ名/コミットメッセージから `SP-n` を拾えなければスキップ
     - `SP-1`: 3 層すべてに diff が無ければ Error（blocking）
-    - `SP-4`/`SP-5`（既定 exempt リスト）: 判定しない
-    - `US-n` 参照が無い（イネイブラー単独扱い・判定不能を含む）: exempt
-    - それ以外（`US-n` を含む機能スプリント）: 3 層中 2 層未満なら Warning
+    - `SP-4`/`SP-5` のハードコード特別扱いはしない（Layer 1 セルフレビュー指摘・二重管理の解消）。
+      `US-n` 参照が無い（イネイブラー単独扱い・判定不能を含む・`SP-4`/`SP-5` は通常ここに該当）は
+      すべて汎用ルールで exempt になる。将来 `SP-4`/`SP-5` に `US-n` が追加された場合も
+      ドキュメント側の変更だけで自動的に整合する
+    - それ以外（`US-n` を含む機能スプリント。`SP-4`/`SP-5` でも `US-n` を含めば対象になる）:
+      3 層中 2 層未満なら Warning
 
     `app_or_src_exists` / `sp_signal_text` を渡すと I/O・git を一切呼ばずに判定できる
     （`--self-test` 用の注入口。省略時は従来どおり実ファイルシステム・git から取得する）。
@@ -294,9 +310,6 @@ def vertical_slice_check(
             )
         return errors, warnings
 
-    if sp_num in ENABLER_ONLY_EXEMPT_SP:
-        return errors, warnings
-
     if not US_PATTERN.search(text):
         return errors, warnings
 
@@ -322,7 +335,7 @@ def layer_split_check(text: str | None = None) -> list[str]:
         return []
     return [
         f"C-5 違反の疑い: ブランチ名/コミットメッセージにレイヤー分割ラベルの痕跡があります"
-        f"（`{m.group(0)}`）。1 SP-n = 1 Issue とし、技術レイヤー別に Issue を分割しないでください"
+        f"（`{m.group(1)}`）。1 SP-n = 1 Issue とし、技術レイヤー別に Issue を分割しないでください"
     ]
 
 

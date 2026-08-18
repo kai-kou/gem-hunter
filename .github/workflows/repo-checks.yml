@@ -30,14 +30,7 @@ jobs:
         run: python3 tools/sprint_backlog_sync.py --self-test
 
       - name: セルフレビュー検査のセルフテスト
-        run: |
-          if python3 tools/self_review_check.py --self-test --help >/dev/null 2>&1 \
-            || python3 tools/self_review_check.py --self-test; then
-            echo "self_review_check のセルフテストを実行した"
-          else
-            echo "::error::self_review_check --self-test が失敗した"
-            exit 1
-          fi
+        run: python3 tools/self_review_check.py --self-test
 
       - name: 日時表記（JST 統一）
         run: python3 tools/check_datetime_tz.py
