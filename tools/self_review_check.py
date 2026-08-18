@@ -96,10 +96,10 @@ US_PATTERN = re.compile(r"(?<![A-Za-z])US-\d+")
 # 優先する」方針（BRIEF.md）に反するため、行全体（先頭の箇条書き記号・`Labels:` 前置きのみ
 # 許容）が label トークンのカンマ区切り列である場合に限定する（行頭・箇条書き記号直後のみ
 # ヒットする、実質的な「ラベル宣言」だけを検出対象にする）。
-_LAYER_LABEL_TOKEN = r"layer:(?:frontend|backend|infra(?:structure)?)"
+_LAYER_LABEL_ITEM = r"layer:(?:frontend|backend|infra(?:structure)?)"
 LAYER_LABEL_PATTERN = re.compile(
     rf"^[ \t]*(?:[-*・]\s*)?(?:labels?\s*[:：]\s*)?"
-    rf"({_LAYER_LABEL_TOKEN}(?:\s*[,、]\s*{_LAYER_LABEL_TOKEN})*)"
+    rf"({_LAYER_LABEL_ITEM}(?:\s*[,、]\s*{_LAYER_LABEL_ITEM})*)"
     r"[ \t]*$",
     re.IGNORECASE | re.MULTILINE,
 )
