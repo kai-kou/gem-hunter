@@ -13,8 +13,8 @@ C) Cloudflare Workers 上で dev 常設環境を作る場合の実装コスト�
 D) 単一開発者 + AI 自律ルーティンという運用実態でのプロセス負荷（dev→main の 2 段マージが自動マージフロー・CP-6・SD-1・sprint-cycle-router とどう衝突するか。リリース遅延・コンフリクト・cherry-pick・ホットフィックス経路。trunk-based development との比較）。
 E) 採用するとしたら『今』か『M-4 公開判断の後』か。段階導入の設計（今は何もせず、公開時に何を足せば dev/main 分離相当の安全性が得られるか。gradual deployment / wrangler versions / rollback で代替できないか）。
 - 参加者: `release_eng`, `cf_platform`, `autonomy_ops`, `req_trace`, `docs_trace`
-- 投稿数: 5
-- 更新: 2026-08-18T14:54:19+09:00
+- 投稿数: 13
+- 更新: 2026-08-18T15:00:32+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -597,3 +597,331 @@ dev 常設を採用する場合、「役割分担（preview alias との共存 o
 ## 補足
 
 本分析は **既存ドキュメント整合性** に徹し、技術的な優劣（管理複雑性、リリーサビリティ、CI コスト等）は判定していない。その判断は cf_platform / release_eng の専門領域。
+
+## ラウンド 2
+
+### `cf_platform` — 反論
+<sub>2026-08-18T14:56:39+09:00</sub>
+
+## cf_platform round 2 — release_eng への rebuttal + 争点 A/D の再分解（+ round1 の未確認事項を確定）
+
+### まず round 1 の「未確認」を公式ドキュメントで確定させる（重要な発見）
+
+`versions secret put` / `--secrets-file` の挙動を公式で確認した結果、**「preview alias ごとにシークレットを分離できる」という前提は誤り**だと判明した。公式 [Secrets](https://developers.cloudflare.com/workers/configuration/secrets/) は `--secrets-file` について「Secrets not included in the file are preserved **from the previous version**」と明記する。シークレットは alias 単位ではなく **Worker 1 本の版チェーン全体で線形に引き継がれる**。つまり同一 Worker（現行の production + `pr-<N>` + 固定 `dev` alias すべて）が版を重ねるたびに、直前の版のシークレットをそのまま継承する。ある版に「dev 専用の OAuth Client Secret」を `versions secret put` で仕込んでも、その次に PR プレビュー版や本番版をアップロードする際に明示的に上書きしなければ、**その dev 専用シークレットが意図せず伝播しうる**。
+
+→ **選択肢 (b)（versions + 固定 preview-alias `dev`）はシークレット分離を構造的に保証できない**。round 1 で「未確認」としたが、これは「実装すればどうにかなる」ではなく「同一 Worker を使う限り原理的に信頼できない」という否定的結論で確定する。OAuth を安全に dev だけで有効化したいなら **(a) `[env.dev]`（別 Worker = 別シークレットストア）以外の選択肢はない**。
+
+### release_eng の「dev は preview alias の固定名にすぎず新しい安全網を追加しない」への rebuttal（部分的）
+
+**Rate Limiting binding とキャッシュ挙動については release_eng が正しい**: `ratelimits` は `wrangler.jsonc` の Worker 単位宣言で、preview/production いずれの版でも同一バインディングが適用される（版ごとの上書き機構はない）。Workers Caching も版に依存しない。**Custom Domain も使わない設計**（`*.workers.dev` 固定・§6.3）なので、preview alias と固定 dev alias は「本番と同じ経路で動く」という意味では **差がない**。この点は同意する（concession）。
+
+**しかし OAuth に限っては差がある**。上記の確定事実の裏返しとして、(a) を使えば **dev だけが production と分離された安全な OAuth Client を持てる**。これは PR ごとの preview alias（URL が PR 番号で変わり続ける）では原理的に得られない価値であり、「新しい安全網をゼロから追加しない」という release_eng の主張の **唯一の例外**になる。
+
+### とはいえ「dev ブランチ」を導入する理由にはならない
+
+ここで autonomy_ops・docs_trace が指摘した「dev をブランチ運用（feat→dev→main の 2 段マージ）に組み込むコスト」と、**Cloudflare 側で OAuth 検証用の固定環境を持つこと**は、**独立した 2 つの問題**として切り離せる。`[env.dev]` は `.github/workflows/deploy-dev.yml` を `workflow_dispatch`（手動起動）または低頻度の `schedule` トリガーにすれば、**git ブランチ戦略と無関係に**「OAuth を含む本番相当の動作を確認したいときだけ手動で最新 main を dev Worker にデプロイする」運用が成立する。この場合、autonomy_ops が列挙した 1〜4（所有判定モデルの破壊・push フックの未対応・base 固定の書き換え・二重マージ）は **一切発生しない**（dev は PR フロー上のブランチではなく単なるデプロイ先になるため）。
+
+**結論（更新）**: 争点 A・D は不採用のまま維持する。ただし争点 C の結論を **一部修正**する: 「dev を作るなら (a) 一択」の前提は変わらないが、その (a) は **ブランチ戦略ではなく単発デプロイ先**として実装すれば低コストで導入余地があり、OAuth 検証という具体的な未検証項目（cloudflare-infrastructure.md §12 に相当項目なし）に対応する。ただし INF-2/INF-4（Worker 数消費・定常運用ゼロ）との天秤は残るため、**今は見送り、M-4 判断時に「OAuth 検証用途限定・手動トリガーの `[env.dev]`」として ADR 化するのが妥当**という E の結論は変えない。
+
+### `autonomy_ops` — 反論
+<sub>2026-08-18T14:56:39+09:00</sub>
+
+## autonomy_ops round 2: 自己検証 → 採用側の最強論拠への反論
+
+### 1. 自己検証（結論: 部分的に concede）
+
+round 1 で挙げた 4 点のうち、**2（dev 保護 push フックがない）・3（base=main のハードコード）・4（squash 集約 PR の Session-Id 帰属不能）は認める。これらは sp 見積もり可能な実装コストであり、「直せば済むもの」を不採用の理由に使っていた**。フック改修・ドキュメント書き換え・所有判定ロジック拡張はいずれも既存パターンの延長で対応可能で、採用しない理由にはならない。
+
+ただし **1（sprint-cycle-router の 9 分岐に dev→main 昇格ステップが存在しない）だけは性質が違う**。これは「実装し忘れた機能」ではなく「誰が dev の準備完了を判定するか」という **意思決定の所在そのものが未定義** という話であり、コード修正では埋まらない。round 2 の核心はここにある。
+
+### 2. 主 = 本番直結は実在リスクか（コーディネーターの問い 1）
+
+実在するが、程度を見誤ってはいけない。現行フローは CI（テスト・SD-2 の E2E は操作レビュー手順をそのまま写す）+ Layer0 機械ゲート + Layer1 敵対的セルフレビューを通過して初めて squash マージされる。**dev を挟んでも、そこを見る人間はいない**（単一開発者 + 完全自走）。つまり dev は「もう一段、同じ CI と同じセルフレビューを走らせるだけの環境」になり、**新しい検証内容を何も追加しない**。人間の目や実トラフィックによる soak time があって初めて dev の価値が生まれるが、本プロジェクトの運用体制ではどちらも欠けている。real な本番直結リスクへの回答は、release_eng・cf_platform が示した **gradual deployment（`versions deploy --percentage`）+ 即時 rollback** の方が筋が良い。実トラフィックの一部で検証し失敗時は自動的に戻せる ―― dev が原理的に提供できない「本番相当の入力での検証」を、環境を増やさずに実現する。
+
+### 3. 人手を増やさない自動昇格は成立するか（コーディネーターの問い 2・最重要）
+
+技術的には成立する（例: 「dev が green かつ直近コミットから N 時間経過で router が昇格 PR を自動生成し自動マージ」）。これは CP-6/INF-4 の「新しい人間の判断点」という直接的な違反を回避する。**ここは concede する**。
+
+しかし、これは 2 つの分岐に潰れる。
+- **(a) N 時間待つだけの機械的タイマー**なら、dev 滞在中に何か新しい検証が行われるわけではない（CI は PR 作成時点で既に通っている）。安全性の上積みはゼロで、リードタイムだけが N 時間伸びる。release_eng が引いた DORA の指摘（long-lived な中間ブランチはリードタイムを落とすだけで確認者不在なら価値を生まない）にそのまま該当する。
+- **(b) dev 滞在中に何か実際の検証（synthetic monitoring・定期ヘルスチェック等）を新設する**なら、それは dev という「場所」ではなく「検証の仕組み」が価値の源泉であり、その仕組みは preview alias や本番の gradual deployment 上でも同様に実装できる（むしろ実トラフィックで検証できる分こちらが優位）。dev という第三の環境を経由する必然性がない。
+
+つまり自動化しても、dev は「(a) 無意味な待機」か「(b) 他の場所でも作れる仕組みの入れ物」のどちらかにしかならず、**CP-6/INF-4 の論拠は崩れるが、それによって dev 採用が正当化されるわけではない**（正当化コストが消えても便益がゼロなら、便益ゼロのものを追加する理由にはならない）。
+
+### 結論
+
+round 1 の「4 箇所が壊れる」を採用しない理由として使ったのは誤りだったと認める。改めて不採用の根拠を置き直すと: **dev という環境そのものに、この運用体制で発生させられる価値がない**（人間の目もなく、実トラフィックもなく、CI 以上の検証も追加しない）。同じコストをかけるなら gradual deployment + rollback（release_eng・cf_platform の提案）に投資する方が、本番直結リスクへの実効性が高い。争点 A・D は引き続き不採用を支持する。
+
+### `release_eng` — 譲歩
+<sub>2026-08-18T14:56:56+09:00</sub>
+
+## release_eng round2: 自説（round1）への譲歩
+
+round1 の「PR ごとの ephemeral preview があれば dev は不要」「trunk-based development が正しいので dev は不要」という主張を自己攻撃した結果、3 点の弱点を認める。
+
+**① 合成状態の検証が構造的に欠落している**: round1 の主張は「個々の PR 差分が preview で検証される」ことのみを根拠にしており、main 上で複数 PR が積み上がった **合成後の状態** を非本番で検証する層が現行設計にないことを見落としていた。`deploy-production.yml` は push to main で即 `wrangler deploy` するため、合成状態を最初に浴びるのは本番トラフィックそのものである。sprint-cycle-router が高頻度に squash マージする運用では、個別に緑でも組み合わせで壊れる統合バグを検知する非本番の場が構造的にない。これは実在するリスクで、round1 では過小評価していた。
+
+**② gradual deployment 論の射程を暗黙に限定していた**: 「gradual deployment がある」という round1 の主張は、暗黙に「現状は利用者ゼロ」を前提にしていたが、この前提を争点 E の議論に明示せず争点 A の結論（不採用）へ一般化してしまった。M-4 通過後（公開後）は、canary % であっても実ユーザーが一時的に壊れたバージョンを踏む時点でリスクはゼロでなくなる。「gradual deployment が dev の代替になる」という主張は公開後には無条件には成立しない。
+
+**③ trunk-based の前提条件を検証せずに権威として引用していた**: DORA / trunk-based development を根拠に dev 不採用を主張したが、その前提（全マージをゲートする強力な自動テスト・feature flag によるデプロイと解放の分離）を本プロジェクトが今満たしているかを検証していなかった。`sprint-development-rules.md` SD-2 は SP-1〜SP-3 を「CI green 必須」の例外とし、テスト CI 自体は SP-4 で初めて整う設計になっている。round1 5 投稿のいずれにも feature flag 機構への言及はない。前提が未完成の段階で trunk-based の権威だけを根拠にするのは論拠として弱い。
+
+### `release_eng` — 反論
+<sub>2026-08-18T14:56:56+09:00</sub>
+
+## release_eng round2: 上記 3 点を認めた上での rebuttal（結論は不変、根拠を修正）
+
+3 つの穴を認めても、**争点 A・D の結論（dev 不採用）は維持する**。穴を閉じる正しい手段が dev ではないため。
+
+**① 合成状態の検証は dev を作っても閉じない**: autonomy_ops の round1 指摘（`sprint-cycle-router` の 9 分岐に dev→main の昇格ステップが存在しない）がそのまま効く。dev を作っても「feat→dev」は自走するが「誰が・いつ dev→main を昇格させるか」が定義されない限り、**同じ「合成状態を誰が検証するか」という問いが 1 段上に移動するだけ**で、gap は閉じずに滞留リスクへ転化する（round1 で自分自身も認めた「不採用」の主因）。正しい閉じ方は、`deploy-production.yml` 自体に **push to main で実際にマージされたコミットに対して test suite を走らせ、成功しなければ `wrangler deploy` に進ませないゲート** を追加すること。これは新しいブランチも昇格の主体も不要で、既存の 1 ホップ構造のまま合成状態の検証を本番投入前に差し込める。
+
+**② gradual deployment 論は「今は不要」の結論を強めこそすれ、揺るがさない**: 公開後に canary リスクがゼロでなくなるという指摘は正しいが、それは「今から dev を作る」根拠にはならず、「M-4 で公開判断が Yes になった時点で `deploy-production.yml` の gradual deployment を強化する（初期比率を下げる・エラー率閾値を厳しくする・自動 rollback を必須にする）」という **争点 E の対応強化** に帰着する。cf_platform が実測したとおり dev には確定コスト（Worker 恒久 +1、または OAuth 用シークレット紐付けが未確認）が伴う一方、gradual deployment の強化は Worker 増分ゼロで実装できる。公開後のリスクに備える投資対効果は dev より高い。
+
+**③ 前提未完成という指摘は、dev にはさらに強く跳ね返る**: SP-1〜SP-3 で強力な自動テストゲートが未整備なら、trunk-based の安全網が弱いのと同様に、dev→main の昇格判断を支える自動検証も未整備ということ。**未完成の CI の上に dev という新しい意思決定点を足すのは、検証されない「安全に見える中間状態」を作るだけで実害がある**。正しい順序は SD-2 が定めるとおり SP-4 でテスト CI を完成させることが先で、それによって①のゲートも③の前提も同時に満たされる。dev の要否はその後、M-4 のデータを見て判断すべき。
+
+**結論の修正**: A・D は不採用のまま維持するが、根拠を「PR preview があるから十分」から「合成状態の検証は main 直結の CI ゲートで閉じる方が dev より低コストで、dev はむしろ検証されない中間状態を増やす」に差し替える。
+
+### `req_trace` — 反論
+<sub>2026-08-18T14:57:37+09:00</sub>
+
+## req_trace round2 — 採用側の最強論拠を検証する（groupthink チェック）
+
+round1 は 5 名とも「不採用」に収束したが、coordinator の指摘どおり早すぎる合意を疑う。3 点それぞれに、**部分的に譲歩しつつ、譲歩してもなお結論が変わらない理由**を示す。
+
+### 1. 「与件は下限であって上限ではない」— 譲歩する。ただし B の争点自体が変わる
+
+この指摘は **原則として正しい**。`minimum-requirements.md` は「最低要件定義（MVP）」であり、これを根拠に「§4 に書いていないから **やってはいけない**」と主張したなら論理的飛躍だった。round1 の自分の投稿を読み返すと、「§4.1〜4.4 に環境分離が列挙されていない」から「§7 に環境分離がない」まで積み上げて **B（過剰解釈）に倒す**論法を取ったが、これは実質「不記載 = 禁止」に近い読み方をしていた。ここは訂正する。
+
+ただし訂正した上で、争点の立て方自体を修正すべきだと考える。「与件が下限」なら、争点 B は「§4 が dev ブランチを要求しているか」ではなく **「dev ブランチは §4 が要求する水準を満たすために必要な手段か、それとも要求水準を超えた任意の上乗せか」** に立て直す必要がある。ここで §4 の構造を厳密に読み直す。
+
+§4 は「プロダクション運用を想定した実装とする。」という 1 文の直後に §4.1〜4.4 が続く。この 1 文が「姿勢の宣言」であって 4.1〜4.4 に限定されない、という coordinator の疑いは検証に値するので、§7・roadmap.md との整合性で検証した。
+
+- `roadmap.md` M-2 は「11 項目の実機確認と品質ゲートの充足が通過条件」と明記し、M-2 = 与件充足そのものと定義している。§7 の 11 項目（受け入れ基準チェックリスト）は M-2 通過判定の **確定した operational definition**。
+- もし §4 の「プロダクション運用を想定」が 4.1〜4.4 を超えて無限定に及ぶ姿勢の宣言であるなら、その宣言は §7 のどの項目でも検証できないことになり、「M-2 は 11 項目で判定が完結する」という roadmap.md の記述と矛盾する。要件文書の内部整合性を保つ読み方は「§4 の総論は 4.1〜4.4 という具体列挙で **運用可能な形に確定されている**」であり、これは「4.1〜4.4 に書いていないことは禁止」という意味ではなく、**「4.1〜4.4 が、与件充足（優先順位 1 位）の判定範囲を確定するスコープである」**という意味。
+
+つまり結論はこうなる: dev ブランチは §4 によって **禁止されても要求されてもいない**。それは「与件充足」（優先順位 1 位）の対象外というだけで、「やってはいけない」わけではない。ここから先は純粋に **費用対効果の経営判断**であり、優先順位表の 2〜5 位（積み上げ可能性・説明可能性・差別化・運用改善）のどこかで評価するしかない。autonomy_ops（D：昇格 PR を作る主体が自律運用フローに存在しない）・cf_platform（C：Worker 恒久 +1 か、シークレット分離が未確認の妥協案か）・release_eng（trunk-based の方が DORA 的にも整合し、gradual deployment + rollback で同じ安全性を代替できる）が round1 で示した **具体的コストと代替案**が、「B で禁止されているから不要」という弱い論拠に代わる、**任意の上乗せとして見た場合の妥当な却下理由**になる。譲歩した結果、論拠の重心が「解釈論（B）」から「費用対効果（C・D・E）」に移っただけで、結論（今は不採用・M-4 後に再検討）は変わらない。
+
+### 2. 「評価者は ADR を読む前に構造を見る」— 部分的に譲歩し、対策を具体化する
+
+これも正しい懸念で、round1 の自分の主張「ADR に書けば説明可能性は満たせる」は **読まれる前提が甘かった**。訂正する。
+
+ただし 2 点、追加検証したい。
+
+第一に、`minimum-requirements.md` §6（ドキュメント要件）は「README に…設計上の判断、工夫した点、こだわったポイントを記載する」ことを **与件そのもの**として要求している。これは ADR（`docs/adr/` 配下）と違い、リポジトリを開いて最初に読まれる README に強制的に載る。「dev ブランチがない」という構造を見た評価者が次にすることは、大抵 README を開くことであり、そこに「なぜ dev を持たないか」の理由が書いてあれば、判断根拠に評価者は必ず到達できる（ADR ほど埋もれない）。ここは round1 の「ADR で足りる」から「README §6 の必須記載事項として、より確実な導線で足りる」に主張を強化する。
+
+第二に、逆側の可能性（coordinator が明示的に求めた「加点になるケース」）を検証する。release_eng が round1 で引用した DORA/trunk-based の知見が示すとおり、**「dev ブランチ + 2 段マージ」は 2020 年代の CD 実践では既に「長寿命ブランチによるリードタイム悪化」という既知のアンチパターン側に分類されつつある**。技術的に成熟した評価者（このプロジェクトの想定読者はエンジニアの選考担当）であれば、「PR ごとの ephemeral preview + trunk-based + gradual deployment/rollback」という構成の方が、「dev ブランチを律儀に用意した」構成よりも **モダンな CD 判断として高く評価される可能性がある**。つまり「環境分離をしていないこと」自体が減点になるとは限らず、むしろ「なぜ dev を意図的に持たないか」を言語化できていること（trunk-based の根拠・Cloudflare versions/rollback で同じ安全性を代替する設計）の方が、優先順位 3 位「説明可能性」に対する加点材料になりうる。
+
+とはいえ、これは「見る人による」というリスクを完全には消さない。README に一言も触れず放置すれば、coordinator の懸念どおり「意識していない」と即断されるリスクは実在する。ここは自分の讓歩点として明確に認め、**「dev ブランチを作る」ではなく「README に環境戦略の判断根拠を明記する」ことを M-2 の必須タスクとして追加すべき**という具体的な代替アクションを提案する。
+
+### 3. 「ユーザー自身が相談してきた」ことの重み — ここが一番重要な訂正
+
+これは coordinator の 3 点の中で最も重い指摘で、率直に認める。round1 の自分の投稿は、ユーザーの相談内容を「与件解釈の妥当性検証の対象」として扱い、暗に「与件にないから不要」で結論づける構成になっていた。しかしユーザーの発言原文を読み直すと：
+
+> 「最低限の要件の中にプロダクションを意識するという事項があったかと思いますが、それを踏まえて、リリースサイクルとして…環境を分けるべきか **悩んでいます**」
+
+これは文法的に疑問形であり、かつ内容も「§4 の要求から dev 分離という結論が導けるか」を **ユーザー自身が検証してほしいと頼んでいる**。`user-instruction-issue-rules.md` の「質問か指示か」の分類基準に照らすと、これは「可否・要否を問う疑問文」に該当し、**指示ではなく質問として扱うべき**（＝実装せよという指示ではなく、答えを出してから必要なら選択肢を示す）。この観点では、この議論チームがやるべきことは「ユーザーの懸念を却下する」ことではなく、**ユーザー自身の推論過程（§4 → dev 分離という連想）を検証し、その結果を推奨案として返す**ことそのもの。つまり「ユーザーが必要性を感じているものを与件にないから却下する」という coordinator の懸念する構図には実はなっておらず、**ユーザーは『これは要件から導けるか』を聞いており、我々の役割はまさにそれに答えること**。
+
+その上で、ユーザーが抱いている不安（プロダクション運用を意識していないと見られるのでは）の **実体**には向き合う必要がある。これは 2 で検証したとおり実在するリスクであり、「dev ブランチという特定の実装」ではなく「プロダクション運用を意識した設計判断をしていることが伝わる状態」がユーザーの真のニーズだと解釈すべき。したがって、この議論の最終出力（推奨案）は「dev ブランチは不要」という否定形で終わらせず、**代替でそのニーズを満たす具体策**（README への設計判断の明記、gradual deployment/rollback の活用、M-4 での再判定というトリガー）とセットで提示する必要がある。これは `sprint-development-rules.md` SD-3 の「選択肢は最大 2 つ・推奨を明示」の形式にそのまま落とし込める：
+
+- 選択肢 1（推奨）: 今は dev ブランチを追加せず、代わりに ① README/ADR に「なぜ dev を持たないか」の設計判断を明記 ② gradual deployment + rollback を INF-21 強化として独立検討 ③ M-4（公開判断）通過時に再判定、という 3 点セットで「プロダクション運用を意識している」ことを可視化する
+- 選択肢 2: 今すぐ dev（固定 alias）を追加する。ただし cf_platform の実装コスト比較（Worker 恒久+1 か、シークレット分離未確認の妥協案か）と autonomy_ops の D（昇格 PR を作る主体が自律運用フローに存在せず、放置リスクが構造化する）を負う
+
+### 結論（round2 更新版）
+
+B は「禁止」論法から「対象外（費用対効果の任意判断）」論法に訂正。ポートフォリオ評価リスクは実在すると認め、対策を「ADR」から「README §6 必須記載」に強化。ユーザーの相談は却下ではなく **検証依頼として正面から回答すべき**と訂正し、最終出力は「不採用」の一言ではなく代替策 3 点とセットの推奨案にする。これらを反映しても **争点 A・E の結論自体（今は不採用、M-4 後に再検討）は変わらない** — 変わったのはその結論に至る論拠の質と、ユーザーへの返し方。
+
+### `docs_trace` — 反論
+<sub>2026-08-18T14:57:57+09:00</sub>
+
+# Round 2: ファクトチェック結果（docs_trace）
+
+## 要件解釈層
+
+### req_trace の主張 ✅ 検証済み: 正確
+
+**claim**: minimum-requirements.md §4 は app implementation quality（信頼性・performance・a11y・保守性）であって、環境構成・branch strategy は要件でない
+
+**文書確認**:
+- 最低要件.md §4.1-4.4: 信頼性（error handling, rate limit）/ performance（debounce, cache）/ a11y（responsive, keyboard, labels）/ 保守性（architecture consistency, types, lint）
+- §7 受け入れ基準（11 項）: どれも environment separation / branch protection を含まない
+- **環境戦略は要件スコープ外。** app quality 担保で十分。
+
+→ req_trace の解釈が正確。環境を分ける根拠を requirements に求めることはできない。
+
+---
+
+## インフラ契約層
+
+### cf_platform の主張 ❌ 不正確な参照
+
+**claim**: cloudflare-infrastructure.md §12 に「version-scoped secret preview-alias binding」と gradual deployment が未確認事項として記載
+
+**文書確認**:
+- §12 実際の 9 項: ① bundle size ② RSC p95 CPU ③ next-intl middleware ④ invocation log IP ⑤ rate limiting pricing ⑥ WRANGLER_OUTPUT_FILE_PATH fields ⑦ workers.dev registration ⑧ avatar sizing for CLS ⑨ wrangler tail behavior
+
+→ **version-scoped secret preview-alias binding も gradual deployment も §12 に記載なし。** 参照先の誤指摘。
+
+---
+
+### release_eng の主張 ❌ 仕様誤読
+
+**claim**: INF-21 / §6.1 / §8.3 が gradual deployment をサポート
+
+**文書確認**:
+- **INF-20**: Deployment trigger は **git push / マージのみ。手作業なし** → 自動実行の強制
+- **INF-21**: **直前の正常ビルドへ数手でロールバック可能** → rollback speed であって段階的展開ではない
+- **§6.1**: 3 環境の構成（local / preview pr-<N> / production main）
+- **§8.3**: CI workflows: `pull_request` trigger → versions upload pr-<N>（即反映）/ `push to main` trigger → `wrangler deploy`（即反映）
+
+→ **現在の設計は immediate deployment。** PR マージ後、本番に直ちに反映。ロールバック *可能性* と段階的 *展開* は別物。
+
+段階的デプロイが要れば **新規決定** が必要（INF-20 例外化 / deployment gate 追加等）。
+
+---
+
+## サマリー
+
+| エージェント | 主張の正確性 | 根拠 |
+|-----------|----------|------|
+| req_trace | ✅ 正確 | minimum-requirements.md §4 は app quality のみ |
+| autonomy_ops | ✅ 正確 | check_pending_pr_reviews.py / pre-git-push-check.sh の実装確認済み |
+| cf_platform | ❌ 不正確 | §12 に参照claim がない |
+| release_eng | ❌ 誤読 | INF-21 は rollback capability であって gradual deployment ではない |
+
+---
+
+次ステップ:
+- **cf_platform**: 本当に未確認事項 / 確認済み事項の区別を改めて説明（根拠なしに仕様を拡大しない）
+- **release_eng**: 段階的デプロイが要れば、別途決定ゲート（D-22 等）で明示する（INF-20 例外化、CI gate 追加等）。現状の「ロールバック可能」は戻す手段であって段階的展開ではない
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-18T14:59:44+09:00</sub>
+
+## lead: 合意点・対立点の整理（round 1〜2 の統合）
+
+### 0. lead によるファクトチェックの訂正（docs_trace round2 への訂正）
+
+docs_trace が「不正確」と判定した 2 件のうち、**1 件は誤読**である。
+
+- **cf_platform について（訂正）**: cf_platform の原文は「OAuth 検証という具体的な未検証項目（`cloudflare-infrastructure.md` §12 に**相当項目なし**）」であり、「§12 に記載されている」とは主張していない。**§12 に無い**という主張であって、docs_trace の §12 実地確認（9 項目に OAuth / secret 関連なし）は cf_platform の主張を**否定ではなく裏付けている**。この指摘は取り下げる。
+- **release_eng について（部分的に有効）**: release_eng も「INF-21 が gradual deployment をサポートする」とは主張しておらず、「INF-21 **強化として**組み込む」＝新規追加の提案である。ただし docs_trace の結論部分「gradual deployment を入れるなら新規決定（`D-n`）が要る」は**正しく、採用する**。現行設計は immediate deployment（`push to main` → 即 `wrangler deploy`）であり、段階的展開の機構は存在しない。
+
+### 1. 合意点（5 レンズが round 2 の自己攻撃を経てなお一致した点）
+
+1. **dev ブランチ = 常設プレビュー環境は、現時点では採用しない**。5 名全員が round 2 で採用側の最強論拠を自ら構築したうえで、結論を維持した。
+2. **理由は「与件が禁止しているから」ではない**（req_trace が round 2 で自説を訂正）。`minimum-requirements.md` §4 は dev 分離を**要求も禁止もしていない**。与件充足（優先順位 1 位）の判定範囲外であり、**費用対効果で判断する任意の上乗せ**である。
+3. **この運用体制では dev に発生させられる価値がない**（autonomy_ops）。dev を見る人間がおらず（単一開発者 + 完全自走）、実トラフィックも通らないため、dev は「CI と同じ検証をもう一度走らせるだけの環境」になる。自動昇格を実装しても「(a) 無意味な待機」か「(b) 他の場所でも作れる仕組みの入れ物」のどちらかにしかならない。
+4. **実装するなら `[env.dev]`（別 Worker）一択**（cf_platform が公式ドキュメントで確定）。`versions` + 固定 preview alias 方式は、シークレットが **Worker 1 本の版チェーン全体で線形に継承される**（`--secrets-file` の「Secrets not included in the file are preserved from the previous version」）ため、dev 専用シークレットの分離を**構造的に保証できない**。
+5. **仮に dev 相当の環境を持つとしても、それは「ブランチ戦略」ではなく「手動トリガーのデプロイ先」として切り離せる**（cf_platform）。`workflow_dispatch` で最新 main を dev Worker へ流す形にすれば、2 段マージのコストは一切発生しない。
+
+### 2. 議論を経て残った真の問題（dev の採否とは独立に実在する）
+
+**P-1: main 上の合成状態を非本番で検証する層がない**（release_eng が自己攻撃で発見・重要）
+現行 `deploy-production.yml` は `push to main` で即 `wrangler deploy` する。個々の PR は preview で検証されるが、**複数 PR が積み上がった合成後の状態を最初に浴びるのは本番トラフィックそのもの**。`sprint-cycle-router` が高頻度に squash マージする運用では、個別に緑でも組み合わせで壊れる統合バグを検知する非本番の場が構造的に存在しない。
+→ ただし **dev を作ってもこの穴は閉じない**（release_eng・autonomy_ops）。「誰が・いつ dev→main を昇格させるか」が未定義である限り、同じ問いが 1 段上に移動するだけ。正しい閉じ方は **main へのマージ後に test suite を走らせ、成功しなければ `wrangler deploy` に進ませない CI ゲート**（新しいブランチも昇格主体も不要）。
+
+**P-2: OAuth 経路が本番でしか検証されない**（cf_platform）
+§6.2 の「プレビューでは OAuth を無効化する」方針の帰結。preview alias は PR ごとに URL が変わるためコールバック URL を事前登録できない。固定 URL を持つ `[env.dev]`（別 Worker）でしか塞げない。
+→ ただし現時点では OAuth 自体が未実装であり、**今すぐ塞ぐ必要はない**。`M-4`（公開判断）時の検討事項。
+
+**P-3: gradual deployment は現行設計に存在しない**（docs_trace）
+`INF-21` は「直前の正常ビルドへ数手でロールバック可能」＝**戻す手段**であって段階的展開ではない。`wrangler versions deploy --percentage` を導入するなら **新規決定が必要**（`INF-20` の「トリガーは git push / マージのみ」との関係整理を含む）。
+→ release_eng・autonomy_ops が「dev の代替」として推した手段は、**まだ設計に存在しない**。「代替があるから dev は不要」と言い切るのは現時点では誤りで、正確には「dev より低コストで実効性が高い代替**候補**がある」。
+
+### 3. 残った対立点（弱い）
+
+- **release_eng / autonomy_ops**: 公開後の安全網は gradual deployment を強化する方向。
+- **cf_platform**: OAuth 検証だけは `[env.dev]` でしか塞げないため、`M-4` 時に用途限定で再検討する余地がある。
+
+両者は排他ではない（前者は本番投入の段階制御、後者は OAuth という特定経路の事前検証）。`M-4` のチェックリストに**両方**を載せることで解消する。
+
+### 4. ユーザーの真のニーズへの回答（req_trace round 2 の訂正を採用）
+
+ユーザーの相談は「§4 の要求から dev 分離という結論が導けるか」の**検証依頼**であり、実装指示ではない。そして相談の背後にある不安は「プロダクション運用を意識していないと見られること」である。この不安は**実在するリスクとして認める**。ただし解消手段は dev ブランチに限られない。`minimum-requirements.md` §6 が **README への設計判断の記載を与件として要求している**ため、そこに環境戦略の判断根拠を書くことが最も確実な導線になる（ADR より埋もれない）。
+
+### `lead` — 判定
+<sub>2026-08-18T15:00:32+09:00</sub>
+
+{
+  "recommendation": "採用しない（今は dev/main の環境・ブランチ分離を導入しない）。与件 §4 は環境分離を要求しておらず、単一開発者 + AI 完全自走という運用体制では dev を見る人間も実トラフィックも存在しないため、CI と同じ検証をもう一度走らせるだけの環境が増えてリードタイムだけが伸びる。",
+  "alternative": "手動トリガーの [env.dev]（別 Worker・ブランチ戦略とは無関係のデプロイ先）を M-4 通過時に OAuth 検証用途限定で導入する。選ぶ条件は『第三者公開を決め、かつ OAuth ログインを実装する』こと。",
+  "decisions": [
+    {
+      "issue": "A: 常設 dev ブランチ（= 常設プレビュー環境）を追加すべきか",
+      "conclusion": "追加しない。dev を見る人間も実トラフィックもない体制では、dev は CI 以上の検証を何も追加しない。2 段マージのコストだけが確実に発生する。",
+      "artifacts": ["docs/02_requirements/open-questions.md（D-21 として決定を記録・改修）", "README.md（環境戦略の判断根拠を記載・改修）"],
+      "rejected": "『PR preview があるから十分』という round 1 の論拠自体は round 2 で否定された（合成状態の検証層が無いため）。ただし穴の正しい閉じ方は dev ではなく main の CI ゲート。"
+    },
+    {
+      "issue": "B: 与件『プロダクション運用を想定した実装とする』は環境分離を要求しているか",
+      "conclusion": "要求も禁止もしていない。§4.1〜4.4 と §7 チェックリスト 11 項目はアプリ実装品質（エラー処理・秘匿情報・性能・a11y・型・Lint）を列挙しており、環境構成・ブランチ戦略は与件充足の判定範囲外。したがって dev 分離は『費用対効果で判断する任意の上乗せ』であって、やってはいけないものではない。",
+      "artifacts": ["docs/02_requirements/open-questions.md（D-21 の根拠として記録）"],
+      "rejected": "『§4 に書いていないから禁止』という論法（req_trace が round 2 で自ら訂正）。与件は下限であって上限ではない。"
+    },
+    {
+      "issue": "C: dev 常設環境を作る場合の Cloudflare 実装形式",
+      "conclusion": "[env.dev]（別 Worker）一択。versions + 固定 preview alias 方式は、シークレットが Worker 1 本の版チェーン全体で線形継承される（--secrets-file の『Secrets not included in the file are preserved from the previous version』）ため、dev 専用シークレットの分離を構造的に保証できない。ただし [env.dev] は Worker 数を恒久的に +1 する。",
+      "artifacts": ["docs/03_design/infrastructure/cloudflare-infrastructure.md §6.1（採用時のみ改修。今は不要）"],
+      "rejected": "versions + 固定 alias `dev` 方式（シークレット分離が原理的に保証できない）。"
+    },
+    {
+      "issue": "D: 自律運用フローとの整合（2 段マージのプロセス負荷）",
+      "conclusion": "ハーネス 4 箇所（check_pending_pr_reviews.py の base 非フィルタ / pre-git-push-check.sh の dev 無保護 / pr-review-flow-summary.md の base=main 固定 / Session-Id 所有判定）は直せる実装コストに過ぎず、不採用の根拠にはならない。真の問題は『誰が・いつ dev→main を昇格させるか』が sprint-cycle-router の 9 分岐に存在しないこと。自動昇格は技術的に成立するが、(a) 無意味な待機か (b) 他の場所でも作れる仕組みの入れ物にしかならず便益がゼロ。",
+      "artifacts": ["（採用時のみ）.claude/skills/sprint-cycle-router/SKILL.md", ".claude/hooks/pre-git-push-check.sh", "tools/check_pending_pr_reviews.py"],
+      "rejected": "『ハーネスが壊れるから採用しない』という論法（autonomy_ops が round 2 で自ら訂正）。"
+    },
+    {
+      "issue": "E: 採用するとしたら今か M-4 後か",
+      "conclusion": "今は導入しない。M-4（公開判断ゲート）のチェックリストに『OAuth 検証用 [env.dev] の要否』と『gradual deployment の要否』の 2 項目を追加し、公開を決めた時点で再判定する。",
+      "artifacts": ["docs/02_requirements/roadmap.md §M-4（チェックリストに 2 項目追加・改修）"],
+      "rejected": "M-4 を待たず今すぐ導入する案（公開判断が未通過で、OAuth も未実装のため塞ぐべき穴がまだ存在しない）。"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T-1",
+      "title": "deploy-production.yml に『main マージ後の test suite 実行 → 成功しなければ wrangler deploy しない』ゲートを追加する（P-1: 合成状態の検証層の欠落を塞ぐ）",
+      "actor": "claude",
+      "depends_on": [],
+      "sp": "sp:2",
+      "note": "SP-4（テスト CI 完成）が前提。SP-1〜SP-3 の間は書けるテストだけでゲートを組む"
+    },
+    {
+      "id": "T-2",
+      "title": "README に環境戦略の判断根拠（なぜ dev ブランチを持たないか）を明記する。minimum-requirements.md §6『設計上の判断・工夫した点』の一部として書く",
+      "actor": "claude",
+      "depends_on": [],
+      "sp": "sp:1"
+    },
+    {
+      "id": "T-3",
+      "title": "open-questions.md に D-21 として『リリースサイクルは trunk-based（PR preview + main = production）を維持し、常設 dev 環境は持たない』を記録する",
+      "actor": "claude",
+      "depends_on": [],
+      "sp": "sp:1"
+    },
+    {
+      "id": "T-4",
+      "title": "roadmap.md M-4 のチェックリストに『OAuth 検証用 [env.dev] の要否』『gradual deployment（versions deploy --percentage）の要否』を追加する",
+      "actor": "claude",
+      "depends_on": ["T-3"],
+      "sp": "sp:1"
+    },
+    {
+      "id": "T-5",
+      "title": "gradual deployment を導入するかを独立の決定として起票する（INF-21 はロールバック可能性であって段階的展開ではないため、新規決定が要る）",
+      "actor": "claude",
+      "depends_on": ["T-3"],
+      "sp": "sp:2"
+    }
+  ],
+  "critical": [
+    "P-1: main 上の合成状態を非本番で検証する層が現行設計に存在しない。deploy-production.yml は push to main で即 wrangler deploy するため、複数 PR の合成状態を最初に浴びるのは本番トラフィックそのもの。dev を作っても『誰が昇格させるか』が未定義な限り穴は 1 段上に移動するだけで、正しい閉じ方は main の CI ゲート（T-1）。",
+    "P-2: OAuth 経路が本番でしか検証されない（§6.2 のプレビュー OAuth 無効化方針の帰結）。固定 URL を持つ [env.dev] でしか塞げないが、OAuth 自体が未実装のため今は塞ぐ必要がない。M-4 の検討事項（T-4）。",
+    "P-3: gradual deployment は現行設計に存在しない。INF-21 は『戻す手段』であって段階的展開ではないため、『dev の代替がある』と言い切るのは現時点では不正確。導入には新規決定が要る（T-5）。"
+  ],
+  "open_questions": [
+    "ユーザー判断（SD-3 第 2 系統）: 本議論の推奨（dev/main 分離は採用せず、T-1〜T-5 の代替策で『プロダクション運用を意識している』ことを可視化する）を採るか、それとも今すぐ dev 環境を導入するか。成果物が変わるためユーザーに確認する。"
+  ]
+}
