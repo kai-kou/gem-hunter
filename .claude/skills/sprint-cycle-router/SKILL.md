@@ -104,7 +104,7 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **1** | `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue が存在する | 即対応（他ブランチより最優先・既存仕様どおり） | `claude-code-spec-sync` Step1 |
 | **2** | `check_pending_pr_reviews.py --mine --actionable-only`（相当）が非空 | レビュー対応・自動マージ・公開反映まで継続。新規スプリント着手より優先（CP-4: 中途 PR を放置して新規に手を広げない） | `pr-review-watcher` |
 | **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名}まで完了」1 行）から続きを判定し再開（手順は §7 の中断条件と対）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
-| **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py`（別担当実装・並行 PR で追加） <!-- refcheck:ignore --> |
+| **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
 | **5** | `status:waiting-claude` の `type:improvement`/`type:bug` が存在する | 改善 Issue 消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
 | **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
@@ -176,7 +176,7 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
        ⚠️ 「インフラ」は運用基盤の契約であって、クリーンアーキテクチャ用語の `src/infrastructure/`
        （アダプタ層）ではない。混同しない。
 
-     - **無人 firing での SD-3 第 2 系統（仕様解釈の分岐）**: §5 の手順に従う。
+     - **無人 firing での SD-3 第 2 系統（仕様解釈の分岐）**: §6 の手順に従う。
      - `SP-8`（ログイン）の E2E は `infrastructure-design.md` §8.1 の記載どおり、プレビュー URL
        では実行不能なため、ダミー OAuth 設定の **ローカルビルド**に対して実行する（この 1 件だけ
        実行対象を切り替える）。
@@ -326,6 +326,6 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 | `.claude/skills/pr-review-watcher/SKILL.md` | Step 2 / Step 3（PR 済み）/ Step 4-6 の委譲先 |
 | `.claude/skills/self-improvement-loop/SKILL.md` | Step 5（消化モード）/ Step 7（整理モード）の委譲先 |
 | `.claude/skills/workflow-health-check/SKILL.md` / `.claude/skills/project-sync/SKILL.md` | Step 6（衛生）の委譲先 |
-| `tools/sprint_backlog_sync.py` | Step 3.5 の SP→Issue 同期スクリプト（本スキルは呼び出し方のみ持つ・並行 PR で追加） <!-- refcheck:ignore --> |
+| `tools/sprint_backlog_sync.py` | Step 3.5 の SP→Issue 同期スクリプト（本スキルは呼び出し方のみ持ち、パース・判定ロジックは持たない） |
 | `tools/self_review_check.py` | 縦切り・`C-5`・TDD 順序の機械判定（PR 前チェック） |
 | `content/discussions/sprint-cycle-design-20260818/whiteboard.md` | 本設計の議論全文・却下案・合意経緯 |
