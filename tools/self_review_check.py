@@ -361,7 +361,8 @@ def duplicate_sp_branch_warning(
         if r.returncode != 0:
             return None
         remote_branches = r.stdout.splitlines()
-    pattern = re.compile(rf"SP-{re.escape(sp_num)}(?!\d)")
+    # SP_PATTERN と同じ理由（issue 2）で直前が英字の誤爆を防ぐ（例: "WASP-3" の "SP-3"）
+    pattern = re.compile(rf"(?<![A-Za-z])SP-{re.escape(sp_num)}(?!\d)")
     matches = [b.strip() for b in remote_branches if pattern.search(b)]
     if len(matches) >= 2:
         return (
@@ -596,13 +597,28 @@ def _self_test_vertical_slice_check() -> list[str]:
     if not (errs == [] and warns == []):
         failures.append(f"US-n機能スプリントで2層以上は Warning 無しを期待したが errs={errs} warns={warns}")
 
-    for exempt_sp in ("4", "5"):
+    for enabler_sp in ("4", "5"):
+        # US-n 参照が無いイネイブラー単独スプリントは汎用ルールで exempt になる（ハードコード無し）
         errs, warns = vertical_slice_check(
             ["app/foo/page.tsx"], app_or_src_exists=True,
-            sp_signal_text=f"SP-{exempt_sp}-enabler-only US-99",
+            sp_signal_text=f"SP-{enabler_sp}-enabler-only-no-us-reference",
         )
         if not (errs == [] and warns == []):
-            failures.append(f"SP-{exempt_sp} は既定 exempt を期待したが errs={errs} warns={warns}")
+            failures.append(
+                f"SP-{enabler_sp} で US-n 参照が無ければ exempt を期待したが errs={errs} warns={warns}"
+            )
+
+    # issue4 回帰: ENABLER_ONLY_EXEMPT_SP のハードコードを撤廃したので、
+    # SP-4/SP-5 でも US-n を含めば汎用ルール（2 層未満で Warning）が効く想定
+    errs, warns = vertical_slice_check(
+        ["app/foo/page.tsx"], app_or_src_exists=True,
+        sp_signal_text="SP-4-something referencing US-99",
+    )
+    if not (errs == [] and len(warns) == 1):
+        failures.append(
+            f"SP-4 で US-n を含むのに1層のみは Warning 1件を期待したが errs={errs} warns={warns}"
+            "（ENABLER_ONLY_EXEMPT_SP ハードコード復活の回帰）"
+        )
 
     errs, warns = vertical_slice_check(
         ["app/foo/page.tsx"], app_or_src_exists=True, sp_signal_text="no-sp-number-here"
