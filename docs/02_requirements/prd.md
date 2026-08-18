@@ -182,7 +182,7 @@ GitHub の検索では有名なリポジトリが上位を占めやすい一方�
 | 課金・サブスクリプション | `D-3` により目的としない |
 | 目的別タグの自前生成（LLM 分類・人手キュレーション） | 維持コストが運用継続と両立しない。GitHub topics の活用に絞る（`Q-4`） |
 | エージェント向け API / MCP の提供 | `D-1` で不採用 |
-| GitHub App 化・Webhook 受信 | 本プロダクトは他人の公開リポジトリを読むだけで、監視対象リポジトリが存在しない（`Q-6`） |
+| GitHub App の **Webhook 受信・イベント購読** | 本プロダクトは他人の公開リポジトリを読むだけで、監視対象リポジトリが存在しない（`Q-6`）。⚠️ **GitHub App を「サーバー側の認証方式」として使うことは採用済み**（`D-20`）。ここで不採用なのは Webhook を受けて常駐処理を行う形態であり、両者を混同しない |
 | 複数トークンのローテーション | レート制限の回避とみなされる恐れがある（`D-6`） |
 
 ---
@@ -505,7 +505,9 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 | 変数 | 用途 | 必須 |
 |---|---|---|
-| GitHub アクセストークン | サーバー側の共有 PAT（`D-6`） | 実質必須（未設定時は未認証となりレート枠が 10 req/分に落ちる） |
+| GitHub App Client ID | installation token を取る JWT の `iss`（`D-20`）。数値の App ID も受理されるが **Client ID に統一する**（変数名 `GITHUB_APP_CLIENT_ID` と揃える） | 実質必須（**3 つ揃って初めて認証される**。欠けると未認証となりレート枠が 10 req/分に落ちる） |
+| GitHub App 秘密鍵 | JWT の RS256 署名に使う（`D-20`）。⚠️ **PKCS#8 形式で注入する**（Web Crypto の `importKey` は PKCS#1 を受け付けない） | 同上 |
+| GitHub App Installation ID | `POST /app/installations/{id}/access_tokens` の対象（`D-20`） | 同上 |
 | OAuth クライアント ID | 任意ログイン（`AR-5`） | ログイン機能を有効化する場合 |
 | OAuth クライアントシークレット | 同上 | 同上 |
 | OAuth コールバック URL | デプロイ先に依存するため必ず外部注入する | 同上 |
@@ -559,7 +561,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | # | 主題 | 記録先 |
 |---|---|---|
 | 1 | Next.js 16 + App Router の採用 | 未作成 |
-| 2 | 認証方式（単一 PAT + 任意 OAuth）と、与件が対象外とした認証を上乗せした理由 | 未作成 |
+| 2 | 認証方式（GitHub App の installation token + 任意 OAuth）と、与件が対象外とした認証を上乗せした理由 | ✅ [ADR 0003](../adr/0003-github-app-authentication.md)（サーバー側認証の方式選定）/ 任意 OAuth 部分は未作成 |
 | 3 | DB を持たない設計原則と、状態をクライアント側へ寄せる判断 | 未作成 |
 | 4 | キャッシュ抽象（Cache Port）を設ける判断と、YAGNI の例外とした理由 | 未作成 |
 | 5 | `FR-7` でページネーションを選び、無限スクロールを採らなかった理由 | 未作成 |

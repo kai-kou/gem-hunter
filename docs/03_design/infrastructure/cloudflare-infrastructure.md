@@ -209,7 +209,7 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 | 経路 | 手段 | 位置づけ |
 |---|---|---|
 | **主** | レスポンスヘッダ `X-Cache-Status: HIT` / `MISS` を **アプリ側で付与する**（`lib/infra/cache.ts`） | 🟢 **事業者非依存**。ブラウザの DevTools で誰でも確認でき、E2E テストからも assert できる（`SD-2`） |
-| 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの共有 PAT** の残量） |
+| 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの GitHub App installation token** の残量・`D-20`） |
 | 補助 | `wrangler tail --format json` のライブストリーム | ⚠️ `invocation_logs: false` でも tail が拾えるかは **未確認**（§12 の 9）。主経路にしない |
 
 🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`lib/infra/` の実装が付け替わるだけ）。
@@ -342,9 +342,17 @@ npx wrangler whoami
 npx opennextjs-cloudflare build
 npx wrangler versions upload --preview-alias bootstrap
 
-# 3. シークレット投入（非対話）
-printf '%s' "$GITHUB_TOKEN_FOR_APP" | npx wrangler secret put GITHUB_TOKEN
-printf '%s' "$RATE_LIMIT_SALT"      | npx wrangler secret put RATE_LIMIT_SALT
+# 3. シークレット投入（非対話・GitHub App 方式 / `D-20`）
+printf '%s' "$GITHUB_APP_CLIENT_ID"       | npx wrangler secret put GITHUB_APP_CLIENT_ID
+printf '%s' "$GITHUB_APP_INSTALLATION_ID" | npx wrangler secret put GITHUB_APP_INSTALLATION_ID
+printf '%s' "$RATE_LIMIT_SALT"            | npx wrangler secret put RATE_LIMIT_SALT
+
+# 秘密鍵は PKCS#8 へ変換して投入する（理由は §7.6）。中間ファイルを作らずパイプで渡す
+# ⚠️ 供給元によっては改行がリテラルの \n にエスケープされているため、先に正規化する
+set -o pipefail   # openssl の失敗をパイプに埋もれさせない（空シークレット登録の防止）
+printf '%s\n' "${GITHUB_APP_PRIVATE_KEY//\\n/$'\n'}" \
+  | openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
+  | npx wrangler secret put GITHUB_APP_PRIVATE_KEY_PKCS8
 
 # 4. 本番デプロイ
 npx wrangler deploy
@@ -385,6 +393,24 @@ npx wrangler deploy
 🔴 **例外の終了条件は「`.github/workflows/deploy-preview.yml` と `deploy-production.yml` が `main` にマージされた時点」**（= `SP-1` の完了時）。これ以降は GitHub Actions 経由のみに一本化し、手動デプロイの経路を残さない。
 
 ⚠️ **`SP-4`（テスト CI の整備）と混同しない。** `SP-1` が用意するのは **デプロイ CI**、`SP-4` が用意するのは **テスト CI** であり、本例外が終わるのは前者がマージされたときである。
+
+
+### 7.6. 🔴 GitHub App の秘密鍵は PKCS#8 で持つ（`D-20` の実装上の必須事項）
+
+GitHub が発行する App の秘密鍵は **PKCS#1**（`-----BEGIN RSA PRIVATE KEY-----`）だが、**Workers の Web Crypto `crypto.subtle.importKey()` は `pkcs8` しか受け付けない**（`pkcs1` という形式指定が存在しない）。変換せずに渡すと実行時に import が失敗する。
+
+```bash
+# PKCS#1 -> PKCS#8（Worker に入れる前に一度だけ行う）
+openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
+```
+
+- 🔴 **変換結果をファイルに書かない**。上記のようにパイプで `wrangler secret put` へ直接渡す（`INF-5` / 秘密のディスク残留を避ける）
+- 🔴 **改行がリテラルの `\n` にエスケープされた形で供給される経路がある**（複数行の鍵をシークレット UI へ貼る場合）。そのまま `openssl` に渡すと `Could not read key from <stdin>` で失敗し、**空のシークレットが登録されて実行時まで気づけない**。§7.2 のとおり正規化と `set -o pipefail` をセットで使う（2026-08-18 に実測確認済み）
+- Worker 側は `importKey("pkcs8", …, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"])` で読み、`iat` / `exp` / `iss`（App の Client ID）を含む JWT を RS256 で署名する
+- **`exp` は最大 10 分**（GitHub 側の上限）。時計ずれ対策として `iat` を 60 秒戻す
+- installation token（`POST /app/installations/{id}/access_tokens`）は **TTL 1 時間**。毎リクエストで取り直さず、**失効前まで再利用する**（安全マージンを引いて再取得）
+
+> 🔵 上記はいずれも 2026-08-18 に Cloudflare Workers 上で実測確認済み（[ADR 0003](../../adr/0003-github-app-authentication.md)）。
 
 ---
 
@@ -508,7 +534,7 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 |---|---|---|---|
 | **H-1** | Cloudflare Dashboard → My Profile > API Tokens → 「Edit Cloudflare Workers」テンプレートでトークンを 1 本発行する | 3 分 | `POST /user/tokens` には既存トークンが必要（ニワトリ卵）。公式が「初回は Dashboard で」と明記 |
 | **H-2** | そのトークンと Account ID を **2 箇所** に貼る: ① GitHub リポジトリ Settings > Secrets and variables > Actions ② Claude.ai の環境変数設定 | 3 分 | クラウドセッションから `actions/*` API が 403 でブロックされる（`env-vars.md`）。セッション env への書き込みも人間操作 |
-| **H-3** | **GitHub の Fine-grained PAT（public repo の読み取り）を発行し、同じ 2 箇所に登録する** | 3 分 | アプリがサーバー側で使う共有 PAT（[`prd.md`](../../02_requirements/prd.md) §10・`D-6`）。GitHub アカウントの権限が要るため Claude が発行できない。**未設定でも未認証で動くが、レート枠が落ちる** |
+| **H-3** | **GitHub App を作成し、App ID / Client ID・秘密鍵・Installation ID を同じ 2 箇所に登録する**（権限は `contents:read` / `issues:read` / `metadata:read`）| 5 分 | アプリがサーバー側で使う認証情報（[`prd.md`](../../02_requirements/prd.md) §10・`D-20`）。App の作成・鍵の発行・インストールはいずれも GitHub アカウントの権限が要るため Claude が代行できない。**未設定でも未認証で動くが、レート枠が落ちる**。🟢 **本リポジトリでは対応済み**（Issue #31・実測検証は [ADR 0003](../../adr/0003-github-app-authentication.md)） |
 
 🔵 **H-1 〜 H-3 が済めば、以降のリソース作成・デプロイ・プレビュー URL 生成・シークレット投入・トークンのローテーション発行はすべて Claude が非対話で実行できる。**
 
@@ -524,6 +550,8 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 **ゼロ**。デプロイは git トリガー、ロールバックは CLI、監視は CI の失敗通知で足りる。
 
 🔴 **そのために、`H-1` の Cloudflare API トークンには TTL を設定しない**（`INF-4` を優先する。[`infrastructure-design.md`](./infrastructure-design.md) §9.4 の「PAT の有効期限更新」を発生させないための選択）。
+
+🟢 **GitHub 側は `D-20`（GitHub App 方式）により、この問題が構造的に消えている**: 有効期限を持つのは 1 時間で自動失効する installation token であり、**アプリが毎回取り直すため人手の更新作業が発生しない**。人が保持するのは期限のない署名鍵だけになる（Fine-grained PAT を採っていた場合に残るはずだった定常作業が `INF-4` から落ちる）。
 
 ⚠️ **TTL を付ける運用に変えるなら、期限前に Issue を自動起票する仕組みの実装を同時に行う**（手当てなしに人手の定常作業を増やさない・`D-15`）。2 本目以降のトークンを `POST /accounts/{id}/tokens` で発行する場合も同じ判断を適用する。
 

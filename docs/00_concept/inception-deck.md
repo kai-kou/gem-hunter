@@ -196,7 +196,7 @@ star は注目度の指標であって利用実績ではない。約 600 万個�
   │          │                   │              │
   │  ┌───────▼────────┐   ┌──────▼───────────┐  │
   │  │ Cache Port     │   │ 認証             │  │
-  │  │ get/set/invalidate │ 共有 PAT         │  │
+  │  │ get/set/invalidate │ GitHub App       │  │
   │  │ + TTL のみ     │   │ + 任意 OAuth     │  │
   │  └───────┬────────┘   │ (httpOnly Cookie)│  │
   │          │            └──────────────────┘  │
