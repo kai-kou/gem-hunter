@@ -282,10 +282,10 @@
 | 層 | diff に含まれるか判定する対象 | 対応する既存 ID |
 |---|---|---|
 | フロントエンド | `app/**/page.tsx` / `app/**/layout.tsx` / `src/ui/**` | `E-8` / `NFR-3` |
-| バックエンド | `app/**/route.ts` / `src/usecases/**` / `src/domain/**` / `src/infrastructure/**` / `src/composition/**` | `E-2` / `E-5` / `TR-4` |
+| バックエンド | `app/**/route.ts` / `src/usecases/**` / `src/domain/**` / `src/infrastructure/**` / `src/composition/**` / `src/shared/**` | `E-2` / `E-5` / `TR-4` |
 | インフラ | `.github/workflows/**` / プレビューデプロイ設定 / `.env.example` 等の環境変数宣言 / `next.config.*` のランタイム契約部 | `E-12` / `E-22` / `E-6` / `INF-6`〜`INF-14` |
 
-⚠️ **層の定義とディレクトリ構造の正本は [アプリケーションアーキテクチャ](../03_design/architecture/application-architecture.md) §1**（本表は 3 層判定のための写し）。「インフラ」は運用基盤の契約（`INF-n`）であって、クリーンアーキテクチャ用語の `src/infrastructure/`（アダプタ層）ではない。** `src/infrastructure/` はバックエンド層の一部として数える。混同しないこと。
+⚠️ **層の定義とディレクトリ構造の正本は [アプリケーションアーキテクチャ](../03_design/architecture/application-architecture.md) §1**（本表は 3 層判定のための写し）。「インフラ」は運用基盤の契約（`INF-n`）であって、クリーンアーキテクチャ用語の `src/infrastructure/`（アダプタ層）ではない。`src/infrastructure/` と `src/shared/` はバックエンド層の一部として数える。混同しないこと。**
 
 **適用範囲（飼い主が確定・2026-08-18）**: `C-5` 違反（技術レイヤー別の分割 Issue）は **全スプリントで blocking**。加えて `SP-1` のみ **3 層すべてに diff が無ければ blocking**。`US-n` を含む機能スプリントは **3 層中 2 層以上に触れていなければ warning**（block しない）。イネイブラー単独スプリント（Issue の `含む` が `E-n` のみ）は **exempt**（操作レビュー手順が書けることが条件）。この適用範囲は `AskUserQuestion` による飼い主の明示確認を経て確定した（`content/discussions/sprint-cycle-design-20260818/whiteboard.md` round 3）。
 
@@ -364,7 +364,7 @@
   2. ネットワークを遮断した状態でも同じ結果になる（外部 API に依存していない）
   3. PR を作ると CI でテストが自動実行される
 - **対応 `AC`**: `AC-10`（基盤部分）
-- **見積もり**: `sp:5`（`R-11`：Server Component のテスト手法が未確定）
+- **見積もり**: `sp:5`（手段は [テスト戦略](../04_development/testing-strategy.md) で確定済み（`R-11` クローズ）。残る不確実性は Vitest / Playwright / axe の実機セットアップと CI 組み込み）
 
 > 🔵 **`C-2` を満たすイネイブラー単独スプリント**（§5.2）。ここから先のスプリントはすべて、この回帰検知の上に積む。
 
@@ -544,7 +544,7 @@ SP-1 → SP-2 → SP-3 → SP-4 → SP-5   ← S-0。この順序は固定
 | 項目 | 影響するストーリー | 参照 |
 |---|---|---|
 | キャッシュ TTL の具体値（検索 / 詳細） | `E-3` / `E-10` | `prd.md` §13 / `R-5` |
-| テストのレイヤー分担と手段（Server Component のテスト手法） | `E-11` | `prd.md` §13 / `R-11` |
+| ~~テストのレイヤー分担と手段（Server Component のテスト手法）~~ ✅ 決定済み | `E-11` | [テスト戦略](../04_development/testing-strategy.md)（`R-11` クローズ） |
 | i18n ライブラリの選定 | `E-4` | `prd.md` §13 / `R-7` |
 | `use cache` / `cacheLife` / `cacheTag` の適用範囲 | `E-3` | `prd.md` §13 / `R-7` |
 | UI コンポーネントライブラリの採否 | `E-8` / `E-9` | `prd.md` §13 / `TR-5` |

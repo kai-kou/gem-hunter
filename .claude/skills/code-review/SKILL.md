@@ -48,7 +48,7 @@ git fetch origin +main:refs/remotes/origin/main && git diff origin/main...HEAD &
 | 簡素化・再利用 | 既存関数での代替・コピペ重複・YAGNI 違反（1 箇所しか使わない抽象化） |
 | テスト・検証 | 変更が実行結果で証明可能か・テスト欠落・`bash -n`/`py_compile` |
 | ドキュメント整合 | ルール・SKILL.md・README との desync・参照切れ |
-| アーキテクチャ・ドメイン整合（**差分が `app/` か `src/` を含むときだけ追加**） | 層の依存規則違反（`docs/rules/architecture-rules.md` §2 の A-1〜A-7）・ユビキタス言語との不一致（`domain-model.md` §2 に無い語・`subscribers_count` 等の変換漏れ）・生の `string`/`number` をユースケースへ渡している・テスト配置が `testing-strategy.md` §3 と食い違う |
+| アーキテクチャ・ドメイン整合（**差分が `app/` か `src/` を含むときだけ追加**） | 層の依存規則違反（`docs/rules/architecture-rules.md` §2 の `ARCH-1`〜`ARCH-7` / `ARCH-R1` / `ARCH-R2`）・ユビキタス言語との不一致（`domain-model.md` §2 に無い語・`subscribers_count` 等の変換漏れ）・生の `string`/`number` をユースケースへ渡している・テスト配置が `testing-strategy.md` §3 と食い違う |
 
 各ファインダーへの指示テンプレート（`agent-team-summary.md` の出力ルールを先頭に付ける）:
 

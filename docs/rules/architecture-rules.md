@@ -31,21 +31,30 @@
 
 ---
 
-## 2. 毎回守る 7 つ（違反はセルフレビューで Error になる）
+## 2. 毎回守る 7 つ（`ARCH-1`〜`ARCH-7`）
+
+> 🔴 **ID の接頭辞に注意**: `A-1`〜`A-6` は **ユーザー確認の既約境界外リスト**（`user-confirmation-minimization.md` §1）が予約済みの ID である。
+> アーキテクチャの規律は **`ARCH-n`** を使い、両者を混同しない（「A-4 違反」と書くとサーキットブレーカーの意味に読める）。
+
+| # | 規律 | 破ったときに何が起きるか | 機械チェック |
+|---|---|---|---|
+| **ARCH-1** | `src/domain/` は **何も import しない**（`next` / `react` / `zod` を含む） | 中心がフレームワークに縛られ、差し替えもテストもできなくなる | Error |
+| **ARCH-2** | ユースケースは **ポートを引数で受け取る**（実装・フレームワークを `import` で掴まない） | テストで実 API を叩くしかなくなる | Error |
+| **ARCH-3** | 依存は内向きだけ（`app/` `src/ui/` → `src/infrastructure/` の直 import 禁止＝ `src/composition/` 経由 / `src/infrastructure/` → `src/usecases/` `src/ui/` `app/` の逆流禁止 / `src/ui/` → `app/` 禁止） | UI とデータ源が癒着し `W-1` が壊れる | Error |
+| **ARCH-4** | 事業者固有バインディングは `src/infrastructure/platform/` の中だけ | `NFR-21` / `INF-5` 違反。事業者を替えられなくなる | Error（**`// arch-ok` で抑止できない**） |
+| **ARCH-5** | GitHub API と GitHub 認証情報は `src/infrastructure/github/`（認証は `platform/` も可）の中だけ | `NFR-16` 違反。秘密鍵がクライアントバンドルへ載る事故を止められない | Error（**`// arch-ok` で抑止できない**） |
+| **ARCH-6** | `src/ui/` は `src/usecases/` を import しない（呼び出しは `app/` 側） | 表示とアプリケーション手続きが癒着する | Error |
+| **ARCH-7** | `src/shared/` は層に依存しない | 共有ユーティリティにビジネス知識が溜まり、どの層からも切り離せなくなる | Warning |
+
+**機械チェックできない 2 つ（レビューで見る）**:
 
 | # | 規律 | 破ったときに何が起きるか |
 |---|---|---|
-| **A-1** | `src/domain/` は **何も import しない**（`next` / `react` / `zod` を含む） | 中心がフレームワークに縛られ、差し替えもテストもできなくなる |
-| **A-2** | ユースケースは **ポートを引数で受け取る**（実装を `import` で掴まない） | テストで実 API を叩くしかなくなる |
-| **A-3** | `app/` / `src/ui/` から `src/infrastructure/` を直接 import しない（`src/composition/` 経由） | UI とデータ源が癒着し `W-1` が壊れる |
-| **A-4** | 事業者固有バインディングは `src/infrastructure/platform/` の中だけ | `NFR-21` / `INF-5` 違反。事業者を替えられなくなる |
-| **A-5** | GitHub API へのアクセスは `src/infrastructure/github/` の中だけ | `NFR-16` 違反 |
-| **A-6** | 外部レスポンスは **検証してから** ドメインへ入れる（`zod`） | 上流の変更が画面の崩壊として現れる（`NFR-19`） |
-| **A-7** | ユースケースの引数は **値オブジェクト**（生の `string` / `number` を渡さない） | 不正値が奥まで届き、境界での防御が効かなくなる |
+| **ARCH-R1** | 外部レスポンスは **検証してから** ドメインへ入れる（`zod`） | 上流の変更が画面の崩壊として現れる（`NFR-19`） |
+| **ARCH-R2** | ユースケースの引数は **値オブジェクト**（生の `string` / `number` を渡さない） | 不正値が奥まで届き、境界での防御が効かなくなる |
 
-機械チェック: `python3 tools/check_architecture_boundaries.py`（PR 前の `self_review_check.py` から自動実行）。
-
----
+機械チェック: `python3 tools/check_architecture_boundaries.py`（PR 前の `self_review_check.py` が **変更ファイルだけ** を渡して自動実行）。
+`// arch-ok` は `ARCH-1` / `ARCH-2` / `ARCH-3` / `ARCH-6` / `ARCH-7` にのみ効き、**抑止件数はサマリーに必ず出る**（黙って消えない）。
 
 ## 3. DDD で守るのは 3 つだけ
 
@@ -70,6 +79,7 @@
 ## 5. 完了・成功の定義
 
 - [ ] §1 の判定に沿った場所にファイルが置かれている
-- [ ] §2 の 7 項目に違反がない（`check_architecture_boundaries.py` が PASS）
+- [ ] `ARCH-1`〜`ARCH-7` に違反がない（`check_architecture_boundaries.py` が PASS）
+- [ ] `ARCH-R1` / `ARCH-R2`（機械チェック対象外）を自分で確認した
 - [ ] 新しいドメイン語を導入したなら [ドメインモデル](../03_design/data-model/domain-model.md) を同じ PR で更新した
 - [ ] 触れた `AC-n` に対応するテストがある（テスト戦略 §6）

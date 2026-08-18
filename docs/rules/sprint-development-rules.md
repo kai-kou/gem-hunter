@@ -49,9 +49,8 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 
 🔴 **実装を先に書いてテストを後から足す順序を取らない。**
 
-🔵 **道具・層分担・二重ループの具体は [`docs/04_development/testing-strategy.md`](../04_development/testing-strategy.md)（SSOT・`R-11` の回答）に従う。**
-本節は規律だけを定める。⚠️ **`async` Server Component はユニットで描画できない**（Next.js 公式が E2E を推奨）ため、
-データ取得を伴う画面は E2E で担保し、ロジックはユースケース層へ出す。
+🔵 **道具・層分担・二重ループ・フレームワーク由来の制約は [`docs/04_development/testing-strategy.md`](../04_development/testing-strategy.md)（SSOT・`R-11` の回答）に従う。**
+本節は規律だけを定め、制約の中身は再掲しない（片方だけ古くなるため）。
 
 | 層 | 対象 | 対応要件 |
 |---|---|---|

@@ -114,7 +114,7 @@ TEST_PATH_GLOBS = (
 FRONTEND_GLOBS = ("app/**/page.tsx", "app/**/layout.tsx", "src/ui/**")
 BACKEND_GLOBS = (
     "app/**/route.ts", "src/usecases/**", "src/domain/**", "src/infrastructure/**",
-    "src/composition/**",
+    "src/composition/**", "src/shared/**",
 )
 INFRA_GLOBS = (".github/workflows/**",)
 
@@ -769,6 +769,74 @@ def _self_test_tdd_commit_order_warnings() -> list[str]:
     return failures
 
 
+ARCH_CODE_SUFFIXES = (".ts", ".tsx", ".mts", ".cts")
+
+
+def subcheck_outcome(stdout: str, returncode: int) -> tuple[list[str], list[str], str | None]:
+    """補助チェッカーの出力を (errors, warnings, 異常終了の理由) に振り分ける。
+
+    🔴 **終了コードだけで正常判定しない**: Python は未捕捉例外でも exit 1 を返すため、
+    「違反あり(1)」と「チェッカー自体の死亡(1)」が区別できない。`❌`/`⚠️` の検出、または
+    正常終端マーカー（`✅`/`ℹ️`）のどちらも無ければ異常終了として Warning を出す。
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    matched = False
+    ok_marker = False
+    for line in (stdout or "").splitlines():
+        if line.startswith("❌"):
+            errors.append(line[1:].strip())
+            matched = True
+        elif line.startswith("⚠️"):
+            warnings.append(line[2:].strip())
+            matched = True
+        elif line.startswith(("✅", "ℹ️")):
+            ok_marker = True
+    if not matched and not ok_marker:
+        return errors, warnings, f"exit={returncode}"
+    return errors, warnings, None
+
+
+def run_subcheck(args: list[str], prefix: str, errors: list[str], warnings: list[str],
+                 *, timeout: int = 30) -> None:
+    """補助チェッカーを実行し、結果を errors / warnings へ prefix 付きで積む。"""
+    proc = sh([sys.executable, *args], timeout=timeout)
+    e, w, abnormal = subcheck_outcome(proc.stdout or "", proc.returncode)
+    errors.extend(f"{prefix}: {x}" for x in e)
+    warnings.extend(f"{prefix}: {x}" for x in w)
+    if abnormal:
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        tail = detail[-1] if detail else "(出力なし)"
+        warnings.append(f"{prefix}チェックが異常終了しました（{abnormal}）: {tail[:200]}")
+
+
+def _self_test_subcheck_outcome() -> list[str]:
+    """補助チェッカー出力の振り分け（#47 の依存規則ゲート回帰）。"""
+    failures: list[str] = []
+    cases = [
+        # (stdout, returncode, want_errors, want_warnings, want_abnormal)
+        ("❌ src/x.ts:1 ARCH-1: …\n", 1, 1, 0, False),
+        ("⚠️ src/x.ts が層に属していません\n", 0, 0, 1, False),
+        ("✅ 依存規則 OK（3 ファイル・Warning 0 件）\n", 0, 0, 0, False),
+        ("ℹ️ 検査対象のアプリコードがありません\n", 0, 0, 0, False),
+        # 未捕捉例外（stdout 空 + exit 1）は「違反なし」ではなく異常終了として扱う
+        ("", 1, 0, 0, True),
+        ("", 2, 0, 0, True),
+    ]
+    for stdout, rc, want_e, want_w, want_abn in cases:
+        e, w, abn = subcheck_outcome(stdout, rc)
+        if len(e) != want_e or len(w) != want_w or bool(abn) != want_abn:
+            failures.append(
+                f"stdout={stdout!r} rc={rc}: want ({want_e},{want_w},{want_abn}) "
+                f"got ({len(e)},{len(w)},{bool(abn)})"
+            )
+    # 起動ゲートの拡張子がチェッカー側と揃っていること（.mts/.cts の取りこぼし防止）
+    for suffix in (".ts", ".tsx", ".mts", ".cts"):
+        if not f"src/domain/x{suffix}".endswith(ARCH_CODE_SUFFIXES):
+            failures.append(f"起動ゲートが {suffix} を対象外にしている")
+    return failures
+
+
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
@@ -781,6 +849,7 @@ def run_self_test() -> int:
         ("TDD コミット順序", _self_test_tdd_commit_order_warnings),
         ("SP-n/US-n 単語境界（issue2 回帰）", _self_test_sp_us_word_boundary),
         ("commit_files --root（issue3 回帰）", _self_test_commit_files_root_flag),
+        ("補助チェッカー出力の振り分け", _self_test_subcheck_outcome),
     ]
     failed_groups = 0
     total_failures = 0
@@ -874,41 +943,15 @@ def main() -> int:
     # サブエージェント定義の `tools` がフィルタで全滅していないか（#367）
     # 全滅すると委譲が「空回答」になり、しかも Claude Code は削除をエラー報告しない。
     if any(f.startswith(".claude/agents/") for f in files):
-        proc = sh([sys.executable, "tools/check_agent_definitions.py"], timeout=30)
-        matched = False
-        for line in (proc.stdout or "").splitlines():
-            if line.startswith("❌"):
-                errors.append(f"サブエージェント定義: {line[2:].strip()}")
-                matched = True
-            elif line.startswith("⚠️"):
-                warnings.append(f"サブエージェント定義: {line[2:].strip()}")
-                matched = True
-        # 検査自体が壊れて無警告で素通りするのを防ぐ（他の補助ツールと同じ方針）
-        if proc.returncode != 0 and not matched:
-            detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-            tail = detail[-1] if detail else "(出力なし)"
-            warnings.append(
-                f"サブエージェント定義チェックが異常終了しました（exit={proc.returncode}）: {tail[:200]}"
-            )
+        run_subcheck(["tools/check_agent_definitions.py"], "サブエージェント定義",
+                     errors, warnings, timeout=30)
 
     # クリーンアーキテクチャの依存規則（#47・#32）
-    # アプリコードが無い期間はチェッカー側が自動スキップするため、無条件呼び出しでも誤検知しない。
-    if any(f.startswith(("app/", "src/")) and f.endswith((".ts", ".tsx")) for f in files):
-        proc = sh([sys.executable, "tools/check_architecture_boundaries.py"], timeout=60)
-        matched = False
-        for line in (proc.stdout or "").splitlines():
-            if line.startswith("❌"):
-                errors.append(f"依存規則: {line[1:].strip()}")
-                matched = True
-            elif line.startswith("⚠️"):
-                warnings.append(f"依存規則: {line[2:].strip()}")
-                matched = True
-        if proc.returncode not in (0, 1) and not matched:
-            detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-            tail = detail[-1] if detail else "(出力なし)"
-            warnings.append(
-                f"依存規則チェックが異常終了しました（exit={proc.returncode}）: {tail[:200]}"
-            )
+    # 変更ファイルだけを渡す（全体走査だと差分外の既存違反で無関係な PR がブロックされる）。
+    arch_files = [f for f in files if f.startswith(("app/", "src/")) and f.endswith(ARCH_CODE_SUFFIXES)]
+    if arch_files:
+        run_subcheck(["tools/check_architecture_boundaries.py", *arch_files], "依存規則",
+                     errors, warnings, timeout=30)
 
     # 月次コストテレメトリの feature PR 混入チェック（#106・#242 回帰検知）
     # cost_monthly は gitignore 対象で、telemetry/cost-data ブランチへのみ永続化する（#242）。

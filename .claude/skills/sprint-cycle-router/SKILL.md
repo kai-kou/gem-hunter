@@ -171,8 +171,8 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
        TDD の最低ライン。定義の正本である `application-architecture.md` / `domain-model.md` /
        `testing-strategy.md` への入口になっている）
      - `SD-2`（TDD 主体）: Red → Green → Refactor。操作レビュー手順を E2E に写す。
-       **道具と層分担の正本は `docs/04_development/testing-strategy.md`**（`async` Server Component は
-       ユニットで描画できないため E2E に置く。本スキルには複製しない）
+       **道具・層分担・フレームワーク由来の制約の正本は `docs/04_development/testing-strategy.md`**
+       （本スキルには複製しない）
      - **新しいドメイン語を導入したら `docs/03_design/data-model/domain-model.md` を同じ PR で更新する**
        （ユビキタス言語はコードと同時に更新されて初めて機能する）
      - **縦切りの判定境界（3 層・強制力の 4 段）**: 正本は

@@ -54,7 +54,7 @@
 | **Presentation** | `src/ui/` | 表示。React コンポーネント（Client Components を含む） | `src/domain/`（**型と値オブジェクトのみ**）/ `src/shared/**` / `react` | `src/usecases/**` / `src/infrastructure/**` / `app/**` |
 | **Composition** | `src/composition/` | **唯一、実装をポートへ束ねてよい場所**（composition root） | すべて | — |
 | **Frameworks & Drivers** | `app/` | ルーティング・Server Component・Route Handler・Server Action。**薄く保つ** | `src/composition/**` / `src/ui/**` / `src/domain/`（型）/ `next/**` | `src/infrastructure/**`（直接） |
-| **Shared** | `src/shared/` | どの層にも属さない純粋ユーティリティ（型ヘルパー・日付整形等）。**ビジネス知識を置かない** | `src/shared/**` のみ | すべての層 |
+| **Shared** | `src/shared/` | どの層にも属さない純粋ユーティリティ（型ヘルパー・日付整形等）。**ビジネス知識を置かない** | `src/shared/**` のみ | すべての層（機械チェックは Warning・§6） |
 
 > ⚠️ **`src/infrastructure/` はクリーンアーキテクチャのアダプタ層であり、`user-story-map.md` §5.2 の「インフラ層（`INF-n`・CI / デプロイ設定）」とは別物。** 3 層判定では `src/infrastructure/` は **バックエンド** に数える（混同禁止）。
 
@@ -172,13 +172,17 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 
 | # | 検査 | 重大度 |
 |---|---|---|
-| 1 | `src/domain/` が他層・フレームワーク（`next` / `react` / `zod` 等）を import していない | Error |
-| 2 | `src/usecases/` が `src/infrastructure/` / `src/ui/` / `app/` / `next` を import していない | Error |
-| 3 | `app/` / `src/ui/` が `src/infrastructure/` を直接 import していない（`src/composition/` 経由のみ） | Error |
-| 4 | 事業者固有バインディング（`getCloudflareContext` / `env.KV` 等）の参照が `src/infrastructure/platform/` の外に無い（`NFR-21` / `INF-5`） | Error |
-| 5 | `api.github.com` への直接アクセス（`fetch` / SDK）が `src/infrastructure/github/` の外に無い（`NFR-16`） | Error |
-| 6 | `src/ui/` が `src/usecases/` を import していない | Error |
-| 7 | `src/shared/` が他層を import していない | Warning |
+| `ARCH-1` | `src/domain/` が他層・フレームワーク（`next` / `react` / `zod` 等）を import していない | Error |
+| `ARCH-2` | `src/usecases/` が `src/infrastructure/` / `src/ui/` / `app/` / `next` / `react` を import していない | Error |
+| `ARCH-3` | `app/` / `src/ui/` が `src/infrastructure/` を直接 import していない（`src/composition/` 経由のみ）。`src/infrastructure/` が `src/usecases/` / `src/ui/` / `app/` を import していない（逆流）。`src/ui/` が `app/` を import していない | Error |
+| `ARCH-4` | 事業者固有バインディング（`getCloudflareContext` / `env.KV` 等）の参照が `src/infrastructure/platform/` の外に無い（`NFR-21` / `INF-5`） | Error |
+| `ARCH-5` | GitHub API・GitHub 認証情報（`api.github.com` / `@octokit/` / `GITHUB_TOKEN` / `GITHUB_APP_*`）の参照が `src/infrastructure/github/`（認証は `platform/` も可）の外に無い（`NFR-16` / `D-20`） | Error |
+| `ARCH-6` | `src/ui/` が `src/usecases/` を import していない | Error |
+| `ARCH-7` | `src/shared/` が他層に依存していない | Warning |
+| 配置 | `app/` / `src/` 配下のファイルが §1.3 のいずれかの層に属している | Warning |
+
+🔴 **`ARCH-R1`（外部レスポンスの検証）と `ARCH-R2`（値オブジェクトでの受け渡し）は機械チェックできない**（レビュー観点・`docs/rules/architecture-rules.md` §2）。
+`// arch-ok` による抑止は `ARCH-1` / `2` / `3` / `6` / `7` にのみ効き、**`ARCH-4` / `ARCH-5`（秘密情報とベンダー境界）には効かない**。抑止件数はサマリーに出力される。
 
 アプリコードが 1 行も無い期間は **全検査をスキップ** する（誤検知させない）。
 
