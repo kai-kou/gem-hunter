@@ -92,7 +92,7 @@ flowchart TB
 | `INF-8` レスポンスストリーミング | 対応。ストリーミング中の Worker はアクティブ扱いで wall time 制限がない | ✅ |
 | `INF-9` 環境変数のランタイム注入 | シークレット・変数が `process.env` に自動注入される（再ビルド不要） | ✅ |
 | `INF-10` CDN 配信・`immutable` ヘッダ | Workers Static Assets。**リクエストは無料・無制限** | ✅ |
-| `INF-11` 画像配信 | 🔵 **`next/image` の最適化を使わない**（§4.4）。GitHub のアバターは `avatars.githubusercontent.com?s=N` をそのまま使う | ✅（方針で回避） |
+| `INF-11` 画像配信 | 🔵 **`next/image` の最適化を使わない**（§3.2）。GitHub のアバターは `avatars.githubusercontent.com?s=N` をそのまま使う | ⚠️ 方針は確定・**`NFR-6`（CLS）を満たすかは実測待ち**（§12 の 8） |
 | `INF-12` 1 リクエスト 10 秒以内 | wall clock は無制限・課金対象外。GitHub API の待ち時間は CPU を消費しない | ✅ 余裕 |
 | `INF-13` 永続ディスクを前提にしない | サーバーレスなので構造的に満たす | ✅ |
 | `INF-14` 単一リージョンで成立 | エッジ実行だが、アプリはどこで動いても同じ（リージョン固有の前提を持たない） | ✅ |
@@ -103,7 +103,7 @@ flowchart TB
 | `INF-1` 個人情報を保持しない | §9 の設定で満たす。⚠️ アカウント運用ログ（Audit 18 か月等）はアプリの制御外 | ⚠️ 一部のみ |
 | `INF-2` 定常コストをゼロに | Free plan を維持する限り超過は課金ではなく停止（§5） | ⚠️ 実測待ち |
 | `INF-3` 与件の技術スタック | Next.js 16 App Router が動く。⚠️ Free の CPU / バンドル上限に収まるかは実測待ち（§5.3） | ⚠️ 実測待ち |
-| `INF-4` 人手の定常運用ゼロ | §11 のとおり、定常作業はゼロ。ブートストラップのみ人間が触る | ✅ |
+| `INF-4` 人手の定常運用ゼロ | ブートストラップ以外の定常作業はゼロ。⚠️ **ただし API トークンの期限切れを自動検知する仕組みが未実装**（§11.3） | ⚠️ 条件付き |
 | `INF-5` 事業者を決め打たない | §10 の境界（`lib/infra/` 限定 + grep 2 本）で機械的に守る | ✅ |
 
 ---
@@ -145,12 +145,16 @@ flowchart TB
   "preview_urls": true,
   "cache": { "enabled": true },
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
-  "limits": { "cpu_ms": 50 }
+  "limits": { "cpu_ms": 50 },
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
+  ]
 }
 ```
 
 - `preview_urls` は 2025-09-17 以降 opt-in。`workers_dev` を切るなら明示が必要
 - `limits.cpu_ms` は Free では意味を持たないが、**Paid へ上げた瞬間に denial-of-wallet 対策として効く** ため最初から書いておく
+- `ratelimits` は **`wrangler.jsonc` の宣言だけで有効になる**（事前のリソース作成コマンドは不要）。`namespace_id` はアカウント内で一意な任意の識別子、`period` は **10 秒か 60 秒のみ**。⚠️ wrangler 4.36.0 以上が必要
 - ⚠️ `wrangler deploy` は設定ファイルを source of truth として扱う。**Dashboard で変えた設定は次回デプロイで巻き戻る**
 
 ---
@@ -198,6 +202,20 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 ---
 
+### 4.5. 🔴 `SP-5` の検証手段（「2 回目は GitHub API を叩いていない」をどう見せるか）
+
+[`user-story-map.md`](../../02_requirements/user-story-map.md) §5.3 の `SP-5` は「2 回目は GitHub API を呼んでいない（`x-ratelimit-remaining` が減らない／ログに外部リクエストが出ない）」を操作レビュー手順にしている。**本設計はログを既定で無効化する（§9.1）ため、確認手段を設計として先に確定しておく。**
+
+| 経路 | 手段 | 位置づけ |
+|---|---|---|
+| **主** | レスポンスヘッダ `X-Cache-Status: HIT` / `MISS` を **アプリ側で付与する**（`lib/infra/cache.ts`） | 🟢 **事業者非依存**。ブラウザの DevTools で誰でも確認でき、E2E テストからも assert できる（`SD-2`） |
+| 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの共有 PAT** の残量） |
+| 補助 | `wrangler tail --format json` のライブストリーム | ⚠️ `invocation_logs: false` でも tail が拾えるかは **未確認**（§12 の 9）。主経路にしない |
+
+🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`lib/infra/` の実装が付け替わるだけ）。
+
+---
+
 ## 5. コスト（`INF-2`）
 
 ### 5.1. 月額 0 円の条件
@@ -232,7 +250,8 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 判定タイミング: SP-1 でプレビュー環境へ初回デプロイした直後
 
 計測 1: p95 CPU 時間
-  npx wrangler tail --format json   # 代表 3 経路（トップ / 検索結果 100 件 / 詳細）を叩いて cpuTime を見る
+  npx wrangler tail --format json   # SP-1 時点の 2 経路（トップ / 検索結果 100 件）を叩いて cpuTime を見る
+  # ⚠️ 詳細ページは SP-3 の成果物。SP-3 完了後に同じ計測を 1 回追加する
 
 計測 2: Worker バンドルサイズ（圧縮後）
   npx opennextjs-cloudflare build && gzip -c .open-next/worker.js | wc -c
@@ -361,9 +380,11 @@ npx wrangler deploy
 
 ### 7.5. ⚠️ `INF-20` の例外（ブートストラップ期間のみ）
 
-`INF-20` は「デプロイのトリガーは git push / マージのみ」と定めるが、**`SP-1` の CI 整備前に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**。これがないと `SP-1` 自体がプレビュー URL を出せず `SD-1` が成立しないため。
+`INF-20` は「デプロイのトリガーは git push / マージのみ」と定めるが、**デプロイ用ワークフローがマージされるまでの間に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**。これがないと `SP-1` 自体がプレビュー URL を出せず `SD-1` が成立しないため。
 
-🔴 **`SP-4`（CI 整備）以降は GitHub Actions 経由のみに一本化し、手動デプロイの経路を残さない。**
+🔴 **例外の終了条件は「`.github/workflows/deploy-preview.yml` と `deploy-production.yml` が `main` にマージされた時点」**（= `SP-1` の完了時）。これ以降は GitHub Actions 経由のみに一本化し、手動デプロイの経路を残さない。
+
+⚠️ **`SP-4`（テスト CI の整備）と混同しない。** `SP-1` が用意するのは **デプロイ CI**、`SP-4` が用意するのは **テスト CI** であり、本例外が終わるのは前者がマージされたときである。
 
 ---
 
@@ -487,15 +508,16 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 |---|---|---|---|
 | **H-1** | Cloudflare Dashboard → My Profile > API Tokens → 「Edit Cloudflare Workers」テンプレートでトークンを 1 本発行する | 3 分 | `POST /user/tokens` には既存トークンが必要（ニワトリ卵）。公式が「初回は Dashboard で」と明記 |
 | **H-2** | そのトークンと Account ID を **2 箇所** に貼る: ① GitHub リポジトリ Settings > Secrets and variables > Actions ② Claude.ai の環境変数設定 | 3 分 | クラウドセッションから `actions/*` API が 403 でブロックされる（`env-vars.md`）。セッション env への書き込みも人間操作 |
+| **H-3** | **GitHub の Fine-grained PAT（public repo の読み取り）を発行し、同じ 2 箇所に登録する** | 3 分 | アプリがサーバー側で使う共有 PAT（[`prd.md`](../../02_requirements/prd.md) §10・`D-6`）。GitHub アカウントの権限が要るため Claude が発行できない。**未設定でも未認証で動くが、レート枠が落ちる** |
 
-🔵 **H-1 / H-2 が済めば、以降のリソース作成・デプロイ・プレビュー URL 生成・シークレット投入・トークンのローテーション発行はすべて Claude が非対話で実行できる。**
+🔵 **H-1 〜 H-3 が済めば、以降のリソース作成・デプロイ・プレビュー URL 生成・シークレット投入・トークンのローテーション発行はすべて Claude が非対話で実行できる。**
 
 ### 11.2. 条件付きで発生するもの
 
 | # | 作業 | 発火条件 |
 |---|---|---|
-| **H-3** | レジストラでネームサーバーを Cloudflare へ変更する | 独自ドメインを使う場合のみ（`M-4` で判断） |
-| **H-4** | Workers Paid（$5/月）への加入・支払い方法の登録 | §5.3 の実測ゲートが閾値超過を確定した場合のみ |
+| **H-4** | レジストラでネームサーバーを Cloudflare へ変更する | 独自ドメインを使う場合のみ（`M-4` で判断） |
+| **H-5** | Workers Paid（$5/月）への加入・支払い方法の登録 | §5.3 の実測ゲートが閾値超過を確定した場合のみ。🟢 **切替の可否は `D-19` で事前承認済み** |
 
 ### 11.3. 定常運用（`INF-4`）
 
@@ -516,6 +538,8 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 | 5 | Rate Limiting binding の課金有無 | 実装直前に料金ページを再確認 | 小 |
 | 6 | `WRANGLER_OUTPUT_FILE_PATH` の `version-upload` エントリのフィールド名 | 初回 CI 実行で確認（主経路にしないので blocking ではない） | 小 |
 | 7 | workers.dev サブドメインの初期登録を非対話で完結できるか | 初回デプロイで確認。失敗したら `H-1` と同時に Dashboard で 1 回設定 | 小 |
+| 8 | GitHub アバターを `?s=N` で出す方式で `NFR-6`（CLS 0.1 以下）を満たせるか | `SP-1`〜`SP-2` で Lighthouse / DevTools により実測 | 中 |
+| 9 | `observability.logs.invocation_logs: false` でも `wrangler tail` がライブログを拾えるか | `SP-5` の補助経路。主経路（`X-Cache-Status`）があるため blocking ではない | 小 |
 
 ---
 
