@@ -1,0 +1,55 @@
+name: repo-checks
+
+# 目的: Claude Code のフック（pre-pr-create-check.sh）を経由しない PR でも、
+# リポジトリ運用ツールの最低限の健全性を担保する。
+# ⚠️ これはアプリケーションのテスト CI（`E-12` / `SP-4` で確立する）ではない。
+# アプリのテスト・Lighthouse・axe は SP-4 以降で別ワークフローとして追加する。
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python 構文チェック
+        run: python3 -m compileall -q tools/
+
+      - name: バックログ供給ツールのセルフテスト
+        run: python3 tools/sprint_backlog_sync.py --self-test
+
+      - name: セルフレビュー検査のセルフテスト
+        run: |
+          if python3 tools/self_review_check.py --self-test --help >/dev/null 2>&1 \
+            || python3 tools/self_review_check.py --self-test; then
+            echo "self_review_check のセルフテストを実行した"
+          else
+            echo "::error::self_review_check --self-test が失敗した"
+            exit 1
+          fi
+
+      - name: 日時表記（JST 統一）
+        run: python3 tools/check_datetime_tz.py
+
+      - name: CJK Markdown の半角スペース
+        run: python3 tools/check_cjk_markdown.py
+
+      - name: ルールの symlink 同期
+        run: ./tools/check_rules_sync.sh
+
+      - name: スキル・ルールの参照切れ
+        run: python3 tools/check_skill_references.py
+
+      - name: サブエージェント定義
+        run: python3 tools/check_agent_definitions.py
