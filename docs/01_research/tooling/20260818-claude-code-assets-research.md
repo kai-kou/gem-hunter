@@ -30,7 +30,9 @@
 | **M**（メタ系: スキル・ルール自体の保守） | 6 | `apply-base` / `skill-audit` / `skill-creator` / `claude-code-spec-sync` ほか |
 | **T**（技術スタック系: コードの書き方） | **0** | — |
 
-機械検証: `grep -ril 'next\.js|nextjs|vitest|playwright|tailwind|shadcn|cloudflare|wrangler|a11y|axe' .claude/` → **ヒット 0 件**。
+機械検証: `grep -rilE 'next\.js|nextjs|vitest|playwright|tailwind|shadcn|cloudflare|wrangler|a11y|axe' .claude/skills .claude/agents .claude/commands` → **ヒット 0 件**。
+
+> ⚠️ スコープを `.claude/` 全体に広げると `settings.json`（sandbox の `allowedDomains` に `api.cloudflare.com`）と `hooks/session-start.sh` の 2 件がヒットするが、いずれも **資産定義ではなく環境設定** なので本判定の対象外。
 
 さらに **アプリコードが 1 行も存在しない**（`src/` / `app/` / `package.json` / `.github/workflows/` すべて未作成。`SP-1` 未着手）。`check_architecture_boundaries.py` も現状は全スキップで空振りしている。
 
@@ -50,9 +52,11 @@
 
 | 項目 | 実測値 |
 |---|---|
-| Hot 層（`.claude/rules/` 常駐 14 ファイル） | **91,600 B（約 22,900 トークン）** |
-| ベース基準値（`token-optimization-rules.md`） | 79,072 B |
-| 超過幅 | **+12,528 B（+16%）** |
+| Hot 層（`.claude/rules/` 常駐 14 ファイル） | 91,600 B（約 22,900 トークン・2026-08-18 実測） |
+| ベース基準値 | 79,072 B |
+| 超過幅 | 約 +16% |
+
+> 🔴 **Hot 層予算の正本は [`docs/rules/token-optimization-rules.md`](../../rules/token-optimization-rules.md) の増減ログ**。本表は本セッションの実測スナップショットであり、増減ログの最新エントリ（90,091 B・2026-08-17）とは +1,509 B の差がある。**この差分の突合は本 PR のスコープ外** として #55 に切り出した（数値の二重管理を避けるため、以降は増減ログを参照すること）。
 
 - **技術知識を常駐ルール（`.claude/rules/`）として足すのは予算上不可**
 - **スキル / サブエージェント形態なら常駐するのは `description` のみ**（数百 B）で予算影響はほぼゼロ
@@ -90,7 +94,7 @@
 | 名称 | 種別 | 概要 | 導入 |
 |---|---|---|---|
 | [Next.js バンドル docs + `AGENTS.md` 自動生成](https://nextjs.org/docs/app/guides/ai-agents) | 仕組み | `node_modules/next/dist/docs/` にバージョン一致の docs を同梱。**16.3 以降は `next dev` が `AGENTS.md` と `CLAUDE.md` を自動生成 / upsert** | `next dev` を 1 回実行。`next.config.ts` の `agentRules: false` で無効化 |
-| [`next-devtools-mcp`](https://nextjs.org/docs/app/guides/mcp) | MCP | dev サーバーの `/_next/mcp` に接続。`get_errors` / `get_logs` / `get_routes` / `get_compilation_issues` など。**`next build` を回さずに型・コンパイルエラーを取れる** | `.mcp.json` に `npx -y next-devtools-mcp@latest` |
+| [`next-devtools-mcp`](https://nextjs.org/docs/app/guides/mcp) | MCP | dev サーバーの `/_next/mcp` に接続。`get_errors` / `get_logs` / `get_routes` / `get_compilation_issues` など。**`next build` を回さずに型・コンパイルエラーを取れる** | `.mcp.json` に `npx -y next-devtools-mcp@<固定バージョン>` |
 | [Next.js 公式 Skills](https://github.com/vercel/next.js/tree/canary/skills) | skill | `next-dev-loop`（編集 → 実行時検証ループ）/ `next-cache-components-*` / `next-partial-prefetching-adoption` | `npx skills add vercel/next.js --skill next-dev-loop` |
 | [`vercel` plugin](https://github.com/vercel/vercel-plugin) | plugin | **33 skills + 3 agents + MCP**。`nextjs` / `react-best-practices` / **`shadcn`** / `turbopack` / `next-upgrade` / `cdn-caching` ほか | `/plugin install vercel@claude-plugins-official` |
 | [`agent-browser`](https://github.com/vercel-labs/agent-browser) | CLI | DOM / console / network / Web Vitals / React ツリーを構造化テキスト出力。`next-dev-loop` が内部利用 | `next-dev-loop` 経由 |
@@ -110,7 +114,7 @@
 |---|---|---|---|
 | [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp) | MCP | **アクセシビリティスナップショット主体**（スクショではなく構造化データ）。ネットワーク傍受・モック・trace・アサーション。headless / Docker / CI 対応 | `claude mcp add playwright npx @playwright/mcp@latest` |
 | **Playwright Agents**（planner / generator / healer） | subagent + MCP | Playwright v1.56+ 同梱。仕様 → テスト計画 → TS テスト生成 → 失敗テストの自動診断・修復。**`.claude/agents/` に 3 ファイル + `.mcp.json` を生成** | `npx playwright init-agents --loop=claude` |
-| [shadcn MCP](https://ui.shadcn.com/docs/mcp) | MCP | レジストリの component を browse / search / 自然言語 install。"Built by shadcn at Vercel" | `.mcp.json` に `npx shadcn@latest mcp` |
+| [shadcn MCP](https://ui.shadcn.com/docs/mcp) | MCP | レジストリの component を browse / search / 自然言語 install。"Built by shadcn at Vercel" | `.mcp.json` に `npx shadcn@<固定バージョン> mcp` |
 | [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) | MCP | 実 Chrome の performance trace / network / source map 付き console | 公式マーケット |
 | [axe MCP（Deque 公式）](https://github.com/dequelabs/axe-mcp-server-public) | MCP | `analyze` / `remediate`。⚠️ **axe DevTools 有料サブスク必須**（A-6 相当） | Docker + API キー |
 
@@ -187,6 +191,8 @@
 | **認証・課金（A-6）** | axe MCP は有料サブスク + API キー。Vercel plugin の MCP 部分は Vercel トークン、Cloudflare Bindings / Builds / Observability MCP は OAuth または API トークン。**Cloudflare Documentation MCP のみ認証不要** |
 | 🔴 **`AGENTS.md` 自動生成の副作用** | Next.js 16.3 の `next dev` は `AGENTS.md` と `CLAUDE.md` を **勝手に生成 / upsert する**。本リポジトリの `CLAUDE.md` は精緻に設計済みのため、**最初の `next dev` 実行で `CLAUDE.md` が `@AGENTS.md` 1 行で上書きされないことを必ず確認する**（不安なら `agentRules: false`）。**導入前に検証すべき最大のリスク** |
 | **Hot 層予算** | 既に基準比 +16%。**常駐ルールとしての追加は不可**。スキル / サブエージェント形態のみ現実的（§1.3） |
+| 🔴 **`@latest` のままコミットしない** | 上表の導入コマンドは、公式ドキュメントが `@latest` で示しているものを **固定バージョン表記に書き換えてある**。`npx` 起動型 MCP は起動のたびにレジストリから取得するため、`@latest` のまま `.mcp.json` にコミットすると、パッケージ乗っ取り・タイポスクワッティング時に **セッション起動のたび任意コードが走る**。導入時にその時点の安定版番号へ確定してからコミットする |
+| ⚠️ **`workers_get_worker_code` の残存リスク** | `scriptName` を自由に受け取るため、同一 Cloudflare アカウント内の **無関係な Worker のソースまで取得できる**（読み取り専用＝安全とは言い切れない）。Cloudflare 側で API トークンを本プロジェクトの Worker に絞る最小権限設定（`A-6`）で緩和する |
 
 ---
 
@@ -202,7 +208,7 @@
 | **今すぐ足せる MCP の判定条件** | 「認証不要」だけでは足りず、**「認証不要 **かつ** 接続先が今すでに存在する」の AND 条件**。`package.json` が 0 行の現状では `next-devtools-mcp`（`next dev` のエンドポイント）も shadcn MCP（`components.json`）も接続先が物理的に存在しない |
 | **外部資産を採ってよい 4 条件** | ① SKILL.md 全文を読む ② 本リポジトリの確定ドキュメント（ADR / `architecture-rules.md` / `testing-strategy.md` / `cloudflare-infrastructure.md` §7.4）と矛盾しないことを個別に確認 ③ パッケージ一括ではなく **単体ファイル単位** で取り込む ④ 取得先バージョンをピン留めする。**4 条件が揃わない限り「採らない」を既定にする** |
 
-🔴 **`bwrap` 不在の実測が判断を変えた**: クラウド実行コンテナには `bwrap` が存在せず、sandbox の network allowlist が **無効**。実効防御は `permissions.allow/deny` の ACL と PreToolUse フックの 2 層のみ。したがって「ドキュメントで読み取り専用と決めた」だけでは実効力がなく、**`permissions` に書いて初めて効く**。
+🔴 **サンドボックスがクラウドで効かないことが判断を変えた**: 詳細は [`sandbox-rules.md`](../../rules/sandbox-rules.md)「クラウド実行環境ではサンドボックスは動作しない」（SSOT・#383）。クラウドでの実効防御は **① コンテナ隔離 ② `permissions.allow/deny` の ACL ③ PreToolUse フック** の 3 層で、`allowedDomains` は含まれない。したがって MCP の利用範囲は「ドキュメントで読み取り専用と決めた」だけでは実効力がなく、**`permissions` に書いて初めて効く**。
 
 ### 5.1 採用するもの（段階導入）
 
