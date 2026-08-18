@@ -1,0 +1,79 @@
+{
+  "topic": "gem-hunter の技術スタック（Next.js 16 / Tailwind v4 + shadcn/ui / Vitest 4 + MSW 2 / Playwright + axe / Cloudflare Workers + OpenNext / クリーンアーキテクチャ + DDD）に対して、公式・非公式の Claude Code 資産（Agent Skills / Subagents / Plugin / MCP）を何を採り何を採らないかを決める",
+  "brief": "リサーチ結果の一次情報は docs/01_research/tooling/20260818-claude-code-assets-research.md（2026-08-18 取得）にある。必ず全文を読んでから発言すること。前提事実: (1) 自リポジトリの .claude/skills 19 件・agents 1 件・commands 2 件は全てプロセス系/メタ系で、技術スタック系は 0 件（grep ヒット 0）。(2) アプリコードは 1 行も存在しない（src/ app/ package.json 未作成・SP-13/SP-1 未着手）。(3) Hot 層（.claude/rules/ 常駐 14 ファイル）は 91,600 B で基準比 +16% 超過のため、常駐ルールとしての知識追加は不可。スキル/サブエージェント形態なら description 分のみで予算影響はほぼゼロ。(4) 設計ドキュメントは What/Why/Constraints を高密度に確定済み（application-architecture.md 209 行・testing-strategy.md 148 行・ui-ux-guidelines.md 307 行・cloudflare-infrastructure.md 585 行）。空白は How（手順化）と書いた後の検証。(5) フロントエンド品質ゲート（ESLint / TS strict / axe / Lighthouse 相当）は tools/ に 1 つも無い。(6) @opennextjs/cloudflare 向けの公式資産は Cloudflare にも Vercel にも存在しない（本プロジェクトの肝が空白）。(7) Next.js 16.3 の next dev は AGENTS.md と CLAUDE.md を自動生成/upsert する副作用がある。争点は少なくとも次の 6 つ: A) 公式 MCP（next-devtools-mcp / shadcn MCP / Playwright MCP / Cloudflare Documentation MCP）をどれだけ .mcp.json に足すか。足すと context7 と役割が重複しないか。クラウドコンテナで npx 起動型が実際に動くか。B) 外部スキル/プラグイン（vercel plugin 33 skills / cloudflare skills / secondsky 個別 skill / superpowers / wshobson 個別 plugin）を採るか、それとも自リポジトリの確定済みドキュメントを SSOT として自作スキルに落とすか。外部資産は ADR 0001（shadcn -b radix）・testing-strategy.md の意図的抑制（vitest-pool-workers を入れない・vi.mock は最終手段）・cloudflare-infrastructure.md §7.4（MCP 書き込み禁止）と正面衝突しないか。C) tdd-guard（PreToolUse hook で実装をブロック）を入れて SD-2 を機械強制するか。既存 19 hooks・self_review_check.py の TDD コミット順序検査と二重にならないか。追加モデル呼び出しコストとサードパーティ hook 常駐のリスクをどう見るか。D) Playwright Agents（npx playwright init-agents が .claude/agents/ に 3 ファイル + .mcp.json を生成）を採るか。既存 .claude/agents/ と check_agent_definitions.py に干渉しないか。E) アクセシビリティ（AC-10 / NFR-26 / Lighthouse Accessibility 100 が品質ゲート）を外部資産（Community-Access 11 agents / masuP9 4 skills）で埋めるか、自作の機械ゲート（@axe-core/playwright を CI で回す）で埋めるか。F) 導入タイミング: SP-13/SP-1 着手前の今入れるか、アプリコードが出てから入れるか（今入れると空振りの死蔵スキルになり skill-audit が検出する）。評価軸の優先順位は CP-5（ミッション貢献）> D-9（基盤優先）> 保守コスト。star 数はメンテ品質の指標にならないことが実測で確認されている（VoltAgent ★24k が Next.js 14 前提のまま）。",
+  "participants": [
+    {
+      "name": "stack_fit",
+      "model": "sonnet",
+      "lens": "技術スタック適合性。各候補資産が Next.js 16 / React 19 / Tailwind v4 / shadcn(-b radix) / Vitest 4 / MSW 2 / Playwright / @opennextjs/cloudflare に実際に追随しているかを、リサーチ文書の記載（バージョン表記・最終更新・追随状況）から厳しく判定する。追随していない資産を『star が多いから』で採らせない。特に OpenNext + Workers 上の Next.js という本プロジェクト固有の組み合わせを、どの資産もカバーしていない事実が何を意味するか（＝自作するしかない領域はどこか）を明確にする。next-devtools-mcp の get_errors / get_compilation_issues が Workers ランタイム前提の本プロジェクトで実際に価値を出すかも検証する"
+    },
+    {
+      "name": "conflict_guard",
+      "model": "sonnet",
+      "lens": "既存資産との衝突・重複。自リポジトリの 19 スキル + 19 hooks + 機械ゲート群 + 確定済み設計ドキュメント（ADR 0001 の -b radix / testing-strategy.md の意図的抑制 / cloudflare-infrastructure.md §7.4 の MCP 書き込み禁止 / architecture-rules.md の ARCH-1〜7）に対して、各外部資産が『黙って違う前提を持ち込む』危険を洗い出す。skill-audit が検出対象にしているトリガー衝突・責務重複・死蔵の観点で、採ると害になるものを名指しする。逆に、既存に無く衝突もしない真の空白がどこかも特定する。SSOT を増やしていないかを最優先で見る"
+    },
+    {
+      "name": "risk_ops",
+      "model": "sonnet",
+      "lens": "リスクと運用可能性。サードパーティ hook（tdd-guard の PreToolUse 介入）・npx 実行時取得・curl|bash install の供給網リスクを security-posture-controls.md / sandbox-rules.md の観点で評価する。クラウド実行コンテナで実際に動くか（npx 起動型 MCP / Playwright ブラウザバイナリ / agent-browser）を切り分ける。認証・課金が要るもの（axe MCP の有料サブスク・Vercel トークン・Cloudflare API トークン）を A-6 として分類する。Next.js 16.3 の next dev による CLAUDE.md 自動 upsert が本リポジトリの CLAUDE.md を破壊するリスクの回避策を具体的に決める。導入後の保守コスト（誰がバージョン追随するのか）を必ず見積もる"
+    },
+    {
+      "name": "sprint_value",
+      "model": "sonnet",
+      "lens": "スプリント実利。SP-13（プレビュー環境 + 骨格）→ SP-1〜SP-5（歩く骨格）→ SP-6〜SP-11（MVP）の各スプリントで、どの資産がどのスプリントの完了条件（SD-1 のプレビュー URL・SD-2 の TDD と E2E・AC-10・NFR-23〜26・Lighthouse Accessibility 100 / Performance 90）に直接効くかを、スプリント単位で対応づける。効かないものは切る。導入タイミング（今入れるか / 該当スプリント着手時に入れるか）をスプリント番号で具体的に決める。死蔵スキルを作らないことを最優先の制約にする。D-9（機能より基盤を優先）と YAGNI（1 箇所しか使わない抽象を先回りで足さない）を衝突解決に使う"
+    },
+    {
+      "name": "budget_meta",
+      "model": "haiku",
+      "lens": "コンテキスト予算と資産形態の機械的整合。Hot 層 91,600 B（基準比 +16%）・skill 可視化バジェット（secondsky README が言及する 15,000 文字制限）・description 総量への影響を数量で押さえる。各候補について『MCP として入れる / plugin として入れる / 自作スキルとして書く / ドキュメント参照に留める』のどの形態がコスト最小かを判定する。新しい事実を主張せず、リサーチ文書の記載と既存ルール（token-optimization-rules.md）との突合に徹する。採用候補が増えたときに何 B 増えるかを見積もり、予算超過を招く組み合わせを警告する"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜F それぞれについて結論を 1 つに決める。各候補資産を『採用 / 保留（該当スプリント着手時に再評価）/ 不採用』の 3 分類に必ず落とし、採用するものは導入形態（MCP / plugin / 自作スキル / サブエージェント / 機械ゲート）と書き込み先ファイルパス、導入コマンドまで具体化する。不採用は理由 1 行を必ず添える（後続セッションが再検討で消耗しないため）。議論で否定された案は採用しない。判断軸の優先順位は CP-5（ミッション貢献）> D-9（基盤優先）> YAGNI・保守コスト。死蔵スキルを作らないことを制約として扱う。ユーザー確認が要るもの（A-6 の課金・トークン発行、および仕様解釈が 2 通り以上に分岐するもの）は open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜F のいずれか",
+        "conclusion": "採用する結論の要点",
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "adopt": [
+      {
+        "asset": "資産名",
+        "form": "mcp | plugin | own-skill | subagent | machine-gate | doc-reference",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "command": "導入コマンド（あれば）",
+        "sprint": "導入タイミング（今 | SP-n 着手時）",
+        "why": "採る理由 1 行"
+      }
+    ],
+    "defer": [
+      {
+        "asset": "資産名",
+        "revisit_at": "再評価するタイミング（SP-n 等）",
+        "why": "今は入れない理由 1 行"
+      }
+    ],
+    "reject": [
+      {
+        "asset": "資産名",
+        "why": "採らない理由 1 行"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T-n",
+        "title": "実行タスク",
+        "actor": "claude | user",
+        "depends_on": ["T-n"],
+        "sp": "sp:1|2|3|5|8"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）"]
+  }
+}
