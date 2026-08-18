@@ -89,7 +89,13 @@ _GOAL_RE = re.compile(r"-\s*\*\*ゴール\*\*:\s*(.+)")
 _INCLUDES_RE = re.compile(r"-\s*\*\*含む\*\*:\s*(.+)")
 _AC_RE = re.compile(r"-\s*\*\*対応\s*`AC`\*\*:\s*(.+)")
 _SP_ESTIMATE_RE = re.compile(r"sp:(\d+)")
-_ID_RE = re.compile(r"`([A-Za-z]+-\d+)`")
+# ID 抽出は **プレフィックスを限定する**。`含む` / `対応 AC` の行には
+# 「（OAuth のモックは `SP-8`）」「（`NFR-5` / `SP-4` のテストで担保する）」のような
+# 補足が括弧書きで付くため、無差別に拾うと本来含まれない ID が Issue に混入する。
+_INCLUDE_ID_RE = re.compile(r"`((?:US|E)-\d+)`")
+_AC_ID_RE = re.compile(r"`(AC-\d+)`")
+# 括弧書きの補足（全角・半角）は ID 抽出の前に落とす
+_PARENTHETICAL_RE = re.compile(r"（[^（）]*）|\([^()]*\)")
 
 
 def _slugify_heading(heading: str) -> str:
@@ -108,6 +114,16 @@ def _slugify_heading(heading: str) -> str:
     t = re.sub(r"\s+", "-", t.strip())
     t = re.sub(r"-{2,}", "-", t)
     return t
+
+
+def _extract_ids(line: str, pattern: re.Pattern[str]) -> list[str]:
+    """1 行から ID を抽出する。括弧書きの補足は対象外にし、出現順の重複を除く。"""
+    cleaned = _PARENTHETICAL_RE.sub(" ", line)
+    seen: list[str] = []
+    for x in pattern.findall(cleaned):
+        if x not in seen:
+            seen.append(x)
+    return seen
 
 
 def parse_sprint_backlog(md_text: str) -> dict:
@@ -152,8 +168,8 @@ def parse_sprint_backlog(md_text: str) -> dict:
 
         includes_m = _INCLUDES_RE.search(block)
         ac_m = _AC_RE.search(block)
-        includes = _ID_RE.findall(includes_m.group(1)) if includes_m else []
-        ac = _ID_RE.findall(ac_m.group(1)) if ac_m else []
+        includes = _extract_ids(includes_m.group(1), _INCLUDE_ID_RE) if includes_m else []
+        ac = _extract_ids(ac_m.group(1), _AC_ID_RE) if ac_m else []
 
         sprints[n] = {
             "number": n,
@@ -630,6 +646,25 @@ def _self_test_labels() -> list[str]:
     return failures
 
 
+def _self_test_id_extraction() -> list[str]:
+    """`含む` / `対応 AC` の ID 抽出が括弧書きの補足を拾わないことを検証する。"""
+    failures = []
+    cases = [
+        # (行, パターン, 期待)
+        ("`E-11`（**検索・詳細 API のモックのみ**。OAuth のモックは `SP-8`）/ `E-12`",
+         _INCLUDE_ID_RE, ["E-11", "E-12"]),
+        ("なし（`NFR-5` / `NFR-17` / `NFR-18`。`SP-4` のテストで担保する）",
+         _AC_ID_RE, []),
+        ("`US-6` / `US-11` / `E-1`", _INCLUDE_ID_RE, ["US-6", "US-11", "E-1"]),
+        ("`AC-1` / `AC-2` / `AC-1`", _AC_ID_RE, ["AC-1", "AC-2"]),  # 重複は出現順で 1 回
+    ]
+    for line, pattern, want in cases:
+        got = _extract_ids(line, pattern)
+        if got != want:
+            failures.append(f"ID 抽出: {line!r} → {got}（期待 {want}）")
+    return failures
+
+
 def _self_test_title() -> list[str]:
     """Issue タイトル整形（Markdown 記法・絵文字の除去と長さ制限）を検証する。"""
     failures = []
@@ -701,6 +736,7 @@ def run_self_test() -> int:
         ("次に着手する SP の決定", _self_test_next_sp),
         ("ラベル決定", _self_test_labels),
         ("タイトル整形", _self_test_title),
+        ("ID 抽出", _self_test_id_extraction),
         ("decide 統合", _self_test_decide),
     ]
     failed_groups = 0

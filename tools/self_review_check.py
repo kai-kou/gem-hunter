@@ -15,6 +15,7 @@ Error 検出時（exit 1）に PR 作成をブロックする「Lv3 ハードコ
 終了コード: 0=合格 or Warning のみ / 1=Error あり（ブロック） / 2=チェッカー異常
 """
 from __future__ import annotations
+import argparse
 import os
 import re
 import shutil
@@ -111,6 +112,14 @@ def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
     """`**`（0 個以上のパス階層）/ `*`（1 階層内の任意文字列）だけを解釈する簡易 glob。
 
     pathlib.PurePosixPath.match() は `**` を解釈しないため自前で用意する。
+
+    🔴 **`**` はゼロ階層にもマッチする（意図的・固定仕様。`_self_test_glob_match` が固定）**:
+    `app/**/page.tsx` は `app/foo/page.tsx` だけでなく `app/page.tsx` にもマッチする。
+    これは gitignore・npm glob・doublestar 等が採用する標準的な `**` の解釈（"a/**/b" は
+    "a/b" にもマッチする）であり、かつ Next.js App Router では `app/page.tsx`（ルート直下の
+    ページ）が最頻出パターンの 1 つ（BRIEF.md の `app/**/page.tsx` はこれを含めて FE 層と
+    分類する意図）。ここでゼロ階層を弾くと最も一般的なルートページが FE 層として検出されず、
+    縦切り判定（検査B）が「FE を全く触っていない」と誤判定する方が実害が大きい。
     """
     segments = pattern.split("/")
     regex = "^"
@@ -201,23 +210,25 @@ def _sp_signal_text() -> str:
     return current_branch_name() + "\n" + "\n".join(commit_message(sha) for sha in branch_commits())
 
 
-def tdd_commit_order_warnings() -> list[str]:
+def tdd_commit_order_warnings(
+    commit_info: list[tuple[str, str, list[str]]] | None = None,
+) -> list[str]:
     """検査A: TDD コミット順序（Tier1・静的・ゼロコスト。テストは実行しない）。根拠: `SD-2`。
 
     - `test:` コミットの diff がテストパス以外を含む → Warning
     - `feat:`/`fix:` コミットの diff がテストパスのみ → Warning（コミット種別と中身の不一致）
     - ブランチ内にテストパスの diff が 1 つも無ければ（アプリ未着手）検査自体をスキップ
+
+    `commit_info`（sha, message, files のタプル列）を渡すと git を一切呼ばずに判定できる
+    （`--self-test` 用の注入口。省略時は従来どおり git から取得する）。
     """
-    commits = branch_commits()
-    if not commits:
-        return []
-    commit_info = []
-    any_test = False
-    for sha in commits:
-        files = commit_files(sha)
-        if any(is_test_path(f) for f in files):
-            any_test = True
-        commit_info.append((sha, commit_message(sha), files))
+    if commit_info is None:
+        commits = branch_commits()
+        if not commits:
+            return []
+        commit_info = [(sha, commit_message(sha), commit_files(sha)) for sha in commits]
+
+    any_test = any(any(is_test_path(f) for f in files) for _, _, files in commit_info)
     if not any_test:
         return []
 
@@ -242,7 +253,12 @@ def tdd_commit_order_warnings() -> list[str]:
     return out
 
 
-def vertical_slice_check(files: list[str]) -> tuple[list[str], list[str]]:
+def vertical_slice_check(
+    files: list[str],
+    *,
+    app_or_src_exists: bool | None = None,
+    sp_signal_text: str | None = None,
+) -> tuple[list[str], list[str]]:
     """検査B: 縦切り(3 層タッチ)判定。根拠: `user-story-map.md` §5.2 / whiteboard round2 §1。
 
     - `app/`・`src/` がどちらも無ければ（アプリ未着手）検査自体をスキップ
@@ -251,13 +267,18 @@ def vertical_slice_check(files: list[str]) -> tuple[list[str], list[str]]:
     - `SP-4`/`SP-5`（既定 exempt リスト）: 判定しない
     - `US-n` 参照が無い（イネイブラー単独扱い・判定不能を含む）: exempt
     - それ以外（`US-n` を含む機能スプリント）: 3 層中 2 層未満なら Warning
+
+    `app_or_src_exists` / `sp_signal_text` を渡すと I/O・git を一切呼ばずに判定できる
+    （`--self-test` 用の注入口。省略時は従来どおり実ファイルシステム・git から取得する）。
     """
     errors: list[str] = []
     warnings: list[str] = []
-    if not (Path("app").is_dir() or Path("src").is_dir()):
+    if app_or_src_exists is None:
+        app_or_src_exists = Path("app").is_dir() or Path("src").is_dir()
+    if not app_or_src_exists:
         return errors, warnings
 
-    text = _sp_signal_text()
+    text = sp_signal_text if sp_signal_text is not None else _sp_signal_text()
     sp_match = SP_PATTERN.search(text)
     if not sp_match:
         return errors, warnings
@@ -288,9 +309,15 @@ def vertical_slice_check(files: list[str]) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def layer_split_check() -> list[str]:
-    """検査C 前段: `C-5`（技術レイヤー別 Issue 分割の禁止）違反痕跡（Error・blocking）。"""
-    m = LAYER_LABEL_PATTERN.search(_sp_signal_text())
+def layer_split_check(text: str | None = None) -> list[str]:
+    """検査C 前段: `C-5`（技術レイヤー別 Issue 分割の禁止）違反痕跡（Error・blocking）。
+
+    `text` を渡すと git を呼ばずに判定できる（`--self-test` 用の注入口。省略時は従来どおり
+    `_sp_signal_text()`＝ブランチ名 + コミットメッセージを git から取得する）。
+    """
+    if text is None:
+        text = _sp_signal_text()
+    m = LAYER_LABEL_PATTERN.search(text)
     if not m:
         return []
     return [
@@ -299,16 +326,30 @@ def layer_split_check() -> list[str]:
     ]
 
 
-def duplicate_sp_branch_warning() -> str | None:
-    """検査C 後段: 同一 `SP-n` の作業ブランチが複数存在する形跡（Warning）。"""
-    sp_num = branch_sp_number()
+_UNSET = object()
+
+
+def duplicate_sp_branch_warning(
+    sp_num: str | None = _UNSET,  # type: ignore[assignment]
+    remote_branches: list[str] | None = None,
+) -> str | None:
+    """検査C 後段: 同一 `SP-n` の作業ブランチが複数存在する形跡（Warning）。
+
+    `sp_num`（未指定センチネル `_UNSET` の場合のみ `branch_sp_number()` で git から取得）と
+    `remote_branches`（未指定の場合のみ `git branch -r` で取得）を渡すと git を呼ばずに判定できる
+    （`--self-test` 用の注入口。`sp_num=None` は「拾えなかった」を意味する正当な入力として区別する）。
+    """
+    if sp_num is _UNSET:
+        sp_num = branch_sp_number()
     if not sp_num:
         return None
-    r = sh(["git", "branch", "-r"])
-    if r.returncode != 0:
-        return None
+    if remote_branches is None:
+        r = sh(["git", "branch", "-r"])
+        if r.returncode != 0:
+            return None
+        remote_branches = r.stdout.splitlines()
     pattern = re.compile(rf"SP-{re.escape(sp_num)}(?!\d)")
-    matches = [b.strip() for b in r.stdout.splitlines() if pattern.search(b)]
+    matches = [b.strip() for b in remote_branches if pattern.search(b)]
     if len(matches) >= 2:
         return (
             f"C-5: 同一 SP-{sp_num} に対する作業ブランチが複数存在する形跡があります: "
