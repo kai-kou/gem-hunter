@@ -386,6 +386,8 @@ npx wrangler deploy
 
 > 補足: MCP で読んだ値（namespace ID 等）は **必ず `wrangler.jsonc` かコミットに落とす**。Claude が知っているだけの状態にしない。
 
+🔴 **本表は `.claude/settings.json` の `permissions` に反映済み**（読み取り 4 ツールを `allow`、D1 / KV / R2 / Hyperdrive の書き込み系を `deny`）。クラウド実行コンテナには `bwrap` が存在せず **sandbox の network allowlist が無効** なため、実効防御は `permissions` の ACL と PreToolUse フックの 2 層しかない。**本表をドキュメントに書くだけでは実効力がない**（Issue #49 の専門チーム議論で確定）。今後 MCP を追加する PR は、許可範囲の `permissions` 反映を **同一 PR に含める**。
+
 ### 7.5. ⚠️ `INF-20` の例外（ブートストラップ期間のみ）
 
 `INF-20` は「デプロイのトリガーは git push / マージのみ」と定めるが、**デプロイ用ワークフローがマージされるまでの間に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**。これがないと `SP-1` 自体がプレビュー URL を出せず `SD-1` が成立しないため。

@@ -190,6 +190,75 @@
 
 ---
 
-## 5. 採否の決定
+## 5. 採否の決定（専門チーム議論の verdict）
 
-> 専門チーム議論（`content/discussions/`）の verdict に基づき記録する。
+> 決定の根拠・対立と決着の全文は [`content/discussions/stack-assets-20260818/whiteboard.md`](../../../content/discussions/stack-assets-20260818/whiteboard.md)（5 レンズ × 2 ラウンドの敵対的相互レビュー）。本節はその結論だけを記録する。
+
+### 5.0 判断の土台（議論で確定した 3 つの原則）
+
+| 原則 | 内容 |
+|---|---|
+| **予算は拘束制約ではない** | 既存 19 スキルの `description` は実測 **14,240 B / 6,394 文字**。上限 15,000 は `SLASH_COMMAND_TOOL_CHAR_BUDGET`（**文字数** 基準）なので消費は約 43%。当初の「上限に到達しているから足せない」という見立ては単位取り違えで撤回した。**代わりに YAGNI（死蔵を作らない）と SSOT 二重化の回避が拘束制約になる** |
+| **今すぐ足せる MCP の判定条件** | 「認証不要」だけでは足りず、**「認証不要 **かつ** 接続先が今すでに存在する」の AND 条件**。`package.json` が 0 行の現状では `next-devtools-mcp`（`next dev` のエンドポイント）も shadcn MCP（`components.json`）も接続先が物理的に存在しない |
+| **外部資産を採ってよい 4 条件** | ① SKILL.md 全文を読む ② 本リポジトリの確定ドキュメント（ADR / `architecture-rules.md` / `testing-strategy.md` / `cloudflare-infrastructure.md` §7.4）と矛盾しないことを個別に確認 ③ パッケージ一括ではなく **単体ファイル単位** で取り込む ④ 取得先バージョンをピン留めする。**4 条件が揃わない限り「採らない」を既定にする** |
+
+🔴 **`bwrap` 不在の実測が判断を変えた**: クラウド実行コンテナには `bwrap` が存在せず、sandbox の network allowlist が **無効**。実効防御は `permissions.allow/deny` の ACL と PreToolUse フックの 2 層のみ。したがって「ドキュメントで読み取り専用と決めた」だけでは実効力がなく、**`permissions` に書いて初めて効く**。
+
+### 5.1 採用するもの（段階導入）
+
+| # | 資産 | 形態 | 導入タイミング | 主な条件 |
+|---|---|---|---|---|
+| 1 | **Cloudflare MCP の読み取り限定を `permissions` に反映** | 機械ゲート | **今すぐ**（本 PR で実施済み） | `cloudflare-infrastructure.md` §7.4 の読み取り 4 ツールを `allow`、D1 / KV / R2 / Hyperdrive の書き込み系を `deny` に明示 |
+| 2 | **`CLAUDE.md` 破壊対策 3 点セット** | 機械ゲート | 骨格確立スプリント | `next.config.ts` の `agentRules: false` 先行設定 + `CLAUDE.md` の upsert 痕跡を検知する機械ゲート + `next dev` 初回実行前後の `git diff CLAUDE.md`。**3 点すべて必須**（1 点で足りるという当初案は撤回） |
+| 3 | **自作スキル: `@opennextjs/cloudflare` デプロイ手順** | 自作スキル | 骨格確立スプリント | 公式・コミュニティともに完全な空白で代替が存在しない。3 スプリントで使われる |
+| 4 | **shadcn MCP（`add` 専用）** | MCP | `SP-1`（ADR 0001 未確認事項 #1 の確定後） | `init` は CLI で `-b radix` を明示して先行実行する。MCP に `init` を任せると ADR 0001 を踏み抜く |
+| 5 | **`next-devtools-mcp`** | MCP | `SP-1`（同上） | バージョンピン。`next build` を回さずに型・コンパイルエラーを取れる。context7（静的ドキュメント）と役割が重複しない |
+| 6 | **Playwright Agents**（planner / generator / healer） | サブエージェント | `SP-4` | 完了条件に **機械ゲートを義務化**: `check_agent_definitions.py` の PASS と `.mcp.json` が差分追記であることの `git diff` 確認。目視レビューでは tools フィルタの silent removal を見逃す |
+| 7 | **`tdd-guard`** | plugin | `SP-4` | 4 条件の AND: ① 権威分離の明文化（`tdd-guard` = 予防 / `self_review_check.py` = 事後の最終防衛線）② `DISABLE_NON_ESSENTIAL_MODEL_CALLS=1` の明示例外化 ③ バージョンピン ④ Vitest 4 での実機検証 |
+| 8 | **自作スキル: TDD / テスト運用** | 自作スキル | `SP-4` | `SP-4`〜`SP-11` の全実装スプリントで参照される。`testing-strategy.md` の What / Why を How に落とす層が不在 |
+| 9 | **自作機械ゲート `tools/check_a11y.py`** | 機械ゲート | `SP-4`（作成）→ `SP-10`（技法移植） | `@axe-core/playwright` を接続。Lighthouse Accessibility 100 / `NFR-26` / `AC-10` を無料で担保する |
+| 10 | citypaul の `react-testing` SKILL.md / masuP9 の a11y 監査技法 | ドキュメント参照 | `SP-4` / `SP-10` の自作時 | 配布形態がない、または粒度が合わないため **技法だけを自作資産に取り込む** |
+
+**自作するのはスキル 2 本 + 機械ゲート 2 本のみ**（YAGNI: スプリントで 2 回以上使われるものだけに絞った結果）。
+
+### 5.2 採用しないもの（理由 1 行・再検討で消耗しないための記録）
+
+| 資産 | 採らない理由 |
+|---|---|
+| `vercel` plugin（33 skills + 3 agents）の一括導入 | 使うのは数本で残りは死蔵。単体取り込みできず 4 条件の ③ を満たせない |
+| `cloudflare/skills` の一括導入 | `@opennextjs/cloudflare` / Next.js への言及がなく本プロジェクトの肝をカバーしない。`wrangler` 手順は `cloudflare-infrastructure.md` 585 行が既に SSOT |
+| `secondsky/claude-skills`（142 skills） | 一括導入は未読外部コードへの実行権限付与。`tailwind-v4-shadcn` も ADR 0001 の `-b radix` を踏み抜くリスクを持つ |
+| `wshobson/agents`（202 agents / 181 skills） | `nextjs-app-router-patterns` が Next.js 14+ 表記で 2 世代遅れ。`architecture-patterns` は `architecture-rules.md` が明示的に採らないとした集約ルート・リポジトリパターンを持ち込む |
+| `VoltAgent/awesome-claude-code-subagents` | 実ファイルが Next.js 14+ / React 18+ 前提。★24k はメンテ品質の指標にならない |
+| `Community-Access/accessibility-agents`（37 agents） | 必要なのは Web 11 agents だけで過剰同梱。`skill-audit` が検出するトリガー衝突を誘発する |
+| axe MCP（Deque 公式） | 有料サブスク必須で `A-6` を発生させるのに、無料の `@axe-core/playwright` で品質ゲートを満たせる |
+| Playwright MCP の **単体追加** | `SP-4` の Playwright Agents が `.mcp.json` を生成するため二重登録になる |
+| `anthropics/skills` の `webapp-testing` | Python 版 Playwright で本プロジェクトの TS / Vitest / Playwright ラインと別系統になる |
+| 公式 `code-review` / `pr-review-toolkit` plugin | 自前 `code-review` スキル（FAIR Layer 1）と責務が完全重複する |
+| `nathankim0/clean-architecture-skills` | 総コミット 2 で更新見込みなし。`architecture-rules.md` + `check_architecture_boundaries.py` で三重に確定済み |
+| 自作 architecture-check スキル案 | `architecture-rules.md` + `check_architecture_boundaries.py` と完全重複 |
+| 自作の UI / state / API / form / cache / error-handling の 6 分割スキル案 | `SD-4` の着手時読み順で既に SSOT として読まれる知識の二重化。**SSOT を割る** |
+| `rohitg00` / `davepoon` / `hesreallyhim` / `JanSzewczyk` / `airowe` / `dykyi-roman` | §3.5 に理由を記録済み（陳腐化・索引・★1・下位互換・PHP 専用） |
+
+### 5.3 議論を経ても残った真の問題（critical）
+
+1. 🔴 **`next dev` による `CLAUDE.md` 上書きリスク**: `agentRules: false` の先行設定だけでは不十分。Cloudflare 向けスキャフォールド経路が「config 生成 → dev 未実行」の順序を保証するかが **未確認**。骨格確立スプリントの Done Criteria に実地確認を含める
+2. 🔴 **sandbox が無効な環境での実効防御は 2 層のみ**: `permissions` ACL と PreToolUse フック。新規 MCP を足す PR は必ず許可範囲を同一 PR で明示する
+3. 🔴 **`@opennextjs/cloudflare` は外部資産が完全にゼロ**: 本プロジェクトの肝を支えるものが存在しない。自作しない限り誰も助けてくれない領域である
+4. 🔴 **段階導入は死蔵を防ぐが累積トリガー衝突は防がない**: `SP-11` 到達時点の同時存在数はビッグバン導入と変わらない。**各 SP 到達時の導入ゲートに衝突レビューを別途組み込む**
+
+### 5.4 実行タスク
+
+`T-1`（本 PR で完了）以降は Issue に分解して段階導入する。
+
+| ID | タスク | タイミング |
+|---|---|---|
+| `T-1` | Cloudflare MCP の読み取り限定を `permissions` に反映 | ✅ 本 PR |
+| `T-2` | 本節（採否の決定）の記録 | ✅ 本 PR |
+| `T-3` | `CLAUDE.md` 破壊対策 3 点セットと検知ゲート | 骨格確立スプリント |
+| `T-4` | 自作スキル `opennext-cloudflare-deploy` | 骨格確立スプリント |
+| `T-5` | shadcn MCP + `next-devtools-mcp` の追加 | `SP-1`（ADR 確定後） |
+| `T-6` | Playwright Agents 導入 + 機械ゲート義務化 | `SP-4` |
+| `T-7` | `tdd-guard` の 4 条件付き導入 | `SP-4` |
+| `T-8` | 自作スキル `stack-testing` + `tools/check_a11y.py` | `SP-4` |
+| `T-9` | masuP9 の a11y 技法を移植 | `SP-10` |

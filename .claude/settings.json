@@ -64,7 +64,11 @@
       "mcp__github__search_issues",
       "mcp__github__subscribe_pr_activity",
       "mcp__github__unsubscribe_pr_activity",
-      "mcp__github__update_pull_request"
+      "mcp__github__update_pull_request",
+      "mcp__Cloudflare_Developer_Platform__search_cloudflare_documentation",
+      "mcp__Cloudflare_Developer_Platform__workers_list",
+      "mcp__Cloudflare_Developer_Platform__workers_get_worker",
+      "mcp__Cloudflare_Developer_Platform__workers_get_worker_code"
     ],
     "deny": [
       "Read(.env)",
@@ -80,7 +84,17 @@
       "Read(**/.git-credentials)",
       "Read(**/.netrc)",
       "Write(.claude/settings.local.json)",
-      "Edit(.claude/settings.local.json)"
+      "Edit(.claude/settings.local.json)",
+      "mcp__Cloudflare_Developer_Platform__d1_database_create",
+      "mcp__Cloudflare_Developer_Platform__d1_database_delete",
+      "mcp__Cloudflare_Developer_Platform__d1_database_query",
+      "mcp__Cloudflare_Developer_Platform__kv_namespace_create",
+      "mcp__Cloudflare_Developer_Platform__kv_namespace_delete",
+      "mcp__Cloudflare_Developer_Platform__kv_namespace_update",
+      "mcp__Cloudflare_Developer_Platform__r2_bucket_create",
+      "mcp__Cloudflare_Developer_Platform__r2_bucket_delete",
+      "mcp__Cloudflare_Developer_Platform__hyperdrive_config_delete",
+      "mcp__Cloudflare_Developer_Platform__hyperdrive_config_edit"
     ]
   },
   "sandbox": {
