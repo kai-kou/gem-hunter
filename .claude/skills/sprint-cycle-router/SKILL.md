@@ -266,7 +266,7 @@ firing のセッション予算が尽きそうになったら、**`docs/rules/sp
 | CI 赤 | `pr-review-watcher` Step 2 が検知 | Step 2 で継続対応。放置なら次々回 firing でも同じ Step 2 が拾う（PR が閉じない限り自然回復） |
 | A-4 サーキットブレーカー発動（修正サイクル 2 回超） | 該当箇所での修正試行回数 | 該当 Issue/PR に `status:blocked` を付与。**Step 3 / Step 4 の対象クエリから除外**（`status:blocked` を除外条件に必ず含める・`self-improvement-loop` の除外リストと同じ書式）。waiting-user 通知は `user-notification-triage.md` の A 区分基準どおり必要時のみ |
 | セッション圧縮（コンテキスト 95%） | `post-compact.sh` フックが自動コミット | 元々 ephemeral なので特別対応不要。圧縮後もその firing 内で継続。firing 自体が尽きたら Step 3 の再開経路に合流 |
-| スプリントが 1 firing に収まらない | Step 3 の stale 判定（4 時間） | §7 の健全な中断状態から §3 の Step 3 の再開手順で続きを判定（git log と Sprint Planning コメントから SD ステップを特定して再開）。恒常的に収まらないなら Issue 側での分割を Step 4 着手時に検討する |
+| スプリントが 1 firing に収まらない | Step 3 の stale 判定（4 時間） | §7 の健全な中断状態から §3 の Step 3 の再開手順で続きを判定（git log と Sprint Planning コメントから SD ステップを特定して再開）。🔴 **同一 `SP-n` が 3 回の firing を跨いでも `SD-1`（プレビュー URL を貼った PR）に到達しない場合は、次の着手時に分割する**（回数は Issue のコメント履歴＝ Sprint Planning コメントと進捗コメントの件数で数える。新規 state ファイルは作らない）。切る場所と番号は `user-story-map.md` §5.3 の該当 `SP-n` に事前明記してある場合それに従い、無ければ「操作レビュー手順の前半で切れる位置」で切って末尾番号を振る（§7-7） |
 
 ---
 
