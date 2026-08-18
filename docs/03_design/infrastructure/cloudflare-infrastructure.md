@@ -386,6 +386,15 @@ npx wrangler deploy
 
 > 補足: MCP で読んだ値（namespace ID 等）は **必ず `wrangler.jsonc` かコミットに落とす**。Claude が知っているだけの状態にしない。
 
+🔴 **本表は `.claude/settings.json` の `permissions` に反映済み**（Issue #49 の専門チーム議論で確定）。**本表をドキュメントに書くだけでは実効力がない** — クラウドではサンドボックスが動作せず（[`sandbox-rules.md`](../../rules/sandbox-rules.md)「クラウド実行環境ではサンドボックスは動作しない」・#383）、実効防御はコンテナ隔離・`permissions` ACL・PreToolUse フックの 3 層に限られるため。
+
+| 反映内容 | ツール |
+|---|---|
+| `allow` | 上表の読み取り 4 ツール |
+| `deny` | 書き込み系 10 種（D1 / KV / R2 / Hyperdrive の `*_create` / `*_delete` / `*_edit` / `*_query`）**＋ 上表に無い読み取り系 10 種**（各サービスの `*_get` / `*_list` と `migrate_pages_to_workers_guide`） |
+
+⚠️ **`deny` は既知ツール名の列挙** であり、`allow` を潰さずにワイルドカードで塞ぐ手段がないため、**MCP サーバー側に新しいツールが増えると未列挙のまま素通りする**。恒久対策（PreToolUse フックによるアローリスト化）は #56。今後 MCP を追加する PR は、許可範囲の `permissions` 反映を **同一 PR に含める**。
+
 ### 7.5. ⚠️ `INF-20` の例外（ブートストラップ期間のみ）
 
 `INF-20` は「デプロイのトリガーは git push / マージのみ」と定めるが、**デプロイ用ワークフローがマージされるまでの間に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**。これがないと `SP-1` 自体がプレビュー URL を出せず `SD-1` が成立しないため。
