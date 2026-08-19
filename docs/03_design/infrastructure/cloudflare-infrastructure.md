@@ -96,7 +96,7 @@ flowchart TB
 | `INF-12` 1 リクエスト 10 秒以内 | wall clock は無制限・課金対象外。GitHub API の待ち時間は CPU を消費しない | ✅ 余裕 |
 | `INF-13` 永続ディスクを前提にしない | サーバーレスなので構造的に満たす | ✅ |
 | `INF-14` 単一リージョンで成立 | エッジ実行だが、アプリはどこで動いても同じ（リージョン固有の前提を持たない） | ✅ |
-| `INF-15`〜`INF-19` シークレット | `wrangler secret put`（GA）を環境ごとに使う。Secrets Store は open beta のため採用しない | ✅ |
+| `INF-15`〜`INF-19` シークレット | `wrangler versions secret put`（GA・§7.2.1）を環境ごとに使う。Secrets Store は open beta のため採用しない | ✅ |
 | `INF-20` トリガーは git push / マージのみ | 原則は GitHub Actions。⚠️ **Actions 制限中はセッション実行が暫定運用**（`D-23`・§7.5 / §8） | ⚠️ 暫定緩和中 |
 | `INF-21` ロールバック | `wrangler rollback` / `wrangler versions deploy` | ✅ |
 | `INF-22` 失敗の通知 | GitHub Actions の失敗通知 | ✅ |
@@ -127,7 +127,7 @@ flowchart TB
 | **Node.js Middleware** | アダプタが未対応で、検出するとビルドを早期エラーにする | 使わない |
 | **`proxy.ts`**（Next 16 で `middleware.ts` から改名） | アダプタでの動作が一次情報で確認できない（未確認） | ルート `app/page.tsx`（Server Component）内で `headers()` から `accept-language` を読み `redirect('/ja')` する |
 | `next/image` の最適化 | Cloudflare Images は月 5,000 変換の無料枠があるが、検索結果の大量アバターで unique 変換が膨らむ | GitHub のアバター URL のサイズパラメータ（`?s=N`）をそのまま使う（`INF-11`） |
-| Secrets Store | open beta で Super Administrator ロールを要求する | `wrangler secret put`（GA） |
+| Secrets Store | open beta で Super Administrator ロールを要求する | `wrangler versions secret put`（GA・§7.2.1） |
 | Bot Fight Mode | 有効化すると WAF の Skip が効かず正当な API リクエストがチャレンジされうる | 有効化しない（Rate Limiting binding で足りる） |
 
 > 🔵 **i18n（`E-4` / `SP-2`）への含意**: `/` → `/ja` のリダイレクトを **middleware で実装しない**。`next-intl` を採用する場合も、ルーティング機能ではなくメッセージカタログ API（`NextIntlClientProvider` / `getTranslations`）だけを使う分割にすれば、`proxy.ts` の未確認問題を構造的に踏まない。`SP-2` 着手前に `next-intl` の現行版仕様を context7 で一次確認する。
@@ -343,20 +343,40 @@ npx opennextjs-cloudflare build
 npx wrangler versions upload --preview-alias bootstrap
 
 # 3. シークレット投入（非対話・GitHub App 方式 / `D-20`）
-printf '%s' "$GITHUB_APP_CLIENT_ID"       | npx wrangler secret put GITHUB_APP_CLIENT_ID
-printf '%s' "$GITHUB_APP_INSTALLATION_ID" | npx wrangler secret put GITHUB_APP_INSTALLATION_ID
-printf '%s' "$RATE_LIMIT_SALT"            | npx wrangler secret put RATE_LIMIT_SALT
+# 🔴 本プロジェクトは version + preview alias 運用のため `wrangler secret put` は使えない（下記 §7.2.1）
+printf '%s' "$GITHUB_APP_CLIENT_ID"       | npx wrangler versions secret put GITHUB_APP_CLIENT_ID
+printf '%s' "$GITHUB_APP_INSTALLATION_ID" | npx wrangler versions secret put GITHUB_APP_INSTALLATION_ID
+printf '%s' "$RATE_LIMIT_SALT"            | npx wrangler versions secret put RATE_LIMIT_SALT
 
 # 秘密鍵は PKCS#8 へ変換して投入する（理由は §7.6）。中間ファイルを作らずパイプで渡す
 # ⚠️ 供給元によっては改行がリテラルの \n にエスケープされているため、先に正規化する
 set -o pipefail   # openssl の失敗をパイプに埋もれさせない（空シークレット登録の防止）
 printf '%s\n' "${GITHUB_APP_PRIVATE_KEY//\\n/$'\n'}" \
   | openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
-  | npx wrangler secret put GITHUB_APP_PRIVATE_KEY_PKCS8
+  | npx wrangler versions secret put GITHUB_APP_PRIVATE_KEY_PKCS8
 
 # 4. 本番デプロイ
 npx wrangler deploy
 ```
+
+### 7.2.1. 🔴 シークレットは `wrangler versions secret put` で投入する（実測 2026-08-19・#67）
+
+本プロジェクトは **version + preview alias 運用**（`wrangler versions upload`。`wrangler deploy` を常用しない）のため、`wrangler secret put` は次のエラーで失敗する:
+
+```
+✘ [ERROR] Secret edit failed. You attempted to modify a secret, but the latest version of your Worker isn't currently deployed.
+```
+
+これは「バージョン運用とシークレットを併用したときの事故（意図しないデプロイ）を防ぐための Cloudflare 側の制限」であり、環境不良ではない。**デプロイせずにシークレットだけ更新する `wrangler versions secret put` を使う**（本プロジェクトの標準経路）。
+
+```bash
+printf '%s' "$V" | npx wrangler versions secret put KEY --message "投入理由"
+npx wrangler versions view <VERSION_ID>   # 投入結果は Secrets 欄で確認する
+```
+
+- 投入すると **その時点の最新バージョンのコード + 新しいシークレット** で新バージョンが作られる（デプロイはされない）
+- その後 `wrangler versions upload` で作る新しいバージョンは **既存のシークレットを引き継ぐ**（`versions view` の `Secrets:` 欄で確認できる）
+- ⚠️ `wrangler secret list` は **デプロイ済みバージョン** を見るため、versions 運用中は空の `[]` を返すことがある。投入確認は `wrangler versions view <VERSION_ID>` で行う
 
 ### 7.3. 使うコマンド（一覧）
 
@@ -366,7 +386,7 @@ npx wrangler deploy
 | プレビュー版のアップロード | `wrangler versions upload --preview-alias pr-<N> --tag "$SHA"` |
 | 段階的な本番反映 | `wrangler versions deploy <VID>@100 -y` |
 | ロールバック | `wrangler rollback` / `wrangler versions list` |
-| シークレット | `printf '%s' "$V" \| wrangler secret put KEY` / `wrangler secret bulk` |
+| シークレット | `printf '%s' "$V" \| wrangler versions secret put KEY`（version 運用のため `secret put` は不可・§7.2.1） |
 | 型生成 | `wrangler types --env-interface CloudflareEnv` |
 | ログ | `wrangler tail --format json --status error` |
 | 状態確認 | `wrangler deployments list --json` |
@@ -415,7 +435,7 @@ GitHub が発行する App の秘密鍵は **PKCS#1**（`-----BEGIN RSA PRIVATE 
 openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
 ```
 
-- 🔴 **変換結果をファイルに書かない**。上記のようにパイプで `wrangler secret put` へ直接渡す（`INF-5` / 秘密のディスク残留を避ける）
+- 🔴 **変換結果をファイルに書かない**。上記のようにパイプで `wrangler versions secret put` へ直接渡す（`INF-5` / 秘密のディスク残留を避ける・投入コマンドの理由は §7.2.1）
 - 🔴 **改行がリテラルの `\n` にエスケープされた形で供給される経路がある**（複数行の鍵をシークレット UI へ貼る場合）。そのまま `openssl` に渡すと `Could not read key from <stdin>` で失敗し、**空のシークレットが登録されて実行時まで気づけない**。§7.2 のとおり正規化と `set -o pipefail` をセットで使う（2026-08-18 に実測確認済み）
 - Worker 側は `importKey("pkcs8", …, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"])` で読み、`iat` / `exp` / `iss`（App の Client ID）を含む JWT を RS256 で署名する
 - **`exp` は最大 10 分**（GitHub 側の上限）。時計ずれ対策として `iat` を 60 秒戻す
@@ -501,7 +521,7 @@ done
 | # | 設定 | 場所 |
 |---|---|---|
 | 1 | **invocation ログを無効化する** | `wrangler.jsonc` の `observability.logs.invocation_logs: false` |
-| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | `src/infrastructure/platform/rate-limit.ts`。salt は `wrangler secret put RATE_LIMIT_SALT` |
+| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | `src/infrastructure/platform/rate-limit.ts`。salt は `wrangler versions secret put RATE_LIMIT_SALT`（§7.2.1） |
 | 3 | **Bot Fight Mode を有効化しない** | Dashboard（既定オフのまま触らない） |
 | 4 | **WAF Rate limiting rules を使わない** | Free は 1 ルール・IP 固定で `AR-5`（ログイン有無での枠分け）に使えない |
 
