@@ -25,7 +25,9 @@ test('SP-3: 詳細まで往復できる', async ({ page }) => {
 
   await test.step('1. 一覧のカードを選ぶ → 独立した URL の詳細ページへ遷移する（モーダルではない）', async () => {
     await page.getByRole('link', { name: 'octostub/octo-widgets' }).click()
-    await expect(page).toHaveURL(/\/ja\/repos\/octostub\/octo-widgets$/)
+    // SP-7 以降、一覧からの詳細リンクは検索条件（keyword 等）をクエリとして継ぎ足す
+    // （`repository-list.tsx`・戻る導線で条件を保持するため）。パス部分の一致だけを見る。
+    await expect(page).toHaveURL(/\/ja\/repos\/octostub\/octo-widgets(\?.*)?$/)
     detailUrl = page.url()
 
     // モーダルでないことの検証: dialog が存在せず、遷移元の検索フォームも
@@ -45,7 +47,9 @@ test('SP-3: 詳細まで往復できる', async ({ page }) => {
 
   await test.step('3. 戻る導線で一覧へ戻る', async () => {
     await page.getByRole('link', { name: '一覧へ戻る' }).click()
-    await expect(page).toHaveURL(/\/ja$/)
+    // SP-7 以降、戻る導線は検索条件（keyword 等）を保持したまま一覧へ戻る（`back-link.tsx`）ため、
+    // クエリ付き（`/ja?q=react`）になる。パス部分の一致だけを見る。
+    await expect(page).toHaveURL(/\/ja(\?.*)?$/)
     await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toBeVisible()
   })
 

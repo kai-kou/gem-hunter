@@ -5,6 +5,8 @@ import type { RepositoryQueryPort } from '../domain/ports/repository-query-port'
 export type SearchRepositoriesInput = {
   keyword: string
   page?: number
+  sort?: string
+  perPage?: number
 }
 
 export type SearchRepositories = (input: SearchRepositoriesInput) => Promise<SearchResult>

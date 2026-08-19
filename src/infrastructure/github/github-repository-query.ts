@@ -1,6 +1,5 @@
 import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
 import type { RepositoryDetail, SearchResult } from '../../domain/model/repository'
-import { PER_PAGE } from '../../domain/model/page-number'
 import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
@@ -53,7 +52,14 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     const url = new URL('/search/repositories', apiOrigin())
     url.searchParams.set('q', query.keyword)
     url.searchParams.set('page', String(query.page))
-    url.searchParams.set('per_page', String(PER_PAGE))
+    url.searchParams.set('per_page', String(query.perPage))
+    // 🔴 仮定（実装手段レベル・SD-3 対象外）: relevance は GitHub API の既定挙動のため
+    // sort/order パラメータを付けない。stars/updated は星の多い順・更新が新しい順が自然なため
+    // order=desc を固定で付与する。
+    if (query.sort !== 'relevance') {
+      url.searchParams.set('sort', query.sort)
+      url.searchParams.set('order', 'desc')
+    }
 
     const response = await this.request(url)
     return toSearchResult(await response.json())

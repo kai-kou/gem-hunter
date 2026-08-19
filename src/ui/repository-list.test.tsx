@@ -85,6 +85,36 @@ describe('RepositoryList', () => {
     expect(screen.getByText(/見つかりませんでした/)).toBeInTheDocument()
   })
 
+  it('searchState を渡すと詳細リンクへ検索条件がクエリとして継ぎ足される（SP-7・詳細→戻る用）', () => {
+    render(
+      <RepositoryList
+        items={items}
+        labels={labels}
+        locale={locale('ja')}
+        searchState={{ keyword: 'react', page: 2, sort: 'stars', perPage: 50 }}
+      />,
+    )
+
+    const href = screen.getByRole('link', { name: /facebook\/react/ }).getAttribute('href') ?? ''
+    const [path, qs] = href.split('?')
+    const params = new URLSearchParams(qs)
+
+    expect(path).toBe('/ja/repos/facebook/react')
+    expect(params.get('q')).toBe('react')
+    expect(params.get('page')).toBe('2')
+    expect(params.get('sort')).toBe('stars')
+    expect(params.get('per_page')).toBe('50')
+  })
+
+  it('searchState を渡さない場合は既存どおりクエリなしのリンクになる（後方互換）', () => {
+    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByRole('link', { name: /facebook\/react/ })).toHaveAttribute(
+      'href',
+      '/ja/repos/facebook/react',
+    )
+  })
+
   it('labels props から star 数・最終更新のラベル文言が反映される（E-4）', () => {
     render(
       <RepositoryList

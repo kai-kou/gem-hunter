@@ -12,12 +12,22 @@ import type { Locale } from '../domain/model/locale'
 export function BackLink({
   locale,
   labels,
+  href,
 }: {
   locale: Locale
   labels: { backLink: string }
+  /**
+   * 戻り先 URL の明示指定（SP-7）。検索条件（keyword/page/sort/perPage）を保持したまま
+   * 一覧へ戻りたい呼び出し元（`repository-detail.tsx`）が `build-search-url.ts` で組み立てて渡す。
+   * 省略時は従来どおり `/${locale}`（検索条件を持たない呼び出し元・`not-found.tsx` 等）。
+   */
+  href?: string
 }) {
   return (
-    <Link href={`/${locale}`} className="text-primary text-sm underline-offset-4 hover:underline">
+    <Link
+      href={href ?? `/${locale}`}
+      className="text-primary text-sm underline-offset-4 hover:underline"
+    >
       {labels.backLink}
     </Link>
   )

@@ -96,6 +96,22 @@ describe('RepositoryDetail', () => {
     expect(screen.getByText('stars')).toBeInTheDocument()
   })
 
+  it('backHref を渡すと戻る導線がそちらを指す（SP-7・検索条件保持）', () => {
+    render(
+      <RepositoryDetail
+        repository={repository}
+        labels={labels}
+        locale={locale('ja')}
+        backHref="/ja?q=react&page=2&sort=stars&per_page=50"
+      />,
+    )
+
+    expect(screen.getByRole('link', { name: labels.backLink })).toHaveAttribute(
+      'href',
+      '/ja?q=react&page=2&sort=stars&per_page=50',
+    )
+  })
+
   it('primaryLanguage が null の場合は言語表示を出さない', () => {
     render(
       <RepositoryDetail

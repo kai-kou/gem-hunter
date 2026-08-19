@@ -1,9 +1,17 @@
 import { DomainValidationError } from '../errors'
+import { DEFAULT_PER_PAGE } from './per-page'
 
-/** GitHub 検索 API が返せる最大件数（1,000 件）と 1 ページの件数から決まる上限。 */
-export const PER_PAGE = 30
-export const MAX_PAGE = Math.floor(1000 / PER_PAGE)
+/** GitHub 検索 API が返せる最大件数（1,000 件）。 */
+const API_RESULT_LIMIT = 1000
+
+/** GitHub 検索 API が返せる最大件数（1,000 件）と既定表示件数（`PerPage` の既定値）から決まる上限。 */
+export const MAX_PAGE = Math.floor(API_RESULT_LIMIT / DEFAULT_PER_PAGE)
 export const DEFAULT_PAGE = 1
+
+/** 実際に選択された `PerPage` に応じた到達可能な最終ページ（AC-7: 1,000 件を超えるページを要求しない）。 */
+export function maxPageFor(perPage: number): number {
+  return Math.floor(API_RESULT_LIMIT / perPage)
+}
 
 declare const brand: unique symbol
 

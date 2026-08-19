@@ -21,11 +21,11 @@ function normalizeSegment(segment: string): string {
 }
 
 /**
- * 検索結果のキャッシュキー（クエリ + ページ）。
- * ⚠️ ソート順（AR-2）・表示件数（AR-3）は導入時に構成要素へ足す（search-query.ts と同時に拡張する）。
+ * 検索結果のキャッシュキー（クエリ + ページ + ソート順 + 表示件数）。
+ * ソート順（AR-2）・表示件数（AR-3）はキャッシュ断片化を招くため構成要素に含める（domain-model.md §4）。
  */
 export function searchResultCacheKey(query: SearchQuery): CacheKey {
-  return `${NAMESPACE_SEARCH}:${normalizeSegment(query.keyword)}:page=${query.page}` as CacheKey
+  return `${NAMESPACE_SEARCH}:${normalizeSegment(query.keyword)}:page=${query.page}:sort=${query.sort}:per_page=${query.perPage}` as CacheKey
 }
 
 /** 単一リポジトリのキャッシュキー（owner/name）。 */

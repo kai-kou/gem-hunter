@@ -4,6 +4,8 @@ import { DomainError } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { getMessages } from '@/src/shared/i18n/messages'
+import { buildSearchUrl } from '@/src/ui/url/build-search-url'
+import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
 
 /**
@@ -11,11 +13,19 @@ import { RepositoryDetail } from '@/src/ui/repository-detail'
  *
  * 動的セグメント（owner / repo）の値は Next.js により decodeURIComponent 済みで渡るため、
  * ここで追加のデコードは行わない（ドット入りリポジトリ名等もそのまま扱える）。
+ *
+ * `searchParams`（SP-7）: 一覧から遷移してきたときに検索条件（keyword/page/sort/perPage）が
+ * `repository-list.tsx` の詳細リンクからクエリとして継ぎ足されて届く。ここで受け取り、
+ * 一覧へ戻るリンク（`backHref`）へそのまま乗せ直す（`RepositoryDetail` → `BackLink`）。
+ * 直接この URL を開いた場合（検索条件なし）は既定値へ倒れ、`buildSearchUrl` が
+ * クエリなしの `/{locale}` を返す（`BackLink` の既定と同じ挙動）。
  */
 export default async function RepositoryDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; owner: string; repo: string }>
+  searchParams: Promise<RawSearchParams>
 }) {
   const { locale: rawLocale, owner, repo } = await params
   if (!isLocale(rawLocale)) {
@@ -23,6 +33,10 @@ export default async function RepositoryDetailPage({
   }
   const locale: Locale = toLocale(rawLocale)
   const messages = getMessages(locale)
+
+  const rawSearchParams = await searchParams
+  const searchState = parseSearchParams(rawSearchParams)
+  const backHref = buildSearchUrl(`/${locale}`, searchState)
 
   let repository
   try {
@@ -57,6 +71,7 @@ export default async function RepositoryDetailPage({
           openIssueCount: messages.detail.openIssueCount,
         }}
         locale={locale}
+        backHref={backHref}
       />
     </main>
   )

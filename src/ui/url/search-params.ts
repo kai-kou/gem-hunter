@@ -1,5 +1,7 @@
 import { trySearchKeyword } from '@/src/domain/model/search-keyword'
 import { tryPageNumber } from '@/src/domain/model/page-number'
+import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
+import { tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 
 /**
  * 検索条件を URL クエリへ載せるためのパラメータ名契約（US-9 / AC-2）。
@@ -8,6 +10,8 @@ import { tryPageNumber } from '@/src/domain/model/page-number'
 export const SEARCH_PARAM_KEYS = {
   keyword: 'q',
   page: 'page',
+  sort: 'sort',
+  perPage: 'per_page',
 } as const
 
 export type RawSearchParams = Record<string, string | string[] | undefined>
@@ -15,6 +19,8 @@ export type RawSearchParams = Record<string, string | string[] | undefined>
 export type ParsedSearchParams = {
   keyword: string
   page: number
+  sort: string
+  perPage: number
 }
 
 function firstValue(value: string | string[] | undefined): string | undefined {
@@ -23,14 +29,19 @@ function firstValue(value: string | string[] | undefined): string | undefined {
 
 /**
  * URL の生の値を素直な形へ正規化する（ドメインの妥当性判定は
- * `trySearchKeyword` / `tryPageNumber` に委ねる。不正値は例外を投げず既定値へ倒す）。
+ * `trySearchKeyword` / `tryPageNumber` / `tryParse`（`per-page` / `sort-order`）に委ねる。
+ * 不正値は例外を投げず既定値へ倒す）。
  */
 export function parseSearchParams(input: RawSearchParams): ParsedSearchParams {
   const rawKeyword = firstValue(input[SEARCH_PARAM_KEYS.keyword])
   const rawPage = firstValue(input[SEARCH_PARAM_KEYS.page])
+  const rawSort = firstValue(input[SEARCH_PARAM_KEYS.sort])
+  const rawPerPage = firstValue(input[SEARCH_PARAM_KEYS.perPage])
 
   const keyword = trySearchKeyword(rawKeyword) ?? ''
   const page = tryPageNumber(rawPage)
+  const sort = trySortOrder(rawSort)
+  const perPage = tryPerPage(rawPerPage)
 
-  return { keyword, page }
+  return { keyword, page, sort, perPage }
 }

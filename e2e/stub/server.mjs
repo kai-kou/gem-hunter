@@ -14,6 +14,10 @@
 //   upstream-error を含む → HTTP 500
 //   rate-limit を含む     → HTTP 403 + x-ratelimit-remaining: 0 + x-ratelimit-reset
 //   not-found を含む（repo 名 or owner）→ HTTP 404（詳細 API のみ）
+//   many-hits を含む       → SP-7（ページネーション・並び替え・表示件数）E2E 専用の 60 件
+//                             データセット。実 API と同様に `page` / `per_page` / `sort` を
+//                             実際に反映して切り出す（他キーワードは PAGE_1_REPOS/PAGE_2_REPOS
+//                             固定・既存 E2E への影響を避けるため分離）。
 //
 // `/__stats`: スタブへ実際に届いたリクエスト数（`searchCount` / `detailCount`）を返す。
 // SP-5（キャッシュ）の E2E は「2 回目の検索でスタブへのリクエストが増えないこと」をこの値で
@@ -38,6 +42,52 @@ const PAGE_2_REPOS = repos.slice(3, 5)
 // items の実件数（フィクスチャは 3 + 2 件）と一致させる必要はない（実 API も total_count と
 // items.length は 1 ページ分では一致しない）。
 const TOTAL_COUNT = 33
+
+// SP-7 E2E 専用: `q` に `many-hits` を含む検索でのみ使う 60 件データセット
+// （`e2e/sp-7.spec.ts`）。挿入順（relevance）と star 降順が一致しないよう
+// `stargazers_count = n * 7`（昇順）で生成し、並び替えが実際に効いたことを
+// 「先頭要素が変わる」で検証できるようにする。60 件 × per_page(20/50) で
+// 複数ページに分かれるようにし、page / per_page / sort をスタブが実際に反映する。
+const MANY_HITS_MARKER = 'many-hits'
+const MANY_TOTAL = 60
+const manyRepos = Array.from({ length: MANY_TOTAL }, (_, idx) => {
+  const n = idx + 1
+  const seq = String(n).padStart(2, '0')
+  const day = String((n % 28) + 1).padStart(2, '0')
+  return {
+    id: 901000 + n,
+    name: `many-${seq}`,
+    full_name: `octostub/many-${seq}`,
+    html_url: `https://github.com/octostub/many-${seq}`,
+    description: null,
+    language: null,
+    stargazers_count: n * 7,
+    // 詳細 API（repositoryDetailDto）が要求するフィールド（検索結果 DTO には出さない・toSearchItem で射影済み）
+    watchers_count: n * 7,
+    subscribers_count: n,
+    forks_count: Math.max(1, Math.floor(n / 2)),
+    open_issues_count: n % 5,
+    updated_at: `2026-01-${day}T00:00:00Z`,
+    pushed_at: `2026-01-${day}T00:00:00Z`,
+    topics: [],
+    owner: {
+      login: 'octostub',
+      avatar_url:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    },
+  }
+})
+
+/** `sort`（relevance/stars/updated）に従って並べ替える（実 API の挙動を模す）。 */
+function sortManyRepos(list, sort) {
+  if (sort === 'stars') {
+    return [...list].sort((a, b) => b.stargazers_count - a.stargazers_count)
+  }
+  if (sort === 'updated') {
+    return [...list].sort((a, b) => new Date(b.pushed_at).getTime() - new Date(a.pushed_at).getTime())
+  }
+  return list // relevance: 挿入順のまま
+}
 
 const PORT = Number(process.env.E2E_STUB_PORT ?? 8788)
 
@@ -124,6 +174,20 @@ const server = http.createServer((req, res) => {
       return sendJson(res, 403, body, headers)
     }
 
+    if (q.includes(MANY_HITS_MARKER)) {
+      const pageNum = Math.max(1, Number.parseInt(page, 10) || 1)
+      const perPage = Math.max(1, Number.parseInt(url.searchParams.get('per_page') ?? '20', 10) || 20)
+      const sort = url.searchParams.get('sort')
+      const sorted = sortManyRepos(manyRepos, sort)
+      const start = (pageNum - 1) * perPage
+      const items = sorted.slice(start, start + perPage)
+      return sendJson(res, 200, {
+        total_count: manyRepos.length,
+        incomplete_results: false,
+        items: items.map(toSearchItem),
+      })
+    }
+
     const items = page === '2' ? PAGE_2_REPOS : PAGE_1_REPOS
     return sendJson(res, 200, searchResponse(items))
   }
@@ -144,7 +208,9 @@ const server = http.createServer((req, res) => {
       return sendJson(res, 403, body, headers)
     }
 
-    const found = repos.find((repo) => repo.owner.login === owner && repo.name === repoName)
+    const found =
+      repos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
+      manyRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
     if (!found) {
       return sendJson(res, 404, { message: 'stub: Not Found (no fixture for this owner/repo)' })
     }
