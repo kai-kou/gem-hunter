@@ -34,26 +34,3 @@ export function parseSearchParams(input: RawSearchParams): ParsedSearchParams {
 
   return { keyword, page }
 }
-
-/**
- * basePath に検索条件を載せた URL パスを組み立てる。
- * page は 1（既定値）のとき、keyword は空のとき出力しない（URL を短く保つ）。
- */
-export function buildSearchPath(
-  basePath: string,
-  params: { keyword: string; page?: number },
-): string {
-  const search = new URLSearchParams()
-
-  const keyword = params.keyword.trim()
-  if (keyword.length > 0) {
-    search.set(SEARCH_PARAM_KEYS.keyword, keyword)
-  }
-
-  if (params.page != null && params.page > 1) {
-    search.set(SEARCH_PARAM_KEYS.page, String(params.page))
-  }
-
-  const queryString = search.toString()
-  return queryString.length > 0 ? `${basePath}?${queryString}` : basePath
-}

@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next'
-import { DEFAULT_LOCALE, LOCALES } from './src/shared/i18n/config'
+import { DEFAULT_LOCALE, LOCALES } from './src/domain/model/locale'
+import { buildLocaleRedirectSource } from './src/ui/url/locale-redirect'
 
 /**
  * ロケール未指定パスを既定ロケール（ja）配下へリダイレクトする（US-9 / E-4）。
@@ -12,11 +13,10 @@ import { DEFAULT_LOCALE, LOCALES } from './src/shared/i18n/config'
  * 本リダイレクトは「単純なパス→パスのリダイレクト」であり、公式ドキュメントも
  * 「For simple redirects, consider using the `redirects` configuration in `next.config.ts` first.」
  * と明記しているため、proxy.ts を廃し `redirects()` へ置き換える。
- * リダイレクト要否の判定基準（ロケール接頭辞の有無）は、下記の正規表現
- * （`:path(...)` の否定先読み群）に一本化されている。他ファイルに同等の判定ロジックは存在しない。
+ * リダイレクト要否の判定基準（ロケール接頭辞の有無・静的ファイル拡張子の除外）は
+ * `src/shared/i18n/locale-redirect.ts` の `buildLocaleRedirectSource()`（純粋関数）に
+ * 一本化されている。他ファイルに同等の判定ロジックは存在しない。
  */
-const localeAlternation = LOCALES.join('|')
-
 const nextConfig: NextConfig = {
   async redirects() {
     return [
@@ -26,9 +26,9 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        // ロケール接頭辞（/ja, /en, ...）・_next・api・拡張子付き静的ファイルを除く
-        // 全パスを既定ロケール配下へ前置する。
-        source: `/:path((?!(?:${localeAlternation})(?:/|$))(?!_next(?:/|$))(?!api(?:/|$))(?!.*\\..*).*)`,
+        // ロケール接頭辞（/ja, /en, ...）・_next・api・末尾セグメントが
+        // 静的ファイル拡張子のパスを除く全パスを既定ロケール配下へ前置する。
+        source: buildLocaleRedirectSource(LOCALES),
         destination: `/${DEFAULT_LOCALE}/:path`,
         permanent: false,
       },

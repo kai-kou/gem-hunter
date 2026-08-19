@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SEARCH_PARAM_KEYS, buildSearchPath, parseSearchParams } from './search-params'
+import { SEARCH_PARAM_KEYS, parseSearchParams } from './search-params'
 
 describe('SEARCH_PARAM_KEYS', () => {
   it('keyword は q、page は page に固定されている', () => {
@@ -49,39 +49,5 @@ describe('parseSearchParams', () => {
   it('page が上限を超えたら上限に丸められる代わりに 1 に正規化される（tryPageNumber の既定挙動）', () => {
     // MAX_PAGE を超える値は tryPageNumber が DEFAULT_PAGE (1) へ倒す
     expect(parseSearchParams({ page: '99999' })).toEqual({ keyword: '', page: 1 })
-  })
-})
-
-describe('buildSearchPath', () => {
-  it('keyword のみ指定すると q だけが付く', () => {
-    expect(buildSearchPath('/ja', { keyword: 'react' })).toBe('/ja?q=react')
-  })
-
-  it('page が 2 以上なら page パラメータも付く', () => {
-    expect(buildSearchPath('/ja', { keyword: 'react', page: 2 })).toBe('/ja?q=react&page=2')
-  })
-
-  it('page が 1 のときは page パラメータを出力しない', () => {
-    expect(buildSearchPath('/ja', { keyword: 'react', page: 1 })).toBe('/ja?q=react')
-  })
-
-  it('page が未指定のときは page パラメータを出力しない', () => {
-    expect(buildSearchPath('/ja', { keyword: 'react' })).toBe('/ja?q=react')
-  })
-
-  it('keyword が空文字なら q を出力しない', () => {
-    expect(buildSearchPath('/ja', { keyword: '' })).toBe('/ja')
-  })
-
-  it('keyword が空白のみなら q を出力しない', () => {
-    expect(buildSearchPath('/ja', { keyword: '   ' })).toBe('/ja')
-  })
-
-  it('URL エンコードが必要な文字を含む keyword を正しくエンコードする', () => {
-    expect(buildSearchPath('/ja', { keyword: 'a b&c' })).toBe('/ja?q=a+b%26c')
-  })
-
-  it('keyword も page もないと basePath のみを返す', () => {
-    expect(buildSearchPath('/ja', { keyword: '' })).toBe('/ja')
   })
 })

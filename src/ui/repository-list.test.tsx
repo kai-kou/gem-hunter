@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { RepositoryList } from './repository-list'
 
@@ -27,7 +28,7 @@ const items: RepositorySummary[] = [
 
 describe('RepositoryList', () => {
   it('オーナーアイコンとリポジトリ名を表示する（AC-3）', () => {
-    render(<RepositoryList items={items} labels={labels} />)
+    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
 
     expect(screen.getByRole('link', { name: /facebook\/react/ })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'facebook' })).toHaveAttribute(
@@ -37,7 +38,7 @@ describe('RepositoryList', () => {
   })
 
   it('説明・主要言語・star 数・topics を表示する（AR-1）', () => {
-    render(<RepositoryList items={items} labels={labels} />)
+    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
 
     expect(screen.getByText(/The library for web and native user interfaces\./)).toBeInTheDocument()
     expect(screen.getByText('JavaScript')).toBeInTheDocument()
@@ -46,7 +47,7 @@ describe('RepositoryList', () => {
   })
 
   it('結果ゼロ件のときは該当なしを伝える', () => {
-    render(<RepositoryList items={[]} labels={labels} />)
+    render(<RepositoryList items={[]} labels={labels} locale={locale('ja')} />)
 
     expect(screen.getByText(/見つかりませんでした/)).toBeInTheDocument()
   })
@@ -56,10 +57,32 @@ describe('RepositoryList', () => {
       <RepositoryList
         items={items}
         labels={{ empty: 'No repositories matched.', starCount: 'stars', updatedAt: 'Updated' }}
+        locale={locale('en')}
       />,
     )
 
     expect(screen.getByText('stars', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText(/Updated/)).toBeInTheDocument()
+  })
+
+  it('ja ロケールでは星数・更新日を日本式書式（YYYY/MM/DD）で表示する（🔴 CRITICAL 修正）', () => {
+    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByText('233,000')).toBeInTheDocument()
+    expect(screen.getByText(/2026\/08\/18/)).toBeInTheDocument()
+  })
+
+  it('en ロケールでは英語ラベルと英語式日付（MM/DD/YYYY）が両方揃って表示される（🔴 CRITICAL 修正）', () => {
+    render(
+      <RepositoryList
+        items={items}
+        labels={{ empty: 'No repositories matched.', starCount: 'stars', updatedAt: 'Updated' }}
+        locale={locale('en')}
+      />,
+    )
+
+    expect(screen.getByText('233,000')).toBeInTheDocument()
+    expect(screen.getByText(/08\/18\/2026/)).toBeInTheDocument()
     expect(screen.getByText(/Updated/)).toBeInTheDocument()
   })
 })

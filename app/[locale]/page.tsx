@@ -1,10 +1,12 @@
 import { notFound } from 'next/navigation'
 import { searchRepositoriesUseCase } from '@/src/composition/container'
 import { DomainError } from '@/src/domain/errors'
+import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { tryPageNumber } from '@/src/domain/model/page-number'
 import type { SearchResult } from '@/src/domain/model/repository'
 import { trySearchKeyword } from '@/src/domain/model/search-keyword'
-import { isLocale, type Locale } from '@/src/shared/i18n/config'
+import { formatMessage } from '@/src/shared/i18n/format-message'
+import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
 import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
 import { RepositoryList } from '@/src/ui/repository-list'
@@ -36,7 +38,7 @@ async function runSearch(
     if (error instanceof DomainError) {
       return {
         status: 'error',
-        message: messages.home.searchError.replace('{message}', error.message),
+        message: formatMessage(messages.home.searchError, { message: error.message }),
       }
     }
     throw error
@@ -54,7 +56,7 @@ export default async function LocaleHome({
   if (!isLocale(rawLocale)) {
     notFound()
   }
-  const locale: Locale = rawLocale
+  const locale: Locale = toLocale(rawLocale)
   const messages = getMessages(locale)
 
   const rawSearchParams = await searchParams
@@ -90,9 +92,10 @@ export default async function LocaleHome({
         {state.status === 'ok' ? (
           <>
             <p className="text-muted-foreground text-sm">
-              {messages.home.resultCount
-                .replace('{total}', state.result.totalCount.toLocaleString(locale === 'ja' ? 'ja-JP' : 'en-US'))
-                .replace('{shown}', String(state.result.items.length))}
+              {formatMessage(messages.home.resultCount, {
+                total: state.result.totalCount.toLocaleString(toIntlLocaleTag(locale)),
+                shown: String(state.result.items.length),
+              })}
             </p>
             <RepositoryList
               items={state.result.items}
@@ -101,6 +104,7 @@ export default async function LocaleHome({
                 starCount: messages.home.starCount,
                 updatedAt: messages.home.updatedAt,
               }}
+              locale={locale}
             />
           </>
         ) : null}

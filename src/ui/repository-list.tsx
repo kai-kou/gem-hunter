@@ -1,12 +1,6 @@
+import type { Locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
-
-const numberFormat = new Intl.NumberFormat('ja-JP')
-const dateFormat = new Intl.DateTimeFormat('ja-JP', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  timeZone: 'Asia/Tokyo',
-})
+import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 
 type RepositoryListLabels = {
   empty: string
@@ -14,17 +8,31 @@ type RepositoryListLabels = {
   updatedAt: string
 }
 
-/** 検索結果の一覧（AC-3 / AR-1）。表示だけを持つ Server Component。文言は labels props 経由（E-4）。 */
+/**
+ * 検索結果の一覧（AC-3 / AR-1）。表示だけを持つ Server Component。文言は labels props 経由（E-4）。
+ * 数値・日付の書式は `locale` props に追従する（`en` で日本式書式にならないようにする）。
+ */
 export function RepositoryList({
   items,
   labels,
+  locale,
 }: {
   items: readonly RepositorySummary[]
   labels: RepositoryListLabels
+  locale: Locale
 }) {
   if (items.length === 0) {
     return <p className="text-muted-foreground py-8 text-sm">{labels.empty}</p>
   }
+
+  const localeTag = toIntlLocaleTag(locale)
+  const numberFormat = new Intl.NumberFormat(localeTag)
+  const dateFormat = new Intl.DateTimeFormat(localeTag, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Tokyo',
+  })
 
   return (
     <ul className="divide-border divide-y">
