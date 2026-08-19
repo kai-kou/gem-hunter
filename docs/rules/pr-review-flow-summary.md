@@ -18,6 +18,12 @@
 
 ## PR 作成時の必須事項（コマンド仕様は各ツールの description に従う）
 
+> 🔴 **GitHub Actions は制限中で使えない**（ジョブが数秒・ログ 0 バイトで失敗）。ワークフロー 2 本は撤去済み。
+> 代わりに **セッション（Claude）が `bash tools/run_checks.sh` を実行して品質を担保し、`wrangler` を直接叩いて**
+> プレビュー・本番へデプロイする。CI という機構自体が現在存在しない前提でこのファイルを読む。
+
+0. **PR 作成前チェック（唯一の機械的証跡）**: `bash tools/run_checks.sh` を実行し、**結果（PASS / FAIL）を PR 本文に貼る**（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）
+0.5. **プレビュー URL の取得**: GitHub Actions は使わず、**セッションが `wrangler versions upload --preview-alias pr-<N>` を実行** して取得したプレビュー URL を PR 本文へ貼る（`sprint-development-rules.md` `SD-1` の「開けるプレビュー URL」要件をこの経路で満たす）
 1. `mcp__github__create_pull_request`（`head`={作業ブランチ} / `base`=main）。本文に **`Session-Id: $CLAUDE_CODE_SESSION_ID`**・`Sprint Goal:` 1 行・`sp:N`・**`Team:` トレーラー**（例 `Team: fan-out(3)`・Issue の `編成` 欄の同期コピー）を必ず含める（`--mine` 所有判定と done_sp 計測の前提）。🔴 **`SP-n` のスプリント PR には `Closes #N` を書かない**（Issue のクローズは `pr-review-watcher` Step 7 の最終アクション）
 2. **PR 存在確認（必須・L-050）**: `mcp__github__list_pull_requests` で `head` を指定して実在を確認する（作成の成否をレスポンスだけで判断しない）
 3. Slack 通知: `python3 tools/slack_notify.py pr --pr-url ... --pr-title "[PR作成] ..." --branch ...`

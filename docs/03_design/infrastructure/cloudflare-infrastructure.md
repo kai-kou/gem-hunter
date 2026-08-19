@@ -49,7 +49,7 @@ Cloudflare の無料枠・上限・料金は変動する。本書は **判断に
 あわせて運用方針を 2 つ確定する。
 
 - **CLI（wrangler）が一次経路**。Cloudflare MCP は読み取り 4 ツールのみ（§7.4）
-- **CI は GitHub Actions + `cloudflare/wrangler-action`**。Workers Builds は採用しない（§8）
+- ⚠️ **CI/CD は暫定でセッション（Claude）実行**。原則は GitHub Actions + `cloudflare/wrangler-action` だが、Actions が制限中のため一時的に手動実行へ切り替えている（`D-23`。詳細・復帰条件は §8）
 
 ---
 
@@ -97,7 +97,7 @@ flowchart TB
 | `INF-13` 永続ディスクを前提にしない | サーバーレスなので構造的に満たす | ✅ |
 | `INF-14` 単一リージョンで成立 | エッジ実行だが、アプリはどこで動いても同じ（リージョン固有の前提を持たない） | ✅ |
 | `INF-15`〜`INF-19` シークレット | `wrangler secret put`（GA）を環境ごとに使う。Secrets Store は open beta のため採用しない | ✅ |
-| `INF-20` トリガーは git push / マージのみ | GitHub Actions。⚠️ `SP-1` のブートストラップ期間のみ例外（§7.5） | ⚠️ 条件付き |
+| `INF-20` トリガーは git push / マージのみ | 原則は GitHub Actions。⚠️ **Actions 制限中はセッション実行が暫定運用**（`D-23`・§7.5 / §8） | ⚠️ 暫定緩和中 |
 | `INF-21` ロールバック | `wrangler rollback` / `wrangler versions deploy` | ✅ |
 | `INF-22` 失敗の通知 | GitHub Actions の失敗通知 | ✅ |
 | `INF-1` 個人情報を保持しない | §9 の設定で満たす。⚠️ アカウント運用ログ（Audit 18 か月等）はアプリの制御外 | ⚠️ 一部のみ |
@@ -395,13 +395,15 @@ npx wrangler deploy
 
 ⚠️ **`deny` は既知ツール名の列挙** であり、`allow` を潰さずにワイルドカードで塞ぐ手段がないため、**MCP サーバー側に新しいツールが増えると未列挙のまま素通りする**。恒久対策（PreToolUse フックによるアローリスト化）は #56。今後 MCP を追加する PR は、許可範囲の `permissions` 反映を **同一 PR に含める**。
 
-### 7.5. ⚠️ `INF-20` の例外（ブートストラップ期間のみ）
+### 7.5. ⚠️ `INF-20` の例外（GitHub Actions 制限中の暫定運用・`D-23`）
 
-`INF-20` は「デプロイのトリガーは git push / マージのみ」と定めるが、**デプロイ用ワークフローがマージされるまでの間に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**。これがないと `SP-1` 自体がプレビュー URL を出せず `SD-1` が成立しないため。
+`INF-20` は「デプロイのトリガーは git push / マージのみ」と定めるが、**GitHub Actions がプラットフォーム側の制限により起動できない間に限り、Claude がセッションから直接 `wrangler versions upload` / `wrangler deploy` を叩いてよい**。
 
-🔴 **例外の終了条件は「`.github/workflows/deploy-preview.yml` と `deploy-production.yml` が `main` にマージされた時点」**（= `SP-1` の完了時）。これ以降は GitHub Actions 経由のみに一本化し、手動デプロイの経路を残さない。
+**経緯**: 当初はブートストラップ期間限定の例外だったが、`deploy-preview` ワークフローが 4 回とも数秒でジョブごと失敗（ログ 0 バイト・ステップ未開始）し、無関係な `repo-checks` も同様の失敗を示したため調査した結果、**GitHub Actions が制限中であることが確定した**（Issue #65・飼い主回答）。ワークフロー定義・参照アクションのタグはいずれも正しく、Actions 側の問題である。これを受けて `.github/workflows/deploy-preview.yml` と `deploy-production.yml` は **撤去済み**（`D-23`）。起動できない赤いチェックを毎 PR に残すと、本当の失敗が埋もれるため。
 
-⚠️ **`SP-4`（テスト CI の整備）と混同しない。** `SP-1` が用意するのは **デプロイ CI**、`SP-4` が用意するのは **テスト CI** であり、本例外が終わるのは前者がマージされたときである。
+🔴 **例外の終了条件は「GitHub Actions の制限が解除され、ワークフローを復帰させた時点」**（旧: 「デプロイ用ワークフローが `main` にマージされた時点」から `D-23` で改定）。これ以降は GitHub Actions 経由のみに一本化し、手動デプロイの経路を残さない。復帰手順は §8.4。
+
+⚠️ **`SP-4`（テスト CI の整備）と混同しない。** テスト CI の整備方針は `tools/run_checks.sh` の導入で別途進む。本例外は **デプロイ CI（Actions）の代替** に限定した話であり、Actions が使えない間はテスト実行もセッション側の `tools/run_checks.sh` 呼び出しで代替する（§8.2）。
 
 
 ### 7.6. 🔴 GitHub App の秘密鍵は PKCS#8 で持つ（`D-20` の実装上の必須事項）
@@ -425,49 +427,61 @@ openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
 
 ## 8. CI/CD
 
-### 8.1. 方針
+### 8.1. 🔴 現状: GitHub Actions は使用しない（暫定運用・`D-23`）
 
-**GitHub Actions + `cloudflare/wrangler-action` に一本化する。Workers Builds は採用しない。**
+**原則（GitHub Actions が復帰したら戻す構成）は「GitHub Actions + `cloudflare/wrangler-action` に一本化・Workers Builds は不採用」だが、GitHub Actions がプラットフォーム側の制限で起動できないため、現在は CI とデプロイの両方を Claude がセッションから直接実行する。**
 
-| | Workers Builds | GitHub Actions + wrangler |
-|---|---|---|
-| 初回接続 | 🔴 GitHub App のインストール承認（**GUI 必須**） | 環境変数 2 つ |
-| CI 系統 | Cloudflare 側と GitHub Actions 側の 2 系統に分裂 | 🟢 1 系統（テスト・Lighthouse と同居） |
-| ビルド無料枠 | 3,000 分/月 | GitHub Actions 側の枠で足りる |
+`.github/workflows/deploy-preview.yml` と `deploy-production.yml` は撤去済み（起動できない赤いチェックが毎 PR に付くと本当の失敗が埋もれるため）。品質チェックは `tools/run_checks.sh`（詳細は同スクリプトを参照。本書は参照のみ）で行う。
 
-⚠️ OIDC は 2026-08 時点で未対応。**長期トークン + GitHub Secrets が唯一の公式経路** なので、TTL 付きトークンを API でローテーションする運用で緩和する。
+### 8.2. セッション実行の手順
 
-### 8.2. 🔴 プレビュー URL は fail-closed で扱う
-
-`SD-1`（PR に開けるプレビュー URL がある）が **サイレントに欠落する経路を塞ぐ**。
+**プレビュー（PR 作成前）**:
 
 ```bash
-npx wrangler versions upload --preview-alias "pr-${PR_NUMBER}" --tag "$GITHUB_SHA" 2>&1 | tee wrangler-out.log
+bash tools/run_checks.sh
+npx opennextjs-cloudflare build
+npx wrangler versions upload --preview-alias "pr-<N>" --tag "$SHA"
+```
+
+出力された URL を **PR 本文に貼る**（`SD-1`）。🔴 **fail-closed を維持する**（旧 CI 版の思想を踏襲）: URL が取得できなければ、その場で PR を出さずに理由を特定するか、**PR 本文に「URL が取得できなかった理由」と「ローカル起動手順」を書く**（沈黙禁止・`SD-1`）。
+
+**本番（マージ後）**:
+
+```bash
+npx wrangler deploy
+```
+
+セッションがマージした直後に実行する。実行結果（デプロイ成功・URL）は Issue / PR コメントに記録する（実行したことを黙らない）。
+
+### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
+
+`SD-1`（PR に開けるプレビュー URL がある）が **サイレントに欠落する経路を塞ぐ**。CI 版と同じ検証をセッション側のコマンドとして実行する。
+
+```bash
+npx wrangler versions upload --preview-alias "pr-<N>" --tag "$SHA" 2>&1 | tee wrangler-out.log
 URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' wrangler-out.log | head -1)
 
 if [ -z "$URL" ]; then
-  echo "::error::wrangler がプレビュー URL を出力しなかった（stdout 形式が変わった可能性）"
-  exit 1
+  echo "wrangler がプレビュー URL を出力しなかった（stdout 形式が変わった可能性）"
+  # → PR 本文に理由とローカル起動手順を書く（沈黙禁止）
 fi
 
 for i in 1 2 3; do
   code=$(curl -s -o /dev/null -w '%{http_code}' "$URL") && [ "$code" -lt 500 ] && break
   sleep 5
 done
-[ "$code" -ge 500 ] && { echo "::error::プレビュー URL が $code を返した: $URL"; exit 1; }
 ```
 
-- **主経路は stdout の正規表現抽出**。`WRANGLER_OUTPUT_FILE_PATH` の ND-JSON は **フィールド名が未確認** のため検証専用に留める（false negative で CI を落とさない）
+- **主経路は stdout の正規表現抽出**。`WRANGLER_OUTPUT_FILE_PATH` の ND-JSON は **フィールド名が未確認** のため検証専用に留める（§12 の 6）
 - URL を PR へ投稿したあと、**投稿が反映されたことまで確認** して初めて成功とする
 
-### 8.3. ワークフロー構成
+### 8.4. 🔴 復帰条件と手順（GitHub Actions の制限が解除されたら）
 
-| ファイル | トリガー | 内容 |
-|---|---|---|
-| `.github/workflows/deploy-preview.yml` | `pull_request` | `versions upload --preview-alias pr-<N>` → URL 検証 → PR へ投稿 |
-| `.github/workflows/deploy-production.yml` | `push`（`main`） | `wrangler deploy` |
-
-`actions/setup-node` は **`node-version: 22` 以上**（wrangler 4.x の要件）。
+1. **ワークフローの復元**: 削除した `deploy-preview.yml` / `deploy-production.yml` の YAML 全文は git 履歴に残っている。`git log -- .github/workflows/` で削除前のコミットを特定し、`git show <commit>:.github/workflows/deploy-preview.yml` 等で内容を復元する（本書には全文を残さない）
+2. **fail-closed 検証の復帰**: §8.3 の URL 抽出・5xx リトライロジックを、CI のステップ（`::error::` + `exit 1` での失敗化）としてワークフローに戻す
+3. **`INF-20` の原則復帰**: §7.5 の暫定緩和を終了し、「デプロイのトリガーは git push / マージのみ」に一本化する。`infrastructure-design.md` の `INF-20` 注記・`open-questions.md` の `D-23` を「復帰済み」に更新する
+4. **セッション実行の手動デプロイ経路を残さない**（`INF-20` の原則に戻す。§8.2 の手動コマンドは以後使わない）
+5. `actions/setup-node` は **`node-version: 22` 以上**（wrangler 4.x の要件）を復元時も維持する
 
 ---
 
