@@ -1,0 +1,36 @@
+{
+  "total_count": 2,
+  "incomplete_results": false,
+  "items": [
+    {
+      "id": 10270250,
+      "name": "react",
+      "full_name": "facebook/react",
+      "html_url": "https://github.com/facebook/react",
+      "description": "The library for web and native user interfaces.",
+      "language": "JavaScript",
+      "stargazers_count": 233000,
+      "updated_at": "2026-08-18T09:00:00Z",
+      "topics": ["javascript", "react"],
+      "owner": {
+        "login": "facebook",
+        "avatar_url": "https://avatars.githubusercontent.com/u/69631?v=4"
+      }
+    },
+    {
+      "id": 1,
+      "name": "react-router",
+      "full_name": "remix-run/react-router",
+      "html_url": "https://github.com/remix-run/react-router",
+      "description": null,
+      "language": null,
+      "stargazers_count": 54000,
+      "updated_at": "2026-08-17T09:00:00Z",
+      "topics": [],
+      "owner": {
+        "login": "remix-run",
+        "avatar_url": "https://avatars.githubusercontent.com/u/64235335?v=4"
+      }
+    }
+  ]
+}

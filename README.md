@@ -4,6 +4,31 @@ star の多さでは埋もれてしまう「実際に使われている OSS」�
 
 > 旧称: IndieGems（[`Q-12`](./docs/02_requirements/open-questions.md) により `gem-hunter` に統一）
 
+## 開発（ローカル）
+
+Node.js 22 以上が必要（wrangler 4.x の要件）。
+
+```bash
+npm ci
+npm run dev          # http://localhost:3000 で検索画面が開く
+npm test             # ユニット・結合テスト（Vitest）
+npm run lint         # ESLint
+npm run format       # Prettier
+```
+
+GitHub App の資格情報（[`.env.example`](./.env.example)）を設定しなくても動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。
+
+### 技術スタック
+
+| 領域 | 採用 |
+|---|---|
+| フレームワーク | Next.js 16（App Router・React Server Components） |
+| UI | Tailwind CSS v4 + shadcn/ui（Radix UI・[ADR 0001](./docs/adr/0001-ui-stack.md)） |
+| 実行環境 | Cloudflare Workers（`@opennextjs/cloudflare`・[ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)） |
+| テスト | Vitest 4 + Testing Library + MSW 2（[テスト戦略](./docs/04_development/testing-strategy.md)） |
+
+層と依存規則は [アプリケーションアーキテクチャ](./docs/03_design/architecture/application-architecture.md) が正本（`python3 tools/check_architecture_boundaries.py` で機械検証する）。
+
 ## ドキュメント
 
 プロジェクトのドキュメントは [`docs/`](./docs) 配下で管理する。構成の詳細は [`docs/README.md`](./docs/README.md) を参照。

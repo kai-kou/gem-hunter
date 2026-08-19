@@ -43,3 +43,16 @@ node_modules/
 # 公開スナップショット抽出時の秘匿語リスト（publish-snapshot.sh が読む）。
 # 秘匿語そのものを追跡すると本末転倒なので必ず ignore する。雛形は .publish-secrets.example。
 .publish-secrets
+
+# --- Next.js / Node（SP-1 で追加） ---
+/node_modules
+/.next/
+/out/
+/coverage
+/.open-next/
+/playwright-report/
+/test-results/
+.env
+.env*.local
+.wrangler/
+next-env.d.ts
