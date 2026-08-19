@@ -1,6 +1,6 @@
 import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
 import type { RepositoryDetail, SearchResult } from '../../domain/model/repository'
-import { PER_PAGE } from '../../domain/model/page-number'
+import { DEFAULT_PER_PAGE } from '../../domain/model/per-page'
 import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
@@ -53,7 +53,8 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     const url = new URL('/search/repositories', apiOrigin())
     url.searchParams.set('q', query.keyword)
     url.searchParams.set('page', String(query.page))
-    url.searchParams.set('per_page', String(PER_PAGE))
+    // TODO(SP-7): query.perPage / query.sort を GitHub API へ渡す配線は usecases/infrastructure 担当が実装する
+    url.searchParams.set('per_page', String(DEFAULT_PER_PAGE))
 
     const response = await this.request(url)
     return toSearchResult(await response.json())

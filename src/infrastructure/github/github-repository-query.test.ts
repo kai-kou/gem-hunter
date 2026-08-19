@@ -39,7 +39,7 @@ describe('GithubRepositoryQuery', () => {
     expect(result.items).toHaveLength(2)
     expect(requests[0].searchParams.get('q')).toBe('react')
     expect(requests[0].searchParams.get('page')).toBe('2')
-    expect(requests[0].searchParams.get('per_page')).toBe('30')
+    expect(requests[0].searchParams.get('per_page')).toBe('20')
   })
 
   it('403 かつレート制限枯渇なら RateLimitExceededError を投げる', async () => {
