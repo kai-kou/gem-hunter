@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { getSessionAccessToken } from '@/src/composition/auth'
 import { getRepositoryDetailUseCase } from '@/src/composition/container'
 import { DomainError } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
@@ -6,6 +7,7 @@ import { formatMessage } from '@/src/shared/i18n/format-message'
 import { getMessages } from '@/src/shared/i18n/messages'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
+import { LocaleSwitcher } from '@/src/ui/locale-switcher'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
 
 /**
@@ -37,10 +39,12 @@ export default async function RepositoryDetailPage({
   const rawSearchParams = await searchParams
   const searchState = parseSearchParams(rawSearchParams)
   const backHref = buildSearchUrl(`/${locale}`, searchState)
+  const currentPath = `/${locale}/repos/${owner}/${repo}`
 
+  const accessToken = await getSessionAccessToken()
   let repository
   try {
-    repository = await getRepositoryDetailUseCase()({ owner, repo })
+    repository = await getRepositoryDetailUseCase(accessToken)({ owner, repo })
   } catch (error) {
     if (error instanceof DomainError) {
       return (
@@ -60,6 +64,14 @@ export default async function RepositoryDetailPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <LocaleSwitcher
+        currentLocale={locale}
+        currentPath={currentPath}
+        labels={{
+          navLabel: messages.common.localeSwitcher.navLabel,
+          localeNames: messages.common.localeSwitcher.localeNames,
+        }}
+      />
       <RepositoryDetail
         repository={repository}
         labels={{

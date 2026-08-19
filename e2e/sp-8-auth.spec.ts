@@ -64,7 +64,11 @@ test('SP-8: 未ログインで全機能が使える／ログインでレート�
     await page.goto('/api/auth/login')
     // authorize → stub の 302 → callback → セッション Cookie 発行 → '/' → '/ja' まで
     // ブラウザが自動でリダイレクトを辿る。
-    await expect(page).toHaveURL(/\/ja(\?.*)?$/)
+    // 🔴 `expect(page).toHaveURL()` ではなく `page.waitForURL()` を使う: 前者は
+    // ナビゲーション完了（Set-Cookie の反映含む）を待たずに URL 一致を検出することがあり、
+    // 直後の `context.cookies()` が Secure Cookie を空で返す実機レースを確認した
+    // （4 ホップのクロスオリジン同一サイトリダイレクト連鎖でのみ再現・調査済み）。
+    await page.waitForURL(/\/ja(\?.*)?$/)
 
     const cookies = await context.cookies()
     const session = cookies.find((c) => c.name === SESSION_COOKIE_NAME)
@@ -95,7 +99,8 @@ test('SP-8: 未ログインで全機能が使える／ログインでレート�
 
   await test.step('Step 3: ログアウトするとセッション Cookie が破棄され元に戻る', async () => {
     await page.goto('/api/auth/logout')
-    await expect(page).toHaveURL(/\/ja(\?.*)?$/)
+    // Step 0 と同じ理由で waitForURL を使う（ナビゲーション完了を待ってから Cookie を確認する）。
+    await page.waitForURL(/\/ja(\?.*)?$/)
 
     const cookies = await context.cookies()
     expect(cookies.find((c) => c.name === SESSION_COOKIE_NAME)).toBeUndefined()

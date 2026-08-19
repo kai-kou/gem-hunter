@@ -508,10 +508,10 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | GitHub App Client ID | installation token を取る JWT の `iss`（`D-20`）。数値の App ID も受理されるが **Client ID に統一する**（変数名 `GITHUB_APP_CLIENT_ID` と揃える） | 実質必須（**3 つ揃って初めて認証される**。欠けると未認証となりレート枠が 10 req/分に落ちる） |
 | GitHub App 秘密鍵 | JWT の RS256 署名に使う（`D-20`）。⚠️ **PKCS#8 形式で注入する**（Web Crypto の `importKey` は PKCS#1 を受け付けない） | 同上 |
 | GitHub App Installation ID | `POST /app/installations/{id}/access_tokens` の対象（`D-20`） | 同上 |
-| OAuth クライアント ID | 任意ログイン（`AR-5`） | ログイン機能を有効化する場合 |
-| OAuth クライアントシークレット | 同上 | 同上 |
-| OAuth コールバック URL | デプロイ先に依存するため必ず外部注入する | 同上 |
-| セッション暗号化キー | httpOnly Cookie の暗号化 | 同上 |
+| OAuth クライアント ID（`GITHUB_OAUTH_CLIENT_ID`） | 任意ログイン（`AR-5`） | ログイン機能を有効化する場合 |
+| OAuth クライアントシークレット（`GITHUB_OAUTH_CLIENT_SECRET`） | 同上 | 同上 |
+| OAuth コールバック URL（`GITHUB_OAUTH_CALLBACK_URL`） | デプロイ先に依存するため必ず外部注入する | 同上 |
+| セッション暗号化キー（`SESSION_ENCRYPTION_KEY`） | httpOnly Cookie の暗号化（`jose` `EncryptJWT`・32byte を base64url エンコード） | 同上 |
 | 既定ロケール | `ja`（`AR-4`） | 任意（既定値を持つ） |
 | キャッシュ接続情報 | 外部キャッシュを使う場合のみ（`NFR-17`） | 任意 |
 

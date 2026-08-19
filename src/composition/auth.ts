@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import {
   buildAuthorizeUrl,
   makeGithubOAuth,
@@ -38,3 +39,19 @@ export function completeLoginUseCase(): CompleteLogin {
 }
 
 export { decodeSessionCookie, encodeSessionCookie, SESSION_COOKIE_NAME, SESSION_COOKIE_TTL_SECONDS }
+
+/**
+ * Server Component（`app/[locale]/layout.tsx` 等）向けのセッション読み取り。
+ * `next/headers` の `cookies()` はルートハンドラの `NextRequest.cookies` と別 API のため、
+ * composition root にこの薄いラッパーを 1 つ用意し、両方の呼び出し側が同じ
+ * `decodeSessionCookie`（秘匿値を読む唯一のファイル）へ収束するようにする。
+ */
+export async function getSessionAccessToken(): Promise<string | null> {
+  const store = await cookies()
+  const raw = store.get(SESSION_COOKIE_NAME)?.value
+  if (!raw) {
+    return null
+  }
+  const session = await decodeSessionCookie(raw)
+  return session?.accessToken ?? null
+}

@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { getSessionAccessToken } from '@/src/composition/auth'
 import { searchRepositoriesUseCase } from '@/src/composition/container'
 import { DomainError } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
@@ -10,7 +11,9 @@ import { tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
+import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
+import { LocaleSwitcher } from '@/src/ui/locale-switcher'
 import { Pagination } from '@/src/ui/pagination'
 import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
@@ -28,6 +31,7 @@ async function runSearch(
   rawSort: string,
   rawPerPage: number,
   messages: Messages,
+  accessToken: string | null,
 ): Promise<SearchState> {
   // 境界（URL）で値オブジェクトへ変換する（domain-model.md §4）
   const keyword = trySearchKeyword(rawKeyword)
@@ -36,7 +40,7 @@ async function runSearch(
   }
 
   try {
-    const result = await searchRepositoriesUseCase()({
+    const result = await searchRepositoriesUseCase(accessToken)({
       keyword,
       page: tryPageNumber(rawPage),
       sort: trySortOrder(rawSort),
@@ -70,12 +74,22 @@ export default async function LocaleHome({
 
   const rawSearchParams = await searchParams
   const { keyword, page, sort, perPage } = parseSearchParams(rawSearchParams)
-  const state = await runSearch(keyword, page, sort, perPage, messages)
+  const accessToken = await getSessionAccessToken()
+  const state = await runSearch(keyword, page, sort, perPage, messages, accessToken)
   const basePath = `/${locale}`
   const searchState = { keyword, page, sort, perPage }
+  const currentPath = buildSearchUrl(basePath, searchState)
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <LocaleSwitcher
+        currentLocale={locale}
+        currentPath={currentPath}
+        labels={{
+          navLabel: messages.common.localeSwitcher.navLabel,
+          localeNames: messages.common.localeSwitcher.localeNames,
+        }}
+      />
       <h1 className="text-2xl font-semibold">{messages.home.title}</h1>
       <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
 

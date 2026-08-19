@@ -6,6 +6,10 @@
         "ja": "日本語",
         "en": "English"
       }
+    },
+    "auth": {
+      "login": "Log in with GitHub",
+      "logout": "Log out"
     }
   },
   "home": {
