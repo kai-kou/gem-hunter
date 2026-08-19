@@ -3,7 +3,6 @@ import { GithubRepositoryQuery } from '../infrastructure/github/github-repositor
 import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
 import { CachingRepositoryQuery } from '../infrastructure/platform/cached-repository-query'
 import { InMemoryCache } from '../infrastructure/platform/cache'
-import { recordCacheStatus } from '../infrastructure/platform/cache-status-context'
 import { SystemClock } from '../infrastructure/system-clock'
 import { makeGetRepositoryDetail, type GetRepositoryDetail } from '../usecases/get-repository-detail'
 import { makeSearchRepositories, type SearchRepositories } from '../usecases/search-repositories'
@@ -45,19 +44,14 @@ function makeCachingRepositoryQuery(onCacheStatus?: (status: 'HIT' | 'MISS') => 
   })
 }
 
-/**
- * `onCacheStatus` に `recordCacheStatus` を渡し、HIT/MISS を
- * `cache-status-context.ts` の `AsyncLocalStorage` へ書き込む（SP-5・`X-Cache-Status` ヘッダ用）。
- * store が確立されていない経路（Node の `next start` / vitest 等）では
- * `recordCacheStatus` が何もせず素通りするため、ここでの分岐は不要。
- */
+/** SP-5: 検索結果の取得（HIT/MISS の観測は `searchRepositoriesWithCacheStatus()` を使う）。 */
 export function searchRepositoriesUseCase(): SearchRepositories {
-  return makeSearchRepositories({ repos: makeCachingRepositoryQuery(recordCacheStatus) })
+  return makeSearchRepositories({ repos: makeCachingRepositoryQuery() })
 }
 
 /** SP-3: 独立 URL の詳細画面用ユースケースの組み立て（US-16 / US-17 / AC-4）。 */
 export function getRepositoryDetailUseCase(): GetRepositoryDetail {
-  return makeGetRepositoryDetail({ repos: makeCachingRepositoryQuery(recordCacheStatus) })
+  return makeGetRepositoryDetail({ repos: makeCachingRepositoryQuery() })
 }
 
 /**

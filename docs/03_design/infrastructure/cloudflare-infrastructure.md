@@ -210,13 +210,17 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 [`user-story-map.md`](../../02_requirements/user-story-map.md) §5.3 の `SP-5` は「2 回目は GitHub API を呼んでいない（`x-ratelimit-remaining` が減らない／ログに外部リクエストが出ない）」を操作レビュー手順にしている。**本設計はログを既定で無効化する（§9.1）ため、確認手段を設計として先に確定しておく。**
 
+> 🔴 **2026-08-19 改訂**: 当初案は「画面（Server Component の SSR 応答）に `X-Cache-Status` を **アプリ側で** 動的付与し、ブラウザの DevTools で誰でも確認できる」を主経路としていたが、`wrangler dev --local` + スタブ GitHub API による実機検証で **不成立** と判明した。回避策として「wrangler の `main` を自前エントリに差し替え、`node:async_hooks` の `AsyncLocalStorage` で HIT/MISS を Worker の外側（エントリ層）へ運ぶ」方式を試したが、OpenNext 生成物が挟む非同期継続を `AsyncLocalStorage` の store が越えられず、composition root のコールバックが呼ばれる時点で `getStore()` が **常に `undefined`** だった（デバッグログで実測確認済み。原因は workerd の `nodejs_compat` 実装が Next.js 内部の継続を計装できていない可能性が高いが **未確定**）。一方 **キャッシュ本体（L2 `CachePort`）は実機で正しく動作しており**、同一 URL を短間隔で連続 GET すると 2 回目以降 HIT することをログで確認済み — 壊れていたのは観測手段だけで、二重フェッチしない性質そのものは健全だった。経緯・却下案の全文は議論記録 [`content/discussions/sp5-cache-design-20260819/whiteboard.md`](../../../content/discussions/sp5-cache-design-20260819/whiteboard.md) を参照。
+
+→ 主経路を **`GET /api/search`（Route Handler）の応答ヘッダ** に切り替える。Route Handler は Web 標準の `Response` を直接返せるため動的ヘッダ付与に制約がなく、画面（SSR 応答）ではなく `/api/search?q=...` を直接叩いた（または DevTools の Network タブで検索リクエストを選んだ）ときに確認できる。
+
 | 経路 | 手段 | 位置づけ |
 |---|---|---|
-| **主** | レスポンスヘッダ `X-Cache-Status: HIT` / `MISS` を **アプリ側で付与する**（`src/infrastructure/platform/cache.ts`） | 🟢 **事業者非依存**。ブラウザの DevTools で誰でも確認でき、E2E テストからも assert できる（`SD-2`） |
+| **主** | `GET /api/search` の応答ヘッダ `X-Cache-Status: HIT` / `MISS`（Route Handler が付与） | 🟢 **事業者非依存**。ブラウザの DevTools（Network タブで `/api/search` リクエストを選択）で誰でも確認でき、E2E テストからも assert できる（`SD-2`）。画面の SSR 応答には乗らない（上記改訂理由による制約） |
 | 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの GitHub App installation token** の残量・`D-20`） |
 | 補助 | `wrangler tail --format json` のライブストリーム | ⚠️ `invocation_logs: false` でも tail が拾えるかは **未確認**（§12 の 9）。主経路にしない |
 
-🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`src/infrastructure/platform/` の実装が付け替わるだけ）。
+🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`src/infrastructure/platform/` の実装が付け替わるだけ）。付与位置が Route Handler になっても、キャッシュ判定ロジック自体（L2 `CachePort`）への依存関係は変わらない。
 
 ---
 

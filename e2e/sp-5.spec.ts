@@ -81,3 +81,23 @@ test('SP-5: 同じ検索・同じ詳細で GitHub API を二度叩かない', as
     expect(stats.detailCount).toBe(1)
   })
 })
+
+/**
+ * SP-5 フォールバック経路: `X-Cache-Status` ヘッダの観測（`app/api/search/route.ts`）。
+ *
+ * 画面の SSR 応答には `X-Cache-Status` を載せられない（`AsyncLocalStorage` 案が実機検証で
+ * 不成立・whiteboard round 3 lead 裁定）ため、この Route Handler がヘッダ観測の唯一の経路になる。
+ * 上のテストと同じキャッシュ（`sharedCache`）をプロセス内で共有するため、他ファイルは
+ * もちろん上のテストとも被らない未使用キーワード（`sp5-route-header-check`）を使う。
+ */
+test('SP-5: /api/search が X-Cache-Status ヘッダで HIT/MISS を報告する', async ({ request }) => {
+  const params = { q: 'sp5-route-header-check', page: '1' }
+
+  const first = await request.get('/api/search', { params })
+  expect(first.ok()).toBe(true)
+  expect(first.headers()['x-cache-status']).toBe('MISS')
+
+  const second = await request.get('/api/search', { params })
+  expect(second.ok()).toBe(true)
+  expect(second.headers()['x-cache-status']).toBe('HIT')
+})

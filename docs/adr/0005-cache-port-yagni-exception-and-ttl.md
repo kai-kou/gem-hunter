@@ -30,6 +30,16 @@
 | 検索結果 | 60 秒 | `TTL_SEARCH_SECONDS`（`src/composition/container.ts`） |
 | リポジトリ詳細 | 300 秒 | `TTL_DETAIL_SECONDS`（`src/composition/container.ts`） |
 
+### 2.3. 観測経路の決定（`X-Cache-Status` をどこに付与するか）
+
+`SP-5` の受け入れ条件「2 回目は GitHub API を呼んでいないことを外から検証できる」を満たすヘッダ `X-Cache-Status: HIT` / `MISS` の付与位置を、**`GET /api/search`（Route Handler）の応答** に決定する。画面（`app/[locale]/page.tsx` の Server Component が返す SSR 応答）には付与しない。
+
+1. **SSR 応答への付与を試みて不成立だった**: 当初案は画面の SSR 応答へ直接 `X-Cache-Status` を動的付与する経路だった。Server Component は Web 標準の `Response` を経由せずレンダリングされるため、`wrangler` の `main` を自前エントリへ差し替え `node:async_hooks` の `AsyncLocalStorage` で HIT/MISS を Worker の外側（エントリ層）へ運ぶ方式を実装し、`wrangler dev --local` + スタブ GitHub API で実機検証したが、OpenNext 生成物が挟む非同期継続を `AsyncLocalStorage` の store が越えられず、composition root のコールバックが呼ばれる時点で `getStore()` が常に `undefined` だった（デバッグログで実測確認済み。原因は workerd の `nodejs_compat` 実装が Next.js 内部の継続を計装できていない可能性が高いが未確定）。一方でキャッシュ本体（L2 `CachePort`）自体は実機で正しく動作しており、壊れていたのは観測手段のみだった。
+2. **採用した Route Handler 方式**: `app/api/search/route.ts`（新設）を検索の実処理経路とし、`NextResponse` に `headers.set('X-Cache-Status', ...)` で HIT/MISS を付与する。Route Handler は Web 標準 `Response` / `NextResponse` を直接返すため動的ヘッダ付与に制約がない。
+3. **却下した案（UI を client fetch に作り替える案）**: 画面（`SearchForm` → `/${locale}` への GET → ページ全体の SSR）自体を「クライアントから `/api/search` を fetch し結果を描画する」構成へ作り替え、画面の応答にもヘッダ相当の情報を反映させる案は、`SP-5` のスコープ（同じ検索で GitHub API を二度叩かないことの検証手段の確保）を超えて UI アーキテクチャ全体を変更するスコープ侵食のため却下する。既存の Server Component 経由の検索フローはそのまま維持し、`X-Cache-Status` の確認は `/api/search` を直接叩く（または DevTools の Network タブで検索リクエストを選ぶ）経路に限定する。
+
+詳細な検証過程は議論記録 [`content/discussions/sp5-cache-design-20260819/whiteboard.md`](../../content/discussions/sp5-cache-design-20260819/whiteboard.md) を参照。
+
 ---
 
 ## 3. 理由
@@ -68,6 +78,8 @@
 | **`SearchResult` にキャッシュメタデータ（HIT/MISS）を持たせる案** | ドメイン型にインフラ概念が漏れる。`architecture-rules.md` の DDD 語彙規律に反する |
 | **TTL を環境変数化する案** | `R-5`（必要レート枠の逆算）が未確定な段階で運用面だけを増やす YAGNI |
 | **検索と詳細で同一 TTL にする案** | `NFR-5` が別 TTL を要求している |
+| **`AsyncLocalStorage` で Worker エントリから SSR レンダリング内部へ HIT/MISS を運ぶ案** | 実機検証（`wrangler dev --local` + スタブ GitHub API）で store が伝播せず不成立（§2.3 の 1） |
+| **画面（Server Component）を client fetch 構成に作り替え、SSR 応答にも観測手段を持たせる案** | `SP-5` のスコープを超える UI アーキテクチャ変更（スコープ侵食・§2.3 の 3） |
 
 ---
 
