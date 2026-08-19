@@ -6,7 +6,15 @@ import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
 import { toRepositoryDetail, toSearchResult } from './mapper'
 
-const API_ORIGIN = 'https://api.github.com'
+const DEFAULT_API_ORIGIN = 'https://api.github.com'
+
+/**
+ * 🔴 リクエスト時に毎回読む（モジュール読み込み時に固定しない）。
+ * `next build` 時点で焼き付くのを避け、E2E からローカルスタブへ向けられるようにする（E-11・SP-4）。
+ */
+function apiOrigin(): string {
+  return process.env.GITHUB_API_ORIGIN ?? DEFAULT_API_ORIGIN
+}
 
 /** アクセストークンの供給口。未認証で叩く場合は null を返す。 */
 export type TokenProvider = () => Promise<string | null>
@@ -19,7 +27,7 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
   constructor(private readonly deps: { token: TokenProvider }) {}
 
   async search(query: SearchQuery): Promise<SearchResult> {
-    const url = new URL('/search/repositories', API_ORIGIN)
+    const url = new URL('/search/repositories', apiOrigin())
     url.searchParams.set('q', query.keyword)
     url.searchParams.set('page', String(query.page))
     url.searchParams.set('per_page', String(PER_PAGE))
@@ -31,7 +39,7 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
   async findDetail(name: RepositoryFullName): Promise<RepositoryDetail | null> {
     const url = new URL(
       `/repos/${encodeURIComponent(ownerOf(name))}/${encodeURIComponent(repoOf(name))}`,
-      API_ORIGIN,
+      apiOrigin(),
     )
 
     const response = await this.request(url, { notFoundAsNull: true })
