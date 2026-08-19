@@ -14,6 +14,15 @@ import type { TokenProvider } from './github-repository-query'
 const TOKEN_EXPIRY_MARGIN_MS = 60_000
 
 type CachedToken = { value: string; expiresAt: number }
+
+/**
+ * ⚠️ **意図的にモジュールレベルで共有する（クロージャ化しない）**。
+ * GitHub App は 1 つなので installation token もプロセス全体で 1 つでよく、
+ * `app/page.tsx` はリクエストごとに composition root（`makeInstallationTokenProvider` を含む
+ * ファクトリ群）を呼び直す — もしここをクロージャに移すと、キャッシュがリクエストごとに
+ * 作り直され、毎リクエストで installation token を取り直すことになり悪化する。
+ * ファクトリの全インスタンス間でこの 1 変数を共有するのは設計判断であって漏れではない。
+ */
 let cached: CachedToken | null = null
 
 type AppCredentials = {

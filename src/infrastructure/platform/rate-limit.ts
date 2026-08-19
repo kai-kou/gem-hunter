@@ -24,6 +24,7 @@ export class WorkersRateLimit implements RateLimitPort {
       return { allowed: true }
     }
     const result = await this.binding.limit({ key })
+    // Cloudflare Rate Limiting binding の limit() は { success } しか返さないため retryAfterSeconds は設定しない
     return { allowed: result.success }
   }
 }

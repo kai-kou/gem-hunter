@@ -17,7 +17,7 @@ declare const brand: unique symbol
 export type CacheKey = string & { readonly [brand]: 'CacheKey' }
 
 function normalizeSegment(segment: string): string {
-  return encodeURIComponent(segment.trim().toLowerCase())
+  return encodeURIComponent(segment.normalize('NFC').trim().toLowerCase())
 }
 
 /**

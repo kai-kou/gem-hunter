@@ -26,6 +26,12 @@ describe('searchResultCacheKey', () => {
     const b = searchResultCacheKey(searchQuery({ keyword: 'bar' }))
     expect(a).not.toBe(b)
   })
+
+  // フィールドが増えたら `searchResultCacheKey` の構成要素を見直す（NFR-18）。
+  it('SearchQuery のフィールド集合は keyword / page の 2 つのままである（増えたら searchResultCacheKey の更新漏れを検知するガード）', () => {
+    const query = searchQuery({ keyword: 'x' })
+    expect(Object.keys(query).sort()).toEqual(['keyword', 'page'])
+  })
 })
 
 describe('repositoryCacheKey', () => {
@@ -61,5 +67,15 @@ describe('repositoryCacheKey', () => {
     const searchKey = searchResultCacheKey(searchQuery({ keyword: 'react' }))
     const repoKey = repositoryCacheKey('facebook', 'react')
     expect(searchKey).not.toBe(repoKey)
+  })
+
+  it('合成済み文字と分解形の Unicode 表現は同じキーに正規化される（NFC 正規化）', () => {
+    const composedOwner = 'caf\u00e9' // \u00e9 = U+00E9（合成済み）
+    const decomposedOwner = 'caf\u0065\u0301' // e + U+0301（結合文字による分解形）
+    expect(composedOwner).not.toBe(decomposedOwner) // 前提: 2 つの入力は文字列として異なる
+
+    const composed = repositoryCacheKey(composedOwner, 'react')
+    const decomposed = repositoryCacheKey(decomposedOwner, 'react')
+    expect(composed).toBe(decomposed)
   })
 })
