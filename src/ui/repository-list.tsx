@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { Locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
+import { buildSearchUrl, type SearchUrlState } from './url/build-search-url'
 
 type RepositoryListLabels = {
   empty: string
@@ -17,10 +18,17 @@ export function RepositoryList({
   items,
   labels,
   locale,
+  searchState,
 }: {
   items: readonly RepositorySummary[]
   labels: RepositoryListLabels
   locale: Locale
+  /**
+   * 現在の検索条件（SP-7）。渡すと詳細ページへのリンクへクエリとして継ぎ足し、
+   * 詳細 → 戻る で検索条件を保持できるようにする（`back-link.tsx` と対になる）。
+   * 省略時はクエリなしのパスのまま（既存呼び出しとの後方互換）。
+   */
+  searchState?: SearchUrlState
 }) {
   if (items.length === 0) {
     return <p className="text-muted-foreground py-8 text-sm">{labels.empty}</p>
@@ -58,7 +66,7 @@ export function RepositoryList({
               カード全体へ拡張する（ui-ux-guidelines.md §4.3）。
             */}
             <Link
-              href={`/${locale}/repos/${encodeURIComponent(item.owner.login)}/${encodeURIComponent(item.name)}`}
+              href={`/${locale}/repos/${encodeURIComponent(item.owner.login)}/${encodeURIComponent(item.name)}${searchState ? buildSearchUrl('', searchState) : ''}`}
               className="text-primary font-medium underline-offset-4 hover:underline after:absolute after:inset-0"
             >
               {item.fullName}

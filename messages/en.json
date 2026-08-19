@@ -10,7 +10,20 @@
     "searchError": "Search failed: {message}",
     "empty": "No repositories matched. Try a different keyword.",
     "starCount": "stars",
-    "updatedAt": "Updated"
+    "updatedAt": "Updated",
+    "sortLabel": "Sort order",
+    "sortOptions": {
+      "relevance": "Relevance",
+      "stars": "Stars",
+      "updated": "Updated"
+    },
+    "perPageLabel": "Results per page",
+    "perPageOptionLabel": "{count} per page",
+    "paginationLabel": "Search results pages",
+    "pagePrev": "Previous page",
+    "pageNext": "Next page",
+    "pageCurrent": "Page {page}",
+    "pageLimitReached": "This is the last page available. Refine your keyword to see more results."
   },
   "detail": {
     "backLink": "Back to results",

@@ -10,7 +10,20 @@
     "searchError": "検索できませんでした: {message}",
     "empty": "条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。",
     "starCount": "star 数",
-    "updatedAt": "最終更新"
+    "updatedAt": "最終更新",
+    "sortLabel": "並び順",
+    "sortOptions": {
+      "relevance": "関連度",
+      "stars": "star 数",
+      "updated": "更新日時"
+    },
+    "perPageLabel": "表示件数",
+    "perPageOptionLabel": "{count} 件",
+    "paginationLabel": "検索結果のページ",
+    "pagePrev": "前のページへ",
+    "pageNext": "次のページへ",
+    "pageCurrent": "{page} ページ目",
+    "pageLimitReached": "表示できる最終ページです。キーワードを絞り込むと他の結果を確認できます。"
   },
   "detail": {
     "backLink": "一覧へ戻る",

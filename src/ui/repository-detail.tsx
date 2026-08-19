@@ -24,10 +24,16 @@ export function RepositoryDetail({
   repository,
   labels,
   locale,
+  backHref,
 }: {
   repository: RepositoryDetailModel
   labels: RepositoryDetailLabels
   locale: Locale
+  /**
+   * 一覧へ戻るリンクの検索条件付き URL（SP-7）。呼び出し元（`app/[locale]/repos/[owner]/[repo]/page.tsx`）が
+   * 詳細ページへ渡ってきた検索条件クエリから組み立てる。省略時は `BackLink` の既定（`/${locale}`）。
+   */
+  backHref?: string
 }) {
   const localeTag = toIntlLocaleTag(locale)
   const numberFormat = new Intl.NumberFormat(localeTag)
@@ -41,8 +47,8 @@ export function RepositoryDetail({
 
   return (
     <div>
-      {/* SP-3: 戻り先は /{locale} 固定（検索条件の保持は SP-7 の担当・FR-6） */}
-      <BackLink locale={locale} labels={labels} />
+      {/* SP-7: 検索条件を保持した戻り先（backHref）。未指定時は BackLink の既定（/{locale}）にフォールバックする */}
+      <BackLink locale={locale} labels={labels} href={backHref} />
 
       <div className="mt-4 flex items-center gap-4">
         {/* next/image の最適化は使わない（INF-11）。GitHub のサイズパラメータをそのまま使う */}
