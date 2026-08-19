@@ -68,7 +68,17 @@
       "mcp__Cloudflare_Developer_Platform__search_cloudflare_documentation",
       "mcp__Cloudflare_Developer_Platform__workers_list",
       "mcp__Cloudflare_Developer_Platform__workers_get_worker",
-      "mcp__Cloudflare_Developer_Platform__workers_get_worker_code"
+      "mcp__Cloudflare_Developer_Platform__workers_get_worker_code",
+      "Bash(npx wrangler deploy:*)",
+      "Bash(npx wrangler versions upload:*)",
+      "Bash(npx wrangler versions deploy:*)",
+      "Bash(npx wrangler versions list:*)",
+      "Bash(npx wrangler rollback:*)",
+      "Bash(npx wrangler deployments list:*)",
+      "Bash(npx wrangler whoami:*)",
+      "Bash(npx opennextjs-cloudflare build:*)",
+      "Bash(npm run deploy:*)",
+      "Bash(npm run preview:upload:*)"
     ],
     "deny": [
       "Read(.env)",
@@ -141,39 +151,125 @@
   },
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      { "hooks": [
-        { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit-guard.sh" },
-        { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prompt-structuring.sh" },
-        { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator-directive.sh" }
-      ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prompt-structuring.sh"
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator-directive.sh"
+          }
+        ]
+      }
     ],
     "PermissionRequest": [
-      { "matcher": "Read|Write|Edit|NotebookEdit", "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/permission-request-auto-allow.sh" } ] }
+      {
+        "matcher": "Read|Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/permission-request-auto-allow.sh"
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      { "matcher": "Bash|mcp__github__create_pull_request", "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-router.sh" } ] }
+      {
+        "matcher": "Bash|mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-router.sh"
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-validate.sh" } ] },
-      { "matcher": "mcp__github__merge_pull_request", "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-merge-publish-check.sh", "timeout": 90 } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-validate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__github__merge_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-merge-publish-check.sh",
+            "timeout": 90
+          }
+        ]
+      }
     ],
     "PostToolUseFailure": [
-      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-failure.sh" } ] }
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-failure.sh"
+          }
+        ]
+      }
     ],
     "PreCompact": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-compact.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-compact.sh"
+          }
+        ]
+      }
     ],
     "PostCompact": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-compact.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-compact.sh"
+          }
+        ]
+      }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-router.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-router.sh"
+          }
+        ]
+      }
     ],
     "SubagentStop": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-stop.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-stop.sh"
+          }
+        ]
+      }
     ]
   }
 }

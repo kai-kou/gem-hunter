@@ -1,46 +1,29 @@
 import { describe, expect, it } from 'vitest'
 
-import { InvalidSearchQueryError } from '../errors'
-import { MAX_PAGE, SearchQuery } from './search-query'
+import { DomainValidationError } from '../errors'
+import { DEFAULT_PAGE } from './page-number'
+import { equalsSearchQuery, searchQuery } from './search-query'
 
-describe('SearchQuery', () => {
-  it('キーワードの前後の空白を落として保持する', () => {
-    const query = SearchQuery.create({ keyword: '  react  ' })
+describe('searchQuery', () => {
+  it('キーワードとページを値オブジェクトへ変換する', () => {
+    const query = searchQuery({ keyword: '  react ', page: 3 })
 
     expect(query.keyword).toBe('react')
-    expect(query.page).toBe(1)
+    expect(query.page).toBe(3)
   })
 
-  it('ページ番号を指定できる', () => {
-    expect(SearchQuery.create({ keyword: 'react', page: 3 }).page).toBe(3)
+  it('ページ未指定なら既定ページになる', () => {
+    expect(searchQuery({ keyword: 'react' }).page).toBe(DEFAULT_PAGE)
   })
 
-  it('空文字・空白のみのキーワードを拒否する', () => {
-    expect(() => SearchQuery.create({ keyword: '   ' })).toThrow(InvalidSearchQueryError)
-  })
-
-  it('256 文字を超えるキーワードを拒否する', () => {
-    expect(() => SearchQuery.create({ keyword: 'a'.repeat(257) })).toThrow(InvalidSearchQueryError)
-  })
-
-  it('1 未満・上限超のページ番号を拒否する', () => {
-    expect(() => SearchQuery.create({ keyword: 'react', page: 0 })).toThrow(InvalidSearchQueryError)
-    expect(() => SearchQuery.create({ keyword: 'react', page: MAX_PAGE + 1 })).toThrow(
-      InvalidSearchQueryError,
-    )
-  })
-
-  it('整数でないページ番号を拒否する', () => {
-    expect(() => SearchQuery.create({ keyword: 'react', page: 1.5 })).toThrow(
-      InvalidSearchQueryError,
-    )
+  it('不正なキーワードは値オブジェクトの段階で落とす', () => {
+    expect(() => searchQuery({ keyword: '' })).toThrow(DomainValidationError)
   })
 
   it('同じ値なら等価と判定する', () => {
-    const a = SearchQuery.create({ keyword: 'react', page: 2 })
-    const b = SearchQuery.create({ keyword: 'react', page: 2 })
+    const a = searchQuery({ keyword: 'react', page: 2 })
 
-    expect(a.equals(b)).toBe(true)
-    expect(a.equals(SearchQuery.create({ keyword: 'vue', page: 2 }))).toBe(false)
+    expect(equalsSearchQuery(a, searchQuery({ keyword: 'react', page: 2 }))).toBe(true)
+    expect(equalsSearchQuery(a, searchQuery({ keyword: 'vue', page: 2 }))).toBe(false)
   })
 })

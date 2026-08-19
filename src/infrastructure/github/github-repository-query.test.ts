@@ -3,7 +3,7 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
-import { SearchQuery } from '../../domain/model/search-query'
+import { searchQuery } from '../../domain/model/search-query'
 import fixture from './__fixtures__/search-repositories.json'
 import { GithubRepositoryQuery } from './github-repository-query'
 
@@ -28,7 +28,7 @@ function makeQuery() {
 
 describe('GithubRepositoryQuery', () => {
   it('検索 API を呼び出してドメインモデルを返す', async () => {
-    const result = await makeQuery().search(SearchQuery.create({ keyword: 'react', page: 2 }))
+    const result = await makeQuery().search(searchQuery({ keyword: 'react', page: 2 }))
 
     expect(result.items).toHaveLength(2)
     expect(requests[0].searchParams.get('q')).toBe('react')
@@ -46,7 +46,7 @@ describe('GithubRepositoryQuery', () => {
       ),
     )
 
-    await expect(makeQuery().search(SearchQuery.create({ keyword: 'react' }))).rejects.toThrow(
+    await expect(makeQuery().search(searchQuery({ keyword: 'react' }))).rejects.toThrow(
       RateLimitExceededError,
     )
   })
@@ -58,7 +58,7 @@ describe('GithubRepositoryQuery', () => {
       ),
     )
 
-    await expect(makeQuery().search(SearchQuery.create({ keyword: 'react' }))).rejects.toThrow(
+    await expect(makeQuery().search(searchQuery({ keyword: 'react' }))).rejects.toThrow(
       UpstreamError,
     )
   })

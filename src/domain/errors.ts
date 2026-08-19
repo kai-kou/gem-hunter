@@ -6,10 +6,14 @@ export abstract class DomainError extends Error {
   }
 }
 
-/** 検索条件が値オブジェクトの不変条件を満たさない。 */
-export class InvalidSearchQueryError extends DomainError {
-  constructor(message: string) {
-    super(message)
+/** 値オブジェクトの不変条件を満たさない入力（domain-model.md §4）。 */
+export class DomainValidationError extends DomainError {
+  constructor(
+    readonly valueObject: string,
+    readonly raw: unknown,
+    message?: string,
+  ) {
+    super(message ?? `${valueObject} として扱えない値です`)
   }
 }
 

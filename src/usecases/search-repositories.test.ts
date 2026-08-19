@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { InvalidSearchQueryError } from '../domain/errors'
+import { DomainValidationError } from '../domain/errors'
 import type { RepositorySummary, SearchResult } from '../domain/model/repository'
 import type { SearchQuery } from '../domain/model/search-query'
 import type { RepositoryQueryPort } from '../domain/ports/repository-query-port'
@@ -45,7 +45,7 @@ describe('searchRepositories', () => {
     const received: SearchQuery[] = []
     const searchRepositories = makeSearchRepositories({ repos: fakePort(received) })
 
-    await expect(searchRepositories({ keyword: '' })).rejects.toThrow(InvalidSearchQueryError)
+    await expect(searchRepositories({ keyword: '' })).rejects.toThrow(DomainValidationError)
     expect(received).toHaveLength(0)
   })
 })

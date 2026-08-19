@@ -1,6 +1,7 @@
 import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
 import type { SearchResult } from '../../domain/model/repository'
-import { PER_PAGE, type SearchQuery } from '../../domain/model/search-query'
+import { PER_PAGE } from '../../domain/model/page-number'
+import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
 import { toSearchResult } from './mapper'
 

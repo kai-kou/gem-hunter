@@ -1,23 +1,28 @@
 import { searchRepositoriesUseCase } from '@/src/composition/container'
-import { DomainError, InvalidSearchQueryError } from '@/src/domain/errors'
+import { DomainError } from '@/src/domain/errors'
+import { tryPageNumber } from '@/src/domain/model/page-number'
 import type { SearchResult } from '@/src/domain/model/repository'
+import { trySearchKeyword } from '@/src/domain/model/search-keyword'
 import { RepositoryList } from '@/src/ui/repository-list'
 import { SearchForm } from '@/src/ui/search-form'
 
 type SearchState =
   { status: 'idle' } | { status: 'ok'; result: SearchResult } | { status: 'error'; message: string }
 
-async function runSearch(keyword: string): Promise<SearchState> {
-  if (keyword.trim().length === 0) {
+async function runSearch(rawKeyword: string, rawPage: string | undefined): Promise<SearchState> {
+  // 境界（URL）で値オブジェクトへ変換する（domain-model.md §4）
+  const keyword = trySearchKeyword(rawKeyword)
+  if (keyword === null) {
     return { status: 'idle' }
   }
 
   try {
-    return { status: 'ok', result: await searchRepositoriesUseCase()({ keyword }) }
+    const result = await searchRepositoriesUseCase()({
+      keyword,
+      page: tryPageNumber(rawPage),
+    })
+    return { status: 'ok', result }
   } catch (error) {
-    if (error instanceof InvalidSearchQueryError) {
-      return { status: 'error', message: error.message }
-    }
     if (error instanceof DomainError) {
       return { status: 'error', message: `検索できませんでした: ${error.message}` }
     }
@@ -25,14 +30,18 @@ async function runSearch(keyword: string): Promise<SearchState> {
   }
 }
 
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string | string[] }>
+  searchParams: Promise<{ q?: string | string[]; page?: string | string[] }>
 }) {
   const params = await searchParams
-  const keyword = (Array.isArray(params.q) ? params.q[0] : params.q) ?? ''
-  const state = await runSearch(keyword)
+  const keyword = first(params.q) ?? ''
+  const state = await runSearch(keyword, first(params.page))
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
