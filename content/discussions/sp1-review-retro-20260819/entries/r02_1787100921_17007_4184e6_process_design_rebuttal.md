@@ -10,7 +10,7 @@ ts: 2026-08-19T09:55:21+09:00
 ## 1. guardrail_eng ①②への応答 — 「機械強制なしで守られるか」
 
 **部分譲歩（concession）**: guardrail_eng の指摘は正しい。R1 案の「単独実行禁止」は
-`session-sprint-rules.md` §2 の**文言変更のみ**で、guardrail_eng が却下した「編成欄の記述を検査する」
+`session-sprint-rules.md` §2 の **文言変更のみ** で、guardrail_eng が却下した「編成欄の記述を検査する」
 仕組みが無い以上、SP-1 と同じく「編成欄に『単独実行』と書いて理由を残す」逸脱がまた起こり得る。
 これは guardrail_eng の①（API 依存の Lv3 ゲートは入れない）判断とも整合しており、①を覆すつもりはない。
 
@@ -28,7 +28,7 @@ guardrail_eng 側から起票してもらう方が筋が良い**（③の修正�
 ## 2. docs_trace「retrospective 死蔵」への応答 — 全経路カバーの範囲を訂正
 
 **部分譲歩（concession）**: R1 案「pr-review-watcher のマージ直後に 1 箇所フック」は
-**sprint-cycle-router 経由（Step 2/3/4-6 → pr-review-watcher）で PR が発生する経路だけ**をカバーし、
+**sprint-cycle-router 経由（Step 2/3/4-6 → pr-review-watcher）で PR が発生する経路だけ** をカバーし、
 docs_trace が指摘した「retrospective が全パイプライン共通で死蔵」という問題全体は解決しない。具体的に
 漏れる経路: ① Step 5（self-improvement-loop 消化モード）が作る `type:improvement`/`type:bug` PR
 （`Sprint Goal:` トレーラーが無いため R1 のフック条件に一致しない）② Step 7（リファインメント）は
@@ -41,7 +41,7 @@ docs_trace が指摘した「retrospective が全パイプライン共通で死�
 既存レーン（振り返りレーン・改善 Issue レーン）が別途担当領域である以上、**本ラウンドのスコープは
 SP-n（スプリント開発レーン）に限定してよい**と判定する（争点 B/C の brief 定義とも整合）。
 ただし docs_trace が発見した「retrospective が生成に関係なく全パイプライン共通で死蔵」という事実は
-**争点 B/C を超えた別問題**として切り出す: retro_facilitator の Try リストに以下を追加提案する。
+**争点 B/C を超えた別問題** として切り出す: retro_facilitator の Try リストに以下を追加提案する。
 
 ```
 Try-新: retrospective スキルの呼び出し元を全パイプライン終端に追加する
@@ -61,7 +61,7 @@ Try-新: retrospective スキルの呼び出し元を全パイプライン終端
 
 **新規ラベル・新規 state ファイルは作らない**（sprint-cycle-router §0 の ephemeral 前提・guardrail_eng の
 API/コスト懸念とも整合）。Sprint Review（fan-out 2 役割）が Issue #26 へ投稿するコメントを、
-**Step 3（stale in-progress 再開）が既に読んでいる情報源の語彙に合わせて機械可読な形にする**ことで対応する。
+**Step 3（stale in-progress 再開）が既に読んでいる情報源の語彙に合わせて機械可読な形にする** ことで対応する。
 
 ```markdown
 ## 🔍 Sprint Review 判定（fan-out）
@@ -88,7 +88,7 @@ API/コスト懸念とも整合）。Sprint Review（fan-out 2 役割）が Issu
 
 - guardrail_eng の①②の結論は維持しつつ、`Team:` PR トレーラー（Warning・ローカル git only）を
   guardrail_eng 側からの追加 Try として提案し「機械強制ゼロ」を「最小限の可視化」に引き上げる
-- C の「pr-review-watcher 1 箇所フック」は **SP-n スコープに限定**すると明言し、docs_trace が見つけた
+- C の「pr-review-watcher 1 箇所フック」は **SP-n スコープに限定** すると明言し、docs_trace が見つけた
   全パイプライン共通の死蔵は別 Try（retro_facilitator へ追加提案）に切り出す
 - sprint_review の条件付き受け入れは、新ラベル・新 state ファイルなしで、Sprint Review コメントの
   「次 firing 必須」行 + 既存の「進捗: 〜まで完了」マーカーを Step 3 がそのまま読む形で機械的に引き継ぐ

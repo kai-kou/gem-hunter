@@ -34,4 +34,4 @@ ts: 2026-08-19T09:52:05+09:00
 
 ### 結論
 
-`AC-1` / `AC-2`（一部・超過達成） / `AC-3`（必達・AR-1 も前倒し達成）/ `SD-2` は満たしている。`SD-1` は bootstrap 例外の範囲で満たしている。**SP-1 固有の p95 CPU 実測ゲートが未達のため accepted_with_conditions とし、次の firing で実測を完了させてから Issue #26 を close する**のが一貫した扱い。それ以外の残作業（⑤⑥ + ClockPort）は後続スプリントへ送ってよい。
+`AC-1` / `AC-2`（一部・超過達成） / `AC-3`（必達・AR-1 も前倒し達成）/ `SD-2` は満たしている。`SD-1` は bootstrap 例外の範囲で満たしている。**SP-1 固有の p95 CPU 実測ゲートが未達のため accepted_with_conditions とし、次の firing で実測を完了させてから Issue #26 を close する** のが一貫した扱い。それ以外の残作業（⑤⑥ + ClockPort）は後続スプリントへ送ってよい。

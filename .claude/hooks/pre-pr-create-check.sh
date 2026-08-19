@@ -165,6 +165,13 @@ if [ -f "$repo_root/tools/self_review_check.py" ]; then
 ${check_output}
 
 Error を修正してから PR 作成を再実行してください（チェックシート: docs/rules/self-review-checklist.md）。"
+  elif [ "$check_exit" -ne 0 ]; then
+    # self_review_check.py 自体の異常終了（内部未捕捉例外 exit=2 / 外側 `timeout 60` による
+    # プロセス kill exit=124 等）。ブロックはしない（fail-open・無人ルーティンを止めない）が、
+    # 従来は check_output が誰にも表示されず握りつぶされていた（SP-1 で実際に発生した事故・
+    # content/discussions/sp1-review-retro-20260819）ため可視化する。
+    check_output="${check_output}
+[pre-pr-create-check] self_review_check.py が exit ${check_exit} で異常終了しました。セルフレビュー機械チェックが実質未実行のまま PR 作成が続行されています。原因を確認してください（一時的な負荷等でなければ type:bug Issue 化を検討）。"
   fi
 fi
 
@@ -180,7 +187,7 @@ fi
 #   hookSpecificOutput.additionalContext で注入する（ツール結果の隣に挿入される）。
 #   exit 0（Warning のみ）のとき check_output を破棄していた旧実装の配管バグもここで解消。
 _ctx="[pre-pr-create-check] Layer 0 機械ゲート通過。PR 作成後に Layer 1 セルフレビュー（FAIR・全PR必須）を必ず実行してください。自前 code-review スキル（.claude/skills/code-review/・組み込みを置換・自律起動可）を Skill(code-review) で起動して PR 差分をレビューし、指摘は全件 PR の行単位インラインコメントで記録してください（指摘ゼロでも event=COMMENT のレビューを1件投稿・#461）。これはブロックではありません（docs/rules/ai-reviewer-strategy.md）。"
-if printf '%s' "$check_output" | grep -q 'Warning'; then
+if printf '%s' "$check_output" | grep -qE 'Warning|異常終了'; then
   _ctx="${_ctx}
 セルフレビュー Warning（非ブロック・対応要否を判断すること）:
 ${check_output}"

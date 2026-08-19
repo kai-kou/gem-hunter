@@ -28,6 +28,7 @@
 - あわせて `docs/02_requirements/user-story-map.md` §5.3 の該当スプリントの「操作レビュー」手順を **ID で参照** する（本文へコピーしない）
 - 前スプリントまでの経路も同じ URL で触れること（回帰の目視確認を兼ねる）
 - **出せない場合は PR 本文に理由とローカル起動手順を書く**（沈黙禁止）
+- PR 本文に **`Team:` トレーラー**（例 `Team: fan-out(3)`）を必ず含める（チーム編成の既定は `session-sprint-rules.md` §2 が正本）
 
 🔴 **本規律のためにプレビュー環境のデプロイ先だけ先行決定する**（`D-11`）。本番デプロイ先とキャッシュ基盤は引き続き未決（`D-5` / `D-7`）。`NFR-21`（特定 PaaS 固有機能への依存を最小化）は **アプリのランタイムに対する制約として維持** し、**プレビューのためにアプリコードへ PaaS 固有 API を持ち込まない**（持ち込みたくなったら ADR を起票）。
 
@@ -108,6 +109,7 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 | 5 | `docs/project-mission.md` | 品質ゲート・判断基準 |
 | 6 | `docs/03_design/ui-ux/ui-ux-guidelines.md`（**UI を触るスプリントのみ**） | 技術スタック・デザイントークン・状態表現・a11y の実装指針 |
 | 7 | 🔴 `docs/rules/architecture-rules.md`（**アプリコードを書くスプリントは必読**） | 層の判定・依存規則 7 項目・DDD で守る 3 点・TDD の最低ライン（各 SSOT への入口） |
+| 8 | 🔴 `docs/03_design/data-model/domain-model.md` §4（**値オブジェクト・エンティティを実装する前に必読**） | 値オブジェクトの実装の型（ブランド型 + スマートコンストラクタ）。入口は #7 の `architecture-rules.md`、値オブジェクトの実装形はこちら（`domain-model.md` §4）が正本 |
 
 🔴 **`SD-3` の確認は「ドキュメントを読んでも決まらないこと」にのみ発火する。** 読めば分かることを聞くのは `CP-6` 違反。
 
@@ -129,6 +131,6 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 
 関連: `architecture-rules.md`（実装時の判断チェックリスト）/ `docs/03_design/architecture/application-architecture.md`（層・依存規則の正本）/
 `docs/03_design/data-model/domain-model.md`（ユビキタス言語の正本）/ `docs/04_development/testing-strategy.md`（テストの正本）/
-`docs/02_requirements/user-story-map.md` §5（`SP-n` の正本）/ `session-sprint-rules.md`（単位と `sp:N`）/
+`docs/02_requirements/user-story-map.md` §5（`SP-n` の正本）/ `session-sprint-rules.md`（単位・`sp:N`・チーム編成の既定）/
 `user-confirmation-minimization.md`（確認要否の SSOT）/ `intent-gate-rules.md`（権威解決）/
 `docs/02_requirements/open-questions.md`（`D-11` / `D-12` の決定ログ）
