@@ -74,12 +74,15 @@ src/
     search-repositories.ts
     get-repository-detail.ts
   infrastructure/
+    system-clock.ts                 #   ClockPort の実装（composition root でのみ束ねる）
     github/                         # 🔴 GitHub API に触れてよい唯一の場所（ACL）
       github-repository-query.ts    #   RepositoryQueryPort の実装
+      installation-token.ts         #   GitHub App installation token 供給（ClockPort 経由で時刻を受け取る）
       dto.ts                        #   API レスポンスのスキーマ（zod）
       mapper.ts                     #   DTO → ドメインモデル変換
     platform/                       # 🔴 事業者固有バインディング・キャッシュ実装に触れてよい唯一の場所（NFR-21）
       cache.ts                      #   CachePort の実装（キー規約は NFR-18）
+      cache-key.ts                  #   CacheKey の生成関数（唯一の組み立て場所）
       rate-limit.ts                 #   RateLimitPort の実装
   ui/                               # 表示コンポーネント
   composition/                      # 実装の組み立て（composition root）
@@ -110,13 +113,15 @@ e2e/                                # Playwright（操作レビュー手順の�
 
 ```ts
 // src/composition/container.ts（composition root）
-export function searchRepositoriesUseCase() {
+export function searchRepositoriesUseCase(): SearchRepositories {
+  const clock = new SystemClock()
   return makeSearchRepositories({
-    repos: new GithubRepositoryQuery(githubClient()),
-    cache: new WorkersCache(),
+    repos: new GithubRepositoryQuery({ token: makeInstallationTokenProvider({ clock }) }),
   })
 }
 ```
+
+⚠️ `CachePort`（`InMemoryCache`）/ `RateLimitPort`（`WorkersRateLimit`）はまだ composition root に配線しない（実装済みだが未接続。実適用は `E-3` / `SP-5` のスコープ・`NFR-17` の YAGNI 注記どおり）。
 
 - ユースケースは **ポートを引数で受け取る高階関数（またはコンストラクタ注入）** として書く。`import` で実装を掴まない。
 - テストは composition root を経由せず、**フェイク実装を直接渡す**（[テスト戦略](../../04_development/testing-strategy.md) §4）。

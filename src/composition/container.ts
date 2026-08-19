@@ -1,5 +1,6 @@
 import { GithubRepositoryQuery } from '../infrastructure/github/github-repository-query'
-import { installationTokenProvider } from '../infrastructure/github/installation-token'
+import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
+import { SystemClock } from '../infrastructure/system-clock'
 import { makeSearchRepositories, type SearchRepositories } from '../usecases/search-repositories'
 
 /**
@@ -7,7 +8,8 @@ import { makeSearchRepositories, type SearchRepositories } from '../usecases/sea
  * DI コンテナは使わない（YAGNI）。
  */
 export function searchRepositoriesUseCase(): SearchRepositories {
+  const clock = new SystemClock()
   return makeSearchRepositories({
-    repos: new GithubRepositoryQuery({ token: installationTokenProvider }),
+    repos: new GithubRepositoryQuery({ token: makeInstallationTokenProvider({ clock }) }),
   })
 }
