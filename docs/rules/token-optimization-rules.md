@@ -128,7 +128,7 @@ Claude Code のトークン消費を最小化し、セッションあたりの�
 ### 削減の品質バーを先に固定する（Anthropic cookbook 由来）
 
 > 出典: [Cost Optimization on the Claude API](https://github.com/anthropics/claude-cookbooks/blob/main/cost_optimization/cost_optimization.ipynb)（Anthropic Applied AI チーム）。
-> 採否の議論記録は `content/discussions/cost-optimization-cookbook-adoption/`。
+> 採否の議論記録は `content/discussions/cost-optimization-cookbook-adoption/`（**ベースリポジトリ側の記録で本リポジトリには存在しない**）。
 
 cookbook の中核は「**品質バーを制約として先に固定し、コストだけを最小化する変数として扱う。eval が無ければ削減と劣化を区別できない**」。本リポジトリの Hot 層棚卸し（#146 / #324 / #369）は **KB とトークン数しか見ておらず、削った規律が実際に守られ続けているかを確認する手続きが無い**。以下の最小形で埋める（新規スクリプト・新規スケジュールは作らない）。
 

@@ -286,7 +286,7 @@ Claude 4 モデル全般で対応。ツール結果を受け取った後に内�
 
 ### コスト最適化の優先順位
 
-> **原則: 知能天井を下げるレバーは最後に引く**（Anthropic cookbook [Cost Optimization on the Claude API](https://github.com/anthropics/claude-cookbooks/blob/main/cost_optimization/cost_optimization.ipynb) の適用順序を採用・議論記録は `content/discussions/cost-optimization-cookbook-adoption/`）。
+> **原則: 知能天井を下げるレバーは最後に引く**（Anthropic cookbook [Cost Optimization on the Claude API](https://github.com/anthropics/claude-cookbooks/blob/main/cost_optimization/cost_optimization.ipynb) の適用順序を採用・議論記録は `content/discussions/cost-optimization-cookbook-adoption/`＝**ベースリポジトリ側の記録で本リポジトリには存在しない**）。
 > キャッシュ・入力/出力トークン管理は「同じ知能で払う額」を減らすが、モデル変更と effort 低下は「できることそのもの」を減らす。前者を使い切ってから後者を検討する。
 >
 > **per-token 価格 ≠ per-task コスト**: 安いモデルがターン数・やり直しを増やせば総額は上がりうる。削減率は「1 タスクを完了するまでの総コスト」で読む（下表の削減率はすべて per-token ベースの目安）。
