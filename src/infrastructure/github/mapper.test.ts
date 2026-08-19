@@ -61,6 +61,64 @@ describe('toSearchResult', () => {
     expect(result.items[0].lastPushedAt.toISOString()).toBe('2026-08-01T00:00:00.000Z')
   })
 
+  it('private: true のアイテムを除外する（is:public が効かなくなった場合の多層防御）', () => {
+    const raw = {
+      total_count: 2,
+      incomplete_results: false,
+      items: [
+        ...(fixture as { items: unknown[] }).items,
+        {
+          id: 4242,
+          name: 'secret',
+          full_name: 'acme/secret',
+          html_url: 'https://github.com/acme/secret',
+          description: null,
+          language: null,
+          stargazers_count: 0,
+          updated_at: '2026-08-01T00:00:00Z',
+          pushed_at: '2026-08-01T00:00:00Z',
+          topics: [],
+          private: true,
+          owner: { login: 'acme', avatar_url: 'https://example.com/a.png' },
+        },
+      ],
+    }
+
+    const result = toSearchResult(raw)
+
+    expect(result.items.map((item) => item.fullName)).not.toContain('acme/secret')
+    expect(result.items).toHaveLength(2)
+    // 🔴 totalCount は API の値をそのまま保つ（件数はフィルタで書き換えない）
+    expect(result.totalCount).toBe(2)
+  })
+
+  it('private が未指定・false のアイテムは公開として扱う', () => {
+    const raw = {
+      total_count: 1,
+      incomplete_results: false,
+      items: [
+        {
+          id: 4243,
+          name: 'open',
+          full_name: 'acme/open',
+          html_url: 'https://github.com/acme/open',
+          description: null,
+          language: null,
+          stargazers_count: 0,
+          updated_at: '2026-08-01T00:00:00Z',
+          pushed_at: '2026-08-01T00:00:00Z',
+          topics: [],
+          private: false,
+          owner: { login: 'acme', avatar_url: 'https://example.com/a.png' },
+        },
+      ],
+    }
+
+    expect(toSearchResult(raw).items).toHaveLength(1)
+    // フィクスチャ（private フィールドなし）は従来どおり全件返る
+    expect(toSearchResult(fixture).items).toHaveLength(2)
+  })
+
   it('スキーマに合わない外部データをドメインエラーへ翻訳する', () => {
     // 上位層は zod を知らないため ZodError を層の外へ出さない（ACL の契約）
     expect(() => toSearchResult({ total_count: 'たくさん', items: [] })).toThrow(UpstreamError)

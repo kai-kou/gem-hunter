@@ -14,22 +14,29 @@ export function toSearchResult(raw: unknown): SearchResult {
   const dto = parsed.data
 
   return {
+    // 🔴 totalCount は API が返した値をそのまま保つ（下の private 除外で書き換えない）。
+    //    GitHub 側の総件数とページングの整合を崩さないため。
     totalCount: dto.total_count,
     incompleteResults: dto.incomplete_results ?? false,
-    items: dto.items.map((item): RepositorySummary => ({
-      id: item.id,
-      name: item.name,
-      fullName: item.full_name,
-      owner: { login: item.owner.login, avatarUrl: item.owner.avatar_url },
-      description: item.description,
-      primaryLanguage: item.language,
-      stars: item.stargazers_count,
-      // 🔴 「最終更新日」は pushed_at を使う（メタデータ更新で動く updated_at ではない・domain-model.md §2.2）。
-      //    pushed_at が null（コミット履歴のない空リポジトリ）の場合のみ updated_at にフォールバックする。
-      lastPushedAt: new Date(item.pushed_at ?? item.updated_at),
-      topics: item.topics ?? [],
-      htmlUrl: item.html_url,
-    })),
+    // 🔴 多層防御: 検索クエリの `is:public`（github-repository-query.ts）が将来効かなくなっても
+    //    非公開リポジトリを画面へ出さないための保険（prd.md L171「公開リポジトリの検索」）。
+    //    `private` は optional なので、明示的に true のものだけを除外する（undefined は公開扱い）。
+    items: dto.items
+      .filter((item) => item.private !== true)
+      .map((item): RepositorySummary => ({
+        id: item.id,
+        name: item.name,
+        fullName: item.full_name,
+        owner: { login: item.owner.login, avatarUrl: item.owner.avatar_url },
+        description: item.description,
+        primaryLanguage: item.language,
+        stars: item.stargazers_count,
+        // 🔴 「最終更新日」は pushed_at を使う（メタデータ更新で動く updated_at ではない・domain-model.md §2.2）。
+        //    pushed_at が null（コミット履歴のない空リポジトリ）の場合のみ updated_at にフォールバックする。
+        lastPushedAt: new Date(item.pushed_at ?? item.updated_at),
+        topics: item.topics ?? [],
+        htmlUrl: item.html_url,
+      })),
   }
 }
 

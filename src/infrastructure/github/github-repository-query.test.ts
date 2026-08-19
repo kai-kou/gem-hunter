@@ -42,6 +42,19 @@ describe('GithubRepositoryQuery', () => {
     expect(requests[0].searchParams.get('per_page')).toBe('20')
   })
 
+  it('検索クエリに is:public を AND 付与して公開リポジトリに閉じる（installation token の可視範囲対策）', async () => {
+    await makeQuery().search(searchQuery({ keyword: 'react' }))
+
+    const q = requests[0].searchParams.get('q')
+    expect(q).toBe('react is:public')
+  })
+
+  it('キーワードに is:private が含まれていても is:public を付与する（公開に閉じる）', async () => {
+    await makeQuery().search(searchQuery({ keyword: 'react is:private' }))
+
+    expect(requests[0].searchParams.get('q')).toContain('is:public')
+  })
+
   it('perPage を per_page パラメータへそのまま渡す', async () => {
     await makeQuery().search(searchQuery({ keyword: 'react', perPage: 100 }))
 
@@ -115,6 +128,30 @@ describe('GithubRepositoryQuery#findDetail', () => {
     const result = await makeQuery().findDetail(repositoryFullName('facebook', 'does-not-exist'))
 
     expect(result).toBeNull()
+  })
+
+  it('private: true の詳細レスポンスは null を返す（URL 直打ちで非公開リポジトリを読めないようにする）', async () => {
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo', () =>
+        HttpResponse.json({ ...detailFixture, private: true }),
+      ),
+    )
+
+    const result = await makeQuery().findDetail(repositoryFullName('acme', 'secret'))
+
+    expect(result).toBeNull()
+  })
+
+  it('private: false の詳細レスポンスは従来どおり詳細を返す', async () => {
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo', () =>
+        HttpResponse.json({ ...detailFixture, private: false }),
+      ),
+    )
+
+    const result = await makeQuery().findDetail(repositoryFullName('facebook', 'react'))
+
+    expect(result?.fullName).toBe('facebook/react')
   })
 
   it('スキーマ不一致は UpstreamError を投げる', async () => {
