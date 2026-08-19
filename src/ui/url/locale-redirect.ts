@@ -60,3 +60,30 @@ export function localeRedirectExclusionPattern(
 export function buildLocaleRedirectSource(locales: readonly string[] = LOCALES): string {
   return `/:path(${localeRedirectExclusionPattern(locales)})`
 }
+
+/**
+ * `next.config.ts` の `redirects()` にそのまま渡せる `destination` 文字列
+ * （PR #96・プレビュー 500 障害の修正）。
+ *
+ * `:path` を素のトークンのまま宛先に書くと、Cloudflare プレビュー
+ * （OpenNext Cloudflare アダプタ = `@opennextjs/aws` の
+ * `dist/core/routing/matcher.js` `handleRewrites()`）が `path-to-regexp` の
+ * `compile()` を **検証オプション既定（`validate` 省略 = true）** で呼ぶため、
+ * 宛先側の `:path` はデフォルトパターン `[^\/#\?]+?`（スラッシュを含まない
+ * 単一セグメントのみ）で値を検証してしまう。`source` 側の `:path(...)` は
+ * スラッシュを含む多セグメント値（例: `repos/foo/bar`）を正しく捕捉できるが、
+ * その値を宛先の素の `:path` に渡すと `compile()` が
+ * `TypeError: Expected "path" to match "[^\/#\?]+?", but got "repos/foo/bar"`
+ * を投げ、`routingHandler` の catch 節が `/500` を返す（実機検証済み）。
+ *
+ * ローカルの `next start`（Next.js 自身のルーティング。
+ * `shared/lib/router/utils/prepare-destination.js` の `compileNonPath` は
+ * `path-to-regexp` の `compile()` を `{ validate: false }` で呼ぶため
+ * この検証に引っかからない）では再現しないため見落としやすい。
+ *
+ * 対策として宛先の `:path` にも「任意文字列」を許すカスタムパターン `(.*)` を
+ * 明示し、`compile()` の検証を通す。
+ */
+export function buildLocaleRedirectDestination(defaultLocale: string): string {
+  return `/${defaultLocale}/:path(.*)`
+}

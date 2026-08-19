@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next'
 import { DEFAULT_LOCALE, LOCALES } from './src/domain/model/locale'
-import { buildLocaleRedirectSource } from './src/ui/url/locale-redirect'
+import {
+  buildLocaleRedirectDestination,
+  buildLocaleRedirectSource,
+} from './src/ui/url/locale-redirect'
 
 /**
  * ロケール未指定パスを既定ロケール（ja）配下へリダイレクトする（US-9 / E-4）。
@@ -28,8 +31,11 @@ const nextConfig: NextConfig = {
       {
         // ロケール接頭辞（/ja, /en, ...）・_next・api・末尾セグメントが
         // 静的ファイル拡張子のパスを除く全パスを既定ロケール配下へ前置する。
+        // destination を素の `:path` にしない理由は
+        // `buildLocaleRedirectDestination()` のコメントを参照（PR #96・OpenNext
+        // Cloudflare プレビューでの 500 障害の修正）。
         source: buildLocaleRedirectSource(LOCALES),
-        destination: `/${DEFAULT_LOCALE}/:path`,
+        destination: buildLocaleRedirectDestination(DEFAULT_LOCALE),
         permanent: false,
       },
     ]
