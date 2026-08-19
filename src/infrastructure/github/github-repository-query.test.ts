@@ -42,6 +42,33 @@ describe('GithubRepositoryQuery', () => {
     expect(requests[0].searchParams.get('per_page')).toBe('20')
   })
 
+  it('perPage を per_page パラメータへそのまま渡す', async () => {
+    await makeQuery().search(searchQuery({ keyword: 'react', perPage: 100 }))
+
+    expect(requests[0].searchParams.get('per_page')).toBe('100')
+  })
+
+  it('sort が relevance のときは sort / order パラメータを付けない（GitHub の既定挙動に委ねる）', async () => {
+    await makeQuery().search(searchQuery({ keyword: 'react', sort: 'relevance' }))
+
+    expect(requests[0].searchParams.has('sort')).toBe(false)
+    expect(requests[0].searchParams.has('order')).toBe(false)
+  })
+
+  it('sort が stars のときは sort=stars&order=desc を付ける', async () => {
+    await makeQuery().search(searchQuery({ keyword: 'react', sort: 'stars' }))
+
+    expect(requests[0].searchParams.get('sort')).toBe('stars')
+    expect(requests[0].searchParams.get('order')).toBe('desc')
+  })
+
+  it('sort が updated のときは sort=updated&order=desc を付ける', async () => {
+    await makeQuery().search(searchQuery({ keyword: 'react', sort: 'updated' }))
+
+    expect(requests[0].searchParams.get('sort')).toBe('updated')
+    expect(requests[0].searchParams.get('order')).toBe('desc')
+  })
+
   it('403 かつレート制限枯渇なら RateLimitExceededError を投げる', async () => {
     server.use(
       http.get('https://api.github.com/search/repositories', () =>

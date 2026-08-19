@@ -28,9 +28,21 @@ describe('searchResultCacheKey', () => {
   })
 
   // フィールドが増えたら `searchResultCacheKey` の構成要素を見直す（NFR-18）。
-  it('SearchQuery のフィールド集合は keyword / page の 2 つのままである（増えたら searchResultCacheKey の更新漏れを検知するガード）', () => {
+  it('SearchQuery のフィールド集合は keyword / page / sort / perPage の 4 つである（増えたら searchResultCacheKey の更新漏れを検知するガード）', () => {
     const query = searchQuery({ keyword: 'x' })
-    expect(Object.keys(query).sort()).toEqual(['keyword', 'page'])
+    expect(Object.keys(query).sort()).toEqual(['keyword', 'page', 'perPage', 'sort'])
+  })
+
+  it('ソート順が異なれば別キーになる（AR-2: キャッシュ断片化防止のため構成要素に含める）', () => {
+    const relevance = searchResultCacheKey(searchQuery({ keyword: 'next', sort: 'stars' }))
+    const updated = searchResultCacheKey(searchQuery({ keyword: 'next', sort: 'updated' }))
+    expect(relevance).not.toBe(updated)
+  })
+
+  it('表示件数が異なれば別キーになる（AR-3: キャッシュ断片化防止のため構成要素に含める）', () => {
+    const perPage20 = searchResultCacheKey(searchQuery({ keyword: 'next', perPage: 20 }))
+    const perPage50 = searchResultCacheKey(searchQuery({ keyword: 'next', perPage: 50 }))
+    expect(perPage20).not.toBe(perPage50)
   })
 })
 

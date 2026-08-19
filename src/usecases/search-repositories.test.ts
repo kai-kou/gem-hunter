@@ -44,6 +44,27 @@ describe('searchRepositories', () => {
     expect(result.items[0].fullName).toBe('facebook/react')
   })
 
+  it('sort / perPage を値オブジェクトへ変換してポートへ渡す', async () => {
+    const received: SearchQuery[] = []
+    const searchRepositories = makeSearchRepositories({ repos: fakePort(received) })
+
+    await searchRepositories({ keyword: 'react', sort: 'stars', perPage: 50 })
+
+    expect(received).toHaveLength(1)
+    expect(received[0].sort).toBe('stars')
+    expect(received[0].perPage).toBe(50)
+  })
+
+  it('sort / perPage 省略時は既定値になる', async () => {
+    const received: SearchQuery[] = []
+    const searchRepositories = makeSearchRepositories({ repos: fakePort(received) })
+
+    await searchRepositories({ keyword: 'react' })
+
+    expect(received[0].sort).toBe('relevance')
+    expect(received[0].perPage).toBe(20)
+  })
+
   it('不正なキーワードではポートを呼ばずに落とす', async () => {
     const received: SearchQuery[] = []
     const searchRepositories = makeSearchRepositories({ repos: fakePort(received) })
