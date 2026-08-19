@@ -96,7 +96,7 @@ flowchart TB
 | `INF-12` 1 リクエスト 10 秒以内 | wall clock は無制限・課金対象外。GitHub API の待ち時間は CPU を消費しない | ✅ 余裕 |
 | `INF-13` 永続ディスクを前提にしない | サーバーレスなので構造的に満たす | ✅ |
 | `INF-14` 単一リージョンで成立 | エッジ実行だが、アプリはどこで動いても同じ（リージョン固有の前提を持たない） | ✅ |
-| `INF-15`〜`INF-19` シークレット | `wrangler secret put`（GA）を環境ごとに使う。Secrets Store は open beta のため採用しない | ✅ |
+| `INF-15`〜`INF-19` シークレット | `wrangler versions secret put`（GA・§7.2.1）を環境ごとに使う。Secrets Store は open beta のため採用しない | ✅ |
 | `INF-20` トリガーは git push / マージのみ | 原則は GitHub Actions。⚠️ **Actions 制限中はセッション実行が暫定運用**（`D-23`・§7.5 / §8） | ⚠️ 暫定緩和中 |
 | `INF-21` ロールバック | `wrangler rollback` / `wrangler versions deploy` | ✅ |
 | `INF-22` 失敗の通知 | GitHub Actions の失敗通知 | ✅ |
@@ -127,7 +127,7 @@ flowchart TB
 | **Node.js Middleware** | アダプタが未対応で、検出するとビルドを早期エラーにする | 使わない |
 | **`proxy.ts`**（Next 16 で `middleware.ts` から改名） | アダプタでの動作が一次情報で確認できない（未確認） | ルート `app/page.tsx`（Server Component）内で `headers()` から `accept-language` を読み `redirect('/ja')` する |
 | `next/image` の最適化 | Cloudflare Images は月 5,000 変換の無料枠があるが、検索結果の大量アバターで unique 変換が膨らむ | GitHub のアバター URL のサイズパラメータ（`?s=N`）をそのまま使う（`INF-11`） |
-| Secrets Store | open beta で Super Administrator ロールを要求する | `wrangler secret put`（GA） |
+| Secrets Store | open beta で Super Administrator ロールを要求する | `wrangler versions secret put`（GA・§7.2.1） |
 | Bot Fight Mode | 有効化すると WAF の Skip が効かず正当な API リクエストがチャレンジされうる | 有効化しない（Rate Limiting binding で足りる） |
 
 > 🔵 **i18n（`E-4` / `SP-2`）への含意**: `/` → `/ja` のリダイレクトを **middleware で実装しない**。`next-intl` を採用する場合も、ルーティング機能ではなくメッセージカタログ API（`NextIntlClientProvider` / `getTranslations`）だけを使う分割にすれば、`proxy.ts` の未確認問題を構造的に踏まない。`SP-2` 着手前に `next-intl` の現行版仕様を context7 で一次確認する。
@@ -435,7 +435,7 @@ GitHub が発行する App の秘密鍵は **PKCS#1**（`-----BEGIN RSA PRIVATE 
 openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
 ```
 
-- 🔴 **変換結果をファイルに書かない**。上記のようにパイプで `wrangler secret put` へ直接渡す（`INF-5` / 秘密のディスク残留を避ける）
+- 🔴 **変換結果をファイルに書かない**。上記のようにパイプで `wrangler versions secret put` へ直接渡す（`INF-5` / 秘密のディスク残留を避ける・投入コマンドの理由は §7.2.1）
 - 🔴 **改行がリテラルの `\n` にエスケープされた形で供給される経路がある**（複数行の鍵をシークレット UI へ貼る場合）。そのまま `openssl` に渡すと `Could not read key from <stdin>` で失敗し、**空のシークレットが登録されて実行時まで気づけない**。§7.2 のとおり正規化と `set -o pipefail` をセットで使う（2026-08-18 に実測確認済み）
 - Worker 側は `importKey("pkcs8", …, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"])` で読み、`iat` / `exp` / `iss`（App の Client ID）を含む JWT を RS256 で署名する
 - **`exp` は最大 10 分**（GitHub 側の上限）。時計ずれ対策として `iat` を 60 秒戻す
