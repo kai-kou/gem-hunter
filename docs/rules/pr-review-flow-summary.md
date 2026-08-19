@@ -18,7 +18,7 @@
 
 ## PR 作成時の必須事項（コマンド仕様は各ツールの description に従う）
 
-1. `mcp__github__create_pull_request`（`head`={作業ブランチ} / `base`=main）。本文に **`Session-Id: $CLAUDE_CODE_SESSION_ID`**・`Sprint Goal:` 1 行・`sp:N` を必ず含める（`--mine` 所有判定と done_sp 計測の前提）
+1. `mcp__github__create_pull_request`（`head`={作業ブランチ} / `base`=main）。本文に **`Session-Id: $CLAUDE_CODE_SESSION_ID`**・`Sprint Goal:` 1 行・`sp:N`・**`Team:` トレーラー**（例 `Team: fan-out(3)`・Issue の `編成` 欄の同期コピー）を必ず含める（`--mine` 所有判定と done_sp 計測の前提）。🔴 **`SP-n` のスプリント PR には `Closes #N` を書かない**（Issue のクローズは `pr-review-watcher` Step 7 の最終アクション）
 2. **PR 存在確認（必須・L-050）**: `mcp__github__list_pull_requests` で `head` を指定して実在を確認する（作成の成否をレスポンスだけで判断しない）
 3. Slack 通知: `python3 tools/slack_notify.py pr --pr-url ... --pr-title "[PR作成] ..." --branch ...`
 4. **Layer 1 セルフレビュー**: `Skill(code-review)` を必ず実行 → **指摘は全件 PR の行単位インラインコメントで記録**（指摘ゼロでも `event="COMMENT"` のレビューを 1 件投稿する・#461）

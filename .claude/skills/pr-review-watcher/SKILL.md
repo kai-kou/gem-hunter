@@ -156,11 +156,18 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
    **次 firing 必須**: {条件付き受け入れのときだけ・無ければ「なし」}
    **後続スプリントへ送る項目**: {箇条書き}
    **Issue クローズ条件**: {1 行}
-   進捗: Sprint Review まで完了
+   進捗: Sprint Review まで完了。次は retrospective スキル起動
    ```
 
 4. 続けて **`retrospective` スキルを起動** する（KPT 生成と Try の Issue 化。既存仕様のまま）。
-5. 🔴 上記 1〜4 が未実施のまま完了報告しない（下記「注意事項」に完了条件として追加）。
+5. **対象 Issue をクローズする**（本ステップの最終アクション）。判定が `rejected` / `accepted_with_conditions` で
+   次 firing に持ち越すものがある場合は **open のまま残す**（`status:in-progress` も維持）。
+6. 🔴 上記 1〜5 が未実施のまま完了報告しない（下記「注意事項」に完了条件として追加）。
+
+🔴 **`SP-n` の PR 本文に `Closes #{Issue番号}` を書かない**（`pr-review-flow.md` の標準テンプレートの例外）。
+書くとマージ時点で Issue が閉じ、Step 7 が中断したときに **`sprint-cycle-router` Step 3（`status:in-progress`
+かつ open の stale Issue を再開）が拾えなくなる**（= レビューとレトロが黙って永久に実施されない）。
+クローズは本ステップ 5 が行うため、Issue は Step 7 完了まで open + `status:in-progress` のまま残す。
 
 新ラベル（`status:conditionally-accepted` 等）・新 state ファイル・新ディレクトリ規約は作らない。
 記録先は既存の仕組み（Issue コメント / `content/discussions/` / `retrospective` スキルの出力）に限定する。
