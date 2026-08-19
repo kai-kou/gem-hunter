@@ -74,7 +74,7 @@ export function RepositoryList({
                 {numberFormat.format(item.stars)}
               </span>
               <span>
-                {labels.updatedAt} {dateFormat.format(item.updatedAt)}
+                {labels.updatedAt} {dateFormat.format(item.lastPushedAt)}
               </span>
             </p>
             {item.topics.length > 0 ? (

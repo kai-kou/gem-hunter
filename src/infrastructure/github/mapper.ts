@@ -24,7 +24,8 @@ export function toSearchResult(raw: unknown): SearchResult {
       description: item.description,
       primaryLanguage: item.language,
       stars: item.stargazers_count,
-      updatedAt: new Date(item.updated_at),
+      // 🔴 「最終更新日」は pushed_at を使う（メタデータ更新で動く updated_at ではない・domain-model.md §2.2）
+      lastPushedAt: new Date(item.pushed_at),
       topics: item.topics ?? [],
       htmlUrl: item.html_url,
     })),

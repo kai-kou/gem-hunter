@@ -19,7 +19,8 @@ describe('toSearchResult', () => {
     expect(react.owner.avatarUrl).toBe('https://avatars.githubusercontent.com/u/69631?v=4')
     expect(react.stars).toBe(233000)
     expect(react.primaryLanguage).toBe('JavaScript')
-    expect(react.updatedAt.toISOString()).toBe('2026-08-18T09:00:00.000Z')
+    // 🔴 lastPushedAt は pushed_at 由来（フィクスチャの updated_at とは異なる値で区別する・domain-model.md §2.2）
+    expect(react.lastPushedAt.toISOString()).toBe('2026-08-15T03:00:00.000Z')
     expect(react.topics).toEqual(['javascript', 'react'])
   })
 

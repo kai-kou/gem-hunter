@@ -13,7 +13,7 @@ export type RepositorySummary = {
   readonly description: string | null
   readonly primaryLanguage: string | null
   readonly stars: number
-  readonly updatedAt: Date
+  readonly lastPushedAt: Date
   readonly topics: readonly string[]
   readonly htmlUrl: string
 }

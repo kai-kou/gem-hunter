@@ -14,7 +14,7 @@ const summary: RepositorySummary = {
   description: 'The library for web and native user interfaces.',
   primaryLanguage: 'JavaScript',
   stars: 233000,
-  updatedAt: new Date('2026-08-18T00:00:00Z'),
+  lastPushedAt: new Date('2026-08-18T00:00:00Z'),
   topics: ['javascript', 'react'],
   htmlUrl: 'https://github.com/facebook/react',
 }

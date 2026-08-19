@@ -18,6 +18,7 @@ export const repositoryDto = z.object({
   language: z.string().nullable(),
   stargazers_count: z.number(),
   updated_at: z.string(),
+  pushed_at: z.string(),
   topics: z.array(z.string()).optional(),
   owner: ownerDto,
 })
