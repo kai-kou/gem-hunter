@@ -343,20 +343,40 @@ npx opennextjs-cloudflare build
 npx wrangler versions upload --preview-alias bootstrap
 
 # 3. シークレット投入（非対話・GitHub App 方式 / `D-20`）
-printf '%s' "$GITHUB_APP_CLIENT_ID"       | npx wrangler secret put GITHUB_APP_CLIENT_ID
-printf '%s' "$GITHUB_APP_INSTALLATION_ID" | npx wrangler secret put GITHUB_APP_INSTALLATION_ID
-printf '%s' "$RATE_LIMIT_SALT"            | npx wrangler secret put RATE_LIMIT_SALT
+# 🔴 本プロジェクトは version + preview alias 運用のため `wrangler secret put` は使えない（下記 §7.2.1）
+printf '%s' "$GITHUB_APP_CLIENT_ID"       | npx wrangler versions secret put GITHUB_APP_CLIENT_ID
+printf '%s' "$GITHUB_APP_INSTALLATION_ID" | npx wrangler versions secret put GITHUB_APP_INSTALLATION_ID
+printf '%s' "$RATE_LIMIT_SALT"            | npx wrangler versions secret put RATE_LIMIT_SALT
 
 # 秘密鍵は PKCS#8 へ変換して投入する（理由は §7.6）。中間ファイルを作らずパイプで渡す
 # ⚠️ 供給元によっては改行がリテラルの \n にエスケープされているため、先に正規化する
 set -o pipefail   # openssl の失敗をパイプに埋もれさせない（空シークレット登録の防止）
 printf '%s\n' "${GITHUB_APP_PRIVATE_KEY//\\n/$'\n'}" \
   | openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
-  | npx wrangler secret put GITHUB_APP_PRIVATE_KEY_PKCS8
+  | npx wrangler versions secret put GITHUB_APP_PRIVATE_KEY_PKCS8
 
 # 4. 本番デプロイ
 npx wrangler deploy
 ```
+
+### 7.2.1. 🔴 シークレットは `wrangler versions secret put` で投入する（実測 2026-08-19・#67）
+
+本プロジェクトは **version + preview alias 運用**（`wrangler versions upload`。`wrangler deploy` を常用しない）のため、`wrangler secret put` は次のエラーで失敗する:
+
+```
+✘ [ERROR] Secret edit failed. You attempted to modify a secret, but the latest version of your Worker isn't currently deployed.
+```
+
+これは「バージョン運用とシークレットを併用したときの事故（意図しないデプロイ）を防ぐための Cloudflare 側の制限」であり、環境不良ではない。**デプロイせずにシークレットだけ更新する `wrangler versions secret put` を使う**（本プロジェクトの標準経路）。
+
+```bash
+printf '%s' "$V" | npx wrangler versions secret put KEY --message "投入理由"
+npx wrangler versions view <VERSION_ID>   # 投入結果は Secrets 欄で確認する
+```
+
+- 投入すると **その時点の最新バージョンのコード + 新しいシークレット** で新バージョンが作られる（デプロイはされない）
+- その後 `wrangler versions upload` で作る新しいバージョンは **既存のシークレットを引き継ぐ**（`versions view` の `Secrets:` 欄で確認できる）
+- ⚠️ `wrangler secret list` は **デプロイ済みバージョン** を見るため、versions 運用中は空の `[]` を返すことがある。投入確認は `wrangler versions view <VERSION_ID>` で行う
 
 ### 7.3. 使うコマンド（一覧）
 
@@ -366,7 +386,7 @@ npx wrangler deploy
 | プレビュー版のアップロード | `wrangler versions upload --preview-alias pr-<N> --tag "$SHA"` |
 | 段階的な本番反映 | `wrangler versions deploy <VID>@100 -y` |
 | ロールバック | `wrangler rollback` / `wrangler versions list` |
-| シークレット | `printf '%s' "$V" \| wrangler secret put KEY` / `wrangler secret bulk` |
+| シークレット | `printf '%s' "$V" \| wrangler versions secret put KEY`（version 運用のため `secret put` は不可・§7.2.1） |
 | 型生成 | `wrangler types --env-interface CloudflareEnv` |
 | ログ | `wrangler tail --format json --status error` |
 | 状態確認 | `wrangler deployments list --json` |
@@ -501,7 +521,7 @@ done
 | # | 設定 | 場所 |
 |---|---|---|
 | 1 | **invocation ログを無効化する** | `wrangler.jsonc` の `observability.logs.invocation_logs: false` |
-| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | `src/infrastructure/platform/rate-limit.ts`。salt は `wrangler secret put RATE_LIMIT_SALT` |
+| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | `src/infrastructure/platform/rate-limit.ts`。salt は `wrangler versions secret put RATE_LIMIT_SALT`（§7.2.1） |
 | 3 | **Bot Fight Mode を有効化しない** | Dashboard（既定オフのまま触らない） |
 | 4 | **WAF Rate limiting rules を使わない** | Free は 1 ルール・IP 固定で `AR-5`（ログイン有無での枠分け）に使えない |
 
