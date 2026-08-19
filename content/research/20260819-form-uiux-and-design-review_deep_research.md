@@ -36,6 +36,34 @@
 
 **MOJ Design System**: 検索エージェント 5 体のいずれの結果にも MOJ 固有の URL は含まれていなかった。journal から回収できず（要追加調査）。
 
+---
+
+### 1.1. 追補: 一次情報の追加取得（2026-08-19 JST・本セッションで実施）
+
+上記の穴を埋めるため、`WebFetch` が本文を取得できなかった SPA（Material Design 3 / Apple HIG）を **実ブラウザ（Playwright + プリインストール Chromium）でレンダリングして逐語取得** し、GOV.UK / Primer / MOJ はドキュメントとソースを直接取得した。以下はすべて **一次情報からの逐語確認済み**。
+
+| デザインシステム | 項目 | 値 | 逐語・変数名 | 出典 |
+|---|---|---|---|---|
+| Apple HIG | ボタンの最小ヒット領域 | **44×44 pt**（visionOS は 60×60 pt） | "a button needs a hit region of at least 44x44 pt — in visionOS, 60x60 pt" | https://developer.apple.com/design/human-interface-guidelines/buttons |
+| Material Design 3 | アイコンボタンのターゲットサイズ | **48×48 dp** | "Extra small and small icon buttons must have a target size of 48x48dp or larger to be accessible." | https://m3.material.io/components/buttons/specs |
+| Material Design 3 | テキストフィールドの高さ / ターゲットサイズ | **56 dp**（filled / outlined 共通） | `Default container height 56dp` / `Target size 56dp` | https://m3.material.io/components/text-fields/specs |
+| GOV.UK Frontend | text input の高さ | **40px**（2.5rem） | `height: base.govuk-px-to-rem(40px)` | `alphagov/govuk-frontend` `packages/govuk-frontend/src/govuk/components/input/_mixin.scss` |
+| GOV.UK Frontend | text input のフォントサイズ | **19px / 行間 25px**（ブレークポイントに依らず固定） | `govuk-font($size: 19)`・スケール定義に "Stay at 19/25 at all sizes" | `settings/_typography-responsive.scss` |
+| GOV.UK Frontend | ボタンの実効高さ | **約 38px**（line-height 19 + padding 8/7 + border 2/2） | `_mixin.scss` の padding 計算 | `packages/govuk-frontend/src/govuk/components/button/_mixin.scss` |
+| GOV.UK | 44px タップターゲットの保証 | **していない** | Issue #2060 で「WCAG AAA の 44×44px は満たしていないが、要求されているのは AA のみ」とチームが回答 | https://github.com/alphagov/govuk-frontend/issues/2060 |
+| MOJ Design System | フォームコントロールの寸法 | **GOV.UK を継承**（固有指針なし） | "Use the MOJ Design System alongside the GOV.UK Design System." | https://design-patterns.service.justice.gov.uk/ |
+| GitHub Primer | control size トークン | xsmall **24px** / small **28px** / medium **32px** / large **40px** / xlarge **48px** | `--control-*-size` | https://primer.style/foundations/primitives/size |
+| GitHub Primer | coarse pointer 時のコントロール高さ拡大 | **なし**（変化するのは要素間 gap のみ: coarse 0.75rem/1rem・fine 0.5rem） | 同ページ "Responsive control stack sizes" | https://primer.style/foundations/primitives/size |
+| shadcn/ui（`new-york-v4`） | Button / Input の高さ | `default: h-9`（36px）/ `sm: h-8` / `lg: h-10` / Input `h-9` | registry ソース | `shadcn-ui/ui` `apps/v4/registry/new-york-v4/ui/button.tsx` |
+
+**食い違いの整理と採用方針**:
+
+- **44px（Apple HIG・WCAG 2.5.5）と 48dp（M3）と 40px（GOV.UK / Primer large）で食い違う**。dp は Android の密度非依存単位で CSS px と 1:1 対応しないため、Web の実装基準としては **CSS px 基準で一致する 44px（WCAG 2.5.5 = Apple HIG）を主要導線に採る** のが妥当。
+- **GOV.UK は 44px を保証していない**（AA 適合を要件としているため）。つまり「公共系の実装でも 40px は妥当な水準」であり、二次的コントロールの `--size-control-lg` を 40px に置く根拠になる。
+- **shadcn/ui のデフォルト（36px）はどのガイドラインの推奨も満たさない** 中間値であり、主要導線にそのまま使わない。
+
+**環境上の注意（後続セッション向け）**: このコンテナの Chromium は TLS 1.3 のハンドシェイクに失敗するため、Playwright で外部サイトを開く場合は `launch({ args: ['--ssl-version-max=tls1.2'] })` が必要（TLS 検証の無効化ではない）。また Apple HIG は `networkidle` を待つとタイムアウトするため `domcontentloaded` + 待機に切り替える。
+
 **Apple HIG「44×44pt」の扱い**（重要な注意）: superdesign.dev のブログが「Apple HIG の最小タップターゲットは 44×44pt で、オリジナル iPhone 以来の慣行」と主張したクレームは、敵対的検証で **2 票が反証・KILLED 判定**（詳細は §9）。ただし反証の内容は「44×44pt という数値自体」ではなく「オリジナル iPhone 以来という歴史的経緯」の部分であり、数値自体は複数の反証票の中でも「現行の Apple HIG ガイダンスとしては正しい」と評価されている。**44×44pt という数値は journal 内で正式に primary（Apple 公式 HIG ページ）から直接引用・逐語確認されてはいない**（JS レンダリングのため WebFetch が本文を取得できなかったと検証エージェントが報告している）ため、実装前に `developer.apple.com/design/human-interface-guidelines` を直接確認することを推奨する。
 
 ---

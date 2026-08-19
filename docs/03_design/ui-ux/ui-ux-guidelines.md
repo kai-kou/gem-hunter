@@ -80,7 +80,7 @@ CSS の `@theme` に以下の **セマンティックな名前** で定義する
 | `--size-control-sm` | 小型コントロール | `28px` | Primer `--control-small-size`。[Primer Primitives: Size](https://primer.style/foundations/primitives/size) |
 | `--size-control-md` | 既定 | `32px` | Primer `--control-medium-size`。[Primer Primitives: Size](https://primer.style/foundations/primitives/size) |
 | `--size-control-lg` | 大型コントロール | `40px` | GOV.UK の text input 高さ（`alphagov/govuk-frontend` `_mixin.scss` の `height: govuk-px-to-rem(40px)`）/ Primer `--control-large-size` |
-| `--size-control-xl` | 主要導線 | `44px` | WCAG 2.2 2.5.5（AAA）相当。[Understanding SC 2.5.5](https://www.w3.org/WAI/WCAG21/Understanding/target-size.html) |
+| `--size-control-xl` | 主要導線 | `44px` | WCAG 2.2 2.5.5（AAA）相当。[Understanding SC 2.5.5](https://www.w3.org/WAI/WCAG21/Understanding/target-size.html) / Apple HIG が **44×44 pt** を最小ヒット領域として明記（[Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)・逐語: "a button needs a hit region of at least 44x44 pt"） |
 | `--text-control-min` | 入力系コントロールの最小フォントサイズ | `1rem`（16px） | iOS Safari は 16px 未満の入力欄にフォーカスすると自動ズームする |
 
 #### 🔴 必須
@@ -98,6 +98,13 @@ CSS の `@theme` に以下の **セマンティックな名前** で定義する
 #### なぜ 24px では足りないのか
 
 WCAG 2.2 の 2.5.8（AA）が定める 24×24 CSS px は **適合の下限であって、快適な操作性の目標値ではない**。2.5.8 には間隔例外（隣接ターゲットと直径 24px の円が交差しなければ、視覚サイズが 24px 未満でも適合しうる）があり、法規適合の最低ラインに過ぎない。実際のタップ操作しやすさ（誤タップ防止・手指の震え・粗大運動障害への配慮）を狙うなら、2.5.5（AAA）相当の 44×44 CSS px が実務上のベストプラクティスとされる。
+
+主要なプラットフォームのガイドラインも下限を 24px より大きく置いている（いずれも一次情報で確認済み）:
+
+- **Apple Human Interface Guidelines**: "a button needs a hit region of at least 44x44 pt — in visionOS, 60x60 pt"（[Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)）
+- **Material Design 3**: "Extra small and small icon buttons must have a target size of 48x48dp or larger to be accessible."（[Buttons specs](https://m3.material.io/components/buttons/specs)）。テキストフィールドは container height / target size とも **56dp**（[Text fields specs](https://m3.material.io/components/text-fields/specs)）
+
+本プロジェクトが `--size-control-xl` を 48dp / 56dp ではなく **44px** に置いたのは、WCAG 2.5.5 の CSS px 基準と Apple HIG の pt 基準が一致する値であり、dp（Android の密度非依存単位）は CSS px と 1:1 対応しないため。
 
 本プロジェクトの適合目標は `NFR-10` により **AA** であるため、`--size-control-xl`（44px）の採用は「AAA 準拠を謳うもの」ではない。あくまで主要導線に社内ベストプラクティスとして上乗せしているだけであり、AA 適合の判定自体は `--size-control-xs`（24px）で満たされる。
 
