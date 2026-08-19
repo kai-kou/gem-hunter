@@ -1,28 +1,41 @@
+import { SEARCH_PARAM_KEYS } from '../shared/url/search-params'
 import { Button } from './components/button'
 import { Input } from './components/input'
 
+type SearchFormLabels = {
+  inputLabel: string
+  placeholder: string
+  submit: string
+}
+
+type SearchFormProps = {
+  keyword: string
+  action: string
+  labels: SearchFormLabels
+}
+
 /**
- * 検索フォーム（US-6 / AC-2）。
+ * 検索フォーム（US-9 / AC-2）。
  * GET フォームなのでクライアント JS を持たない（E-8 / NFR-3）。
- * 送信でキーワードが URL のクエリに反映される。
+ * 送信でキーワードが URL のクエリに反映される（パラメータ名は SEARCH_PARAM_KEYS が唯一の正本）。
  */
-export function SearchForm({ keyword }: { keyword: string }) {
+export function SearchForm({ keyword, action, labels }: SearchFormProps) {
   return (
-    <form action="/" method="get" role="search" className="flex gap-2">
-      <label htmlFor="q" className="sr-only">
-        検索キーワード
+    <form action={action} method="get" role="search" className="flex gap-2">
+      <label htmlFor={SEARCH_PARAM_KEYS.keyword} className="sr-only">
+        {labels.inputLabel}
       </label>
       <Input
-        id="q"
-        name="q"
+        id={SEARCH_PARAM_KEYS.keyword}
+        name={SEARCH_PARAM_KEYS.keyword}
         type="search"
         size="xl"
         defaultValue={keyword}
-        placeholder="キーワードで GitHub を検索（例: react）"
+        placeholder={labels.placeholder}
         className="flex-1"
       />
       <Button type="submit" size="xl">
-        検索
+        {labels.submit}
       </Button>
     </form>
   )
