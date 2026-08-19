@@ -106,6 +106,13 @@ else
   skip_check "依存規則 (check_architecture_boundaries.py)" "スクリプトが見つかりません"
 fi
 
+# 4.5. UI 寸法検査（コントロールサイズ・フォントサイズのトークン化ゲート）
+if [ -f "$REPO_ROOT/tools/check_ui_dimensions.py" ]; then
+  run_check "UI 寸法検査 (check_ui_dimensions.py)" python3 tools/check_ui_dimensions.py
+else
+  skip_check "UI 寸法検査 (check_ui_dimensions.py)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
