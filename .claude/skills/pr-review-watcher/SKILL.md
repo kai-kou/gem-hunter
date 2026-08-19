@@ -131,8 +131,10 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 - `post-merge-publish-check.sh`（PostToolUse・matcher `mcp__github__merge_pull_request`）が
   マージ成功を検知してドリフトを判定し、反映が要るときだけ指示を注入する。指示が来たら
   `publish-sync` スキルに従って **push まで完遂する**（ユーザー確認は不要）。
-- 🔴 **本番反映（デプロイ）もセッションが実行する**: Actions 制限中は本番デプロイ用ワークフローも無いため、
-  `push` まで完遂したら続けてセッションが `npm run deploy` を実行し本番反映まで完遂する（Actions 復旧を待たない）。
+- 🔴 **本番反映（デプロイ）もセッションが実行する**（飼い主の明示指示・2026-08-19・`D-23`。`permissions.allow` に登録済み）:
+  Actions 制限中は本番デプロイ用ワークフローも無いため、`push` まで完遂したら続けてセッションが `npm run deploy` を
+  実行し本番反映まで完遂する（Actions 復旧を待たない）。⚠️ **これは「デプロイ実行」の委任であって、Layer 1 セルフレビュー・
+  指摘対応・マージ条件を省略してよいという意味ではない**（レビュー規律は従来どおり）。
 - **反映できないセッションでも黙って終わらせない**。`add_repo` が提供されない自動タスク実行モード
   （scheduled trigger・GitHub Issue/PR 起動・L-117）では push が 403 になるため、その場で
   `publish-sync` スキルの §5 に従って `[publish-sync]` Issue に失敗段階を記録する。

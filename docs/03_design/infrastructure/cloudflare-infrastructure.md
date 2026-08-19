@@ -429,6 +429,8 @@ openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
 
 ### 8.1. 🔴 現状: GitHub Actions は使用しない（暫定運用・`D-23`）
 
+> **この切り替えの根拠は飼い主の明示指示（2026-08-19・逐語）**: 「GitHub Actions について、制限中なので自前でチェックする仕組みに切り替えてください。」本番デプロイをセッションから実行することについても同日「本番デプロイについて自動で行えるように許可リストに追加してください。」の指示を受けて `.claude/settings.json` の `permissions.allow` に wrangler の deploy 系を追加済み。**この 2 件を超える範囲（レビュー・セルフレビューの省略等）は認めない。**
+
 **原則（GitHub Actions が復帰したら戻す構成）は「GitHub Actions + `cloudflare/wrangler-action` に一本化・Workers Builds は不採用」だが、GitHub Actions がプラットフォーム側の制限で起動できないため、現在は CI とデプロイの両方を Claude がセッションから直接実行する。**
 
 `.github/workflows/deploy-preview.yml` と `deploy-production.yml` は撤去済み（起動できない赤いチェックが毎 PR に付くと本当の失敗が埋もれるため）。品質チェックは `tools/run_checks.sh`（詳細は同スクリプトを参照。本書は参照のみ）で行う。
