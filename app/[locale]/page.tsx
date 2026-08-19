@@ -94,7 +94,14 @@ export default async function LocaleHome({
                 .replace('{total}', state.result.totalCount.toLocaleString(locale === 'ja' ? 'ja-JP' : 'en-US'))
                 .replace('{shown}', String(state.result.items.length))}
             </p>
-            <RepositoryList items={state.result.items} />
+            <RepositoryList
+              items={state.result.items}
+              labels={{
+                empty: messages.home.empty,
+                starCount: messages.home.starCount,
+                updatedAt: messages.home.updatedAt,
+              }}
+            />
           </>
         ) : null}
       </section>

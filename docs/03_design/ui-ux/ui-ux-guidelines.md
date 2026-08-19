@@ -55,14 +55,60 @@ CSS の `@theme` に以下の **セマンティックな名前** で定義する
 | `--color-accent` / `--color-accent-fg` | リンク・主ボタン | 背景に対し 4.5:1 以上 / フォーカスリングは **3:1 以上** |
 | `--color-danger` / `--color-danger-fg` | エラー表示 | 4.5:1 以上 |
 
-### 2.2. 🔴 実値の確定手順（`SP-2` の `E-9` で実施）
+### 2.2. ✅ 実値の確定結果（`SP-2` の `E-9` で確定・2026-08-19）
 
-1. 上記 **9 トークン** × ライト/ダークの計 **18 値** を候補として置く（§2.1 の表の全トークンを数える。系統は 5 つだがトークンは 9 つある）
-2. **各ペアのコントラスト比を実測する**（自動チェックを CI に載せる。目視で「たぶん足りている」で通さない）
-3. 4.5:1（`--color-border` は 3:1）を下回るものを調整する
-4. 実測値を本書 §2.1 の表に追記して確定させる
+`tools/check_contrast.py`（`run_checks.sh` に組み込み済み）で実測した結果、以下の 9 トークン × ライト/ダーク計 18 値で全ペアがしきい値を満たす。実体は `app/globals.css` の既存 shadcn raw 変数（`--background` / `--muted` / `--foreground` / `--muted-foreground` / `--border` / `--accent` / `--accent-foreground` / `--destructive` / `--destructive-foreground`）に意味づけとして重ね、`@theme inline` で `--color-*` としてエイリアスする（採用方針は下記コラム参照）。
 
-⚠️ **現時点で実値は未確定**。`NFR-13` が「デザイン着手時に確定させる」としているのは、後から変えると全画面に波及するため。**`SP-2` を越えて未確定のまま進めない。**
+**ライトテーマ**
+
+| トークン | 値（oklch） | 比較先 | 実測コントラスト比 | しきい値 | 判定 |
+|---|---|---|---|---|---|
+| `--color-bg` | `oklch(1 0 0)` | — | — | — | — |
+| `--color-bg-subtle` | `oklch(0.97 0 0)` | — | — | — | — |
+| `--color-fg` | `oklch(0.145 0 0)` | vs `--color-bg` | 19.79:1 | 4.5:1 | PASS |
+| `--color-fg` | 同上 | vs `--color-bg-subtle` | 18.15:1 | 4.5:1 | PASS |
+| `--color-fg-muted` | `oklch(0.5 0 0)`（旧 `0.556` から調整） | vs `--color-bg` | 6.00:1 | 4.5:1 | PASS |
+| `--color-fg-muted` | 同上 | vs `--color-bg-subtle` | 5.50:1 | 4.5:1 | PASS |
+| `--color-border` | `oklch(0.6 0 0)`（旧 `0.922` から調整） | vs `--color-bg` | 3.95:1 | 3.0:1 | PASS |
+| `--color-accent` | `oklch(0.42 0.14 250)`（旧 `oklch(0.97 0 0)` から調整。グレーではなく彩度を持たせた） | vs `--color-bg` | 8.36:1 | 4.5:1 | PASS |
+| `--color-accent-fg` | `oklch(1 0 0)` | vs `--color-accent` | 8.36:1 | 4.5:1 | PASS |
+| `--color-danger` | `oklch(0.577 0.245 27.325)`（既存値のまま） | vs `--color-bg` | 4.76:1 | 4.5:1 | PASS |
+| `--color-danger-fg` | `oklch(1 0 0)`（新規追加） | vs `--color-danger` | 4.76:1 | 4.5:1 | PASS |
+
+**ダークテーマ**
+
+| トークン | 値（oklch） | 比較先 | 実測コントラスト比 | しきい値 | 判定 |
+|---|---|---|---|---|---|
+| `--color-bg` | `oklch(0.145 0 0)` | — | — | — | — |
+| `--color-bg-subtle` | `oklch(0.269 0 0)` | — | — | — | — |
+| `--color-fg` | `oklch(0.985 0 0)` | vs `--color-bg` | 18.96:1 | 4.5:1 | PASS |
+| `--color-fg` | 同上 | vs `--color-bg-subtle` | 14.48:1 | 4.5:1 | PASS |
+| `--color-fg-muted` | `oklch(0.708 0 0)`（既存値のまま） | vs `--color-bg` | 7.63:1 | 4.5:1 | PASS |
+| `--color-fg-muted` | 同上 | vs `--color-bg-subtle` | 5.83:1 | 4.5:1 | PASS |
+| `--color-border` | `oklch(0.55 0 0)`（旧 `oklch(1 0 0 / 10%)` から不透明値へ調整） | vs `--color-bg` | 4.08:1 | 3.0:1 | PASS |
+| `--color-accent` | `oklch(0.72 0.16 250)`（旧 `oklch(0.269 0 0)` から調整） | vs `--color-bg` | 7.95:1 | 4.5:1 | PASS |
+| `--color-accent-fg` | `oklch(0.1 0 0)` | vs `--color-accent` | 8.26:1 | 4.5:1 | PASS |
+| `--color-danger` | `oklch(0.704 0.191 22.216)`（既存値のまま） | vs `--color-bg` | 6.84:1 | 4.5:1 | PASS |
+| `--color-danger-fg` | `oklch(0.1 0 0)`（新規追加） | vs `--color-danger` | 7.12:1 | 4.5:1 | PASS |
+
+#### 既存 shadcn 変数との重ね方（採用方針）
+
+**「意味づけとして重ねる」を基本とし、コントラストが未達だった 4 系統（`--muted-foreground` ライト / `--border` ライト・ダーク / `--accent` 系ライト・ダーク）だけ raw 値自体を調整した。** 新規の `--semantic-*` 変数は追加していない。理由:
+
+- `--color-border` は `border-border`（`@apply border-border` で全要素に適用済み）と同一の Tailwind ユーティリティを生成するため、新しい raw 変数へ差し替えるとエイリアスが二重定義になり cascading で意図せず片方が無視される。実際に「カード枠・区切り線」として使われる値そのものを 3:1 以上へ調整するのが本来の要求（E-9）に最も忠実
+- `--color-accent` も同様に既存の `bg-accent` 系ユーティリティと同一。現時点で `src/` 配下にアクセント色の具体的な参照箇所がまだ無い（スキャフォールド段階）ため、彩度を持たせた値へ調整しても既存コンポーネントの回帰リスクがない
+- `--color-fg-muted` は概念的に `--muted-foreground` と完全に一致するため新規変数を作らず raw 値のみ調整
+- `--color-bg` / `--color-bg-subtle` / `--color-fg` / `--color-danger` は既存値がそのまま要件を満たしたため無調整
+- `--destructive-foreground` は shadcn の標準命名パターン（`*-foreground`）に合わせて新規追加し、`--color-danger-fg` としてもエイリアスした
+
+#### 実測手順（再検証・再確定時）
+
+```bash
+python3 tools/check_contrast.py --self-test   # 変換・計算ロジックの自己テスト
+python3 tools/check_contrast.py               # app/globals.css の実値を検査（run_checks.sh に組み込み済み）
+```
+
+配色を変更する際は、必ず上記を実行してから本節の表を更新すること。
 
 ### 2.3. タイポグラフィとスペーシング
 

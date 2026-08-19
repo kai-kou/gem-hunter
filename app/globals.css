@@ -39,6 +39,19 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* セマンティックカラートークン（§2.1 の実体・E-9 / NFR-13）。
+     既存 shadcn 変数の raw 値を意味づけとして再利用する（新規 raw 変数は増やさない）。
+     コントラスト実測は tools/check_contrast.py（run_checks.sh に組み込み済み）。 */
+  --color-bg: var(--background);
+  --color-bg-subtle: var(--muted);
+  --color-fg: var(--foreground);
+  --color-fg-muted: var(--muted-foreground);
+  --color-accent-fg: var(--accent-foreground);
+  --color-danger: var(--destructive);
+  --color-danger-fg: var(--destructive-foreground);
+  --color-destructive-foreground: var(--destructive-foreground);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -68,11 +81,15 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  /* E-9: 0.556 は --color-bg-subtle（--muted 0.97）に対し 4.34:1 で 4.5:1 未達だったため 0.5 へ調整（実測 tools/check_contrast.py） */
+  --muted-foreground: oklch(0.5 0 0);
+  /* E-9: --color-accent（リンク・主ボタン）用に彩度を持たせた値へ調整。旧値 oklch(0.97 0 0) はグレーで意味的に「アクセント」ではなかった */
+  --accent: oklch(0.42 0.14 250);
+  --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
+  --destructive-foreground: oklch(1 0 0);
+  /* E-9: --color-border は UI コンポーネントとして 3:1 以上が必須。旧値 0.922 は --color-bg に対し 1.26:1 で全く未達だったため 0.6 へ調整 */
+  --border: oklch(0.6 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.87 0 0);
@@ -104,10 +121,13 @@
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /* E-9: ダーク面での視認性を確保するため彩度を持たせた明るめの青へ調整。foreground は accent 面上で 4.5:1 を満たすダーク色 */
+  --accent: oklch(0.72 0.16 250);
+  --accent-foreground: oklch(0.1 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --destructive-foreground: oklch(0.1 0 0);
+  /* E-9: --color-border は UI コンポーネントとして 3:1 以上が必須。旧値は alpha 10% の白で --color-bg に対しほぼ無地（未達）だったため不透明な 0.55 へ調整 */
+  --border: oklch(0.55 0 0);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.87 0 0);

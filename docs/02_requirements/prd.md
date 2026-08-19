@@ -583,7 +583,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | i18n ライブラリの選定 | `next-intl` を第一候補とするが、Next.js 16 での推奨構成を一次確認する | `AR-4` / `R-7` |
 | `use cache` / `cacheLife` / `cacheTag` の適用範囲 | 外部 API レスポンスのキャッシュという用途での実挙動が未検証 | `NFR-5` / `R-7` |
 | **shadcn/ui × Next.js 16 の互換性**（`TR-5` の暫定決定の前提） | 🔴 `SP-1` で実際に導入して動作確認する。**満たせない場合は [ADR 0001](../adr/0001-ui-stack.md) を supersede する新 ADR を書く**（影響度: 大 — UI 実装全体に波及） | `TR-5` / `TR-1` |
-| 配色の **実値**（コントラスト比 4.5:1 の実測） | 🔵 トークン構成（セマンティック 9 トークン × ライト/ダーク）と検証手順は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §2 で確定済み。**実値の実測確定は `SP-2`（`E-9`）で行う**。🔴 `SP-2` を越えて未確定のまま進めない | `NFR-13` |
+| ~~配色の **実値**（コントラスト比 4.5:1 の実測）~~ | ✅ **決定済み（2026-08-19・`E-9`）**: セマンティック 9 トークン × ライト/ダーク計 18 値を `tools/check_contrast.py`（自前実装・`run_checks.sh` 組み込み済み）で実測し全ペアがしきい値を満たすことを確認。実測値・採用方針は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §2.2 | `NFR-13` |
 | GitHub 利用規約の一次確認 | **第三者へ公開する時点** で実施する（Phase 番号ではなく公開の有無で判断する） | `R-8` |
 | ~~プレビュー環境のデプロイ先（サービス選定）~~ | ✅ **決定済み（2026-08-18・`D-16`）**: Cloudflare Workers の version + preview alias。記録は [ADR 0002](../adr/0002-cloudflare-workers-infrastructure.md) | `D-11` / `D-16` / `NFR-21` |
 | 🔴 **Workers Free の上限に収まるか**（p95 CPU 10 ms / Worker バンドル 3 MB gzip） | `SP-1` の初回デプロイ直後に実測する。超過した場合は Workers Paid（$5/月）への切替が必要になり、支払い方法の登録は `A-6` | `D-17` / `INF-2` / `INF-3` |

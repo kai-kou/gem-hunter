@@ -8,6 +8,8 @@
     "idle": "Enter a keyword to search.",
     "resultCount": "Showing {shown} of {total} results",
     "searchError": "Search failed: {message}",
-    "empty": "No repositories matched. Try a different keyword."
+    "empty": "No repositories matched. Try a different keyword.",
+    "starCount": "stars",
+    "updatedAt": "Updated"
   }
 }

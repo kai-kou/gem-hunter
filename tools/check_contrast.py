@@ -4,9 +4,11 @@
 SSOT: `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.1 / §2.2。
 
 `app/globals.css` の `:root`（ライト）/ `.dark`（ダーク）ブロックから
-セマンティックトークンの実 raw 変数（`--semantic-*`）を読み取り、WCAG 2.x の相対輝度式で
-コントラスト比を計算する。oklch() 記法のため、oklch → 線形 sRGB → sRGB の変換を自前実装する
-（外部ライブラリ・ネットワーク接続は使わない）。
+セマンティックトークンの実体（既存 shadcn raw 変数 `--background` / `--muted` / `--foreground` /
+`--muted-foreground` / `--border` / `--accent` / `--accent-foreground` / `--destructive` /
+`--destructive-foreground`。`@theme inline` の `--color-bg` 等はこれらへのエイリアス）を読み取り、
+WCAG 2.x の相対輝度式でコントラスト比を計算する。oklch() 記法のため、oklch → 線形 sRGB → sRGB の
+変換を自前実装する（外部ライブラリ・ネットワーク接続は使わない）。
 
 検査するペア（§2.1 の表に対応。計 9 ペア × ライト/ダーク = 18 判定）:
   fg        vs bg         (>= 4.5:1)  本文
@@ -132,11 +134,17 @@ def contrast_ratio(srgb1: tuple[float, float, float], srgb2: tuple[float, float,
 # --------------------------------------------------------------------------- CSS パース
 
 def extract_block(css_text: str, selector: str) -> str:
-    """`selector { ... }` の直近 1 ブロックの中身を返す（ネストなし前提。globals.css の実構造に対応）。"""
-    idx = css_text.find(selector)
-    if idx == -1:
+    """`selector { ... }` の直近 1 ブロックの中身を返す（ネストなし前提。globals.css の実構造に対応）。
+
+    `selector` の後ろに（空白を挟んで）`{` が続く出現だけを対象にする。`.dark` は
+    `@custom-variant dark (&:is(.dark *));` のような他行にも部分一致するため、
+    厳密な `セレクタ + 空白* + {` パターンでのみマッチさせる。
+    """
+    pattern = re.compile(re.escape(selector) + r"\s*\{")
+    m = pattern.search(css_text)
+    if not m:
         raise ValueError(f"セレクタが見つかりません: {selector!r}")
-    brace_start = css_text.find("{", idx)
+    brace_start = css_text.index("{", m.start())
     if brace_start == -1:
         raise ValueError(f"セレクタ {selector!r} の開き波括弧が見つかりません")
     depth = 0
@@ -162,30 +170,34 @@ def parse_declarations(block: str) -> dict[str, str]:
 
 # --------------------------------------------------------------------------- セマンティックトークン定義
 
-# raw 変数名（app/globals.css の :root / .dark に実値を置く。既存 shadcn 変数とは独立）
+# raw 変数名（app/globals.css の :root / .dark に実値を置く既存 shadcn 変数を意味づけとして再利用）
+# 対応表: --color-bg=background / --color-bg-subtle=muted / --color-fg=foreground /
+#        --color-fg-muted=muted-foreground / --color-border=border / --color-accent=accent /
+#        --color-accent-fg=accent-foreground / --color-danger=destructive /
+#        --color-danger-fg=destructive-foreground
 SEMANTIC_VARS = [
-    "semantic-bg",
-    "semantic-bg-subtle",
-    "semantic-fg",
-    "semantic-fg-muted",
-    "semantic-border",
-    "semantic-accent",
-    "semantic-accent-fg",
-    "semantic-danger",
-    "semantic-danger-fg",
+    "background",
+    "muted",
+    "foreground",
+    "muted-foreground",
+    "border",
+    "accent",
+    "accent-foreground",
+    "destructive",
+    "destructive-foreground",
 ]
 
 # (fg変数, bg変数, しきい値, ラベル)
 CHECK_PAIRS = [
-    ("semantic-fg", "semantic-bg", 4.5, "fg vs bg（本文）"),
-    ("semantic-fg", "semantic-bg-subtle", 4.5, "fg vs bg-subtle（本文・カード面）"),
-    ("semantic-fg-muted", "semantic-bg", 4.5, "fg-muted vs bg（メタ情報）"),
-    ("semantic-fg-muted", "semantic-bg-subtle", 4.5, "fg-muted vs bg-subtle（メタ情報・カード面）"),
-    ("semantic-border", "semantic-bg", 3.0, "border vs bg（カード枠・区切り線）"),
-    ("semantic-accent", "semantic-bg", 4.5, "accent vs bg（リンク文字色）"),
-    ("semantic-accent-fg", "semantic-accent", 4.5, "accent-fg vs accent（主ボタン文字色）"),
-    ("semantic-danger", "semantic-bg", 4.5, "danger vs bg（エラー文字色）"),
-    ("semantic-danger-fg", "semantic-danger", 4.5, "danger-fg vs danger（エラー面文字色）"),
+    ("foreground", "background", 4.5, "--color-fg vs --color-bg（本文）"),
+    ("foreground", "muted", 4.5, "--color-fg vs --color-bg-subtle（本文・カード面）"),
+    ("muted-foreground", "background", 4.5, "--color-fg-muted vs --color-bg（メタ情報）"),
+    ("muted-foreground", "muted", 4.5, "--color-fg-muted vs --color-bg-subtle（メタ情報・カード面）"),
+    ("border", "background", 3.0, "--color-border vs --color-bg（カード枠・区切り線）"),
+    ("accent", "background", 4.5, "--color-accent vs --color-bg（リンク文字色）"),
+    ("accent-foreground", "accent", 4.5, "--color-accent-fg vs --color-accent（主ボタン文字色）"),
+    ("destructive", "background", 4.5, "--color-danger vs --color-bg（エラー文字色）"),
+    ("destructive-foreground", "destructive", 4.5, "--color-danger-fg vs --color-danger（エラー面文字色）"),
 ]
 
 
@@ -208,10 +220,10 @@ def evaluate_theme(theme_name: str, decls: dict[str, str]) -> tuple[bool, list[s
         lines.append(f"[{theme_name}] 未宣言の変数: {', '.join('--' + v for v in missing)}")
         return False, lines
 
-    bg_srgb = oklch_to_srgb(*parse_oklch(decls["semantic-bg"])[:3])
+    bg_srgb = oklch_to_srgb(*parse_oklch(decls["background"])[:3])
 
     for fg_var, bg_var, threshold, label in CHECK_PAIRS:
-        bg_context = bg_srgb if bg_var == "semantic-bg" else resolve_srgb(bg_var, decls, bg_srgb)
+        bg_context = bg_srgb if bg_var == "background" else resolve_srgb(bg_var, decls, bg_srgb)
         fg_srgb = resolve_srgb(fg_var, decls, bg_context)
         bg_resolved = resolve_srgb(bg_var, decls, bg_srgb)
         ratio = contrast_ratio(fg_srgb, bg_resolved)
