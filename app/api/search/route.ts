@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server'
+import { decodeSessionCookie, SESSION_COOKIE_NAME } from '@/src/composition/auth'
 import { searchRepositoriesWithCacheStatus } from '@/src/composition/container'
 import { DomainError, DomainValidationError, NotFoundError, RateLimitExceededError, UpstreamError } from '@/src/domain/errors'
 import { searchKeyword } from '@/src/domain/model/search-keyword'
@@ -62,7 +63,14 @@ export async function GET(request: NextRequest) {
     const rawKeyword = rawParams[SEARCH_PARAM_KEYS.keyword] ?? ''
     const keyword = searchKeyword(rawKeyword)
 
-    const { search, getCacheStatus } = searchRepositoriesWithCacheStatus()
+    // SP-8: セッション Cookie があればユーザー自身のレート枠で検索する（AR-5）。
+    // このエンドポイントは元々 X-Cache-Status 観測・検証専用（用途はファイル冒頭コメント参照）
+    // であり、レート枠切替（T-7・composition/container.ts の TokenProvider 差し替え）を
+    // 外部から観測できる唯一の経路として流用する（実装手段の選択・SD-3 対象外）。
+    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
+    const session = sessionCookie ? await decodeSessionCookie(sessionCookie) : null
+
+    const { search, getCacheStatus } = searchRepositoriesWithCacheStatus(session?.accessToken)
     const result = await search({ keyword, page })
 
     // getCacheStatus() が undefined になるのは `CachingRepositoryQuery` が

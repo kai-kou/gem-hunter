@@ -12,12 +12,18 @@ import { GET } from './route'
  */
 const searchMock = vi.fn()
 const findDetailMock = vi.fn()
+// SP-8: `GithubRepositoryQuery` のコンストラクタへ渡された `token`（`TokenProvider`）を捕まえる
+// （レート枠切替・T-7 が正しい TokenProvider を container.ts から渡しているかの検証用）。
+let capturedTokenProvider: (() => Promise<string | null>) | null = null
 
 // `vi.fn().mockImplementation(() => ({...}))` を `new` すると tinyspy 経由の関数モックが
 // コンストラクタ呼び出しを正しく扱えず「is not a constructor」で失敗するケースがあったため、
 // 素の class を返す factory にする（`new` の意味論をそのまま満たす・素直で壊れにくい）。
 vi.mock('@/src/infrastructure/github/github-repository-query', () => ({
   GithubRepositoryQuery: class {
+    constructor(deps: { token: () => Promise<string | null> }) {
+      capturedTokenProvider = deps.token
+    }
     search(...args: unknown[]) {
       return searchMock(...args)
     }
@@ -25,6 +31,14 @@ vi.mock('@/src/infrastructure/github/github-repository-query', () => ({
       return findDetailMock(...args)
     }
   },
+}))
+
+// SP-8: セッション Cookie の復号（本ファイルは Cookie を送らない既存テストが大半のため、
+// 既定では null を返す実装のままにし、必要なテストだけ `mockResolvedValueOnce` で上書きする）。
+const decodeSessionCookieMock = vi.fn().mockResolvedValue(null)
+vi.mock('@/src/composition/auth', () => ({
+  decodeSessionCookie: (...args: unknown[]) => decodeSessionCookieMock(...args),
+  SESSION_COOKIE_NAME: 'gem_hunter_session',
 }))
 
 /**
@@ -48,6 +62,9 @@ function makeSearchResult(overrides: Partial<SearchResult> = {}): SearchResult {
 beforeEach(() => {
   searchMock.mockReset()
   findDetailMock.mockReset()
+  capturedTokenProvider = null
+  decodeSessionCookieMock.mockReset()
+  decodeSessionCookieMock.mockResolvedValue(null)
 })
 
 describe('GET /api/search — X-Cache-Status', () => {
@@ -111,5 +128,43 @@ describe('GET /api/search — domainErrorStatus のステータス分岐', () =>
     const res = await GET(new NextRequest('http://localhost/api/search?q=upstream-check'))
 
     expect(res.status).toBe(502)
+  })
+})
+
+describe('GET /api/search — SP-8: レート枠切替（セッション Cookie → TokenProvider）', () => {
+  it('セッション Cookie が無ければ TokenProvider はユーザートークンを返さない（installation token 側へ委ねる）', async () => {
+    searchMock.mockResolvedValue(makeSearchResult())
+
+    await GET(new NextRequest('http://localhost/api/search?q=no-session-check'))
+
+    expect(decodeSessionCookieMock).not.toHaveBeenCalled()
+  })
+
+  it('セッション Cookie を復号できたら、その accessToken を返す TokenProvider で検索する', async () => {
+    decodeSessionCookieMock.mockResolvedValueOnce({ accessToken: 'gho_session_token' })
+    searchMock.mockResolvedValue(makeSearchResult())
+
+    await GET(
+      new NextRequest('http://localhost/api/search?q=session-check', {
+        headers: { cookie: 'gem_hunter_session=encrypted-value' },
+      }),
+    )
+
+    expect(decodeSessionCookieMock).toHaveBeenCalledWith('encrypted-value')
+    expect(capturedTokenProvider).not.toBeNull()
+    await expect(capturedTokenProvider!()).resolves.toBe('gho_session_token')
+  })
+
+  it('セッション Cookie の復号に失敗（null）した場合は installation token 側へ委ねる', async () => {
+    decodeSessionCookieMock.mockResolvedValueOnce(null)
+    searchMock.mockResolvedValue(makeSearchResult())
+
+    await GET(
+      new NextRequest('http://localhost/api/search?q=invalid-session-check', {
+        headers: { cookie: 'gem_hunter_session=tampered-value' },
+      }),
+    )
+
+    expect(decodeSessionCookieMock).toHaveBeenCalledWith('tampered-value')
   })
 })
