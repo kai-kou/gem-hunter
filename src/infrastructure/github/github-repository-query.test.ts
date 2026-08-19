@@ -39,7 +39,10 @@ describe('GithubRepositoryQuery', () => {
   it('403 かつレート制限枯渇なら RateLimitExceededError を投げる', async () => {
     server.use(
       http.get('https://api.github.com/search/repositories', () =>
-        HttpResponse.json({ message: 'rate limit' }, { status: 403, headers: { 'x-ratelimit-remaining': '0' } }),
+        HttpResponse.json(
+          { message: 'rate limit' },
+          { status: 403, headers: { 'x-ratelimit-remaining': '0' } },
+        ),
       ),
     )
 

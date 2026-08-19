@@ -6,7 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview:build": "opennextjs-cloudflare build",
+    "preview:upload": "opennextjs-cloudflare build && wrangler versions upload",
+    "deploy": "opennextjs-cloudflare build && wrangler deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -40,8 +48,10 @@
     "prettier": "^3.9.6",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.11",
     "wrangler": "^4.124.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

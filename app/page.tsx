@@ -1,69 +1,69 @@
-import Image from "next/image";
+import { searchRepositoriesUseCase } from '@/src/composition/container'
+import { DomainError, InvalidSearchQueryError } from '@/src/domain/errors'
+import type { SearchResult } from '@/src/domain/model/repository'
+import { RepositoryList } from '@/src/ui/repository-list'
+import { SearchForm } from '@/src/ui/search-form'
 
-export default function Home() {
+type SearchState =
+  { status: 'idle' } | { status: 'ok'; result: SearchResult } | { status: 'error'; message: string }
+
+async function runSearch(keyword: string): Promise<SearchState> {
+  if (keyword.trim().length === 0) {
+    return { status: 'idle' }
+  }
+
+  try {
+    return { status: 'ok', result: await searchRepositoriesUseCase()({ keyword }) }
+  } catch (error) {
+    if (error instanceof InvalidSearchQueryError) {
+      return { status: 'error', message: error.message }
+    }
+    if (error instanceof DomainError) {
+      return { status: 'error', message: `検索できませんでした: ${error.message}` }
+    }
+    throw error
+  }
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string | string[] }>
+}) {
+  const params = await searchParams
+  const keyword = (Array.isArray(params.q) ? params.q[0] : params.q) ?? ''
+  const state = await runSearch(keyword)
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <h1 className="text-2xl font-semibold">gem-hunter</h1>
+      <p className="text-muted-foreground mt-1 mb-6 text-sm">
+        キーワードで GitHub のリポジトリを検索します。
+      </p>
+
+      <SearchForm keyword={keyword} />
+
+      <section className="mt-6" aria-live="polite">
+        {state.status === 'idle' ? (
+          <p className="text-muted-foreground text-sm">キーワードを入力して検索してください。</p>
+        ) : null}
+
+        {state.status === 'error' ? (
+          <p role="alert" className="text-destructive text-sm">
+            {state.message}
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+        ) : null}
+
+        {state.status === 'ok' ? (
+          <>
+            <p className="text-muted-foreground text-sm">
+              {state.result.totalCount.toLocaleString('ja-JP')} 件中 {state.result.items.length}{' '}
+              件を表示
+            </p>
+            <RepositoryList items={state.result.items} />
+          </>
+        ) : null}
+      </section>
+    </main>
+  )
 }
