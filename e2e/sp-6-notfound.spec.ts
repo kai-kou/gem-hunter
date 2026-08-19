@@ -25,6 +25,10 @@ test.describe('SP-6: 存在しないリポジトリの URL を開くと Not Foun
       await expect(page.getByText(ja.detail.notFound, { exact: true })).toBeVisible()
     })
 
+    await test.step('2.5. document title が Not Found 文言に変わる（ルートアナウンサーが沈黙しないための回帰防止・PR #127 指摘1）', async () => {
+      await expect(page).toHaveTitle(ja.detail.notFound)
+    })
+
     await test.step('3. 一覧への戻り導線があり、遷移すると一覧に戻る', async () => {
       await page.getByRole('link', { name: ja.detail.backLink }).click()
       await expect(page).toHaveURL(/\/ja$/)
@@ -40,6 +44,10 @@ test.describe('SP-6: 存在しないリポジトリの URL を開くと Not Foun
 
     await test.step('2. ロケール対応の Not Found 文言が表示されている', async () => {
       await expect(page.getByText(en.detail.notFound, { exact: true })).toBeVisible()
+    })
+
+    await test.step('2.5. document title が Not Found 文言に変わる（ルートアナウンサーが沈黙しないための回帰防止・PR #127 指摘1）', async () => {
+      await expect(page).toHaveTitle(en.detail.notFound)
     })
 
     await test.step('3. 一覧への戻り導線があり、遷移すると一覧に戻る', async () => {

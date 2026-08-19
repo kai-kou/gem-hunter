@@ -42,9 +42,7 @@ export function RepositoryDetail({
   return (
     <div>
       {/* SP-3: 戻り先は /{locale} 固定（検索条件の保持は SP-7 の担当・FR-6） */}
-      <Link href={`/${locale}`} className="text-primary text-sm underline-offset-4 hover:underline">
-        {labels.backLink}
-      </Link>
+      <BackLink locale={locale} labels={labels} />
 
       <div className="mt-4 flex items-center gap-4">
         {/* next/image の最適化は使わない（INF-11）。GitHub のサイズパラメータをそのまま使う */}
