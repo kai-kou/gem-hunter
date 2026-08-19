@@ -4,7 +4,7 @@ import { DomainError, DomainValidationError, NotFoundError, RateLimitExceededErr
 import { searchKeyword } from '@/src/domain/model/search-keyword'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { getMessages } from '@/src/shared/i18n/messages'
-import { parseSearchParams } from '@/src/ui/url/search-params'
+import { parseSearchParams, SEARCH_PARAM_KEYS } from '@/src/ui/url/search-params'
 
 /**
  * SP-5: `X-Cache-Status`（`HIT` | `MISS`）を観測できる検索エンドポイント。
@@ -28,22 +28,39 @@ export async function GET(request: NextRequest) {
   // （実装手段の選択であり仕様分岐ではない・`SD-3`）。
   const messages = getMessages('ja')
   // クエリ解釈を画面（page.tsx）と同じ `parseSearchParams` に一本化する（PR #120 セルフレビュー
-  // 指摘・修正3・二重管理の解消）。`URLSearchParams` は `parseSearchParams` が期待する
-  // `RawSearchParams`（`Record<string, string | string[] | undefined>`）と get() の意味論が
-  // 一致するため、そのまま渡せる。
-  const { keyword: rawKeyword, page: parsedPage } = parseSearchParams(request.nextUrl.searchParams)
+  // 指摘・修正3・二重管理の解消）。`URLSearchParams` はブラケット記法での添字アクセス
+  // （`params['q']`）を `.get('q')` のようには解決しない（未定義を返す）ため、
+  // `parseSearchParams` が期待する `RawSearchParams`（プレーンオブジェクト）へ変換してから渡す。
+  // `Object.fromEntries(searchParams.entries())` は重複キー（`?q=a&q=b`）で最後の値が勝つが
+  // `URLSearchParams.get()`（従来の抽出方法）は最初の値を返すため、ここでは最初の出現だけを
+  // 採用するループで変換し、重複キー時の挙動を変えない。
+  const rawParams: Record<string, string> = {}
+  for (const [key, value] of request.nextUrl.searchParams) {
+    if (!(key in rawParams)) {
+      rawParams[key] = value
+    }
+  }
+  const { page } = parseSearchParams(rawParams)
 
   try {
     // 値オブジェクトへの変換は境界（ここ）で行う（domain-model.md §4 / ARCH-R2）。
     // 画面（page.tsx）は空キーワードを「idle 状態」として黙って許すが、JSON API に
     // idle 相当の応答は無いため、ここでは throw する `searchKeyword` を使って
     // DomainValidationError に倒し、下の catch で画面と同じ整形（formatMessage +
-    // messages.home.searchError）に載せる。`parseSearchParams` は不正値を例外にせず
-    // 既定値へ倒す `trySearchKeyword` / `tryPageNumber` を内部で使うため、空文字列の
-    // 挙動（idle → DomainValidationError に倒す）は従来どおりここで keyword だけ
-    // 作り直す。page は `parseSearchParams` の既定値解決をそのまま使う。
+    // messages.home.searchError）に載せる。
+    //
+    // 🔴 keyword は `parseSearchParams` が返す既に正規化済みの文字列（`trySearchKeyword` が
+    // 不正値を `''` へ倒した後の値）ではなく、`rawParams` の生の値をそのまま `searchKeyword`
+    // に渡す。`parseSearchParams` の出力を経由すると、たとえば 256 文字超のキーワードが
+    // 「空文字列」に潰され、`DomainValidationError` のメッセージが「検索キーワードを
+    // 入力してください」（空欄用）にすり替わってしまう（本来は「256 文字以内で」の方）。
+    // これは `parseSearchParams` が「不正値は例外を投げず既定値へ倒す」設計（画面の idle
+    // 表示用）のためで、API のエラーメッセージ精度とは要件が異なる。よってキー名の契約
+    // （`SEARCH_PARAM_KEYS` 経由で `parseSearchParams` に一本化）は共有しつつ、キーワードの
+    // 生値だけは `rawParams` から直接取り出す（page.tsx にはこの精度要件がないため
+    // `parseSearchParams` の page 解決はそのまま利用する）。
+    const rawKeyword = rawParams[SEARCH_PARAM_KEYS.keyword] ?? ''
     const keyword = searchKeyword(rawKeyword)
-    const page = parsedPage
 
     const { search, getCacheStatus } = searchRepositoriesWithCacheStatus()
     const result = await search({ keyword, page })
