@@ -1,6 +1,6 @@
 import { UpstreamError } from '../../domain/errors'
-import type { RepositorySummary, SearchResult } from '../../domain/model/repository'
-import { searchRepositoriesDto } from './dto'
+import type { RepositoryDetail, RepositorySummary, SearchResult } from '../../domain/model/repository'
+import { repositoryDetailDto, searchRepositoriesDto } from './dto'
 
 /**
  * 外部データを検証したうえでドメインモデルへ変換する（ACL）。

@@ -25,6 +25,9 @@ function fakePort(received: SearchQuery[]): RepositoryQueryPort {
       received.push(query)
       return { totalCount: 1, incompleteResults: false, items: [summary] } satisfies SearchResult
     },
+    async findDetail() {
+      return null
+    },
   }
 }
 
