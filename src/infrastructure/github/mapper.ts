@@ -24,7 +24,9 @@ export function toSearchResult(raw: unknown): SearchResult {
       description: item.description,
       primaryLanguage: item.language,
       stars: item.stargazers_count,
-      updatedAt: new Date(item.updated_at),
+      // 🔴 「最終更新日」は pushed_at を使う（メタデータ更新で動く updated_at ではない・domain-model.md §2.2）。
+      //    pushed_at が null（コミット履歴のない空リポジトリ）の場合のみ updated_at にフォールバックする。
+      lastPushedAt: new Date(item.pushed_at ?? item.updated_at),
       topics: item.topics ?? [],
       htmlUrl: item.html_url,
     })),

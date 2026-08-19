@@ -54,10 +54,23 @@ function toSearchItem(repo) {
     language,
     stargazers_count,
     updated_at,
+    pushed_at,
     topics,
     owner,
   } = repo
-  return { id, name, full_name, html_url, description, language, stargazers_count, updated_at, topics, owner }
+  return {
+    id,
+    name,
+    full_name,
+    html_url,
+    description,
+    language,
+    stargazers_count,
+    updated_at,
+    pushed_at,
+    topics,
+    owner,
+  }
 }
 
 function searchResponse(items) {

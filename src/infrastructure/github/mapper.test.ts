@@ -19,7 +19,8 @@ describe('toSearchResult', () => {
     expect(react.owner.avatarUrl).toBe('https://avatars.githubusercontent.com/u/69631?v=4')
     expect(react.stars).toBe(233000)
     expect(react.primaryLanguage).toBe('JavaScript')
-    expect(react.updatedAt.toISOString()).toBe('2026-08-18T09:00:00.000Z')
+    // 🔴 lastPushedAt は pushed_at 由来（フィクスチャの updated_at とは異なる値で区別する・domain-model.md §2.2）
+    expect(react.lastPushedAt.toISOString()).toBe('2026-08-15T03:00:00.000Z')
     expect(react.topics).toEqual(['javascript', 'react'])
   })
 
@@ -29,6 +30,35 @@ describe('toSearchResult', () => {
     expect(routerRepo.description).toBeNull()
     expect(routerRepo.primaryLanguage).toBeNull()
     expect(routerRepo.topics).toEqual([])
+  })
+
+  it('pushed_at が null（コミット履歴のない空リポジトリ）でも例外を投げず updated_at にフォールバックする', () => {
+    // GitHub API の repository スキーマでは pushed_at は nullable（空リポジトリで null になりうる）。
+    // 検索結果 30 件中 1 件でも null が混ざると zod パース全体が失敗しないことを検証する。
+    const raw = {
+      total_count: 1,
+      incomplete_results: false,
+      items: [
+        {
+          id: 999,
+          name: 'empty-repo',
+          full_name: 'octostub/empty-repo',
+          html_url: 'https://github.com/octostub/empty-repo',
+          description: null,
+          language: null,
+          stargazers_count: 0,
+          updated_at: '2026-08-01T00:00:00Z',
+          pushed_at: null,
+          topics: [],
+          owner: { login: 'octostub', avatar_url: 'https://example.com/a.png' },
+        },
+      ],
+    }
+
+    const result = toSearchResult(raw)
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].lastPushedAt.toISOString()).toBe('2026-08-01T00:00:00.000Z')
   })
 
   it('スキーマに合わない外部データをドメインエラーへ翻訳する', () => {
