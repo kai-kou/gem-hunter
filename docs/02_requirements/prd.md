@@ -580,7 +580,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 |---|---|---|
 | キャッシュ TTL の具体値（検索 / 詳細） | レート枠の逆算（1 検索あたりの API 呼び出し数 × 想定利用者数） | `NFR-5` / `R-5` |
 | ~~テストのレイヤー分担と手段~~ | ✅ **決定済み（2026-08-18・`R-11` クローズ）**: 正本は [テスト戦略](../04_development/testing-strategy.md) | `NFR-23`〜`NFR-25` |
-| ~~i18n ライブラリの選定~~ | ✅ **決定済み（2026-08-19）**: `next-intl` は不採用とし、依存を増やさない自前実装（`src/shared/i18n/config.ts` のロケール定義 + `src/shared/i18n/messages.ts` のメッセージカタログ + `next.config.ts` の `redirects()` による既定ロケールへのパスリダイレクト）で確定。根拠は Next.js 16 で `proxy.ts` が Node.js ランタイム固定になり OpenNext Cloudflare アダプタ（Edge 実行）と両立できないため（詳細は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §3.2） | `AR-4` / `R-7` |
+| ~~i18n ライブラリの選定~~ | ✅ **決定済み（2026-08-19）**: `next-intl` は不採用とし、依存を増やさない自前実装（`src/domain/model/locale.ts` のロケール定義 + `src/shared/i18n/messages.ts` のメッセージカタログ + `next.config.ts` の `redirects()`（リダイレクト判定は `src/ui/url/locale-redirect.ts`）による既定ロケールへのパスリダイレクト）で確定。根拠は Next.js 16 で `proxy.ts` が Node.js ランタイム固定になり OpenNext Cloudflare アダプタ（Edge 実行）と両立できないため（詳細は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §3.2） | `AR-4` / `R-7` |
 | `use cache` / `cacheLife` / `cacheTag` の適用範囲 | 外部 API レスポンスのキャッシュという用途での実挙動が未検証 | `NFR-5` / `R-7` |
 | **shadcn/ui × Next.js 16 の互換性**（`TR-5` の暫定決定の前提） | 🔴 `SP-1` で実際に導入して動作確認する。**満たせない場合は [ADR 0001](../adr/0001-ui-stack.md) を supersede する新 ADR を書く**（影響度: 大 — UI 実装全体に波及） | `TR-5` / `TR-1` |
 | ~~配色の **実値**（コントラスト比 4.5:1 の実測）~~ | ✅ **決定済み（2026-08-19・`E-9`）**: セマンティック 9 トークン × ライト/ダーク計 18 値を `tools/check_contrast.py`（自前実装・`run_checks.sh` 組み込み済み）で実測し全ペアがしきい値を満たすことを確認。実測値・採用方針は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §2.2 | `NFR-13` |
