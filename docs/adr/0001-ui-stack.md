@@ -82,3 +82,13 @@
 | 3 | Tailwind v4 の正確な最新パッチ版 | `SP-1` 導入時 | 小 |
 
 ⚠️ **#1 が満たせないと判明した場合は、この ADR を supersede する新しい ADR を書く**（本 ADR を書き換えない）。
+
+### 7.1. 確認結果（`SP-1` 実機・2026-08-19 JST）
+
+| # | 結果 |
+|---|---|
+| 1 | 🟢 **成立**。`npx shadcn@latest init -b radix` が Next.js 16.3.1 + React 19.2.8 で完走し、`npm run build`（Turbopack）も成功した。本 ADR の supersede は不要 |
+| 2 | `button` / `input` は **`use client` 不要**（Server Component のまま使える）。インタラクティブ系を追加した時点で本表に追記する |
+| 3 | Tailwind CSS **4.3.3**（`@tailwindcss/postcss` 経由・CSS-first 設定で `tailwind.config.js` は作っていない） |
+
+> ⚠️ `shadcn init` は `-b radix` に加えてプリセット指定（`-p nova` 等）が無いと対話プロンプトで止まる（無人実行では `-p` を必ず付ける）。
