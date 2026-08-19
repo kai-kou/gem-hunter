@@ -1,4 +1,4 @@
-import { SEARCH_PARAM_KEYS } from '../shared/url/search-params'
+import { SEARCH_PARAM_KEYS } from './url/search-params'
 import { Button } from './components/button'
 import { Input } from './components/input'
 

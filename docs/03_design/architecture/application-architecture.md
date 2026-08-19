@@ -85,8 +85,10 @@ src/
       cache-key.ts                  #   CacheKey の生成関数（唯一の組み立て場所）
       rate-limit.ts                 #   RateLimitPort の実装
   ui/                               # 表示コンポーネント
+    url/                            #   URL クエリ契約（SEARCH_PARAM_KEYS・parse/build）。domain の値オブジェクトのみ import 可
   composition/                      # 実装の組み立て（composition root）
   shared/
+    i18n/                           # ロケール定義・パス解決・メッセージ辞書（他層に依存しない純粋ユーティリティ）
 e2e/                                # Playwright（操作レビュー手順の写し）
 ```
 

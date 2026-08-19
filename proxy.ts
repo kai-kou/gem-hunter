@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { resolveLocalizedPath } from './src/i18n/resolve-locale-path'
+import { resolveLocalizedPath } from './src/shared/i18n/resolve-locale-path'
 
 /**
  * ロケール未指定パスを既定ロケール（ja）配下へリダイレクトする（US-9 / E-4）。

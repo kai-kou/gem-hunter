@@ -1,5 +1,5 @@
-import { trySearchKeyword } from '../../domain/model/search-keyword' // arch-ok
-import { tryPageNumber } from '../../domain/model/page-number' // arch-ok
+import { trySearchKeyword } from '@/src/domain/model/search-keyword'
+import { tryPageNumber } from '@/src/domain/model/page-number'
 
 /**
  * 検索条件を URL クエリへ載せるためのパラメータ名契約（US-9 / AC-2）。

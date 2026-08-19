@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { SEARCH_PARAM_KEYS } from '../shared/url/search-params'
+import { SEARCH_PARAM_KEYS } from './url/search-params'
 import { SearchForm } from './search-form'
 
 const labels = {
