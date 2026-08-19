@@ -56,3 +56,5 @@ node_modules/
 .env*.local
 .wrangler/
 next-env.d.ts
+# `wrangler types` が生成する成果物（14,000 行超）。tsc は参照するがコミット対象にしない。
+worker-configuration.d.ts

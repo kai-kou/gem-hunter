@@ -181,3 +181,15 @@ const browser = await chromium.launch({
 **使いどころ**: `WebFetch` は JS レンダリング SPA（`m3.material.io` / `developer.apple.com` 等）の本文を取得できずタイトルだけ返す。一次情報の逐語確認が要るときは本手順で実ブラウザを使う（CP-2）。ヘルパー化は #86。
 
 症状（`ERR_CONNECTION_RESET` の全滅）から原因（TLS 1.3）へ辿り着くのが難しく、証明書・プロキシ設定の調査に時間を溶かす。発生時にだけ必要な環境依存の障害カタログのため Warm 層に置く。
+
+---
+
+## L-127: OpenNext Cloudflare 上では `AsyncLocalStorage` の store が SSR レンダリング内部へ伝播しない（2026-08-19・`gem-hunter` `SP-5`）
+
+**症状**: wrangler の `main` を自前エントリに差し替え、`node:async_hooks` の `AsyncLocalStorage` で Worker 側の状態（例: キャッシュ HIT/MISS）を Next.js の SSR レンダリング内部（composition root のコールバック等）へ運ぼうとすると、`getStore()` が **常に `undefined`** を返す。`wrangler dev --local` + スタブ API による実機検証で確認済み。
+
+**原因**: `AsyncLocalStorage` の store は Worker エントリでは確立できるが、OpenNext 生成物が挟む非同期継続を越えて Next.js 内部の SSR レンダリングまで伝播しない。workerd の `nodejs_compat` の `AsyncLocalStorage` 実装が Next.js 内部の継続を計装できていない可能性が高いが **未確定**（原因の断定はしない）。
+
+**対策**: Server Component の応答(SSR 応答)に動的な値を載せる目的でこの手法を採らない。動的ヘッダ・観測用の値が必要な場合は、Web 標準 `Response` を直接返せる **Route Handler** の応答で返す（Server Component は `Response` を経由せずレンダリングされるため、そもそも動的ヘッダを付与する手段がない）。
+
+**保持理由**: OpenNext Cloudflare（Next.js 16 相当）特有の実行モデルの制約で、同種の「Worker 側の状態をレンダリング内部へ運びたい」設計を再び試みると同じ壁にぶつかる。詳細な検証過程は `gem-hunter` の [`content/discussions/sp5-cache-design-20260819/whiteboard.md`](../../../content/discussions/sp5-cache-design-20260819/whiteboard.md) と [ADR 0005 §2.3](../../adr/0005-cache-port-yagni-exception-and-ttl.md#23-観測経路の決定x-cache-status-をどこに付与するか) を参照。

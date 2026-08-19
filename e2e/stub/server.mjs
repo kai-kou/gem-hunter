@@ -5,6 +5,8 @@
 // ルーティング:
 //   GET /search/repositories?q=&page=&per_page=
 //   GET /repos/{owner}/{repo}
+//   GET  /__stats        （SP-5 E2E 検証専用・実 GitHub API には存在しない裏口）
+//   POST /__stats/reset   同上
 //
 // キーワード規約（q または repo 名に部分一致で判定）:
 //   通常のキーワード      → 複数件の結果（total_count は 2 ページ以上になる値）
@@ -12,6 +14,11 @@
 //   upstream-error を含む → HTTP 500
 //   rate-limit を含む     → HTTP 403 + x-ratelimit-remaining: 0 + x-ratelimit-reset
 //   not-found を含む（repo 名 or owner）→ HTTP 404（詳細 API のみ）
+//
+// `/__stats`: スタブへ実際に届いたリクエスト数（`searchCount` / `detailCount`）を返す。
+// SP-5（キャッシュ）の E2E は「2 回目の検索でスタブへのリクエストが増えないこと」をこの値で
+// 検証する（プレビュー環境の `X-Cache-Status` ヘッダはローカル Node サーバーには出ないため代替する・
+// `user-story-map.md` §5.3 SP-5）。
 import { readFileSync } from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
@@ -33,6 +40,9 @@ const PAGE_2_REPOS = repos.slice(3, 5)
 const TOTAL_COUNT = 33
 
 const PORT = Number(process.env.E2E_STUB_PORT ?? 8788)
+
+// SP-5 E2E 検証用のリクエストカウント（`/__stats` / `/__stats/reset` でのみ参照・更新する）。
+const stats = { searchCount: 0, detailCount: 0 }
 
 function toSearchItem(repo) {
   const {
@@ -69,13 +79,24 @@ function rateLimitBody() {
 }
 
 const server = http.createServer((req, res) => {
+  const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
+
+  // 統計エンドポイント（GitHub API には存在しない裏口・method チェックの対象外）
+  if (url.pathname === '/__stats' && req.method === 'GET') {
+    return sendJson(res, 200, stats)
+  }
+  if (url.pathname === '/__stats/reset' && req.method === 'POST') {
+    stats.searchCount = 0
+    stats.detailCount = 0
+    return sendJson(res, 200, stats)
+  }
+
   if (req.method !== 'GET') {
     return sendJson(res, 405, { message: 'stub: method not allowed' })
   }
 
-  const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
-
   if (url.pathname === '/search/repositories') {
+    stats.searchCount += 1
     const q = url.searchParams.get('q') ?? ''
     const page = url.searchParams.get('page') ?? '1'
 
@@ -96,6 +117,7 @@ const server = http.createServer((req, res) => {
 
   const detailMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)$/)
   if (detailMatch) {
+    stats.detailCount += 1
     const [, owner, repoName] = detailMatch
 
     if (repoName.includes('not-found') || owner.includes('not-found')) {

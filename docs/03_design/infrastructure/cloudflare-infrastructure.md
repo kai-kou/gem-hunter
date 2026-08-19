@@ -2,7 +2,7 @@
 
 - **版**: 1.0
 - **作成日**: 2026-08-18 JST
-- **状態**: 確定（`D-16` / `D-17` / `D-18`）
+- **状態**: 確定（`D-16` / `D-17` / `D-18` / `D-24`）
 - **位置づけ**: **事業者を Cloudflare に確定したときの実装先の正本**。契約（`INF-n`）の正本は [`infrastructure-design.md`](./infrastructure-design.md) であり、本書はその契約を **Cloudflare のどの機能で満たすか** を定める
 - **根拠**: ユーザー明示決定（2026-08-18・「インフラについて Cloudflare ベースで進めたい」「アカウントは既存のものを使う」「MCP よりも CLI を利用する方針で」）/ [Cloudflare インフラ リサーチ](../../01_research/infra/20260818-cloudflare-research.md)（一次情報）/ [専門チーム議論](../../../content/discussions/cloudflare-infra-20260818/whiteboard.md)
 
@@ -44,7 +44,7 @@ Cloudflare の無料枠・上限・料金は変動する。本書は **判断に
 |---|---|
 | **`D-16`** | デプロイ先を **プレビュー・本番とも Cloudflare Workers** に確定する（`D-7` / `D-11` をクローズ） |
 | **`D-17`** | ランタイムは **`@opennextjs/cloudflare` アダプタ**。`next` は **16.2.11 以上** にピンする |
-| **`D-18`** | MVP のキャッシュは **HTTP `Cache-Control` + Workers Caching のみ**。永続ストア（R2 / D1 / DO / KV）は採用しない |
+| **`D-18`** | MVP のキャッシュは永続ストア（R2 / D1 / DO / KV）を採用しない。🔴 **L2 の実装方式は `D-24`（2026-08-19）で改訂済み**（§4.2 参照）: 当初案の「HTTP `Cache-Control` + Workers Caching のみ」は撤回し、**アプリ内 `CachePort` の実装（`InMemoryCache`）が主役** |
 
 あわせて運用方針を 2 つ確定する。
 
@@ -159,7 +159,7 @@ flowchart TB
 
 ---
 
-## 4. キャッシュ（`D-18`）
+## 4. キャッシュ（`D-18` / `D-24`）
 
 ### 4.1. 🔴 3 軸に分解する（`infrastructure-design.md` §10.2 の Cloudflare 版）
 
@@ -175,15 +175,19 @@ flowchart TB
 
 ### 4.2. 採用する構成
 
+> 🔴 **2026-08-19 改訂（決定ログ `D-24`）**: 当初案（下記の旧構成）は「L2 = HTTP `Cache-Control` + Workers Caching が MVP の主役」としていたが、§4.5 の「`X-Cache-Status` をアプリ側で動的に付与する」検証手段と両立しなかった（エッジキャッシュが HIT した場合 Worker 自体が実行されず、動的ヘッダを付与できない）。`SP-5` の受け入れ条件は「2 回目は GitHub API を呼んでいないことを外から検証できる」こと（`user-story-map.md` §5.3）であり、**検証可能性を優先して L2 の主役をアプリ内 `CachePort` の実装に置き換える**。経緯・却下案は議論記録 [`content/discussions/sp5-cache-design-20260819/whiteboard.md`](../../../content/discussions/sp5-cache-design-20260819/whiteboard.md)（round 3・lead 判定・争点 A）を参照。
+
 | 層 | 実装 | 役割 |
 |---|---|---|
 | **L1** | リクエスト内メモ化（React `cache`） | 同一レンダー内の重複呼び出しを消す |
-| **L2** | **HTTP `Cache-Control` + Workers Caching**（`cache.enabled`） | 🔵 **MVP の主役**。エッジで 2 層 tiered・**リクエスト合体あり** |
+| **L2** | **アプリ内 `CachePort` の実装（`InMemoryCache`）** | 🔵 **MVP の主役**。composition root の **モジュールスコープで生成する単一インスタンス** として全リクエストから共有参照する（`NFR-17`） |
 | **L3** | 外部ストア（R2 / D1 / KV） | ❌ **未採用**。§6.2 の観測条件を満たしたときだけ ADR とともに導入 |
 
-🔵 **`NFR-7`（request coalescing）の格上げ**: `infrastructure-design.md` §4 は「coalescing はインスタンス内でしか効かないので補助」としていたが、**Workers Caching のリクエスト合体はエッジで効く**（同一キーの同時リクエストで Worker は 1 回だけ実行される）。Cloudflare 前提では coalescing は補助ではなく **主要な防波堤の 1 つ** になる。
+- `Cache-Control` ヘッダは付与してよいが、**「エッジが自動的に Worker をバイパスする」効果には依存しない**（依存すると HIT 時に `X-Cache-Status` を付与できなくなり §4.5 と矛盾するため）。ヘッダを付けても Workers Caching の tiered 化・リクエスト合体自体は副次的な効果として残るが、`SP-5` の検証手段としては当てにしない
+- `NFR-7`（request coalescing）は当初案（`infrastructure-design.md` §4）どおり **補助** に据え置く。エッジのリクエスト合体を主要な防波堤とする格上げは、L2 をエッジキャッシュに依存させないという本改訂と両立しないため撤回する。代わりに `CachingRepositoryQuery`（`src/infrastructure/platform/cached-repository-query.ts`）が **アプリ層の single-flight**（同一キー並行リクエストの in-flight `Promise` 合流）で `NFR-7` を担保する（詳細は [ADR 0005](../../adr/0005-cache-port-yagni-exception-and-ttl.md) §5）
+- **isolate をまたぐ永続性は本スプリントでは追わない**（`InMemoryCache` は isolate が破棄されると失われる）。将来の格上げ候補として、Cloudflare の Cache API（`caches.default`）を composition root から能動的に呼び出し isolate 間で共有する案が残っている（§6.2 の観測条件を満たしたときに ADR で検討する）
 
-⚠️ **Next.js の `fetch` Data Cache / `use cache` は当てにしない**。OpenNext で incremental cache を設定しない構成では isolate 内メモリに退化し、isolate の生存に依存する。**`SP-5`（同じ検索で API を二度叩かない）の担保は L2（HTTP キャッシュ）で説明する**。
+⚠️ **Next.js の `fetch` Data Cache / `use cache` は当てにしない**。OpenNext で incremental cache を設定しない構成では isolate 内メモリに退化し、isolate の生存に依存する。**`SP-5`（同じ検索で API を二度叩かない）の担保は L2（アプリ内 `CachePort`）で説明する**。
 
 ### 4.3. `NFR-17` Cache Port の実装位置
 
@@ -206,13 +210,17 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 [`user-story-map.md`](../../02_requirements/user-story-map.md) §5.3 の `SP-5` は「2 回目は GitHub API を呼んでいない（`x-ratelimit-remaining` が減らない／ログに外部リクエストが出ない）」を操作レビュー手順にしている。**本設計はログを既定で無効化する（§9.1）ため、確認手段を設計として先に確定しておく。**
 
+> 🔴 **2026-08-19 改訂**: 当初案は「画面（Server Component の SSR 応答）に `X-Cache-Status` を **アプリ側で** 動的付与し、ブラウザの DevTools で誰でも確認できる」を主経路としていたが、`wrangler dev --local` + スタブ GitHub API による実機検証で **不成立** と判明した。回避策として「wrangler の `main` を自前エントリに差し替え、`node:async_hooks` の `AsyncLocalStorage` で HIT/MISS を Worker の外側（エントリ層）へ運ぶ」方式を試したが、OpenNext 生成物が挟む非同期継続を `AsyncLocalStorage` の store が越えられず、composition root のコールバックが呼ばれる時点で `getStore()` が **常に `undefined`** だった（デバッグログで実測確認済み。原因は workerd の `nodejs_compat` 実装が Next.js 内部の継続を計装できていない可能性が高いが **未確定**）。一方 **キャッシュ本体（L2 `CachePort`）は実機で正しく動作しており**、同一 URL を短間隔で連続 GET すると 2 回目以降 HIT することをログで確認済み — 壊れていたのは観測手段だけで、二重フェッチしない性質そのものは健全だった。経緯・却下案の全文は議論記録 [`content/discussions/sp5-cache-design-20260819/whiteboard.md`](../../../content/discussions/sp5-cache-design-20260819/whiteboard.md) を参照。
+
+→ 主経路を **`GET /api/search`（Route Handler）の応答ヘッダ** に切り替える。Route Handler は Web 標準の `Response` を直接返せるため動的ヘッダ付与に制約がなく、確認できるのは **画面（SSR 応答）ではなく `/api/search?q=...` を直接叩いたとき** に限る。🔴 **画面（`app/[locale]/page.tsx`）は SSR 内でユースケースを直接呼ぶだけで `/api/search` へリクエストしないため、検索フォームを操作しても DevTools の Network タブに `/api/search` は現れない**。確認するにはブラウザのアドレスバーで `/api/search?q=...` を別途開く（画面の検索操作とは別の追加操作）。
+
 | 経路 | 手段 | 位置づけ |
 |---|---|---|
-| **主** | レスポンスヘッダ `X-Cache-Status: HIT` / `MISS` を **アプリ側で付与する**（`src/infrastructure/platform/cache.ts`） | 🟢 **事業者非依存**。ブラウザの DevTools で誰でも確認でき、E2E テストからも assert できる（`SD-2`） |
+| **主** | `GET /api/search` の応答ヘッダ `X-Cache-Status: HIT` / `MISS`（Route Handler が付与） | 🟢 **事業者非依存**。`/api/search?q=...` を直接開く（画面の検索操作とは別操作）ことで誰でも確認でき、E2E テストからも assert できる（`SD-2`）。**画面の SSR 応答には乗らない**（上記改訂理由による制約。画面の検索フォーム操作だけでは DevTools の Network タブにも `/api/search` は現れない） |
 | 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの GitHub App installation token** の残量・`D-20`） |
 | 補助 | `wrangler tail --format json` のライブストリーム | ⚠️ `invocation_logs: false` でも tail が拾えるかは **未確認**（§12 の 9）。主経路にしない |
 
-🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`src/infrastructure/platform/` の実装が付け替わるだけ）。
+🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`src/infrastructure/platform/` の実装が付け替わるだけ）。付与位置が Route Handler になっても、キャッシュ判定ロジック自体（L2 `CachePort`）への依存関係は変わらない。
 
 ---
 
@@ -633,5 +641,5 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 | [Cloudflare インフラ リサーチ](../../01_research/infra/20260818-cloudflare-research.md) | 数値・一次情報の出典 |
 | [ADR 0002](../../adr/0002-cloudflare-workers-infrastructure.md) | 選定判断の記録 |
 | [`prd.md`](../../02_requirements/prd.md) | 要件 ID・環境変数の正本 |
-| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` / `D-23`（GitHub Actions 制限中の CI/CD 暫定運用）の決定ログ |
+| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` / `D-23`（GitHub Actions 制限中の CI/CD 暫定運用）/ `D-24`（`D-18` の L2 実装改訂）の決定ログ |
 | [議論記録](../../../content/discussions/cloudflare-infra-20260818/whiteboard.md) | 本設計に至った専門チームの議論 |

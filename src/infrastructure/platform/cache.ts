@@ -12,7 +12,8 @@ type Entry = {
  *
  * ⚠️ **範囲**: isolate 内メモリのみに保持する土台実装。Workers Caching / `Cache-Control`
  * ヘッダへの実適用（TTL 値の確定・レスポンスへの付与）は `E-3` / `SP-5` のスコープ（未実施）。
- * 現時点では composition root に配線せず、どのユースケースからも呼ばれない（YAGNI）。
+ * `SP-5` で `src/composition/container.ts` の `sharedCache`（モジュールスコープの単一インスタンス）
+ * として実際に配線済み（`CachingRepositoryQuery` から呼ばれる）。
  */
 export class InMemoryCache implements CachePort {
   private readonly store = new Map<string, Entry>()
