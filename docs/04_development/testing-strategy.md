@@ -27,8 +27,8 @@
 | **Vitest 4** | ユニット・結合の実行基盤 | 4.0 で Browser Mode が stable 化。既定は `jsdom`、UI の実ブラウザ検証が要る場合のみ Browser Mode を使う |
 | **React Testing Library** | コンポーネントの振る舞い検証 | 実装詳細（内部 state・クラス名）ではなく **アクセシブルな役割・ラベル** で取得する（`NFR-10`〜`NFR-12` と同じ向き） |
 | **MSW 2** | HTTP 境界のモック | 🔴 **ACL（`src/infrastructure/github/`）のテストでのみ使う**。上位層はフェイクのポート実装を使う（§4） |
-| **Playwright** | E2E（`async` RSC・主要フロー） | 操作レビュー手順の写し。`SP-4` で導入する |
-| **@axe-core/playwright** | 自動アクセシビリティ検査 | `NFR-26`。E2E の各主要画面で実行する |
+| **Playwright** | E2E（`async` RSC・主要フロー） | 操作レビュー手順の写し。`SP-4` で導入済み（`e2e/*.spec.ts`） |
+| **@axe-core/playwright** | 自動アクセシビリティ検査 | `NFR-26`。`e2e/a11y.spec.ts` で E2E の各主要画面に対して実行する |
 | **@cloudflare/vitest-pool-workers**（任意） | `src/infrastructure/platform/` を Workers ランタイムで検証 | Vitest 4.1 以上が前提。**必要になるまで導入しない**（バインディングを実際に使い始めた時点で判断する） |
 
 セットアップは Next.js 公式手順（`vitest` / `@vitejs/plugin-react` / `jsdom` / `@testing-library/react` / `@testing-library/dom` / `vite-tsconfig-paths`）に従う。独自の雛形を先に作らない。
@@ -119,11 +119,57 @@
 ## 8. コマンド（`NFR-25`）
 
 ```bash
-npm test              # Vitest（ユニット + 結合）。CI ではこの 1 本が緑であること
-npm run test:e2e      # Playwright（E2E + axe）
+npm test              # Vitest（ユニット + 結合）
+npm run test:e2e      # Playwright（E2E + axe。e2e/a11y.spec.ts を含む）
+npm run check          # bash tools/run_checks.sh。Lint/型/vitest/E2E 等をまとめて実行し、
+                        # PR 本文に貼る Markdown サマリー表を末尾に出力する
 ```
 
-CI は PR ごとに両方を実行する（`E-12` / `SP-4`）。
+### E2E の実行方法
+
+- **ローカル既定**: `npm run test:e2e` を実行すると、`playwright.config.ts` の `webServer` が
+  ① E2E 用スタブ GitHub API（`node e2e/stub/server.mjs`）と ② `npm run build && npm start -- --port 3100`
+  （`GITHUB_API_ORIGIN` をスタブへ向けたアプリ本体）を **自動起動** してから実行する。手動でサーバーを
+  立てる必要はない
+- **プレビュー URL に対して実行**: `E2E_BASE_URL` を渡すと `webServer` の自動起動をスキップし、
+  そのまま指定 URL（例: PR プレビュー環境の Cloudflare Workers URL）に対してテストを実行できる
+
+  ```bash
+  E2E_BASE_URL=https://pr-123.example.workers.dev npm run test:e2e
+  ```
+
+  🔴 **現状の制約**: 経路自体は用意してあるが、プレビュー環境（Cloudflare Workers）からローカルの
+  E2E スタブ GitHub API（`e2e/stub/server.mjs`）へは到達できない。プレビュー先の spec が参照する
+  フィクスチャ（`octostub/octo-widgets` 等）は実 GitHub 上には存在しないため、現状のまま
+  `E2E_BASE_URL` でプレビューへ実行すると全件失敗する。**スタブに到達できる公開エンドポイントを
+  用意できるまでは、主経路は上記の `webServer` 自動起動（ローカル完結）とする。**
+- **外部ネットワーク非依存**（`NFR-24`）: `async` Server Component は実 GitHub API ではなく
+  上記スタブに対して通信するため、E2E の実行中に実ネットワークへは一切出ない
+- **所要時間の目安**: コールドビルド込みで約 30 秒、`next build` のキャッシュが効くウォーム実行で約 10 秒
+
+### スタブ API のキーワード規約
+
+`e2e/stub/server.mjs` は `e2e/fixtures/repos.json` を配信するだけの薄いスタブ。検索クエリ（`q`）または
+リポジトリ名・owner 名に以下のキーワードを **部分一致** させることで、テストから任意の応答を引ける。
+
+| キーワード | 挙動 |
+|---|---|
+| （通常のキーワード） | `repos.json` から複数件返す（1 ページ目 3 件・2 ページ目 2 件。`total_count` は 2 ページ以上になる値） |
+| `zero-hits` | `total_count: 0` / `items: []`（0 件表示の検証用） |
+| `upstream-error` | HTTP 500（上流エラー表示の検証用） |
+| `rate-limit` | HTTP 403 + `x-ratelimit-remaining: 0` + `x-ratelimit-reset`（レート制限表示の検証用） |
+| `not-found`（詳細 API の repo 名 or owner のみ） | HTTP 404（詳細ページの Not Found 表示の検証用） |
+
+### CI の読み替え（🔴 Actions 制限中）
+
+> **GitHub Actions は制限中で使えない**（`docs/rules/pr-review-flow-summary.md` 冒頭）。テストブロッキングの
+> 役割は現在 **`bash tools/run_checks.sh`（= `npm run check`）が Vitest と Playwright(E2E) の両方を実行して代替する**
+> （`E-12` / `SP-4`）。PR 作成前にセッションがこれを実行し、結果のサマリー表を PR 本文に貼る運用。
+> `SKIP_E2E=1 bash tools/run_checks.sh` で E2E だけを明示的にスキップできるが、スキップした事実は
+> サマリー表に `SKIP` として必ず残る（黙って緑にしない）。
+>
+> 🔵 **将来 Actions が復旧したら、この読み替えを外し「CI は PR ごとに両方を実行する」という記述へ戻す**
+> （ワークフロー定義自体は撤去済みなので復旧時は再導入が必要。詳細は `E-12` / Issue #77）。
 
 ---
 

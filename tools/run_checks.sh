@@ -17,16 +17,17 @@ has_timeout_cmd() {
   command -v timeout >/dev/null 2>&1
 }
 
-# run_check <name> <command...>
+# run_check_timeout <name> <timeout_sec> <command...>
 # 戻り値: RESULTS に記録するだけ（呼び出し元では判定しない）
-run_check() {
+run_check_timeout() {
   local name="$1"
-  shift
+  local timeout_sec="$2"
+  shift 2
   local start_ts end_ts elapsed exit_code output
 
   start_ts=$(date +%s)
   if has_timeout_cmd; then
-    output=$(timeout "$TIMEOUT_SEC" "$@" 2>&1)
+    output=$(timeout "$timeout_sec" "$@" 2>&1)
     exit_code=$?
   else
     output=$("$@" 2>&1)
@@ -36,7 +37,7 @@ run_check() {
   elapsed=$((end_ts - start_ts))
 
   if [ "$exit_code" -eq 124 ]; then
-    echo "[run_checks] FAIL: ${name}（${TIMEOUT_SEC}秒でタイムアウト。チェッカー自体が完走できませんでした）"
+    echo "[run_checks] FAIL: ${name}（${timeout_sec}秒でタイムアウト。チェッカー自体が完走できませんでした）"
     echo "${output}"
     RESULTS+=("${name}|FAIL(timeout)|${elapsed}")
     OVERALL_EXIT=1
@@ -49,6 +50,14 @@ run_check() {
     echo "[run_checks] PASS: ${name}（${elapsed}秒）"
     RESULTS+=("${name}|PASS|${elapsed}")
   fi
+}
+
+# run_check <name> <command...>
+# 既定タイムアウト（$TIMEOUT_SEC）を使う従来ラッパー。
+run_check() {
+  local name="$1"
+  shift
+  run_check_timeout "$name" "$TIMEOUT_SEC" "$@"
 }
 
 skip_check() {
@@ -97,6 +106,28 @@ if [ "$HAS_NODE_PROJECT" -eq 1 ]; then
   run_check "テスト (vitest run)" npx vitest run
 else
   skip_check "テスト (vitest run)" "package.json が無い（アプリコード導入前）"
+fi
+
+# 3.5. E2E テスト (Playwright)
+# 🔴 ビルドを含み重いため Vitest とは別ステップにし、専用タイムアウトを持つ。
+#    RUN_CHECKS_TIMEOUT（既定 300 秒）を流用すると Lint/型/vitest と取り合いになるため個別の env を持つ。
+#    既定値の根拠: 内側の webServer（`next build && next start`）の起動上限 180 秒（playwright.config.ts）
+#    + テスト実行時間の余裕を足した 600 秒。180 秒ぎりぎりでビルドが終わる遅い環境でも、
+#    外側のこのタイムアウトが先に発火してテストの正常進行を FAIL(timeout) と誤報告しないようにする。
+E2E_TIMEOUT_SEC="${RUN_CHECKS_E2E_TIMEOUT:-600}"
+if [ "${SKIP_E2E:-0}" = "1" ]; then
+  skip_check "E2E (playwright test)" "SKIP_E2E=1 が指定されたためスキップしました。黙って緑にしないための明示表示"
+elif [ "$HAS_NODE_PROJECT" -eq 0 ]; then
+  skip_check "E2E (playwright test)" "package.json が無い（アプリコード導入前）"
+elif [ ! -d "$REPO_ROOT/node_modules/@playwright/test" ]; then
+  # 🔴 package.json はある = アプリコード導入済みなのに @playwright/test が無いのは
+  #    「依存未インストール = 検査できていない」状態（上記 DEPS_MISSING と同じ扱い）。
+  #    Lint/型/vitest は同条件で FAIL するのに E2E だけ黙って緑にしない（本ファイル冒頭のポリシー）。
+  echo "[run_checks] FAIL: E2E (playwright test)（@playwright/test が未インストールのため実行できません。'npm ci' を実行してください）"
+  RESULTS+=("E2E (playwright test)|FAIL|0")
+  OVERALL_EXIT=1
+else
+  run_check_timeout "E2E (playwright test)" "$E2E_TIMEOUT_SEC" npx playwright test
 fi
 
 # 4. 依存規則（クリーンアーキテクチャ）
