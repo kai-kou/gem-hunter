@@ -1,6 +1,6 @@
 import { UpstreamError } from '../../domain/errors'
-import type { RepositorySummary, SearchResult } from '../../domain/model/repository'
-import { searchRepositoriesDto } from './dto'
+import type { RepositoryDetail, RepositorySummary, SearchResult } from '../../domain/model/repository'
+import { repositoryDetailDto, searchRepositoriesDto } from './dto'
 
 /**
  * 外部データを検証したうえでドメインモデルへ変換する（ACL）。
@@ -28,5 +28,34 @@ export function toSearchResult(raw: unknown): SearchResult {
       topics: item.topics ?? [],
       htmlUrl: item.html_url,
     })),
+  }
+}
+
+/**
+ * 外部データを検証したうえで詳細画面のドメインモデルへ変換する（ACL）。
+ * 🔴 スキーマ不一致は外へ漏らさずドメインエラーへ翻訳する（上位層は zod を知らない）。
+ */
+export function toRepositoryDetail(raw: unknown): RepositoryDetail {
+  const parsed = repositoryDetailDto.safeParse(raw)
+  if (!parsed.success) {
+    throw new UpstreamError('GitHub API のレスポンスが想定と異なります', { cause: parsed.error })
+  }
+  const dto = parsed.data
+
+  return {
+    id: dto.id,
+    name: dto.name,
+    fullName: dto.full_name,
+    owner: { login: dto.owner.login, avatarUrl: dto.owner.avatar_url },
+    description: dto.description,
+    primaryLanguage: dto.language,
+    stars: dto.stargazers_count,
+    // 🔴 watchers_count（star のミラー）ではなく subscribers_count を使う
+    watchers: dto.subscribers_count,
+    forks: dto.forks_count,
+    openIssues: dto.open_issues_count,
+    updatedAt: new Date(dto.updated_at),
+    topics: dto.topics ?? [],
+    htmlUrl: dto.html_url,
   }
 }

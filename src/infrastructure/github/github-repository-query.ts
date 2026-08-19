@@ -1,9 +1,10 @@
 import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
-import type { SearchResult } from '../../domain/model/repository'
+import type { RepositoryDetail, SearchResult } from '../../domain/model/repository'
 import { PER_PAGE } from '../../domain/model/page-number'
+import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
-import { toSearchResult } from './mapper'
+import { toRepositoryDetail, toSearchResult } from './mapper'
 
 const API_ORIGIN = 'https://api.github.com'
 
@@ -27,7 +28,25 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     return toSearchResult(await response.json())
   }
 
-  private async request(url: URL): Promise<Response> {
+  async findDetail(name: RepositoryFullName): Promise<RepositoryDetail | null> {
+    const url = new URL(
+      `/repos/${encodeURIComponent(ownerOf(name))}/${encodeURIComponent(repoOf(name))}`,
+      API_ORIGIN,
+    )
+
+    const response = await this.request(url, { notFoundAsNull: true })
+    if (response === null) {
+      return null
+    }
+    return toRepositoryDetail(await response.json())
+  }
+
+  private async request(url: URL, options: { notFoundAsNull: true }): Promise<Response | null>
+  private async request(url: URL, options?: { notFoundAsNull?: false }): Promise<Response>
+  private async request(
+    url: URL,
+    options?: { notFoundAsNull?: boolean },
+  ): Promise<Response | null> {
     const token = await this.deps.token()
     const headers: Record<string, string> = {
       accept: 'application/vnd.github+json',
@@ -47,6 +66,9 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
 
     if (response.ok) {
       return response
+    }
+    if (options?.notFoundAsNull && response.status === 404) {
+      return null
     }
     if (isRateLimited(response)) {
       throw new RateLimitExceededError(

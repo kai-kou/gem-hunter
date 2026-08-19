@@ -40,11 +40,12 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | Gem（原石） | `Gem` | **被依存数（実利用）に対して star（注目度）が不釣り合いに小さい OSS**（[ミッション](../../project-mission.md)） | 🔴 MVP では **算出しない**（Phase 2）。「良いリポジトリ」一般を指す語として使わない |
 | リポジトリ | `Repository` | GitHub 上の 1 リポジトリ。同一性は `owner/repo` | 「プロジェクト」「レポ」と混在させない |
 | リポジトリ識別子 | `RepositoryId` | `owner` と `name` の組。文字列 1 本では持たない | URL・キャッシュキーの素材（`NFR-18`） |
+| リポジトリ完全名 | `RepositoryFullName` | `"owner/repo"` 形式のブランド型（`src/domain/model/repository-full-name.ts`）。`RepositoryQueryPort#findDetail` の引数として使う | `RepositoryId`（`owner`/`name` を分解して持つ設計）とは別物。詳細取得のポート境界でのみ使う軽量な識別子 |
 | オーナー | `Owner` | リポジトリの所有者（ユーザーまたは Organization）。表示に使うのは名前とアイコン | 「ユーザー」は **本アプリの利用者** を指すので混同しない |
 | 検索条件 | `SearchQuery` | キーワード・ページ・ソート・表示件数の 4 つ組。**URL と 1 対 1 で対応する**（`NFR-2`） | UI 状態ではなくドメインの値。バラバラの引数で持ち回らない |
 | 検索結果 | `SearchResult` | 検索条件に対する `RepositorySummary` の並びと総件数 | |
 | 一覧項目 | `RepositorySummary` | 一覧カードに出す範囲（`AR-1`）。**追加 API 呼び出し無しで得られるものだけ** | 詳細と同じ型にしない（取得コストが違う） |
-| 詳細 | `RepositoryDetail` | 詳細ページに出す 7 項目（`FR-4`） | |
+| 詳細 | `RepositoryDetail` | 詳細ページに出す 7 項目（`FR-4`。`src/domain/model/repository.ts`） | `watchers` は `subscribers_count` 由来（§2.2 の変換表）。`RepositoryQueryPort#findDetail` は存在しない場合 `null` を返す（404 を例外にしない） |
 | 閲覧者 | `Viewer` | 本アプリの利用者。未ログインが既定で、ログインしても **変わるのはレート枠だけ**（`D-6`） | 「ログインユーザー限定機能」という概念は存在しない |
 | レート枠 | `RateLimitBudget` | GitHub API の残り呼び出し可能回数と回復時刻 | 「クォータ」と混在させない |
 | キャッシュキー | `CacheKey` | 検索結果・単一リポジトリの名前空間つきキー（`NFR-18`） | 命名規約を先に固定する。後から変えると全無効化される |
@@ -85,6 +86,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | 値オブジェクト | 制約 | 破ったときの挙動 |
 |---|---|---|
 | `RepositoryId` | `owner` / `name` とも GitHub の命名規則に適合 | `DomainValidationError` |
+| `RepositoryFullName` | `owner` は英数字とハイフン（先頭・末尾のハイフン不可・最大 39 文字）、`repo` は英数字 `.` `-` `_`（最大 100 文字・`.` `..` 単体不可）。**リポジトリ名のドット（例 `user.github.io`）は許容する**（#97） | `DomainValidationError`。`try*` 版は既定で `null`（URL 由来の値を 500 にしない） |
 | `SearchKeyword` | 空白のみ不可・前後トリム・長さ上限 | `DomainValidationError`（UI は「検索を促す表示」に倒す・`AC-3`） |
 | `PageNumber` | 1 以上の整数。上限は GitHub 検索の到達可能範囲 | `tryParse` は既定値 `1` に倒す（URL 改変で 500 にしない） |
 | `PerPage` | 🔴 **20 / 50 / 100 のみ**（`AR-3`。任意値はキャッシュ断片化を招く） | `tryParse` は既定値に倒す |

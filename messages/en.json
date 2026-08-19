@@ -11,5 +11,15 @@
     "empty": "No repositories matched. Try a different keyword.",
     "starCount": "stars",
     "updatedAt": "Updated"
+  },
+  "detail": {
+    "backLink": "Back to results",
+    "language": "Language",
+    "starCount": "stars",
+    "watcherCount": "watchers",
+    "forkCount": "forks",
+    "openIssueCount": "open issues",
+    "notFound": "Repository not found.",
+    "loadError": "Could not load: {message}"
   }
 }

@@ -3,7 +3,9 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
+import { repositoryFullName } from '../../domain/model/repository-full-name'
 import { searchQuery } from '../../domain/model/search-query'
+import detailFixture from './__fixtures__/repository-detail.json'
 import fixture from './__fixtures__/search-repositories.json'
 import { GithubRepositoryQuery } from './github-repository-query'
 
@@ -12,6 +14,10 @@ const server = setupServer(
   http.get('https://api.github.com/search/repositories', ({ request }) => {
     requests.push(new URL(request.url))
     return HttpResponse.json(fixture)
+  }),
+  http.get('https://api.github.com/repos/:owner/:repo', ({ request }) => {
+    requests.push(new URL(request.url))
+    return HttpResponse.json(detailFixture)
   }),
 )
 
@@ -61,5 +67,44 @@ describe('GithubRepositoryQuery', () => {
     await expect(makeQuery().search(searchQuery({ keyword: 'react' }))).rejects.toThrow(
       UpstreamError,
     )
+  })
+})
+
+describe('GithubRepositoryQuery#findDetail', () => {
+  it('詳細 API を呼び出してドメインモデルを返す', async () => {
+    const result = await makeQuery().findDetail(repositoryFullName('facebook', 'react'))
+
+    expect(result?.fullName).toBe('facebook/react')
+    expect(requests[0].pathname).toBe('/repos/facebook/react')
+  })
+
+  it('404 は例外にせず null を返す', async () => {
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo', () =>
+        HttpResponse.json({ message: 'Not Found' }, { status: 404 }),
+      ),
+    )
+
+    const result = await makeQuery().findDetail(repositoryFullName('facebook', 'does-not-exist'))
+
+    expect(result).toBeNull()
+  })
+
+  it('スキーマ不一致は UpstreamError を投げる', async () => {
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo', () =>
+        HttpResponse.json({ id: 'not-a-number' }),
+      ),
+    )
+
+    await expect(makeQuery().findDetail(repositoryFullName('facebook', 'react'))).rejects.toThrow(
+      UpstreamError,
+    )
+  })
+
+  it('ドット入りのリポジトリ名を正しくエスケープして URL を組み立てる', async () => {
+    await makeQuery().findDetail(repositoryFullName('example', 'user.github.io'))
+
+    expect(requests[0].pathname).toBe('/repos/example/user.github.io')
   })
 })

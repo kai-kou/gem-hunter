@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { Locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
@@ -37,7 +38,7 @@ export function RepositoryList({
   return (
     <ul className="divide-border divide-y">
       {items.map((item) => (
-        <li key={item.id} className="flex gap-3 py-4">
+        <li key={item.id} className="relative flex gap-3 py-4">
           {/* next/image の最適化は使わない（INF-11）。GitHub のサイズパラメータをそのまま使う */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -49,14 +50,19 @@ export function RepositoryList({
             loading="lazy"
           />
           <div className="min-w-0 flex-1">
-            <a
-              href={item.htmlUrl}
-              className="text-primary font-medium underline-offset-4 hover:underline"
-              rel="noreferrer noopener"
-              target="_blank"
+            {/*
+              独立 URL の詳細ページへの遷移（AC-4・モーダルではない）。
+              カード全体をクリック可能にするが、<a> でカード全体を包むと
+              説明文・メタ情報までスクリーンリーダーが読み上げてしまうため、
+              見出し（リポジトリ名）だけをリンクにし ::after でクリック領域を
+              カード全体へ拡張する（ui-ux-guidelines.md §4.3）。
+            */}
+            <Link
+              href={`/${locale}/repos/${encodeURIComponent(item.owner.login)}/${encodeURIComponent(item.name)}`}
+              className="text-primary font-medium underline-offset-4 hover:underline after:absolute after:inset-0"
             >
               {item.fullName}
-            </a>
+            </Link>
             {item.description ? (
               <p className="text-muted-foreground mt-1 text-sm">{item.description}</p>
             ) : null}

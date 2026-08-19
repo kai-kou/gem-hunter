@@ -107,7 +107,7 @@ e2e/                                # Playwright（操作レビュー手順の�
 
 | ポート | 面積（これ以上広げない） | 実装 | 根拠 |
 |---|---|---|---|
-| `RepositoryQueryPort` | `search(query): Promise<SearchResult>` / `findOne(id): Promise<RepositoryDetail>` | `infrastructure/github/` | `NFR-16` / `TR-4` |
+| `RepositoryQueryPort` | `search(query): Promise<SearchResult>` / `findDetail(name): Promise<RepositoryDetail \| null>` | `infrastructure/github/` | `NFR-16` / `TR-4` |
 | `CachePort` | `get(key)` / `set(key, value, ttl)` / `invalidate(key)` | `infrastructure/platform/` | `NFR-17`（YAGNI の意図的な例外。面積を広げない） |
 | `RateLimitPort` | `consume(key): Promise<Decision>` | `infrastructure/platform/` | `INF-n` / `NFR-7` |
 | `ClockPort` | `now(): Date` | `infrastructure/` | テスト決定性（`SD-2`） |

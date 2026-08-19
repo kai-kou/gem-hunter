@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import { UpstreamError } from '../../domain/errors'
+import detailFixture from './__fixtures__/repository-detail.json'
 import fixture from './__fixtures__/search-repositories.json'
-import { toSearchResult } from './mapper'
+import { toRepositoryDetail, toSearchResult } from './mapper'
 
 describe('toSearchResult', () => {
   it('GitHub の検索レスポンスをドメインモデルへ変換する', () => {
@@ -33,5 +34,33 @@ describe('toSearchResult', () => {
   it('スキーマに合わない外部データをドメインエラーへ翻訳する', () => {
     // 上位層は zod を知らないため ZodError を層の外へ出さない（ACL の契約）
     expect(() => toSearchResult({ total_count: 'たくさん', items: [] })).toThrow(UpstreamError)
+  })
+})
+
+describe('toRepositoryDetail', () => {
+  it('GitHub の詳細レスポンスをドメインモデルへ変換する', () => {
+    const detail = toRepositoryDetail(detailFixture)
+
+    expect(detail.fullName).toBe('facebook/react')
+    expect(detail.owner.login).toBe('facebook')
+    expect(detail.description).toBe('The library for web and native user interfaces.')
+    expect(detail.primaryLanguage).toBe('JavaScript')
+    expect(detail.forks).toBe(48000)
+    expect(detail.openIssues).toBe(1200)
+    expect(detail.topics).toEqual(['javascript', 'react'])
+    expect(detail.updatedAt.toISOString()).toBe('2026-08-18T00:00:00.000Z')
+  })
+
+  it('watchers は subscribers_count を使い、star のミラーである watchers_count は使わない', () => {
+    // フィクスチャは watchers_count(=stargazers_count) と subscribers_count が別値（誤実装検出用）
+    const detail = toRepositoryDetail(detailFixture)
+
+    expect(detail.stars).toBe(233000)
+    expect(detail.watchers).toBe(6600)
+    expect(detail.watchers).not.toBe(detail.stars)
+  })
+
+  it('スキーマに合わない外部データをドメインエラーへ翻訳する', () => {
+    expect(() => toRepositoryDetail({ id: 'not-a-number' })).toThrow(UpstreamError)
   })
 })
