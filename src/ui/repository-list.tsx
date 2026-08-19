@@ -1,22 +1,38 @@
+import type { Locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
+import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 
-const numberFormat = new Intl.NumberFormat('ja-JP')
-const dateFormat = new Intl.DateTimeFormat('ja-JP', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  timeZone: 'Asia/Tokyo',
-})
+type RepositoryListLabels = {
+  empty: string
+  starCount: string
+  updatedAt: string
+}
 
-/** 検索結果の一覧（AC-3 / AR-1）。表示だけを持つ Server Component。 */
-export function RepositoryList({ items }: { items: readonly RepositorySummary[] }) {
+/**
+ * 検索結果の一覧（AC-3 / AR-1）。表示だけを持つ Server Component。文言は labels props 経由（E-4）。
+ * 数値・日付の書式は `locale` props に追従する（`en` で日本式書式にならないようにする）。
+ */
+export function RepositoryList({
+  items,
+  labels,
+  locale,
+}: {
+  items: readonly RepositorySummary[]
+  labels: RepositoryListLabels
+  locale: Locale
+}) {
   if (items.length === 0) {
-    return (
-      <p className="text-muted-foreground py-8 text-sm">
-        条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。
-      </p>
-    )
+    return <p className="text-muted-foreground py-8 text-sm">{labels.empty}</p>
   }
+
+  const localeTag = toIntlLocaleTag(locale)
+  const numberFormat = new Intl.NumberFormat(localeTag)
+  const dateFormat = new Intl.DateTimeFormat(localeTag, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Tokyo',
+  })
 
   return (
     <ul className="divide-border divide-y">
@@ -48,10 +64,12 @@ export function RepositoryList({ items }: { items: readonly RepositorySummary[] 
               {item.primaryLanguage ? <span>{item.primaryLanguage}</span> : null}
               <span>
                 <span aria-hidden="true">★ </span>
-                <span className="sr-only">star 数 </span>
+                <span className="sr-only">{labels.starCount} </span>
                 {numberFormat.format(item.stars)}
               </span>
-              <span>最終更新 {dateFormat.format(item.updatedAt)}</span>
+              <span>
+                {labels.updatedAt} {dateFormat.format(item.updatedAt)}
+              </span>
             </p>
             {item.topics.length > 0 ? (
               <ul className="mt-2 flex flex-wrap gap-1">

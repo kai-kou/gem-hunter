@@ -1,0 +1,15 @@
+{
+  "home": {
+    "title": "gem-hunter",
+    "description": "Search GitHub repositories by keyword.",
+    "searchLabel": "Search keyword",
+    "searchPlaceholder": "Search GitHub by keyword (e.g. react)",
+    "searchSubmit": "Search",
+    "idle": "Enter a keyword to search.",
+    "resultCount": "Showing {shown} of {total} results",
+    "searchError": "Search failed: {message}",
+    "empty": "No repositories matched. Try a different keyword.",
+    "starCount": "stars",
+    "updatedAt": "Updated"
+  }
+}

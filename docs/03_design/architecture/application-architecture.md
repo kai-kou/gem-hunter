@@ -66,7 +66,7 @@ app/                                # Next.js App Router（薄い）
   [locale]/repos/[owner]/[repo]/page.tsx
 src/
   domain/
-    model/                          # Repository / Owner / SearchQuery / SearchResult …
+    model/                          # Repository / Owner / SearchQuery / SearchResult / Locale …
     ports/                          # RepositoryQueryPort / CachePort / RateLimitPort（interface のみ）
     services/                       # 複数モデルに跨る純粋ロジック（Phase 2: GemIndex 算出）
     errors.ts                       # ドメインエラー（NotFound / RateLimitExceeded / Upstream …）
@@ -85,8 +85,15 @@ src/
       cache-key.ts                  #   CacheKey の生成関数（唯一の組み立て場所）
       rate-limit.ts                 #   RateLimitPort の実装
   ui/                               # 表示コンポーネント
+    url/                            #   URL クエリ契約（SEARCH_PARAM_KEYS・parse・ロケールリダイレクトのパス判定）。domain の値オブジェクトのみ import 可
+    i18n/                           #   Locale → Intl ロケールタグ変換等、domain の値オブジェクトに依存する表示用ユーティリティ
   composition/                      # 実装の組み立て（composition root）
   shared/
+    i18n/                           # メッセージ辞書の読み込み（実体は messages/ 直下）・プレースホルダー置換等、
+                                     #   domain に依存しない純粋ユーティリティ（ARCH-7・ロケール定義自体は domain/model/locale.ts）
+messages/
+  ja.json                           # メッセージ辞書（日本語）
+  en.json                           # メッセージ辞書（英語）
 e2e/                                # Playwright（操作レビュー手順の写し）
 ```
 

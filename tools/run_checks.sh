@@ -113,6 +113,13 @@ else
   skip_check "UI 寸法検査 (check_ui_dimensions.py)" "スクリプトが見つかりません"
 fi
 
+# 4.6. カラートークン コントラスト検査（E-9 / NFR-13）
+if [ -f "$REPO_ROOT/tools/check_contrast.py" ]; then
+  run_check "配色コントラスト検査 (check_contrast.py)" python3 tools/check_contrast.py
+else
+  skip_check "配色コントラスト検査 (check_contrast.py)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
