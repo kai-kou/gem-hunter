@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { searchFor } from './helpers'
 
 /**
  * SP-3: 一覧 → 詳細 → 一覧の往復が通る。
@@ -16,8 +17,7 @@ async function readStat(page: Page, label: string): Promise<string> {
 test('SP-3: 詳細まで往復できる', async ({ page }) => {
   await test.step('前提: 検索結果を表示しておく（SP-1）', async () => {
     await page.goto('/ja')
-    await page.getByRole('searchbox', { name: '検索キーワード' }).fill('react')
-    await page.getByRole('button', { name: '検索' }).click()
+    await searchFor(page, 'react')
     await expect(page.getByRole('link', { name: 'octostub/octo-widgets' })).toBeVisible()
   })
 

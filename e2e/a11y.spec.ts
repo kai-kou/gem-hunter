@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type { Result } from 'axe-core'
 import { createAxeBuilder } from './axe'
+import { searchFor } from './helpers'
 
 /**
  * NFR-26: 自動アクセシビリティ検査（一覧画面・詳細画面）。
@@ -14,8 +15,7 @@ function seriousOrCritical(violations: Result[]): Result[] {
 test.describe('NFR-26: axe 自動アクセシビリティ検査', () => {
   test('一覧画面（検索結果）に serious/critical の違反がない', async ({ page }) => {
     await page.goto('/ja')
-    await page.getByRole('searchbox', { name: '検索キーワード' }).fill('react')
-    await page.getByRole('button', { name: '検索' }).click()
+    await searchFor(page, 'react')
     await expect(page.getByRole('link', { name: 'octostub/octo-widgets' })).toBeVisible()
 
     const results = await createAxeBuilder(page).analyze()

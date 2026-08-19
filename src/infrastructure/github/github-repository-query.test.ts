@@ -158,4 +158,46 @@ describe('GITHUB_API_ORIGIN 環境変数によるオリジン切り替え（E2E 
 
     expect(requests[0].origin).toBe('https://api.github.com')
   })
+
+  it('GITHUB_API_ORIGIN がループバック（http://localhost:8788）ならそのオリジンへリクエストする', async () => {
+    const origin = 'http://localhost:8788'
+    process.env.GITHUB_API_ORIGIN = origin
+    server.use(
+      http.get(`${origin}/search/repositories`, ({ request }) => {
+        requests.push(new URL(request.url))
+        return HttpResponse.json(fixture)
+      }),
+    )
+
+    const result = await makeQuery().search(searchQuery({ keyword: 'react' }))
+
+    expect(result.items).toHaveLength(2)
+    expect(requests[0].origin).toBe(origin)
+  })
+
+  // 注: msw（path-to-regexp）が `[::1]` を含む URL のハンドラ登録に対応していないため、
+  // ここでは「オリジン検証を通過し実際に fetch まで進むか」だけを確認する（実接続の成否は問わない）。
+  it('GITHUB_API_ORIGIN が ::1（IPv6 ループバック）でも拒否されない（接続失敗はしてよい）', async () => {
+    process.env.GITHUB_API_ORIGIN = 'http://[::1]:8788'
+
+    await expect(makeQuery().search(searchQuery({ keyword: 'react' }))).rejects.not.toThrow(
+      /GITHUB_API_ORIGIN/,
+    )
+  })
+
+  it('GITHUB_API_ORIGIN に外部ホストを設定すると、トークン漏洩防止のため例外を投げる', async () => {
+    process.env.GITHUB_API_ORIGIN = 'https://attacker.example'
+
+    await expect(makeQuery().search(searchQuery({ keyword: 'react' }))).rejects.toThrow(
+      /GITHUB_API_ORIGIN/,
+    )
+  })
+
+  it('GITHUB_API_ORIGIN が不正な URL 形式だと例外を投げる', async () => {
+    process.env.GITHUB_API_ORIGIN = 'not a url'
+
+    await expect(makeQuery().search(searchQuery({ keyword: 'react' }))).rejects.toThrow(
+      /GITHUB_API_ORIGIN/,
+    )
+  })
 })

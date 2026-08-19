@@ -109,15 +109,23 @@ else
 fi
 
 # 3.5. E2E テスト (Playwright)
-# 🔴 ビルドを含み重いため Vitest とは別ステップにし、専用タイムアウトを持つ（コールド約 30 秒 + 余裕）。
+# 🔴 ビルドを含み重いため Vitest とは別ステップにし、専用タイムアウトを持つ。
 #    RUN_CHECKS_TIMEOUT（既定 300 秒）を流用すると Lint/型/vitest と取り合いになるため個別の env を持つ。
-E2E_TIMEOUT_SEC="${RUN_CHECKS_E2E_TIMEOUT:-300}"
+#    既定値の根拠: 内側の webServer（`next build && next start`）の起動上限 180 秒（playwright.config.ts）
+#    + テスト実行時間の余裕を足した 600 秒。180 秒ぎりぎりでビルドが終わる遅い環境でも、
+#    外側のこのタイムアウトが先に発火してテストの正常進行を FAIL(timeout) と誤報告しないようにする。
+E2E_TIMEOUT_SEC="${RUN_CHECKS_E2E_TIMEOUT:-600}"
 if [ "${SKIP_E2E:-0}" = "1" ]; then
   skip_check "E2E (playwright test)" "SKIP_E2E=1 が指定されたためスキップしました。黙って緑にしないための明示表示"
 elif [ "$HAS_NODE_PROJECT" -eq 0 ]; then
   skip_check "E2E (playwright test)" "package.json が無い（アプリコード導入前）"
 elif [ ! -d "$REPO_ROOT/node_modules/@playwright/test" ]; then
-  skip_check "E2E (playwright test)" "@playwright/test が未インストールです（npm ci を実行してください）"
+  # 🔴 package.json はある = アプリコード導入済みなのに @playwright/test が無いのは
+  #    「依存未インストール = 検査できていない」状態（上記 DEPS_MISSING と同じ扱い）。
+  #    Lint/型/vitest は同条件で FAIL するのに E2E だけ黙って緑にしない（本ファイル冒頭のポリシー）。
+  echo "[run_checks] FAIL: E2E (playwright test)（@playwright/test が未インストールのため実行できません。'npm ci' を実行してください）"
+  RESULTS+=("E2E (playwright test)|FAIL|0")
+  OVERALL_EXIT=1
 else
   run_check_timeout "E2E (playwright test)" "$E2E_TIMEOUT_SEC" npx playwright test
 fi

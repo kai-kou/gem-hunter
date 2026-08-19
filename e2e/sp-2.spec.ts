@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { createAxeBuilder } from './axe'
+import { searchFor } from './helpers'
+import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
 
 /**
  * SP-2: URL とロケールの形が決まる。
@@ -19,15 +21,14 @@ test('SP-2: URL とロケールの形が決まる', async ({ page, context }) =>
   })
 
   await test.step('2. 検索を実行する → キーワードとページが URL に乗る', async () => {
-    await page.getByRole('searchbox', { name: '検索キーワード' }).fill('react')
-    await page.getByRole('button', { name: '検索' }).click()
-    await expect(page).toHaveURL(/\/ja\?q=react$/)
+    await searchFor(page, 'react')
+    await expect(page).toHaveURL(new RegExp(`/ja\\?${SEARCH_PARAM_KEYS.keyword}=react$`))
 
     const pageTwoUrl = new URL(page.url())
-    pageTwoUrl.searchParams.set('page', '2')
+    pageTwoUrl.searchParams.set(SEARCH_PARAM_KEYS.page, '2')
     await page.goto(pageTwoUrl.pathname + pageTwoUrl.search)
-    await expect(page).toHaveURL(/[?&]q=react(&|$)/)
-    await expect(page).toHaveURL(/[?&]page=2(&|$)/)
+    await expect(page).toHaveURL(new RegExp(`[?&]${SEARCH_PARAM_KEYS.keyword}=react(&|$)`))
+    await expect(page).toHaveURL(new RegExp(`[?&]${SEARCH_PARAM_KEYS.page}=2(&|$)`))
     // ページ 2 のフィクスチャ（e2e/fixtures/repos.json の 4 件目以降）が出ていることで
     // page パラメータが実際に効いていることを確認する
     await expect(page.getByRole('link', { name: 'octostub/octo-tables' })).toBeVisible()

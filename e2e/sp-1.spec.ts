@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { searchFor } from './helpers'
+import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
 
 /**
  * SP-1: キーワードで GitHub を検索し、結果が一覧で見える。
@@ -12,9 +14,8 @@ test('SP-1: 検索して一覧が出る', async ({ page }) => {
   })
 
   await test.step('2. 検索欄に react と入力し、ボタン（または Enter）で実行する', async () => {
-    await page.getByRole('searchbox', { name: '検索キーワード' }).fill('react')
-    await page.getByRole('button', { name: '検索' }).click()
-    await expect(page).toHaveURL(/[?&]q=react(&|$)/)
+    await searchFor(page, 'react')
+    await expect(page).toHaveURL(new RegExp(`[?&]${SEARCH_PARAM_KEYS.keyword}=react(&|$)`))
   })
 
   await test.step('3. オーナーアイコンとリポジトリ名の一覧が出る', async () => {

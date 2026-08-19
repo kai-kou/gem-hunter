@@ -138,6 +138,11 @@ npm run check          # bash tools/run_checks.sh。Lint/型/vitest/E2E 等を�
   E2E_BASE_URL=https://pr-123.example.workers.dev npm run test:e2e
   ```
 
+  🔴 **現状の制約**: 経路自体は用意してあるが、プレビュー環境（Cloudflare Workers）からローカルの
+  E2E スタブ GitHub API（`e2e/stub/server.mjs`）へは到達できない。プレビュー先の spec が参照する
+  フィクスチャ（`octostub/octo-widgets` 等）は実 GitHub 上には存在しないため、現状のまま
+  `E2E_BASE_URL` でプレビューへ実行すると全件失敗する。**スタブに到達できる公開エンドポイントを
+  用意できるまでは、主経路は上記の `webServer` 自動起動（ローカル完結）とする。**
 - **外部ネットワーク非依存**（`NFR-24`）: `async` Server Component は実 GitHub API ではなく
   上記スタブに対して通信するため、E2E の実行中に実ネットワークへは一切出ない
 - **所要時間の目安**: コールドビルド込みで約 30 秒、`next build` のキャッシュが効くウォーム実行で約 10 秒
