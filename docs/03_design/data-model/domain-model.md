@@ -116,11 +116,21 @@ export function trySearchKeyword(raw: string): SearchKeyword | null { /* … */ 
 **`CacheKey` の実装位置（Issue #67）**: ブランド型 + 生成関数を `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。`src/domain/model/` ではない — キー形式が `CachePort` 実装詳細と不可分なため）。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` の 2 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
 
 ```text
-search:{正規化キーワード}:page={ページ番号}:sort={ソート順}:per_page={表示件数}   # searchResultCacheKey
-repository:{正規化owner}/{正規化name}                                             # repositoryCacheKey
+search:{バージョン}:{正規化キーワード}:page={ページ番号}:sort={ソート順}:per_page={表示件数}   # searchResultCacheKey
+repository:{バージョン}:{正規化owner}/{正規化name}                                             # repositoryCacheKey
+
+# 現行（CACHE_SCHEMA_VERSION = 'v2'）の実例
+search:v2:react:page=1:sort=stars:per_page=20
+repository:v2:vercel/next.js
 ```
 
 ソート順（`AR-2`）・表示件数（`AR-3`）は `SearchQuery` の構成要素であり、キャッシュ断片化を招くため `searchResultCacheKey` に必ず含める。
+
+**🔴 バージョンセグメント（`CACHE_SCHEMA_VERSION`・Issue #142）**: 名前空間の直後に置く **キャッシュスキーマバージョン** で、両方の生成関数が同じ定数（`src/infrastructure/platform/cache-key.ts` の `export const CACHE_SCHEMA_VERSION`）を共有する。
+
+- **bump する条件**: **キャッシュ値の「意味」が変わったとき** — 取得範囲・フィルタ条件・レスポンスのマッピングの変更が対象。キーの構成要素（キーワード・ページ・ソート順・表示件数）が同じままでも、**同じキーに対して返るべき値の中身が変われば bump する**。
+- **なぜ必要か**: キーが検索条件だけで構成されていると、修正をデプロイしても **古い意味の値が入ったエントリが TTL 切れまでヒットし続ける**。バージョンを上げれば全キーが別物になり、既存エントリを一括で論理的に無効化できる（明示的なパージ機構を持たずに済む）。
+- **改訂履歴**: `v1` 初版 / `v2` 検索を公開リポジトリ限定（`is:public`）にし、同じ検索条件に対する結果の範囲が変わったため引き上げ（Issue #142・`NFR-33`）。
 
 ---
 
