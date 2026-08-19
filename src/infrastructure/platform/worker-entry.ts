@@ -19,19 +19,13 @@
  * 実行する前に必ずビルドを走らせること。ビルド前でも `tsc --noEmit` が通るよう、型は
  * `open-next-worker.d.ts`（同ディレクトリ）のアンビエント宣言を参照する。
  */
-import openNextWorker from "../../../.open-next/worker.js";
+import worker from "../../../.open-next/worker.js";
 import { cacheStatusStore, type CacheStatus } from "./cache-status-context";
 
 export { cacheStatusStore } from "./cache-status-context";
 export type { CacheStatus } from "./cache-status-context";
 
-interface OpenNextWorker {
-  fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response>;
-}
-
-const worker = openNextWorker as OpenNextWorker;
-
-export default {
+const workerEntry = {
   async fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {
     let cacheStatus: CacheStatus | undefined;
 
@@ -61,3 +55,5 @@ export default {
     });
   },
 };
+
+export default workerEntry;
