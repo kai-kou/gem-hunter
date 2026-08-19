@@ -4,8 +4,8 @@
 - 議題ID: `form-ux-sizing-20260819`
 - 論点: 検索フォームの入力欄・ボタンが h-8(32px) で縦幅が小さく操作性が悪い。根本原因はガイドラインに主要コントロールの最小高さ基準が無く shadcn radix-nova の既定を素通ししたこと。争点 A(最小高さの数値と根拠) B(shadcn 既定の扱い方) C(検索フォーム UX) D(ガイドラインへの落とし方と機械検証) E(導入価値のある Claude Code 資産)。詳細は tools/discussion_specs/form_ux_sizing_spec.json
 - 参加者: `mobile_touch`, `form_ux`, `design_system`, `a11y_wcag`, `tooling_scout`
-- 投稿数: 5
-- 更新: 2026-08-19T10:03:50+09:00
+- 投稿数: 12
+- 更新: 2026-08-19T10:11:20+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -341,3 +341,356 @@ ring 実色 ≈ rgb(161,161,161) → 50%アルファで白背景と合成 ≈ rg
 
 ---
 **サマリー**: WCAG 2.2 の必須（AA）違反候補は **フォーカスリングのコントラスト不足（1.4.11・実測 1.5〜1.9:1 で 3:1 未達）**。ターゲットサイズ自体（2.5.8）は現状 32px で AA を満たすため違反ではなく、44px への引き上げは AAA 整合とタッチ操作性向上のための推奨。追加の実害として **iPad Safari でのオートズーム**（`md:text-sm` の穴）と **`sr-only` ラベルが 3.3.2 の意図を満たさない**という 2 点を特定した。
+
+## ラウンド 2
+
+### `mobile_touch` — 反論
+<sub>2026-08-19T10:05:50+09:00</sub>
+
+# mobile_touch レンズ: Round 2 反論・応答
+
+## 対 `a11y_wcag`: 「32px は AA 適合済み、44px は AAA 整合の推奨にすぎない」への応答
+
+**部分的に同意し、部分的に反論する。**
+
+同意する点: `a11y_wcag` の整理（2.5.8 AA の絶対下限は 24px であり、32px は形式的に AA 適合済み）は自分の Round 1 の記述と完全に一致しており、争いはない。「44px = AAA そのものへの適合義務」という主張はしていない。
+
+反論する点: 「44px は AAA 整合の“推奨”にすぎない」という **フレーミング**自体が誤解を招く。`a11y_wcag` 自身が §3 で「a11y 観点の推奨値: 40〜44px」と結論しており、根拠に自分（mobile_touch）の Fitts の法則の議論を明示的に引用している。つまり `a11y_wcag` は「AAA 整合だから」ではなく「タッチ誤操作低減のため」に 40〜44px を推奨しており、**これは AAA 準拠目的の話ではなく私の Round 1 主張と同じ実用工学上の理由**。争点は「AAA という抽象的上位基準への整合」ではなく「**この 2 コントロールに限定した、タッチ操作エラー率を下げるための実用的引き上げ**」であり、これは過剰要求（scope creep）ではない。理由は 3 点:
+
+1. **適用範囲が極小**: アプリ全体の全コントロールを 44px にせよという主張ではない。検索フォームの主要 2 要素（入力・送信）に限定しており、`design_system` の一次情報（Nova = 情報密度優先の管理画面向けスタイル）が示す通り、そもそも `h-8` 既定自体がこのユースケースの想定外だった。是正は既定値の誤用の是正であり、新たな過剰基準の追加ではない。
+2. **ユーザー体感報告との対応**: 「縦幅が小さく操作性が悪い」という報告は AA/AAA の適合ラベルとは無関係に存在する実害であり、`a11y_wcag` 自身も「操作性が良くないというユーザー報告の実体はこの隙間（AA ギリギリ）にある」と結論している。44px 論拠を「AAA 整合」に矮小化すると、この実害が見えなくなる。
+3. **40〜44px という幅ではなく 44px に一本化すべき**: `a11y_wcag` は「40〜44px」とレンジで示したが、40px（`h-10`）は 4px グリッドには乗るものの Apple HIG・WCAG AAA いずれの実数とも一致しない中途半端な値になる。`design_system` が既に `--spacing-control-md: 44px` としてトークン設計済みであり、複数レンズが同じ 44px に収束している以上、レンジを残す理由はない。**44px で確定**を維持する。
+
+## 対 `design_system`: `@theme` トークン（36/44/48px）で `pointer:coarse` 出し分けコストが下がるなら採用すべきでは
+
+**不採用の結論は維持するが、一部譲歩する。**
+
+`design_system` の `--spacing-control-{sm,md,lg}` トークンは、**「どの値を使うか」の宣言コストを下げる**ものであり、**「いつどちらを使うか（=出し分けロジック）」のコストは下げない**。`pointer: coarse` による出し分けを実装するには、`h-control-md`（44px 固定）とは別に「`pointer: coarse` のときだけ `h-control-lg`（48px）、`pointer: fine` のときは `h-control-sm`（36px）」のような **Tailwind バリアント併記**（例: `h-control-sm coarse:h-control-lg`、または `@theme` の値自体をメディアクエリで再定義する CSS カスタムプロパティの上書き）が別途必要で、これはトークン層ではなくコンポーネント/CSS 層の追加ロジック。トークンが増えても、この分岐自体は依然として実装・レビュー・（jsdom では検証不能という Round 1 の指摘の通り）**テストのコストとして残る**。
+
+加えて Round 1 で述べたハイブリッド機（`any-pointer: coarse` と `any-pointer: fine` が同時に真になりうる）の問題は **値の置き場所（トークンかどうか）とは独立**した判定ロジック自体の不確実性であり、トークン導入では解消しない。
+
+一方で譲歩する点: `design_system` が `--spacing-control-sm/md/lg` を「将来の密なコンテキスト（icon button 等）向け」として汎用的に設計したことには同意する。**このトークン基盤自体は、将来ほかの副次的コントロールで `pointer: coarse` 出し分けを採用する余地を残しておく（Round 1 §5 で述べた「密度が価値を持つ副次コントロール」向け）という点で有用**であり、トークン設計そのものへの反対はしない。反対しているのは「**今回の検索フォーム主要 2 コントロールに出し分けを適用すること**」であり、`h-control-md`（44px）で無条件固定、というのが引き続きの結論。
+
+## 対 `form_ux`: 640px 縦積み/横並び切替と、縦積み時の `w-full` ボタンの是非
+
+**`w-full` 自体はタッチ操作性の観点で明確に有利、ただし積み重ね時の縦間隔に懸念があり補強を提案する。**
+
+有利な理由: `w-full` は視覚境界とヒットエリアが一致した状態でターゲット面積を大幅に拡大する（Round 1 §2 で述べた「見えないパディングでの誤魔化しは不可」の対極＝視覚・当たり判定とも真に大きい、最も望ましい形）。横方向の到達精度要求が実質ゼロになるため Fitts's law 上も明確に有利で、640px 切替判断そのものにも異論はない。
+
+懸念点: `form_ux` の実装案（`flex flex-col gap-2` で入力欄→ボタンを縦積み、両者とも `h-11` 相当・`gap-2`=8px）では、**幅いっぱいの 2 つの大きな縦積みターゲットが 8px 間隔で隣接する**。Material 3 の「ターゲット間 8dp 以上」は形式的には満たすが、これは境界値（ちょうど最小値）であり、余裕がない。特にこのフォームは「入力 → 打ち直し（再フォーカス）→ 送信」という往復操作が起きやすく、ソフトウェアキーボード表示中は画面下部の視認性が落ちるため、**入力欄を再タップしようとしてボタンを誤タップする／その逆**のリスクが横並び時より高い（横並びなら誤タップ方向は左右のみで、縦積みでは進行方向＝スクロール/スワイプ方向と一致するため親指の慣性で行き過ぎやすい）。
+
+**提案**: 縦積み時（`<sm`）のみ `gap-2`（8px）ではなく `gap-3`（12px）に広げる（4px グリッドには適合、`sm:` 以上では横並びに戻るため `gap-2` のままでよい）。`className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-2"` のような出し分けを推奨する。これは `form_ux` の縦積み判断そのものへの反対ではなく、縦積み時の間隔値への追加提案。
+
+## 結論（争点Aへの最終スタンス・変更なし）
+
+44px（`h-11` = `design_system` の `--spacing-control-md`）を検索入力・送信ボタンの最小高さとして無条件採用。`pointer:coarse` 出し分けは不採用。縦積み時の `w-full` は採用、ただし間隔を `gap-3`（12px）に補強することを追加提案する。
+
+### `form_ux` — 反論
+<sub>2026-08-19T10:06:23+09:00</sub>
+
+# form_ux Round 2: 4 点への応答
+
+## 1. 可視ラベルの重複問題（`a11y_wcag` の 3.3.2 指摘とあわせて 1 案に絞る）
+
+指摘は妥当。現状の Round 1 案（可視ラベル「検索キーワード」+ プレースホルダ「例: react」）は、`app/page.tsx` の h1「gem-hunter」・導入文「キーワードで GitHub のリポジトリを検索します。」と **意味的に 3 重化**していた（「検索」という語が h1 直下の文脈で 3 回連呼される）。**譲歩して 1 案に絞る**:
+
+| 要素 | 文言 | 役割（重複させない） |
+|---|---|---|
+| h1 | `gem-hunter` | アプリ名（不変） |
+| 導入文（`page.tsx`） | 「キーワードで GitHub のリポジトリを検索します。」 | 1 回だけの操作説明（`§4.4` 初期状態の教育的文言と同枠。現状維持） |
+| **可視ラベル** | **「キーワード」**（「検索」を落とす） | フィールド名のみ。導入文で「検索」は既出のため反復しない |
+| プレースホルダ | 「例: react, vue, rust」等の**具体例のみ** | ラベルの言い換えではなく入力形式のヒント（NN/g の「プレースホルダをラベル代替にしない」原則に従い、ラベルと同義文にしない） |
+| ボタン | 「検索」 | 動詞（アクション）はここでのみ使う |
+
+これで `3.3.2`（全ユーザーへの可視提示）を満たしつつ、同一意味の文言を並べる冗長性を解消する。**確定案として上表を採用。**
+
+## 2. 入力欄とボタンの高さ — 統一に賛成、`mobile_touch` と `design_system` は対立していない
+
+`mobile_touch` の「無条件 44px」と、私の `h-11`(44px) は数値として完全一致している。`design_system` の 3 段トークン（`--spacing-control-sm`=36px / `-md`=44px / `-lg`=48px）も、**検索フォームが使う `default` は `control-md`=44px** であり、`mobile_touch` の 44px 提案と数値が一致する（36px は将来のアイコンボタン等、48px は未使用の予備）。**3 者は対立していない**——「3 段トークンを用意しておくが、検索フォームの入力欄・ボタンはどちらも `control-md`(44px) を使う」で一本化できる。
+
+**入力欄とボタンで高さを変えるべきか**: **同一にすべき**（44px で揃える）。理由: (a) `search-form.tsx` は横並び配置（`sm:` 以上）であり、高さが異なると視覚的なベースラインがズレて「揃っていない」印象を与える（フォームUXの基本原則）、(b) `mobile_touch` の Fitts's law の議論はボタンだけでなく入力欄のタップ／フォーカス操作にも同様に当てはまる、(c) `design_system` の差分案（`input.tsx`/`button.tsx` 双方を `h-control-md` に統一）と実装上も整合する。
+
+**訂正**: Round 1 の実装例で `h-11` を生の Tailwind クラスとして書いたが、`design_system` の争点B決定（`(iv)+(i)`: `@theme` トークン化）に従い、**`h-11` ではなく `h-control-md` を使うべき**。争点C担当としてこの点は `design_system` の決定に完全に譲る。
+
+## 3. 640px 縦積み切替の根拠 — 部分的に譲歩する
+
+正直に認める: **「640px」という具体値そのものを裏付ける一次情報は持っていない**。Tailwind の既定 `sm` を流用した提案であり、これは実装上の便宜であって研究的根拠ではない。
+
+一方で「縦積みにすべきか、横並びのまま入力欄を広く取り小さいボタンを右に置くか」という設計判断自体には、**`a11y_wcag` が既に立てている 1.4.10 Reflow の判定基準点（320 CSS px 幅）**を使って定量的に答えられる:
+
+- USWDS の入力幅目安「27 文字」（約 27ch ≈ 216px、`ch` 単位はフォント依存だが概算）
+- 争点2 で確定した高さ 44px のボタン（幅は「検索」2 文字 + `px-6` 相当のパディングで概算 90〜100px）
+- 両者を `gap-2`(8px) で横並びにすると **314〜324px**
+
+`page.tsx` の `px-4`（左右合計 32px）を引いた実効幅は、1.4.10 の判定基準点 320px の端末では **288px** しかなく、**横並びのまま入力欄を USWDS 目安幅・ボタンを 44px 確保すると 320px 端末で収まらない**（実測ではなく概算だが、既存プロジェクト制約である `NFR-15`/1.4.10 と同じ判定点を使った試算である点は一次情報に基づく）。「ボタンを小さいまま右に置く」代替案は、争点2で確定した「ボタンも 44px 必須」という結論と矛盾するため採用できない。
+
+**結論（修正版）**: ブレークポイントの具体値は「`sm`(640px) だから」ではなく、**「1.4.10 の判定基準点である 320px 幅で横並びが数学的に破綻するため縦積みが必要」**という理由に差し替える。`sm:flex-row` という実装自体は、320px ちょうどではなく安全マージンを取った実用的な閾値として維持してよいが、根拠の主張は上記に修正する。
+
+## 4. `type="search"` のネイティブクリアボタン — 過大評価を訂正
+
+WebSearch で確認（[caniuse: -webkit-search-cancel-button](https://caniuse.com/mdn-css_selectors_-webkit-search-cancel-button)、取得日 2026-08-19 JST）: `::-webkit-search-cancel-button` は **WebKit/Blink 限定の非標準機能**。Safari（iOS/macOS）・Chrome（Android/デスクトップ、Blink ベース）では値が非空のときに表示されるが、**Firefox は非対応**。仕様書に載らない非標準機能であるため、将来的に変更・削除される可能性がある。
+
+Round 1 で「JS なし前提での実効性」を暗に過大評価していた点を訂正する: **モバイルでの実効性は「Safari(iOS)・Chrome(Android) では効くが、保証された機能ではない」という限定的なものであり、UX 設計の前提にしてはならない**。JS なしで確実にクリア機能を提供する手段は存在しないため、**「クリアボタンは環境依存のボーナスであり、設計上は無いものとして扱う」**と修正する。実務上の代替は「入力欄を長押し/全選択して打ち直す」「ブラウザバック」等のユーザー任せになるが、これは JS なし GET フォームの制約上受け入れるほかない（スコープ外）。
+
+## Sources（Round 2 追加分）
+- https://caniuse.com/mdn-css_selectors_-webkit-search-cancel-button（取得日 2026-08-19 JST）
+
+### `tooling_scout` — 反論
+<sub>2026-08-19T10:07:07+09:00</sub>
+
+## 1. 自己反論: Playwright + axe-core 導入はこの Issue にオーバースコープではないか（部分的に譲歩）
+
+`docs/rules/sprint-development-rules.md` SD-2 は「`SP-1`〜`SP-3` はテスト基盤未整備につき『テストを書ける対象から書く』に緩和、CI 必須化は `SP-4` から」と定めており、本 Issue（フォーム高さ修正）は spec の一次観測に `SP-1 / PR #58` とある通りこの緩和期間に該当する。R1 で自分が提案した「`@playwright/test` + `@axe-core/playwright` を導入し `treosh/lighthouse-ci-action` を GitHub Actions に配線する」は、**2 つの異質な作業を 1 つに束ねていた**点を認め、切り分ける。
+
+- **今すぐ・スコープ内として維持**: `@playwright/test` を devDependencies に追加し、**この PR が固定する具体的な回帰**（検索入力欄・送信ボタンの実測高さが確定した基準値以上であること）だけを検証する **単一テストファイル**を書く。これは CP-1 の「自分がこのタスクで変更したコードパス上の壊れは即修正・即テスト化する」に該当し、SD-2 緩和期間の「書ける対象から書く」の範囲内。CI への blocking gate 化は不要（ローカル `npx playwright test` で十分、`SP-4` で正式に CI へ昇格）。
+- **後日・別 Issue に切り出す（訂正）**: `treosh/lighthouse-ci-action` の GitHub Actions 配線は、ワークフロー全体設計・閾値設定・Cloudflare プレビュー URL との結線（§4 で詳述）を伴うインフラタスクであり、フォーム高さ修正の PR に混ぜるとスコープ逸脱になる。**「今すぐ」から撤回し「条件付きで後日（`SP-4` または専用 Issue）」に格下げする。** ただし `ui-ux-guidelines.md` §9 が実装済みであるかのように Lighthouse CI を前提記述している点自体は事実誤認なので、争点 D の decision には「§9 の記述は "計画" であり "実装済み" ではない」と明記すべきだと lead に申し送る。
+
+## 2. `design_system` への確認: `h-8` ハードコード直値を機械的に禁止するツールは実在するか → 実在するが v4 対応が未成熟、`design_system` の「grep warning・exit 1 にしない」判断を支持する
+
+コミュニティ製 `eslint-plugin-tailwindcss`（francoismassart/eslint-plugin-tailwindcss）に `no-arbitrary-value` / `no-custom-classname` ルールが存在し、後者は `h-8` のような直値クラスをカスタムトークン以外禁止する設定が理論上可能（[GitHub](https://github.com/francoismassart/eslint-plugin-tailwindcss)・取得日 2026-08-19 JST）。しかし公式 README 自身が「Tailwind CSS v4 対応は部分的（beta チャンネル）で `no-contradicting-classname` 等に false positive が出うる」と明記している（[出典同上](https://www.npmjs.com/package/eslint-plugin-tailwindcss)）。本プロジェクトは Tailwind v4 + `@theme` トークン運用のため、**今この lint を CI の強制ゲートにすると false positive で無関係な PR を止めるリスクが高い**。したがって `design_system` が R1 で出した「新規トークン置換ルールは PR レビュー時の目視チェック項目に留め、機械検証は warning 止まり（exit 1 にしない）」という判断に **賛成・支持**する。公式のシンプルな解（shadcn 側がトークン継承を自動化する仕組み）は存在しない、という `design_system` の主張も自分の検索で追加反証は出なかったので確認が取れた。
+
+## 3. `a11y_wcag` への回答: フォーカスリングのコントラスト（1.4.11）は axe-core で自動検出できない（確認・重要な穴）
+
+Deque University の axe 4.11 ルール一覧を確認した結果、**1.4.11 Non-text Contrast を検出する専用ルールは axe-core に存在しない**（`color-contrast` / `color-contrast-enhanced` はテキストのみが対象。取得日 2026-08-19 JST）。W3C の ACT 実装表でも axe-core は非テキストコントラストの完全自動判定を「manual」扱いとしている。**`a11y_wcag` が最重要違反候補として挙げたフォーカスリング問題は、axe-core 導入だけでは CI で捉えられない**ことを明確に認める。
+
+現実的な機械検証の代替案（争点 D への追加提案）: 争点 1 で導入する Playwright テストの中で、`page.evaluate()` で `getComputedStyle` から実際に描画された `--ring` の合成色を取得し、`wcag-contrast`（npm・軽量ライブラリ）でコントラスト比を計算して `expect(ratio).toBeGreaterThanOrEqual(3)` を書くことは技術的に可能（Playwright はブラウザで実描画するため oklch → 実際の合成 RGB を正確に取得できる。`a11y_wcag` が R1 で行った手計算より高精度になる）。これは axe-core の守備範囲外を Playwright 側で埋める具体案であり、争点 1 の「単一テストファイル」に含めてよい規模（`--ring` の実装修正 1 箇所 + アサーション 1 本）。ただしこれも `SP-1` 緩和期間の「書ける対象から書く」に収まる最小追加として提案するのであって、包括的なコントラスト検証基盤の新設ではない。
+
+## 4. Lighthouse CI と Cloudflare Workers プレビュー URL: 技術的には結線可能だが今は未実装（§1 の格下げと整合）
+
+`.github/workflows/deploy-preview.yml` を確認した。`wrangler versions upload --preview-alias "pr-${PR_NUMBER}"` の標準出力から URL を正規表現で抜き出し、`steps.upload.outputs.url` として **既に GITHUB_OUTPUT に格納済み**（47〜64 行目）。したがって `treosh/lighthouse-ci-action` を同一ジョブの `upload` ステップ直後に追加し、`urls: ${{ steps.upload.outputs.url }}` を渡せば技術的には動く形にできる（プレビュー URL が PR ごとに変わる問題への解は "同一ワークフロー内で output を橋渡しする" というだけで、追加のインフラは不要）。**「動く形になっているか」への回答は「配線方法は特定済みだが、当該ワークフローへの追加はまだ行われていない」**。§1 の格下げ判断と整合させ、争点 D の decision には「配線先・手順は本ラウンドで確定済み（`deploy-preview.yml` の `upload` ステップ直後に 1 ステップ追加）、実装は SP-4 または専用 `type:improvement` Issue に切り出す」と明記することを lead に提案する。
+
+### `a11y_wcag` — 反論
+<sub>2026-08-19T10:07:29+09:00</sub>
+
+## a11y_wcag: Round 2 反論・譲歩
+
+### 1. mobile_touch への応答 — 「AA適合=十分」は維持できない。44px に一本化する
+
+`mobile_touch` の指摘は正しい。**Round 1 の自分の論法を訂正する**: 「2.5.8 AA は 32px で満たす」という命題自体は事実として変わらないが、これを「だから 32px で十分」という含意で使ったのは誤りだった。WCAG 適合は **法的下限（compliance floor）** であり、**使いやすさ（usability optimum）を保証しない**。両者は別の物差しであり、ユーザーが「操作性が悪い」と報告した事実は使いやすさの物差しの上で起きている。適合の物差しだけでこれを退けることはできない。
+
+**最終数値を 1 つに絞る**: `mobile_touch` の 44px（`h-11`）に **a11y レンズとしても合意し、40〜44px というレンジ表記は取り下げる**。根拠を a11y 側から補強すると、44px は 2.4.13 Focus Appearance（AAA・`4h+4w` の面積式）を余裕を持って満たせる下限でもあり、Round 1 で自分が挙げた 2.5.5（AAA・44px）と mobile_touch の Apple HIG/Material 3 根拠が同じ数値に収束している。**この一致を偶然ではなく「業界の実用ラインが概ね 44px に収斂している」という強いシグナルとして扱うべき**。§7.5 の改題案（Round 1 の 4 番目の提案）は「2.5.8=AA必須下限 24px」「44px=実用推奨値（AAA整合・複数一次情報が独立に一致）」という**2段書き**のまま維持するが、「推奨」の欄は 40〜44px のレンジではなく **44px 単一値**に修正する。
+
+### 2. design_system への回答 — 測定根拠の明示（誤測定なら結論変更もあり得るため精査した）
+
+**基準色**: `--background`（ライト `oklch(1 0 0)`=白、ダーク `oklch(0.145 0 0)`）。理由は 1.4.11 の「adjacent colors」定義（コンポーネントに隣接する色）に従うため。`focus-visible:ring-3` は `box-shadow` としてコンポーネント外側に描画されるリングであり、`Input` は `bg-transparent`（実質ページ背景色）、`Button` の `bg-primary` はリング自体の外側描画には関与しない（リングは要素の境界の**外**に出るため、隣接色はページ背景が正しい）。この点に異論があれば design_system の実装知見で訂正してほしい。
+
+**換算方法**: (1) `oklch(L C H)` → OKLab → 線形 sRGB（CSS Color 4 の標準変換行列）→ ガンマ補正で 8bit sRGB。(2) アルファ合成: **2 通りの方法で再計算し、結果が一致することを確認した**——① 素朴な sRGB ガンマ空間での 8bit 線形補間（Round 1 の方法）: 光 ≈ rgb(208,208,208) → 白背景比 **1.54:1**。② Tailwind v4 の `color-mix()` が実際に採用する可能性が高い **OKLab 空間での知覚的合成**（`L` 値を直接 50:50 で混合してから sRGB化）: 光 ≈ rgb(207,207,207) → 白背景比 **1.56:1**。ダークモードも同様に両方式で **1.77〜1.87:1**。**どちらの合成方式でも 3:1 の半分程度にしかならず、結論（1.4.11 未達）は合成方式の選択に依存しない**。ただし実際に Tailwind がどちらの color space で `/50` を解決しているかはビルド後の CSS（`ring-color` の計算値）を実機で確認していない自己申告の限界であり、**最終判定は実装 PR で `getComputedStyle` の実測値を axe DevTools 等で再確認することを条件とする**（Round 1 で既に明記済みの留保を維持）。
+
+### 3. form_ux への回答 — 可視ラベルは解決するが、現状 `sr-only` は「適合違反」ではなく「設計上の劣後」だった（Round 1 の記述を訂正）
+
+`labels-or-instructions.html` の **Sufficient Techniques / Failures** を再確認した。**視覚的に非表示なラベル（`display:none` ではなく clip 技法＝`sr-only`）を明示的に不十分とする Failure 技法は存在しない**。H44（label 要素での関連付け）は可視性を要求しておらず、現状の `<label htmlFor="q" className="sr-only">` は **技術的な十分基準（sufficient technique）を満たしており、3.3.2 の適合違反と断定することはできない**。
+
+Round 1 で「3.3.2 の意図と衝突する」と書いたのは、Understanding 文書の **Intent セクション**（規範的な SC 本文ではなく解説）の記述を根拠にしたものであり、これは **確定的な適合違反の主張ではなく、W3C 自身が推奨する設計方針からの逸脱という「設計上の劣後」に位置づけを訂正する**。したがって:
+
+- `form_ux` の可視ラベル案は 3.3.2 を「不適合から適合に直す」ものではなく、**「適合はしているが弱い実装」を「意図に忠実な強い実装」に引き上げるもの**。
+- a11y レンズとしては `form_ux` の可視ラベル案を **全面的に支持する**（Intent 準拠・NN/g のプレースホルダ弊害の知見とも整合）が、§7 への追記文言は「`sr-only` は 3.3.2 違反」ではなく「**`sr-only` は 3.3.2 の技術的最低ラインは満たすが、可視ラベルが推奨される**」という正確な強度で書く（Round 1 の提案 5 番を訂正）。
+
+### 4. tooling_scout への回答 — 自分が挙げた SC のうち自動検出できる/できないの線引き
+
+| SC | axe-core 標準ルールで自動検出 | Playwright 自作アサーションで検出可能 | 検出不可（要目視/専門判断） |
+|---|---|---|---|
+| 2.5.8 Target Size (Minimum) | △（`target-size` ルールはあるが重なり判定は「要レビュー」扱いになりやすい） | ○（`boundingBox()` で px 実測・閾値比較は確実） | — |
+| 2.5.5 Target Size (Enhanced) | ×（axe は AAA のこのルールを既定で持たない） | ○（同上、閾値を 44px にするだけ） | — |
+| 2.5.3 Label in Name | ○（`label-content-name-mismatch` ルールで自動検出） | — | — |
+| 3.3.2 Labels or Instructions | △（ラベルの**存在**は `label`/`aria-*` 系ルールで検出可。ラベルが**可視かどうか**は axe も Playwright の単純アサーションも判定基準を持たない） | △（`getComputedStyle` で `clip`/`position:absolute` パターンを検出する自作スクリプトなら可能だが一般解ではない） | 「可視ラベルが望ましい」という**設計判断そのもの**は自動化不可（3 番の議論の通り） |
+| 1.4.11 Non-text Contrast（今回発見したフォーカスリング問題） | **×（axe-core の `color-contrast` 系ルールはテキストが対象で、box-shadow によるフォーカスリングのような非テキスト UI 要素の隣接色コントラストは標準ルールでは検出しない）** | △（`getComputedStyle` で focus 時の `box-shadow` 値をパースし、算出した rgba を今回と同じ計算式でコントラスト判定する**自作スクリプトを書けば可能**。汎用ルールが無いだけで技術的に不可能ではない） | — |
+| 1.4.10 Reflow | ×（ズームシミュレーションは axe の対象外） | ○（`page.setViewportSize({width:320,...})` 後に `scrollWidth <= clientWidth` を確認すれば機械判定できる） | — |
+| 2.4.11 Focus Not Obscured / 2.4.13 Focus Appearance | ×（どちらも axe-core に相当ルールなし） | △（2.4.11 は sticky header の座標と focus 要素の座標を比較する自作スクリプトで部分的に可能。2.4.13 の面積式・コントラスト差はフォーカス時/非フォーカス時のスクリーンショット差分か box-shadow 解析が必要で実装コストが高い） | 実質的に手動チェックリスト（§7.7）に残すのが現実的 |
+
+**線引きの結論**: `tooling_scout` の「Playwright + axe-core」提案のうち、**axe-core が担えるのは 2.5.3 と（ラベル存在レベルの）3.3.2 のみ**。**今回最も重い指摘だった 1.4.11（フォーカスリングのコントラスト）は axe-core の対象外**であり、CI で機械的に守らせるには **`box-shadow` の computed style を解析する自作 Playwright スクリプト**が別途必要になる（既存提案の `boundingBox()` アサーションの隣に追加する形）。§7.7 の手動チェックリストから「フォーカスリングのコントラスト比を実測した」の項目は、**自動化提案が採用されるまで削除しない**（tooling_scout の判定に対する追加要望）。
+
+---
+**まとめ**: 争点1は 44px へ一本化（mobile_touch に譲歩）。争点2は 2 通りの合成方式で再計算し結論は変わらないことを確認（design_system への根拠開示）。争点3は「適合違反」から「設計上の劣後」へ自説を訂正しつつ form_ux 案を支持（concession）。争点4は axe-core の守備範囲外（特に 1.4.11）を明示し、tooling_scout の提案に自作スクリプトの追加を要望した。
+
+### `design_system` — 反論
+<sub>2026-08-19T10:08:43+09:00</sub>
+
+## 1. `tooling_scout`/コーディネーターの指摘への応答: 案 (i) の upstream 差分管理と機械検知
+
+指摘は妥当。「`ui-ux-guidelines.md` §1 への目視レビュー項目追記」だけでは、私が (ii)(iii) を却下した理由（**記憶依存で再発を防げない**）と**同じ弱点**を抱える。ここは訂正する。
+
+ただし (ii)/(iii) と本件には **構造的な違い** があり、その違いを使えば機械検知は可能だと考える。
+
+- (ii)/(iii) が防げない理由は「呼び出し箇所が**アプリ全体に無制限に散らばる**」ため（コンポーネント呼び出しは何百箇所にでも増えうる）。
+- 一方 shadcn の既定値問題は **`src/ui/components/*.tsx` という有限かつ列挙可能なファイル集合**にしか発生しない（`shadcn add` が生成するのはこのディレクトリだけ）。しかも cva の `size` variant は `default:` キーという**構文的に特定できる位置**にある。
+
+**具体的な機械チェック案**（`tools/check_control_token_usage.py` として新規追加。既存の `check_cjk_markdown.py`/`self_review_check.py` と同系統の pre-PR チェックに合流させる）:
+
+```python
+# src/ui/components/*.tsx の cva size variants から `default:` エントリの文字列を抽出し、
+# h-6 / h-7 / h-8 / size-6 / size-7 / size-8 等の生の高さ値を含み、
+# かつ "control-" を含まない場合に fail（xs/sm は対象外・意図的な密なバリアントのため許容）。
+# Input のような単一コンポーネントは cn(...) 第一引数の先頭トークンを同様にチェックする。
+```
+
+- これは「新規追加されたコンポーネントファイルの `default` サイズが `control-*` トークン経由か」だけを見る**狭い**チェックであり、(ii)/(iii) のような無制限サーフェスの検知を試みているわけではない。**exit 1 のハードゲート**にできる（`xs`/`sm` は除外ルールが明確なので誤検知しにくい）。
+- 補足として `git diff --name-only` で `src/ui/components/` 配下の新規ファイルに絞れば、`shadcn add` 直後の 1 回だけ走らせれば十分（毎回全ファイルを舐める必要はない）。
+
+**結論**: 「運用（目視）」から「機械ゲート」へ格上げする。r1 で書いた §1 追記は**残しつつ**（人間が見落とした場合の二重防御として）、主防御はこのスクリプトにする。r1 の提案を撤回はしないが、`tooling_scout` の指摘どおり単独では不十分だったことは認める。
+
+## 2. `a11y_wcag` の iPad Safari オートズーム指摘への応答: フォントサイズトークン化は不要、`md:text-sm` を削除する
+
+指摘を**全面的に受け入れる**。r1 は高さのみに注目しトークン設計の対象を狭めすぎた。
+
+ただし対処は「フォントサイズの新規トークン化」ではない。理由: 16px は既に **Tailwind 既定の `text-base` ユーティリティ**であり、かつガイドライン §2.3 の 5 段階タイポスケール（12/14/16/20/24）に**既に含まれている値**。高さ（`h-8`）の場合と違い、shadcn の既定値と衝突する新しい値が必要なわけではなく、**単に `md:` での上書きを消せば済む**。新トークンを増やすとむしろ「なぜ 2 つ目のサイズ体系があるのか」を混乱させる（YAGNI 観点でも不要）。
+
+**具体的差分**（`src/ui/components/input.tsx` 11 行目、r1 で示した `h-control-md` 化と合わせて適用）:
+
+```diff
+- 'h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none ... md:text-sm dark:bg-input/30 ...'
++ 'h-control-md w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-1 text-base transition-colors outline-none ... dark:bg-input/30 ...'
+```
+
+（`text-base` はブレークポイント無条件で維持、`md:text-sm` を除去。`file:text-sm` はファイル選択ボタンの内部テキストで編集可能フィールド本体ではないため対象外＝オートズーム要因にならない）。
+
+**範囲の限定**: これは `Input`（テキスト編集可能フィールド）専用の対処。`Button` の `text-sm`（14px・タイポスケール内）はフォーカスでキャレットが立たない要素なのでオートズーム対象外、変更不要。`a11y_wcag` の指摘通り「ブレークポイントを問わず 16px 未満にしない」を §7 に明文化する提案にも賛成（design_system としては「input.tsx が実例」として PR に添える）。
+
+## 3. `mobile_touch`/`form_ux` 収斂値と 4px グリッド表記の齟齬への応答: ガイドライン側を改訂する
+
+**36/44/48px は §2.3 が列挙する `4 / 8 / 12 / 16 / 24 / 32` には無いが、4 の倍数ではあるので数学的には矛盾しない（36=4×9, 44=4×11, 48=4×12）。** 問題は「ガイドラインの列挙が言葉足らずだった」ことにある。
+
+現行 §2.3 の「スペーシング」節は文脈上 **margin/gap/padding のレイアウト間隔**を指しており、**コントロールの視覚的高さ**という別カテゴリの値を暗に除外していない代わりに明記もしていない（この暗黙の前提のズレが、そもそも h-8 を誰も疑わなかった一因＝今回の根本原因そのものと同型）。**値を 4px グリッド内に収めるという原則自体は変えず、列挙を拡張する**のが正しい対処であり、ガイドライン本文の改訂を提案する。
+
+**具体的差分**（`docs/03_design/ui-ux/ui-ux-guidelines.md` §2.3、既存の「スペーシング」箇条の直後に新設）:
+
+```diff
+  - **スペーシング**: 4px グリッドに載せる（4 / 8 / 12 / 16 / 24 / 32）。任意の値を書かない
++ - **コントロール高さ**: 4px グリッドに載せる専用スケール（36 / 44 / 48px）。主要な操作系コンポーネント（検索入力・送信ボタン等）の既定は `--spacing-control-{sm,md,lg}`（`app/globals.css`）を参照し、生の `h-*` 数値を直書きしない
+```
+
+`mobile_touch`/`a11y_wcag` が収斂した 44px を採用する前提であれば、r1 で提示した `--spacing-control-md: calc(var(--spacing) * 11)` (=44px) はそのまま使える。r1 の値（36/44/48）は変更不要、**ガイドライン側の記述を追随させる**というのが design_system としての最終回答。
+
+## 4. `a11y_wcag` のフォーカスリング・コントラスト不足への応答: `--ring` の具体的な改訂案
+
+これはトークンの持ち場なので担当として具体案を出す。ただし **oklch→sRGB の精密な数値は自前計算では確定できない**（`a11y_wcag` 自身も同じ注記を付けている）。ここでは「方向性 + 実装パターン」を確定させ、**マージ前に axe DevTools / Colour Contrast Analyser での実測を必須とする**運用を前提にする（数値を断定しない）。
+
+**方針**: (a) `--ring` の L 値を暗背景/明背景それぞれで離す、(b) `ring-ring/50` の半透明依存を弱める（アルファを上げる）— 2 つを併用してどちらか一方の精度誤差を吸収する。
+
+**具体差分**（`app/globals.css`）:
+
+```diff
+  :root {
+    ...
+-   --ring: oklch(0.708 0 0);
++   --ring: oklch(0.5 0 0);   /* 現状より暗く。/50 のアルファ込みで 3:1 を狙う。要実測 */
+    ...
+  }
+  .dark {
+    ...
+-   --ring: oklch(0.556 0 0);
++   --ring: oklch(0.78 0 0);  /* 現状より明るく。背景 oklch(0.145) との差を拡大。要実測 */
+    ...
+  }
+```
+
+**具体差分**（`src/ui/components/input.tsx` と `button.tsx` の両方、`focus-visible:ring-3 ring-ring/50` → `focus-visible:ring-3 ring-ring/70` 相当にアルファを引き上げ。両ファイルで文字列は同一箇所なので `sd` 一括置換可）:
+
+```diff
+- focus-visible:ring-3 ring-ring/50
++ focus-visible:ring-3 ring-ring/70
+```
+
+**次のアクション**（lead への申し送り）: この 2 値（`--ring` の L・アルファ %）は実装 PR で axe DevTools 実測してから確定する。**「3:1 を満たす」という受け入れ条件だけを先に確定し、具体数値は実装時の実測ループに委ねる**のが誠実な進め方（未実測の数値を確定値として主張しない）。`--ring` は Input/Button 両方が共有する 1 トークンなので、**1 箇所の修正で両コンポーネントに波及する**のが今回のトークン化方針の副産物としての利点（争点 B の設計判断がここでも効いている）。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-19T10:09:29+09:00</sub>
+
+## 合意に達した点
+
+1. **数値は 44px に完全収束した**。`mobile_touch`（Apple HIG 44pt / Fitts の法則）・`form_ux`（USWDS の入力幅目安との整合）・`design_system`（`--spacing-control-md`）・`a11y_wcag`（Round 2 で 40〜44px のレンジを撤回し 44px に一本化）の 4 レンズが独立の根拠から同一値へ到達した。
+2. **「WCAG AA 適合＝十分」は棄却された**。`a11y_wcag` が自ら訂正したとおり、2.5.8（AA・24px）は法的下限であり使いやすさを保証しない。ユーザーの体感報告は適合の物差しの上ではなく使いやすさの物差しの上にある。
+3. **入力欄とボタンは同一高さ（44px）で揃える**（横並び時のベースライン整合・両者ともタップ対象）。
+4. **`pointer: coarse` による出し分けは不採用**。トークン化しても出し分けロジック自体のコストは下がらず、ハイブリッド機での判定不確実性も残る（`mobile_touch` の反論を `design_system` が受け入れ）。
+5. **`sr-only` ラベルは「3.3.2 違反」ではなく「設計上の劣後」**（`a11y_wcag` が Round 2 で自説を訂正）。ただし可視ラベルへの変更は 4 レンズとも支持。
+6. **フォーカスリングのコントラスト不足（1.4.11・AA）が本議論で発見された最も重い問題**。2 通りの色合成方式で再計算しても 3:1 の約半分（ライト 1.54〜1.56:1 / ダーク 1.77〜1.87:1）で結論は変わらない。
+7. **axe-core はフォーカスリングのコントラスト（1.4.11）を検出できない**（`tooling_scout` が Deque のルール一覧で確認）。「axe を入れれば a11y が守れる」は誤り。
+
+## 議論を経て変わった主張（相互検証が効いた点）
+
+| 主張者 | Round 1 | Round 2 での変化 |
+|---|---|---|
+| `a11y_wcag` | 「32px でも AA 適合済み」「`sr-only` は 3.3.2 の意図不適合」 | 44px に一本化して譲歩。`sr-only` は「適合違反ではなく設計上の劣後」へ位置づけを訂正 |
+| `form_ux` | 生の `h-11`・可視ラベル「検索キーワード」・640px の根拠 | `h-control-md` トークンへ差し替え。ラベルを「キーワード」に絞り h1・導入文との三重化を解消。640px は一次情報の根拠なしと認め、1.4.10 の 320px 基準点での試算に差し替え。`type=search` のクリアボタンは非標準（Firefox 非対応）と訂正し設計前提から外す |
+| `design_system` | 再発防止は「目視レビュー項目の追記」 | 自らの弱点（記憶依存）を認め `grep` による機械検知へ差し替え。`text-base md:text-sm` は `a11y_wcag` に全面譲歩して 16px 固定へ |
+| `tooling_scout` | Playwright + axe-core + Lighthouse CI を「今すぐ」 | 束ねすぎと自己反論。Lighthouse CI 配線は撤回して別 Issue へ格下げ |
+| `mobile_touch` | 44px 無条件 | 維持。ただし縦積み時の間隔を `gap-2`→`gap-3` に補強する追加提案 |
+
+## 残った対立
+
+なし。争点 A〜E すべてで収束した。`tooling_scout` の Playwright 導入スコープのみ lead 判断で確定させる（下記 verdict D-2）。
+
+### `lead` — 判定
+<sub>2026-08-19T10:11:20+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: 主要コントロールの最小高さ",
+      "design": "検索入力・送信ボタンの高さを 44px に統一し、ブレークポイントによる出し分けをしない。24px（WCAG 2.5.8 AA）は法的下限であり実用基準として採用しない。pointer: coarse による出し分けは不採用",
+      "evidence": [
+        "https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced.html",
+        "https://m3.material.io/foundations/designing/structure",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/pointer"
+      ],
+      "artifacts": ["app/globals.css（改修）", "src/ui/components/input.tsx（改修）", "src/ui/components/button.tsx（改修）"],
+      "rejected": "40px（4px グリッドには乗るがどの一次情報とも一致しない中途半端な値）/ 48px（lg=36px との差が開きすぎる）/ 見えないパディングでヒットエリアだけ拡張する案（視覚的な小ささという体感報告に対応しない・隣接コントロールとヒットエリアが重なる）/ pointer: coarse 出し分け（ハイブリッド機で any-pointer が同時に真になり判定が不確実。トークン化しても分岐ロジックのコストは下がらない）"
+    },
+    {
+      "issue": "B: shadcn radix-nova の h-8 既定の扱い",
+      "design": "(iv) @theme に --spacing-control-{sm,md,lg} = 36/44/48px を定義し、(i) input.tsx / button.tsx の既定をそのトークンで書き換える併用案。呼び出し側の className 上書き（iii）と size バリアント運用（ii）は記憶依存で再発を防げないため不採用。再発防止の主防御は機械チェック（src/ui/components/*.tsx の cva default エントリに生の h-6/h-7/h-8/size-8 が入っていないか）とし、ガイドラインへのチェック項目追記は二重防御として併置する",
+      "evidence": [
+        "https://x.com/shadcn/status/1999530419125981676",
+        "https://tailwindcss.com/docs/theme",
+        "https://tailwindcss.com/docs/height",
+        "https://github.com/shadcn-ui/ui/discussions/7170"
+      ],
+      "artifacts": ["app/globals.css（改修）", "src/ui/components/input.tsx（改修）", "src/ui/components/button.tsx（改修）", "tools/check_control_token_usage.py（新規）"],
+      "rejected": "呼び出し側 className 上書き / size バリアントの都度選択 / eslint-plugin-tailwindcss による強制ゲート（v4 対応が未成熟で false positive のリスク）"
+    },
+    {
+      "issue": "C: 検索フォームの UX",
+      "design": "可視ラベル『キーワード』を追加（sr-only を廃止）。プレースホルダは具体例のみ（例: react, vue, rust）に格下げしラベルの言い換えにしない。送信ボタンは『検索』テキストを維持（アイコン単体化しない）。レイアウトは縦積み gap-3 を既定とし sm 以上で横並び gap-2 + items-end。ボタンは w-full sm:w-auto。input の md:text-sm を削除し 16px 固定にする（iPad Safari のオートズーム対策）。type=search のネイティブクリアボタンは非標準（Firefox 非対応）のため設計前提にしない",
+      "evidence": [
+        "https://www.nngroup.com/articles/form-design-placeholders/",
+        "https://design-system.service.gov.uk/components/text-input/",
+        "https://designsystem.digital.gov/components/search/",
+        "https://www.nngroup.com/articles/magnifying-glass-icon/",
+        "https://css-tricks.com/16px-or-larger-text-prevents-ios-form-zoom/",
+        "https://caniuse.com/mdn-css_selectors_-webkit-search-cancel-button",
+        "https://www.w3.org/WAI/WCAG21/Understanding/reflow.html"
+      ],
+      "artifacts": ["src/ui/search-form.tsx（改修）", "src/ui/components/input.tsx（改修）"],
+      "rejected": "ラベル文言『検索キーワード』（h1・導入文・ボタンと『検索』が三重化する）/ sr-only ラベルの維持（3.3.2 の技術的最低ラインは満たすが W3C の意図に対して劣後）/ 横並び固定（320px 幅で入力欄 27 文字目安 + 44px ボタンが数学的に収まらない）"
+    },
+    {
+      "issue": "D-1: フォーカスリングのコントラスト（本議論で発見した最も重い問題・WCAG 1.4.11 AA）",
+      "design": "ring-ring/50 の半透明依存をやめて不透明にし、ライトの --ring を暗くする。合成後のコントラスト比が背景に対し 3:1 以上であることを機械チェックで検証してから確定する（手計算の値を断定しない）",
+      "evidence": ["https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast.html", "https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html"],
+      "artifacts": ["app/globals.css（改修）", "src/ui/components/input.tsx（改修）", "src/ui/components/button.tsx（改修）", "デザイントークンのコントラスト検証テスト（新規）"],
+      "rejected": "アルファ /50 のまま L 値だけ下げる案（ライトで L≈0.29 とほぼ黒になり意匠が破綻する）/ 実測せずに提案値を確定値として採用すること"
+    },
+    {
+      "issue": "D-2: 基準の機械検証（スコープの確定・lead 判断）",
+      "design": "本 PR に含めるのは jsdom で成立する検証のみ（コントロールがトークン経由か・フォーカスリングのコントラスト比・フォームのマークアップ）。実レイアウトの高さ実測（Playwright の boundingBox）と axe-core / Lighthouse CI の CI 配線は本 PR に含めず別 Issue に切り出す。理由は SD-2 の緩和期間（SP-1〜SP-3）に当たること、および E2E 基盤の整備は SP-4 の担当であること。ガイドライン §9 が Lighthouse CI を実装済みであるかのように前提記述している点は『計画であり未実装』と明記して訂正する",
+      "evidence": ["https://playwright.dev/docs/api/class-locator#locator-bounding-box", "https://dequeuniversity.com/rules/axe/4.11"],
+      "artifacts": ["docs/03_design/ui-ux/ui-ux-guidelines.md（改修）", "別 Issue（新規起票）"],
+      "rejected": "本 PR で Playwright + axe-core + Lighthouse CI を一括導入する案（tooling_scout 自身が自己反論でスコープ逸脱を認めた）/ vitest + jsdom で高さを実測する案（jsdom は CSS レイアウトエンジンを持たず原理的に不可能）"
+    },
+    {
+      "issue": "E: 導入価値のある Claude Code 資産",
+      "design": "今すぐ導入するものは無い（既存の eslint-plugin-jsx-a11y は eslint-config-next 経由で既に有効）。Playwright + @axe-core/playwright は SP-4 の E2E 基盤整備とあわせて導入する。shadcn MCP / Chrome DevTools MCP は必要が生じてから。frontend-design plugin は本プロジェクトの抑制的なデザイントークン制約と方向性が逆のため採らない。判断の根拠と再評価の条件をリサーチ記録に残す",
+      "evidence": ["https://ui.shadcn.com/docs/mcp", "https://github.com/ChromeDevTools/chrome-devtools-mcp/", "https://claude.com/plugins/frontend-design"],
+      "artifacts": ["docs/03_design/ui-ux/20260819-form-ux-research.md（新規）"],
+      "rejected": "Storybook + a11y addon（アプリ規模に対して過剰）/ 新規スキルの作成（既存 code-review / pr-review-watcher の責務と重複する）"
+    }
+  ],
+  "critical": [
+    "フォーカスリングのコントラスト不足（WCAG 1.4.11 AA・ライト 約1.5:1 / ダーク 約1.9:1 で 3:1 未達）。本 PR で是正し機械チェックで検証する",
+    "input.tsx の md:text-sm により iPad Safari（ビューポート幅 768px）で入力欄タップ時にオートズームが発生する。本 PR で是正する",
+    "ガイドライン §9 が Lighthouse CI による判定を前提にしているが .github/workflows/ に該当ワークフローは存在しない（記述と実態の乖離）"
+  ],
+  "open_questions": []
+}
