@@ -1,4 +1,13 @@
 {
+  "common": {
+    "localeSwitcher": {
+      "navLabel": "Language",
+      "localeNames": {
+        "ja": "日本語",
+        "en": "English"
+      }
+    }
+  },
   "home": {
     "title": "gem-hunter",
     "description": "Search GitHub repositories by keyword.",
