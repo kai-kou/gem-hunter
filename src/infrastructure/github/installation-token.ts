@@ -1,6 +1,7 @@
 import { SignJWT, importPKCS8 } from 'jose'
 
 import { UpstreamError } from '../../domain/errors'
+import type { ClockPort } from '../../domain/ports/clock-port'
 import type { TokenProvider } from './github-repository-query'
 
 /**
@@ -13,6 +14,15 @@ import type { TokenProvider } from './github-repository-query'
 const TOKEN_EXPIRY_MARGIN_MS = 60_000
 
 type CachedToken = { value: string; expiresAt: number }
+
+/**
+ * ⚠️ **意図的にモジュールレベルで共有する（クロージャ化しない）**。
+ * GitHub App は 1 つなので installation token もプロセス全体で 1 つでよく、
+ * `app/page.tsx` はリクエストごとに composition root（`makeInstallationTokenProvider` を含む
+ * ファクトリ群）を呼び直す — もしここをクロージャに移すと、キャッシュがリクエストごとに
+ * 作り直され、毎リクエストで installation token を取り直すことになり悪化する。
+ * ファクトリの全インスタンス間でこの 1 変数を共有するのは設計判断であって漏れではない。
+ */
 let cached: CachedToken | null = null
 
 type AppCredentials = {
@@ -32,8 +42,11 @@ function readCredentials(): AppCredentials | null {
   return { clientId, installationId, privateKeyPkcs8 }
 }
 
-async function requestInstallationToken(credentials: AppCredentials): Promise<CachedToken> {
-  const now = Math.floor(Date.now() / 1000)
+async function requestInstallationToken(
+  credentials: AppCredentials,
+  clock: ClockPort,
+): Promise<CachedToken> {
+  const now = Math.floor(clock.now().getTime() / 1000)
   const key = await importPKCS8(credentials.privateKeyPkcs8.replace(/\\n/g, '\n'), 'RS256')
   const jwt = await new SignJWT({})
     .setProtectedHeader({ alg: 'RS256' })
@@ -70,20 +83,23 @@ async function requestInstallationToken(credentials: AppCredentials): Promise<Ca
 /**
  * 資格情報が揃っていれば installation token を、揃っていなければ null を返す。
  * null のときデータアクセス層は未認証で GitHub API を叩く（枠は狭いが動作は止めない）。
+ * 時刻は `ClockPort` 経由で受け取る（テスト決定性・SD-2。composition root で束ねる）。
  */
-export const installationTokenProvider: TokenProvider = async () => {
-  const credentials = readCredentials()
-  if (!credentials) {
-    return null
-  }
+export function makeInstallationTokenProvider(deps: { clock: ClockPort }): TokenProvider {
+  return async () => {
+    const credentials = readCredentials()
+    if (!credentials) {
+      return null
+    }
 
-  const now = Date.now()
-  if (cached && cached.expiresAt - TOKEN_EXPIRY_MARGIN_MS > now) {
+    const now = deps.clock.now().getTime()
+    if (cached && cached.expiresAt - TOKEN_EXPIRY_MARGIN_MS > now) {
+      return cached.value
+    }
+
+    cached = await requestInstallationToken(credentials, deps.clock)
     return cached.value
   }
-
-  cached = await requestInstallationToken(credentials)
-  return cached.value
 }
 
 /** テスト用にキャッシュを捨てる。 */

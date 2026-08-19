@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest'
+
+import { searchQuery } from '../../domain/model/search-query'
+import { repositoryCacheKey, searchResultCacheKey } from './cache-key'
+
+describe('searchResultCacheKey', () => {
+  it('検索結果は search 名前空間になる', () => {
+    const key = searchResultCacheKey(searchQuery({ keyword: 'gem hunter' }))
+    expect(key.startsWith('search:')).toBe(true)
+  })
+
+  it('キーワードの前後空白・大文字小文字の違いは同じキーに正規化される', () => {
+    const a = searchResultCacheKey(searchQuery({ keyword: '  Next.js  ' }))
+    const b = searchResultCacheKey(searchQuery({ keyword: 'next.js' }))
+    expect(a).toBe(b)
+  })
+
+  it('ページ番号が異なれば別キーになる', () => {
+    const page1 = searchResultCacheKey(searchQuery({ keyword: 'next', page: 1 }))
+    const page2 = searchResultCacheKey(searchQuery({ keyword: 'next', page: 2 }))
+    expect(page1).not.toBe(page2)
+  })
+
+  it('キーワードが異なれば別キーになる', () => {
+    const a = searchResultCacheKey(searchQuery({ keyword: 'foo' }))
+    const b = searchResultCacheKey(searchQuery({ keyword: 'bar' }))
+    expect(a).not.toBe(b)
+  })
+
+  // フィールドが増えたら `searchResultCacheKey` の構成要素を見直す（NFR-18）。
+  it('SearchQuery のフィールド集合は keyword / page の 2 つのままである（増えたら searchResultCacheKey の更新漏れを検知するガード）', () => {
+    const query = searchQuery({ keyword: 'x' })
+    expect(Object.keys(query).sort()).toEqual(['keyword', 'page'])
+  })
+})
+
+describe('repositoryCacheKey', () => {
+  it('単一リポジトリは repository 名前空間になる（search とキーが衝突しない）', () => {
+    const key = repositoryCacheKey('facebook', 'react')
+    expect(key.startsWith('repository:')).toBe(true)
+  })
+
+  it('owner/name の大文字小文字・前後空白は正規化される', () => {
+    const a = repositoryCacheKey('  Facebook  ', 'React')
+    const b = repositoryCacheKey('facebook', 'react')
+    expect(a).toBe(b)
+  })
+
+  it('owner が異なれば別キーになる', () => {
+    const a = repositoryCacheKey('facebook', 'react')
+    const b = repositoryCacheKey('vuejs', 'react')
+    expect(a).not.toBe(b)
+  })
+
+  it('name が異なれば別キーになる', () => {
+    const a = repositoryCacheKey('facebook', 'react')
+    const b = repositoryCacheKey('facebook', 'relay')
+    expect(a).not.toBe(b)
+  })
+
+  it('利用者識別子を含まない（NFR-18）', () => {
+    const key = repositoryCacheKey('facebook', 'react')
+    expect(key).not.toMatch(/viewer|user|session/i)
+  })
+
+  it('検索結果のキーと衝突しない（NFR-18: 名前空間分離）', () => {
+    const searchKey = searchResultCacheKey(searchQuery({ keyword: 'react' }))
+    const repoKey = repositoryCacheKey('facebook', 'react')
+    expect(searchKey).not.toBe(repoKey)
+  })
+
+  it('合成済み文字と分解形の Unicode 表現は同じキーに正規化される（NFC 正規化）', () => {
+    const composedOwner = 'caf\u00e9' // \u00e9 = U+00E9（合成済み）
+    const decomposedOwner = 'caf\u0065\u0301' // e + U+0301（結合文字による分解形）
+    expect(composedOwner).not.toBe(decomposedOwner) // 前提: 2 つの入力は文字列として異なる
+
+    const composed = repositoryCacheKey(composedOwner, 'react')
+    const decomposed = repositoryCacheKey(decomposedOwner, 'react')
+    expect(composed).toBe(decomposed)
+  })
+})
