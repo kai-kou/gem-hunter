@@ -25,8 +25,7 @@
 | 項目 | 値 | 適用対象 |
 |---|---|---|
 | 主要コントロールの高さ | **44px**（`--spacing-control-md`） | 検索入力欄・送信ボタン等、利用者が必ず触る操作系 |
-| 副次コントロールの高さ | 36px（`--spacing-control-sm`） | 密度が価値を持つ文脈（将来のアイコンボタン等） |
-| 余裕を持たせる高さ | 48px（`--spacing-control-lg`） | 予備（現状未使用） |
+| 既定より大きい導線の高さ | 48px（`--spacing-control-lg`） | `Button` の `size="lg"` |
 | フォームコントロールの文字サイズ | **16px 以上（ブレークポイント非依存）** | `input` / `textarea` / `select` |
 | フォーカスリングのコントラスト | **背景に対し 3:1 以上** | 全コントロール |
 | コントロール間の間隔 | 縦積み 12px / 横並び 8px | 検索フォーム |
@@ -65,7 +64,7 @@ WCAG が規定するのはヒットエリアであり、理論上は「視覚 32
 - 検索はアプリの中心導線であり、マウス利用時でも大きい方が Fitts の法則上有利。小さくする利得が無い
 - 分岐を入れるとテストできない箇所が増える（jsdom はメディア特性を評価しない）
 
-→ **無条件で 44px**。密度が価値を持つ副次コントロールに限り、将来 `control-sm` を選ぶ余地を残す。
+→ **無条件で 44px**。密度が価値を持つ副次コントロールが必要になったら、そのときに小さい段を足す。
 
 ---
 
@@ -167,11 +166,14 @@ v4 の `height` / `width` などは `--spacing` テーマ変数から **動的�
 
 ```css
 @theme inline {
-  --spacing-control-sm: calc(var(--spacing) * 9);   /* 36px */
   --spacing-control-md: calc(var(--spacing) * 11);  /* 44px */
   --spacing-control-lg: calc(var(--spacing) * 12);  /* 48px */
 }
 ```
+
+> 議論の段階では 36px（`control-sm`）を含む 3 段を置く案だったが、セルフレビューで
+> **実際に使う箇所が無い段を先回りで定義するのは YAGNI** と指摘され 2 段に絞った。
+> 密な文脈が必要になった時点で足す。
 
 実ビルドで `.h-control-md{height:calc(var(--spacing) * 11)}` が生成されることを確認済み。
 
@@ -228,9 +230,9 @@ false positive のリスクがある**ため採らない（テスト側で完結
 
 | ファイル | 変更 |
 |---|---|
-| `app/globals.css` | `--spacing-control-{sm,md,lg}`（36/44/48px）を追加。ライトの `--ring` を `oklch(0.708 0 0)` → `oklch(0.55 0 0)` |
+| `app/globals.css` | `--spacing-control-{md,lg}`（44/48px）を追加。ライトの `--ring` を `oklch(0.708 0 0)` → `oklch(0.55 0 0)` |
 | `src/ui/components/input.tsx` | `h-8` → `h-control-md`、`px-2.5` → `px-3`、`md:text-sm` を削除（16px 固定）、`ring-ring/50` → `ring-ring` |
-| `src/ui/components/button.tsx` | `size=default` の `h-8` → `h-control-md`、`px-2.5` → `px-3`、`ring-ring/50` → `ring-ring` |
+| `src/ui/components/button.tsx` | `size=default` の `h-8` → `h-control-md`、`size=lg` の `h-9` → `h-control-lg`（既定より小さいのを是正）、`px-2.5` → `px-3`、フォーカス・エラー状態のリングを不透明化 |
 | `src/ui/search-form.tsx` | 可視ラベル「キーワード」を追加、プレースホルダを入力例に格下げ、縦積み → `sm:` 横並び、ボタン `w-full sm:w-auto` |
 | `src/ui/design-tokens.test.ts` | トークン値・コントラスト比・既定サイズの回帰テスト（新規） |
 | `src/ui/search-form.test.tsx` | フォームのマークアップ・レイアウトの回帰テスト（新規） |
@@ -240,7 +242,7 @@ false positive のリスクがある**ため採らない（テスト側で完結
 
 - 実描画での高さ実測・リフロー検証・axe-core 統合（`SP-4` の E2E 基盤整備とあわせて）
 - Lighthouse CI の GitHub Actions 配線（ガイドライン §9 の記述と実態の乖離解消）
-- `destructive` バリアントのフォーカスリング（`ring-destructive/20`）のコントラスト実測
+- 彩度のある色（`--destructive` 等）のコントラスト比を機械検証する（現在のテストはグレースケールの `oklch(L 0 0)` のみ算出できる）
 
 ## 9. 出典一覧
 

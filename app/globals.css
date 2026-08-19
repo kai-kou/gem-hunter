@@ -40,9 +40,8 @@
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   /* コントロール高さ（4px グリッドの専用スケール・ui-ux-guidelines.md §2.3） */
-  --spacing-control-sm: calc(var(--spacing) * 9); /* 36px: 密な文脈の副次コントロール */
   --spacing-control-md: calc(var(--spacing) * 11); /* 44px: 主要コントロールの既定 */
-  --spacing-control-lg: calc(var(--spacing) * 12); /* 48px: 余裕を持たせたい主要導線 */
+  --spacing-control-lg: calc(var(--spacing) * 12); /* 48px: 既定より大きい導線（size="lg"） */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);

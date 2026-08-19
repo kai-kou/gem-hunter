@@ -70,9 +70,9 @@ describe('コントロールサイズトークン', () => {
     expect(controlSizePx('control-md')).toBe(44)
   })
 
-  it('副次コントロール用（control-sm）と余裕を持たせる用（control-lg）も 4px グリッドに載る', () => {
-    expect(controlSizePx('control-sm')).toBe(36)
+  it('既定より大きい導線（control-lg）が 48px で、既定より小さくならない', () => {
     expect(controlSizePx('control-lg')).toBe(48)
+    expect(controlSizePx('control-lg')).toBeGreaterThan(controlSizePx('control-md'))
   })
 
   it('コンポーネントの既定サイズを生の高さ値で書かない（shadcn add した分も含む）', () => {
@@ -83,7 +83,9 @@ describe('コントロールサイズトークン', () => {
       const defaultSizes = [...source.matchAll(/default:\s*\n?\s*'([^']*)'/g)].map((m) => m[1])
       const baseClasses = [...source.matchAll(/cn\(\s*\n?\s*'([^']*)'/g)].map((m) => m[1])
       // cva の第一引数（ベースクラス）。shadcn の生成物は二重引用符で直接渡す
-      const cvaBases = [...source.matchAll(/cva\(\s*\n?\s*["']([^"']*)["']/g)].map((m) => m[1])
+      const cvaBases = [...source.matchAll(/cva\(\s*\n?\s*(["'])((?:(?!\1)[\s\S])*)\1/g)].map(
+        (m) => m[2],
+      )
 
       for (const classNames of [...defaultSizes, ...baseClasses, ...cvaBases]) {
         expect(classNames, `${file}: 既定サイズは h-control-* トークンで指定する`).not.toMatch(
@@ -120,9 +122,10 @@ describe('フォーカスリングのコントラスト（WCAG 1.4.11 Non-text C
   })
 
   it('フォーカスリングを半透明にしない（合成でコントラストが目減りするため）', () => {
-    expect(inputSource).toContain('focus-visible:ring-ring')
-    expect(inputSource).not.toContain('ring-ring/')
-    expect(buttonSource).toContain('focus-visible:ring-ring')
-    expect(buttonSource).not.toContain('ring-ring/')
+    // エラー状態（aria-invalid / destructive）のリングも同じ基準で判定される
+    for (const source of [inputSource, buttonSource]) {
+      expect(source).toContain('focus-visible:ring-ring')
+      expect(source).not.toMatch(/ring-(ring|destructive)\//)
+    }
   })
 })
