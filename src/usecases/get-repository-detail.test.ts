@@ -63,4 +63,14 @@ describe('getRepositoryDetail', () => {
     expect(result).toBeNull()
     expect(received).toHaveLength(0)
   })
+
+  it('不正な repo（URL 由来）ではポートを呼ばずに null を返す', async () => {
+    const received: RepositoryFullName[] = []
+    const getRepositoryDetail = makeGetRepositoryDetail({ repos: fakePort(received, detail) })
+
+    const result = await getRepositoryDetail({ owner: 'facebook', repo: '' })
+
+    expect(result).toBeNull()
+    expect(received).toHaveLength(0)
+  })
 })

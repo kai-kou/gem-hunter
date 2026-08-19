@@ -53,12 +53,17 @@ describe('RepositoryDetail', () => {
   it('Star 数と Watcher 数が別の値として表示される（watchers_count 誤用防止・AC-5）', () => {
     render(<RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />)
 
-    const starValue = screen.getByTestId('stat-stars')
-    const watcherValue = screen.getByTestId('stat-watchers')
+    // dl/dt/dd は ARIA の term/definition ロールを持つため、ラベル（dt）から
+    // 対応する値（dd）を辿ることで「正しいラベルの下に正しい数値がある」ことを検証する。
+    const starTerm = screen.getByText(labels.starCount).closest('dt')
+    const watcherTerm = screen.getByText(labels.watcherCount).closest('dt')
+    const starValue = starTerm?.nextElementSibling
+    const watcherValue = watcherTerm?.nextElementSibling
 
     expect(starValue).toHaveTextContent('233,000')
     expect(watcherValue).toHaveTextContent('6,800')
-    expect(starValue.textContent).not.toBe(watcherValue.textContent)
+    expect(starValue).not.toBeNull()
+    expect(starValue?.textContent).not.toBe(watcherValue?.textContent)
   })
 
   it('統計値は項目名（label）と数値（value）の対で表示される', () => {
