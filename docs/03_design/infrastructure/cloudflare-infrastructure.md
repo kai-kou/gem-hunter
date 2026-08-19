@@ -130,7 +130,7 @@ flowchart TB
 | Secrets Store | open beta で Super Administrator ロールを要求する | `wrangler versions secret put`（GA・§7.2.1） |
 | Bot Fight Mode | 有効化すると WAF の Skip が効かず正当な API リクエストがチャレンジされうる | 有効化しない（Rate Limiting binding で足りる） |
 
-> 🔵 **i18n（`E-4` / `SP-2`）への含意**: ✅ **決定済み（2026-08-19）**: `/` → `/ja` のリダイレクトは **middleware（`proxy.ts`）で実装せず** `next.config.ts` の `redirects()` で行う（上表の根拠）。`next-intl` は **不採用に決定** し、依存を増やさない自前実装（`src/shared/i18n/config.ts` のロケール定義 + `src/shared/i18n/messages.ts` のメッセージカタログ）でメッセージ管理を行う。詳細は [PRD §13](../../02_requirements/prd.md#13-未決事項実装着手時に決定する)。
+> 🔵 **i18n（`E-4` / `SP-2`）への含意**: ✅ **決定済み（2026-08-19）**: `/` → `/ja` のリダイレクトは **middleware（`proxy.ts`）で実装せず** `next.config.ts` の `redirects()` で行う（上表の根拠）。`next-intl` は **不採用に決定** し、依存を増やさない自前実装（`src/domain/model/locale.ts` のロケール定義 + `src/shared/i18n/messages.ts` のメッセージカタログ）でメッセージ管理を行う。詳細は [PRD §13](../../02_requirements/prd.md#13-未決事項実装着手時に決定する)。
 
 ### 3.3. `wrangler.jsonc`（出発点）
 
