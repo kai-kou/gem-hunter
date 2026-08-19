@@ -77,44 +77,44 @@
 
 ### 根拠 1: JWE 必須・JWS 単独では NFR-9 を満たせない
 
-- `prd.md` AR-5 詳細（244-251 行）: 「セッションは暗号化した httpOnly Cookie で保持する（DB を持たないため）。ユーザーの OAuth トークンをクライアントへ露出させない」— **「暗号化した」と明記**されており、署名のみ（JWS）は仕様の字面上も不適合。
+- `prd.md` AR-5 詳細（244-251 行）: 「セッションは暗号化した httpOnly Cookie で保持する（DB を持たないため）。ユーザーの OAuth トークンをクライアントへ露出させない」— **「暗号化した」と明記** されており、署名のみ（JWS）は仕様の字面上も不適合。
 - NFR-9（288 行）:「秘匿情報をクライアントへ露出させない…ユーザーのアクセストークンはすべてサーバー側でのみ扱う」。JWS はペイロードが base64url でしかなく **誰でも復号（デコード）してトークン原文を読める**。httpOnly は JS からの読み取りを防ぐだけで、Cookie は物理的にブラウザ側に存在し、DevTools の Application パネルやネットワークログ経由でペイロードが可読になる。JWS のみだと「サーバー側でのみ扱う」の実質を満たせず NFR-9 違反リスクが高い。
 - 一方 JWE は対称鍵（`SESSION_ENCRYPTION_KEY` などの環境変数、サーバーのみ保持）がなければ復号不能なため、Cookie が物理的にクライアント側にあっても内容は「実質的にサーバー側でのみ扱われている」と言える。**D-5（DB なし）の制約下で NFR-9 を満たす唯一の現実的手段が自己完結型の暗号化 Cookie（JWE）**。
 
 ### 根拠 2: 「署名付き opaque セッション ID + サーバー側一時保持」案は D-5 だけでなく Workers の実行モデルでも破綻する（rejected）
 
-- `installation-token.ts` はモジュールレベルの `cached` 変数（グローバル可変状態）でトークンキャッシュを持っているが、コメントに明記されている通りこれは **「失っても再取得すれば済む」性質のキャッシュ**であり、正しさに影響しない。
-- opaque セッション ID をキーにしたサーバー側一時保持（インメモリ Map 等)を同じパターンで実装しようとすると、性質が違う: Cloudflare Workers は **リクエストごとに異なる isolate で実行されうる**ため、グローバル変数に保持したセッション状態は次のリクエストで消えている可能性があり、**ログイン直後に自分のセッションが見えなくなる**という機能的破綻を起こす。D-5 の「永続ストア不可」を KV/D1 等の外部ストアで回避する提案も出うるが、それは新規インフラ導入であり本スプリントのスコープ外・D-5 の意図（DB を持たない）に反するため不採用。
+- `installation-token.ts` はモジュールレベルの `cached` 変数（グローバル可変状態）でトークンキャッシュを持っているが、コメントに明記されている通りこれは **「失っても再取得すれば済む」性質のキャッシュ** であり、正しさに影響しない。
+- opaque セッション ID をキーにしたサーバー側一時保持（インメモリ Map 等)を同じパターンで実装しようとすると、性質が違う: Cloudflare Workers は **リクエストごとに異なる isolate で実行されうる** ため、グローバル変数に保持したセッション状態は次のリクエストで消えている可能性があり、**ログイン直後に自分のセッションが見えなくなる** という機能的破綻を起こす。D-5 の「永続ストア不可」を KV/D1 等の外部ストアで回避する提案も出うるが、それは新規インフラ導入であり本スプリントのスコープ外・D-5 の意図（DB を持たない）に反するため不採用。
 - 結論: **自己完結（self-contained）な暗号化 Cookie 以外に選択肢がない**。
 
 ### 根拠 3: no-scope トークンをそのまま Cookie に持たせることの是非
 
 - `auth_flow` 側の争点 A 決定（no-scope OAuth）を前提にすると、漏洩時の実害は「公開データの取得 API に対するレート枠増加」に限られ、プライベートリポジトリ・書き込み権限などの重大リスクはない（`AR-5`:「公開リポジトリの検索・閲覧しか行わないため追加権限は不要」）。
 - とはいえ NFR-9 は no-scope かどうかに関わらず「クライアント非露出」を要求しているため、**リスクの小ささを理由に平文格納・JWS のみへ格下げしない**。JWE 前提であれば直接持たせて問題ない（トークンを別途参照するための opaque ID を発行してどこかに紐付ける、という余分な間接層は D-5 下では作れる場所がなく YAGNI）。
-- セッション Cookie の有効期限は GitHub トークンの無期限性に依存させず、**アプリ側で妥当な TTL（例: 7〜14 日）を JWE の `exp` に設定し、期限切れで再ログインを要求する**設計にする（無期限セッションを避けることは一般的なセキュリティ衛生であり、no-scope でも省略しない）。
+- セッション Cookie の有効期限は GitHub トークンの無期限性に依存させず、**アプリ側で妥当な TTL（例: 7〜14 日）を JWE の `exp` に設定し、期限切れで再ログインを要求する** 設計にする（無期限セッションを避けることは一般的なセキュリティ衛生であり、no-scope でも省略しない）。
 
 ### 根拠 4: CSRF state はサーバー側ストア不可（D-5）→ 二次 Cookie 方式（double-submit 型）
 
 - 標準的な「サーバーでランダム値を生成 → セッションストアに保存 → callback で突合」というパターンは D-5 で使えない。
 - 代替として **`authorize` へのリダイレクト直前に、暗号論的乱数の `state` を生成し、GitHub への authorize URL のクエリに載せると同時に、短命（例: 10 分）・httpOnly・`Secure`・`SameSite=Lax` の Cookie（例: `gh_oauth_state`）にも同じ値を保存する**。`SameSite=Lax` である理由: GitHub からのリダイレクトバックはトップレベル GET ナビゲーションであり、`Lax` はこのケースで Cookie を送出する（`Strict` だと送られず state 検証が常に失敗する）。
-- `callback` ハンドラでは、クエリの `state` と Cookie の `gh_oauth_state` を **タイミングセーフな文字列比較**で厳密一致確認し、不一致・欠如なら 400 として処理を中断、トークン交換に進まない。一致確認後は state Cookie を即時削除する（使い捨て・リプレイ防止）。
+- `callback` ハンドラでは、クエリの `state` と Cookie の `gh_oauth_state` を **タイミングセーフな文字列比較** で厳密一致確認し、不一致・欠如なら 400 として処理を中断、トークン交換に進まない。一致確認後は state Cookie を即時削除する（使い捨て・リプレイ防止）。
 - **この state Cookie 自体を暗号化・署名する必要はない**（YAGNI）。値そのものに秘匿情報を含まず、サーバーが発行してサーバーが検証するだけの「サーバー側が書いた値をサーバー側が読み返す」用途であり、httpOnly + Secure により JS からの読み取り・改ざんは防げる。攻撃者が Cookie を上書きできるのは XSS が成立した場合のみで、その場合は state 云々よりも根本の XSS 対策が先決（対称鍵で毎回暗号化するコストに見合わない）。
 
 ### 根拠 5: ログアウト
 
 - session Cookie を `Set-Cookie: <name>=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax` で上書きし、クライアント側の Cookie ストアから確実に削除する（値を空にするだけで Max-Age を更新しないと古いブラウザで残存しうるため必須）。
 - `gh_oauth_state` は callback 成功時点で既に削除済みのはずだが、フロー中断（state 不一致・ユーザーが認可を拒否等）で残る可能性があるため、ログアウト処理でも防御的に同名 Cookie を削除する。
-- GitHub 側のトークン失効（`DELETE /applications/{client_id}/grant`）は、no-scope かつ D-6（機能差を作らない・上乗せ最小主義）の方針を踏まえると **MVP 必須要件ではない**と判断する（Cookie 削除だけで本アプリからは即座に使えなくなり、AC 上の「ログアウトすると元に戻る」は満たせる）。ただし将来課題として `critical`/`open_questions` ではなく単なる補足に留める（成果物が変わる仕様分岐ではないため確認不要・SD-3 の射程外）。
+- GitHub 側のトークン失効（`DELETE /applications/{client_id}/grant`）は、no-scope かつ D-6（機能差を作らない・上乗せ最小主義）の方針を踏まえると **MVP 必須要件ではない** と判断する（Cookie 削除だけで本アプリからは即座に使えなくなり、AC 上の「ログアウトすると元に戻る」は満たせる）。ただし将来課題として `critical`/`open_questions` ではなく単なる補足に留める（成果物が変わる仕様分岐ではないため確認不要・SD-3 の射程外）。
 
 ### 根拠 6: NFR-22（環境変数集約）との整合
 
 - `prd.md` §10 の環境変数一覧に「OAuth クライアント ID」「OAuth クライアントシークレット」「OAuth コールバック URL」「セッション暗号化キー」が既に列挙済み。**いずれも `NEXT_PUBLIC_` を付けない**（518 行）。
 - `installation-token.ts` の `readCredentials()` パターン（環境変数が揃っていなければ `null` を返し機能を無効化）を、セッション暗号化キー・OAuth クライアント ID/シークレットの読み取りにも踏襲する。これは `infrastructure-design.md` §8.1 の「環境変数未設定でログイン導線が自動的に消える」方針（アプリコードに環境判定を書かない）とも整合する。
-- セッション Cookie の暗号鍵と OAuth 資格情報を読んでよいファイルは、`installation-token.ts` 冒頭コメント「🔴 秘匿情報を読んでよいのはこのファイルだけ」に倣い、**新設する session/OAuth 用インフラファイル 1〜2 本に限定**すべき（ARCH-5: GitHub API・GitHub 認証情報は `src/infrastructure/github/` か `platform/` の中だけ）。具体的な配置は争点 C（`clean_arch` レンズ）と整合させる必要があるが、セキュリティ観点からの制約としては「秘匿値を読むコードパスを 1 箇所に閉じ込める」ことを要求する。
+- セッション Cookie の暗号鍵と OAuth 資格情報を読んでよいファイルは、`installation-token.ts` 冒頭コメント「🔴 秘匿情報を読んでよいのはこのファイルだけ」に倣い、**新設する session/OAuth 用インフラファイル 1〜2 本に限定** すべき（ARCH-5: GitHub API・GitHub 認証情報は `src/infrastructure/github/` か `platform/` の中だけ）。具体的な配置は争点 C（`clean_arch` レンズ）と整合させる必要があるが、セキュリティ観点からの制約としては「秘匿値を読むコードパスを 1 箇所に閉じ込める」ことを要求する。
 
 ### アルゴリズム選定の補足（Edge/Workers 適合性）
 
-- installation token 用の `SignJWT`/`importPKCS8`（RS256・非対称）は GitHub App 認証の要件上必須だが、**セッション Cookie はアプリ自身が発行・検証する**ため非対称鍵にする理由がない。`EncryptJWT`（`jose`）で `alg: "dir"`（鍵導出なしの直接鍵使用）+ `enc: "A256GCM"` を使う対称暗号を推奨する。Web Crypto ベースで Cloudflare Workers 上でも動作する（`jose` は Workers 対応を謳っている）。
+- installation token 用の `SignJWT`/`importPKCS8`（RS256・非対称）は GitHub App 認証の要件上必須だが、**セッション Cookie はアプリ自身が発行・検証する** ため非対称鍵にする理由がない。`EncryptJWT`（`jose`）で `alg: "dir"`（鍵導出なしの直接鍵使用）+ `enc: "A256GCM"` を使う対称暗号を推奨する。Web Crypto ベースで Cloudflare Workers 上でも動作する（`jose` は Workers 対応を謳っている）。
 - 対称鍵は 32 バイト（256bit）を base64url 等でエンコードして環境変数に格納する運用とし、`readCredentials` 相当のガードで未設定時は `null`（ログイン機能無効化）とする。
 
 ---
@@ -237,7 +237,7 @@ infra-design.md §8.1 の「ダミー OAuth 設定を注入したローカルビ
 1. **未ログインで全機能が使える**: 既存 `sp-1.spec.ts` 相当の検索フローを未ログイン状態でなぞるだけ（新規ロジック不要・回帰確認）。
 2. **ログイン → レート枠が自分のものに切り替わる**: 検証方法は 2 案あり、**両方を実装することを推奨**（片方が UI 実装の有無に依存するため）。
    - **案 2a（確実・UI 非依存）**: `/__stats` を `authorizedSearchCount` 等に拡張し、stub が受信したリクエストの `Authorization` ヘッダ有無をカウントする。ログイン前は素通し（未カウント）、ログイン後の検索操作でカウントが増えることを assert する。既存の `searchCount`/`detailCount` は加算元のまま壊さない（フィールド追加のみ・後方互換）。
-   - **案 2b（UI があれば併用）**: stub の `/search/repositories` `/repos/...` レスポンスに `x-ratelimit-limit`/`x-ratelimit-remaining` ヘッダを常時付与し、`Authorization` ヘッダの有無で値を変える（未認証 60 / 認証済み 5000 の実 GitHub 挙動を模す）。UI がこの値を表示するなら文言の変化を assert できる。**UI 表示の要否は clean_arch/PO 側の決定次第**なので、2a を最低ラインとして提案する。
+   - **案 2b（UI があれば併用）**: stub の `/search/repositories` `/repos/...` レスポンスに `x-ratelimit-limit`/`x-ratelimit-remaining` ヘッダを常時付与し、`Authorization` ヘッダの有無で値を変える（未認証 60 / 認証済み 5000 の実 GitHub 挙動を模す）。UI がこの値を表示するなら文言の変化を assert できる。**UI 表示の要否は clean_arch/PO 側の決定次第** なので、2a を最低ラインとして提案する。
 3. **ログアウト → 元に戻る**: ログアウト操作後に 2a の判定が「未認証扱い」に戻ることを assert（Cookie が消え、以降のリクエストに `Authorization` が付かない）。
 4. **言語切替**: 既存の i18n 基盤（`locale-redirect.ts` 等）に対する回帰 E2E は既にあるはず（要確認）。SP-8 で新規に足すのは「切替 UI（US-2）をクリックした後に URL が `/en/...` になり、既存文言が英語になるが、スタブが返すリポジトリ `description` は原文のまま」の assert。**既存の検索・詳細フィクスチャ（`e2e/fixtures/repos.json`）を流用でき、新規フィクスチャは不要**。
 
@@ -270,7 +270,7 @@ OAuth authorize/token/user を `e2e/stub/server.mjs` に追加し（メソッド
 
 ## rebuttal（session_security・争点 B・round 2）
 
-round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 者の投稿を突き合わせた結果、**2 点の実質的な指摘**と**1 点の命名収束依頼**がある。
+round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 者の投稿を突き合わせた結果、**2 点の実質的な指摘** と **1 点の命名収束依頼** がある。
 
 ---
 
@@ -323,7 +323,7 @@ round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 �
 
 ## rebuttal（争点 A・round1 の自分の分析とホワイトボードのみに基づく）
 
-`clean_arch` の route handler 配置案（`src/composition/auth.ts` 経由・`AuthPort` 新設）と `session_security` の CSRF state 実装案（二次 Cookie）を、自分の round1 シーケンス案（`GET /api/auth/github/authorize` → `GET /api/auth/github/callback` → `POST /api/auth/logout`）と突き合わせた結果、**2 点の不整合**と **1 点の見落とし**を見つけた。いずれも「自前実装」という結論そのものは揺るがないが、シーケンス具体化の中身を修正する必要がある。
+`clean_arch` の route handler 配置案（`src/composition/auth.ts` 経由・`AuthPort` 新設）と `session_security` の CSRF state 実装案（二次 Cookie）を、自分の round1 シーケンス案（`GET /api/auth/github/authorize` → `GET /api/auth/github/callback` → `POST /api/auth/logout`）と突き合わせた結果、**2 点の不整合** と **1 点の見落とし** を見つけた。いずれも「自前実装」という結論そのものは揺るがないが、シーケンス具体化の中身を修正する必要がある。
 
 ### 指摘 1: route パス命名が自分の案と食い違っている（要解決・優先度高）
 
@@ -331,7 +331,7 @@ round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 �
 - `clean_arch`（C-1）: `app/api/auth/{login,callback,logout}/route.ts`（`github` セグメントなし、`authorize` ではなく `login`）
 - `verify_test`（§2・§3）: `GITHUB_OAUTH_CALLBACK_URL: 'http://127.0.0.1:3100/api/auth/callback'` — `clean_arch` の命名にすでに追随している
 
-**この不一致は「実装手段の些末な違い」ではなく実害がある**: `GITHUB_OAUTH_CALLBACK_URL` は GitHub OAuth App 登録時に**完全一致**でコールバック URL を事前登録する値であり、`app/` のファイルパスと 1 対 1 対応する。3 者が別々のパスを前提にしたまま実装が分岐すると、登録した OAuth App のコールバック URL とルートハンドラの実パスが食い違い、GitHub 側で `redirect_uri_mismatch` エラーになる。
+**この不一致は「実装手段の些末な違い」ではなく実害がある**: `GITHUB_OAUTH_CALLBACK_URL` は GitHub OAuth App 登録時に **完全一致** でコールバック URL を事前登録する値であり、`app/` のファイルパスと 1 対 1 対応する。3 者が別々のパスを前提にしたまま実装が分岐すると、登録した OAuth App のコールバック URL とルートハンドラの実パスが食い違い、GitHub 側で `redirect_uri_mismatch` エラーになる。
 
 **self-correction**: `clean_arch` と `verify_test` が既に 2 対 1 で `/api/auth/login` `/api/auth/callback` `/api/auth/logout`（`github` セグメントなし）に収束している。自分の round1 案を撤回し、この命名に合わせる。理由も妥当— `RepositoryQueryPort` が事業者名を冠さないのと同じ命名規律（`clean_arch` C-2 のドメイン純度チェック）を、URL パスにも延長したものと解釈できる（現時点で GitHub 単一プロバイダでも、将来の拡張時にパスを壊さずに済む）。**環境変数設計の `GITHUB_OAUTH_CALLBACK_URL` 例示値を `http://localhost:3000/api/auth/github/callback` → `http://localhost:3000/api/auth/callback` に訂正する**。
 
@@ -340,9 +340,9 @@ round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 �
 - `clean_arch`（C-2）: `AuthPort.exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` — 戻り値は `accessToken` のみ
 - 自分（round1・シーケンス手順 3）: token 交換の後に `GET https://api.github.com/user` を追加で叩き、login/avatar を取得してセッションに含める、と書いた
 
-これは食い違いというより **自分の round1 案がスコープを広げすぎていた**と考える。根拠:
+これは食い違いというより **自分の round1 案がスコープを広げすぎていた** と考える。根拠:
 - SP-8 の操作レビュー対象は「ログインするとレート枠が自分のものに切り替わる／ログアウトすると元に戻る」であり、ユーザー名・アバター表示は AC に明記がない。
-- `verify_test`（§4-2, §6）も「UI がレート枠の数値を表示するか単なるログイン状態バッジのみか」を **自分のレンズでは決め切れない未解決点**として明示しており、`/user` 呼び出しを前提にしていない。E2E の 2a 案（`Authorization` ヘッダの有無をカウント）も `/user` 抜きで成立する。
+- `verify_test`（§4-2, §6）も「UI がレート枠の数値を表示するか単なるログイン状態バッジのみか」を **自分のレンズでは決め切れない未解決点** として明示しており、`/user` 呼び出しを前提にしていない。E2E の 2a 案（`Authorization` ヘッダの有無をカウント）も `/user` 抜きで成立する。
 - `D-6`（機能差を作らない・上乗せ最小主義）に照らすと、AC に無い「ログイン中ユーザー名の表示」のために GitHub API 呼び出しを 1 本追加するのは過剰実装（YAGNI）。ログイン状態の UI 表示が要るなら「セッション Cookie の有無」という真偽値だけで足り、GitHub `/user` は不要。
 
 **訂正**: 自分の round1 シーケンス手順 3 から「`GET /user` で login/avatar を取得」を削除し、`clean_arch` の `AuthPort.exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` にそのまま整合させる。ログイン状態表示が将来要件として浮上した場合のみ、別途 `/user` 取得を追加する（本スプリントのタスクには含めない）。
@@ -350,7 +350,7 @@ round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 �
 ### 指摘 3（自分の round1 案への自己修正）: ログイン導線の表示ゲートが `session_security` の鍵管理と噛み合っていない
 
 - 自分（round1・環境変数設計）: 「`GITHUB_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` / `_CALLBACK_URL` の 3 変数が揃っているか」だけでログインリンクの表示を判定する、と書いた
-- `session_security`（根拠 6・アルゴリズム選定の補足）: セッション Cookie の暗号化に **`SESSION_ENCRYPTION_KEY`（32byte 対称鍵）を別途要求**しており、`readCredentials()` パターン（未設定なら `null` で機能無効化）をこの鍵にも適用すべきと述べている
+- `session_security`（根拠 6・アルゴリズム選定の補足）: セッション Cookie の暗号化に **`SESSION_ENCRYPTION_KEY`（32byte 対称鍵）を別途要求** しており、`readCredentials()` パターン（未設定なら `null` で機能無効化）をこの鍵にも適用すべきと述べている
 
 自分の 3 変数ゲートには `SESSION_ENCRYPTION_KEY` が入っていない。もし OAuth 側 3 変数だけ揃って `SESSION_ENCRYPTION_KEY` が未設定という状態が起きると、ログインリンクは表示されるのに callback でセッション Cookie を発行しようとして例外になる（`infrastructure-design.md` §8.1 が求める「環境変数未設定で静かに機能が消える」に反し、静かにではなく壊れて出る）。
 
@@ -358,7 +358,7 @@ round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 �
 
 ### 確認（矛盾なし・整合を確認できた点）
 
-- `clean_arch` C-2 の「CSRF state 検証は usecase の外・route handler で state cookie と query の一致を見てから usecase を呼ぶ」は、自分の round1 シーケンス手順 3（「`oauth_state` Cookie と query の `state` を照合 → 一致なら token 交換」という順序）と**完全に一致**している。
+- `clean_arch` C-2 の「CSRF state 検証は usecase の外・route handler で state cookie と query の一致を見てから usecase を呼ぶ」は、自分の round1 シーケンス手順 3（「`oauth_state` Cookie と query の `state` を照合 → 一致なら token 交換」という順序）と **完全に一致** している。
 - `session_security` の二次 Cookie 方式（`gh_oauth_state`・非暗号化・httpOnly・`SameSite=Lax`・10 分）は自分の round1 案「短命 `oauth_state` Cookie」の具体化そのもので矛盾しない。
 
 ### `auth_flow` — 譲歩
@@ -387,15 +387,15 @@ round1 の自分の claim（JWE + 二次 Cookie 方式）を基準に、他 3 �
 
 ### 反論 2: `auth_flow` のシーケンス手順 3（`GET https://api.github.com/user` 取得）が自分の `AuthPort` 設計から漏れている
 
-**指摘**: `auth_flow` の claim 「シーケンス具体化」手順 3 は、token 交換の後に **`GET https://api.github.com/user`（プロフィール取得）を追加で叩く**設計になっている。これは `RepositoryQueryPort` の対象外の新しい GitHub API 呼び出しであり、私の round1 `AuthPort`（`exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` のみ）はこの呼び出しを表現できていない。このままだと、この `/user` 呼び出しが `callback` route handler や `oauth.ts` 内のどこかに **場当たり的に実装され、`AuthPort` を経由しない生 `fetch` として route handler 側に漏れ出すリスク**がある（`ARCH-5` 違反・`ARCH-2` のポート注入原則からの逸脱）。
+**指摘**: `auth_flow` の claim 「シーケンス具体化」手順 3 は、token 交換の後に **`GET https://api.github.com/user`（プロフィール取得）を追加で叩く** 設計になっている。これは `RepositoryQueryPort` の対象外の新しい GitHub API 呼び出しであり、私の round1 `AuthPort`（`exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` のみ）はこの呼び出しを表現できていない。このままだと、この `/user` 呼び出しが `callback` route handler や `oauth.ts` 内のどこかに **場当たり的に実装され、`AuthPort` を経由しない生 `fetch` として route handler 側に漏れ出すリスク** がある（`ARCH-5` 違反・`ARCH-2` のポート注入原則からの逸脱）。
 
 **裁定**: SP-8 の操作レビュー手順（brief 記載の 4 項目）に「ユーザー名・アバター表示」は含まれておらず、`verify_test` の E2E 案（案 2a: `Authorization` ヘッダ有無のカウント）も `/user` 呼び出しの結果に依存していない。**YAGNI により `/user` プロフィール取得は SP-8 スコープ外として一旦落とす**（`completeLogin` usecase は `AuthPort.exchangeAuthorizationCode` のみでよい）ことを提案する。もし後続 UI 検討で「ログイン中: ○○」のようなユーザー名表示が必要になった場合は、`AuthPort` に `fetchViewer(accessToken): Promise<{ login: string; avatarUrl: string } | null>` を追加し `src/infrastructure/github/oauth.ts`（or 既存 `github-repository-query.ts` 隣接）に実装する、という拡張パスを明記しておく（今 fetch を route handler に直書きしない限り、後から足しても層は壊れない）。`auth_flow` にはこの縮小 or 拡張パスのどちらかを round2 で明示してもらいたい。
 
 ### 反論 3（自分の round1 案の修正）: `session-cookie.ts` の責務を「暗号化セッション Cookie」だけに絞る
 
-`session_security` の claim（根拠4）で、CSRF `state` は **非暗号化の単純ランダム値**を短命 Cookie に置くだけでよく、暗号化・署名は不要と明言されている。これは私の round1 `src/composition/auth.ts` の `encodeSessionCookie`/`decodeSessionCookie`（=セッション本体用の JWE ラッパー）とは **別物**であり、`state` Cookie の読み書きは `next/server` の標準 Cookie API を **route handler が直接呼べばよく**、composition root/infra を経由させる必要がない（暗号鍵などの秘匿値に触れないため）。
+`session_security` の claim（根拠4）で、CSRF `state` は **非暗号化の単純ランダム値** を短命 Cookie に置くだけでよく、暗号化・署名は不要と明言されている。これは私の round1 `src/composition/auth.ts` の `encodeSessionCookie`/`decodeSessionCookie`（=セッション本体用の JWE ラッパー）とは **別物** であり、`state` Cookie の読み書きは `next/server` の標準 Cookie API を **route handler が直接呼べばよく**、composition root/infra を経由させる必要がない（暗号鍵などの秘匿値に触れないため）。
 
-**修正**: round1 の C-1 に「`state` Cookie の生成・照合は `app/api/auth/{login,callback}/route.ts` が `next/server` の Cookie API で直接行い、`src/composition/auth.ts` を経由しない（秘匿値を扱わないため ARCH-3 の対象外）」を追記する。`encodeSessionCookie`/`decodeSessionCookie` は **ログイン確立後の本セッション Cookie 専用**に限定する。
+**修正**: round1 の C-1 に「`state` Cookie の生成・照合は `app/api/auth/{login,callback}/route.ts` が `next/server` の Cookie API で直接行い、`src/composition/auth.ts` を経由しない（秘匿値を扱わないため ARCH-3 の対象外）」を追記する。`encodeSessionCookie`/`decodeSessionCookie` は **ログイン確立後の本セッション Cookie 専用** に限定する。
 
 ## 同意（concession）
 
@@ -432,7 +432,7 @@ round1 で私は「ログイン前は `Authorization` ヘッダなし・ログ�
 
 session_security 根拠 4/5 は session Cookie・`oauth_state` Cookie ともに `Secure` 属性付きを明記している。一方 `playwright.config.ts` の既存 `webServer`（私の round1 claim §3 で流用を提案したもの）は `baseURL = http://127.0.0.1:3100` で **TLS を張っていない**。
 
-Chromium はループバック（`127.0.0.1`/`localhost`）を「潜在的に信頼できるオリジン」として扱い `Secure` Cookie の送受信を許可する実装になっているため、恐らく動作はするはずだが、**この場のレンズ（私）が実機未検証のまま断定するのは L-113（捏造）に抵触するリスクがある**。TDD の Red 順序（round1 §5）に **「Step 0: ダミー OAuth 経由でログインし `document.cookie`（httpOnly なので JS からは見えない前提で、代わりに Playwright の `context.cookies()` で）セッション Cookie が実際に set されることを確認する smoke assert」を追加**することを提案する。ここで落ちれば、4 操作レビューのうち 2〜3 が原理的に自動化不能になるため、実装の最初期（内側ユニットより前）に潰すべきリスクとして `critical` 候補に入れることを lead に提案する。
+Chromium はループバック（`127.0.0.1`/`localhost`）を「潜在的に信頼できるオリジン」として扱い `Secure` Cookie の送受信を許可する実装になっているため、恐らく動作はするはずだが、**この場のレンズ（私）が実機未検証のまま断定するのは L-113（捏造）に抵触するリスクがある**。TDD の Red 順序（round1 §5）に **「Step 0: ダミー OAuth 経由でログインし `document.cookie`（httpOnly なので JS からは見えない前提で、代わりに Playwright の `context.cookies()` で）セッション Cookie が実際に set されることを確認する smoke assert」を追加** することを提案する。ここで落ちれば、4 操作レビューのうち 2〜3 が原理的に自動化不能になるため、実装の最初期（内側ユニットより前）に潰すべきリスクとして `critical` 候補に入れることを lead に提案する。
 
 ### `verify_test` — 譲歩
 <sub>2026-08-20T07:21:29+09:00</sub>
@@ -467,7 +467,7 @@ no-scope・DB なし（D-5）という要件規模に対しライブラリの主
 - route handler: `app/api/auth/{login,callback,logout}/route.ts`（provider名なしに一本化。`RepositoryQueryPort` と同じ事業者中立命名規律をパスにも延長）。
 - `src/domain/ports/auth-port.ts`: `AuthPort.exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` のみ（`/user` プロフィール取得は round2 で SP-8 スコープ外に確定・YAGNI。ログイン中ユーザー名表示が要る場合のみ将来 `AuthPort.fetchViewer` を追加）。
 - 実装: `src/infrastructure/github/oauth.ts`（authorize URL 組み立て・token交換・AuthPort実装）。
-- `src/infrastructure/platform/session-cookie.ts`: **本セッション Cookie（JWE）専用**に責務を絞る。`encodeSessionCookie`/`decodeSessionCookie` のみ。
+- `src/infrastructure/platform/session-cookie.ts`: **本セッション Cookie（JWE）専用** に責務を絞る。`encodeSessionCookie`/`decodeSessionCookie` のみ。
 - `state` Cookie: composition root を経由せず、route handler が `next/server` の Cookie API で直接生成・照合する（秘匿値を扱わないため ARCH-3 対象外）。
 - `src/composition/auth.ts`: 上記を束ね、ログイン導線の表示可否を「`GITHUB_OAUTH_CLIENT_ID`/`_CLIENT_SECRET`/`_CALLBACK_URL`/`SESSION_ENCRYPTION_KEY` の4変数が揃っているか」で一元判定する。
 - レート枠切替: `RateLimitPort`（Issue #122・自リクエストの間引き）とは無関係な別配線。`container.ts` の `TokenProvider` を `makeInstallationTokenProvider` からユーザーアクセストークン版へ composition root で差し替えるだけ（新規ドメインポート不要）。`searchRepositoriesUseCase(accessToken?)` 等に拡張。
@@ -478,7 +478,7 @@ no-scope・DB なし（D-5）という要件規模に対しライブラリの主
 - `e2e/stub/server.mjs` に `GET /login/oauth/authorize`（302即時リダイレクト）・`POST /login/oauth/access_token`（固定トークン返却）・`GET /user`（未使用だが将来のfetchViewer拡張に備え実装だけ残す。**AuthPort からは呼ばれない**）を追加。POST分岐は405判定より前に置く（実装漏れ注意）。
 - 新規env: `GITHUB_OAUTH_ORIGIN`（`GITHUB_API_ORIGIN` と同じループバック限定検証を共有）・`GITHUB_OAUTH_CLIENT_ID`/`_CLIENT_SECRET`/`_CALLBACK_URL`（値は stub 検証なしのため固定文字列可）・`SESSION_ENCRYPTION_KEY`（E2E専用ダミー鍵）。
 - `playwright.config.ts` の既存 `webServer`（ローカルビルド構成）に上記envを追加するだけで infra-design.md §8.1 の「ダミーOAuth設定を注入したローカルビルド」要件を満たす。新規起動スクリプト不要。
-- `/__stats` の計測軸は「Authorizationヘッダの有無」ではなく「**値がユーザートークン固定文字列と一致するリクエスト数**」（`userAuthSearchCount`等）に訂正（round2 verify_test 自己修正済み。未ログイン時も installation token が既に付与されているため）。
+- `/__stats` の計測軸は「Authorizationヘッダの有無」ではなく「**値がユーザートークン固定文字列と一致するリクエスト数**」（`userAuthSearchCount` 等）に訂正（round2 verify_test 自己修正済み。未ログイン時も installation token が既に付与されているため）。
 - 新規 `e2e/sp-8.spec.ts`: SP-8 の4操作レビュー手順をそのまま `test.step()` に写す。Step 0 として T-1（Secureセッション Cookie が実際にsetされるか `context.cookies()` で smoke確認）を先頭に追加。
 - TDD順序: 外側E2E Red（4手順）→ stub拡張（テストインフラとして先に用意・無テスト対象）→ 内側ユニット Red/Green/Refactor（state生成/検証 → セッション暗号化/復号 → OAuthコールバックusecase(フェイクAuthPortで) → ACLエラー変換 → oauth.ts実装をMSWでテスト）→ 外側E2E Green。
 
