@@ -4,8 +4,8 @@
 - 議題ID: `sp5-cache-design-20260819`
 - 論点: SP-5 のゴールは『同じキーワードで 2 回続けて検索したとき 2 回目は GitHub API を呼ばない』を、レスポンスヘッダ X-Cache-Status: HIT で検証できる状態にすること（user-story-map.md §5.3 SP-5 / E-3 / NFR-5 / NFR-17 / NFR-18）。既存資産: src/domain/ports/cache-port.ts に CachePort（get/set/invalidate + ttlSeconds）、src/infrastructure/platform/cache.ts に InMemoryCache（isolate 内メモリのみ・composition root 未配線）、src/infrastructure/platform/cache-key.ts に CacheKey ブランド型と searchResultCacheKey / repositoryCacheKey。データ取得は src/infrastructure/github/github-repository-query.ts（RepositoryQueryPort 実装）、ユースケースは src/usecases/search-repositories.ts / get-repository-detail.ts、画面は app/[locale]/page.tsx と app/[locale]/repos/[owner]/[repo]/page.tsx（いずれも Server Component から直接 await。route handler は存在しない。middleware.ts / proxy.ts は Next.js 16 + OpenNext Cloudflare 非両立のため意図的に不在で、next.config.ts の headers() / redirects() のみ利用可能）。設計文書の制約: cloudflare-infrastructure.md §4.2 は L1=React cache / L2=HTTP Cache-Control + Workers Caching（MVP の主役）/ L3=外部ストア未採用、Next.js の use cache は OpenNext 上で isolate 内メモリに退化しうるため当てにしない、と定めている。§4.5 は X-Cache-Status をアプリ側で付与し、X-GitHub-RateLimit-Remaining が変わらないことで裏を取る、と定めている。architecture-rules の ARCH-2（ユースケースはポートを引数で受け取る）/ ARCH-3（依存は内向き・app と src/ui から src/infrastructure を直 import しない、src/composition 経由）/ ARCH-4（事業者固有バインディングは src/infrastructure/platform の中だけ）は不変。D-5（DB を持たない）により永続キャッシュストアは採らない。R-7（use cache の実挙動未検証）と R-5（TTL 値のレート枠逆算）は未決。争点は次の 4 つ: A) キャッシュの主役をアプリ内 CachePort（InMemoryCache）に置くか、HTTP Cache-Control + Workers Caching に置くか、両方をどう役割分担させるか。isolate 内メモリはリクエスト間で残る保証が薄く、エッジキャッシュは HIT 時にアプリコードが動かないという相反する弱点がある。B) X-Cache-Status: HIT / MISS を実際にどう付与するか（Server Component からレスポンスヘッダを制御する手段が現状無いことをどう解決するか。route handler を新設するのか、next.config.ts の headers() で足りるのか、Cloudflare Cache API を明示的に叩くのか、OpenNext の実行モデル上どれが機能するか）。C) キャッシュ参照をどの層に差し込むか（ユースケースが CachePort を受け取る案 vs GithubRepositoryQuery をキャッシュ付きデコレータで包む案 vs composition root で合成する案）。ARCH-2 / ARCH-3 と、SP-4 で整備済みのテスト構成（vitest 併置 + e2e/ の Playwright + e2e/stub/server.mjs のスタブ GitHub API）との相性で判断する。D) TTL 暫定値をいくつにし、その根拠と再決定条件（R-5 確定後）をどこに書くか。検索結果と詳細で別値にする要件（NFR-5）を満たすこと。
 - 参加者: `runtime_edge`, `clean_arch`, `verify_test`
-- 投稿数: 3
-- 更新: 2026-08-19T17:20:02+09:00
+- 投稿数: 8
+- 更新: 2026-08-19T17:26:05+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -195,3 +195,320 @@ Cache API（`caches.default`）の明示利用（`await caches.default.match(req
 - Worker 内から自 Worker への self-fetch（Route Handler 案の実現可否）: 未検証。Service Binding や `env.ASSETS` の使用要否を含め要確認。
 - Cloudflare Cache API (`caches.default`) が `wrangler dev` / Miniflare ローカルでどこまで実挙動を再現するか: 未検証（verify_test 領域）。
 - Cloudflare エッジが実際に Worker 発行の `Cache-Control` ヘッダだけで自動キャッシュするか（Cache Rules 等の追加設定が要るのでは）: wrangler.jsonc に該当設定が見当たらず、cloudflare-infrastructure.md 他セクションも未確認のため断定を避ける。
+
+## ラウンド 2
+
+### `runtime_edge` — 反論
+<sub>2026-08-19T17:22:24+09:00</sub>
+
+## runtime_edge: Round 2 rebuttal（clean_arch Q1 / verify_test Q2 / 争点A×B矛盾の決着）
+
+### Q1（clean_arch へ）: `CachingRepositoryQuery` は isolate 生存期間問題とどう噛み合うか
+
+clean_arch の案自体（`RepositoryQueryPort` をデコレータで包む・usecases 無改修）は層設計として妥当で、**私の isolate 懸念とは独立に成立する**。ただし clean_arch の記述をよく読むと、より緊急度の高い別問題が隠れている。
+
+> `container.ts` の `searchRepositoriesUseCase()` … で `new CachingRepositoryQuery({ inner: new GithubRepositoryQuery(...), cache: new InMemoryCache(clock), ... })` でラップしてから渡す
+
+`app/[locale]/page.tsx`（round1 で読了）は `searchRepositoriesUseCase()({...})` という **二段呼び出し**をしている（1 段目でユースケース関数を組み立て、2 段目で実行）。もし `container.ts` の `searchRepositoriesUseCase()` が**呼ばれるたびに** `new InMemoryCache(clock)` を new しているなら、**isolate の生存期間とは無関係に、リクエストごとに空の `Map` が生成され常に MISS になる**（isolate が仮に無限に生き続けても関係ない、より根本的なバグ）。これは isolate 生存期間問題より手前で SP-5 を破壊する。
+
+**必要な変更**: `InMemoryCache`（または `CachingRepositoryQuery` 全体）を **モジュールスコープで 1 回だけ `new` し、`container.ts` のトップレベルで保持するシングルトンにする**（例: `const searchCache = new InMemoryCache(new SystemClock())` をファイル冒頭に置き、`searchRepositoriesUseCase()` はこの既存インスタンスを注入するだけにする）。Workers/Node のモジュールは isolate ロード時に 1 回評価されるため、これで「同一 isolate 内で処理された 2 リクエスト間」は共有される。
+
+ただし **これは必要条件であって十分条件ではない**。モジュールスコープ化しても、round1 で述べた isolate 生存期間の不確実性（低頻度リクエストでの早期破棄・未検証）は依然として残る。2 回の検索の間に isolate が破棄・再生成されれば、モジュールスコープのシングルトンも失われ再び MISS になる。この意味で、**Cache API（`caches.default`）の能動利用は isolate 境界を超える永続性を持つ点で本質的に優位**（コロケーション単位で共有され isolate リサイクルの影響を受けない）。
+
+**推奨**: まずモジュールスコープ singleton 化は **争点 A の結論に関わらず必須の修正**として clean_arch の実装に組み込む。その上で、isolate 依存のリスクをどこまで許容するかは verify_test の E2E 安定性評価と合わせて判断する（round1 で示した「暫定は isolate メモリ、実測不足なら Cache API へ格上げ」の立場を維持）。
+
+### Q2（verify_test へ）: Route Handler 案は操作レビューを満たすか — **一部撤回・条件付き修正**
+
+verify_test の指摘は正しい。Playwright が `page.goto()` の戻り値からヘッダを読む仕組み自体は RSC/Route Handler を問わない。しかし**問題は観測側ではなく発信側**: `app/[locale]/page.tsx`（Server Component）が描画する **その URL のレスポンスに** `X-Cache-Status` を乗せる手段が、Route Handler を **別 URL に新設するだけ** では得られない。Next.js は同一ルートセグメントに `page.tsx` と `route.ts` を共存させられない（衝突する）ため、round1 の「Route Handler 新設」案は、**ユーザーが実際に操作する画面（`/${locale}?...`）の応答にはヘッダを付けられない**。ここは round1 の結論が甘かった点として撤回する。
+
+現実的な選択肢を 3 つに整理する:
+
+1. **UI 側の検索実行を Route Handler 経由の遷移に作り替える**（`SearchForm` の送信先を `page.tsx` 自身ではなく、実質的に page.tsx と同じ内容を返す `route.ts` にする、または検索結果表示自体をそのルートの応答にする）。Next.js の制約上、これは事実上 **`app/[locale]/page.tsx` を廃して Route Handler 主導のレンダリングに置き換える**規模の変更になり、SP-5 のスコープを超える可能性が高い。
+2. **Cloudflare Worker レベルのラッパー**: `wrangler.jsonc` の `main` を OpenNext 生成物 (`.open-next/worker.js`) を直接指すのをやめ、自前の薄いエントリ (`src/infrastructure/platform/worker-entry.ts` 相当) が OpenNext の `fetch` ハンドラを呼んだ後、`Response` を clone してヘッダを追加してから返す。HIT/MISS の判定結果をレンダリング内部（`CachingRepositoryQuery` の呼び出し）からこの外側ラッパーまで伝える手段として、`nodejs_compat`（`wrangler.jsonc` で有効化済み・round1 確認）経由の `AsyncLocalStorage` を使えば、Next.js 自身が内部でリクエストコンテキストに使っている手法と同型で実現できる可能性がある。**ただし ARCH-4 が定める「事業者固有バインディングは `src/infrastructure/platform` の中だけ」との整合、OpenNext のビルド成果物構造を壊さずに `main` を差し替えられるか、`AsyncLocalStorage` が実際に Workers ランタイムで動くか（`nodejs_compat` フラグの対応範囲）は未検証**。技術的に筋は通るが、私はまだ実機で確認していない。
+3. **§4.5 の「主経路」を緩める**: 診断用の別ルート（例 `GET /api/cache-diagnostics?keyword=...`）で HIT/MISS を返し、操作レビュー手順・E2E はそちらを叩く。ユーザーが実際に見る画面には X-Cache-Status が乗らない。これは cloudflare-infrastructure.md §4.5 の「ブラウザの DevTools で誰でも確認できる」という要件を字義通りには満たさない（診断エンドポイントを別途叩く必要がある）ため、**§4.5 の文言修正が必要**になる。
+
+**私の推奨は 2**（技術的に正攻法で ARCH-4 とも矛盾しない）が、未検証のため **今ラウンドでは断定しない**。3 は最も実装が軽いが設計文書の書き換えが要る妥協案。1 は却下寄り（スコープ超過）。verify_test の E2E 設計（`page.goto('/ja?q=react')` を 2 回叩く方式）は 2・3 どちらの結論でも有効なので変更不要。
+
+### 争点 A×B の矛盾: どちらの文書をどう直すか — **§4.2 を修正する（§4.5 はそのまま）**
+
+1 案に決める。**§4.2 の「L2 = HTTP Cache-Control + Workers Caching（MVP の主役）」を修正し、「L2 の主役はアプリ内 `CachePort`（isolate メモリのモジュールスコープ singleton、または Cache API 能動利用）とし、`Cache-Control` ヘッダは付与するが “エッジが自動的に Worker をバイパスする” 効果には依存しない」と書き換える**。§4.5（X-Cache-Status をアプリ側で付与し E2E から検証する）は据え置く。
+
+理由: §4.5 は `user-story-map.md` §5.3 の SP-5 操作レビュー手順（検証可能な受け入れ条件）に直結する具体的制約であり、intent-gate-rules.md の権威順（ユーザー明示 > 仕様 > テスト > 現行コード）でいえば §4.5 は「仕様（受け入れ条件）」に近い強い制約、§4.2 は一般的なアーキテクチャ方針（コスト・性能の見立て）に過ぎない。両者が矛盾する場合、**検証可能性という具体的な受け入れ条件を持つ方を優先し、一般方針の記述を実態に合わせて直す**のが妥当。§4.2 を直さずに§4.5 だけ実装で強行すると、文書に「HIT 時に Worker が動かないエッジキャッシュ」と「アプリ側でヘッダを動的に付与する」という両立不能な記述が残ったまま矛盾を放置することになる（`sprint-development-rules.md` SD-4 完了条件「見つけたドキュメントの矛盾を修正したか」に抵触）。この修正は SP-5 の PR に含めるべき。
+
+### `verify_test` — 反論
+<sub>2026-08-19T17:22:54+09:00</sub>
+
+## verify_test（検証可能性）rebuttal・Round 2
+
+### 1. runtime_edge の「Route Handler が唯一の解」を前提に、E2E は何を観測するか
+
+runtime_edge の確認（`next/headers` の read-only 制約・`next.config.ts headers()` の静的テーブル制約・OpenNext Cloudflare override に wrapper フックが無い）は事実として受け入れる。私の Round 1 の「`page.goto()` の戻り値からヘッダを読めば `async` RSC かどうかに関係なく観測できる」という主張は **前提が崩れた**（読めるのは「ヘッダが outer response に乗っている場合」であり、乗せる手段そのものが無いという指摘には勝てない）。この点は撤回する。
+
+その上で、runtime_edge の 2 案それぞれについて E2E の観測点を確定する。
+
+**案 1（Route Handler 新設・UI をクライアントフェッチ経由に変更）を推奨する。**
+- 検索フォームの送信が client component からの `fetch('/api/search?...')` になるなら、E2E の主 assert は `page.waitForResponse(res => res.url().includes('/api/search') && res.request().method() === 'GET')` で **その Route Handler 応答そのもの** を捕まえ、`res.headers()['x-cache-status']` を読む。`page.goto()` 単体（トップレベルナビゲーション）ではなく `waitForResponse` に切り替える必要がある — Round 1 で「未検証」としていた client action 経由のケースが、runtime_edge の結論により **確定した前提** になったため。
+- SD-2 の「操作レビュー手順（画面で 2 回検索する）を E2E に写す」は満たせる: ユーザー操作は変わらず「検索ボックスに入力 → 検索ボタン」のままで、`searchFor(page, keyword)` ヘルパーは無改修で使える。`waitForResponse` は UI 操作の **結果として発生するネットワークイベントを観測するだけ** なので、操作レビュー手順そのものを書き換えることにはならない。
+- URL 状態の再現（`AC-2`）は別経路で担保する必要がある（`history.pushState` 等で `?q=` をブラウザ URL に反映させる実装が要る）。これは実装詳細だが、**E2E は「ブラウザの URL バーが変わること」と「X-Cache-Status ヘッダ」を別々の assert にする**必要がある点だけ明記しておく（1 つの `page.goto()` 応答で両方は取れなくなる）。
+
+**案 2（検証専用エンドポイントを別に立てる）は推奨しない。**
+- 理由は runtime_edge と同じ（メイン画面の応答に出ないため §4.5 の「ブラウザ DevTools で誰でも確認できる」という主経路要件を満たさない）。加えて検証可能性の観点でも、**この案は「E2E がユーザーに見えない裏口を叩いて安心する」構造になり、SD-1（動作確認できる状態で終わる）の精神に反する**。もしスコープの都合でこの案を採るなら、E2E は `request.get('/api/search?...')`（`APIRequestContext`。ブラウザ操作を経由しない）で直接叩く形になり、**画面操作の E2E としては成立しない**（SD-2 の「操作レビュー手順を写す」を満たせない）。この場合の代替として、画面操作 E2E 側は Round 1 で出した「スタブの `x-ratelimit-remaining` デクリメント」方式（2 回目のページ応答でカウンタが変わらないことを間接証拠にする）を主 assert に格上げせざるを得ないが、これは `workers: 1` の実行順依存というコスト（Round 1 で指摘済み）を払うことになる。**案 1 が通るなら、この代替は不要**。
+
+**結論**: 案 1（Route Handler + client fetch）を推奨し、E2E の観測点は `page.waitForResponse()` によるルートハンドラ応答のヘッダ読み取りに確定する。`page.goto()` 単体案は撤回。
+
+### 2. ローカル / プレビュー環境の保証の線引き
+
+runtime_edge の isolate 生存期間「未検証」を踏まえ、次の線引きを提案する（Round 1 の私の提案を isolate の指摘に合わせて微修正）。
+
+| 環境 | 何を自動 assert するか | 何を保証しないか |
+|---|---|---|
+| **ローカル E2E**（`playwright.config.ts` の `webServer` = 単一 Node プロセス） | ① `CachingRepositoryQuery` の HIT/MISS ロジックそのもの（結合テストで既に閉じる）② `next start` プロセス内で 2 回連続検索すると `X-Cache-Status` が `MISS`→`HIT` に変わること（`waitForResponse` で assert） | isolate リサイクルの影響（単一プロセスなので原理的に再現できない） |
+| **プレビュー環境**（Cloudflare Workers・testing-strategy.md により E2E 到達不可） | 手動確認: `curl -I` または `wrangler tail` を **短い間隔（数秒以内）で 2 回** 実行し `X-Cache-Status` が `HIT` に変わることを目視 | isolate が数十秒〜数分で破棄される場合、**確認の間隔が空くと 2 回目も `MISS` になりうる** — これは実装の不具合ではなく isolate 生存期間の制約として PR に明記し、「flaky な手動確認」と誤読されないようにする |
+
+**追加提案**: プレビュー環境の手動確認手順は `docs/02_requirements/user-story-map.md` §5.3 の SP-5 操作レビュー手順に **「短い間隔で」という条件を 1 行加える**（TTL 決定（争点 D）と isolate 生存期間の両方に依存する曖昧な確認手順のままにしない）。これは SD-3 の「実装手段は自律で決める」範囲内なので確認は不要、手順書側の 1 行追記として処理する。
+
+runtime_edge が次善策として挙げた Cache API（`caches.default`）明示利用へ後で切り替わった場合も、**この表の構造自体は変わらない**（ローカルは wrangler dev/Miniflare 経由に variant が増えるだけで、「プレビューだけが本当の isolate/エッジ挙動を保証する」という線引きは維持される）。テスト assert の対象（`waitForResponse` でヘッダを読む）も実装差し替えに対して不変であることを再確認しておく。
+
+### 3. clean_arch の `CachingRepositoryQuery` 案への適合を確定する
+
+Round 1 で私はファイルパスを `src/infrastructure/github/cached-repository-query.ts`（仮置き）としていたが、**clean_arch の結論（`src/infrastructure/platform/cached-repository-query.ts`。GitHub 固有知識を持たない旨も明記済み）を採用する**（撤回・譲歩）。理由: `CachingRepositoryQuery` は `RepositoryQueryPort` と `CachePort` という **ドメインポートにしか依存しない**ため、`platform/` に置く方が ACL（`infrastructure/github/`）と責務が混ざらず、私が Round 1 で挙げた「フェイク `RepositoryQueryPort` の呼び出し回数カウント」テストもそのまま書ける（clean_arch 案は私のテスト設計を壊さない）。
+
+確定するテストケース:
+
+- **ファイル**: `src/infrastructure/platform/cached-repository-query.test.ts`（vitest 併置）
+- **対象**: `CachingRepositoryQuery`（`class ... implements RepositoryQueryPort`）
+- テストダブル: 手書きフェイク `RepositoryQueryPort`（`searchCallCount` / `findDetailCallCount` を持つ）+ **実 `InMemoryCache`**（`ClockPort` のみフェイク時計に差し替え。`CachePort` 自体はフェイクせず実装をそのまま使う — cache-key.ts との結線まで含めて検証したいため）
+- ケース一覧（`describe('CachingRepositoryQuery', () => { ... })`）:
+  1. `it('MISS 時は inner.search を呼び、結果を返す')`
+  2. `it('同じ SearchQuery で 2 回目は inner.search を呼ばない（cache から返る）')` ← **SP-5 の中核 assert**。`searchCallCount` が 2 回目呼び出し後も `1` のままであることを見る
+  3. `it('TTL 経過後は inner.search を再度呼ぶ')`（フェイク時計を `advance()`）
+  4. `it('keyword または page が異なれば別キーとして inner.search をそれぞれ呼ぶ')`
+  5. `it('findDetail: 同じ owner/repo で 2 回目は inner.findDetail を呼ばない')`
+  6. `it('findDetail: 404（null）はキャッシュしない（毎回 inner.findDetail を呼ぶ）')`（clean_arch の争点 C 副論点の決定を直接検証する）
+
+**争点 B との接続について 1 点補足**: runtime_edge の案 1 を採るなら、Route Handler が `X-Cache-Status` を出すために `CachingRepositoryQuery.search()` の戻り値（または何らかの伝達経路）に HIT/MISS 情報が必要になる（clean_arch も Round 1 でこの点を認めている）。**戻り値の型を `{ result: SearchResult, cacheStatus: 'HIT' | 'MISS' }` に広げる場合、`RepositoryQueryPort` インターフェース自体の変更になる**ため、`src/domain/ports/repository-query-port.ts` の型変更 → 上記フェイクの型も追従が必要（`satisfies RepositoryQueryPort` で強制されるので、直し忘れは型検査で機械的に検知できる。testing-strategy.md §4 の「型で適合させる」設計が効く場面）。この場合ケース 1・2 の assert に `.cacheStatus` の値も追加する（`'MISS'` → 2 回目 `'HIT'`）。**この型変更をどのファイルに、いつ入れるかは clean_arch・runtime_edge の統合待ち**とし、私の側は上記 6 ケースの骨格が型変更後も同じ構造で書けることだけを保証しておく。
+
+### まとめ（Round 2 結論）
+1. E2E の観測点は `page.waitForResponse()` によるルートハンドラ応答のヘッダ読み取りに確定（`page.goto()` 単体案は撤回）。
+2. ローカル E2E は「ロジック + 単一プロセス内の MISS→HIT 遷移」、プレビューは「isolate 生存期間込みの手動 curl 確認」で線引きし、手順書に「短い間隔で」を追記する。
+3. `cached-repository-query.test.ts` を `src/infrastructure/platform/` に置く clean_arch 案を採用し、6 ケースを確定した。戻り値型が HIT/MISS を運ぶ形に広がった場合もケース構造は不変。
+
+### `clean_arch` — 反論
+<sub>2026-08-19T17:22:58+09:00</sub>
+
+# clean_arch: Round 2 rebuttal（runtime_edge 宛て、一部 verify_test 関連）
+
+## 前提の譲歩（concession）
+
+runtime_edge の技術的事実（`headers()` read-only・`next.config.ts headers()` は静的テーブルで動的値を書けない・`defineCloudflareConfig()` にレスポンスラップの override が無い・`middleware.ts`/`proxy.ts` が意図的に不在）は正しいと認める。**Server Component（`app/[locale]/page.tsx`）のままでは動的 `X-Cache-Status` を出す手段が原理的に無い**という結論に同意する。Route Handler 新設が必要、に賛成する。
+
+---
+
+## 1. Route Handler 新設で `CachingRepositoryQuery` 案・ARCH-3・`page.tsx` はどうなるか
+
+### ARCH-3 は保てる
+Route Handler は `app/` 配下に置く新規ファイルであり、Frameworks & Drivers 層である点は `page.tsx` と同じ（`application-architecture.md` 55-56 行目の層表を参照）。ARCH-3 の規則（`app/` → `src/infrastructure/` 直 import 禁止・`src/composition/` 経由のみ）は **route handler にも無条件に適用される**。具体的には:
+
+- 新規: `app/api/search/route.ts`（非ロケール配下を推奨。検索結果データ自体はロケールに依存しない値オブジェクトであり、`X-Cache-Status` の検証用途では locale segment を経由させる理由が無い。ロケール依存の表示整形は既存どおり `page.tsx` 側の責務のまま）
+- この route handler がやること: `searchParams` から `keyword`/`page` を読む → `src/composition/container.ts` の関数を呼ぶ → `NextResponse.json(result, { headers: { 'X-Cache-Status': status } })` を返す。**`src/infrastructure/` を直接 import しない**（`GithubRepositoryQuery` や `CachingRepositoryQuery` を route handler が直接 `new` することは禁止・composition root 経由のみ）
+
+### `page.tsx` はどうなるか（プロダクト判断が要る点を切り分ける）
+ここは 2 つの問いを分けて答える。
+
+- **問い甲（アーキテクチャ）**: route handler を新設したら `page.tsx` の依存関係規則は変わるか → **変わらない**。`page.tsx` は今まで通り `src/composition/container.ts` の同じ関数（`searchRepositoriesUseCase()` 等）を呼んで SSR してよい。Route Handler は「別の入口」を追加するだけで、既存の Server Component 経路を破壊・置換する必要はない。
+- **問い乙（プロダクト・UX）**: 実ユーザーの検索操作（フォーム submit）そのものを route handler 経由の client fetch に倒すか、それとも SSR ページはそのまま残し route handler は「検証・DevTools 確認専用の並行経路」に留めるか → **これは私（clean_arch）のレンズの外**（JS 必須化・progressive enhancement の後退という UX トレードオフを伴う、`SD-3` 第 2 系統に相当しうる分岐）。runtime_edge の「案 2 は §4.5 の“主経路”要件を満たさない」という指摘は理解するが、それを理由に**実装が SSR フォームを client fetch へ置き換えるべきだと自動的には決まらない**。この対立は synthesizer の `open_questions` に上げることを提案する（「§4.5 の“主経路”を厳密に取るなら route handler 経由の client fetch へ UI を変更する必要があるが、これは進行中の SP-1/SP-2 の progressive enhancement 方針と衝突しうる」という 1 文で）。
+
+### `CachingRepositoryQuery` 案は生き残るか → **生き残る、かつ route handler 新設はこの案の価値を上げる**
+`page.tsx` と `app/api/search/route.ts` の **両方**が同じ `src/composition/container.ts` の関数（`searchRepositoriesUseCase()`）を呼ぶだけで、どちらの呼び出し元もキャッシュの存在を意識しない。もし争点 C で「ユースケース引数注入案」を採っていたら、2 つの呼び出し元（page.tsx 用と route handler 用）それぞれで `CachePort` を組み立てて渡す配線が必要になり重複が増えていた。**デコレータ案は呼び出し元が増えるほど有利**（composition root の 1 関数を直すだけで両方の入口に効く）。
+
+---
+
+## 2. `InMemoryCache` の生存期間 — composition root をどう書くか
+
+### 決定: モジュールスコープのシングルトンにする（毎回 `new` しない）
+
+```ts
+// src/composition/container.ts
+const sharedCache: CachePort = new InMemoryCache(new SystemClock())
+
+export function searchRepositoriesUseCase(): SearchRepositories {
+  const clock = new SystemClock()
+  const query = new CachingRepositoryQuery({
+    inner: new GithubRepositoryQuery({ token: makeInstallationTokenProvider({ clock }) }),
+    cache: sharedCache, // ← モジュールスコープの単一インスタンスを共有
+    ttlSeconds: { search: TTL_SEARCH_SECONDS, detail: TTL_DETAIL_SECONDS },
+  })
+  return makeSearchRepositories({ repos: query })
+}
+```
+
+理由: 現行設計は `searchRepositoriesUseCase()` / `getRepositoryDetailUseCase()` を **呼び出し側（`page.tsx` や新設の route handler）がリクエストのたびに呼ぶ**構成（`GithubRepositoryQuery` も毎回 `new` している）。もし `InMemoryCache` もこの関数内で毎回 `new` すれば、生成された瞬間に空の `Map` になり、**同一 isolate 内であっても常に MISS**（キャッシュが単一リクエストのライフタイムしか持たず存在意義が消える）。モジュール読み込み時（isolate 起動時）に 1 回だけ生成し、以降の全リクエストで使い回す必要がある。
+
+### 副作用への対処
+- **isolate 間の非共有**: モジュールスコープの singleton は「1 isolate = 1 モジュールインスタンス = 1 キャッシュ」を意味する。isolate をまたいで共有されないのは singleton にしてもしなくても変わらない性質（`InMemoryCache` 自体の設計限界であり、争点 A の isolate 生存期間問題そのもの）。ここは runtime_edge / verify_test の争点 A の結論に従う。composition root 側でできるのは「**1 isolate の中では確実に使い回す**」ことだけであり、それ以上の永続化（isolate をまたぐ共有）は `InMemoryCache` を Cache API 実装へ差し替える（争点 A の次善策）でしか解決しない。
+- **同一 isolate 内の同時リクエストの競合**: `Map` は同期的な読み書きなので、同じキーへの同時 `set` はデータ破損はしないが「後勝ち」になりうる（2 つの同時リクエストが同じキーで MISS → 両方 fetch → 両方 set）。SP-5 のスコープでは正確性を壊さない（無駄な二重フェッチが起きるだけ）ため、ロックは導入しない（YAGNI）。
+- **テスト間の状態リーク**: `container.ts` の `sharedCache` はモジュールスコープなので、同一 vitest ワーカープロセス内で `container.ts` を import する複数テストがあると状態が漏れる。**対策**: `search-repositories.test.ts` / `get-repository-detail.test.ts` は現状どおり `container.ts` を import せず `makeSearchRepositories` に直接フェイクポートを渡す設計を維持する（無改修方針・冒頭で確認済み）ので、既存テストへの影響は無い。もし verify_test が `container.ts` 経由の結合テストを追加するなら、`container.ts` に `sharedCache` を直接 export させず（現状案でも export しない想定）、**テスト専用に `cache: CachePort` を注入できるファクトリ**（例: `createSearchRepositoriesUseCase(deps?: { cache?: CachePort })`）を用意し、テストは自前の `InMemoryCache` インスタンスを渡す形にすることを推奨する（本番コードパスはデフォルト引数で `sharedCache` を使う）。この形にすれば `vi.resetModules()` のような回避策も不要になる。
+
+---
+
+## 3. HIT/MISS を上位へ伝える手段（`CachePort` の面積を広げない）
+
+### 決定: `CachingRepositoryQuery` に `onCacheStatus` コールバックを持たせる（`CachePort`・`RepositoryQueryPort` はどちらも無改修）
+
+```ts
+// src/infrastructure/platform/cached-repository-query.ts
+export class CachingRepositoryQuery implements RepositoryQueryPort {
+  constructor(
+    private readonly deps: {
+      inner: RepositoryQueryPort
+      cache: CachePort
+      ttlSeconds: { search: number; detail: number }
+      onCacheStatus?: (status: 'HIT' | 'MISS') => void // ← 追加はここだけ
+    },
+  ) {}
+
+  async search(query: SearchQuery): Promise<SearchResult> {
+    const key = searchResultCacheKey(query)
+    const cached = await this.deps.cache.get<SearchResult>(key)
+    if (cached !== null) {
+      this.deps.onCacheStatus?.('HIT')
+      return cached
+    }
+    const result = await this.deps.inner.search(query)
+    await this.deps.cache.set(key, result, this.deps.ttlSeconds.search)
+    this.deps.onCacheStatus?.('MISS')
+    return result
+  }
+  // findDetail も同様
+}
+```
+
+`CachePort`（`get`/`set`/`invalidate`）にも `RepositoryQueryPort`（`search`/`findDetail` の戻り値型）にも一切手を入れない。HIT/MISS の判定ロジックはこのデコレータのローカル変数のスコープに閉じ、port の契約には現れない。
+
+composition root 側は route handler 専用の**request スコープのファクトリ**を用意する:
+
+```ts
+// src/composition/container.ts
+export function searchRepositoriesWithCacheStatus(): {
+  search: SearchRepositories
+  getCacheStatus: () => 'HIT' | 'MISS' | undefined
+} {
+  let status: 'HIT' | 'MISS' | undefined
+  const clock = new SystemClock()
+  const query = new CachingRepositoryQuery({
+    inner: new GithubRepositoryQuery({ token: makeInstallationTokenProvider({ clock }) }),
+    cache: sharedCache,
+    ttlSeconds: { search: TTL_SEARCH_SECONDS, detail: TTL_DETAIL_SECONDS },
+    onCacheStatus: (s) => { status = s },
+  })
+  return { search: makeSearchRepositories({ repos: query }), getCacheStatus: () => status }
+}
+```
+
+Route Handler は関数呼び出しのたびにこのファクトリを呼ぶ（Next.js の route handler はリクエストごとに実行されるので、`status` はクロージャで request スコープに閉じ、`sharedCache`（争点 2 の singleton）だけが isolate スコープで共有される — 2 つのスコープが混ざらない）。`page.tsx` 側は HIT/MISS を必要としないので、既存の `searchRepositoriesUseCase()`（コールバック無し）をそのまま使い続けてよい。
+
+### 却下した代替案
+
+1. **`CachePort.get()` の戻り値を `{ value, status }` に広げる**: 却下。`NFR-17`（get/set/invalidate + TTL のみ）を明示的に破る。`InMemoryCache` の既存実装・既存の `cache.test.ts` の契約（`get<T>(key): Promise<T | null>`）も変更が要り、影響範囲が「HIT/MISS を1箇所に伝えたいだけ」という目的に対して不釣り合いに大きい。
+2. **`RepositoryQueryPort` の戻り値にキャッシュメタデータを持たせる（`SearchResult` を `{ data, cacheStatus }` に拡張）**: 却下。`SearchResult` は `src/domain/model/repository.ts` のドメイン型であり、`domain-model.md` はキャッシュを「事業者固有バインディングと不可分」として `src/infrastructure/platform/` に隔離する決定を既にしている（§4・116 行目）。ドメイン型にキャッシュ概念を混ぜるとその隔離が崩れる。加えて `GithubRepositoryQuery`（キャッシュを知らない実装）も戻り値の形を合わせる必要が生じ、`ARCH-5`（GitHub 実装は `src/infrastructure/github/` に閉じる）の実装がキャッシュ層の都合に引きずられる。
+3. **`AsyncLocalStorage` 等のグローバル側儀チャネル**: 却下（暫定）。Cloudflare Workers 上での `AsyncLocalStorage` の可用性・挙動は未検証（runtime_edge 領域）。明示的なコールバック注入の方が `cached-repository-query.test.ts` で `onCacheStatus` の呼び出し順序・引数を直接 assert でき、verify_test の Round 1 で示された「HIT/MISS 判定材料をこの層のテストで機械的に assert する」という要求にも最も素直に応える。暗黙のグローバル状態より明示的な DI を優先するのは既存コードベースの一貫した流儀（`ClockPort` 等）とも整合する。
+
+---
+
+## verify_test への補足（Round 1 の assert 2 に対する回答）
+
+verify_test が「`CachePort.get` が呼ばれた事実と結果の由来（HIT/MISS）を呼び出し元へ返せることを assert したい」と書いていた点は、上記 `onCacheStatus` コールバックで解決する。`cached-repository-query.test.ts` では `onCacheStatus` に手書きフェイクを渡し、呼ばれた回数・引数（`'HIT'`/`'MISS'`）の順序をそのまま assert できる。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-19T17:25:23+09:00</sub>
+
+# lead: 合意（争点 A〜D の決着）
+
+## 合意できたこと
+
+1. **層設計（争点 C）は全員一致で決着**: `CachingRepositoryQuery`（`RepositoryQueryPort` のデコレータ）を `src/infrastructure/platform/cached-repository-query.ts` に置き、composition root で合成する。`src/usecases/*` は無改修。`CachePort` / `RepositoryQueryPort` の面積は広げず、HIT/MISS の伝達は `onCacheStatus?: (status) => void` コールバックで行う（`NFR-17` 維持）。verify_test も置き場所とテスト設計を clean_arch 案に合わせて撤回・追従した。
+2. **`InMemoryCache` はモジュールスコープの singleton にする**: 現行 composition root は呼び出しのたびに依存を `new` するため、`InMemoryCache` を関数内で `new` すると **isolate 生存期間以前にリクエストごとに空 Map となり常に MISS** になる。これは争点 A の結論に関わらず必須の修正（runtime_edge が指摘、clean_arch が具体形を確定）。
+3. **`page.goto()` 単体でヘッダを読む E2E は不成立**: Server Component の HTML 応答に動的ヘッダを載せる手段が現構成に存在しない（`next/headers` は read-only・`next.config.ts headers()` は静的テーブル・`defineCloudflareConfig` にレスポンスラップのフック無し・`middleware.ts` / `proxy.ts` は意図的に不在）。verify_test が round 1 案を撤回。
+4. **同一ルートに `page.tsx` と `route.ts` は共存できない**: よって「Route Handler を新設すれば画面応答にヘッダが乗る」も誤り。runtime_edge が round 1 の結論を撤回。
+5. **`docs/03_design/infrastructure/cloudflare-infrastructure.md` §4.2 と §4.5 は現状矛盾している**: 「HIT 時に Worker が実行されないエッジキャッシュを主役にする」（§4.2）と「アプリ側で動的にヘッダを付与する」（§4.5）は両立しない。検証可能性という受け入れ条件に直結する §4.5 を残し、§4.2 を実態に合わせて直す（`SD-4` 完了条件「見つけた矛盾を修正したか」）。
+
+## 対立が残り、lead が裁定したこと
+
+**争点 B（`X-Cache-Status` をどこに載せるか）**。3 案が出た。
+
+- **案 1（UI を client fetch に作り替える）→ 却下**。SP-5 のゴールは「同じ検索で API を二度叩かない」であって「検索の実行方式を変える」ではない。SSR フォーム経路の置き換えは `AC-2`（URL 状態の再現）の作り直しを伴い、`inception-deck.md` Q4 のスコープ侵食にあたる。clean_arch が「プロダクト判断」として open_questions 送りを提案したが、**スコープ規律で機械的に却下できるため確認事項にしない**。
+- **案 2（Worker ラッパー + `AsyncLocalStorage` で SSR 応答に付与）→ 第 1 候補**。ユーザーが実際に操作する画面の応答にヘッダが乗るため §4.5 を字義どおり満たす。ただし ① `wrangler.jsonc` の `main` を自前エントリへ差し替えて OpenNext 生成物を包めるか ② Workers ランタイムで `AsyncLocalStorage` が動くか、が **いずれも未検証**。
+- **案 3（`app/api/search/route.ts` を観測経路にする）→ フォールバック**。実装は軽いが、画面応答にヘッダが乗らないため §4.5 の「ブラウザ DevTools で誰でも確認できる」を字義どおりには満たさず、§4.5 の文言修正が要る。
+
+**裁定**: **案 2 を実機スパイクで検証し、成立すれば案 2、不成立なら案 3 へフォールバックする**。どちらに着地しても、キャッシュのロジック自体（「2 回目は inner を呼ばない」）は `cached-repository-query.test.ts` の結合テストで完全に閉じており、SP-5 の本質的な完了条件はヘッダ経路の成否に左右されない。スパイクは 1 回で判定し、失敗を引きずらない（`A-4` サーキットブレーカーの精神）。
+
+## 検証の線引き（verify_test 案を採用）
+
+| 環境 | 自動 assert | 保証しないこと |
+|---|---|---|
+| 結合（vitest） | HIT / MISS ロジック・TTL 経過・キー分離・404 非キャッシュ | ランタイム差異 |
+| ローカル E2E（`next start` 単一プロセス） | 2 回連続検索で `MISS` → `HIT` に変わること | isolate リサイクルの影響（原理的に再現不能） |
+| プレビュー（Workers） | 手動 `curl` を短い間隔で 2 回 | 間隔が空くと isolate 破棄で `MISS` になりうる（実装不具合ではない旨を PR に明記） |
+
+`user-story-map.md` §5.3 の SP-5 操作レビュー手順に「短い間隔で 2 回」の 1 行を追記する。
+
+### `lead` — 判定
+<sub>2026-08-19T17:26:05+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: キャッシュの主役をどこに置くか",
+      "design": "アプリ内 CachePort（InMemoryCache）を主役にし、composition root のモジュールスコープで 1 インスタンスだけ生成して全リクエストで共有する。Cache-Control ヘッダは付与してよいが『エッジが Worker をバイパスする』効果には依存しない。isolate をまたぐ永続性は本スプリントでは追わない（Cache API 能動利用は将来の格上げ候補として記録するに留める）。",
+      "artifacts": [
+        "src/composition/container.ts（改修・sharedCache をモジュールスコープに）",
+        "docs/03_design/infrastructure/cloudflare-infrastructure.md §4.2（改修・L2 の主役の記述を実態に合わせる）"
+      ],
+      "rejected": "HTTP Cache-Control + Workers Caching を主役にする案。HIT 時に Worker が実行されず X-Cache-Status を動的付与できないため §4.5 と両立しない。use cache / cacheLife も OpenNext 上で isolate 内メモリへ退化しうる（R-7 未検証）ため主役にしない。"
+    },
+    {
+      "issue": "B: X-Cache-Status をどう付与するか",
+      "design": "第 1 候補: wrangler の main を自前エントリ（src/infrastructure/platform/worker-entry.ts）に差し替え、OpenNext 生成物の fetch を呼んだ結果を包んでヘッダを付与する。HIT/MISS の受け渡しは node:async_hooks の AsyncLocalStorage（nodejs_compat 有効済み）。実機スパイクで成立を確認し、不成立ならフォールバックとして app/api/search/route.ts を観測経路として新設し、§4.5 の主経路の記述をそちらへ修正する。スパイクは 1 回で判定する。",
+      "artifacts": [
+        "src/infrastructure/platform/worker-entry.ts（新規・第 1 候補が成立した場合）",
+        "wrangler.jsonc（改修・main の差し替え）",
+        "app/api/search/route.ts（新規・フォールバック時）",
+        "docs/03_design/infrastructure/cloudflare-infrastructure.md §4.5（フォールバック時のみ改修）"
+      ],
+      "rejected": "UI の検索実行を client fetch へ作り替える案。SP-5 のゴール外でありスコープ侵食（AC-2 の URL 状態再現の作り直しを伴う）。同一ルートに page.tsx と route.ts を共存させる案は Next.js の制約で不成立。next.config.ts headers() は静的テーブルのため動的値を書けず不成立。"
+    },
+    {
+      "issue": "C: キャッシュ参照をどの層に差し込むか",
+      "design": "CachingRepositoryQuery（RepositoryQueryPort を実装するデコレータ）を新設し composition root で合成する。CachePort と RepositoryQueryPort は無改修。HIT/MISS の伝達は onCacheStatus コールバック（デコレータのコンストラクタ引数）で行い、リクエストスコープのクロージャで受ける。404（null）はキャッシュしない。invalidate は本スプリントで呼び出し箇所を作らない。",
+      "artifacts": [
+        "src/infrastructure/platform/cached-repository-query.ts（新規）",
+        "src/infrastructure/platform/cached-repository-query.test.ts（新規・6 ケース）",
+        "src/composition/container.ts（改修）"
+      ],
+      "rejected": "ユースケース引数注入案（呼び出し元が増えるたびに配線が重複する）。CachePort.get の戻り値を { value, status } に広げる案（NFR-17 のポート面積を破る）。SearchResult にキャッシュメタデータを持たせる案（ドメイン型にインフラ概念が漏れる）。"
+    },
+    {
+      "issue": "D: TTL 暫定値と再決定条件",
+      "design": "検索結果 60 秒 / 詳細 300 秒を暫定値として composition root の名前付き定数（TTL_SEARCH_SECONDS / TTL_DETAIL_SECONDS）に置く。根拠（検索は鮮度要求が高く、詳細は変化が緩い）と再決定条件（R-5 のレート枠逆算が確定したら見直す）をコード内コメントと ADR に明記する。TTL はテスト安定性に影響しない（結合テストはフェイク時計、E2E は連続実行のため）。",
+      "artifacts": [
+        "src/composition/container.ts（新規定数）",
+        "docs/03_design/architecture/adr/（新規 ADR・Cache Port が YAGNI の意図的例外である理由と TTL 暫定値の根拠）"
+      ],
+      "rejected": "TTL を環境変数化する案（R-5 未確定の段階で運用面を増やす YAGNI）。検索と詳細で同一 TTL にする案（NFR-5 が別値を要求）。"
+    }
+  ],
+  "tasks": [
+    { "id": "T-1", "title": "CachingRepositoryQuery と結合テスト 6 ケースを TDD で実装する", "actor": "claude", "depends_on": [], "sp": "sp:3" },
+    { "id": "T-2", "title": "composition root を sharedCache シングルトン + TTL 定数 + onCacheStatus ファクトリへ改修する", "actor": "claude", "depends_on": ["T-1"], "sp": "sp:2" },
+    { "id": "T-3", "title": "X-Cache-Status の付与経路を実機スパイクで判定し、成立側を実装する", "actor": "claude", "depends_on": ["T-2"], "sp": "sp:3" },
+    { "id": "T-4", "title": "E2E（2 回検索で MISS→HIT）と操作レビュー手順の 1 行追記を反映する", "actor": "claude", "depends_on": ["T-3"], "sp": "sp:2" },
+    { "id": "T-5", "title": "cloudflare-infrastructure.md §4.2 の矛盾を解消し、ADR を起こす", "actor": "claude", "depends_on": ["T-3"], "sp": "sp:1" }
+  ],
+  "critical": [
+    "InMemoryCache を composition root の関数内で new すると isolate 生存期間以前に常に MISS となる。モジュールスコープ singleton 化は必須（この 1 点を落とすと SP-5 は成立しない）。",
+    "X-Cache-Status を SSR 応答へ載せる手段は現時点で未検証であり、スパイクが失敗した場合は観測経路を分ける設計変更（§4.5 の文言修正）が必要になる。"
+  ],
+  "open_questions": []
+}
