@@ -145,6 +145,26 @@ ${errors}先にすべての変更をコミット＆pushしてから PR 作成（
 手順: git add <ファイル> → git commit → git push -u origin <ブランチ名>"
 fi
 
+# 4.5. run_checks サマリーの貼付検査（Lv3・Actions 制限中の CI 代替・#72）
+# GitHub Actions が制限中で CI が存在しないため、`tools/run_checks.sh` の実行結果を PR 本文へ貼ることが
+# 唯一の機械的証跡になる。貼付が無い PR は「lint / 型 / テストを誰も実行していない」可能性があるためブロックする。
+# 🔴 ここをブロックにする理由: 満たす条件が「本文に結果表を貼る」だけで決定論的（誤検知が構造的に起きない）。
+#    チェッカーの異常終了を fail-open にしたのとは性質が違う（あちらは環境要因、これは手順の省略）。
+#    Actions が復帰しワークフローが CI を担うようになったら本ブロックは撤去する（cloudflare-infrastructure.md §8.4）。
+if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
+  pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
+  if ! printf '%s' "$pr_body" | grep -q 'run_checks'; then
+    hook_block "[pre-pr-create-check] PR 作成をブロックしました。PR 本文に run_checks の結果がありません。
+
+GitHub Actions が制限中で CI が無いため、\`npm run check\`（= tools/run_checks.sh）の結果が唯一の機械的証跡です。
+1. \`npm run check\` を実行する
+2. 出力末尾の Markdown サマリー表（見出し 'run_checks 結果'）を PR 本文に貼る
+3. PR 作成を再実行する
+
+手順の正本: docs/rules/pr-review-flow-summary.md「PR 作成時の必須事項」項目 0"
+  fi
+fi
+
 # 5. セルフレビュー機械チェック（docs/rules/self-review-checklist.md・Lv3）
 # Error 検出時のみブロック。チェッカー自体の異常（python 不在等・exit>1）ではブロックしない。
 # サブディレクトリから gh pr create が実行されてもスキップされないようリポジトリルートで実行する

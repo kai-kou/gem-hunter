@@ -58,34 +58,45 @@ skip_check() {
   RESULTS+=("${name}|SKIP|0")
 }
 
-# --- アプリコードの有無を先に判定（package.json / node_modules 不在なら 1〜3 は SKIP） ---
+# --- アプリコードの有無を先に判定 ---
+# 🔴 SKIP してよいのは「アプリがまだ無い（package.json 自体が無い）」ときだけ。
+#    package.json があるのに node_modules が無いのは **依存未インストール = 検査できていない** 状態なので
+#    FAIL 扱いにする（未実行と合格が終了コードで区別できないと、CI 不在の今この結果を信用できない）。
 HAS_NODE_PROJECT=1
+DEPS_MISSING=0
 if [ ! -f "$REPO_ROOT/package.json" ]; then
   HAS_NODE_PROJECT=0
-fi
-if [ ! -d "$REPO_ROOT/node_modules" ]; then
+elif [ ! -d "$REPO_ROOT/node_modules" ]; then
   HAS_NODE_PROJECT=0
+  DEPS_MISSING=1
+fi
+
+# 依存未インストールは主要 3 チェックを実行不能にするため、その事実を 1 件の FAIL として記録する
+if [ "$DEPS_MISSING" -eq 1 ]; then
+  echo "[run_checks] FAIL: 依存関係が未インストール（node_modules が無いため Lint / 型チェック / テストを実行できません。'npm ci' を実行してください）"
+  RESULTS+=("依存関係のインストール状態|FAIL|0")
+  OVERALL_EXIT=1
 fi
 
 # 1. Lint
 if [ "$HAS_NODE_PROJECT" -eq 1 ]; then
   run_check "Lint (eslint)" npx eslint
 else
-  skip_check "Lint (eslint)" "package.json または node_modules が見つかりません"
+  skip_check "Lint (eslint)" "package.json が無い（アプリコード導入前）"
 fi
 
 # 2. 型チェック
 if [ "$HAS_NODE_PROJECT" -eq 1 ]; then
   run_check "型チェック (tsc --noEmit)" npx tsc --noEmit
 else
-  skip_check "型チェック (tsc --noEmit)" "package.json または node_modules が見つかりません"
+  skip_check "型チェック (tsc --noEmit)" "package.json が無い（アプリコード導入前）"
 fi
 
 # 3. ユニット・結合テスト
 if [ "$HAS_NODE_PROJECT" -eq 1 ]; then
   run_check "テスト (vitest run)" npx vitest run
 else
-  skip_check "テスト (vitest run)" "package.json または node_modules が見つかりません"
+  skip_check "テスト (vitest run)" "package.json が無い（アプリコード導入前）"
 fi
 
 # 4. 依存規則（クリーンアーキテクチャ）

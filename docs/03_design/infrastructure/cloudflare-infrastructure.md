@@ -440,7 +440,7 @@ openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
 **プレビュー（PR 作成前）**:
 
 ```bash
-bash tools/run_checks.sh
+npm run check                 # = bash tools/run_checks.sh（permissions で許可済みの呼び出し形はこちら）
 npx opennextjs-cloudflare build
 npx wrangler versions upload --preview-alias "pr-<N>" --tag "$SHA"
 ```
@@ -450,10 +450,17 @@ npx wrangler versions upload --preview-alias "pr-<N>" --tag "$SHA"
 **本番（マージ後）**:
 
 ```bash
-npx wrangler deploy
+git fetch origin +main:refs/remotes/origin/main && git checkout origin/main
+npm ci && npm run check       # 🔴 合成状態の検証（複数 PR がマージされた main HEAD で再実行する）
+npm run deploy                # = opennextjs-cloudflare build && wrangler deploy（ビルドを含む形に統一）
+curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.dev/   # 5xx なら rollback を検討
 ```
 
-セッションがマージした直後に実行する。実行結果（デプロイ成功・URL）は Issue / PR コメントに記録する（実行したことを黙らない）。
+セッションがマージした直後に実行する。実行結果（デプロイ成功・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
+
+- 🔴 **`npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）
+- 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替）
+- **失敗したら本番へ進まない**（fail-closed）。疎通確認が 5xx なら `npx wrangler rollback` を検討し、判断と結果を記録する
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
 
