@@ -19,6 +19,10 @@ SSOT: `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.4（コントロールサ�
 
 Warning（`run_checks.sh` を止めない）:
   - `src/ui/components/` 配下に未登録の新規コンポーネントファイルがあり、生の `h-\\d+` を含む場合
+  - 登録済み呼び出しサイトの `className={...}`（式形式）に、変数展開・関数戻り値など
+    静的に解決できない部分が含まれる場合（誤検知で止めないため Error にしない）
+  - `app/globals.css` の対象変数が宣言されているが、値を px/rem として解決できない場合
+    （黙ってスキップせず Warning で可視化する）
 
 🔴 Python は px 数値をハードコードしない（WCAG 24px / iOS 16px という「判定基準の定数」を除く）。
    tier ごとの実効 px 値は `app/globals.css` の宣言値から都度読み取る。Python が持つのは
@@ -59,7 +63,19 @@ CALL_SITE_REQUIREMENTS: dict[str, dict[str, str]] = {
 TIER_ORDER = ["xs", "sm", "md", "lg", "xl"]
 
 # cva の size variant 名 → tier 名（Button の `default` / Input の `default` は tier "md" に対応）
-VARIANT_TIER = {"xs": "xs", "sm": "sm", "default": "md", "lg": "lg", "xl": "xl"}
+# icon 系（正方形の icon variant）も同じ tier 表に載せる（未登録だと tier 不足が検出されずすり抜ける）。
+# 🔴 `icon-xl` は button.tsx から削除済み（YAGNI）のためここにも追加しない。
+VARIANT_TIER = {
+    "xs": "xs",
+    "sm": "sm",
+    "default": "md",
+    "lg": "lg",
+    "xl": "xl",
+    "icon": "md",
+    "icon-xs": "xs",
+    "icon-sm": "sm",
+    "icon-lg": "lg",
+}
 
 # WCAG / iOS の判定基準定数（トークンの実効値ではなく「判定基準」そのもの。ハードコード対象外ではない）
 WCAG_MIN_TARGET_PX = 24.0  # WCAG 2.2 2.5.8（AA）target size minimum
@@ -125,19 +141,75 @@ def lineno_at(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
+def css_var_raw(css_text: str, var_name: str) -> str | None:
+    """`--var-name: <値>;` の `<値>` 部分（前後空白除去済み）を返す。未宣言なら None。"""
+    m = re.search(rf"--{re.escape(var_name)}\s*:\s*([^;]+);", css_text)
+    return m.group(1).strip() if m else None
+
+
 def css_var_px(css_text: str, var_name: str) -> float | None:
-    """`--var-name: 24px;` / `--var-name: 1rem;` を px に解決する（1rem = 16px）。"""
-    m = re.search(
-        rf"--{re.escape(var_name)}\s*:\s*([\d.]+)\s*(px|rem)\s*;", css_text
-    )
+    """`--var-name: 24px;` / `--var-name: 1rem;` を px に解決する（1rem = 16px）。
+
+    単位表記の大文字小文字は問わない（`24PX` 等）。変数が未宣言、または
+    単位が px/rem 以外・数値として解釈できない場合は None（呼び出し側で
+    「解決できなかった」ことを検出できるよう、値の有無と解決可否を区別する）。
+    """
+    raw = css_var_raw(css_text, var_name)
+    if raw is None:
+        return None
+    m = re.match(r"^([\d.]+)\s*(px|rem)$", raw, re.IGNORECASE)
     if not m:
         return None
     value = float(m.group(1))
-    return value * 16.0 if m.group(2) == "rem" else value
+    return value * 16.0 if m.group(2).lower() == "rem" else value
 
 
 def tier_order_index(tier: str) -> int | None:
     return TIER_ORDER.index(tier) if tier in TIER_ORDER else None
+
+
+def _find_matching_brace(text: str, open_idx: int) -> int:
+    """`text[open_idx]` が `{` である前提で、対応する `}` の index を返す。
+
+    文字列リテラル（`"` `'`）・テンプレートリテラル（`` ` ``、`${...}` の再帰含む）の
+    中身は中括弧としてカウントしない。対応が見つからない場合は `len(text)` を返す。
+    """
+    n = len(text)
+    depth = 0
+    i = open_idx
+    while i < n:
+        ch = text[i]
+        if ch == "{":
+            depth += 1
+            i += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            i += 1
+            if depth == 0:
+                return i - 1
+            continue
+        if ch in "\"'":
+            q = ch
+            i += 1
+            while i < n and text[i] != q:
+                i += 2 if text[i] == "\\" else 1
+            i += 1
+            continue
+        if ch == "`":
+            i += 1
+            while i < n and text[i] != "`":
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == "$" and i + 1 < n and text[i + 1] == "{":
+                    i = _find_matching_brace(text, i + 1) + 1
+                    continue
+                i += 1
+            i += 1
+            continue
+        i += 1
+    return n
 
 
 # --------------------------------------------------------------------------- 検査 1: cva size テーブルの生値
@@ -187,29 +259,116 @@ def check_bare_small_text(rel: str, text: str, min_px: float) -> list[str]:
 
 # --------------------------------------------------------------------------- 検査 3: globals.css のフロア実体
 
-def check_globals_floor(css_text: str) -> list[str]:
+def check_globals_floor(css_text: str) -> tuple[list[str], list[str]]:
     errors: list[str] = []
-    xs_px = css_var_px(css_text, "size-control-xs")
-    if xs_px is not None and xs_px < WCAG_MIN_TARGET_PX:
-        errors.append(
-            f"{GLOBALS_CSS} UI-DIM-3: --size-control-xs が {xs_px:g}px で "
-            f"WCAG 2.5.8 フロア（{WCAG_MIN_TARGET_PX:g}px）未満です"
-        )
-    text_min_px = css_var_px(css_text, "text-control-min")
-    if text_min_px is not None and text_min_px < IOS_ZOOM_MIN_FONT_PX:
-        errors.append(
-            f"{GLOBALS_CSS} UI-DIM-3: --text-control-min が {text_min_px:g}px で "
-            f"iOS 自動ズーム回避フロア（{IOS_ZOOM_MIN_FONT_PX:g}px）未満です"
-        )
-    return errors
+    warnings: list[str] = []
+
+    def _check(var_name: str, floor_px: float, floor_label: str) -> None:
+        raw = css_var_raw(css_text, var_name)
+        if raw is None:
+            return  # 未宣言はこの検査の対象外（宣言必須は別の関心事）
+        px = css_var_px(css_text, var_name)
+        if px is None:
+            warnings.append(
+                f"{GLOBALS_CSS} UI-DIM-3: --{var_name} の値 `{raw}` を px/rem として"
+                "解決できません（フロア判定をスキップしました。単位を px か rem にしてください）"
+            )
+            return
+        if px < floor_px:
+            errors.append(
+                f"{GLOBALS_CSS} UI-DIM-3: --{var_name} が {px:g}px で "
+                f"{floor_label}フロア（{floor_px:g}px）未満です"
+            )
+
+    _check("size-control-xs", WCAG_MIN_TARGET_PX, "WCAG 2.5.8")
+    _check("text-control-min", IOS_ZOOM_MIN_FONT_PX, "iOS 自動ズーム回避")
+    return errors, warnings
 
 
 # --------------------------------------------------------------------------- 検査 4: 呼び出しサイトの className 上書き禁止
 
-def check_call_site_classname(rel: str, text: str) -> list[str]:
+CLASSNAME_LITERAL_RE = re.compile(r'className\s*=\s*"([^"]*)"')
+CLASSNAME_EXPR_START_RE = re.compile(r"className\s*=\s*\{")
+
+
+def _scan_classname_expr(rel: str, expr: str, base_offset: int, code: str) -> tuple[list[str], bool]:
+    """`className={...}` の式本体を検査する。
+
+    文字列リテラル・テンプレートリテラルの静的部分は禁止クラス判定にかけて Error 化する。
+    変数展開（`${...}`）や、リテラルを除去してもなお残る識別子（関数呼び出し名を除く）が
+    あれば「静的に解決できない」と判定し、呼び出し元へ `has_dynamic=True` を返す
+    （Error にはせず、呼び出し元で Warning を積む）。
+    """
     errors: list[str] = []
+    n = len(expr)
+    skeleton = list(expr)
+    saw_dynamic_interp = False
+
+    def check_segment(seg_text: str, seg_offset: int) -> None:
+        for tok_m in re.finditer(r"\S+", seg_text):
+            tok = tok_m.group(0)
+            if CALL_SITE_H_TEXT_RE.match(tok):
+                ln = lineno_at(code, seg_offset + tok_m.start())
+                errors.append(
+                    f"{rel}:{ln} UI-DIM-4: className={{...}} 内のリテラルに `{tok}` があります"
+                    "（サイズは cva の size variant 経由で指定し、呼び出し側で上書きしないでください）"
+                )
+
+    i = 0
+    while i < n:
+        ch = expr[i]
+        if ch in "\"'":
+            q = ch
+            j = i + 1
+            while j < n and expr[j] != q:
+                j += 2 if expr[j] == "\\" else 1
+            check_segment(expr[i + 1 : j], base_offset + i + 1)
+            for k in range(i, min(j + 1, n)):
+                skeleton[k] = " "
+            i = j + 1
+            continue
+        if ch == "`":
+            j = i + 1
+            seg_start = j
+            while j < n and expr[j] != "`":
+                if expr[j] == "\\":
+                    j += 2
+                    continue
+                if expr[j] == "$" and j + 1 < n and expr[j + 1] == "{":
+                    check_segment(expr[seg_start:j], base_offset + seg_start)
+                    close = _find_matching_brace(expr, j + 1)
+                    saw_dynamic_interp = True
+                    j = close + 1
+                    seg_start = j
+                    continue
+                j += 1
+            check_segment(expr[seg_start:j], base_offset + seg_start)
+            for k in range(i, min(j + 1, n)):
+                skeleton[k] = " "
+            i = j + 1
+            continue
+        i += 1
+
+    has_dynamic = saw_dynamic_interp
+    if not has_dynamic:
+        remainder = "".join(skeleton)
+        for id_m in re.finditer(r"[A-Za-z_$][A-Za-z0-9_$]*", remainder):
+            k = id_m.end()
+            while k < n and remainder[k].isspace():
+                k += 1
+            if k < n and remainder[k] == "(":
+                continue  # 関数呼び出し名（例: cn(...)）は素通しし、中の引数だけを見る
+            has_dynamic = True
+            break
+    return errors, has_dynamic
+
+
+def check_call_site_classname(rel: str, text: str) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
     code = strip_comments(text)
-    for m in re.finditer(r"className\s*=\s*\"([^\"]*)\"", code):
+
+    for m in CLASSNAME_LITERAL_RE.finditer(code):
         content = m.group(1)
         base_offset = m.start(1)
         for tok_m in re.finditer(r"\S+", content):
@@ -220,7 +379,21 @@ def check_call_site_classname(rel: str, text: str) -> list[str]:
                     f"{rel}:{ln} UI-DIM-4: リテラル className に `{stripped_tok}` があります"
                     "（サイズは cva の size variant 経由で指定し、呼び出し側で上書きしないでください）"
                 )
-    return errors
+
+    for m in CLASSNAME_EXPR_START_RE.finditer(code):
+        brace_start = m.end() - 1
+        close = _find_matching_brace(code, brace_start)
+        expr = code[brace_start + 1 : close]
+        expr_errors, has_dynamic = _scan_classname_expr(rel, expr, brace_start + 1, code)
+        errors.extend(expr_errors)
+        if has_dynamic:
+            ln = lineno_at(code, brace_start)
+            warnings.append(
+                f"{rel}:{ln} UI-DIM-4: className={{...}} の一部が静的に解決できません"
+                "（サイズ影響 className が静的に解決できません。size variant で指定してください）"
+            )
+
+    return errors, warnings
 
 
 # --------------------------------------------------------------------------- 検査 5: 呼び出しサイトの tier 下限
@@ -293,13 +466,17 @@ def run_checks(files: dict[str, str]) -> tuple[list[str], list[str]]:
                 if text is None:
                     continue
                 errors.extend(check_bare_small_text(rel, text, text_min_px))
-        errors.extend(check_globals_floor(css_text))
+        floor_errors, floor_warnings = check_globals_floor(css_text)
+        errors.extend(floor_errors)
+        warnings.extend(floor_warnings)
 
     for rel, requirements in CALL_SITE_REQUIREMENTS.items():
         text = files.get(rel)
         if text is None:
             continue
-        errors.extend(check_call_site_classname(rel, text))
+        classname_errors, classname_warnings = check_call_site_classname(rel, text)
+        errors.extend(classname_errors)
+        warnings.extend(classname_warnings)
         errors.extend(check_call_site_tier(rel, text, requirements))
 
     registered = set(COMPONENT_FILES)
@@ -342,7 +519,6 @@ def _good_files() -> dict[str, str]:
         "        icon: 'size-(--size-control-md)',\n"
         "        'icon-xs': \"size-(--size-control-xs) [&_svg:not([class*='size-'])]:size-3\",\n"
         "        'icon-lg': 'size-(--size-control-lg)',\n"
-        "        'icon-xl': 'size-(--size-control-xl)',\n"
         "      },\n"
         "    },\n"
         "  },\n"
@@ -404,11 +580,11 @@ _case(
 )
 
 _case(
-    "検査1: button.tsx の icon-xl variant に任意値 size-[44px]",
+    "検査1: button.tsx の icon-lg variant に任意値 size-[40px]",
     lambda f: f.__setitem__(
         "src/ui/components/button.tsx",
         f["src/ui/components/button.tsx"].replace(
-            "'icon-xl': 'size-(--size-control-xl)',", "'icon-xl': 'size-[44px]',"
+            "'icon-lg': 'size-(--size-control-lg)',", "'icon-lg': 'size-[40px]',"
         ),
     ),
     1, 0,
@@ -463,6 +639,24 @@ _case(
 )
 
 _case(
+    "検査3: globals.css の --size-control-xs が 20PX（フロア未満・大文字単位）",
+    lambda f: f.__setitem__(
+        "app/globals.css",
+        f["app/globals.css"].replace("--size-control-xs: 24px;", "--size-control-xs: 20PX;"),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査3: globals.css の値が px/rem 以外の単位で解決できない場合は Warning（fail-open しない）",
+    lambda f: f.__setitem__(
+        "app/globals.css",
+        f["app/globals.css"].replace("--size-control-xs: 24px;", "--size-control-xs: 1.5em;"),
+    ),
+    0, 1,
+)
+
+_case(
     "検査4: search-form.tsx のリテラル className に h-10",
     lambda f: f.__setitem__(
         "src/ui/search-form.tsx",
@@ -481,6 +675,39 @@ _case(
 )
 
 _case(
+    "検査4: className={cn(\"flex-1\", \"h-10\")} の式形式が Error として検出される",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            'className="flex-1"', 'className={cn("flex-1", "h-10")}'
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査4: className={`flex-1 h-10`}（テンプレートリテラル）が Error として検出される",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            'className="flex-1"', 'className={`flex-1 h-10`}'
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査4: className={someVar}（静的に解決不能）は Error にせず Warning",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            'className="flex-1"', 'className={someVar}'
+        ),
+    ),
+    0, 1,
+)
+
+_case(
     "検査5: search-form.tsx の Input が size 未指定（既定 tier md < 必要 xl）",
     lambda f: f.__setitem__(
         "src/ui/search-form.tsx",
@@ -494,6 +721,17 @@ _case(
     lambda f: f.__setitem__(
         "src/ui/search-form.tsx",
         f["src/ui/search-form.tsx"].replace('<Button type="submit" size="xl">', '<Button type="submit" size="sm">'),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査5: search-form.tsx の Button が size=\"icon-xs\"（tier xs < 必要 xl）",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            '<Button type="submit" size="xl">', '<Button type="submit" size="icon-xs">'
+        ),
     ),
     1, 0,
 )
