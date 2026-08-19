@@ -50,7 +50,6 @@
   --color-accent-fg: var(--accent-foreground);
   --color-danger: var(--destructive);
   --color-danger-fg: var(--destructive-foreground);
-  --color-destructive-foreground: var(--destructive-foreground);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);

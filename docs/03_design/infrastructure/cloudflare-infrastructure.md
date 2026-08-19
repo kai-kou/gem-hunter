@@ -125,12 +125,12 @@ flowchart TB
 | 使わない | 理由 | 代わりに |
 |---|---|---|
 | **Node.js Middleware** | アダプタが未対応で、検出するとビルドを早期エラーにする | 使わない |
-| **`proxy.ts`**（Next 16 で `middleware.ts` から改名） | アダプタでの動作が一次情報で確認できない（未確認） | ルート `app/page.tsx`（Server Component）内で `headers()` から `accept-language` を読み `redirect('/ja')` する |
+| **`proxy.ts`**（Next 16 で `middleware.ts` から改名） | ✅ **不採用を確定（2026-08-19）**: Next.js 16 で Proxy は Node.js ランタイム固定になり、`runtime` config を Proxy 側で指定するとビルドエラーになる（`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md` "Runtime" 節）。かつ `@opennextjs/cloudflare`（Edge 実行）は Node.js middleware を検出すると `process.exit(1)` で早期エラーにし `.open-next/worker.js` を生成しない（`node_modules/@opennextjs/cloudflare/dist/cli/build/build.js` 65-68 行目）。公式ドキュメントも単純なリダイレクトは `next.config.ts` の `redirects` を優先する旨を明記（`node_modules/next/dist/docs/01-app/01-getting-started/16-proxy.md` 27 行目） | `next.config.ts` の `redirects()` で `/` → `/ja`、ロケール接頭辞なしパス → `/ja/:path` へ既定ロケール固定リダイレクトする（`accept-language` の検出は行わない）。実装は `next.config.ts` |
 | `next/image` の最適化 | Cloudflare Images は月 5,000 変換の無料枠があるが、検索結果の大量アバターで unique 変換が膨らむ | GitHub のアバター URL のサイズパラメータ（`?s=N`）をそのまま使う（`INF-11`） |
 | Secrets Store | open beta で Super Administrator ロールを要求する | `wrangler versions secret put`（GA・§7.2.1） |
 | Bot Fight Mode | 有効化すると WAF の Skip が効かず正当な API リクエストがチャレンジされうる | 有効化しない（Rate Limiting binding で足りる） |
 
-> 🔵 **i18n（`E-4` / `SP-2`）への含意**: `/` → `/ja` のリダイレクトを **middleware で実装しない**。`next-intl` を採用する場合も、ルーティング機能ではなくメッセージカタログ API（`NextIntlClientProvider` / `getTranslations`）だけを使う分割にすれば、`proxy.ts` の未確認問題を構造的に踏まない。`SP-2` 着手前に `next-intl` の現行版仕様を context7 で一次確認する。
+> 🔵 **i18n（`E-4` / `SP-2`）への含意**: ✅ **決定済み（2026-08-19）**: `/` → `/ja` のリダイレクトは **middleware（`proxy.ts`）で実装せず** `next.config.ts` の `redirects()` で行う（上表の根拠）。`next-intl` は **不採用に決定** し、依存を増やさない自前実装（`src/shared/i18n/config.ts` のロケール定義 + `src/shared/i18n/messages.ts` のメッセージカタログ）でメッセージ管理を行う。詳細は [PRD §13](../../02_requirements/prd.md#13-未決事項実装着手時に決定する)。
 
 ### 3.3. `wrangler.jsonc`（出発点）
 

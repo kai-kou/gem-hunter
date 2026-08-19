@@ -270,8 +270,11 @@ def run_check() -> int:
 
 def self_test() -> int:
     failures: list[str] = []
+    total = 0
 
     def check(name: str, cond: bool):
+        nonlocal total
+        total += 1
         if not cond:
             failures.append(name)
 
@@ -282,6 +285,25 @@ def self_test() -> int:
     # 既知値: oklch(0 0 0) は黒
     r, g, b = oklch_str_to_srgb("oklch(0 0 0)")
     check("oklch(0 0 0) -> 黒", abs(r) < 1e-3 and abs(g) < 1e-3 and abs(b) < 1e-3)
+
+    # 既知の有彩色ケース（C=0 の無彩色では l_ = m_ = s_ = L となり LMS 係数・
+    # a = C・cosH / b = C・sinH の経路が一切評価されないため、C > 0 の値で検証する）。
+    # 変換値は https://oklch.com / colorjs.io の実装と照合した既知の sRGB 対応（srgb 0-255 換算）。
+    # 許容誤差は各チャンネル ±2/255（≒0.0078）。
+    def check_rgb(label: str, oklch_value: str, expected_255: tuple[int, int, int]) -> None:
+        r_, g_, b_ = oklch_str_to_srgb(oklch_value)
+        got_255 = (round(r_ * 255), round(g_ * 255), round(b_ * 255))
+        tol = 2 / 255
+        ok = (
+            abs(r_ - expected_255[0] / 255) < tol
+            and abs(g_ - expected_255[1] / 255) < tol
+            and abs(b_ - expected_255[2] / 255) < tol
+        )
+        check(f"{label}: {oklch_value} -> rgb{expected_255}（実測 rgb{got_255}）", ok)
+
+    check_rgb("有彩色（赤）", "oklch(0.627955 0.257683 29.2338)", (255, 0, 0))
+    check_rgb("有彩色（緑）", "oklch(0.86644 0.294827 142.495)", (0, 255, 0))
+    check_rgb("有彩色（青）", "oklch(0.452013 0.313214 264.052)", (0, 0, 255))
 
     # 白 vs 黒のコントラスト比は 21:1
     ratio = contrast_ratio((1.0, 1.0, 1.0), (0.0, 0.0, 0.0))
@@ -325,7 +347,7 @@ def self_test() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print(f"[check_contrast --self-test] PASS（{7 + 3} 件相当のアサーション全て成功）")
+    print(f"[check_contrast --self-test] PASS（{total} 件のアサーション全て成功）")
     return 0
 
 
