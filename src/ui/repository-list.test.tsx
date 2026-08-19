@@ -37,6 +37,39 @@ describe('RepositoryList', () => {
     )
   })
 
+  it('カードは独立 URL の詳細ページへのリンクになっている（モーダルではない・AC-4）', () => {
+    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByRole('link', { name: /facebook\/react/ })).toHaveAttribute(
+      'href',
+      '/ja/repos/facebook/react',
+    )
+  })
+
+  it('リポジトリ名にドットを含む場合も正しい href になる（例: user.github.io）', () => {
+    const dotted: RepositorySummary[] = [
+      {
+        id: 1,
+        fullName: 'octocat/octocat.github.io',
+        name: 'octocat.github.io',
+        owner: { login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4' },
+        description: null,
+        primaryLanguage: null,
+        stars: 1,
+        updatedAt: new Date('2026-08-18T09:00:00Z'),
+        topics: [],
+        htmlUrl: 'https://github.com/octocat/octocat.github.io',
+      },
+    ]
+
+    render(<RepositoryList items={dotted} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByRole('link', { name: /octocat\/octocat\.github\.io/ })).toHaveAttribute(
+      'href',
+      '/ja/repos/octocat/octocat.github.io',
+    )
+  })
+
   it('説明・主要言語・star 数・topics を表示する（AR-1）', () => {
     render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
 
