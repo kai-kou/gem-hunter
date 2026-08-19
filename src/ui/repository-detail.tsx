@@ -1,3 +1,4 @@
+import { CircleDot, Eye, GitFork, Star } from 'lucide-react'
 import Link from 'next/link'
 import type { Locale } from '../domain/model/locale'
 import type { RepositoryDetail as RepositoryDetailModel } from '../domain/model/repository'
@@ -32,10 +33,10 @@ export function RepositoryDetail({
   const numberFormat = new Intl.NumberFormat(localeTag)
 
   const stats = [
-    { key: 'stars', label: labels.starCount, value: repository.stars },
-    { key: 'watchers', label: labels.watcherCount, value: repository.watchers },
-    { key: 'forks', label: labels.forkCount, value: repository.forks },
-    { key: 'openIssues', label: labels.openIssueCount, value: repository.openIssues },
+    { key: 'stars', label: labels.starCount, value: repository.stars, Icon: Star },
+    { key: 'watchers', label: labels.watcherCount, value: repository.watchers, Icon: Eye },
+    { key: 'forks', label: labels.forkCount, value: repository.forks, Icon: GitFork },
+    { key: 'openIssues', label: labels.openIssueCount, value: repository.openIssues, Icon: CircleDot },
   ] as const
 
   return (
@@ -70,11 +71,11 @@ export function RepositoryDetail({
       <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map((stat) => (
           <div key={stat.key} className="bg-muted/50 rounded-md p-3">
-            <dt className="text-muted-foreground text-xs font-medium">{stat.label}</dt>
-            <dd
-              data-testid={`stat-${stat.key}`}
-              className="text-foreground mt-1 text-lg font-semibold"
-            >
+            <dt className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
+              <stat.Icon aria-hidden="true" className="size-4 shrink-0" />
+              {stat.label}
+            </dt>
+            <dd className="text-foreground mt-1 text-lg font-semibold">
               {numberFormat.format(stat.value)}
             </dd>
           </div>
