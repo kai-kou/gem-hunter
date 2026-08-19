@@ -1,0 +1,66 @@
+{
+  "topic": "SP-1 のスプリントレビュー・レトロスペクティブを実施し、『スプリント開発とリファインメントは常に専門チームで進め、レビューとレトロを必ずチームで記録する』を恒久プロセスとして定着させる",
+  "brief": "飼い主のフィードバック（原文 2 点）: (1)『スプリント開発やリファインメントについて、単独エージェントで進めずに常に専門チームを組成してチームとして進めるようにしてください。メインのエージェントは高コストなモデルなのでオーケストレーターとして、専門チームを組成してタスクを遂行してください。』 (2)『成果物に対するスプリントレビューと、レトロスペクティブを必ずチームで実施して記録を残してください。必要に応じて Issue も作成して後続のスプリントで対応できるようにしてください。』\n\n直前スプリント（SP-1・Issue #26・PR #58・2026-08-19 JST マージ済み）で実際に起きた事実:\n- リポジトリはアプリコードゼロの状態から、Next.js 16.3.1 + Tailwind v4 + shadcn/ui(Radix) の骨格、ドメイン(SearchKeyword/PageNumber のブランド型・SearchQuery・RepositoryQueryPort・ドメインエラー) → ユースケース → ACL(zod DTO 検証 + mapper + GitHub App installation token) → Server Component 表示、までを 1 firing で実装した。テストは Vitest 4 + MSW 2 で 7 ファイル 22 テスト green、依存規則チェック PASS、Cloudflare Workers へデプロイして https://sp1-gem-hunter.kinamocchi-tech.workers.dev で操作レビュー手順 3 項目を完走できる状態にしてマージした。\n- 🔴 このスプリントは **メインセッション単独で実行された**（サブエージェント委譲を禁じられた実行モードだったため）。session-sprint-rules.md §2 は sp:5 以上で役割分担型 fan-out を既定としており、sp:8 の本スプリントは編成欄に『単独実行』と書いて逸脱理由を記録した状態で進んだ。Layer 1 セルフレビューも code-review スキルの Step 1（観点別フレッシュ文脈ファインダーの並列サブエージェント）を使わず、メインが観点ごとに読み直す代替で実施した（自己修正盲点 64.5% の回避という設計目的が満たされていない）。\n- 実装中に値オブジェクトを最初クラス（SearchQuery.create）で書き、domain-model.md §4 が『ブランド型 + スマートコンストラクタ』を正本と定めていることに後から気づいて書き直した（仕様の先読み不足による手戻り）。\n- ACL が zod の ZodError を層の外へ漏らしており、セルフレビューで検出して safeParse + UpstreamError へ修正した（マージ前に解消済み）。\n- tools/check_architecture_boundaries.py の import 抽出正規表現が破滅的バックトラックを起こし、26 ファイルの検査に 57 秒かかっていた。self_review_check.py の 30 秒タイムアウトを超えるため PR 前ゲートが『checker error』で素通りしていた。今回修正して 58ms になった。アプリコードが 1 行も無い間は表面化しない不具合だった。\n- GitHub Actions のジョブが起動できない（deploy-preview が 2 回とも数秒・ログ 0 バイトで失敗。参照アクションのタグ実在は確認済み、無関係な repo-checks も同じ落ち方）。A-6 相当として飼い主へ確認依頼中。プレビュー URL はセッションから wrangler versions upload で手動確保した。\n- SP-1 には残作業がある（Cloudflare 作業 ④ p95 CPU 実測 / ⑤ src/infrastructure/platform の Cache Port の器 / ⑥ シークレット投入・Rate Limiting / installation-token.ts の ClockPort 化）。Issue #26 は open のまま status:in-progress。\n\n現行ルールの関連箇所（SSOT を増やさないために必ず突き合わせること）:\n- docs/rules/agent-team-summary.md『2 協調モードと振り分け』= 議論型（discussion-review）と役割分担型 fan-out の振り分け SSOT。現行は『ユーザーが専門チームを明示したときは議論型が既定、内部の自動調査は fan-out が既定』。\n- docs/rules/session-sprint-rules.md §2 = Sprint Planning コメントの『編成』欄（必須）。既定は役割分担型 fan-out で sp:5 以上は並列 / sp:1〜3 は単独実行。\n- docs/rules/sprint-development-rules.md = SD-1〜SD-4（4 規律・SSOT）。\n- .claude/skills/sprint-cycle-router/SKILL.md = 無人ルーティンの決定木。Step 4-3 が Sprint Planning コメントを投稿し、編成の規則は session-sprint-rules.md を参照している。Step 4-6 で pr-review-watcher へ継続。スプリントレビュー・レトロのステップは決定木に無い。\n- .claude/skills/retrospective/SKILL.md = KPT 生成 + Try の Issue 化（Agent Teams 3 役の並列サブエージェント）。現状どこからも自動起動されていない可能性がある（各パイプラインの最終ステップから呼ばれる設計）。\n- .claude/skills/code-review/SKILL.md Step 1 = 観点別フレッシュ文脈ファインダー（並列サブエージェント）。\n- docs/rules/improvement-lane-map.md = 改善 Issue / 振り返り / 監査・衛生の 3 レーン責務境界。\n- CLAUDE.md『応答スタイル』『スプリント開発の 4 規律』節。\n- .claude/hooks/orchestrator-directive.sh = 高コストモデル検出時に『オーケストレーターとして専門チームを組成せよ』を注入する既存フック（非ブロッキング）。\n- tools/self_review_check.py = PR 前チェック（縦切り・C-5・TDD 順序・スプリントメタの機械判定）。\n\n争点は少なくとも次の 5 つ:\nA) スプリントレビュー（成果物の受け入れ判定）として SP-1 は本当に『完了』と言えるか。user-story-map.md §5.3 の操作レビュー手順・§7 の Done 判定・prd.md の AC-1/AC-2/AC-3/AR-1・SD-1/SD-2 の完了条件に照らして、受け入れる / 条件付き受け入れ / 差し戻し のどれか。残課題のうち後続スプリントへ送るものと、次の firing で必ず潰すものの線引き。\nB) 『常に専門チームを組成する』を、どの粒度で・どのファイルに・どう書くか。全スプリント一律で議論型（discussion-review）にすると 1 firing あたりのコストと時間が跳ね上がる。sp 値・スプリントの性質（実装 / 設計 / リファインメント）ごとの使い分けを決め、SSOT を 1 つに定める（session-sprint-rules.md §2 の編成欄の規則を書き換えるのか、sprint-development-rules.md に新しい規律 SD-5 を足すのか、agent-team-summary.md を直すのか）。飼い主の指示は『常に』なので、単独実行を許す例外を作るなら根拠と範囲を明示する。\nC) 『スプリントレビューとレトロを必ずチームで実施して記録を残す』を無人ルーティンのどこに差し込むか。sprint-cycle-router の決定木は『1 firing = 該当する最初の 1 ブランチだけ』という設計なので、レビュー・レトロを独立ブランチにすると実装が進まない firing が増える。マージ直後に同一 firing 内で実行するのか、次 firing の先頭で実行するのか、Step 2（自 PR 回収）の完了処理に含めるのか。記録の置き場所（content/discussions/ か content/retrospectives/ か Issue コメントか）と、既存の retrospective スキル・discussion-review スキルとの責務分担。\nD) ドキュメントに書くだけでは守られない（今回まさに『編成欄に単独実行と書いて逸脱理由を記録する』ことで規律が緩んだ）。機械強制をどこまで入れるか。tools/self_review_check.py や hooks で『チーム編成の証跡（whiteboard か サブエージェント起動記録）が無い PR』を Warning / Error にできるか。誤検知でルーティンを止めない設計になっているか。実装コストに見合うか。\nE) 今回のスプリントから学んだこと（KPT）のうち、Issue として起票して後続スプリントで潰すべきものは何か。少なくとも次の候補を評価すること: ① 実装前に domain-model.md / application-architecture.md / testing-strategy.md の該当節を読む手順が SD-4 の読む順序に入っていない（今回の値オブジェクト手戻りの原因） ② tools 系スクリプトに実行時間の上限を設ける仕組み（今回の 57 秒バックトラックは self_review_check の checker error として握りつぶされていた） ③ GitHub Actions が起動できない件の切り分け ④ SP-1 の残作業（④⑤⑥ + ClockPort）。優先度と sp 見積もりまで付けること。",
+  "participants": [
+    {
+      "name": "sprint_review",
+      "model": "sonnet",
+      "lens": "スプリントレビュー（成果物の受け入れ判定）。docs/02_requirements/user-story-map.md §5.3 の SP-1 操作レビュー手順・§7 運用ルール・docs/02_requirements/prd.md §6 の AC-1/AC-2/AC-3 と AR-1・docs/rules/sprint-development-rules.md の SD-1/SD-2 完了条件に、マージ済みの実装（app/ src/ wrangler.jsonc .github/workflows/）が実際に適合しているかをコードとドキュメントを照合して判定する。受け入れ / 条件付き受け入れ / 差し戻し を根拠付きで 1 つ選ぶ。未達項目は『次の firing で潰す』か『後続スプリントへ送る』かまで決める。感想ではなく、要件 ID と実ファイルの行を根拠に書くこと"
+    },
+    {
+      "name": "process_design",
+      "model": "sonnet",
+      "lens": "プロセス設計（飼い主指示の恒久化）。『スプリント開発・リファインメントは常に専門チームで進める / メインはオーケストレーター』を、既存 SSOT を壊さずどのファイルにどう書くかを設計する。docs/rules/session-sprint-rules.md §2 の編成欄・docs/rules/sprint-development-rules.md の SD-n・docs/rules/agent-team-summary.md の協調モード振り分け・.claude/skills/sprint-cycle-router/SKILL.md Step 4 の関係を整理し、同じ規則が 2 箇所に実体で書かれる状態（ドリフトの温床）を作らないこと。議論型と fan-out の使い分け基準、単独実行を許す例外の有無と範囲、1 firing あたりのコスト影響まで具体的に示す"
+    },
+    {
+      "name": "retro_facilitator",
+      "model": "sonnet",
+      "lens": "レトロスペクティブ（KPT の抽出と Issue 化）。brief に列挙された SP-1 の事実だけを材料に Keep / Problem / Try を出す。Problem は『誰が悪い』ではなく『どの仕組みが欠けていたか』で書く（単独実行・仕様先読み不足による値オブジェクトの手戻り・PR 前ゲートの checker error 握りつぶし・Actions 起動不能・レビュー/レトロがルーティンの決定木に無いこと）。Try は必ず『Issue タイトル / type ラベル / sp 見積もり / 完了条件』の 4 点を埋めた形で提案し、後続スプリントで機械的に着手できる粒度にする。抽象的な心構え（気をつける・意識する）は Try にしない"
+    },
+    {
+      "name": "guardrail_eng",
+      "model": "sonnet",
+      "lens": "機械強制の実効性。ドキュメントに書くだけの規律は守られないという前提で、『チーム編成なしでスプリントを進めた』『スプリントレビュー・レトロの記録が無いままスプリントを閉じた』を機械的に検知できるかを設計する。tools/self_review_check.py（PR 前チェック）・.claude/hooks/ の既存フック・PR 本文の必須項目・content/discussions/ や Issue コメントの存在チェックのうち、どれが誤検知なく実装できるか。無人ルーティンを止めない設計（Error にするか Warning にするか）と実装コストを評価し、費用対効果が合わないものは『入れない』と明言すること"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合。CLAUDE.md / docs/rules/*.md / .claude/skills/*/SKILL.md のうち、今回の 2 つの飼い主指示（常にチーム編成 / レビュー・レトロを必ずチームで記録）に関係する記述を機械的に洗い出し、『どのファイルのどの節を変える必要があるか』『どこが既に矛盾しているか』を列挙する。新しい設計を主張せず既存記述との突合に徹する。特に session-sprint-rules.md §2 の編成欄の既定・agent-team-summary.md の振り分け・sprint-cycle-router SKILL.md の決定木・retrospective スキルの起動経路（どこからも呼ばれていないなら死蔵）・improvement-lane-map.md のレーン境界を確認すること"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて採用する結論を 1 つに決める。決定は必ず『どのファイルに何を書くか（新規 / 改修）』『どの Issue を起票するか（タイトル・ラベル・sp・完了条件）』まで落とす。飼い主の明示指示（常にチーム編成 / レビューとレトロを必ずチームで記録）は権威順の最上位であり、コストを理由に骨抜きにしない。ただし『常に』の運用可能な形（議論型 / fan-out の使い分け）は設計してよい。SSOT を増やさない（同じ規則の実体を 2 箇所に書かない）。議論で否定された案は採用しない。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "sprint_review": {
+      "verdict": "accepted | accepted_with_conditions | rejected",
+      "rationale": "判定理由",
+      "carry_over": ["次 firing で潰す残課題"],
+      "backlog": ["後続スプリントへ送る項目"]
+    },
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "decision": "採用する結論",
+        "files": ["変更するファイルと変更内容"],
+        "rejected": ["否定された案と理由"]
+      }
+    ],
+    "kpt": {
+      "keep": ["続けること"],
+      "problem": ["仕組みの欠落"],
+      "try": ["試すこと"]
+    },
+    "issues": [
+      {
+        "title": "Issue タイトル",
+        "labels": ["type:* / priority:* / sp:*"],
+        "body_summary": "対応方針と完了条件",
+        "why": "どの Problem / 残課題に対応するか"
+      }
+    ],
+    "open_questions": ["飼い主の判断が要る事項"]
+  }
+}
