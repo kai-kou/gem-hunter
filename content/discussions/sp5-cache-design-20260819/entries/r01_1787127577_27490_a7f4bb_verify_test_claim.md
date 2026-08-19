@@ -26,7 +26,7 @@ ts: 2026-08-19T17:19:37+09:00
 - この層だけで「2 回目は外部 API を呼んでいない」の **本体ロジック** は完全に機械的検証が閉じる（外部依存なし・フェイクのみ・NFR-24 違反なし）。
 
 #### 3. 結合: composition root 配線の検証
-- `src/composition/container.ts` に `InMemoryCache`（または C の結論次第でデコレータ）を配線したら、`container.test.ts` は現状存在しない。新規に「同一プロセス内で `searchRepositoriesUseCase()` を 2 回呼んでも内側の HTTP フェッチが 1 回」まで確認したい場合は **MSW でネットワーク層をカウント**するのが妥当（ここは ACL 境界を跨ぐので testing-strategy.md §4 の「MSW は ACL のテストに限る」の例外に当たらない点に注意が必要 — 厳密には ACL 単体ではなく composition root 経由の結合テストになるため、**Red 段階でこのテストを書くかどうかは要判断**。個人的な意見: 2 の層でロジックは閉じているので、composition root レベルの結合テストは「配線ミスの検知」だけが目的になり、MSW を使うより **スタブサーバー（`e2e/stub/server.mjs` は E2E 専用なので流用しない）ではなく `undici` の `MockAgent` 等を使う結合テストを 1 本足す価値はあるが必須ではない**。§6 の AC 対応表にも composition root 単体の行は無いので、**この結合テストは Nice-to-have・E2E で代替可能なら省略してよい**と考える。
+- `src/composition/container.ts` に `InMemoryCache`（または C の結論次第でデコレータ）を配線したら、`container.test.ts` は現状存在しない。新規に「同一プロセス内で `searchRepositoriesUseCase()` を 2 回呼んでも内側の HTTP フェッチが 1 回」まで確認したい場合は **MSW でネットワーク層をカウント** するのが妥当（ここは ACL 境界を跨ぐので testing-strategy.md §4 の「MSW は ACL のテストに限る」の例外に当たらない点に注意が必要 — 厳密には ACL 単体ではなく composition root 経由の結合テストになるため、**Red 段階でこのテストを書くかどうかは要判断**。個人的な意見: 2 の層でロジックは閉じているので、composition root レベルの結合テストは「配線ミスの検知」だけが目的になり、MSW を使うより **スタブサーバー（`e2e/stub/server.mjs` は E2E 専用なので流用しない）ではなく `undici` の `MockAgent` 等を使う結合テストを 1 本足す価値はあるが必須ではない**。§6 の AC 対応表にも composition root 単体の行は無いので、**この結合テストは Nice-to-have・E2E で代替可能なら省略してよい** と考える。
 
 #### 4. E2E: `e2e/sp-5.spec.ts`（新規）
 `testing-strategy.md` §5「外側（受け入れ）: 操作レビュー手順を E2E に写す → Red」に従い、まずこれを失敗する状態で書く。
@@ -71,20 +71,20 @@ test('SP-5: 2 回目の検索は X-Cache-Status: HIT になる', async ({ page }
 **未検証・要確認点（正直に書く）**:
 - `searchFor()` がフォーム submit による **フルページナビゲーション**（`waitForResponse` で捕まえられる）か、それとも Next.js のクライアントサイド遷移（RSC ペイロードの fetch のみでトップレベル HTML レスポンスヘッダは取れない可能性）かは、実装を読んでいない（`app/[locale]/page.tsx` は今回読んでいない）ため **未検証**。もしクライアントサイド遷移の場合、`page.goto('/ja?q=react')` の形で **直接 URL 遷移させて `page.goto()` の戻り値からヘッダを読む** 方式に切り替える必要がある（`page.goto()` は必ずフル HTTP レスポンスを返すのでこちらの方が確実）。**推奨: E2E は `page.goto('/ja?q=react')` を 2 回呼ぶ形に倒し、client action 経由の submit には依存しない**（sp-1 の URL 状態再現要件 `AC-2` とも整合する）。
 - ヘッダ名は `X-Cache-Status`（大文字始まり）だが HTTP ヘッダは大小文字非区別。Playwright の `headers()` はキーを小文字化して返す仕様なので `res.headers()['x-cache-status']` で読む（これは Playwright の既知仕様であり実装依存ではない）。
-- 争点 B が「Cloudflare Cache API を明示的に叩く」案になった場合、ローカル `next start`（Node ランタイム）では Cloudflare の `caches` グローバルが存在しない可能性があり、**ローカル webServer での E2E がそもそもその経路を通らない**リスクがある。この場合ローカル E2E は InMemoryCache 経路のみを検証し、Workers Cache API 経路は別途プレビュー環境での手動確認 or `@cloudflare/vitest-pool-workers` 導入まで検証が閉じない。この乖離は runtime_edge の結論待ちで、**Red を書く前に B の結論を確定させる必要がある**（B → 私のテスト設計の入力）。
+- 争点 B が「Cloudflare Cache API を明示的に叩く」案になった場合、ローカル `next start`（Node ランタイム）では Cloudflare の `caches` グローバルが存在しない可能性があり、**ローカル webServer での E2E がそもそもその経路を通らない** リスクがある。この場合ローカル E2E は InMemoryCache 経路のみを検証し、Workers Cache API 経路は別途プレビュー環境での手動確認 or `@cloudflare/vitest-pool-workers` 導入まで検証が閉じない。この乖離は runtime_edge の結論待ちで、**Red を書く前に B の結論を確定させる必要がある**（B → 私のテスト設計の入力）。
 
 #### 5. スタブへのリクエスト回数を数える具体案（もう1経路、E2E レベルで裏取り）
-`e2e/stub/server.mjs` はグローバル変数でリクエストカウンタを持たない薄い実装。**改修案**: `/__stats` のようなデバッグ専用ルートを足し、`GET /__stats` で `{ searchRequestCount: number }` を返す（テスト専用エンドポイントなので本番コードには影響しない・スタブファイル内で閉じる）。または `X-GitHub-RateLimit-Remaining`（インフラ設計書 §4.5 の「副」経路）をそのまま使い、スタブが固定値でなく **リクエストのたびに `remaining` をデクリメントする** ようにすれば、2 回目のページ応答でその値が変わらないことをアプリ側ヘッダ経由で assert できる（新規のスタブエンドポイントを増やさずに済む）。**後者を推奨**（インフラ設計書 §4.5 の「副」の裏取り経路そのものであり、二重に確認できる）。改修対象: `e2e/stub/server.mjs`（`rateLimitBody` とは別に、`x-ratelimit-remaining` を通常応答にも付与しデクリメントするグローバルカウンタを追加）。ただし `fullyParallel: false / workers: 1` なのでテスト間の順序に依存する副作用が生まれる点に注意（他の spec ファイルが先に同じスタブへ複数回リクエストしているとカウンタがずれる）。**そのため主 assert は `X-Cache-Status` に置き、`X-GitHub-RateLimit-Remaining` は補助（裏取り）に留める**べき（インフラ設計書の位置づけと一致）。
+`e2e/stub/server.mjs` はグローバル変数でリクエストカウンタを持たない薄い実装。**改修案**: `/__stats` のようなデバッグ専用ルートを足し、`GET /__stats` で `{ searchRequestCount: number }` を返す（テスト専用エンドポイントなので本番コードには影響しない・スタブファイル内で閉じる）。または `X-GitHub-RateLimit-Remaining`（インフラ設計書 §4.5 の「副」経路）をそのまま使い、スタブが固定値でなく **リクエストのたびに `remaining` をデクリメントする** ようにすれば、2 回目のページ応答でその値が変わらないことをアプリ側ヘッダ経由で assert できる（新規のスタブエンドポイントを増やさずに済む）。**後者を推奨**（インフラ設計書 §4.5 の「副」の裏取り経路そのものであり、二重に確認できる）。改修対象: `e2e/stub/server.mjs`（`rateLimitBody` とは別に、`x-ratelimit-remaining` を通常応答にも付与しデクリメントするグローバルカウンタを追加）。ただし `fullyParallel: false / workers: 1` なのでテスト間の順序に依存する副作用が生まれる点に注意（他の spec ファイルが先に同じスタブへ複数回リクエストしているとカウンタがずれる）。**そのため主 assert は `X-Cache-Status` に置き、`X-GitHub-RateLimit-Remaining` は補助（裏取り）に留める** べき（インフラ設計書の位置づけと一致）。
 
 ### isolate メモリ依存への懸念（E-27相当・私のレンズ）
-- ローカル `next start`（`playwright.config.ts` の `webServer`）は **単一 Node プロセスが全テストで使い回される**ため、`InMemoryCache` がプロセス内シングルトンとして配線されていれば E2E は安定して通る。**しかし実際の Cloudflare Workers 本番/プレビュー環境では isolate が頻繁にリサイクルされうる**ため、ローカル E2E が緑でも本番で HIT 率が上がらない可能性がある。これは runtime_edge の主担当領域だが、**検証可能性の観点からは「ローカル E2E だけでは SP-5 の完了を証明しきれない」**ことを明記しておく。対策案: プレビュー環境で `curl -I` を 2 回叩いて `X-Cache-Status` を目視確認する手順を PR 本文に残す（自動化はできないため、`testing-strategy.md` の「プレビュー URL への E2E 実行は現状スタブ到達不可」制約とも整合し、手動確認をセルフレビューのチェックリストに落とす形が現実的）。
+- ローカル `next start`（`playwright.config.ts` の `webServer`）は **単一 Node プロセスが全テストで使い回される** ため、`InMemoryCache` がプロセス内シングルトンとして配線されていれば E2E は安定して通る。**しかし実際の Cloudflare Workers 本番/プレビュー環境では isolate が頻繁にリサイクルされうる** ため、ローカル E2E が緑でも本番で HIT 率が上がらない可能性がある。これは runtime_edge の主担当領域だが、**検証可能性の観点からは「ローカル E2E だけでは SP-5 の完了を証明しきれない」** ことを明記しておく。対策案: プレビュー環境で `curl -I` を 2 回叩いて `X-Cache-Status` を目視確認する手順を PR 本文に残す（自動化はできないため、`testing-strategy.md` の「プレビュー URL への E2E 実行は現状スタブ到達不可」制約とも整合し、手動確認をセルフレビューのチェックリストに落とす形が現実的）。
 
 ### 争点 D への短い意見
 TTL 暫定値は「E2E 実行時間より十分大きく（数十秒〜数分オーダー）」だけがテスト安定性からの制約。検索結果と詳細で別値にする場合も、フェイク時計を使うユニット/結合テストは TTL の実値に依存しないので、値そのものの決定はテストを Block しない。R-5 未決を理由にテストを止める必要はない。
 
 ### まとめ（結論）
 1. ロジックの「2 回目は外部を呼んでいない」は **ユニット/結合層（フェイク `RepositoryQueryPort` の呼び出し回数カウント）で完全に機械的に閉じる**。ここが最も安定した Red の起点。
-2. E2E は `X-Cache-Status` ヘッダを **`page.goto()` の戻り値から直接読む**方式を推奨（client action 経由だとヘッダが取れない可能性があり未検証）。
+2. E2E は `X-Cache-Status` ヘッダを **`page.goto()` の戻り値から直接読む** 方式を推奨（client action 経由だとヘッダが取れない可能性があり未検証）。
 3. スタブの `X-GitHub-RateLimit-Remaining` デクリメント案は補助の裏取りとして有効だが、`workers: 1` の実行順依存に注意し主 assert にはしない。
 4. TTL 値（争点 D）はテスト安定性を左右しない。
 5. ローカル E2E 緑だけでは isolate 依存の本番挙動までは証明できない旨を PR に明記する必要がある。
