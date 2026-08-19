@@ -9,7 +9,7 @@ ts: 2026-08-19T10:52:58+09:00
 
 ### 1. ux_standards §2.4 への「参照の書式」を具体化する（rebuttal 兼・自分の提案の精緻化）
 
-ux_standards の §2.4 案（🔴必須／🔵推奨の二層構造・トークン表）を前提に、code-review Step1 の UI 行と Step7 4点目の文言を以下に確定する。**基準の実体（px 値・トークン名）は書かず、「どの区分（必須/推奨）に当てはめて severity を決めるか」という判定ルールだけを書く**ことで参照を保つ。
+ux_standards の §2.4 案（🔴必須／🔵推奨の二層構造・トークン表）を前提に、code-review Step1 の UI 行と Step7 4点目の文言を以下に確定する。**基準の実体（px 値・トークン名）は書かず、「どの区分（必須/推奨）に当てはめて severity を決めるか」という判定ルールだけを書く** ことで参照を保つ。
 
 - **code-review Step1「UI・アクセシビリティ」行の焦点列**（確定文言）:
   「`docs/03_design/ui-ux/ui-ux-guidelines.md` §2.4 を実際に Read してから判定する（本文に埋め込まれた値を訓練データから推測しない・L-113）。🔴必須行の逸脱＝`severity: CRITICAL`、🔵推奨行の逸脱＝`severity: WARNING` 以下。§2.4 に該当行がない新規コントロールへの言及は `severity: NIT`（規定不在の指摘であって違反ではない）」
@@ -42,11 +42,11 @@ ux_standards の §2.4 案（🔴必須／🔵推奨の二層構造・トーク�
 
 ### 4. docs_trace の指摘との突合・書き換え要否の確定
 
-- docs_trace「`.claude/skills/` 配下: 該当ファイルなし（UI/a11y 専門スキル不在）」（docs_trace evidence L74-75）→ 本提案が着地すると **この行は陳腐化する**（`code-review/SKILL.md` と `pr-review-watcher/SKILL.md` の2ファイルに UI/a11y 言及が新設されるため）。ただし docs_trace の Round1 評価そのものは正しい（提案前時点の事実）。**書き換えが必要なのはこの2ファイルのみ**で、docs_trace が挙げた他の言及箇所（`sprint-development-rules.md` / `testing-strategy.md` / `user-story-map.md`）には触れない。
+- docs_trace「`.claude/skills/` 配下: 該当ファイルなし（UI/a11y 専門スキル不在）」（docs_trace evidence L74-75）→ 本提案が着地すると **この行は陳腐化する**（`code-review/SKILL.md` と `pr-review-watcher/SKILL.md` の2ファイルに UI/a11y 言及が新設されるため）。ただし docs_trace の Round1 評価そのものは正しい（提案前時点の事実）。**書き換えが必要なのはこの2ファイルのみ** で、docs_trace が挙げた他の言及箇所（`sprint-development-rules.md` / `testing-strategy.md` / `user-story-map.md`）には触れない。
 - docs_trace「SD-2 と E2E 基盤の乖離（SP-1〜SP-3 は Playwright 無し）」（docs_trace evidence L88-115）→ **本提案のスコープ外**。guardrail_eng が Playwright 導入を別 Issue に切り出す判断（guardrail_eng claim L41-43）と整合し、`sprint-development-rules.md` 自身が SP-1〜SP-3 を例外として明記済み（同ファイル内で自己無矛盾）なので書き換え不要。
-- docs_trace「SSOT が複数に分散（ガイドライン・テスト戦略・ユーザーストーリーマップの3所）」（docs_trace evidence L124）→ これは **E2E 導入タイミングの分散**であり、デザイン判定基準の分散ではない。デザイン判定基準は ux_standards 案どおり `ui-ux-guidelines.md` §2.4 に一本化されるため、本提案が新たな分散を生むことはない。`testing-strategy.md` / `user-story-map.md` の書き換えは本提案の射程外（テスト基盤タイミングの決定は別レーン）。
+- docs_trace「SSOT が複数に分散（ガイドライン・テスト戦略・ユーザーストーリーマップの3所）」（docs_trace evidence L124）→ これは **E2E 導入タイミングの分散** であり、デザイン判定基準の分散ではない。デザイン判定基準は ux_standards 案どおり `ui-ux-guidelines.md` §2.4 に一本化されるため、本提案が新たな分散を生むことはない。`testing-strategy.md` / `user-story-map.md` の書き換えは本提案の射程外（テスト基盤タイミングの決定は別レーン）。
 
 ### 結論（Round2 で確定した変更点）
 
-- 書き換えファイルは Round1 と同じ2つ（`.claude/skills/code-review/SKILL.md` Step1 表 / `.claude/skills/pr-review-watcher/SKILL.md` Step7 受け入れ判定役4点目）だが、**両方とも「§2.4 を Read してから必須/推奨で severity を分ける」形に文言を確定**し、**guardrail_eng の機械検査と重複する数値フロア判定は明示的に除外**する。
+- 書き換えファイルは Round1 と同じ2つ（`.claude/skills/code-review/SKILL.md` Step1 表 / `.claude/skills/pr-review-watcher/SKILL.md` Step7 受け入れ判定役4点目）だが、**両方とも「§2.4 を Read してから必須/推奨で severity を分ける」形に文言を確定** し、**guardrail_eng の機械検査と重複する数値フロア判定は明示的に除外** する。
 - 新規ファイル・新規 SSOT は増えない（Round1 の結論を維持）。
