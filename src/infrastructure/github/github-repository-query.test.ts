@@ -108,3 +108,54 @@ describe('GithubRepositoryQuery#findDetail', () => {
     expect(requests[0].pathname).toBe('/repos/example/user.github.io')
   })
 })
+
+describe('GITHUB_API_ORIGIN 環境変数によるオリジン切り替え（E2E でスタブへ向けるため）', () => {
+  const STUB_ORIGIN = 'http://127.0.0.1:8788'
+  const originalEnv = process.env.GITHUB_API_ORIGIN
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.GITHUB_API_ORIGIN
+    } else {
+      process.env.GITHUB_API_ORIGIN = originalEnv
+    }
+  })
+
+  it('GITHUB_API_ORIGIN が設定されていれば、そのオリジンへ検索リクエストする', async () => {
+    process.env.GITHUB_API_ORIGIN = STUB_ORIGIN
+    server.use(
+      http.get(`${STUB_ORIGIN}/search/repositories`, ({ request }) => {
+        requests.push(new URL(request.url))
+        return HttpResponse.json(fixture)
+      }),
+    )
+
+    const result = await makeQuery().search(searchQuery({ keyword: 'react' }))
+
+    expect(result.items).toHaveLength(2)
+    expect(requests[0].origin).toBe(STUB_ORIGIN)
+  })
+
+  it('GITHUB_API_ORIGIN が設定されていれば、そのオリジンへ詳細リクエストする', async () => {
+    process.env.GITHUB_API_ORIGIN = STUB_ORIGIN
+    server.use(
+      http.get(`${STUB_ORIGIN}/repos/:owner/:repo`, ({ request }) => {
+        requests.push(new URL(request.url))
+        return HttpResponse.json(detailFixture)
+      }),
+    )
+
+    const result = await makeQuery().findDetail(repositoryFullName('facebook', 'react'))
+
+    expect(result?.fullName).toBe('facebook/react')
+    expect(requests[0].origin).toBe(STUB_ORIGIN)
+  })
+
+  it('GITHUB_API_ORIGIN 未設定なら既定の https://api.github.com へリクエストする（回帰防止）', async () => {
+    delete process.env.GITHUB_API_ORIGIN
+
+    await makeQuery().search(searchQuery({ keyword: 'react' }))
+
+    expect(requests[0].origin).toBe('https://api.github.com')
+  })
+})
