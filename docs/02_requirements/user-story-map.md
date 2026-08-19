@@ -374,7 +374,7 @@
 - **含む**: `E-3`
 - **操作レビュー**:
   1. 同じキーワードで 2 回続けて検索する（🔴 プレビュー環境（Workers）では isolate が破棄されるとキャッシュが失われるため、**短い間隔（数秒以内）で** 2 回行う）
-  2. **2 回目は GitHub API を呼んでいない**（🔵 **確認手段の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §4.5**: レスポンスヘッダ `X-Cache-Status: HIT` を主経路とし、`X-GitHub-RateLimit-Remaining` が変わらないことで裏を取る）
+  2. **2 回目は GitHub API を呼んでいない**（🔵 **確認手段の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §4.5**: レスポンスヘッダ `X-Cache-Status: HIT` を主経路とし、`X-GitHub-RateLimit-Remaining` が変わらないことで裏を取る。🔴 **手順 1 の画面操作（SSR）は `/api/search` を呼ばないため、画面操作だけではこのヘッダを観測できない**。ヘッダの確認は `/api/search?q={同じキーワード}` をブラウザのアドレスバーで別途開く（画面の検索フォーム操作とは別の追加操作）ことで行う）
   3. 詳細ページでも同様に 2 回目が外部リクエストなしで表示される
 - **対応 `AC`**: なし（`NFR-5` / `NFR-17` / `NFR-18`。`SP-4` のテストで担保する）
 - **見積もり**: `sp:8`（`use cache` の実挙動が未検証・`R-7`。`project-mission.md` の Dynamic 補正の実例と同型）

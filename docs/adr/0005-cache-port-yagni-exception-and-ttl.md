@@ -2,7 +2,7 @@
 
 - **状態**: **承認**
 - **日付**: 2026-08-19 JST
-- **対応要件**: `NFR-5` / `NFR-17` / `NFR-18` / `E-3` / `R-5` / `D-5` / `ARCH-2` / `ARCH-3` / `ARCH-4`
+- **対応要件**: `NFR-5` / `NFR-17` / `NFR-18` / `E-3` / `R-5` / `D-5` / `D-18` / `D-24` / `ARCH-2` / `ARCH-3` / `ARCH-4`
 - **関連**: [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §4 / [ユーザーストーリーマップ](../02_requirements/user-story-map.md) §5.3 `SP-5` / [議論記録](../../content/discussions/sp5-cache-design-20260819/whiteboard.md)（round 3・lead 判定・争点 C・D）
 
 ---
@@ -80,6 +80,7 @@
 | **検索と詳細で同一 TTL にする案** | `NFR-5` が別 TTL を要求している |
 | **`AsyncLocalStorage` で Worker エントリから SSR レンダリング内部へ HIT/MISS を運ぶ案** | 実機検証（`wrangler dev --local` + スタブ GitHub API）で store が伝播せず不成立（§2.3 の 1） |
 | **画面（Server Component）を client fetch 構成に作り替え、SSR 応答にも観測手段を持たせる案** | `SP-5` のスコープを超える UI アーキテクチャ変更（スコープ侵食・§2.3 の 3） |
+| **HTTP `Cache-Control` + Workers Caching を L2 の主役にする（`D-18` 原案）** | §4.5 の動的ヘッダ付与と両立しないため撤回（エッジキャッシュが HIT すると Worker 自体が実行されず `X-Cache-Status` を付与できない。`D-24` で改訂） |
 
 ---
 
@@ -90,6 +91,7 @@
 - `D-5` の設計制約（外部キャッシュへ後から差し替え可能）を満たしたまま、`SP-5` の受け入れ条件（キャッシュヒットの外部検証）を達成できる
 - `src/usecases/*` を無改修のまま `CachingRepositoryQuery` を composition root で着脱でき、`ARCH-2` / `ARCH-3` / `ARCH-4` を維持できる
 - ポート面積を広げないため、`NFR-17` の歯止め（汎用キャッシュライブラリを自作しない）を保てる
+- `CachingRepositoryQuery` は `search` / `findDetail` それぞれにキー単位の in-flight `Promise` マップを持ち、同一キーへの並行リクエストを **single-flight**（先行 `Promise` への相乗り）で単一化する。`NFR-7`（request coalescing）は、`D-24` でエッジキャッシュ側の格上げが撤回された後も、**アプリ層（`CachingRepositoryQuery`）でこの形で担保** される
 
 ### 受け入れる代償
 
@@ -106,6 +108,7 @@
 |---|---|
 | [`prd.md`](../02_requirements/prd.md) `NFR-5` / `NFR-17` / `NFR-18` | 要件の正本 |
 | [`open-questions.md`](../02_requirements/open-questions.md) `D-5` | YAGNI 例外・外部キャッシュ差し替え可能という設計制約の決定ログ |
+| [`open-questions.md`](../02_requirements/open-questions.md) `D-18` / `D-24` | MVP キャッシュの当初方針（`D-18`）と、本 ADR の検証結果を受けた L2 実装の改訂（`D-24`）の決定ログ |
 | [`cloudflare-infrastructure.md`](../03_design/infrastructure/cloudflare-infrastructure.md) §4 | キャッシュ層設計の正本（L2 の主役を本 ADR と同じ理由で `CachePort` 実装へ改訂済み） |
 | [`architecture-rules.md`](../rules/architecture-rules.md) `ARCH-2` / `ARCH-3` / `ARCH-4` | 依存規則（ポート引数注入・内向き依存・事業者固有バインディングの隔離） |
 | [議論記録](../../content/discussions/sp5-cache-design-20260819/whiteboard.md) | 争点 C・D の 3 レンズ・3 ラウンドの敵対的相互検証の全文 |

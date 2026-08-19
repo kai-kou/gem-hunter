@@ -148,6 +148,63 @@ describe('CachingRepositoryQuery#search', () => {
 
     expect(statuses).toEqual(['MISS', 'HIT'])
   })
+
+  it('同一キーへの並行リクエストは inner.search を 1 回しか呼ばない（single-flight）', async () => {
+    // resolve 関数を呼び出し発生前に確定させておく（inner.search が実際に呼ばれる
+    // までのマイクロタスク段数に依存させないため。gate.promise を先に作り、呼ばれた
+    // 側はそれをそのまま返すだけにする）。
+    let resolveFetch!: (value: SearchResult) => void
+    const gate = new Promise<SearchResult>((resolve) => {
+      resolveFetch = resolve
+    })
+    let callCount = 0
+    const inner: RepositoryQueryPort = {
+      search: async () => {
+        callCount += 1
+        return gate
+      },
+      findDetail: async () => {
+        throw new Error('このテストでは使わない')
+      },
+    }
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+    const query = searchQuery({ keyword: 'react' })
+
+    const p1 = decorated.search(query)
+    const p2 = decorated.search(query)
+    resolveFetch(makeSearchResult({ totalCount: 7 }))
+    const [r1, r2] = await Promise.all([p1, p2])
+
+    expect(callCount).toBe(1)
+    expect(r1.totalCount).toBe(7)
+    expect(r2.totalCount).toBe(7)
+  })
+
+  it('inner.search が失敗すると in-flight エントリが残らず、次の呼び出しで再試行できる', async () => {
+    let callCount = 0
+    const inner: RepositoryQueryPort = {
+      search: async () => {
+        callCount += 1
+        if (callCount === 1) {
+          throw new Error('boom')
+        }
+        return makeSearchResult({ totalCount: 9 })
+      },
+      findDetail: async () => {
+        throw new Error('このテストでは使わない')
+      },
+    }
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+    const query = searchQuery({ keyword: 'react' })
+
+    await expect(decorated.search(query)).rejects.toThrow('boom')
+    const result = await decorated.search(query)
+
+    expect(result.totalCount).toBe(9)
+    expect(callCount).toBe(2)
+  })
 })
 
 describe('CachingRepositoryQuery#findDetail', () => {
@@ -175,5 +232,60 @@ describe('CachingRepositoryQuery#findDetail', () => {
     expect(first).toBeNull()
     expect(second).toBeNull()
     expect(inner.findDetailCallCount).toBe(2)
+  })
+
+  it('同一 owner/repo への並行リクエストは inner.findDetail を 1 回しか呼ばない（single-flight）', async () => {
+    // 上の search テストと同じ理由で、resolve 関数を呼び出し発生前に確定させておく。
+    let resolveFetch!: (value: RepositoryDetail) => void
+    const gate = new Promise<RepositoryDetail>((resolve) => {
+      resolveFetch = resolve
+    })
+    let callCount = 0
+    const inner: RepositoryQueryPort = {
+      search: async () => {
+        throw new Error('このテストでは使わない')
+      },
+      findDetail: async () => {
+        callCount += 1
+        return gate
+      },
+    }
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+    const name = repositoryFullName('facebook', 'react')
+
+    const p1 = decorated.findDetail(name)
+    const p2 = decorated.findDetail(name)
+    resolveFetch(makeRepositoryDetail({ fullName: name, stars: 42 }))
+    const [r1, r2] = await Promise.all([p1, p2])
+
+    expect(callCount).toBe(1)
+    expect(r1?.stars).toBe(42)
+    expect(r2?.stars).toBe(42)
+  })
+
+  it('inner.findDetail が失敗すると in-flight エントリが残らず、次の呼び出しで再試行できる', async () => {
+    let callCount = 0
+    const name = repositoryFullName('facebook', 'react')
+    const inner: RepositoryQueryPort = {
+      search: async () => {
+        throw new Error('このテストでは使わない')
+      },
+      findDetail: async () => {
+        callCount += 1
+        if (callCount === 1) {
+          throw new Error('boom')
+        }
+        return makeRepositoryDetail({ fullName: name })
+      },
+    }
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+
+    await expect(decorated.findDetail(name)).rejects.toThrow('boom')
+    const result = await decorated.findDetail(name)
+
+    expect(result?.fullName).toBe(name)
+    expect(callCount).toBe(2)
   })
 })
