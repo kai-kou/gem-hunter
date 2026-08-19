@@ -175,15 +175,19 @@ flowchart TB
 
 ### 4.2. 採用する構成
 
+> 🔴 **2026-08-19 改訂**: 当初案（下記の旧構成）は「L2 = HTTP `Cache-Control` + Workers Caching が MVP の主役」としていたが、§4.5 の「`X-Cache-Status` をアプリ側で動的に付与する」検証手段と両立しなかった（エッジキャッシュが HIT した場合 Worker 自体が実行されず、動的ヘッダを付与できない）。`SP-5` の受け入れ条件は「2 回目は GitHub API を呼んでいないことを外から検証できる」こと（`user-story-map.md` §5.3）であり、**検証可能性を優先して L2 の主役をアプリ内 `CachePort` の実装に置き換える**。経緯・却下案は議論記録 [`content/discussions/sp5-cache-design-20260819/whiteboard.md`](../../../content/discussions/sp5-cache-design-20260819/whiteboard.md)（round 3・lead 判定・争点 A）を参照。
+
 | 層 | 実装 | 役割 |
 |---|---|---|
 | **L1** | リクエスト内メモ化（React `cache`） | 同一レンダー内の重複呼び出しを消す |
-| **L2** | **HTTP `Cache-Control` + Workers Caching**（`cache.enabled`） | 🔵 **MVP の主役**。エッジで 2 層 tiered・**リクエスト合体あり** |
+| **L2** | **アプリ内 `CachePort` の実装（`InMemoryCache`）** | 🔵 **MVP の主役**。composition root の **モジュールスコープで生成する単一インスタンス** として全リクエストから共有参照する（`NFR-17`） |
 | **L3** | 外部ストア（R2 / D1 / KV） | ❌ **未採用**。§6.2 の観測条件を満たしたときだけ ADR とともに導入 |
 
-🔵 **`NFR-7`（request coalescing）の格上げ**: `infrastructure-design.md` §4 は「coalescing はインスタンス内でしか効かないので補助」としていたが、**Workers Caching のリクエスト合体はエッジで効く**（同一キーの同時リクエストで Worker は 1 回だけ実行される）。Cloudflare 前提では coalescing は補助ではなく **主要な防波堤の 1 つ** になる。
+- `Cache-Control` ヘッダは付与してよいが、**「エッジが自動的に Worker をバイパスする」効果には依存しない**（依存すると HIT 時に `X-Cache-Status` を付与できなくなり §4.5 と矛盾するため）。ヘッダを付けても Workers Caching の tiered 化・リクエスト合体自体は副次的な効果として残るが、`SP-5` の検証手段としては当てにしない
+- `NFR-7`（request coalescing）は当初案（`infrastructure-design.md` §4）どおり **補助** に据え置く。エッジのリクエスト合体を主要な防波堤とする格上げは、L2 をエッジキャッシュに依存させないという本改訂と両立しないため撤回する
+- **isolate をまたぐ永続性は本スプリントでは追わない**（`InMemoryCache` は isolate が破棄されると失われる）。将来の格上げ候補として、Cloudflare の Cache API（`caches.default`）を composition root から能動的に呼び出し isolate 間で共有する案が残っている（§6.2 の観測条件を満たしたときに ADR で検討する）
 
-⚠️ **Next.js の `fetch` Data Cache / `use cache` は当てにしない**。OpenNext で incremental cache を設定しない構成では isolate 内メモリに退化し、isolate の生存に依存する。**`SP-5`（同じ検索で API を二度叩かない）の担保は L2（HTTP キャッシュ）で説明する**。
+⚠️ **Next.js の `fetch` Data Cache / `use cache` は当てにしない**。OpenNext で incremental cache を設定しない構成では isolate 内メモリに退化し、isolate の生存に依存する。**`SP-5`（同じ検索で API を二度叩かない）の担保は L2（アプリ内 `CachePort`）で説明する**。
 
 ### 4.3. `NFR-17` Cache Port の実装位置
 
