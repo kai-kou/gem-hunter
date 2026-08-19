@@ -1,0 +1,59 @@
+{
+  "topic": "SP-1 の検索フォームの操作性欠陥を是正する『判定できる寸法基準』を確定し、デザイン観点のレビューがスプリントレビューで必ず実施される仕組みを、SSOT を増やさずに導入する",
+  "brief": "飼い主のフィードバック（原文）: 『スプリント1の成果について、入力フォームについて、縦幅が小さく操作性が良くありませんでした。最新のUI/UXのトレンド、ノウハウ、ベストプラクティスや有用なスキル定義などを詳細にリサーチして実装時の参考となるようにしてください。またスプリントレビュー時にデザイン観点のレビューも実施されるように仕組みを導入してください。専門チームを組成して対応してください。』（スクリーンショット添付: トップページの検索入力欄・検索ボタンが明らかに小さい）\n\n【確認済みの事実（調査エージェントが実ファイルから採取）】\n- src/ui/components/input.tsx:11 = `h-8 w-full min-w-0 rounded-lg border ... px-2.5 py-1 text-base ... md:text-sm`。高さ 32px、md 以上でフォント 14px。\n- src/ui/components/button.tsx:23-35 = cva の size バリアント。default `h-8`、xs `h-6`、sm `h-7`、lg `h-9`、icon 系 `size-8/6/7/9`。検索ボタンは default（32px）。\n- src/ui/search-form.tsx = `<form action=\"/\" method=\"get\" role=\"search\" className=\"flex gap-2\">` に Input（flex-1）と Button。GET フォームでクライアント JS を持たない（E-8 / NFR-3）。SearchForm 専用のテストファイルは存在しない。\n- app/layout.tsx = `viewport` export が存在しない（`maximum-scale` 等の設定なし）。html lang=\"ja\"。フォントは next/font の Geist。\n- app/globals.css = shadcn 標準の `@theme inline` トークンのみ（--color-*, --radius-*）。タイポスケール（12/14/16/20/24px）や 4px スペーシンググリッドを表す独自トークンは未定義。\n- app/page.tsx = Server Component。idle / ok / error の 3 状態のみ実装（読み込み中は未実装）。\n- テスト基盤は Vitest 4 + jsdom + @testing-library/react + MSW 2。**Playwright は依存にもスクリプトにも存在しない（E2E・視覚回帰・実ブラウザ計測の基盤が無い）**。UI のテストは src/ui/repository-list.test.tsx の 1 本のみ。\n- tools/run_checks.sh の実行内容 = ① npx eslint ② npx tsc --noEmit ③ npx vitest run ④ python3 tools/check_architecture_boundaries.py ⑤ python3 tools/check_cjk_markdown.py --changed ⑥ python3 tools/self_review_check.py。各チェックは RUN_CHECKS_TIMEOUT（既定 300 秒）付き。GitHub Actions は制限中で使えないため、これがセッション実行の唯一の機械ゲート。\n\n【既存ドキュメント・レビュー資産の現状】\n- docs/03_design/ui-ux/ui-ux-guidelines.md（307 行・UI 実装の判断基準の正本）: §2.3 にタイポスケール 12/14/16/20/24px と 4px グリッド、§4.5 に『ページ番号ボタンは 24×24 CSS px 以上』、§7.5 ターゲットサイズ（WCAG 2.2 の 2.5.8・24×24 CSS px 以上または間隔確保）、§7.7 手動チェックリストに『アイコンボタンの実測サイズが 24×24px 以上』。🔴 **検索フォームの入力欄・ボタン自体の高さ / タッチターゲット / モバイル時の寸法についての数値規定は存在しない**。§0 は『本書は推奨ではなく判定できる指示として書く。レビューで機械的に判定できる粒度にする』と宣言している。\n- docs/02_requirements/prd.md §6: AC-8（読み込み中・0 件・エラーの判別と aria-live）、AC-9（任意画面幅でキーボード完走・フォーカス可視・200% 拡大で破綻しない）。NFR-10 WCAG 2.2 AA 目標 / NFR-11 キーボード / NFR-12 aria-live / NFR-13 コントラスト 4.5:1 / NFR-14 代替テキスト / NFR-15 スマホ〜デスクトップ・200% 拡大 / NFR-26 axe による自動 a11y チェックを CI に組み込み（**Actions 制限中のため未実装**）。\n- .claude/skills/code-review/SKILL.md（Layer 1 セルフレビューの標準実行手段）: Step 1 の観点別ファインダーは L44-51 の表で定義され、既定 5 系統（正確性 / セキュリティ / 簡素化・再利用 / テスト・検証 / ドキュメント整合）＋ 差分が app/ か src/ を含むときだけ『アーキテクチャ・ドメイン整合』を追加。🔴 **UI / デザイン / アクセシビリティの観点は存在しない**。指摘は『ファイル:行 / severity(CRITICAL|WARNING|NIT) / 欠陥 1 文 / 失敗シナリオ / 推奨修正』の 5 項目必須で、PR には行単位インラインコメントで投稿する。\n- .claude/skills/self-reviewer/SKILL.md: Step 2 の観点表 9 項目に UI・デザインの語は 1 度も出現しない（grep 0 件）。\n- .claude/skills/pr-review-watcher/SKILL.md Step 7（スプリントレビュー + レトロ・マージ直後・完了報告の前に必須）: 『既定は fan-out 2 役割（受け入れ判定役 / 残課題の仕分け役）。sp:8 のときだけ discussion-review に切り替え』。受け入れ判定役には必須 3 点（設計ドキュメントを 1 ホップ先まで辿る / 実際に実行して結果で断定する / 編成欄が単独実行でないか）が明記されている。🔴 **デザイン観点の判定役は存在しない**。残課題の仕分け役には役割定義文がない。\n- .claude/agents/ には owner.md（PO ロール）1 ファイルのみ。frontmatter は name / description / model / tools（カンマ区切りのホワイトリスト）。\n- docs/rules/sprint-development-rules.md SD-1 = スプリント PR には開けるプレビュー URL を貼る（Cloudflare Workers の versions upload でセッションが取得している）。SD-2 = TDD 主体、操作レビュー手順を E2E に写す（**E2E 基盤が無いため現状は未達**）。\n\n【並行して実行中のディープリサーチ（結果は後から届く）】\nネイティブ /deep-research で『入力欄・ボタンの推奨寸法の一次情報（Material Design 3 / Apple HIG / GOV.UK / MOJ / Primer / shadcn/ui の比較）、WCAG 2.2 の 2.5.8 と 2.5.5 の正確な要件と例外、iOS Safari の 16px 未満ズームの回避、2026 年の検索フォーム UI のベストプラクティス、Tailwind v4 + shadcn/ui の実装パターン、デザインレビューの運用ノウハウ、AI エージェントによるデザインレビューの公開資産』を調査中。**数値の最終確定はリサーチ結果の出典で裏取りする**ため、参加者は『どういう構造・粒度で規定すべきか』『何を機械検査に載せるか』を設計することに集中し、個別の px 値を断定しない（自分の知識で仮置きする場合は必ず『要出典確認』と明記する）。\n\n【争点】\nA) 寸法基準を ui-ux-guidelines.md にどう置くか。§7.5（WCAG 2.2 の 2.5.8 = 24×24px）は既にあるのに今回の欠陥を防げなかった。何が足りなかったのか（対象がアイコンボタンに限定されていた / 主要導線のフォームコントロールが規定の外にあった / モバイル時の出し分けが無かった / フォントサイズと入力欄の関係が無かった）。新設する節の位置・粒度・書式を決める。『判定できる指示』（§0 の宣言）を満たす形にすること。\nB) 実装の修正範囲。shadcn/ui 由来の input.tsx / button.tsx の既定サイズ自体を変えるのか、SearchForm 側で size を指定するのか、レスポンシブに出し分けるのか。shadcn の再生成（npx shadcn add）で上書きされるリスク、他画面（SP-2 以降のページネーション・ソート・件数切替）への波及、デザイントークン化（app/globals.css に寸法トークンを足すか）まで含めて決める。\nC) デザイン観点レビューをどこに差し込むか。候補: ① code-review スキル Step 1 の観点表に『UI・アクセシビリティ』系統を追加（差分が app/ src/ui/ を含むときだけ発火） ② .claude/agents/ に design-reviewer サブエージェントを新設 ③ pr-review-watcher Step 7 のスプリントレビュー fan-out に『デザイン受け入れ判定役』を追加 ④ self-reviewer の観点表に追加。**同じ規則の実体を 2 箇所に書かない**（SSOT を増やさない）という制約の下で、どれを採り、どれを採らないかを決める。飼い主の指示は『スプリントレビュー時にデザイン観点のレビューも実施されるように』なので ③ は最低条件だが、マージ後の Step 7 だけだと欠陥がマージされてから見つかる（今回まさにそれが起きた）点をどう扱うか。\nD) 実効性の担保。Playwright が無く、レビュアーは実画面を見られない（プレビュー URL は人間なら開けるがサブエージェントは開けない）。この制約下で『縦幅が小さい』類の欠陥を検出する手段は何か。候補: 静的検査（Tailwind クラスの高さ・フォントサイズを AST / 正規表現で検査する tools/check_ui_dimensions.py を run_checks.sh に追加）、jsdom + testing-library で className を assert するテスト、レビュー観点のチェックリスト（人力）、Playwright 導入（コスト大・NFR-26 の axe 自動チェックとセットで検討）。誤検知でルーティンを止めない設計・実装コスト・費用対効果を評価し、採らないものは『採らない』と明言する。\nE) 今回のスコープに入れるもの / 別 Issue に送るもの の線引き。Playwright + axe の導入（NFR-26 / SD-2 の E2E 要件）は明らかに別スプリント規模。SP-2 以降で作る他のコントロール（ページネーション・ソート・件数切替）への適用も含め、この PR でどこまでやるかを決める。",
+  "participants": [
+    {
+      "name": "ux_standards",
+      "model": "sonnet",
+      "lens": "UI/UX 標準とアクセシビリティ。docs/03_design/ui-ux/ui-ux-guidelines.md（特に §0 の『判定できる指示として書く』宣言・§2.3 タイポとスペーシング・§4 トップページ・§7.5 ターゲットサイズ・§7.7 手動チェックリスト）と docs/02_requirements/prd.md §6 の AC-8/AC-9・NFR-10〜NFR-15/NFR-26 を実際に読み、『既存の規定がありながら今回の欠陥を防げなかった理由』を構造的に説明する。そのうえで、フォームコントロールの寸法をガイドラインのどの節にどう書けば再発しないかを、節の見出し・表の列・記述の粒度まで具体的に設計する。個別の px 値は並行リサーチで裏取り中のため断定せず、『どの数値をどの出典で確定させるか（プレースホルダ）』の形で書くこと。WCAG 2.2 の 2.5.8 と 2.5.5 の関係、モバイルとデスクトップの出し分けの必要性、入力欄のフォントサイズと iOS ズームの関係は論点として必ず扱う"
+    },
+    {
+      "name": "review_process",
+      "model": "sonnet",
+      "lens": "レビュー工程の設計と責務境界。.claude/skills/code-review/SKILL.md（Step 1 観点表 L44-51・Step 3-A インライン投稿）、.claude/skills/self-reviewer/SKILL.md（Step 2 観点表）、.claude/skills/pr-review-watcher/SKILL.md Step 7（スプリントレビューの fan-out 役割定義）、.claude/agents/owner.md（エージェント定義の型）、docs/rules/pr-review-flow-summary.md、docs/rules/improvement-lane-map.md を読み、争点 C の 4 候補それぞれについて『採る / 採らない』と理由を述べる。最重要の制約は SSOT を増やさないこと（デザイン観点の判定基準の実体を ui-ux-guidelines.md 以外に複製しない。スキル側は参照だけを持つ）。飼い主の指示『スプリントレビュー時にデザイン観点のレビューも実施されるように』を満たす最小構成と、マージ前（Layer 1）に前倒しする価値の有無を、1 スプリントあたりの追加コスト（サブエージェント 1 本ぶん）と天秤にかけて判定する"
+    },
+    {
+      "name": "guardrail_eng",
+      "model": "sonnet",
+      "lens": "機械強制の実効性と実装コスト。『ドキュメントに書くだけの規律は守られない』を前提に、争点 D を設計する。tools/run_checks.sh（6 チェック・RUN_CHECKS_TIMEOUT 300 秒）と tools/self_review_check.py・tools/check_architecture_boundaries.py の実装を読み、同じ流儀で『UI 寸法の静的検査』を追加できるかを判定する。具体的には (1) Tailwind の h-* / text-* / size-* クラスを src/ui/ の tsx から抽出して下限値と突き合わせる静的検査の実現可能性と誤検知リスク（cva の variants・条件付き className・任意値 h-[44px]・レスポンシブ prefix の扱い）、(2) jsdom + testing-library で className を assert するテストの脆さ、(3) Playwright 導入の是非（NFR-26 の axe 自動チェックとセットにすべきか・今スコープか別 Issue か）を評価する。採らない選択肢は明確に『採らない』と書く。Actions が使えずセッション実行が唯一のゲートである点を必ず考慮する"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント・資産の整合確認。新しい設計を主張せず、突合に徹する。(1) docs/03_design/ui-ux/ui-ux-guidelines.md の全節見出しと、寸法・フォームに言及している箇所を行番号付きで列挙する。(2) docs/02_requirements/user-story-map.md §5.3 の SP-2 以降で作られるコントロール（ページネーション・ソート・件数切替）を列挙し、今回決める寸法基準が波及する範囲を示す。(3) .claude/skills/ 配下と docs/rules/ 配下で『デザイン』『UI』『a11y』『アクセシビリティ』に言及しているファイルと箇所を grep で洗い出し、今回の変更で書き換えが必要になる箇所・既に矛盾している箇所を列挙する。(4) docs/rules/sprint-development-rules.md の SD-1/SD-2 と、E2E 基盤が無い現状との乖離を指摘する。出力は『ファイルパス:行番号 → 内容 1 行』の形式で"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて採用する結論を 1 つに決める。決定は必ず『どのファイルに何を書くか（新規 / 改修）』『この PR でやること / 別 Issue に送ること』まで落とす。飼い主の明示指示（フォームの操作性改善 / リサーチを実装の参考にできる形にする / スプリントレビューでデザイン観点のレビューが実施される仕組み）は権威順の最上位でコストを理由に骨抜きにしない。SSOT を増やさない（デザイン基準の実体は ui-ux-guidelines.md に一本化し、スキル・エージェント側は参照のみ）。個別の px 値は並行実行中のディープリサーチの出典で確定させるため、verdict では『どの数値をどの出典で確定するか』の形で残す。議論で否定された案は採用しない。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "decision": "採用する結論",
+        "files": ["変更するファイルと変更内容"],
+        "rejected": ["否定された案と理由"]
+      }
+    ],
+    "guideline_section": {
+      "section_title": "ui-ux-guidelines.md に新設する節の見出しと位置",
+      "rules": ["規定する項目（数値はリサーチで確定するプレースホルダ可）"]
+    },
+    "review_mechanism": {
+      "where": ["デザイン観点レビューを差し込む場所"],
+      "new_files": ["新規作成するファイル"],
+      "modified_files": ["改修するファイル"]
+    },
+    "machine_checks": {
+      "adopt": ["採用する機械検査とその実装方針"],
+      "reject": ["採らない選択肢と理由"]
+    },
+    "scope": {
+      "this_pr": ["この PR でやること"],
+      "follow_up_issues": [{"title": "Issue タイトル", "labels": ["type:* / sp:*"], "why": "理由"}]
+    },
+    "open_questions": ["飼い主の判断が要る事項"]
+  }
+}

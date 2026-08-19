@@ -70,6 +70,67 @@ CSS の `@theme` に以下の **セマンティックな名前** で定義する
 - **カード内の 3 段階**: リポジトリ名 `16–18px / 700` → 説明文 `14px / 400 / --color-fg` → メタ `12–13px / 500 / --color-fg-muted`
 - **スペーシング**: **4px グリッド** に載せる（4 / 8 / 12 / 16 / 24 / 32）。任意の値を書かない
 
+### 2.4. コントロールサイズトークン
+
+`app/globals.css` の `@theme inline` に定義する。**数値の正本はここ 1 箇所**（他節は参照するだけで数値を書かない）。
+
+| トークン | 用途 | 値 | 根拠 |
+|---|---|---|---|
+| `--size-control-xs` | 最小許容サイズ（アイコンのみボタン等） | `24px` | WCAG 2.2 2.5.8（AA）フロア。[Understanding SC 2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) |
+| `--size-control-sm` | 小型コントロール | `28px` | Primer `--control-small-size`。[Primer Primitives: Size](https://primer.style/foundations/primitives/size) |
+| `--size-control-md` | 既定 | `32px` | Primer `--control-medium-size`。[Primer Primitives: Size](https://primer.style/foundations/primitives/size) |
+| `--size-control-lg` | 大型コントロール | `40px` | GOV.UK の text input 高さ（`alphagov/govuk-frontend` `_mixin.scss` の `height: govuk-px-to-rem(40px)`）/ Primer `--control-large-size` |
+| `--size-control-xl` | 主要導線 | `44px` | WCAG 2.2 2.5.5（AAA）相当。[Understanding SC 2.5.5](https://www.w3.org/WAI/WCAG21/Understanding/target-size.html) / Apple HIG が **44×44 pt** を最小ヒット領域として明記（[Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)・逐語: "a button needs a hit region of at least 44x44 pt"） |
+| `--text-control-min` | 入力系コントロールの最小フォントサイズ | `1rem`（16px） | iOS Safari は 16px 未満の入力欄にフォーカスすると自動ズームする |
+
+#### 🔴 必須
+
+- すべてのコントロールは `--size-control-xs`（24px）を下回らない
+- 入力系コントロールのフォントサイズは `--text-control-min`（16px）を下回らない。**全ブレークポイントで**（`md:text-sm` のような縮小をしない）
+- `maximum-scale=1` や `user-scalable=no` でズームを抑止しない（抑止すると WCAG 1.4.4 Resize Text 違反になる）
+- **高さとフォントサイズは cva の `size` variant 経由でのみ指定し、呼び出し側の `className` に生の `h-*` / `text-*` を書かない**（数値の入力経路を 1 本に絞り、機械検査の射程に収める）
+
+#### 🔵 推奨
+
+- 主要導線（検索入力欄・検索ボタン）は `--size-control-xl`（44px）を使う
+- 二次的なコントロールは `--size-control-md`（32px）以上を使う
+
+#### なぜ 24px では足りないのか
+
+WCAG 2.2 の 2.5.8（AA）が定める 24×24 CSS px は **適合の下限であって、快適な操作性の目標値ではない**。2.5.8 には間隔例外（隣接ターゲットと直径 24px の円が交差しなければ、視覚サイズが 24px 未満でも適合しうる）があり、法規適合の最低ラインに過ぎない。実際のタップ操作しやすさ（誤タップ防止・手指の震え・粗大運動障害への配慮）を狙うなら、2.5.5（AAA）相当の 44×44 CSS px が実務上のベストプラクティスとされる。
+
+主要なプラットフォームのガイドラインも下限を 24px より大きく置いている（いずれも一次情報で確認済み）:
+
+- **Apple Human Interface Guidelines**: "a button needs a hit region of at least 44x44 pt — in visionOS, 60x60 pt"（[Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)）
+- **Material Design 3**: "Extra small and small icon buttons must have a target size of 48x48dp or larger to be accessible."（[Buttons specs](https://m3.material.io/components/buttons/specs)）。テキストフィールドは container height / target size とも **56dp**（[Text fields specs](https://m3.material.io/components/text-fields/specs)）
+
+本プロジェクトが `--size-control-xl` を 48dp / 56dp ではなく **44px** に置いたのは、WCAG 2.5.5 の CSS px 基準と Apple HIG の pt 基準が一致する値であり、dp（Android の密度非依存単位）は CSS px と 1:1 対応しないため。
+
+本プロジェクトの適合目標は `NFR-10` により **AA** であるため、`--size-control-xl`（44px）の採用は「AAA 準拠を謳うもの」ではない。あくまで主要導線に社内ベストプラクティスとして上乗せしているだけであり、AA 適合の判定自体は `--size-control-xs`（24px）で満たされる。
+
+#### Tailwind v4 での参照記法
+
+`h-(--size-control-xl)` の短縮記法を使う（`h-[var(--size-control-xl)]` と等価。tailwindcss 4.3.3 で実ビルド検証済み）。
+
+```
+❌ h-11 / h-[44px]（生の数値・Tailwind 既定スケール）
+✅ h-(--size-control-xl)（トークン参照）
+```
+
+#### 機械検査とレビューの境界
+
+| 範囲 | 担当 | 具体例 |
+|---|---|---|
+| cva `size` テーブルへの生の `h-\d+` / `size-\d+` 直書きの禁止 | 機械（`tools/check_ui_dimensions.py`・`run_checks.sh` の Error 検査） | `button.tsx` / `input.tsx` の variant 文字列 |
+| 入力欄の無プレフィックス `text-*` が 16px 未満でないこと | 機械 | `input.tsx` のベースクラス |
+| `--size-control-xs` / `--text-control-min` の宣言値がフロアを下回っていないこと | 機械 | `app/globals.css` |
+| 登録済み呼び出しサイトの `className` への `h-*` / `text-*` 直書き禁止 | 機械 | `search-form.tsx` 等、config に登録された箇所 |
+| variant → 必要 tier（例: 主要導線は `xl` 以上）の充足 | 機械 | config テーブルに登録された variant のみ |
+| 未登録の新規コンポーネントの検知漏れがないか | レビュー（機械は Warning のみ） | `src/ui/components/` に新設されたが config 未登録のファイル |
+| トークン化されていない意味論（「これは主要導線か」の判断そのもの） | レビュー（`code-review` スキルの UI・アクセシビリティ観点 / `pr-review-watcher` Step 7 の受け入れ判定役） | 新規コントロールの tier 選定の妥当性 |
+
+🔴 **機械が守る範囲（上表の機械列）をレビューで二重指摘しない。** レビューは「機械検査を通過しているか」ではなく「意味論的に正しい tier を選んでいるか」「新規コンポーネントが config に登録されているか」を見る。
+
 ---
 
 ## 3. レイアウトと i18n 耐性
@@ -144,7 +205,7 @@ GitHub 検索結果の情報順序をベースラインに採る。
 - `<nav aria-label="検索結果のページ">` でラップし、現在ページに **`aria-current="page"`** を付与（現在ページはリンクにしない）
 - **件数を明示する**: 「157 件中 26〜50 件を表示」（MOJ Design System のパターン）
 - 取得上限（1,000 件）に達したら、**上限の存在を明示する**（例: 「表示できる最終ページです。キーワードを絞り込むと他の結果が見られます」）。上限を超えるページ番号は提示しない（`AC-7`）
-- ページ番号ボタンは **24×24 CSS px 以上**（WCAG 2.2 の 2.5.8）
+- ページ番号ボタンは `--size-control-xs`（§2.4）以上
 - モバイルでは前後ボタン中心に簡略化してよい
 
 ---
@@ -217,10 +278,29 @@ Next.js の route announcer は **document title が変化しないと何もア�
 | カード・詳細でオーナー名が **テキストとして隣接表示される** | 🔵 **`alt=""`（スペースなしの空文字）を明示指定**（装飾扱い）。属性の省略はしない（ファイル名を読み上げる SR がある） |
 | アイコンが **唯一の情報源** になる場合 | 意味のある `alt` を書く |
 
-### 7.5. ターゲットサイズ（WCAG 2.2 の 2.5.8）
+### 7.5. ターゲットサイズ（WCAG 2.2 の 2.5.8 / 2.5.5）
 
-- ページネーションのページ番号、アイコンのみのコントロールは **24×24 CSS px 以上**、または隣接ターゲットと間隔を確保
-- テキスト内リンクは対象外（inline exception）
+🔴 **値の正本は §2.4**。本節は数値を繰り返さず、2 つの達成基準の関係と例外条項の解説に専念する。
+
+#### 2.5.8 Target Size (Minimum) — Level AA（本プロジェクトの適合目標）
+
+ポインタ入力のターゲットは、`--size-control-xs`（§2.4）以上。判定は「ターゲット内に軸整列した正方形（同サイズ）を完全に収められるか」であり、ターゲットの外形そのものが正方形である必要はない。**5 つの例外** を持つ:
+
+| 例外 | 内容 |
+|---|---|
+| Spacing（間隔） | フロア未満のターゲットでも、各ターゲットの外接矩形中心にフロア直径の円を置いたとき、隣接ターゲットの円と交差しなければ適合 |
+| Equivalent（等価コントロール） | 同一ページ上の別のコントロールが 2.5.8 自体を満たしていれば（＝フロア以上であれば）よい自己参照的な規定 |
+| Inline（インライン） | 文または文のブロック内にあるターゲット（テキスト内リンク等）は対象外 |
+| User Agent Control（ユーザーエージェント制御） | サイズがブラウザ既定値のままで著者が変更していない場合は適用除外 |
+| Essential（本質的） | サイズがそのターゲットの機能にとって本質的な場合 |
+
+本プロジェクトは間隔例外に頼らず、`--size-control-xs` を実サイズで満たす方針を §2.4 で確定させている（機械検査が担保）。
+
+#### 2.5.5 Target Size (Enhanced) — Level AAA（社内ベストプラクティスとして一部採用）
+
+ポインタ入力のターゲットは `--size-control-xl`（§2.4）以上。2.5.8 と異なり **Spacing 例外を持たない**（4 つの例外: Equivalent／Inline／User Agent Control／Essential）。Equivalent 例外も 2.5.8 より厳格で、代替コントロールが明示的にフロア（44px）以上であることが要求される（2.5.8 の自己参照的な緩さがない）。
+
+🔴 **本プロジェクトの適合目標は `NFR-10` により AA。** 2.5.5（AAA）は「準拠を謳うもの」ではなく、主要導線（§2.4 の 🔵 推奨）にのみ社内ベストプラクティスとして上乗せする。すべてのコントロールに 44px を要求しない。
 
 ### 7.6. 該当しない基準（記録として残す）
 
@@ -239,7 +319,8 @@ Lighthouse の a11y カテゴリは axe-core の全ルールの約半分しか�
 [ ] スクリーンリーダーで件数アナウンスが二重読み上げにならない
 [ ] 読み込み中 → 件数確定 のアナウンス順序が破綻しない
 [ ] 200% 拡大で横スクロールが強制されない
-[ ] アイコンボタンの実測サイズが 24×24px 以上
+[ ] アイコンボタンの実測サイズが `--size-control-xs`（§2.4）以上
+[ ] 入力欄にモバイル実機でフォーカスして自動ズームが起きない
 [ ] アバターの alt="" が「隣接テキストと冗長」な文脈でのみ使われている
 [ ] sticky ヘッダーにフォーカスが隠れない（実際にキーボードで確認）
 [ ] フォーカスリングのコントラスト比を実測した
@@ -290,6 +371,7 @@ next.config: images.remotePatterns に
 - [ ] §4.3 のカードリンクパターンを使っている（カード全体を `<a>` で包んでいない）
 - [ ] §4.4 の 4 状態が実装されている。**レイアウトシフトの有無は目視で判定せず、Lighthouse CI の CLS 実測値で判定する**（`NFR-1` の 0.1 以下）
 - [ ] §5.2 のエラー種別ごとに文言が分かれている
+- [ ] §2.4 のコントロールサイズトークンを cva の `size` variant 経由でのみ参照し、`tools/check_ui_dimensions.py` が PASS する
 - [ ] §7.1 のフォーカス移動が実装されている
 - [ ] §7.7 の手動チェックリストを実際に通し、🔴 **チェック結果（各項目の可否）を PR 本文に貼付した**（自己申告だけで ✅ を付けない）
 - [ ] §8.4 の `remotePatterns` が明示指定されている

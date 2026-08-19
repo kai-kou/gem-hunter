@@ -49,6 +49,7 @@ git fetch origin +main:refs/remotes/origin/main && git diff origin/main...HEAD &
 | テスト・検証 | 変更が実行結果で証明可能か・テスト欠落・`bash -n`/`py_compile` |
 | ドキュメント整合 | ルール・SKILL.md・README との desync・参照切れ |
 | アーキテクチャ・ドメイン整合（**差分が `app/` か `src/` を含むときだけ追加**） | 層の依存規則違反（`docs/rules/architecture-rules.md` §2 の `ARCH-1`〜`ARCH-7` / `ARCH-R1` / `ARCH-R2`）・ユビキタス言語との不一致（`domain-model.md` §2 に無い語・`subscribers_count` 等の変換漏れ）・生の `string`/`number` をユースケースへ渡している・テスト配置が `testing-strategy.md` §3 と食い違う |
+| UI・アクセシビリティ（**差分が `app/` か `src/ui/` を含むときだけ追加**） | `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.4（コントロールサイズトークン）を **実際に Read してから** 判定する（訓練データから値を推測しない・L-113）。🔴 必須行の逸脱 = `severity: CRITICAL` / 🔵 推奨行の逸脱 = `severity: WARNING` / §2.4 に該当行が無い新規コントロールへの言及 = `severity: NIT`（規定不在であって違反ではない）。🔴 **二重指摘禁止**: `tools/check_ui_dimensions.py`（`run_checks.sh` の Error 検査）が既に機械判定している範囲（`button.tsx` / `input.tsx` の cva `size` テーブルの必須フロア値・モバイル既定フォントサイズ・`globals.css` の宣言値）は指摘しない。レビューが見るのは機械検査の射程外のみ: ① §2.4 に未登録の新規 UI プリミティブが追加されたのに `check_ui_dimensions.py` の config に登録されていない（メタチェック）② 動的な `className` 合成・条件式によるサイズ上書き（静的検査で解けない）③ 🔵 推奨行の逸脱 ④ 選んだ variant / トークンが情報設計上妥当か（主要導線に `--size-control-lg` を使っているか等の設計判断） |
 
 各ファインダーへの指示テンプレート（`agent-team-summary.md` の出力ルールを先頭に付ける）:
 
@@ -65,6 +66,10 @@ git fetch origin +main:refs/remotes/origin/main && git diff origin/main...HEAD &
 
 > `severity` と `推奨修正` は Step 3 のインラインコメント本文テンプレートの必須項目である。
 > ここで出力させないと Step 3 でテンプレートを埋める材料が無くなるため、指示から省略しない。
+
+> UI・アクセシビリティ観点のファインダーには、上記テンプレートに加えて
+> 「レビュー開始前に `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.4 を実際に Read し、
+> 訓練データから値を推測して判定しない（L-113）」を明示的に指示する。
 
 ### Step 2: 敵対的検証（false positive の排除）
 
@@ -163,7 +168,7 @@ mcp__github__pull_request_review_write(method="submit_pending", owner, repo, pul
 ```markdown
 ## Layer 1 セルフレビュー結果（{YYYY-MM-DD HH:MM JST}）
 
-観点: 正確性 / セキュリティ / 簡素化・再利用 / テスト・検証 / ドキュメント整合（+ アプリコード差分ならアーキテクチャ・ドメイン整合）
+観点: 正確性 / セキュリティ / 簡素化・再利用 / テスト・検証 / ドキュメント整合（+ アプリコード差分ならアーキテクチャ・ドメイン整合 / UI 差分なら UI・アクセシビリティ）
 
 - CONFIRMED: {件数}件（🔴{n} 🟡{n} ⚪{n}）→ 各インラインコメント参照
 - PLAUSIBLE: {件数}件

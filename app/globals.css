@@ -46,6 +46,14 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* コントロールサイズ（§2.4 の実体・数値の正本はここだけ） */
+  --size-control-xs: 24px; /* WCAG 2.2 の 2.5.8（AA）フロア。これ未満は不可 */
+  --size-control-sm: 28px; /* Primer control-small = 28px */
+  --size-control-md: 32px; /* 既定。Primer control-medium = 32px */
+  --size-control-lg: 40px; /* GOV.UK の text input = 40px / Primer control-large = 40px */
+  --size-control-xl: 44px; /* 主要導線。WCAG 2.2 の 2.5.5（AAA）= 44x44 CSS px 相当 */
+  --text-control-min: 1rem; /* 入力系コントロールの最小フォントサイズ = 16px（iOS Safari の自動ズーム回避） */
 }
 
 :root {
