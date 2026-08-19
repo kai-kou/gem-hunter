@@ -180,4 +180,4 @@ const browser = await chromium.launch({
 
 **使いどころ**: `WebFetch` は JS レンダリング SPA（`m3.material.io` / `developer.apple.com` 等）の本文を取得できずタイトルだけ返す。一次情報の逐語確認が要るときは本手順で実ブラウザを使う（CP-2）。ヘルパー化は #86。
 
-**保持理由**: 症状（`ERR_CONNECTION_RESET` の全滅）から原因（TLS 1.3）へ辿り着くのが難しく、証明書・プロキシ設定の調査に時間を溶かす。発生時にだけ必要な環境依存の障害カタログのため Warm 層に置く。
+症状（`ERR_CONNECTION_RESET` の全滅）から原因（TLS 1.3）へ辿り着くのが難しく、証明書・プロキシ設定の調査に時間を溶かす。発生時にだけ必要な環境依存の障害カタログのため Warm 層に置く。
