@@ -154,3 +154,30 @@ GitHub Issue/PR からの自動トリガー型タスクにも scheduled trigger 
   （読み取り可否だけで書き込み可否を推定しない）。
 - 恒久的な複数リポジトリアクセスの公式機能がリリースされたら、本エントリとクロスリポ参照系スキルの
   前提を更新する（CP-2）。
+
+---
+
+## L-126: クラウドコンテナの Chromium は TLS 1.3 で必ず失敗する（Playwright で SPA を開けない）
+
+**症状**: プリインストールされた Chromium を Playwright で起動して外部サイトへアクセスすると、**対象ドメインを問わず・プロキシ経由でも直接接続でも 100% 決定論的に** `net::ERR_CONNECTION_RESET`（稀に `ERR_CERT_DATE_INVALID`）で失敗する。`page.goto` が一度も成功しない。
+
+**原因**: TLS 1.3 のハンドシェイク自体が通らない（CPU に `avx512_vnni` があり BoringSSL の AVX512 暗号パスに起因すると推測）。**証明書の信頼設定の問題ではない**（CA バンドルを NSS DB へ登録しても解決しない）。
+
+**対策**: 起動時に TLS 1.2 へ固定する。**TLS 検証の無効化ではない** ため `/root/.ccr/README.md` の禁止事項に抵触しない。
+
+```js
+const browser = await chromium.launch({
+  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  args: ['--ssl-version-max=tls1.2'],           // 🔴 この 1 行が無いと必ず失敗する
+  proxy: process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined,
+})
+```
+
+**あわせて必要な環境知識**:
+
+- Playwright は **グローバルに導入済み**（`playwright@1.56.1`）。`NODE_PATH=/opt/node22/lib/node_modules node script.js` とすれば `require('playwright')` が通る（`playwright install` は実行しない・`playwright-core` の追加インストールも不要）
+- `networkidle` 待機は常時バックグラウンド通信があるサイト（`developer.apple.com` 等）でタイムアウトする。**`domcontentloaded` + 明示待機** に切り替えると安定する
+
+**使いどころ**: `WebFetch` は JS レンダリング SPA（`m3.material.io` / `developer.apple.com` 等）の本文を取得できずタイトルだけ返す。一次情報の逐語確認が要るときは本手順で実ブラウザを使う（CP-2）。ヘルパー化は #86。
+
+症状（`ERR_CONNECTION_RESET` の全滅）から原因（TLS 1.3）へ辿り着くのが難しく、証明書・プロキシ設定の調査に時間を溶かす。発生時にだけ必要な環境依存の障害カタログのため Warm 層に置く。
