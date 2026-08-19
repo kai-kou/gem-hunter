@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@theme inline {
+  --spacing-control-md: calc(var(--spacing) * 11);
+}
