@@ -39,7 +39,7 @@ function tokenValue(selector: string, token: string): string {
   if (block === null) {
     throw new Error(`${selector} ブロックが見つからない`)
   }
-  const matched = block[1].match(new RegExp(`--${token}:\\s*([^;]+);`))
+  const matched = block[1].match(new RegExp(`(?:^|\\n)\\s*--${token}:\\s*([^;]+);`))
   if (matched === null) {
     throw new Error(`${selector} に --${token} が定義されていない`)
   }
@@ -82,8 +82,10 @@ describe('コントロールサイズトークン', () => {
       const source = readFileSync(join(COMPONENTS_DIR, file), 'utf8')
       const defaultSizes = [...source.matchAll(/default:\s*\n?\s*'([^']*)'/g)].map((m) => m[1])
       const baseClasses = [...source.matchAll(/cn\(\s*\n?\s*'([^']*)'/g)].map((m) => m[1])
+      // cva の第一引数（ベースクラス）。shadcn の生成物は二重引用符で直接渡す
+      const cvaBases = [...source.matchAll(/cva\(\s*\n?\s*["']([^"']*)["']/g)].map((m) => m[1])
 
-      for (const classNames of [...defaultSizes, ...baseClasses]) {
+      for (const classNames of [...defaultSizes, ...baseClasses, ...cvaBases]) {
         expect(classNames, `${file}: 既定サイズは h-control-* トークンで指定する`).not.toMatch(
           /(^|\s)h-\d/,
         )
