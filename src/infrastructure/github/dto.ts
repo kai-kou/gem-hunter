@@ -17,8 +17,12 @@ export const repositoryDto = z.object({
   description: z.string().nullable(),
   language: z.string().nullable(),
   stargazers_count: z.number(),
+  // 🔴 コミット履歴のない空リポジトリでは null になる（GitHub API 仕様）。
+  //    mapper.ts の toSearchResult で updated_at へのフォールバック元として使う。
   updated_at: z.string(),
-  pushed_at: z.string(),
+  // 🔴 nullable（コミットが一度もない空リポジトリでは null になりうる）。
+  //    非 null 前提で必須にすると、検索結果 30 件中 1 件でも該当した瞬間に zod パース全体が失敗する。
+  pushed_at: z.string().nullable(),
   topics: z.array(z.string()).optional(),
   owner: ownerDto,
 })

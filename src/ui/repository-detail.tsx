@@ -1,7 +1,7 @@
 import { CircleDot, Eye, GitFork, Star } from 'lucide-react'
-import Link from 'next/link'
 import type { Locale } from '../domain/model/locale'
 import type { RepositoryDetail as RepositoryDetailModel } from '../domain/model/repository'
+import { BackLink } from './back-link'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 
 type RepositoryDetailLabels = {

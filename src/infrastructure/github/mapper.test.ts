@@ -32,6 +32,35 @@ describe('toSearchResult', () => {
     expect(routerRepo.topics).toEqual([])
   })
 
+  it('pushed_at が null（コミット履歴のない空リポジトリ）でも例外を投げず updated_at にフォールバックする', () => {
+    // GitHub API の repository スキーマでは pushed_at は nullable（空リポジトリで null になりうる）。
+    // 検索結果 30 件中 1 件でも null が混ざると zod パース全体が失敗しないことを検証する。
+    const raw = {
+      total_count: 1,
+      incomplete_results: false,
+      items: [
+        {
+          id: 999,
+          name: 'empty-repo',
+          full_name: 'octostub/empty-repo',
+          html_url: 'https://github.com/octostub/empty-repo',
+          description: null,
+          language: null,
+          stargazers_count: 0,
+          updated_at: '2026-08-01T00:00:00Z',
+          pushed_at: null,
+          topics: [],
+          owner: { login: 'octostub', avatar_url: 'https://example.com/a.png' },
+        },
+      ],
+    }
+
+    const result = toSearchResult(raw)
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].lastPushedAt.toISOString()).toBe('2026-08-01T00:00:00.000Z')
+  })
+
   it('スキーマに合わない外部データをドメインエラーへ翻訳する', () => {
     // 上位層は zod を知らないため ZodError を層の外へ出さない（ACL の契約）
     expect(() => toSearchResult({ total_count: 'たくさん', items: [] })).toThrow(UpstreamError)
