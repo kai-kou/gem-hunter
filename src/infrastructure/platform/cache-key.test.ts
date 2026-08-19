@@ -108,8 +108,12 @@ describe('CACHE_SCHEMA_VERSION', () => {
   })
 
   it('スキーマバージョン導入後もキーワードの正規化（トリム・小文字化）は保たれる', () => {
-    const a = searchResultCacheKey(searchQuery({ keyword: '  Next.js  ' }))
-    const b = searchResultCacheKey(searchQuery({ keyword: 'next.js' }))
+    const a = searchResultCacheKey(
+      searchQuery({ keyword: '  Next.js  ', page: 1, sort: 'stars', perPage: 20 }),
+    )
+    const b = searchResultCacheKey(
+      searchQuery({ keyword: 'next.js', page: 1, sort: 'stars', perPage: 20 }),
+    )
     expect(a).toBe(b)
     expect(a).toBe(`search:${CACHE_SCHEMA_VERSION}:next.js:page=1:sort=stars:per_page=20`)
   })
