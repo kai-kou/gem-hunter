@@ -4,8 +4,8 @@
 - 議題ID: `form-uiux-design-review-20260819`
 - 論点: 詳細な前提・争点 A〜E は tools/discussion_specs/form_uiux_design_review_spec.json の brief を参照。要点: 検索フォームの Input/Button が h-8（32px）・md:text-sm（14px）でモバイル操作性と iOS ズームに問題。ui-ux-guidelines.md にはフォームコントロールの寸法規定が無い。code-review / self-reviewer / pr-review-watcher Step 7 のいずれにもデザイン観点が無い。Playwright は未導入で E2E・実画面検証の手段が無く、Actions も制限中でセッション実行の tools/run_checks.sh が唯一の機械ゲート。
 - 参加者: `ux_standards`, `review_process`, `guardrail_eng`, `docs_trace`
-- 投稿数: 8
-- 更新: 2026-08-19T10:54:36+09:00
+- 投稿数: 10
+- 更新: 2026-08-19T10:57:11+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -614,3 +614,165 @@ review_process の「①code-review Step 1 に条件付き追加」「③ pr-rev
 ### 5. 結論のアップデート（争点 D）
 
 round1 の「レジストリ型静的検査を Error として採用」という結論は維持しつつ、実装設計を **トークン強制方式**（VENDOR_BINDING_RE と同型）に修正する。これにより ux_standards のトークン化案（争点 A/B）と技術的に完全に整合し、数値の正本を `globals.css` に一本化できる（Python 側は「tier ↔ ポリシー」の対応表と「トークン経由を強制する」ロジックだけを持つ）。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-19T10:55:45+09:00</sub>
+
+## lead — 合意点と対立の解消
+
+### 合意（4 レンズが一致）
+
+1. **数値の正本は 1 箇所**: コントロール寸法の実値は `app/globals.css` の `@theme` に置くトークン（`--size-control-*`）を唯一の正本とし、`ui-ux-guidelines.md` §2.4 は「トークンの意味・必須/推奨の区分・使い方」を、スキル側は「参照と severity 判定ルール」だけを持つ。ドキュメント・テスト・Python スクリプトのいずれにも px 数値を複製しない。
+2. **新規エージェント定義は作らない**（`design-reviewer` は不採用）。既存の `code-review` Step 1 観点表と `pr-review-watcher` Step 7 受け入れ判定役の拡張で足りる。
+3. **機械検査とレビューの二重ゲートを作らない**。機械が保証する範囲（トークン経由の強制・モバイル既定フォントサイズ・フロア値の実体・登録済み variant のブレークポイント解決・登録済み呼び出しサイトのリテラル className）はレビュー観点から明示的に除外する。
+4. **Playwright / axe は今回のスコープ外**（別 Issue）。E2E 基盤が無い制約は本 PR で解消しない。
+
+### 対立の解消（lead 判定）
+
+- **docs_trace「§2.4 を新設すると後続の全セクション番号が変わり `user-story-map.md:294` の §4 参照が壊れる」→ 棄却**。§2.3 の直後に §2.4 を足すのは §2 の内部追加であり、§3 以降の番号は変わらない（実ファイルで確認済み: §3 は行 75、§4 は行 99 で、いずれも §2 配下の小節追加の影響を受けない）。ただし docs_trace が指摘した **§4.5:147 と §7.7:242 の 24px 直書き**は実在する重複であり、ux_standards の Round 2 修正案（トークン参照への置換）を採用する。
+- **ux_standards「Step 7 の 4 点目にプレビュー URL の目視確認を含める」→ 採用（ただし文言を限定）**。サブエージェントは実画面を開けないため「目視確認した旨を記録する」を義務化すると虚偽記載を誘発する（L-113）。**「プレビュー URL を PR 本文から引用し、主要導線コントロールが §2.4 の推奨 tier を使っているかをコードで確認したうえで、視覚的な最終判断は人間の操作レビューに委ねる」**という形にし、エージェントに「見た」と書かせない。
+- **guardrail_eng「生の `h-*` 直書き禁止（トークン経由の強制）」→ 採用**。`check_architecture_boundaries.py` の `VENDOR_BINDING_RE` と同型で、既存の流儀を踏襲できる。ただし config テーブル（variant → 必要 tier）は Python 側に持つため、**未登録コンポーネントは検査対象外**という限界が残る。この穴は code-review Step 1 のメタチェック（「新規 UI プリミティブを追加したなら config に登録したか」）で埋める。
+- **`input.tsx` の cva 化（size variant 新設）→ 採用**。現状 Input には size の選択肢が無く、呼び出し側が `className` で生の高さを上書きするしか手段がない＝機械検査の射程外に落ちる経路を構造的に作っている。
+
+### 残る限界（明記して受け入れる）
+
+- 動的 className 合成によるサイズ上書きは静的検査で検出できない（Warning 止まり）。
+- 「実際のブラウザでの体感操作性」は Playwright 不採用のため機械では担保されない。人間の操作レビュー（`SD-1` のプレビュー URL）が唯一の担保である状態は本 PR では変わらない。
+
+### `lead` — 判定
+<sub>2026-08-19T10:57:11+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: 寸法基準をガイドラインにどう置くか",
+      "decision": "docs/03_design/ui-ux/ui-ux-guidelines.md の §2.3 直後に §2.4『コントロールサイズトークン』を新設し、コントロール寸法の判定基準（必須/推奨の二層）をここに一本化する。実値は app/globals.css の @theme のトークンが正本で、§2.4 は用途・必須/推奨の区分・禁止事項（呼び出し側での生クラス上書き）を持つ。§4.5 と §7.5 と §7.7 の 24px 直書きはトークン参照に置換する。§7.5 は WCAG 2.5.8（AA・必須）と 2.5.5（AAA・推奨として採用）の適合根拠の解説に専念する",
+      "files": [
+        "docs/03_design/ui-ux/ui-ux-guidelines.md: §2.4 新設 / §4.5・§7.5・§7.7 の数値をトークン参照へ置換",
+        "app/globals.css: @theme に --size-control-sm/md/lg と最小フォントサイズのトークンを追加（実値はリサーチの一次情報で確定）"
+      ],
+      "rejected": [
+        "§2.3 に統合拡張する（docs_trace 案）: タイポ・スペーシングとコントロール寸法は関心事が異なり、必須/推奨の二層表を混ぜると判定粒度が落ちる",
+        "節番号の変更を理由に新設を見送る: §2 内部への追加であり §3 以降の番号は変わらない（実ファイルで確認済み）"
+      ]
+    },
+    {
+      "issue": "B: 実装の修正範囲",
+      "decision": "input.tsx を cva 化して size variant（default / lg）を新設し、button.tsx と合わせて cva の size テーブルからトークンを参照する形にする。SearchForm は size を named prop で選ぶだけにし、className で高さ・フォントサイズを上書きしない。shadcn の default variant の意味は変えない（他画面への一括波及を避ける）",
+      "files": [
+        "src/ui/components/input.tsx: cva 化 + size variant 新設",
+        "src/ui/components/button.tsx: size テーブルをトークン参照へ",
+        "src/ui/search-form.tsx: size を明示指定（生クラス上書きをやめる）",
+        "src/ui/search-form.test.tsx: 新規（variant 配線の回帰テスト。px 数値は assert しない）"
+      ],
+      "rejected": [
+        "SearchForm 側で className に h-* を直接書く: 静的検査の射程外に落ちる経路を作るため禁止（§2.4 に明文化）",
+        "shadcn の default size 自体を大きくする: SP-2 以降の二次コントロールまで巻き込み影響範囲が読めない"
+      ]
+    },
+    {
+      "issue": "C: デザイン観点レビューをどこに差し込むか",
+      "decision": "① code-review スキル Step 1 の観点表に『UI・アクセシビリティ』行を追加（差分が app/ か src/ui/ を含むときだけ発火）し、③ pr-review-watcher Step 7 の受け入れ判定役の必須項目を 3 点→4 点に拡張する。両方とも判定基準の実体は書かず『§2.4 を Read し、必須行の逸脱は CRITICAL / 推奨行の逸脱は WARNING』という severity 判定ルールと、機械検査済み範囲の除外だけを持つ",
+      "files": [
+        ".claude/skills/code-review/SKILL.md: Step 1 観点表に 1 行追加 + ファインダー指示テンプレートに UI・アクセシビリティ節を追加",
+        ".claude/skills/pr-review-watcher/SKILL.md: Step 7 受け入れ判定役の必須項目を 4 点に拡張"
+      ],
+      "rejected": [
+        "② .claude/agents/design-reviewer.md の新設: 呼び出し元が結局 ①③ になり、frontmatter に判断基準を書き込む構造的誘引で ui-ux-guidelines.md と二重管理になる",
+        "④ self-reviewer の観点表に追加: 実装者自身のセルフチェックは自己修正盲点の対象で、観点一覧の実体が 2 箇所に増える",
+        "Step 7 の役割を 3 つに増やす: 既存 2 役割の拡張で足り、fan-out コストを増やさない"
+      ]
+    },
+    {
+      "issue": "D: 実効性の担保（機械強制）",
+      "decision": "tools/check_ui_dimensions.py を新設し、run_checks.sh に Error チェックとして追加する。方式は『生の h-*/text-* 直書きを禁止しトークン経由を強制する』（check_architecture_boundaries.py の VENDOR_BINDING_RE と同型）+『globals.css の宣言値からフロアを動的に解決する』。Python 側が持つのは variant → 必要 tier の config テーブルのみで px 数値は持たない。--self-test を備える",
+      "files": [
+        "tools/check_ui_dimensions.py: 新規",
+        "tools/run_checks.sh: チェック追加"
+      ],
+      "rejected": [
+        "src/ui/**/*.tsx の広域スキャン: 動的 className・任意値・レスポンシブ prefix を解釈できず過検知と過小検知を同時に起こす",
+        "jsdom + testing-library で px 数値を assert する: 実レイアウトを持たずクラス文字列一致にしかならないうえ数値の複製になる",
+        "Playwright 導入: 今回のスコープ外（別 Issue）"
+      ]
+    },
+    {
+      "issue": "E: スコープの線引き",
+      "decision": "この PR では ガイドライン §2.4 + トークン + Input/Button/SearchForm の実装 + 静的検査 + レビュー仕組みの 5 点を完遂する。Playwright + axe による E2E・a11y 自動検証（NFR-26 / SD-2 の E2E 要件）と、SP-2 以降のコントロール（ページネーション・ソート・件数切替）への適用は別 Issue に送る",
+      "files": [],
+      "rejected": [
+        "SP-2 以降のコントロールを先回りで実装する: YAGNI。§2.4 のトークンだけ用意し適用は各スプリントの SD-4 自律参照に委ねる"
+      ]
+    }
+  ],
+  "guideline_section": {
+    "section_title": "§2.4 コントロールサイズトークン（§2.3 の直後）",
+    "rules": [
+      "必須: 全コントロールは --size-control-sm（WCAG 2.2 の 2.5.8 フロア）を下回らない",
+      "必須: 入力系コントロールのモバイル既定フォントサイズは 16px を下回らない（iOS Safari の自動ズーム回避。maximum-scale での抑止は禁止）",
+      "推奨: 主要導線（検索入力欄・検索ボタン）は --size-control-lg を使う（WCAG 2.5.5 相当を推奨として採用。AAA 適合を謳うものではない）",
+      "必須: コントロールの高さ・フォントサイズは cva の size variant 経由でのみ指定し、呼び出し側の className に生の h-* / text-* を書かない",
+      "モバイル / デスクトップの出し分けはトークン参照 + レスポンシブ prefix で表現する（数値の直書きをしない）",
+      "実値（px）はリサーチの一次情報（Material Design 3 / Apple HIG / GOV.UK / MOJ / Primer / shadcn）で確定し app/globals.css の @theme に置く"
+    ]
+  },
+  "review_mechanism": {
+    "where": [
+      "マージ前: code-review スキル Step 1 の観点表『UI・アクセシビリティ』（app/ か src/ui/ を含む差分のみ）",
+      "マージ後: pr-review-watcher Step 7 受け入れ判定役の必須 4 点目（スプリントレビュー）"
+    ],
+    "new_files": ["tools/check_ui_dimensions.py", "src/ui/search-form.test.tsx"],
+    "modified_files": [
+      "docs/03_design/ui-ux/ui-ux-guidelines.md",
+      "app/globals.css",
+      "src/ui/components/input.tsx",
+      "src/ui/components/button.tsx",
+      "src/ui/search-form.tsx",
+      ".claude/skills/code-review/SKILL.md",
+      ".claude/skills/pr-review-watcher/SKILL.md",
+      "tools/run_checks.sh"
+    ]
+  },
+  "machine_checks": {
+    "adopt": [
+      "cva size テーブルでの生の h-*/size-* 直書き禁止（トークン経由の強制）→ Error",
+      "無プレフィックス（モバイル既定）の text-* が 16px 未満なら Error",
+      "globals.css の --size-control-sm 宣言値が WCAG フロア未満なら Error",
+      "登録済み variant のレスポンシブ実効値が config テーブルの tier を下回るなら Error",
+      "登録済み呼び出しサイト（search-form.tsx）のリテラル className によるサイズ上書き → Error",
+      "未登録コンポーネント・動的 className によるサイズ影響 → Warning（run_checks.sh を止めない）"
+    ],
+    "reject": [
+      "src/ui 全体の無差別クラススキャン（過検知）",
+      "jsdom での px 数値 assert（数値の複製・実装詳細への結合）",
+      "Playwright / 視覚回帰（今回のスコープ外）"
+    ]
+  },
+  "scope": {
+    "this_pr": [
+      "ui-ux-guidelines.md §2.4 新設と既存節のトークン参照化",
+      "app/globals.css へのコントロールサイズトークン追加（実値はリサーチで確定）",
+      "input.tsx の cva 化 / button.tsx のトークン参照化 / search-form.tsx の size 明示",
+      "search-form.test.tsx（variant 配線の回帰テスト）",
+      "tools/check_ui_dimensions.py + run_checks.sh 統合",
+      "code-review / pr-review-watcher のレビュー観点拡張"
+    ],
+    "follow_up_issues": [
+      {
+        "title": "feat: Playwright + axe による E2E・アクセシビリティ自動検証を導入する（NFR-26 / SD-2）",
+        "labels": ["type:feature", "sp:5"],
+        "why": "実ブラウザでの体感操作性・視覚回帰・a11y 自動検証は静的検査では担保できず、SP-4 の E2E 基盤整備と一体で設計すべき"
+      },
+      {
+        "title": "improvement: SP-2 以降の新規コントロール（ページネーション・ソート・件数切替）に §2.4 のサイズトークンを適用する",
+        "labels": ["type:improvement", "sp:2"],
+        "why": "今回はトークンの器と主要導線のみ。他コントロールへの適用は各スプリントで行うが、抜けを防ぐため追跡する"
+      }
+    ]
+  },
+  "open_questions": [
+    "実ブラウザでの体感操作性は Playwright 不採用のため人間の操作レビューが唯一の担保である（今回の欠陥もそこで見つかった）。この状態を許容し続けるか、別 Issue の優先度を上げるかは飼い主の判断事項"
+  ]
+}
