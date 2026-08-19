@@ -11,6 +11,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check": "bash tools/run_checks.sh",
     "preview:build": "opennextjs-cloudflare build",
     "preview:upload": "opennextjs-cloudflare build && wrangler versions upload",
     "deploy": "opennextjs-cloudflare build && wrangler deploy",

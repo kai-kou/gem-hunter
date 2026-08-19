@@ -16,6 +16,14 @@ PR 作成後に **Claude 自身が Layer 1 セルフレビュー（自前 `code-
 フィードバックループ）は `reference.md`**、フロー全体の正本は **`docs/rules/pr-review-flow.md`**、
 レビュアー構成の SSOT は **`docs/rules/ai-reviewer-strategy.md`** を参照。
 
+## CI 制限中の運用（Actions 制限・必読）
+
+🔴 **CI は無い**（GitHub Actions が制限中でジョブが数秒・ログ 0 バイトで失敗するため、ワークフロー 2 本は撤去済み）。
+**Layer 0（機械ゲート）は「PR 作成前の `tools/run_checks.sh` + フック」だけで完結する**（手順・PR 本文への
+結果貼付は `docs/rules/pr-review-flow-summary.md`「PR 作成時の必須事項」が正本）。以降の各ステップで
+「CI 失敗を待つ / 監視する」という記述が出てきても、Actions 制限中はその事象自体が発生しない
+（`subscribe_pr_activity` は人手コメントの監視にのみ有効）。Actions 復旧後は本節を削除し従来運用に戻す。
+
 ## トリガー条件
 
 - PR 作成後に AI レビューの到着を待つ時（PR 作成フローの一部として自動開始）
@@ -123,6 +131,10 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 - `post-merge-publish-check.sh`（PostToolUse・matcher `mcp__github__merge_pull_request`）が
   マージ成功を検知してドリフトを判定し、反映が要るときだけ指示を注入する。指示が来たら
   `publish-sync` スキルに従って **push まで完遂する**（ユーザー確認は不要）。
+- 🔴 **本番反映（デプロイ）もセッションが実行する**（飼い主の明示指示・2026-08-19・`D-23`。`permissions.allow` に登録済み）:
+  Actions 制限中は本番デプロイ用ワークフローも無いため、`push` まで完遂したら続けてセッションが `npm run deploy` を
+  実行し本番反映まで完遂する（Actions 復旧を待たない）。🔴 **deploy 前に `main` HEAD で `npm run check` を再実行** し（合成状態の検証）、deploy 後は本番 URL の疎通を確認する（手順の正本は `cloudflare-infrastructure.md` §8.2）。⚠️ **これは「デプロイ実行」の委任であって、Layer 1 セルフレビュー・
+  指摘対応・マージ条件を省略してよいという意味ではない**（レビュー規律は従来どおり）。
 - **反映できないセッションでも黙って終わらせない**。`add_repo` が提供されない自動タスク実行モード
   （scheduled trigger・GitHub Issue/PR 起動・L-117）では push が 403 になるため、その場で
   `publish-sync` スキルの §5 に従って `[publish-sync]` Issue に失敗段階を記録する。

@@ -36,6 +36,8 @@
 
 構成の詳細・コマンド・設定ファイルは [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) が正本。
 
+> ⚠️ **追記（2026-08-19・`D-23`）**: 決定 #6（CI は GitHub Actions + `cloudflare/wrangler-action`）は、GitHub Actions がプラットフォーム側の制限で起動できない状態（Issue #65）を受けて **暫定的にセッション（Claude）実行へ切り替えている**。`.github/workflows/deploy-preview.yml` / `deploy-production.yml` は撤去済み。本 ADR の決定 #6 自体は取り消さず、制限解除後に GitHub Actions へ復帰する（現状の運用・復帰手順は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §8 が正本）。
+
 ---
 
 ## 3. 理由

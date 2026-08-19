@@ -186,7 +186,9 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
 
 4-5. PR 本文の必須項目: `Sprint Goal:` 1 行 / `sp:N` / `Team:` トレーラー（`編成` 欄の同期コピー） /
      `Session-Id: $CLAUDE_CODE_SESSION_ID` /
-     プレビュー URL（出せない場合は理由とローカル起動手順） / 参照要件 ID（既存必須項目そのまま。
+     **`tools/run_checks.sh` の結果（PASS / FAIL）** / プレビュー URL（`wrangler versions upload
+     --preview-alias pr-<N>` で取得。出せない場合は理由とローカル起動手順） / 参照要件 ID（既存必須項目そのまま。
+     手順の正本は `docs/rules/pr-review-flow-summary.md`「PR 作成時の必須事項」・本スキルには複製しない。
      `session-sprint-rules.md` の「スプリントプランニング」節 / `sprint-development-rules.md` `SD-1` 準拠）。
      🔴 **`Closes #{Issue番号}` は書かない**（クローズは `pr-review-watcher` Step 7 の最終アクション。
      マージ時に閉じると Step 7 中断時に Step 3 が再開できなくなる）。
