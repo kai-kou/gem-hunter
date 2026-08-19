@@ -1,0 +1,12 @@
+<!-- discussion_whiteboard:auto -->
+# 🧑‍🏫 議論ホワイトボード: SP-8 ログイン(GitHub OAuth)でレート枠切替と言語切替を実装する設計
+
+- 議題ID: `sp8-auth-i18n-20260819`
+- 論点: SP-8（Issue #140, sp:8）のゴールは『未ログインのまま全機能が使える／ログインするとレート枠が自分のものに切り替わる／ログアウトすると元に戻る／言語を英語に切り替えると URL ロケールと UI 文言が変わる（リポジトリ説明文は原文のまま）』を操作レビューで確認できる状態にすること（user-story-map.md §5.3 SP-8、US-2/US-4/US-5、E-11 の OAuth モック追加）。既に確定済みの前提: prd.md AR-5（244-251行）により GitHub OAuth はスコープ要求なし（no scope）、セッションは暗号化 httpOnly Cookie に保持しトークンをクライアントへ非露出、CSRF 対策で state パラメータ必須、ログアウトで Cookie 破棄、コールバック URL は環境変数化、認証は任意で機能差を作らない（D-6）。prd.md AR-4（237-242行）により i18n は自前実装（next-intl 不採用・R-7 で確定済み）で、URL は全ロケールにプレフィックス（/ja/ /en/）、既定ロケールは ja、GitHub 由来データは機械翻訳しない。i18n 基盤（app/[locale]/ セグメント・src/domain/model/locale.ts の Locale 値オブジェクト・src/shared/i18n/messages.ts・messages/ja.json・messages/en.json・src/ui/url/locale-redirect.ts）は既に実装済みで SP-8 が触るのは言語切替 UI（US-2）の追加のみ。認証関連の実装は src/ 配下に一切存在せず本スプリントが新規実装する。architecture-rules.md の ARCH-2（ユースケースはポートを引数で受け取る）/ ARCH-3（app・src/ui から src/infrastructure を直 import しない。src/composition 経由必須）/ ARCH-4（事業者固有バインディングは src/infrastructure/platform の中だけ）/ ARCH-5（GitHub API と GitHub 認証情報は src/infrastructure/github/ か platform/ の中だけ）は不変。D-5（DB を持たない）によりセッションストアは持てず Cookie 完結が前提。jose（^6.2.9）が依存済みで JWT/JWE 操作に使える。infrastructure-design.md §8.1（270-281行）により、OAuth コールバック URL の事前登録とプレビュー URL の PR 毎変化が非両立のため、プレビュー環境では OAuth を無効化する方針（環境変数未設定で自動的にログイン導線が消える。アプリコードに環境判定を書かない）が既に決まっており、SP-8 の E2E・操作レビューはプレビュー URL ではなく『ダミー OAuth 設定を注入したローカルビルド』に対して実行する。e2e/stub/server.mjs は現在 GitHub REST API（検索・詳細・レート制限 403 シミュレーション）のみスタブしており OAuth authorize/token/callback のモックは未実装。関連する未完了 Issue #122『RateLimitPort を composition root と全経路へ実際に配線する』があり、レート枠切替の実装はこの Port と整合させる必要がある。争点は次の 4 つ: A) OAuth フロー自体を自前実装するか（ライブラリは未導入。i18n は Edge/Workers 実行モデル非両立を理由に自前実装した前例がある）、それとも Auth.js 等のライブラリを新規導入するか。プレビュー無効化・no-scope・自前 i18n との整合、Cloudflare Workers（Edge runtime）上での動作可否で判断する。B) セッション Cookie の暗号化方式（jose の JWE で GitHub アクセストークン自体を暗号化して Cookie に入れるか、署名付き opaque セッション ID + サーバー側の一時保持かだが D-5 により永続ストアは不可）と、CSRF state パラメータの検証をどこでどう実装するか。C) 層配置（route handler の置き場所と composition root の配線方法、ARCH-2/ARCH-3/ARCH-4/ARCH-5 との整合、RateLimitPort 配線（#122）とレート枠切替ユースケースの関係、言語切替 UI（US-2）をどのコンポーネント層に置くか）。D) 検証可能性（e2e/stub/server.mjs への OAuth モック追加方法、プレビュー無効化 + ダミー OAuth ローカルビルドでの E2E 実行手順の具体化、4 つの操作レビュー手順の E2E 化、TDD の Red をどの順に書くか）。
+- 参加者: `auth_flow`, `session_security`, `clean_arch`, `verify_test`
+- 投稿数: 0
+- 更新: 2026-08-20T07:14:11+09:00
+
+> このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
+
+_（まだ投稿がありません）_

@@ -1,0 +1,52 @@
+{
+  "topic": "SP-8 ログイン（GitHub OAuth）でレート枠を自分のものに切り替え、言語（ja/en）を選べるようにする実装設計",
+  "brief": "SP-8（Issue #140, sp:8）のゴールは『未ログインのまま全機能が使える／ログインするとレート枠が自分のものに切り替わる／ログアウトすると元に戻る／言語を英語に切り替えると URL ロケールと UI 文言が変わる（リポジトリ説明文は原文のまま）』を操作レビューで確認できる状態にすること（user-story-map.md §5.3 SP-8、US-2/US-4/US-5、E-11 の OAuth モック追加）。既に確定済みの前提: prd.md AR-5（244-251行）により GitHub OAuth はスコープ要求なし（no scope）、セッションは暗号化 httpOnly Cookie に保持しトークンをクライアントへ非露出、CSRF 対策で state パラメータ必須、ログアウトで Cookie 破棄、コールバック URL は環境変数化、認証は任意で機能差を作らない（D-6）。prd.md AR-4（237-242行）により i18n は自前実装（next-intl 不採用・R-7 で確定済み）で、URL は全ロケールにプレフィックス（/ja/ /en/）、既定ロケールは ja、GitHub 由来データは機械翻訳しない。i18n 基盤（app/[locale]/ セグメント・src/domain/model/locale.ts の Locale 値オブジェクト・src/shared/i18n/messages.ts・messages/ja.json・messages/en.json・src/ui/url/locale-redirect.ts）は既に実装済みで SP-8 が触るのは言語切替 UI（US-2）の追加のみ。認証関連の実装は src/ 配下に一切存在せず本スプリントが新規実装する。architecture-rules.md の ARCH-2（ユースケースはポートを引数で受け取る）/ ARCH-3（app・src/ui から src/infrastructure を直 import しない。src/composition 経由必須）/ ARCH-4（事業者固有バインディングは src/infrastructure/platform の中だけ）/ ARCH-5（GitHub API と GitHub 認証情報は src/infrastructure/github/ か platform/ の中だけ）は不変。D-5（DB を持たない）によりセッションストアは持てず Cookie 完結が前提。jose（^6.2.9）が依存済みで JWT/JWE 操作に使える。infrastructure-design.md §8.1（270-281行）により、OAuth コールバック URL の事前登録とプレビュー URL の PR 毎変化が非両立のため、プレビュー環境では OAuth を無効化する方針（環境変数未設定で自動的にログイン導線が消える。アプリコードに環境判定を書かない）が既に決まっており、SP-8 の E2E・操作レビューはプレビュー URL ではなく『ダミー OAuth 設定を注入したローカルビルド』に対して実行する。e2e/stub/server.mjs は現在 GitHub REST API（検索・詳細・レート制限 403 シミュレーション）のみスタブしており OAuth authorize/token/callback のモックは未実装。関連する未完了 Issue #122『RateLimitPort を composition root と全経路へ実際に配線する』があり、レート枠切替の実装はこの Port と整合させる必要がある。争点は次の 4 つ: A) OAuth フロー自体を自前実装するか（ライブラリは未導入。i18n は Edge/Workers 実行モデル非両立を理由に自前実装した前例がある）、それとも Auth.js 等のライブラリを新規導入するか。プレビュー無効化・no-scope・自前 i18n との整合、Cloudflare Workers（Edge runtime）上での動作可否で判断する。B) セッション Cookie の暗号化方式（jose の JWE で GitHub アクセストークン自体を暗号化して Cookie に入れるか、署名付き opaque セッション ID + サーバー側の一時保持かだが D-5 により永続ストアは不可）と、CSRF state パラメータの検証をどこでどう実装するか。C) 層配置（route handler の置き場所と composition root の配線方法、ARCH-2/ARCH-3/ARCH-4/ARCH-5 との整合、RateLimitPort 配線（#122）とレート枠切替ユースケースの関係、言語切替 UI（US-2）をどのコンポーネント層に置くか）。D) 検証可能性（e2e/stub/server.mjs への OAuth モック追加方法、プレビュー無効化 + ダミー OAuth ローカルビルドでの E2E 実行手順の具体化、4 つの操作レビュー手順の E2E 化、TDD の Red をどの順に書くか）。",
+  "participants": [
+    {
+      "name": "auth_flow",
+      "model": "sonnet",
+      "lens": "OAuth フロー実装（争点 A を主担当。自前実装 vs Auth.js 等ライブラリ導入を、no-scope OAuth・プレビュー無効化方針・自前 i18n の前例・Cloudflare Workers Edge runtime 適合性・依存追加のコスト対効果で比較し 1 案に決める。GitHub OAuth App の登録要否とコールバック URL の環境変数設計、authorize→callback→token 交換のシーケンスを具体化する)"
+    },
+    {
+      "name": "session_security",
+      "model": "sonnet",
+      "lens": "セッションとセキュリティ（争点 B を主担当。httpOnly Cookie の暗号化方式（jose の JWE か署名 JWS か）、GitHub アクセストークンを Cookie に直接持たせることの是非、CSRF state パラメータの生成・検証・保存先（D-5 により永続ストア不可）、ログアウト時の Cookie 破棄、NFR-9（秘匿情報のクライアント非露出）と NFR-22（環境変数集約）の遵守を検証する)"
+    },
+    {
+      "name": "clean_arch",
+      "model": "sonnet",
+      "lens": "層と依存規則（争点 C を主担当。route handler の配置と composition root 配線を ARCH-2/ARCH-3/ARCH-4/ARCH-5 に照らして 1 案に決める。レート枠切替ユースケースと Issue #122 の RateLimitPort 配線の関係を整理し、二重実装にならないようにする。言語切替 UI（US-2）の実装層と Locale 値オブジェクトとの統合方法を決める。ドメイン層に事業者概念（GitHub OAuth・Cookie）を漏らしていないか検証する)"
+    },
+    {
+      "name": "verify_test",
+      "model": "sonnet",
+      "lens": "検証可能性（争点 D を主担当。SP-8 の 4 つの操作レビュー手順を E2E でどう機械的に assert するか、e2e/stub/server.mjs に OAuth authorize/token/callback のモックをどう追加するか、infrastructure-design.md §8.1 が定める『ダミー OAuth 設定を注入したローカルビルド』での E2E 実行を具体的な手順（環境変数・起動コマンド）に落とす、TDD の Red をどの順に書くか、E-11 の OAuth モック追加が既存の検索・詳細 API モックと衝突しないか)"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜D それぞれについて採用する設計を 1 つに決める。決定は必ず『どのファイルに何を書くか（新規/改修）』まで落とす。Edge runtime（Cloudflare Workers）上で動かないと指摘された案・D-5（DB なし）に反する案・NFR-9（秘匿情報露出）に反する案は採用しない。検証手段が無い案も採用しない（SP-8 の完了条件は操作レビューを完走できることであるため）。議論で否定された案は rejected に書く。実装手段の判断は自律で確定させ、成果物が変わる仕様解釈の分岐だけを open_questions に残す（sprint-development-rules-detail.md §3.3 の3条件で判定し、満たさない論点は結論を出さず保留と明記する）。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜D のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T-n",
+        "title": "実行タスク",
+        "actor": "claude | user",
+        "depends_on": ["T-n"],
+        "sp": "sp:1|2|3|5|8"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）または保留にした論点"]
+  }
+}
