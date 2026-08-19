@@ -604,5 +604,5 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 | [Cloudflare インフラ リサーチ](../../01_research/infra/20260818-cloudflare-research.md) | 数値・一次情報の出典 |
 | [ADR 0002](../../adr/0002-cloudflare-workers-infrastructure.md) | 選定判断の記録 |
 | [`prd.md`](../../02_requirements/prd.md) | 要件 ID・環境変数の正本 |
-| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` の決定ログ |
+| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` / `D-23`（GitHub Actions 制限中の CI/CD 暫定運用）の決定ログ |
 | [議論記録](../../../content/discussions/cloudflare-infra-20260818/whiteboard.md) | 本設計に至った専門チームの議論 |
