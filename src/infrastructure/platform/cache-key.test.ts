@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { searchQuery } from '../../domain/model/search-query'
-import { repositoryCacheKey, searchResultCacheKey } from './cache-key'
+import { CACHE_SCHEMA_VERSION, repositoryCacheKey, searchResultCacheKey } from './cache-key'
 
 describe('searchResultCacheKey', () => {
   it('検索結果は search 名前空間になる', () => {
@@ -89,5 +89,39 @@ describe('repositoryCacheKey', () => {
     const composed = repositoryCacheKey(composedOwner, 'react')
     const decomposed = repositoryCacheKey(decomposedOwner, 'react')
     expect(composed).toBe(decomposed)
+  })
+})
+
+describe('CACHE_SCHEMA_VERSION', () => {
+  it('スキーマバージョンは v から始まる非空の識別子である', () => {
+    expect(CACHE_SCHEMA_VERSION).toMatch(/^v\d+$/)
+  })
+
+  it('検索結果のキーは名前空間の直後にスキーマバージョンを含む', () => {
+    const key = searchResultCacheKey(searchQuery({ keyword: 'next' }))
+    expect(key.startsWith(`search:${CACHE_SCHEMA_VERSION}:`)).toBe(true)
+  })
+
+  it('単一リポジトリのキーは名前空間の直後にスキーマバージョンを含む', () => {
+    const key = repositoryCacheKey('facebook', 'react')
+    expect(key.startsWith(`repository:${CACHE_SCHEMA_VERSION}:`)).toBe(true)
+  })
+
+  it('スキーマバージョン導入後もキーワードの正規化（トリム・小文字化）は保たれる', () => {
+    const a = searchResultCacheKey(searchQuery({ keyword: '  Next.js  ' }))
+    const b = searchResultCacheKey(searchQuery({ keyword: 'next.js' }))
+    expect(a).toBe(b)
+    expect(a).toBe(`search:${CACHE_SCHEMA_VERSION}:next.js:page=1:sort=stars:per_page=20`)
+  })
+
+  it('スキーマバージョン導入後も owner/name の正規化・エンコードは保たれる', () => {
+    const key = repositoryCacheKey('  Face book  ', 'React')
+    expect(key).toBe(`repository:${CACHE_SCHEMA_VERSION}:face%20book/react`)
+  })
+
+  it('スキーマバージョンが変わると同じ入力でも別キーになる（旧エントリを論理的に無効化できる）', () => {
+    const key = searchResultCacheKey(searchQuery({ keyword: 'next' }))
+    const legacyKey = key.replace(`:${CACHE_SCHEMA_VERSION}:`, ':v0:')
+    expect(key).not.toBe(legacyKey)
   })
 })

@@ -37,7 +37,8 @@ describe('GithubRepositoryQuery', () => {
     const result = await makeQuery().search(searchQuery({ keyword: 'react', page: 2 }))
 
     expect(result.items).toHaveLength(2)
-    expect(requests[0].searchParams.get('q')).toBe('react')
+    // 公開リポジトリに閉じるため is:public が AND 付与される（下の専用テストも参照）
+    expect(requests[0].searchParams.get('q')).toBe('react is:public')
     expect(requests[0].searchParams.get('page')).toBe('2')
     expect(requests[0].searchParams.get('per_page')).toBe('20')
   })

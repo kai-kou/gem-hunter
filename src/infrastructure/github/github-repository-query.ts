@@ -38,6 +38,14 @@ function apiOrigin(): string {
   return configured
 }
 
+/**
+ * 🔴 検索クエリへ必ず AND 付与する修飾子。
+ * GitHub App の installation token（Bearer）で認証すると、そのトークンから見える private
+ * リポジトリまで `GET /search/repositories` の可視範囲に入ってしまう。本プロダクトの仕様は
+ * 「GitHub 公開リポジトリの検索」（prd.md L171）なので、検索の時点で公開に閉じる。
+ */
+const PUBLIC_ONLY_QUALIFIER = 'is:public'
+
 /** アクセストークンの供給口。未認証で叩く場合は null を返す。 */
 export type TokenProvider = () => Promise<string | null>
 
@@ -50,7 +58,8 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
 
   async search(query: SearchQuery): Promise<SearchResult> {
     const url = new URL('/search/repositories', apiOrigin())
-    url.searchParams.set('q', query.keyword)
+    // 🔴 ユーザーが `is:private` 等を書いても公開に閉じるよう、常に AND で付与する。
+    url.searchParams.set('q', `${query.keyword} ${PUBLIC_ONLY_QUALIFIER}`)
     url.searchParams.set('page', String(query.page))
     url.searchParams.set('per_page', String(query.perPage))
     // 🔴 仮定（実装手段レベル・SD-3 対象外）: relevance は GitHub API の既定挙動のため
@@ -75,7 +84,14 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     if (response === null) {
       return null
     }
-    return toRepositoryDetail(await response.json())
+
+    const raw: unknown = await response.json()
+    // 🔴 非公開リポジトリは「見つからない」として扱う（URL 直打ちで詳細が読めるのを塞ぐ）。
+    //    検索側の is:public だけでは詳細エンドポイントの直接アクセスを防げないため、ここでも閉じる。
+    if (isPrivateRepository(raw)) {
+      return null
+    }
+    return toRepositoryDetail(raw)
   }
 
   private async request(url: URL, options: { notFoundAsNull: true }): Promise<Response | null>
@@ -115,6 +131,17 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     }
     throw new UpstreamError(`GitHub API がエラーを返しました（HTTP ${response.status}）`)
   }
+}
+
+/**
+ * 非公開リポジトリのレスポンスかを判定する（fail-closed）。
+ * 🔴 `private === true` のときだけ非公開とみなす（未指定は公開扱い）。DTO 側も
+ * `z.boolean().optional()` で揃えている（既存フィクスチャとの後方互換・テスト容易性のため）。
+ */
+function isPrivateRepository(raw: unknown): boolean {
+  return (
+    typeof raw === 'object' && raw !== null && (raw as { private?: unknown }).private === true
+  )
 }
 
 function isRateLimited(response: Response): boolean {
