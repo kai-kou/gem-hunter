@@ -12,8 +12,10 @@ Node.js 22 以上が必要（wrangler 4.x の要件）。
 npm ci
 npm run dev          # http://localhost:3000 で検索画面が開く
 npm test             # ユニット・結合テスト（Vitest）
+npm run test:e2e     # E2E テスト（Playwright。スタブ API + アプリを自動起動、外部ネットワーク非依存）
 npm run lint         # ESLint
 npm run format       # Prettier
+npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_checks.sh。PR 前の唯一の機械的証跡）
 ```
 
 GitHub App の資格情報（[`.env.example`](./.env.example)）を設定しなくても動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。
@@ -25,7 +27,7 @@ GitHub App の資格情報（[`.env.example`](./.env.example)）を設定しな�
 | フレームワーク | Next.js 16（App Router・React Server Components） |
 | UI | Tailwind CSS v4 + shadcn/ui（Radix UI・[ADR 0001](./docs/adr/0001-ui-stack.md)） |
 | 実行環境 | Cloudflare Workers（`@opennextjs/cloudflare`・[ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)） |
-| テスト | Vitest 4 + Testing Library + MSW 2（[テスト戦略](./docs/04_development/testing-strategy.md)） |
+| テスト | Vitest 4 + Testing Library + MSW 2（ユニット・結合）/ Playwright + axe（E2E）（[テスト戦略](./docs/04_development/testing-strategy.md)） |
 
 層と依存規則は [アプリケーションアーキテクチャ](./docs/03_design/architecture/application-architecture.md) が正本（`python3 tools/check_architecture_boundaries.py` で機械検証する）。
 
