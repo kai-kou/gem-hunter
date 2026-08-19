@@ -1,9 +1,17 @@
+import { UpstreamError } from '../../domain/errors'
 import type { RepositorySummary, SearchResult } from '../../domain/model/repository'
 import { searchRepositoriesDto } from './dto'
 
-/** 外部データを検証したうえでドメインモデルへ変換する（ACL）。 */
+/**
+ * 外部データを検証したうえでドメインモデルへ変換する（ACL）。
+ * 🔴 スキーマ不一致は外へ漏らさずドメインエラーへ翻訳する（上位層は zod を知らない）。
+ */
 export function toSearchResult(raw: unknown): SearchResult {
-  const dto = searchRepositoriesDto.parse(raw)
+  const parsed = searchRepositoriesDto.safeParse(raw)
+  if (!parsed.success) {
+    throw new UpstreamError('GitHub API のレスポンスが想定と異なります', { cause: parsed.error })
+  }
+  const dto = parsed.data
 
   return {
     totalCount: dto.total_count,

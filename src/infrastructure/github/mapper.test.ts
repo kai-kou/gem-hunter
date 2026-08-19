@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { UpstreamError } from '../../domain/errors'
 import fixture from './__fixtures__/search-repositories.json'
 import { toSearchResult } from './mapper'
 
@@ -29,7 +30,8 @@ describe('toSearchResult', () => {
     expect(routerRepo.topics).toEqual([])
   })
 
-  it('スキーマに合わない外部データを弾く', () => {
-    expect(() => toSearchResult({ total_count: 'たくさん', items: [] })).toThrow()
+  it('スキーマに合わない外部データをドメインエラーへ翻訳する', () => {
+    // 上位層は zod を知らないため ZodError を層の外へ出さない（ACL の契約）
+    expect(() => toSearchResult({ total_count: 'たくさん', items: [] })).toThrow(UpstreamError)
   })
 })
