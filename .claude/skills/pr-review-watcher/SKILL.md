@@ -111,8 +111,9 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 | 4 | Layer 0（機械ゲート）+ Layer 1 通過の確認 |
 | 5 | 自動マージ（squash・外部レビュアー応答待ちなし） |
 | 6 | **公開リポジトリへの反映（`publish-sync`）**。マージで生まれた差分をこのセッション内で反映まで完遂する。詳細は下記 |
-| 7 | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102） |
-| 8 | マージ後フィードバックループ → `docs/rules/lessons/pr-review.md` に教訓追記（必須・`lessons-management.md` に従う） |
+| 7 | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。詳細は下記 |
+| 8 | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102） |
+| 9 | マージ後フィードバックループ → `docs/rules/lessons/pr-review.md` に教訓追記（必須・`lessons-management.md` に従う） |
 
 ### Step 6: マージ直後の公開反映（#449）
 
@@ -128,6 +129,49 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 - ローカル実行で `gh pr merge` を使った場合はフックの matcher（MCP ツール）に掛からない。
   セッション終了時の `stop-publish-check.sh` が backstop として拾う。
 
+### Step 7: スプリントレビュー + レトロスペクティブ（マージ + 公開反映の直後・完了報告の前・必須）
+
+`sp1-review-retro-20260819` 議論（争点 C・lead 判定）の決定に基づく。**発火条件**: マージした PR 本文に
+`Sprint Goal:` 行がある（= `SP-n` スプリントの PR）。無い場合は本ステップをスキップして Step 8 へ進む。
+
+**スコープは `SP-n` スプリントの成果物レビューに限定する**（改善 Issue・`type:retro-try` の PR は対象外）。
+全パイプライン共通の `retrospective` 死蔵解消（各パイプライン終端への呼び出し追加）は本ステップの
+射程外であり、別 Issue で扱う。
+
+1. **スプリントレビューを実行する**。既定は **fan-out 2 役割**（受け入れ判定役 / 残課題の仕分け役）。
+   `sp:8` のときだけ `discussion-review` スキルに切り替え、議論全文は
+   `content/discussions/sprint-review-SP-{n}-{YYYYMMDD}/` に残し、Issue コメントには結論サマリーだけ書く。
+2. 🔴 **受け入れ判定役の役割定義に必ず含める 3 点**（省略すると判定が浅くなり実効性が消える）:
+   - 該当 `SP-n` 節が参照する **設計ドキュメントのポインタを 1 ホップ先まで辿る**（例:
+     `user-story-map.md` → `cloudflare-infrastructure.md` 等の Cloudflare 固有ゲート）
+   - テスト・依存規則チェック等は **実際に実行して結果で断定する**（「たぶん満たしている」は書かない・L-113）
+   - Sprint Planning コメントの **`編成` 欄が単独実行になっていないか** を確認し、なっていれば
+     Problem として記録する（`session-sprint-rules.md` §2 で単独実行は禁止）
+3. 判定結果を **対象 Issue のコメント** として投稿する。書式は以下（`進捗:` 行は
+   `sprint-cycle-router` Step 3 の stale 再開判定が読むマーカーなので必ず末尾に置く）:
+
+   ```markdown
+   ## 🔍 Sprint Review 判定
+   **結果**: accepted | accepted_with_conditions | rejected
+   **次 firing 必須**: {条件付き受け入れのときだけ・無ければ「なし」}
+   **後続スプリントへ送る項目**: {箇条書き}
+   **Issue クローズ条件**: {1 行}
+   進捗: Sprint Review まで完了。次は retrospective スキル起動
+   ```
+
+4. 続けて **`retrospective` スキルを起動** する（KPT 生成と Try の Issue 化。既存仕様のまま）。
+5. **対象 Issue をクローズする**（本ステップの最終アクション）。判定が `rejected` / `accepted_with_conditions` で
+   次 firing に持ち越すものがある場合は **open のまま残す**（`status:in-progress` も維持）。
+6. 🔴 上記 1〜5 が未実施のまま完了報告しない（下記「注意事項」に完了条件として追加）。
+
+🔴 **`SP-n` の PR 本文に `Closes #{Issue番号}` を書かない**（`pr-review-flow.md` の標準テンプレートの例外）。
+書くとマージ時点で Issue が閉じ、Step 7 が中断したときに **`sprint-cycle-router` Step 3（`status:in-progress`
+かつ open の stale Issue を再開）が拾えなくなる**（= レビューとレトロが黙って永久に実施されない）。
+クローズは本ステップ 5 が行うため、Issue は Step 7 完了まで open + `status:in-progress` のまま残す。
+
+新ラベル（`status:conditionally-accepted` 等）・新 state ファイル・新ディレクトリ規約は作らない。
+記録先は既存の仕組み（Issue コメント / `content/discussions/` / `retrospective` スキルの出力）に限定する。
+
 ## サイレント原則（L-102・最重要）
 
 AIレビュー指摘対応は **ユーザーに報告しない**。記録は PR スレッド返信・Resolve・Issue コメントのみ。
@@ -140,3 +184,4 @@ AIレビュー指摘対応は **ユーザーに報告しない**。記録は PR 
 - 修正コミット後の再レビューに備え、`resolved` 後も監視を継続する
 - 全体タイムアウトは 30 分。経過時は現状を PR コメントに記録（サイレント）
 - 他セッション対応中の PR（`active_session: true`・`--actionable-only` 出力に現れない）には介入しない（CP-4・L-109）
+- 🔴 `Sprint Goal:` 行のある PR をマージしたら、Step 7（スプリントレビュー + レトロスペクティブ）を実施済みでない限り完了報告しない

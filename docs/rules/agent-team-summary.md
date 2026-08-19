@@ -17,6 +17,7 @@
 - 議論型の実行前に `discussion-whiteboard-rules.md` を Read し、`discussion-review` スキルの手順に従う
 - **障害検出時の内部自動調査は fan-out が既定**（ユーザー明示指示ではないため）
 - フォールバック連鎖: ネイティブ失敗 → `tools/run_discussion_review.py`（claude -p 駆動）→ それも失敗なら fan-out。各段の退避をログに残す（サイレントフォールバック禁止）
+- 🔴 **`SP-n` スプリント開発・リファインメントの編成の既定は `session-sprint-rules.md` §2 が正本**（単独実行禁止・sp 別の役割数）。本ファイルは汎用の振り分け（議論型 vs fan-out の選び方）のみを扱う
 
 ## モデル選択（コスト最適化）
 

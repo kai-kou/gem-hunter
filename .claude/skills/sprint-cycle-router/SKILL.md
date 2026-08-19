@@ -104,7 +104,7 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 |---|---|---|---|
 | **1** | `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue が存在する | 即対応（他ブランチより最優先・既存仕様どおり） | `claude-code-spec-sync` Step1 |
 | **2** | `check_pending_pr_reviews.py --mine --actionable-only`（相当）が非空 | レビュー対応・自動マージ・公開反映まで継続。新規スプリント着手より優先（CP-4: 中途 PR を放置して新規に手を広げない） | `pr-review-watcher` |
-| **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名}まで完了」1 行）から続きを判定し再開（手順は §7 の中断条件と対）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
+| **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名 **または Sprint Review**}まで完了。次は {次にやること}」1 行）から続きを判定し再開（手順は §7 の中断条件と対）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
 | **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
@@ -157,11 +157,10 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
 
 4-2. `status:in-progress` 付与（処理の最初のアクション・CP-4 論理ロック）。
 
-4-3. Sprint Planning コメントを投稿する。**書式と `編成` 欄の記入規則（既定の協調モード・並列化の
-     しきい値・議論型を使う条件）の正本は `docs/rules/session-sprint-rules.md` の
-     「スプリントプランニング」節**。本スキルには複製しない（しきい値を片方だけ直すと、
-     無人ルーティンが古い基準で並列/単独を判定し続ける）。チーム編成の記録先は既存の `編成` 欄であり、
-     新しい記録先は作らない。
+4-3. Sprint Planning コメントを投稿する。**編成の既定（単独実行禁止・sp 別の役割数）の正本は
+     `docs/rules/session-sprint-rules.md` §2**。本スキルは参照のみで、性質別・sp 別の分岐を
+     SKILL.md に複製しない（しきい値を片方だけ直すと、無人ルーティンが古い基準で並列/単独を
+     判定し続ける）。チーム編成の記録先は既存の `編成` 欄であり、新しい記録先は作らない。
 
 4-4. `sprint-development-rules.md` の `SD-1`〜`SD-4` をそのまま実行する:
      - `SD-4`（ドキュメントを読んで自律的に動く）: 着手時に `user-story-map.md` §5.3 の該当
@@ -185,11 +184,16 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
        では実行不能なため、ダミー OAuth 設定の **ローカルビルド**に対して実行する（この 1 件だけ
        実行対象を切り替える）。
 
-4-5. PR 本文の必須項目: `Sprint Goal:` 1 行 / `sp:N` / `Session-Id: $CLAUDE_CODE_SESSION_ID` /
+4-5. PR 本文の必須項目: `Sprint Goal:` 1 行 / `sp:N` / `Team:` トレーラー（`編成` 欄の同期コピー） /
+     `Session-Id: $CLAUDE_CODE_SESSION_ID` /
      プレビュー URL（出せない場合は理由とローカル起動手順） / 参照要件 ID（既存必須項目そのまま。
      `session-sprint-rules.md` の「スプリントプランニング」節 / `sprint-development-rules.md` `SD-1` 準拠）。
+     🔴 **`Closes #{Issue番号}` は書かない**（クローズは `pr-review-watcher` Step 7 の最終アクション。
+     マージ時に閉じると Step 7 中断時に Step 3 が再開できなくなる）。
 
 4-6. `pr-review-watcher` へ継続（Layer1 セルフレビュー → 指摘対応 → マージ → 公開反映）。
+     マージ後のスプリントレビュー + レトロスペクティブは `pr-review-watcher` 側で必ず実行される
+     （本スキルは呼び出し元を持たない）。
      ここで firing のセッション予算が尽きたら、コミット済みの内容と `status:in-progress` ラベルだけが
      生き残る。次の該当 firing は Step 2（自分の PR）または Step 3（stale 再開）で拾う。
 ```
