@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ALLOWED_PER_PAGE } from '@/src/domain/model/per-page'
 import { DEFAULT_PAGE } from '@/src/domain/model/page-number'
 import { formatMessage } from '@/src/shared/i18n/format-message'
+import { buttonVariants } from './components/button'
 import { buildSearchUrl, type SearchUrlState } from './url/build-search-url'
 
 type PerPagePickerLabels = {
@@ -39,7 +40,11 @@ export function PerPagePicker({ basePath, current, labels }: PerPagePickerProps)
             key={option}
             href={href}
             aria-current={isCurrent ? 'true' : undefined}
-            className="rounded-md px-2.5 py-1 text-sm whitespace-normal underline-offset-4 outline-none aria-[current=true]:bg-secondary aria-[current=true]:font-medium aria-[current=true]:text-secondary-foreground not-aria-[current=true]:text-muted-foreground not-aria-[current=true]:hover:bg-muted not-aria-[current=true]:hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            className={buttonVariants({
+              variant: isCurrent ? 'secondary' : 'ghost',
+              size: 'default',
+              className: 'whitespace-normal',
+            })}
           >
             {formatMessage(labels.optionLabel, { count: String(option) })}
           </Link>

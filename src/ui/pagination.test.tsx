@@ -70,6 +70,20 @@ describe('Pagination', () => {
     expect(screen.getByRole('status')).toHaveTextContent('表示できる最終ページです。')
   })
 
+  it('perPage=100 のとき MAX_PAGE（perPage=20 基準の50）ではなく実際の到達可能上限（10）を超えたら次ページリンクを出さない（AC-7）', () => {
+    render(
+      <Pagination
+        basePath="/ja"
+        current={{ keyword: 'react', page: 10, sort: 'relevance', perPage: 100 }}
+        totalCount={10000}
+        labels={labels}
+      />,
+    )
+
+    expect(screen.queryByRole('link', { name: '次のページへ' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('表示できる最終ページです。')
+  })
+
   it('次ページリンクの href は page が 1 つ進み、他の条件はそのまま', () => {
     render(
       <Pagination

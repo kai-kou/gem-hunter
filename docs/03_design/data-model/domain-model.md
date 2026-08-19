@@ -116,11 +116,11 @@ export function trySearchKeyword(raw: string): SearchKeyword | null { /* … */ 
 **`CacheKey` の実装位置（Issue #67）**: ブランド型 + 生成関数を `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。`src/domain/model/` ではない — キー形式が `CachePort` 実装詳細と不可分なため）。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` の 2 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
 
 ```text
-search:{正規化キーワード}:page={ページ番号}       # searchResultCacheKey
-repository:{正規化owner}/{正規化name}             # repositoryCacheKey
+search:{正規化キーワード}:page={ページ番号}:sort={ソート順}:per_page={表示件数}   # searchResultCacheKey
+repository:{正規化owner}/{正規化name}                                             # repositoryCacheKey
 ```
 
-⚠️ ソート順（`AR-2`）・表示件数（`AR-3`）は `SearchQuery` に該当フィールドが導入された時点で `searchResultCacheKey` の構成要素へ追加する（キャッシュ断片化を招くため未導入のうちは含めない）。
+ソート順（`AR-2`）・表示件数（`AR-3`）は `SearchQuery` の構成要素であり、キャッシュ断片化を招くため `searchResultCacheKey` に必ず含める。
 
 ---
 

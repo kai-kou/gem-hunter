@@ -175,8 +175,8 @@ const server = http.createServer((req, res) => {
     }
 
     if (q.includes(MANY_HITS_MARKER)) {
-      const pageNum = Number.parseInt(page, 10) || 1
-      const perPage = Number.parseInt(url.searchParams.get('per_page') ?? '20', 10) || 20
+      const pageNum = Math.max(1, Number.parseInt(page, 10) || 1)
+      const perPage = Math.max(1, Number.parseInt(url.searchParams.get('per_page') ?? '20', 10) || 20)
       const sort = url.searchParams.get('sort')
       const sorted = sortManyRepos(manyRepos, sort)
       const start = (pageNum - 1) * perPage
