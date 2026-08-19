@@ -16,11 +16,14 @@ export function SearchForm({ keyword }: { keyword: string }) {
         id="q"
         name="q"
         type="search"
+        size="xl"
         defaultValue={keyword}
         placeholder="キーワードで GitHub を検索（例: react）"
         className="flex-1"
       />
-      <Button type="submit">検索</Button>
+      <Button type="submit" size="xl">
+        検索
+      </Button>
     </form>
   )
 }
