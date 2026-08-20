@@ -7,8 +7,6 @@ import { DomainValidationError } from '../errors'
  *
  * ブランド型 + スマートコンストラクタ（`domain-model.md` §4）。値そのものは算出済みの数値を
  * 運ぶだけで、算出（rankings → 差）は `computeGemIndex` が行う。
- *
- * ⚠️ 本ファイルの関数本体は契約確定用のスタブ。TDD（Red → Green）で実装役が置き換える。
  */
 
 declare const brand: unique symbol
@@ -31,11 +29,29 @@ export function gemIndexValue(value: GemIndex): number {
 }
 
 /**
- * Ecosyste.ms の `rankings`（パーセンタイル順位・0〜100・0 が最上位）から Gem Index を算出する。
- * 被依存数の順位が上位（値が小さい）ほど、star の順位が下位（値が大きい）ほど過小評価度が高い。
+ * Ecosyste.ms の `rankings`（パーセンタイル順位・0〜100・**0 が最上位**）から Gem Index を算出する。
  *
- * ⚠️ スタブ。順位の向き・値域の正本は `ADR 0009` §2.1。実装役が同 ADR に照らして確定する。
+ * - `dependentRank`: 被依存数の順位（値が小さいほど実利用が多い＝上位）
+ * - `starRank`:      star の順位（値が小さいほど注目度が高い＝上位）
+ *
+ * 定義: `Gem Index = dependentRank − starRank`（`ADR 0009` §2.1）。
+ * 被依存数が上位（小さい）かつ star が下位（大きい）ほど差が **強い負値** になり、
+ * 「過小評価度が高い」ことを意味する。ソート時は **値が小さいほど上位（asc）** で並べる。
+ *
+ * 値域外（負数・100 超・非有限数）は `DomainValidationError`。母集団外の順位は算出前に弾く。
  */
-export function computeGemIndex(_dependentRank: number, _starRank: number): GemIndex {
-  throw new Error('computeGemIndex: not implemented (SP-14 実装役が TDD で埋める)')
+export function computeGemIndex(dependentRank: number, starRank: number): GemIndex {
+  assertRank('dependentRank', dependentRank)
+  assertRank('starRank', starRank)
+  return gemIndex(dependentRank - starRank)
+}
+
+function assertRank(name: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new DomainValidationError(
+      'GemIndex',
+      value,
+      `${name} は 0〜100 の有限数で指定してください（rankings は 0 が最上位）`,
+    )
+  }
 }

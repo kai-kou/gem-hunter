@@ -1,0 +1,151 @@
+{
+  "date": "20260820",
+  "meta": {
+    "source": "Ecosyste.ms",
+    "license": "CC BY-SA 4.0",
+    "sourceLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "generatedAt": "2026-08-20T00:00:00Z"
+  },
+  "candidates": [
+    {
+      "packageName": "chalk",
+      "repositoryFullName": "chalk/chalk",
+      "dependentCount": 130085,
+      "stars": 22000,
+      "gemIndex": -63.9
+    },
+    {
+      "packageName": "debug",
+      "repositoryFullName": "debug-js/debug",
+      "dependentCount": 92000,
+      "stars": 11000,
+      "gemIndex": -70.2
+    },
+    {
+      "packageName": "ansi-styles",
+      "repositoryFullName": "chalk/ansi-styles",
+      "dependentCount": 41000,
+      "stars": 500,
+      "gemIndex": -85.4
+    },
+    {
+      "packageName": "supports-color",
+      "repositoryFullName": "chalk/supports-color",
+      "dependentCount": 55000,
+      "stars": 700,
+      "gemIndex": -82.1
+    },
+    {
+      "packageName": "ms",
+      "repositoryFullName": "vercel/ms",
+      "dependentCount": 45000,
+      "stars": 5300,
+      "gemIndex": -60.5
+    },
+    {
+      "packageName": "minimatch",
+      "repositoryFullName": "isaacs/minimatch",
+      "dependentCount": 65000,
+      "stars": 3400,
+      "gemIndex": -72.0
+    },
+    {
+      "packageName": "semver",
+      "repositoryFullName": "npm/node-semver",
+      "dependentCount": 85000,
+      "stars": 4900,
+      "gemIndex": -75.3
+    },
+    {
+      "packageName": "graceful-fs",
+      "repositoryFullName": "isaacs/node-graceful-fs",
+      "dependentCount": 30000,
+      "stars": 1100,
+      "gemIndex": -68.7
+    },
+    {
+      "packageName": "lodash",
+      "repositoryFullName": "lodash/lodash",
+      "dependentCount": 175000,
+      "stars": 60000,
+      "gemIndex": -20.4
+    },
+    {
+      "packageName": "express",
+      "repositoryFullName": "expressjs/express",
+      "dependentCount": 95000,
+      "stars": 65000,
+      "gemIndex": 5.1
+    },
+    {
+      "packageName": "react",
+      "repositoryFullName": "facebook/react",
+      "dependentCount": 250000,
+      "stars": 232000,
+      "gemIndex": 20.3
+    },
+    {
+      "packageName": "vue",
+      "repositoryFullName": "vuejs/vue",
+      "dependentCount": 55000,
+      "stars": 208000,
+      "gemIndex": 45.7
+    },
+    {
+      "packageName": "svelte",
+      "repositoryFullName": "sveltejs/svelte",
+      "dependentCount": 8000,
+      "stars": 82000,
+      "gemIndex": 55.9
+    },
+    {
+      "packageName": "picocolors",
+      "repositoryFullName": "alexeyraspopov/picocolors",
+      "dependentCount": 15000,
+      "stars": 4600,
+      "gemIndex": -35.1
+    },
+    {
+      "packageName": "postcss",
+      "repositoryFullName": "postcss/postcss",
+      "dependentCount": 41000,
+      "stars": 28800,
+      "gemIndex": -8.6
+    },
+    {
+      "packageName": "commander",
+      "repositoryFullName": "tj/commander.js",
+      "dependentCount": 78000,
+      "stars": 27500,
+      "gemIndex": -25.3
+    },
+    {
+      "packageName": "yargs",
+      "repositoryFullName": "yargs/yargs",
+      "dependentCount": 46000,
+      "stars": 11400,
+      "gemIndex": -30.9
+    },
+    {
+      "packageName": "glob",
+      "repositoryFullName": "isaacs/node-glob",
+      "dependentCount": 62000,
+      "stars": 8700,
+      "gemIndex": -45.2
+    },
+    {
+      "packageName": "cross-spawn",
+      "repositoryFullName": "moxystudio/node-cross-spawn",
+      "dependentCount": 35000,
+      "stars": 1100,
+      "gemIndex": -71.8
+    },
+    {
+      "packageName": "is-number",
+      "repositoryFullName": "jonschlinkert/is-number",
+      "dependentCount": 18000,
+      "stars": 130,
+      "gemIndex": -90.2
+    }
+  ]
+}
