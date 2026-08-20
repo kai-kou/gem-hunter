@@ -67,9 +67,16 @@ GitHub Secrets は **値を読み取る API が存在しない**（設計上の�
 | API で値を読める | ❌ 不可能（名前・日時のみ） | ✅ `gh variable get` で取得可能 |
 | CLI で値を読める | ❌ `gh secret get` は存在しない | ✅ `gh variable get` で取得可能 |
 | 値の参照可能範囲 | Actions ランナー内のみ | API/CLI でリポジトリ権限保有者が読取可 |
-| セキュリティ | 最高 | 中（プライベートリポジトリで保護） |
+| セキュリティ | 最高 | 中（**collaborator 権限で保護**。リポジトリの公開/非公開に依存しない） |
 
-**セキュリティの現実的判断**: Variables はプレーンテキスト保存だが、プライベートリポジトリのためアクセスはリポジトリ権限保有者のみ。Claude.ai の環境変数設定も同等のセキュリティレベル。
+**セキュリティの現実的判断**: Variables はプレーンテキスト保存だが、**読み取りには collaborator 権限が必須** であり、匿名ユーザーは読めない。Claude.ai の環境変数設定も同等のセキュリティレベル。
+
+> 🔴 **「プライベートリポジトリだから安全」という理解は誤り**（2026-08-20 に一次情報で訂正・#233）。実際の保護は **リポジトリの公開/非公開ではなく collaborator 権限** が担っている。
+>
+> - リポジトリ Variables の読み取りは、公開/非公開にかかわらず collaborator 権限が必要（[REST API endpoints for GitHub Actions variables](https://docs.github.com/en/rest/actions/variables)）
+> - **fork からの pull request で起動したワークフローには、secrets と同様に変数も渡らない**（[community discussion #44322](https://github.com/orgs/community/discussions/44322)）。したがって「fork PR にワークフローを仕込んで `vars` を echo させる」経路は成立しない
+>
+> つまり **リポジトリをパブリック化しても本方式の安全性は変わらない**。ただし「private だから安全」という前提で新しい値を Variables へ追加する判断をしないこと（保護しているのは可視性ではなく権限である）。
 
 ## セットアップ手順
 
