@@ -1,0 +1,49 @@
+{
+  "topic": "SP-14（日次ダイジェスト・Gem Index データ基盤）の実装方式を確定する — データ取得方式・母集団整合性・バッチ実行方式・静的 JSON スキーマ",
+  "brief": "gem-hunter は ADR 0014（docs/adr/0014-zero-query-daily-digest.md）で日次ダイジェストの設計をほぼ確定済み: トップページに日付シードの決定論的生成で『今日の Gem』を有限件数（既定5件）表示する。Gem Index の算出方法は ADR 0009（被依存数パーセンタイル順位 − star パーセンタイル順位・2軸非合算）で確定済みで再定義しない。バッチ生成は D-28（open-questions.md）により Cloudflare 外（セッション/Routine の cron）で回し、静的 JSON を git commit → デプロイで丸ごと差し替える（Worker は実行時に書き込まない・D-18 の対象外）。SP-14 のスコープは npm エコシステムのみに限定する（ADR 0014 §2.6・PyPI は後続スプリント）。着手前提の実データ調査で次の事実が判明した: (1) Ecosyste.ms の REST API（https://packages.ecosyste.ms/api/v1/registries/npmjs.org/packages/{name}）に dependent_packages_count（被依存数）と rankings（Ecosyste.ms 側で計算済みのパーセンタイル順位オブジェクト。例: rankings.stargazers_count・rankings.dependent_packages_count）の両方が実測で確認できた。(2) S3 バルクダンプ（https://ecosystems-data.s3.amazonaws.com/packages-[DATE].tar.gz・約1,310万パッケージ・2〜4ヶ月毎更新）も同フィールドを持つ想定だが、bot保護でopen-dataページへの直接アクセスは確認できていない。(3) REST API のレート制限は IP あたり 5000 req/hour。(4) データのライセンスは CC BY-SA 4.0（表示+継承・UI に出典表示が必須）。(5) OpenSSF criticality_score は GCS 公開データが 2025-07-25 以降 約13ヶ月更新停止しており実質デッドと判定済み。代替の OpenSSF Scorecard（api.scorecard.dev）は API キー不要で直近数日以内のスコアを返す実働サービスと実測確認済み（健全性フィルタはこちらを採用する）。動かせない制約: DB を持たない（状態は localStorage/Cookie/URL/静的JSONのみ）/ サーバーに個人データを持たない（D-14）/ Cloudflare Workers Free（超過時 Paid $5 まで事前承認・撤退ライン月$10・D-16/D-19）/ アプリコードに PaaS 固有 API を持ち込まない（NFR-21）/ 母集団はエコシステム内で閉じて計算し混ぜない（ADR 0014 §2.6 不変条件）/ GitHub Actions は制限中で使えず品質ゲートはセッションが tools/run_checks.sh を実行して担保する。議論の争点は次の4つ。A) データ取得方式（S3バルクダンプ全量処理 vs REST API個別呼び出し。npm全体で数十万〜百万パッケージ規模の母集団パーセンタイル計算に必要な件数をレート制限内でどう賄うか、あるいは表示候補プールだけを絞ってよいか。ADR 0014 は『母集団は npm 全量、絞ってよいのは表示候補プールの件数だけ』と不変条件で明記している）B) rankings フィールドの母集団整合性（Ecosyste.ms の rankings が npm エコシステム内で閉じて計算されているか、複数言語エコシステムを混ぜた母集団か。混ざっている場合は rankings を使わず dependent_packages_count / stargazers_count の生値から npm 内で閉じたパーセンタイルを自前計算する設計に倒す。この判定手段と、判定できない場合のフォールバック方針を決める）C) バッチの実行主体と頻度（誰が・どのツールで・どの頻度で回すか。GitHub Actions が使えない中で、セッション手動実行/Claude Code Scheduled Tasks/その他のどれが D-15『運用の手離れ』と両立するか。SPOF・鮮度劣化時の自己修復方針は D-28 で無害化+検知が要求されている）D) 静的 JSON のスキーマ設計（何を git に commit するか。Gem Index 計算済みの候補プール一覧のスキーマ、日付シードで並べ替える際にクライアント側で必要な情報の過不足、健全性フィルタ用の Scorecard スコアをどう合成するか）。",
+  "participants": [
+    {
+      "name": "data_pipeline",
+      "model": "sonnet",
+      "lens": "データ取得方式とレート制限内での実現可能性（S3バルクダンプ全量処理とREST API個別呼び出しのコスト・実現可能性を比較する / npm全体の母集団パーセンタイル計算に必要な件数の見積もりとレート制限5000req/hourとの整合を数値で検証する / S3バルクダンプのbot保護を回避する現実的な取得手段があるか、無ければAPI経由で母集団パーセンタイルをどう構成するかの具体案を出す / D-28の『バッチをCloudflare外のセッション/Routineのcronで回す』の実装形を具体的なツール名・スクリプト構成まで踏み込んで提案する）"
+    },
+    {
+      "name": "data_integrity",
+      "model": "sonnet",
+      "lens": "母集団整合性とスコア算出の正しさ（Ecosyste.msのrankingsフィールドの母集団定義を実測・ドキュメントから検証し、npmエコシステム内で閉じているかを判定する具体的な検証手段を提示する / 閉じていない場合の自前パーセンタイル計算のアルゴリズムをADR 0009の定義（被依存数パーセンタイル順位 − starパーセンタイル順位・2軸非合算）に忠実な形で設計する / ADR 0014 §2.6の不変条件『母集団は npm 全量、絞ってよいのは表示候補プールの件数だけ』を満たすデータ処理パイプラインの形を具体化する / 健全性フィルタ（Scorecard採用）をGem Indexとどう独立に扱うか、ADR 0009の『合算しない』方針との整合を確認する)"
+    },
+    {
+      "name": "constraints_guard",
+      "model": "sonnet",
+      "lens": "制約とリスクの番人（D-14/D-18/D-27境界・NFR-21・Workers Free CPU予算10msをこの設計が守れるか1件ずつ判定する / CC BY-SA 4.0のShareAlikeが自作の合成JSON・Gem Indexスコアにどこまで継承されるかとUI帰属表示の最小要件を確認する / バッチ実行主体の選択肢それぞれがD-15『運用の手離れ』を壊さないか判定する / SPOF発生時（バッチ停止・API障害）の無害化・自己修復の具体的な実装方針を提案する / sp:8のスコープが肥大化していないか、SP-14単体で完結する境界を明示する)"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合（ADR 0014・ADR 0009・open-questions.md の D-27/D-28・user-story-map.md の SP-14/SP-15/SP-16 記載・prd.md 該当箇所との矛盾を機械的に洗い出す。新しい事実を主張せず既存記述との突合に徹する。決定した設計がどのファイルのどの箇所を更新する必要があるかを列挙し、新しいSSOTを増やしていないかを指摘する)"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4レンズのclaim/rebuttalを突き合わせ、争点A〜Dそれぞれについて『採用する設計』または『ユーザーに確認すべき分岐』のどちらかに分類する。ADR 0009/0014の既存決定は変更しない前提で、実装レベルの技術的判断（データ取得方式・スキーマ・バッチ実行方式）は原則ここで決め切る。仕様解釈が2通り以上あり選択で成果物が変わるもの（SD-3第2系統）だけをopen_questionsに落とす。決定は『どのファイルに何を書くか』『どのスクリプト・ツールを新設/流用するか』まで落とす。議論で否定された案は採用しない。未確認事項（実データを見ないと決まらない具体値・しきい値等）は断定せず『実装時に潰す』として残す。優先順位に迷ったらproject-mission.mdの判断基準を使う。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜D のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": [
+      {
+        "question": "ユーザーに確認すべき仕様分岐",
+        "options": ["選択肢は最大 2 つ"],
+        "recommendation": "推奨案とその理由 1 行"
+      }
+    ]
+  }
+}
