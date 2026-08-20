@@ -2,9 +2,10 @@ import { Suspense } from 'react'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import { searchRepositoriesUseCase } from '@/src/composition/container'
+import { getDailyDigestUseCase, searchRepositoriesUseCase } from '@/src/composition/container'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
+import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { tryPageNumber } from '@/src/domain/model/page-number'
 import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
@@ -17,6 +18,8 @@ import { getMessages, type Messages } from '@/src/shared/i18n/messages'
 import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
+import { AttributionNotice } from '@/src/ui/attribution-notice'
+import { DailyDigest } from '@/src/ui/daily-digest'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { LoadingIndicator } from '@/src/ui/loading-indicator'
@@ -26,6 +29,9 @@ import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
 import { SearchForm } from '@/src/ui/search-form'
 import { SortPicker } from '@/src/ui/sort-picker'
+
+/** `SP-14` の暫定既定件数（`ADR 0014` §2.1 / 未確定事項 #2・実データを見て確定するまでの暫定値）。 */
+const DAILY_DIGEST_LIMIT = 5
 
 /**
  * 検索の 4 状態（`ui-ux-guidelines.md` §4.4）。
@@ -251,6 +257,27 @@ export default async function LocaleHome({
   const statePromise = runSearch(rawKeyword, page, sort, perPage, accessToken)
   void statePromise.catch(() => undefined)
 
+  // SP-14: 日次ダイジェスト（キーワード非依存の発見面・`ADR 0014` §2.2）。
+  // `?date=YYYYMMDD` は不正値・未指定を当日（UTC）へフォールバックする（`tryParse` 契約）。
+  //
+  // 🔴 **キーワード検索中は非表示にする**（ADR 0014 §2.1「開いた瞬間に見える」は未検索状態の
+  //    要件で、検索実行中まで並置する要件はない）。検索結果一覧と Gem 一覧が同時に `<ol>` として
+  //    DOM に並ぶと、既存 E2E の `getByRole('list').first()` が Gem 一覧を先に拾って検索結果を
+  //    取れなくなる（SP-1/SP-7/SP-10 と衝突）。「発見面」と「検索面」を排他表示にする。
+  //    データ取得はサーバー側で await するが、静的 JSON + slice + sort で安価。
+  const rawDate = Array.isArray(rawSearchParams.date)
+    ? rawSearchParams.date[0]
+    : rawSearchParams.date
+  const dateSeed = tryDateSeed(rawDate, new Date())
+  //
+  // 🔴 **二重防御**: 候補プールの読み込みは `StaticGemDigest` 側で例外を投げない設計だが、
+  //    ここでも `.catch(() => null)` を張って「ダイジェストの失敗がトップページ全体を
+  //    500 にする」経路を塞ぐ（`app/` 配下に `error.tsx` は無く、失敗すれば既存の検索機能まで
+  //    巻き添えになる）。`null` は下の既存分岐でそのまま非表示に倒れる。
+  const dailyDigest = hasKeyword
+    ? null
+    : await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT }).catch(() => null)
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
       <LocaleSwitcher
@@ -273,6 +300,32 @@ export default async function LocaleHome({
           submit: messages.home.searchSubmit,
         }}
       />
+
+      {/*
+        SP-14: 発見面（`ADR 0014`）。検索フォームの直下・コントロール行より前に置き、
+        キーワード未入力のときだけ表示する（上のコメント参照）。出典表示（`D-29`）は
+        同じ排他条件で表示し、ライセンス URL と改変明示を伴う。
+      */}
+      {dailyDigest !== null ? (
+        <>
+          <DailyDigest
+            digest={dailyDigest}
+            locale={locale}
+            labels={{
+              heading: messages.home.digest.heading,
+              empty: messages.home.digest.empty,
+              dependentLabel: messages.home.digest.dependentLabel,
+              starsLabel: messages.home.digest.starsLabel,
+              gemIndexLabel: messages.home.digest.gemIndexLabel,
+            }}
+          />
+          <AttributionNotice
+            meta={dailyDigest.meta}
+            locale={locale}
+            labels={{ attribution: messages.home.digest.attribution }}
+          />
+        </>
+      ) : null}
 
       {/*
         検索欄の直下に横並びのコントロール行（ソート切替 + 表示件数切替）を置く

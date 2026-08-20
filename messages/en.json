@@ -50,7 +50,15 @@
     "pagePrev": "Previous page",
     "pageNext": "Next page",
     "pageCurrent": "Page {page}",
-    "pageLimitReached": "This is the last page available. Refine your keyword to see more results."
+    "pageLimitReached": "This is the last page available. Refine your keyword to see more results.",
+    "digest": {
+      "heading": "Today's Gems",
+      "empty": "No gems to show today.",
+      "dependentLabel": "Used by",
+      "starsLabel": "stars",
+      "gemIndexLabel": "Gem Index",
+      "attribution": "Data via {source} ({license}) · Generated: {generatedAt} · Order is recomputed from the day's seed."
+    }
   },
   "detail": {
     "backLink": "Back to results",

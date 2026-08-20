@@ -50,7 +50,15 @@
     "pagePrev": "前のページへ",
     "pageNext": "次のページへ",
     "pageCurrent": "{page} ページ目",
-    "pageLimitReached": "表示できる最終ページです。キーワードを絞り込むと他の結果を確認できます。"
+    "pageLimitReached": "表示できる最終ページです。キーワードを絞り込むと他の結果を確認できます。",
+    "digest": {
+      "heading": "今日の Gem",
+      "empty": "今日は表示できる Gem がありません",
+      "dependentLabel": "被依存数",
+      "starsLabel": "star",
+      "gemIndexLabel": "Gem Index",
+      "attribution": "Data via {source}({license})· 生成: {generatedAt} · 並び順は日付シードで再算出しています"
+    }
   },
   "detail": {
     "backLink": "一覧へ戻る",
