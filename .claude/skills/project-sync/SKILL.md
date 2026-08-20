@@ -161,6 +161,16 @@ Step 3.7: Abandoned ブランチ検出（月曜 07:00 のみ）— CP-3 準拠
   ├─ 7 日間コミットがないブランチを検出
   └─ 削除候補リストをログ出力（自動削除はしない。ユーザー判断に委ねる）
 
+Step 3.85: 配信データ鮮度チェック（全実行時）— E-25 / NFR-8
+  ├─ python3 tools/check_digest_freshness.py --json を実行
+  │     → fresh（0）: 何もしない
+  │     → stale（1）: python3 tools/check_digest_freshness.py --heal で自己修復を試行
+  │          → 成功: ログのみ（次回配信で新しい generatedAt になる）
+  │          → 失敗（ネットワーク不通等）: 配信済み JSON はそのまま維持し、Slack へ「配信データが stale・
+  │            自己修復失敗（理由）」を FYI 通知（劣化するのは鮮度のみ・配信自体は止めない・NFR-8）
+  │     → unknown（2）: ファイル不在・破損等。type:bug Issue を起票して記録（waiting-user 化しない）
+  └─ 結果を Step 3.9 の衛生レポートに含める（digest_freshness_status）
+
 Step 3.9: 衛生レポート出力・永続化（全実行時）— CP-3 準拠 / Issue #2080
   ├─ python3 tools/log_hygiene_snapshot.py --slot "{時刻}-project-sync" --slack を実行
   │     → content/pipeline-state/snapshots/health_YYYY-MM-DD.json に衛生指標を永続化

@@ -209,6 +209,12 @@ else
   skip_check "デプロイゲート self-test (check_deploy_gate.py --self-test)" "スクリプトが見つかりません"
 fi
 
+if [ -f "$REPO_ROOT/tools/check_digest_freshness.py" ]; then
+  run_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" python3 tools/check_digest_freshness.py --self-test
+else
+  skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="

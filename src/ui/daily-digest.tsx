@@ -4,6 +4,9 @@ import type { DailyDigest } from '../domain/model/gem'
 import { gemIndexValue } from '../domain/model/gem-index'
 import { ownerOf, repoOf, type RepositoryFullName } from '../domain/model/repository-full-name'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
+import { FirstVisitNote } from './seen-digest/first-visit-note'
+import { NewSinceLastVisitBadge } from './seen-digest/new-since-last-visit-badge'
+import { SeenDigestProvider } from './seen-digest/seen-digest-provider'
 
 type DailyDigestLabels = {
   /** セクション見出し（例: 「今日の Gem」）。 */
@@ -16,6 +19,12 @@ type DailyDigestLabels = {
   starsLabel: string
   /** Gem Index の視覚ラベル。 */
   gemIndexLabel: string
+  /** 再訪時、前回は無かった packageName に付ける新着バッジの文言（`US-32`）。 */
+  newBadge: string
+  /** localStorage が空 / 消去 / 破損しているとき「初回として全件表示」を伝える注記（`US-32`）。 */
+  firstVisitNote: string
+  /** RSS 購読リンクの文言（`US-32`）。 */
+  rssLink: string
 }
 
 /**
@@ -57,65 +66,84 @@ export function DailyDigest({
 
   return (
     <section aria-labelledby="daily-digest-heading" className="mt-6">
-      <h2 id="daily-digest-heading" className="text-lg font-semibold">
-        {labels.heading}
-      </h2>
+      <SeenDigestProvider
+        currentPackageNames={digest.items.map((gem) => gem.packageName)}
+        date={digest.date}
+      >
+        <h2 id="daily-digest-heading" className="text-lg font-semibold">
+          {labels.heading}
+        </h2>
 
-      {digest.items.length === 0 ? (
-        // 0 件は視覚だけでなく支援技術にも伝える（`RepositoryList` の 0 件と同じ作法）。
-        <p role="status" className="text-muted-foreground py-8 text-sm">
-          {labels.empty}
-        </p>
-      ) : (
-        <ol className="divide-border mt-3 divide-y">
-          {digest.items.map((gem, index) => {
-            // `owner/repo` の分割はドメインの関数へ寄せる（`split('/')[1] ?? ''` を UI に散らさない）。
-            // 形式検証はインフラ層（`static-gem-digest.ts`）が済ませており、満たさない候補は
-            // そもそもここへ届かない（届いていれば `owner/repo` である）。
-            const fullName = gem.repositoryFullName as RepositoryFullName
-            const owner = ownerOf(fullName)
-            const repo = repoOf(fullName)
+        {/* localStorage が空 / 消去 / 破損している場合の自然劣化（US-32・必須要件）。 */}
+        <FirstVisitNote label={labels.firstVisitNote} />
 
-            return (
-              <li key={gem.packageName} className="relative flex gap-3 py-4">
-                <span
-                  aria-hidden="true"
-                  className="text-muted-foreground w-6 shrink-0 text-right text-sm tabular-nums"
-                >
-                  {index + 1}.
-                </span>
-                <div className="min-w-0 flex-1">
-                  {/*
-                    詳細ページへの遷移（AC-4・独立 URL・モーダルではない）。
-                    カード全体を tap 領域にするため ::after でクリック領域を拡張する
-                    （`repository-list.tsx` と同じ作法）。
-                  */}
-                  <Link
-                    href={`/${locale}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`}
-                    className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+        {digest.items.length === 0 ? (
+          // 0 件は視覚だけでなく支援技術にも伝える（`RepositoryList` の 0 件と同じ作法）。
+          <p role="status" className="text-muted-foreground py-8 text-sm">
+            {labels.empty}
+          </p>
+        ) : (
+          <ol className="divide-border mt-3 divide-y">
+            {digest.items.map((gem, index) => {
+              // `owner/repo` の分割はドメインの関数へ寄せる（`split('/')[1] ?? ''` を UI に散らさない）。
+              // 形式検証はインフラ層（`static-gem-digest.ts`）が済ませており、満たさない候補は
+              // そもそもここへ届かない（届いていれば `owner/repo` である）。
+              const fullName = gem.repositoryFullName as RepositoryFullName
+              const owner = ownerOf(fullName)
+              const repo = repoOf(fullName)
+
+              return (
+                <li key={gem.packageName} className="relative flex gap-3 py-4">
+                  <span
+                    aria-hidden="true"
+                    className="text-muted-foreground w-6 shrink-0 text-right text-sm tabular-nums"
                   >
-                    {gem.packageName}
-                  </Link>
-                  <p className="text-muted-foreground mt-1 text-xs">{gem.repositoryFullName}</p>
-                  <p className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                    <span>
-                      {labels.dependentLabel} {numberFormat.format(gem.dependentCount)}
-                    </span>
-                    <span>
-                      <span aria-hidden="true">★ </span>
-                      <span className="sr-only">{labels.starsLabel} </span>
-                      {numberFormat.format(gem.stars)}
-                    </span>
-                    <span>
-                      {labels.gemIndexLabel} {numberFormat.format(gemIndexValue(gem.gemIndex))}
-                    </span>
-                  </p>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      )}
+                    {index + 1}.
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    {/*
+                      詳細ページへの遷移（AC-4・独立 URL・モーダルではない）。
+                      カード全体を tap 領域にするため ::after でクリック領域を拡張する
+                      （`repository-list.tsx` と同じ作法）。
+                    */}
+                    <Link
+                      href={`/${locale}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`}
+                      className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                    >
+                      {gem.packageName}
+                    </Link>{' '}
+                    <NewSinceLastVisitBadge packageName={gem.packageName} label={labels.newBadge} />
+                    <p className="text-muted-foreground mt-1 text-xs">{gem.repositoryFullName}</p>
+                    <p className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      <span>
+                        {labels.dependentLabel} {numberFormat.format(gem.dependentCount)}
+                      </span>
+                      <span>
+                        <span aria-hidden="true">★ </span>
+                        <span className="sr-only">{labels.starsLabel} </span>
+                        {numberFormat.format(gem.stars)}
+                      </span>
+                      <span>
+                        {labels.gemIndexLabel} {numberFormat.format(gemIndexValue(gem.gemIndex))}
+                      </span>
+                    </p>
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        )}
+
+        {/* RSS 購読リンク（US-32）。 */}
+        <p className="mt-3 text-xs">
+          <a
+            href="/api/digest/rss"
+            className="text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring"
+          >
+            {labels.rssLink}
+          </a>
+        </p>
+      </SeenDigestProvider>
     </section>
   )
 }
