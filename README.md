@@ -111,3 +111,4 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 | [0010](./docs/adr/0010-no-token-rotation.md) | 複数トークンのローテーションを採用しない |
 | [0011](./docs/adr/0011-i18n-routing-and-default-locale.md) | i18n のルーティング設計と既定ロケールを、`next-intl` を不採用として自前実装で確定する |
 | [0012](./docs/adr/0012-optional-github-oauth.md) | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする |
+| [0013](./docs/adr/0013-zero-query-daily-digest.md) | キーワード非依存の発見面を日次の有限ダイジェストとして実装する |
