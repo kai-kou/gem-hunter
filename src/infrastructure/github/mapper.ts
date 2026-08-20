@@ -19,10 +19,10 @@ export function toSearchResult(raw: unknown): SearchResult {
     totalCount: dto.total_count,
     incompleteResults: dto.incomplete_results ?? false,
     // 🔴 多層防御: 検索クエリの `is:public`（github-repository-query.ts）が将来効かなくなっても
-    //    非公開リポジトリを画面へ出さないための保険（prd.md L171「公開リポジトリの検索」）。
-    //    `private` は optional なので、明示的に true のものだけを除外する（undefined は公開扱い）。
+    //    非公開リポジトリを画面へ出さないための保険（prd.md L171「公開リポジトリの検索」・NFR-33）。
+    //    `private` は DTO で必須にしているため、欠落したレスポンスはここへ届く前に UpstreamError で倒れる。
     items: dto.items
-      .filter((item) => item.private !== true)
+      .filter((item) => !item.private)
       .map((item): RepositorySummary => ({
         id: item.id,
         name: item.name,
@@ -43,13 +43,21 @@ export function toSearchResult(raw: unknown): SearchResult {
 /**
  * 外部データを検証したうえで詳細画面のドメインモデルへ変換する（ACL）。
  * 🔴 スキーマ不一致は外へ漏らさずドメインエラーへ翻訳する（上位層は zod を知らない）。
+ * 🔴 「公開に閉じる」ポリシーはこの ACL に集約する（呼び出し側で生 JSON を覗いて判定しない）。
+ *    非公開リポジトリは `null`（＝見つからない）として返し、詳細 URL の直打ちを塞ぐ（NFR-33 / AC-12）。
+ *    判定は必ず zod 検証の **後**（型付き値）で行う（検証前の手書きキャストは private の欠落・
+ *    型崩れを黙って公開扱いへ倒すため）。
  */
-export function toRepositoryDetail(raw: unknown): RepositoryDetail {
+export function toPublicRepositoryDetail(raw: unknown): RepositoryDetail | null {
   const parsed = repositoryDetailDto.safeParse(raw)
   if (!parsed.success) {
     throw new UpstreamError('GitHub API のレスポンスが想定と異なります', { cause: parsed.error })
   }
   const dto = parsed.data
+
+  if (dto.private) {
+    return null
+  }
 
   return {
     id: dto.id,

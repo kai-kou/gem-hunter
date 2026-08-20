@@ -12,7 +12,11 @@
       "stargazers_count": 233000,
       "updated_at": "2026-08-18T09:00:00Z",
       "pushed_at": "2026-08-15T03:00:00Z",
-      "topics": ["javascript", "react"],
+      "private": false,
+      "topics": [
+        "javascript",
+        "react"
+      ],
       "owner": {
         "login": "facebook",
         "avatar_url": "https://avatars.githubusercontent.com/u/69631?v=4"
@@ -28,6 +32,7 @@
       "stargazers_count": 54000,
       "updated_at": "2026-08-17T09:00:00Z",
       "pushed_at": "2026-08-16T03:00:00Z",
+      "private": false,
       "topics": [],
       "owner": {
         "login": "remix-run",

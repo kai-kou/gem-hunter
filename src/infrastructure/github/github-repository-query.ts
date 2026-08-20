@@ -3,7 +3,7 @@ import type { RepositoryDetail, SearchResult } from '../../domain/model/reposito
 import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
-import { toRepositoryDetail, toSearchResult } from './mapper'
+import { toPublicRepositoryDetail, toSearchResult } from './mapper'
 
 const DEFAULT_API_ORIGIN = 'https://api.github.com'
 
@@ -85,13 +85,9 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
       return null
     }
 
-    const raw: unknown = await response.json()
-    // 🔴 非公開リポジトリは「見つからない」として扱う（URL 直打ちで詳細が読めるのを塞ぐ）。
-    //    検索側の is:public だけでは詳細エンドポイントの直接アクセスを防げないため、ここでも閉じる。
-    if (isPrivateRepository(raw)) {
-      return null
-    }
-    return toRepositoryDetail(raw)
+    // 🔴 非公開リポジトリを「見つからない」として扱う判定は ACL（mapper）に集約している
+    //    （検索側の is:public だけでは詳細エンドポイントの直接アクセスを防げないため・NFR-33 / AC-12）。
+    return toPublicRepositoryDetail(await response.json())
   }
 
   private async request(url: URL, options: { notFoundAsNull: true }): Promise<Response | null>
@@ -131,17 +127,6 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     }
     throw new UpstreamError(`GitHub API がエラーを返しました（HTTP ${response.status}）`)
   }
-}
-
-/**
- * 非公開リポジトリのレスポンスかを判定する（fail-closed）。
- * 🔴 `private === true` のときだけ非公開とみなす（未指定は公開扱い）。DTO 側も
- * `z.boolean().optional()` で揃えている（既存フィクスチャとの後方互換・テスト容易性のため）。
- */
-function isPrivateRepository(raw: unknown): boolean {
-  return (
-    typeof raw === 'object' && raw !== null && (raw as { private?: unknown }).private === true
-  )
 }
 
 function isRateLimited(response: Response): boolean {
