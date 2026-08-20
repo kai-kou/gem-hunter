@@ -155,12 +155,50 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
      `user-story-map.md` §5.3 の Markdown を毎 firing パースしない（Ready 判定は Issue ラベル・
      本文の ID 参照・先行 SP-n の Closed 状態から機械判定する）。
 
+4-1.5. **並行安全性判定（#197）**: 4-1 で選んだ候補が、他セッションのオープン PR とファイル競合
+     しないかを `tools/check_parallel_safety.py` で機械判定する（目視突き合わせでの誤判定 — Issue
+     タイトル・本文だけから変更ファイルを推測し、実装調査より前に「並行可能」と結論して着手後に
+     衝突が判明した実例 — の再発防止）。
+
+     1. オープン PR の変更ファイルを取得する: `mcp__github__pull_request_read(method="get_files",
+        pullNumber=N)` の生 JSON を一時ファイル（例 `/tmp/pr_<N>_files.json`）に保存する
+        （オープン PR が 0 件なら `--in-flight` 系の指定なしで実行してよい）。🔴 **`get_files` は
+        `perPage` / `page` のページング API**（既定では 1 ページ分しか返らない）。変更ファイル数が
+        既定ページサイズを超えうる PR では `perPage=100` を指定し、`page` を進めて全ページ取得する。
+        ページごとに別ファイルへ保存してよい（`--in-flight-json` は繰り返し指定でき、複数ページを
+        1 回の実行にそのまま渡せる）。全ページを渡さないと、衝突しているのに `parallel_safe` と
+        誤判定しうる（ファイル数が多く衝突リスクが最も高い PR ほど見落としの被害が大きい）。
+     2. 候補 SP-n の想定変更ファイルは、Issue 本文（`user-story-map.md` §5.3 該当セクションの
+        対象パス記載）に書いてあればそれを使い、書いていなければ **未確定** として
+        `--candidate "SP-n:"`（コロンの後を空）で渡す。
+     3. 実行する:
+        ```bash
+        python3 tools/check_parallel_safety.py \
+            --in-flight-json /tmp/pr_<N>_files.json \
+            --candidate "SP-n:glob1,glob2" \
+            --json
+        ```
+     4. 終了コード別の行動:
+        - `1`（conflict）→ この候補は選ばない。4-1 に戻り次の Ready な SP-n を選び直す
+          （無ければ Step 9 no-op へフォールスルー）
+        - `3`（undetermined）→ 🔴 **「並行可能」と報告しない**。先に実装調査（コード探索）で
+          想定変更ファイルを確定させ、確定した一覧で再実行してから 4-2 へ進む。**未宣言
+          （`--candidate "SP-n:"`）だけでなく、宣言した glob が 1 件も展開できなかった場合
+          （対象ディレクトリが未作成等）も同じ `3` になる**。後者は実ファイルパスがまだ存在しない
+          ケースなので、対象ディレクトリが未作成なら実装調査で確定する予定の実ファイルパスで
+          宣言し直すか、実装調査そのものを先に進めてから再実行する
+        - `0`（parallel_safe）→ 4-2 へ進む。ただし着手後に想定外のファイルが必要と判明したら
+          **その時点で再実行する**（判定は着手前の一度きりではない）
+     5. 実行コマンドと判定結果を 4-3 の Sprint Planning コメントに含める。
+
 4-2. `status:in-progress` 付与（処理の最初のアクション・CP-4 論理ロック）。
 
 4-3. Sprint Planning コメントを投稿する。**編成の既定（単独実行禁止・sp 別の役割数）の正本は
      `docs/rules/session-sprint-rules.md` §2**。本スキルは参照のみで、性質別・sp 別の分岐を
      SKILL.md に複製しない（しきい値を片方だけ直すと、無人ルーティンが古い基準で並列/単独を
      判定し続ける）。チーム編成の記録先は既存の `編成` 欄であり、新しい記録先は作らない。
+     **4-1.5 の並行安全性判定（実行コマンド + 判定結果）も同コメントに含める**
+     （目視で決めていないことを事後検証可能にする）。
 
 4-4. `sprint-development-rules.md` の `SD-1`〜`SD-4` をそのまま実行する:
      - `SD-4`（ドキュメントを読んで自律的に動く）: 着手時に `user-story-map.md` §5.3 の該当
@@ -334,5 +372,6 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 | `.claude/skills/self-improvement-loop/SKILL.md` | Step 5（消化モード）/ Step 7（整理モード）の委譲先 |
 | `.claude/skills/workflow-health-check/SKILL.md` / `.claude/skills/project-sync/SKILL.md` | Step 6（衛生）の委譲先 |
 | `tools/sprint_backlog_sync.py` | Step 3.5 の SP→Issue 同期スクリプト（本スキルは呼び出し方のみ持ち、パース・判定ロジックは持たない） |
+| `tools/check_parallel_safety.py` | Step 4-1.5 の並行安全性判定スクリプト（CLI 契約・判定思想の詳細は `docs/rules/session-concurrency-rules-detail.md`「レイヤー 1 補強」） |
 | `tools/self_review_check.py` | 縦切り・`C-5`・TDD 順序の機械判定（PR 前チェック） |
 | `content/discussions/sprint-cycle-design-20260818/whiteboard.md` | 本設計の議論全文・却下案・合意経緯 |
