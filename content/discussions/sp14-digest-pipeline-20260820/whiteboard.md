@@ -4,8 +4,8 @@
 - 議題ID: `sp14-digest-pipeline-20260820`
 - 論点: gem-hunter は ADR 0014（docs/adr/0014-zero-query-daily-digest.md）で日次ダイジェストの設計をほぼ確定済み: トップページに日付シードの決定論的生成で『今日の Gem』を有限件数（既定5件）表示する。Gem Index の算出方法は ADR 0009（被依存数パーセンタイル順位 − star パーセンタイル順位・2軸非合算）で確定済みで再定義しない。バッチ生成は D-28（open-questions.md）により Cloudflare 外（セッション/Routine の cron）で回し、静的 JSON を git commit → デプロイで丸ごと差し替える（Worker は実行時に書き込まない・D-18 の対象外）。SP-14 のスコープは npm エコシステムのみに限定する（ADR 0014 §2.6・PyPI は後続スプリント）。着手前提の実データ調査で次の事実が判明した: (1) Ecosyste.ms の REST API（https://packages.ecosyste.ms/api/v1/registries/npmjs.org/packages/{name}）に dependent_packages_count（被依存数）と rankings（Ecosyste.ms 側で計算済みのパーセンタイル順位オブジェクト。例: rankings.stargazers_count・rankings.dependent_packages_count）の両方が実測で確認できた。(2) S3 バルクダンプ（https://ecosystems-data.s3.amazonaws.com/packages-[DATE].tar.gz・約1,310万パッケージ・2〜4ヶ月毎更新）も同フィールドを持つ想定だが、bot保護でopen-dataページへの直接アクセスは確認できていない。(3) REST API のレート制限は IP あたり 5000 req/hour。(4) データのライセンスは CC BY-SA 4.0（表示+継承・UI に出典表示が必須）。(5) OpenSSF criticality_score は GCS 公開データが 2025-07-25 以降 約13ヶ月更新停止しており実質デッドと判定済み。代替の OpenSSF Scorecard（api.scorecard.dev）は API キー不要で直近数日以内のスコアを返す実働サービスと実測確認済み（健全性フィルタはこちらを採用する）。動かせない制約: DB を持たない（状態は localStorage/Cookie/URL/静的JSONのみ）/ サーバーに個人データを持たない（D-14）/ Cloudflare Workers Free（超過時 Paid $5 まで事前承認・撤退ライン月$10・D-16/D-19）/ アプリコードに PaaS 固有 API を持ち込まない（NFR-21）/ 母集団はエコシステム内で閉じて計算し混ぜない（ADR 0014 §2.6 不変条件）/ GitHub Actions は制限中で使えず品質ゲートはセッションが tools/run_checks.sh を実行して担保する。議論の争点は次の4つ。A) データ取得方式（S3バルクダンプ全量処理 vs REST API個別呼び出し。npm全体で数十万〜百万パッケージ規模の母集団パーセンタイル計算に必要な件数をレート制限内でどう賄うか、あるいは表示候補プールだけを絞ってよいか。ADR 0014 は『母集団は npm 全量、絞ってよいのは表示候補プールの件数だけ』と不変条件で明記している）B) rankings フィールドの母集団整合性（Ecosyste.ms の rankings が npm エコシステム内で閉じて計算されているか、複数言語エコシステムを混ぜた母集団か。混ざっている場合は rankings を使わず dependent_packages_count / stargazers_count の生値から npm 内で閉じたパーセンタイルを自前計算する設計に倒す。この判定手段と、判定できない場合のフォールバック方針を決める）C) バッチの実行主体と頻度（誰が・どのツールで・どの頻度で回すか。GitHub Actions が使えない中で、セッション手動実行/Claude Code Scheduled Tasks/その他のどれが D-15『運用の手離れ』と両立するか。SPOF・鮮度劣化時の自己修復方針は D-28 で無害化+検知が要求されている）D) 静的 JSON のスキーマ設計（何を git に commit するか。Gem Index 計算済みの候補プール一覧のスキーマ、日付シードで並べ替える際にクライアント側で必要な情報の過不足、健全性フィルタ用の Scorecard スコアをどう合成するか）。
 - 参加者: `data_pipeline`, `data_integrity`, `constraints_guard`, `docs_trace`
-- 投稿数: 4
-- 更新: 2026-08-20T20:21:41+09:00
+- 投稿数: 10
+- 更新: 2026-08-20T20:29:40+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -408,3 +408,463 @@ D-28: 「SPOF は無害化 + 検知して自己修復で対処し、配信自体
 
 - ADR 0014 は D-28 で「S3 バルクダンプを用いる」と明記しているが、本ラウンドの実測では **S3 は匿名アクセスが拒否され、REST 一覧 API + 事前計算済み `rankings` の方が現時点でアクセス可能**という逆転した根拠が得られた。データソースをどちらにするかは ADR の記述を上書きしうる論点のため、他レンズの検証（特にライセンス・帰属表示レンズ）と突き合わせて判断してほしい。
 - 転送量 778GB という数字は「フィールド絞り込みができるか」が未確認のままの上限値であり、round2 で `fields=` 系パラメータの有無を確認できれば大きく圧縮できる可能性が高い。
+
+## ラウンド 2
+
+### `docs_trace` — 反論
+<sub>2026-08-20T20:23:43+09:00</sub>
+
+# Round 2: ドキュメント整合性との接点確認 - docs_trace
+
+## 要旨
+
+round 1 で検出した「D-27 不可視・未決パラメータ分散」が、他エージェントの実測（data_pipeline / data_integrity / constraints_guard）を通じて **設計判断そのものに逆流**している。特に **データソース（S3 vs REST API）の確定が既存ドキュメントの複数箇所を一度に無効化する可能性**を指摘する。
+
+---
+
+## 1. データソース変更が既存ドキュメントに与える影響
+
+### 矛盾の見える化
+
+**ADR 0014 の前提**（§2.6 / §5 / 補完リサーチ）:
+- 「S3 バルクダンプをデータ源として想定」
+- 「S3 ダンプに `dependent_packages_count` / `rankings` が含まれるかを SP-14 着手直後に実確認」
+
+**data_pipeline の実測**（round 1 実測 e/f/g）:
+- S3 バケットは Anubis（JS 実行必須） + S3 ポリシーで **匿名アクセス拒否**
+- **REST API + ストリーミングパースが実際のアクセス可能経路に確定**
+- リクエスト数（5,761 req）はレート制限内だが、転送量（778GB）が新ボトルネック
+
+### 既存ドキュメントの「実施不可能化」
+
+**prd.md §13 の未決事項**（line 629-630）:
+```
+| 🔴 S3 ダンプに集計フィールド（`dependent_packages_count` / `rankings`）が含まれるか未検証 | 
+    `SP-14` 着手直後に実ファイルで確認する。含まれない場合はパーセンタイルを自前計算するか 
+    API 併用になり見積もりが変わる |
+
+| `criticality_score` の cron 稼働継続が未確認 | ... |
+```
+
+**所見**: 上記の「S3 ダンプ確認」チェック項目は、S3 が技術的にアクセス不可と判定された時点で **「実施不可能」に転換**。当初の想定（「S3 で確認できる / できない」の 2 分岐）が破綻している。
+
+### 推奨アクション
+
+1. **ADR 0014 を Data Source の判断を踏まえて改訂** — 「S3 を用いる」から「REST API + ストリーミングパース」への変更を、新 ADR supersede ではなく ADR 0014 自体の改訂として取り扱うべきか、それとも新 ADR を立てるべきか、判定が要る。
+2. **prd.md §13 の「S3 ダンプ確認」チェック項目を削除 or 「実施不可」と明記** — 現状のままだと「未確認のまま」という曖昧な状態が永続する。
+
+---
+
+## 2. 「rankings フィールドは npm 内で閉じて計算済み」という data_pipeline の立証と、data_integrity の警告の並立
+
+### 相互矛盾のように見える記述
+
+**data_integrity の主張（§1）**:
+- 「`rankings` フィールドの母集団スコープ・極性が未検証であり危険」
+- 「自前パーセンタイル計算を基本線とすべき」
+
+**data_pipeline の実測（実測 d）**:
+- `ecosyste-ms/packages` の GitHub ソースコードを確認し、`rankings` が `registry` 経由で npm 単独スコープで計算されていることを立証（コード引用: `rankings[:stargazers_count] = registry.top_percentage_for(...)`）
+
+### 実は矛盾していない理由
+
+**data_integrity は「立証できるまでは信用するな」という stance** → 正当性あり（vendor blackbox への依存排除）。
+**data_pipeline は「立証した」という fact** → 同じく正当性あり。
+
+**この並立がもたらす判断点**:
+- `rankings` を直接使う → リクエスト数 5,761・転送量 778GB（フィールド絞り込み未確認）
+- 自前計算に切り替える → リクエスト数は同じだが、メモリ・後続処理は npm 全量走査に必要（data_integrity §2 参照）
+
+**constraints_guard の指摘が的確**: 「論点 B（rankings の母集団スコープ確認）が sp:8 見積もりを左右する」。data_integrity の方法論（手段 A: ソースコード確認）は既に data_pipeline が実施済みで結果（GitHub ソース確認で npm 内スコープ立証）が出ている。
+
+### 推奨アクション
+
+1. **data_integrity の手段 A（ソース確認）は既に data_pipeline が実施済み** → round 2 では「GitHub ソースの当該部分を引き継ぎ、極性（0=最上位 vs 1=最上位）の最終確認」に焦点を絞るべき（実測 h で「0=最上位推定」との note 有り）。
+2. **「rankings を信用する」の最終判断は data_integrity の手段 B（クロスエコシステム比較）で補強** → npm と PyPI のペアで相互検証するのは data_pipeline が Phase 2 に進む際の自信につながる。
+
+---
+
+## 3. D-27 の不可視性が Phase 2 へのハンドオフを危険にする
+
+### 現状（Round 1 指摘の再確認）
+
+**user-story-map.md が D-27 を参照する**（line 496・579・595）:
+```
+🔴 **`D-27` により、着手順序を変更する。** `SP-12` 以降（`S-2`）は `SP-14` / `SP-15`（`S-3`）
+の完了後に着手する。`S-2` は Gem 発見の実装を踏まえて統合設計する（飼い主の選択・[`open-questions.md`](./open-questions.md) の `D-27`）。
+```
+
+**でも open-questions.md に D-27 の定義がない** → SSOT の空白。
+
+### これが実装判断に与える影響
+
+- **constraints_guard の指摘**: SP-14 の sp:8 見積もりが「論点 A/B（データソース・パーセンタイル方式）」で変わるという判断。
+- **data_pipeline の指摘**: 「転送量 778GB という上限値が未確定（フィールド絞り込み未検証）」「S3 不可によるデータソース変更」。
+- **これらが全て「正当な見積もり再検討の根拠」になるには、D-27（「S-3 を S-2 より先に実施する理由」）が文書化されていることが前提** → 「この優先順位は本当に有効か」を Phase 2 開始時に改めて検証できるから。
+
+現状では「user-story-map.md が着手順序を示す」という事実の記録だけで、「飼い主がなぜこう判断したのか」という意思決定の根拠が失われている。
+
+### 推奨アクション
+
+**open-questions.md に D-27 定義を明記**（新設セクション or 既存セクションへの追記）:
+```markdown
+### D-27: S-2（積み上げ）の着手順序を S-3（Gem 発見）より後に遅延させる理由
+
+**決定**: S-3（SP-14〜SP-16）を完了してから S-2 を着手する。
+
+**根拠**: S-2 は「お気に入り・履歴・topic フィルタ」などの上乗せ機能であり、
+「Gem 発見（S-3）の実装を踏まえた統合設計」が品質ゲートになっている。
+S-2 をメインフロー（S-1）の直後に実施すると、S-3 の導入後に大幅な修正が要る可能性が高く、
+リワークコストが大きくなる。
+
+**参照**: user-story-map.md §5.5 の着手順序図（S-3 → S-2）
+```
+
+---
+
+## 4. 未決パラメータの分散記述が「何を誰が決めるのか」の責務混乱を招く
+
+### Round 1 で指摘した重複
+
+**ADR 0009 §2.3** / **ADR 0014 §5** / **prd.md §13** の 3 箇所に「未決パラメータ」が重複記述されている。
+
+### Round 2 で確認された影響
+
+**data_pipeline**:
+- 「フィールド絞り込み（`fields=` パラメータ）が確認できれば 778GB を 1〜2 桁圧縮できる」
+- 「健全性フィルタ（`criticality_score`）はエンドポイントに含まれていない、別途取得が必要」
+
+**constraints_guard**:
+- 「配信件数（既定 5 件）は実データの分布を見てから確定」
+- 「健全性フィルタのしきい値は sp:14 実測後に決定」
+
+**所見**: 「フィールド絞り込みが可能か」「健全性フィルタはどう取得するのか」という実装パラメータが、実は **ADR 0014 §5 の未確定事項 3・4** と **prd.md §13** の複数行に渡って分散している。「正本はどれか」が不明確だと、update するときにどの箇所を修正すべきかが曖昧になる。
+
+### 推奨アクション
+
+**未決パラメータの SSOT を一本化** → `prd.md` §13 を正本とし、各 ADR はそこへの参照リンク + 「この ADR が影響する項目は以下」という note を持たせる。例：
+
+```markdown
+### ADR 0014 に関連する未決パラメータ（prd.md §13 参照）
+
+- フィールド絞り込み可否（転送量 778GB の圧縮可能性）
+- 健全性フィルタの取得方式（OpenSSF Scorecard の実装)
+- 配信件数の具体値（実データ分布による）
+- バッチ実行頻度（週次 vs 日次）
+```
+
+---
+
+## 5. D-29（ライセンス・メタデータ）の SSOT 確認
+
+### constraints_guard の要求
+
+```
+1. 配信 JSON のトップレベルに `source` / `license`（`CC BY-SA 4.0` 固定文字列） / 
+   `source_license_url` / 改変の明示（例: `derived: true` や `transformations` 説明）
+   を必須フィールドとして持つ。
+```
+
+### 既存ドキュメントでの D-29 の扱い
+
+**prd.md / open-questions.md で「D-29」と参照されているが、その定義箇所が不明確**（round 1 分析では確認していない）。
+
+### 推奨アクション（情報確認）
+
+**D-29 の定義を確認し、その内容が「バッチスキーマ設計」に反映されているか検証**。特に：
+- 「生テキスト再配信禁止」という制約が、data_pipeline の最終 JSON スキーマ（何フィールドを含めるか）に実装されているか
+- `generated_at` / `source_license_url` などメタデータフィールドがスキーマに組み込まれているか
+
+---
+
+## 6. まとめ: ドキュメント側から要求する確認事項
+
+| # | 項目 | 影響範囲 | 優先度 |
+|---|---|---|---|
+| 1 | **D-27 を open-questions.md に明記** | user-story-map.md の参照先が埋まり、S-2/S-3 の順序判定が検証可能に | 🔴 高 |
+| 2 | **prd.md §13 の「S3 ダンプ確認」チェック項目を削除 or 「技術的に実施不可」と明記** | S3 不可に基づく設計変更がドキュメント上も反映される | 🔴 高 |
+| 3 | **未決パラメータの SSOT を `prd.md` §13 に一本化** | 各 ADR がどの項目を確定させ、どの項目が未決か明確化 | 🟡 中 |
+| 4 | **D-29 の内容を確認し、バッチスキーマ設計に反映されているかを検証** | ライセンス・帰属表示の実装ガード | 🟡 中 |
+| 5 | **ADR 0014 が「S3 を用いる」を前提としている箇所を「REST API + ストリーミング」に改訂** | data_pipeline の実測結果をアーキテクチャに反映 | 🔴 高 |
+
+---
+
+## 結論
+
+- **Round 1 で指摘した「D-27 不可視・未決パラメータ分散」が、実装側の判断（データソース確定・sp 見積もり再考）とリンクしている**ことが確認された。
+- 特に **D-27 の不可視性は意思決定の根拠喪失を招くため、早期に明記すべき**。
+- **S3 アクセス不可という事実上の設計変更が、既存ドキュメント（prd.md・ADR 0014）の複数箇所を同時に無効化している** → 一度に update すべき。
+
+### `data_integrity` — 反論
+<sub>2026-08-20T20:24:18+09:00</sub>
+
+# round 2: data_pipeline round1 への rebuttal / concession（data_integrity）
+
+## 1. concession: rankings の母集団スコープ（npm 単独 vs 混合）は解決したと認める
+
+data_pipeline の実測 d（ecosyste-ms/packages のソース `package.rb` の `load_rankings`）が示す
+`rankings[:stargazers_count] = registry.top_percentage_for(self, :stargazers_count)` は、
+私が round1 §1「手段 A（最優先・決定的）」として提案した検証そのものである。`registry` オブジェクト経由でパーセンタイルを計算している以上、少なくとも計算の呼び出し単位が **エコシステム（registry = npmjs.org）単位で閉じている**ことは一次情報として確認できたと判断する。
+
+→ **round1 で懸念していた「rankings が全エコシステム混合の母集団かもしれない」という疑いは、この時点で解消されたと認める。この懸念を理由に自前パーセンタイル計算を主張する部分は撤回する。**
+
+## 2. concession: 極性（0=最上位）の矛盾指摘も、data_pipeline の実測 h で説明可能と判明
+
+round1 で私は「chalk の `rankings.dependent_packages_count=0.0005476` が chalk の実際の人気度と矛盾する」と指摘したが、これは data_pipeline の実測 h（typescript: `dependent_packages_count=488,056`（実利用トップクラス）に対し `rankings.dependent_packages_count=0.0` → 0.0 が最上位という向き）によって **矛盾ではなく、単に「0 に近いほど上位」という向きの convention だった**ことが判明した。chalk の 0.0005476 はむしろ「被依存数で上位 0.05%」という筋の通った値であり、round1 の指摘（矛盾の指摘）はここで撤回する。
+
+## 3. rebuttal（軽微・予防的）: 向きの反転は式の符号設計に事故のリスクを残す
+
+ただし、この「0=最上位」convention と、ADR 0009 の文言「被依存数のパーセンタイル順位 − star のパーセンタイル順位」が素直に想定する **「高い値=多い方」という自然な convention** は逆向きである。この点を数式で確認する。
+
+- ADR 0009 が意図する式（自然な convention。percentile が高い = その指標が多い）:
+  `Gem Index = percentile_dep(自然) − percentile_star(自然)`
+- Ecosyste.ms の `rankings`（0=最上位 convention）から自然な convention へ変換すると:
+  `percentile_dep(自然) = 1 − rankings.dependent_packages_count`
+  `percentile_star(自然) = 1 − rankings.stargazers_count`
+- 代入すると:
+  `Gem Index = (1 − rankings.dependent_packages_count) − (1 − rankings.stargazers_count) = rankings.stargazers_count − rankings.dependent_packages_count`
+
+→ data_pipeline が §4 で提案した式（`rankings.stargazers_count − rankings.dependent_packages_count`）は、**両軸が同じ極性で反転しているために減算で自動的にキャンセルされ、ADR 0009 が意図する式と数学的に一致する**。式そのものは正しいと確認できた。
+
+**しかしこれは「たまたま両辺が同じ向きに反転しているために結果的に正しい」だけであり、直感的には正しく見えない（`rankings.stargazers_count` を単独で「star が多いほど大きい値」と誤読するとバグを埋め込む）。** 実装時に以下 2 点を必須にすることを提案する（これは対立ではなく、data_pipeline の設計への追加要求）。
+
+1. 実装コード（`tools/generate_gem_index.py` の compute フェーズ）に、上記の変換式（`1 − rankings.*` → キャンセル）をコメントとして明記する。「なぜ `star − dep` の順で引き算するのか」を将来の実装者が rankings の生値だけを見て誤読しないようにする。
+2. **golden test を必須にする**: typescript（`rankings.dependent_packages_count=0.0`, `rankings.stargazers_count=0.0505` → Gem Index ≈ +0.05・被依存/star とも上位のため中立に近い正の値）と chalk（`rankings.dependent_packages_count=0.0005476`, `rankings.stargazers_count=0.6435` → Gem Index ≈ +0.64・被依存は上位だが star は相対的に低い＝典型的な「隠れた名品」寄りの高い正の値）の実測ペアを単体テストの固定値として組み込み、符号を取り違えるリグレッションを機械的に検出できるようにする。
+
+## 4. 新たな未解決論点（data_pipeline の実測ではまだ解消されていない・round1「残す論点」の延長）
+
+`registry.top_percentage_for(self, :stargazers_count)` はスコープが registry 単位であることは示すが、**その `top_percentage_for` の分母（population）が `registry.packages` の全 5,760,152 件なのか、それとも GitHub 解決済み（`stargazers_count` が非 null）のサブセットに限定されているのかは、引用されたソース断片だけでは判定できない**。
+
+これは chalk の実測値（`rankings.stargazers_count=0.6435`）と整合性を検討すると具体的な疑問になる。npm 5,760,152 件の大多数は GitHub リポジトリが未解決（stars を持たない、または 0 扱い）と考えられる。もし分母が全量（5.76M 件）であれば、母集団の大部分が star=0 側に積み上がるため、chalk のように実際に GitHub star を一定数持つパッケージは「上位に近い」値（0 に近い）になるはずである。ところが実測値は 0.6435（下から見れば上位約 36%）であり、**「大多数が 0 扱いで下位に積み上がる」という前提と整合しにくい**。これは以下のいずれかを示唆する。
+
+- (a) `top_percentage_for` の分母は GitHub 解決済みパッケージのサブセットに限定されている（＝ star 軸の母集団が npm 全量より暗黙に小さい）。
+- (b) 分母は全量だが、GitHub 未解決パッケージの扱い（null 除外 / 0 換算 / 別枠）が私の想定と異なる。
+- (c) 単純に、npm には chalk より GitHub star が多いパッケージが実際に相当数（数十万件規模）存在する（大規模フレームワーク・企業製 SDK・自動生成パッケージ群等）。
+
+(a) が正しい場合、round1 の「残す論点」（stargazers 側の母集団が dependents 側より非対称に小さい）がそのまま再燃し、ADR 0014 §2.6 の「母集団は npm 全量」という不変条件との整合を追加検証する必要がある。(c) であれば単なる私の直感の誤りであり問題ない。
+
+**data_pipeline への確認依頼**（round3 に向けて）: `top_percentage_for` メソッド本体（呼び出し元ではなく定義側。おそらく `registry.rb` か関連 concern）を確認し、分母の集合条件（`where` 句の有無・null 除外の有無）を実測してほしい。この 1 点が確認できれば、私の round1 からの懸念（母集団の完全性）は完全に解消できる。
+
+## 5. まとめ
+
+| round1 の懸念 | round2 判定 |
+|---|---|
+| rankings の母集団が npm 単独か混合か不明 | **解消（concession）**。ソース実測 d により registry 単位で閉じていると確認 |
+| chalk の値が矛盾しているように見える | **解消（concession）**。0=最上位の向きで説明可能（実測 h） |
+| 自前パーセンタイル計算を主，張とする理由 | **撤回**。上記 2 点が解消された以上、rankings をそのまま使う data_pipeline 案（§3.1 item 1）を支持する |
+| 符号設計のリスク | **新規（軽微な rebuttal）**。式自体は正しいが実装コメント + golden test を必須要件として追加提案 |
+| star 軸の母集団の完全性 | **未解決（rebuttal 継続）**。`top_percentage_for` の分母定義の実測が必要。round1 の「未解決として残す論点」と同根 |
+
+### `constraints_guard` — 反論
+<sub>2026-08-20T20:24:42+09:00</sub>
+
+## constraints_guard round2: rebuttal / concession
+
+### 譲歩（concession）: data_pipeline への譲歩 1 件
+
+round1 で私は「候補プール再生成は週次〜月次で十分（要 data_pipeline 確認）」と述べた。data_pipeline が §4 で独立に「週次」を提案しており（理由: S3 の 2〜4 ヶ月サイクルより高頻度に鮮度を保てる副次効果）、私の推奨と収束している。**これは私の主張の裏付けとして受け入れる（譲歩というより合流）。** ただし下記「反論1」で頻度の妥当な範囲そのものを再検討する。
+
+---
+
+### 反論 1（rebuttal）: 「Routine cron 一択・週次〜月次」は転送量 778GB / 5,761 req という新事実の下でも両立するか
+
+**結論: 両立するが、両立の仕方は「どちらのデータ取得方式を採るか」で全く別物になる。頻度の議論を単一の数字で語るのは不正確だった。**
+
+data_pipeline の実測（§1〜§2）を読むと、コストは 2 つの世界に分かれる。
+
+| 方式 | 1 回あたりのコスト | 週次〜月次との両立 |
+|---|---|---|
+| **③ 一覧 API 全件走査 + 自前パーセンタイル計算**（data_integrity の推奨経路） | 5,761 req・約778GB 転送・1〜2h（レート制限枠を跨ぐ） | ✅ 頻度を下げること自体は D-15 に有利だが、**単発コストが重いため「週次〜月次」の中でも月次寄りを推す**。理由は反論2で述べる SPOF 露出面の拡大。 |
+| **`rankings` フィールドをそのまま信頼**（data_pipeline の本命案・§2 後半） | サーバー側 `sort=dependent_packages_count&order=desc` で上位ページのみ取得（例: 候補プール 5,000 件なら **5 リクエスト**） | ✅ コストがほぼゼロなので、週次はおろか**日次にしても D-15 上の負担にならない**。私が round1 で「日次はレート制限リスクを増やす」と述べた懸念はこの方式には当てはまらない。 |
+
+**私の round1 の推奨「週次〜月次」は、どちらの方式を採るかで意味が変わる点を明示していなかった**。これは自分の主張の精度不足として訂正する。正しくは:
+- `rankings` 信頼案が採用されるなら、頻度は D-15 の制約からはほぼ自由（週次でも日次でも負担は同等に軽い）。この場合の頻度は運用上の好み（鮮度 vs 実行回数）の問題であり、制約レンズからは「どちらでもよい」。
+- 自前計算案（778GB/5,761req）が必要になった場合のみ、私の「頻度を下げて D-15 負担を減らす」という round1 の主張がそのまま効いてくる。この場合は週次より**月次寄りを推奨**する（反論2）。
+
+---
+
+### 反論 2（rebuttal）: 778GB / 1〜2h の自前計算案が Routine cron・D-15 と両立するための追加要件
+
+data_pipeline §4 の実装案（fetch → compute → filter → publish の 4 フェーズ、`checkpoint` スキルで中間ファイルを commit）は方向性として妥当だが、**D-15「運用の手離れ」を満たすには以下 2 点が未確認のまま残っている**。これを満たさない限り自前計算案は「Routine cron 一択」の前提を崩す。
+
+1. **レート制限のペーシングが完全自動でなければならない**: 「2 時間で分割」が人間の再開操作を要する設計だと、D-15 が禁じる「人手が残る定常作業」が発生する。バッチスクリプト自身が時間帯をまたいで sleep/backoff し、無人で完走する実装であることを明記してほしい（`Bash(run_in_background: true)` + `Monitor` は起動側の話であり、レート制限待機そのものの自動化とは別問題）。
+2. **中間ファイルの commit 先はマージ前の作業ブランチ/PR に限定する**: fetch フェーズが複数 firing にまたがって中間ファイル（`content/data/_intermediate/npm-rankings-{date}.jsonl`）を commit する場合、**そのブランチが `main` にマージされるのは publish フェーズ完了・バリデーション通過後のみ**であることを設計上保証する必要がある。そうでないと、fetch/compute 途中の firing でクラッシュした際に不完全な中間データが `main` 経由でデプロイされるリスクが生まれ、round1 で私が要求した「部分成功時は丸ごと不採用にする」というフェイルクローズド原則が崩れる。data_pipeline 案の 4 フェーズ構成自体はこの原則と両立可能だが、**「commit のタイミングと対象ブランチ」を明示的に設計に書き加えることを依頼する**。
+
+この 2 点が満たされるなら自前計算案も Routine cron・D-15 と両立する。満たされない/確認できない場合は、頻度をさらに下げる（月次）か、下記の rankings 信頼案へ倒すことを推奨する。
+
+---
+
+### 反論 3（rebuttal・本題）: data_integrity の「rankings 危険」と data_pipeline の「rankings そのまま使える」— 制約レンズからの判定
+
+data_integrity が round1 で最優先に提案した検証手段は「**手段 A: Ecosyste.ms のソースコードで算出ロジックを直接確認する**」だった。data_pipeline は本ラウンドでまさにこれを実行し、`ecosyste-ms/packages` の `package.rb` `load_rankings` で `registry.top_percentage_for(self, :stargazers_count)` という **registry（= npm）単位で閉じた計算**であることをソースから確認した（実測 d）。
+
+**判定: スコープ（母集団が npm 単独か混合か）の論点は data_pipeline 側の勝ち。data_integrity 自身が指定した最優先の決定的手段で決着している。** 残る未決は data_integrity が提起した**極性（0.0 が上位か下位か）**のみで、これは data_pipeline も「round2 で最終確定」と認めている未解決事項。
+
+**この判定が D-15 / Workers Free CPU 予算に与える影響を評価する:**
+
+- **D-15 への影響は極めて大きい**: rankings 信頼案が採用できれば、バッチは「サーバー側ソート済み上位ページを数リクエスト取得するだけ」に縮小し、data_integrity が提案した Stage1/Stage2/Stage3 の自前パイプライン（母集団全件保持・混入防止の単体テスト・依存関係の静的検査まで要求する重い設計）は**まるごと不要になる**。sp:8 の「薄いスライス」方針（round1 で私が指摘した論点）にとって、これは実装コストを 1〜2 桁圧縮する差であり、D-15 の「定常作業の一覧化・自動化」の対象そのものが小さくなる（自動化すべき作業が少なければ手離れの実現も容易になる）。反論2で挙げた「2 時間に及ぶレート制限ペーシングの完全自動化」「中間ファイルのブランチ隔離」という追加要件も、rankings 信頼案なら実質的に消える(5 リクエストなら 1 レート制限枠内に確実に収まり、複数 firing にまたがる中間状態も発生しない)。
+- **Workers Free CPU 予算への影響は「ない」**: これは論点を混同しないよう明示しておきたい。ADR 0014 §2.2 により並べ替え計算はどちらの方式でもクライアント側で行われる設計であり、rankings をそのまま使うか自前計算するかは **バッチ側（Cloudflare 外）の内部実装の違いに過ぎず、Worker の CPU 消費には一切影響しない**。round1 で私が出した CPU 予算の判定（✅ 適合・SSR で並べ替えない限り問題なし）は、この論点の決着とは独立に成立し続ける。
+
+**私の推奨（sp:8 スコープの観点から）**: rankings 信頼案を主設計として採用し、data_integrity の Stage1/2/3 自前計算パイプラインは「極性検証が失敗した場合のフォールバック」として**設計ドキュメントに残すだけに留め、今回は実装しない**（YAGNI・CLAUDE.md「1 箇所しか使わない抽象化レイヤーを先回りで追加しない」）。極性の検証自体は data_pipeline が示した通り数サンプルの追加確認で足り、778GB の全件走査は不要である。
+
+**data_integrity への確認依頼**: 「vendor のブラックボックス値は後から定義が変わっても検知できない」という残存懸念（round1 §4 末尾）はスコープ論点とは別の運用リスクとして理解した。これは自前計算パイプラインを常設する理由にはならず、**軽量なサニティチェック**（例: 既知の主要パッケージ数件の rankings 順位が想定範囲内か・レスポンスの `rankings` キー構成が変化していないかを Routine 実行時にアサートする）で足りると考えるが、この代替で懸念が解消するか意見を聞きたい。
+
+---
+
+### まとめ
+
+| 論点 | 私の判定 |
+|---|---|
+| 週次〜月次の推奨（round1） | rankings 信頼案なら D-15 上ほぼ制約なし（好みの問題）。自前計算案が必要なら月次寄りを推奨、かつレート制限ペーシング自動化・中間ファイルのブランチ隔離を追加要件として課す |
+| rankings 危険 vs そのまま使える | スコープ論点は data_pipeline の勝ち（data_integrity 指定の最優先手段=ソースコード確認で決着）。極性のみ未決 |
+| D-15 への影響 | rankings 信頼案を採るかどうかで自動化すべき作業量が 1〜2 桁変わる。rankings 信頼案を強く推奨 |
+| Workers Free CPU 予算への影響 | どちらの方式でも無関係（クライアント側計算のため）。論点を混同しないこと |
+
+### `data_pipeline` — 反論
+<sub>2026-08-20T20:26:56+09:00</sub>
+
+## data_pipeline round2: rebuttal / concession
+
+### data_integrity への rebuttal（論点B: rankings の母集団スコープ・極性）— `top_percentage_for` の実装を特定し決着させた
+
+`data_integrity` が「最優先・決定的」と位置づけた**手段A（ソースコード確認）を round1〜round2 で完遂**し、呼び出し元（`package.rb`）だけでなく **`top_percentage_for` 自体の実装本体**（`registry.rb`）まで特定できた。
+
+```ruby
+# registry.rb
+def top_percentage_for(package, field)
+  return nil if package.send(field).nil?
+  Rails.cache.fetch("top_percentage_for/#{id}/#{field}/#{package.send(field)}", expires_in: 1.day) do
+    packages.active.where("#{field} > ?", package.send(field)).count.to_f / packages_count * 100
+  end
+end
+```
+
+これで **2 つの論点が同時に、統計的推論ではなく実装の引用として確定する**。
+
+1. **母集団スコープ**: `packages`（＝ `registry has_many :packages`）と `packages_count` はいずれも `registry`（= npm）に属するパッケージ集合に限定される。全レジストリ横断ではありえない。**論点B は npm 単独スコープで決着**。
+2. **極性と値域**: `count(該当フィールドが自分より厳密に大きいパッケージ数) / 全体件数 × 100`。**値域は 0〜100（0〜1 ではなく百分率）、0 に近いほど「自分より上位が存在しない＝最上位」、100 に近いほど「ほぼ全員が自分より上位＝最下位」**という向き。
+
+**round2 中盤の自己訂正の経緯（透明性のため記録する）**: 私は round2 序盤で `is-thirteen`（`rankings.dependent_packages_count=1.6345`）や `before-after-hook`（`rankings.stargazers_count=5.366`）が **1.0 を超えている**ことを見て「`[0,1]` の percentile という仮説は誤りだった」と一度 **撤回**しかけた。しかし `top_percentage_for` の実装本体を特定した結果、これは仮説の誤りではなく **単に値域が `[0,1]` ではなく `[0,100]`（百分率）だった**ことが原因だと判明した。`5.366` は「5.366%（上位 5.4 パーセンタイル相当）」として何ら矛盾しない正常値である。**この撤回は撤回する**（元の「値が小さいほど上位」という極性の理解は正しかった。誤っていたのは私の値域の解釈だけ）。
+
+**ADR 0009 §2.1 の「パーセンタイル順位の差」への写像も確定できる**: `top_percentage_for` は「上位からの順位割合（0=最上位）」なので、通常の意味でのパーセンタイル（大きいほど上位）に変換すると `percentile(x) = 100 − rankings[field]`。ADR 0009 の Gem Index = `percentile(依存数) − percentile(star)` に代入すると
+
+```
+Gem Index = (100 − rankings.dependent_packages_count) − (100 − rankings.stargazers_count)
+          = rankings.stargazers_count − rankings.dependent_packages_count
+```
+
+となり、**round1 で私が提案した式（符号反転前後の定数項は打ち消し合う）がそのまま ADR 0009 の定義と数式的に等価であることが証明できた**。よって round1 の「rankings をそのまま Gem Index の入力に使ってよい」という結論を、実装コードの裏付け付きで維持する。
+
+### data_integrity への rebuttal（自前パーセンタイル計算パイプラインの必要性）
+
+`top_percentage_for` の実装が Ecosyste.ms 内部で **キャッシュ付きの単純な `COUNT(*) WHERE field > x`** であること自体もわかった。これは自前実装（data_integrity §2 の `rank_asc` 二分探索方式）と **アルゴリズム的に同値**（順序統計量の相対位置を数える点で同一）であり、Ecosyste.ms が「別の定義」を使っているわけではない。したがって data_integrity が懸念していた「ベンダーのブラックボックスが ADR 0009 の定義とズレている可能性」は、**実装レベルで整合していると確認できた**。
+
+一方で、data_integrity の Stage1〜3 分離という「母集団を絞らせないためのコード構造」提案には引き続き同意する（concession）。ただし入力を **S3 バルクダンプ（round1 実測: `AccessDenied` で不成立）や REST 一覧 API の全量ページネーション（round1 実測: 5,761 リクエスト・約 778GB）に置く必要はない** — `rankings` は Ecosyste.ms 側で **日次キャッシュ済みの事前計算値**（`expires_in: 1.day`）として個々のパッケージレコードに同梱されているため、我々のバッチが母集団全体をスキャンし直す必要がない。Stage1（母集団パーセンタイル計算）に相当する処理は **Ecosyste.ms 側で完了済み**であり、我々のバッチは Stage2（健全性フィルタ）・Stage3（候補プール抽出）だけを実装すればよい。これにより 778GB の転送量問題も同時に解消される（候補プール数百〜数千件分の `rankings` を読むだけで済む）。
+
+**唯一残る留意点**: `Rails.cache.fetch(..., expires_in: 1.day)` なので `rankings` の鮮度は最大 1 日ずれる可能性がある。ADR 0014 §2.2 が要求する「日付が変わると顔ぶれが入れ替わる」のはクライアント側の日付シード選出であり、`rankings` 自体の 1 日ラグは実害にならないと判断するが、念のため次ラウンドで docs_trace / constraints_guard の見解も聞きたい。
+
+### constraints_guard への回答（論点Bの優先解決依頼・778GBの現実性）
+
+- **論点B**: 上記のとおり `top_percentage_for` の実装引用により **スコープ・極性・ADR 0009 定義との数式的等価性の 3 点を同時に決着**させた。constraints_guard が「sp:8 の実現可能性を左右する」と位置づけた最優先事項は解消できたと考える。
+- **778GB の現実性**: ご指摘の懸念は正しかったが、原因の理解を修正したい。「REST 全量ページネーションで自前計算する」場合にのみ発生するコストであり、`rankings` を信頼して直接使う設計（今回決着した内容）ではそもそも発生しない。S3（`AccessDenied`）・REST 全量自前計算（778GB）の両方を避け、**候補プール規模（数百〜数千件）の個別 `GET .../packages/{name}` または `per_page` 一覧 API 呼び出しだけで完結する**ため、constraints_guard 317行目の想定（「rankings が npm 単独スコープと確認できれば S3 ETL 不要」）がそのまま成立する。
+- **バッチ頻度**: `rankings` が Ecosyste.ms 側で 1 日キャッシュである実測を踏まえ、**週次〜月次の再取得で十分**という constraints_guard の提案に同意する（concession）。むしろ頻度を上げても `rankings` 自体は 1 日単位でしか更新されないため、必要以上に高頻度化する理由はない。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-20T20:29:01+09:00</sub>
+
+# lead 合意整理（round 3 相当）
+
+4 レンズ（data_pipeline / data_integrity / constraints_guard / docs_trace）の round1〜round2 を統合する。
+
+## 争点A・B は実質決着（data_pipeline の実装ソース引用が決定打）
+
+`ecosyste-ms/packages` の `registry.rb#top_percentage_for` を data_pipeline が特定し、data_integrity 自身が
+round1 で最優先指定した「手段A: ソースコード確認」で決着した。
+
+- 母集団スコープ: `registry`（npm）単位で閉じている（全レジストリ横断ではない）
+- 値域・極性: `COUNT(field > x) / packages_count * 100` → 0〜100（百分率）・0 が最上位
+- ADR 0009 の定義との写像: `Gem Index = rankings.stargazers_count − rankings.dependent_packages_count`
+  （符号反転は数式的に相殺され、ADR 0009「被依存数パーセンタイル順位 − star パーセンタイル順位」と等価）
+- data_integrity は自前パーセンタイル計算パイプライン（Stage1/2/3）の主張を撤回し、rankings 信頼案を支持
+
+**未決の1点（軽微）**: `top_percentage_for` の分母（`packages_count`）が npm 全量か GitHub 解決済みサブセットかは
+ソース断片からは確定していない。data_pipeline も data_integrity もこれを「軽量サンプル確認で足りる」と
+一致しており、着手直後の実データ確認で潰す前提（AskUserQuestion 不要・SD-3 非該当）とする。
+
+## 争点C: データ取得方式・バッチ頻度も決着
+
+rankings 信頼案（Ecosyste.ms 側で日次キャッシュ済みの事前計算値をそのまま使う）を採用したことで:
+- S3 バルクダンプ（AccessDenied で実測不成立）・REST 全量ページネーション自前計算（5,761 req・778GB）は
+  いずれも不要になった
+- 候補プール規模（実データを見て確定・数百〜数千件想定）分の個別/一覧 API 呼び出しのみで完結
+- D-15（運用の手離れ）への負荷はほぼゼロ。頻度は週次・日次どちらでも成立（運用上の好みで決めてよい）
+- constraints_guard が要求した「レート制限ペーシングの完全自動化」「中間ファイルのブランチ隔離」は
+  自前計算案（不採用）でのみ必要だった要件であり、今回の設計では不要
+
+## 争点D: スキーマ
+
+D-29（open-questions.md 339行目に実在）が要求する必須メタデータをそのまま踏襲する:
+`source` / `license`（"CC BY-SA 4.0" 固定文字列）/ `source_license_url` / `generated_at`。
+生テキスト（description 等）は再配信しない。配信件数・しきい値は実データ分布を見てから確定する
+（ADR 0014 §5 の既定路線のまま・着手直後に潰す）。
+
+## docs_trace の指摘の事実確認（lead による検証）
+
+docs_trace は「open-questions.md に D-27 の定義が見つからない」と指摘したが、**lead が直接 grep で確認した
+ところ D-27（337行目）・D-28（338行目）・D-29（339行目）はいずれも表形式で実在する**。docs_trace の探索
+（見出し形式で検索した可能性）が届かなかっただけで、SSOT の空白という指摘は誤りだった。この点は
+verdict で訂正する。
+
+一方、**D-28 の記述内容そのものが今回の議論で覆った**という真に重要な発見がある。D-28 は
+「API 経由の全件走査はせず、Ecosyste.ms の S3 バルクダンプを用いる」と明記しているが、
+data_pipeline の実測で S3 は AccessDenied（bot 保護）により技術的に使用不可能と判明し、
+今回 rankings 信頼案（API 経由）を採用することが決定した。**D-28 の記述は事実と矛盾したまま残る**ため、
+open-questions.md の D-28 と ADR 0014 の該当箇所（S3 バルクダンプを前提とする記述）を、この決定を
+反映して更新する必要がある。これが critical。
+
+docs_trace の他の指摘（ADR 0014 frontmatter の AC-9 冗長性・未決パラメータの3箇所分散記述・
+package.json 貼り付け機能の追跡記録なし）は妥当だが、SP-14 の実装をブロックする性質ではないため、
+軽微な改善提案として記録するに留め、SP-14 の PR に含めるかは実装フェーズの裁量とする。
+
+## 決定できないもの（open_questions）
+
+なし。すべて実装レベルの技術判断として決め切れた（着手直後の実データ確認で潰す前提の項目のみ残存）。
+
+### `lead` — 判定
+<sub>2026-08-20T20:29:40+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: データ取得方式",
+      "design": "Ecosyste.ms REST API の rankings フィールド（Ecosyste.ms 側で日次キャッシュ済みの事前計算値）をそのまま Gem Index の入力として信頼する。候補プール規模（実データを見て確定）分の個別/一覧 API 呼び出しのみで完結させる。S3 バルクダンプ全量処理・REST 全量ページネーションによる自前パーセンタイル計算は不採用。",
+      "artifacts": ["tools/generate_gem_index.py（新規）", "docs/adr/0014-zero-query-daily-digest.md（S3前提の記述を改訂）", "docs/02_requirements/open-questions.md（D-28 の記述を改訂）"],
+      "rejected": "S3バルクダンプ全量処理: bot保護でAccessDenied・技術的に不成立と実測確認。REST全量ページネーション+自前パーセンタイル計算: 5,761リクエスト・約778GB転送で、rankings信頼案に対しコスト1〜2桁大きく、D-15（運用の手離れ）の負荷も大きいためYAGNIとして却下（フォールバックとして設計ドキュメントに残すのみ）"
+    },
+    {
+      "issue": "B: rankings フィールドの母集団整合性",
+      "design": "Ecosyste.ms実装ソース（registry.rb の top_percentage_for）を引用確認し、母集団は registry（npm）単位で閉じていること、値域は0〜100（百分率）で0が最上位という極性であることを実装レベルで決着。ADR 0009 の定義（被依存数パーセンタイル順位 − star パーセンタイル順位）への写像は Gem Index = rankings.stargazers_count − rankings.dependent_packages_count で数式的に等価と確認。実装時はこの符号変換の理由をコードコメントに明記し、typescript/chalk の実測値を使った golden test を必須にする。",
+      "artifacts": ["tools/generate_gem_index.py（新規・compute フェーズにコメント+golden test）"],
+      "rejected": "自前パーセンタイル計算パイプライン（Stage1母集団計算/Stage2健全性フィルタ/Stage3日次選出の3段分離）: data_integrity round1提案だがroundを経てrankings信頼案で代替可能と判明したため撤回・不採用（フォールバックとして設計ドキュメントに残すのみ）"
+    },
+    {
+      "issue": "C: バッチの実行主体と頻度",
+      "design": "D-28（Cloudflare外・セッション/Routineのcronで回し静的JSONをgit commit→デプロイで丸ごと差し替え）の枠組みは維持。rankings信頼案採用によりバッチのコストが激減（候補プール規模分のAPI呼び出しのみ）したため、頻度は週次〜日次のどちらでもD-15上の負荷は同等に軽い（運用上の好みで決定してよい）。レート制限ペーシングの完全自動化・中間ファイルのブランチ隔離は自前計算案でのみ必要だった要件のため今回は不要。軽量サニティチェック（既知パッケージのrankings順位が想定範囲内か・レスポンスのrankingsキー構成が変化していないかをRoutine実行時にアサート）を実装する。",
+      "artifacts": ["docs/routines/（新規ルーティン定義）", "tools/generate_gem_index.py"],
+      "rejected": "自前計算案前提のレート制限ペーシング自動化・中間ファイルのブランチ隔離設計: rankings信頼案採用により対象外（自前計算に戻す場合のフォールバック要件として記録のみ）"
+    },
+    {
+      "issue": "D: 静的JSONのスキーマ設計",
+      "design": "配信JSONのトップレベルにD-29（open-questions.md 339行目）が要求するメタデータ（source / license=\"CC BY-SA 4.0\" 固定文字列 / source_license_url / generated_at）を必須フィールドとして持つ。Ecosyste.msの生テキスト（description等）は再配信せず、数値・識別子・自作の派生値に限定する。配信件数・しきい値は実データ分布を見てから着手直後に確定する（ADR 0014 §5の既定路線のまま）。",
+      "artifacts": ["tools/generate_gem_index.py", "docs/adr/0014-zero-query-daily-digest.md（スキーマ節を追記）"],
+      "rejected": "なし"
+    }
+  ],
+  "critical": [
+    "open-questions.md の D-28（338行目）が『Ecosyste.ms の S3 バルクダンプを用いる』と明記しているが、実測でS3はbot保護によりAccessDenied（技術的に使用不可）と判明し、今回rankings信頼案（API経由）を採用することが決定した。D-28の記述は事実と矛盾したまま残っているため、open-questions.mdとADR 0014のS3前提記述を、この決定を反映して更新する必要がある（着手直後に必ず対応する）。",
+    "top_percentage_for の分母（packages_count）がnpm全量かGitHub解決済みサブセットかは実装ソース断片からは確定していない。着手直後の実データ確認（軽量サンプル比較）で潜在的な母集団の非対称性を潰す必要がある。"
+  ],
+  "open_questions": []
+}
