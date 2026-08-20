@@ -18,7 +18,24 @@ npm run format       # Prettier
 npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_checks.sh。PR 前の唯一の機械的証跡）
 ```
 
-GitHub App の資格情報（[`.env.example`](./.env.example)）を設定しなくても動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。
+`npm test` / `npm run test:e2e` は環境変数を一切設定しなくても通る（外部 API はモック化されている）。
+
+### 環境変数
+
+すべて **任意**。1 つも設定しなくても `npm run dev` は起動し、検索・詳細表示は動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。⚠️ 本リポジトリに `.env.example` は存在しない（追加候補として Issue 化を検討する）。以下の表を参照して `.env.local`（Next.js の規約どおり）に必要な分だけ設定する。
+
+| 変数 | 用途 | 未設定時の挙動 |
+|---|---|---|
+| `GITHUB_APP_CLIENT_ID` | GitHub App の installation token 取得（[ADR 0003](./docs/adr/0003-github-app-authentication.md)） | 3 変数が揃わない限り未認証で GitHub API を叩く（レート枠が狭い） |
+| `GITHUB_APP_INSTALLATION_ID` | 同上 | 同上 |
+| `GITHUB_APP_PRIVATE_KEY_PKCS8` | 同上（**PKCS#8 形式**で注入する必要がある） | 同上 |
+| `GITHUB_OAUTH_CLIENT_ID` | 任意ログイン（`AR-5`・[ADR 0012](./docs/adr/0012-optional-github-oauth.md)） | 3 変数が揃わない限りログイン導線が静かに無効化される（未ログイン相当の機能はすべて動く） |
+| `GITHUB_OAUTH_CLIENT_SECRET` | 同上 | 同上 |
+| `GITHUB_OAUTH_CALLBACK_URL` | 同上（デプロイ先ごとに異なる。オープンリダイレクト対策の検証にも使う） | 同上 |
+| `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | セッション機能が無効化される |
+| `RATE_LIMIT_SALT` | 検索経路の自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt | レート制限の間引きをしない（フェイルオープン） |
+
+上記はいずれも `src/infrastructure/` 配下の各ファイルが `process.env` から直接読む（秘匿情報を読んでよい層を 1 ファイルに限定する設計・`ARCH-5` / `NFR-22`）。`GITHUB_API_ORIGIN` はテスト専用のスタブ切替であり、アプリの実行時には使わない。
 
 ### 技術スタック
 
