@@ -46,32 +46,43 @@ function log(msg) {
 }
 
 function spawnTracked(name, command, args, opts) {
-  const proc = spawn(command, args, { cwd: REPO_ROOT, ...opts })
+  // 🔴 `npx next start` は自身が「next-server」孫プロセスを spawn する（next のラッパー構造）。
+  //    detached: true にせず親プロセスだけへ SIGTERM を送ると、孫プロセスは親から切り離されて
+  //    init（pid 1）に再親化され、ポートを掴んだまま生き残ってしまう（実測で確認済みの実害）。
+  //    detached: true でプロセスグループを分け、cleanup では process.kill(-pid, sig) で
+  //    グループごと（孫プロセスまで含めて）終了させる。
+  const proc = spawn(command, args, { cwd: REPO_ROOT, detached: true, ...opts })
   spawned.push({ proc, name })
   return proc
 }
 
+function killGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal)
+  } catch {
+    // グループ kill が使えない/既に全滅している場合は単体 kill にフォールバック
+    try {
+      process.kill(pid, signal)
+    } catch {
+      // すでに終了している場合は無視
+    }
+  }
+}
+
 async function cleanup() {
-  for (const { proc, name } of spawned.splice(0)) {
-    if (proc.exitCode === null && proc.signalCode === null) {
-      log(`後始末: ${name}（pid=${proc.pid}）を終了します`)
-      try {
-        proc.kill('SIGTERM')
-      } catch {
-        // すでに終了している場合は無視
-      }
+  const pending = spawned.splice(0)
+  for (const { proc, name } of pending) {
+    if (proc.exitCode === null && proc.signalCode === null && proc.pid) {
+      log(`後始末: ${name}（pid=${proc.pid}）のプロセスグループを終了します`)
+      killGroup(proc.pid, 'SIGTERM')
     }
   }
   // SIGTERM で終わらないプロセスに時間を与える
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  for (const { proc, name } of spawned) {
-    if (proc.exitCode === null && proc.signalCode === null) {
-      log(`後始末: ${name}（pid=${proc.pid}）に SIGKILL を送ります`)
-      try {
-        proc.kill('SIGKILL')
-      } catch {
-        // ignore
-      }
+  await new Promise((resolve) => setTimeout(resolve, 1000))
+  for (const { proc, name } of pending) {
+    if (proc.exitCode === null && proc.signalCode === null && proc.pid) {
+      log(`後始末: ${name}（pid=${proc.pid}）のプロセスグループに SIGKILL を送ります`)
+      killGroup(proc.pid, 'SIGKILL')
     }
   }
 }
