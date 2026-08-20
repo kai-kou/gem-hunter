@@ -317,6 +317,9 @@ export default async function LocaleHome({
               dependentLabel: messages.home.digest.dependentLabel,
               starsLabel: messages.home.digest.starsLabel,
               gemIndexLabel: messages.home.digest.gemIndexLabel,
+              newBadge: messages.home.digest.newBadge,
+              firstVisitNote: messages.home.digest.firstVisitNote,
+              rssLink: messages.home.digest.rssLink,
             }}
           />
           <AttributionNotice

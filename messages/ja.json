@@ -57,7 +57,10 @@
       "dependentLabel": "被依存数",
       "starsLabel": "star",
       "gemIndexLabel": "Gem Index",
-      "attribution": "Data via {source}({license})· 生成: {generatedAt} · 並び順は日付シードで再算出しています"
+      "attribution": "Data via {source}({license})· 生成: {generatedAt} · 並び順は日付シードで再算出しています",
+      "newBadge": "新着",
+      "firstVisitNote": "初回として全件を表示しています",
+      "rssLink": "RSS で購読"
     }
   },
   "detail": {

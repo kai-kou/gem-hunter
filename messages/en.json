@@ -57,7 +57,10 @@
       "dependentLabel": "Used by",
       "starsLabel": "stars",
       "gemIndexLabel": "Gem Index",
-      "attribution": "Data via {source} ({license}) · Generated: {generatedAt} · Order is recomputed from the day's seed."
+      "attribution": "Data via {source} ({license}) · Generated: {generatedAt} · Order is recomputed from the day's seed.",
+      "newBadge": "New",
+      "firstVisitNote": "Showing all items as your first visit",
+      "rssLink": "Subscribe via RSS"
     }
   },
   "detail": {

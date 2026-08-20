@@ -12,6 +12,9 @@ const labels = {
   dependentLabel: '被依存数',
   starsLabel: 'star',
   gemIndexLabel: 'Gem Index',
+  newBadge: '新着',
+  firstVisitNote: '初回として全件を表示しています',
+  rssLink: 'RSS で購読',
 }
 
 function makeDigest(items: DailyDigestModel['items']): DailyDigestModel {
@@ -167,6 +170,9 @@ describe('DailyDigest', () => {
           dependentLabel: 'Used by',
           starsLabel: 'stars',
           gemIndexLabel: 'Gem Index',
+          newBadge: 'New',
+          firstVisitNote: 'Showing all items as your first visit',
+          rssLink: 'Subscribe via RSS',
         }}
         locale={locale('en')}
       />,
