@@ -263,12 +263,36 @@ def head_matches_main() -> bool:
     return bool(head) and proc.returncode == 0 and proc.stdout.strip() == head
 
 
+_BEARER_RE = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
+
+
+def mask_output(text: str, secrets: dict[str, str] | None = None) -> str:
+    """wrangler 等の出力から既知の秘匿値を除去する（純粋関数・Issue/PR コメント記録用・WARNING PR #235）。
+
+    `secrets` 省略時はセッション環境変数（`CLOUDFLARE_API_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`）の
+    実値を対象にする。`mask_secrets.py` は「変数名 → マスク値」の対で動く設計（`mask_if_sensitive`）で
+    任意テキストへの適用手段が無いため、値の置換自体はここで行い `mask_value()` のみ再利用する。
+    """
+    if not text:
+        return text
+    if secrets is None:
+        secrets = {
+            name: os.environ.get(name, "")
+            for name in ("CLOUDFLARE_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
+        }
+    masked = text
+    for value in secrets.values():
+        if value:
+            masked = masked.replace(value, mask_value(value))
+    return _BEARER_RE.sub("Bearer ****", masked)
+
+
 def run_retire(alias: str, tag: str, dry_run: bool) -> dict[str, Any]:
     command = build_retire_command(alias, tag)
     if dry_run:
         return {"alias": alias, "ok": True, "dry_run": True, "command": " ".join(command)}
     proc = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
-    output = f"{proc.stdout}\n{proc.stderr}"
+    output = mask_output(f"{proc.stdout}\n{proc.stderr}")
     url_match = re.search(r"https://[a-zA-Z0-9.-]+\.workers\.dev", output)
     return {
         "alias": alias,
@@ -360,12 +384,81 @@ def self_test() -> int:
     check("全件成功", exit_code_for([{"ok": True}, {"ok": True}]), EXIT_OK)
     check("1 件でも失敗したら 1", exit_code_for([{"ok": True}, {"ok": False}]), EXIT_FAILED)
 
+    # --- C: ページング判定（should_fetch_next_page・PR #235 CRITICAL の再発防止） ---
+    check(
+        "1 ページで全件取得できたら継続しない（実測 total_count=35, per_page=100 相当）",
+        should_fetch_next_page({"page": 1, "per_page": 100, "count": 35, "total_count": 35}, 35, 35),
+        False,
+    )
+    check(
+        "total_count が per_page を超えるなら継続する（100 件超の見落とし防止）",
+        should_fetch_next_page({"page": 1, "per_page": 100, "count": 100, "total_count": 250}, 100, 100),
+        True,
+    )
+    check(
+        "累積が total_count に達したら継続しない（最終ページ）",
+        should_fetch_next_page({"page": 3, "per_page": 100, "count": 50, "total_count": 250}, 250, 50),
+        False,
+    )
+    check(
+        "このページが 0 件なら継続しない（無限ループ防止）",
+        should_fetch_next_page({"page": 5, "per_page": 100, "total_count": 250}, 200, 0),
+        False,
+    )
+    check(
+        "total_count が取れない応答は継続しない（fail-safe・無限ループ防止）",
+        should_fetch_next_page({"page": 1, "per_page": 100, "count": 10}, 10, 10),
+        False,
+    )
+
+    # --- D: 出力マスク（mask_output・PR #235 WARNING） ---
+    check(
+        "既知の秘匿値（環境変数実値）をマスクする",
+        mask_output(
+            "error: token=abcdef123456 invalid", secrets={"CLOUDFLARE_API_TOKEN": "abcdef123456"}
+        ),
+        f"error: token={mask_value('abcdef123456')} invalid",
+    )
+    check(
+        "Bearer <token> 形式を除去する",
+        mask_output("Authorization: Bearer sk-abcdefghijklmnop1234567890", secrets={}),
+        "Authorization: Bearer ****",
+    )
+    check("空文字はそのまま返す", mask_output("", secrets={}), "")
+    check(
+        "秘匿値を含まないテキストは変化しない",
+        mask_output("wrangler deploy 成功しました", secrets={"X": "abcdef123456"}),
+        "wrangler deploy 成功しました",
+    )
+
+    # --- E: 退役ブロック判定（should_block_retire・PR #235 WARNING） ---
+    check(
+        "ビルド成果物が無ければブロックする",
+        should_block_retire(build_exists=False, head_is_main=True, allow_non_main=False) is not None,
+        True,
+    )
+    check(
+        "HEAD が main でなく --allow-non-main も無ければブロックする",
+        should_block_retire(build_exists=True, head_is_main=False, allow_non_main=False) is not None,
+        True,
+    )
+    check(
+        "HEAD が main でなくても --allow-non-main ならブロックしない",
+        should_block_retire(build_exists=True, head_is_main=False, allow_non_main=True),
+        None,
+    )
+    check(
+        "ビルド成果物あり・HEAD が main ならブロックしない",
+        should_block_retire(build_exists=True, head_is_main=True, allow_non_main=False),
+        None,
+    )
+
     if failures:
         print("セルフテスト: FAIL")
         for failure in failures:
             print(f"  - {failure}")
         return EXIT_FAILED
-    print("セルフテスト: 全 12 ケース PASS")
+    print("セルフテスト: 全 25 ケース PASS")
     return EXIT_OK
 
 
@@ -426,21 +519,37 @@ def cmd_list(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def should_block_retire(*, build_exists: bool, head_is_main: bool, allow_non_main: bool) -> str | None:
+    """退役実行前の安全装置（純粋関数・WARNING PR #235）。
+
+    ブロックすべきならその理由（メッセージ）を返し、問題なければ None を返す。
+    `cmd_retire` はこの結果をそのまま `Precondition` に渡すだけにし、分岐そのものを self-test で固定する。
+    """
+    if not build_exists:
+        return (
+            f"ビルド成果物 {BUILD_OUTPUT} がありません。"
+            " 本番デプロイ（npm run deploy）の直後に実行してください"
+        )
+    if not allow_non_main and not head_is_main:
+        return (
+            "HEAD が origin/main と一致しません。退役は本番と同じ内容を張り替える操作なので、"
+            " main HEAD で実行してください（意図的に外すときは --allow-non-main）"
+        )
+    return None
+
+
 def cmd_retire(args: argparse.Namespace, aliases: list[str]) -> int:
     if not aliases:
         print("退役対象はありません。")
         return EXIT_OK
     if not args.dry_run:
-        if not os.path.exists(BUILD_OUTPUT):
-            raise Precondition(
-                f"ビルド成果物 {BUILD_OUTPUT} がありません。"
-                " 本番デプロイ（npm run deploy）の直後に実行してください"
-            )
-        if not args.allow_non_main and not head_matches_main():
-            raise Precondition(
-                "HEAD が origin/main と一致しません。退役は本番と同じ内容を張り替える操作なので、"
-                " main HEAD で実行してください（意図的に外すときは --allow-non-main）"
-            )
+        block_reason = should_block_retire(
+            build_exists=os.path.exists(BUILD_OUTPUT),
+            head_is_main=head_matches_main(),
+            allow_non_main=args.allow_non_main,
+        )
+        if block_reason:
+            raise Precondition(block_reason)
 
     tag = retire_tag(git_head_sha())
     results = [run_retire(alias, tag, args.dry_run) for alias in aliases]
