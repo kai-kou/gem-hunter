@@ -1,0 +1,48 @@
+NOTICE — Third-party materials / 第三者の資料について
+
+This repository is licensed under the MIT License (see LICENSE).
+The MIT License does NOT apply to the materials listed below. They belong to
+third parties, are included here for reference only, and remain under their own
+terms.
+
+本リポジトリは MIT License（LICENSE を参照）で公開している。ただし以下は MIT License の
+適用対象外である。いずれも第三者に権利が帰属し、参照のために収録しているにすぎず、それぞれ
+自身の条件のもとに置かれる。
+
+---------------------------------------------------------------------------
+1. docs/02_requirements/minimum-requirements.md
+---------------------------------------------------------------------------
+
+The requirements specification ("与件") for this project, authored and provided
+by a third party. It is reproduced verbatim so that the design decisions in this
+repository can be traced back to the requirements they answer.
+
+Copyright remains with its original author. It is NOT licensed under the MIT
+License, and no permission to reuse, modify, or redistribute it is granted by
+this repository.
+
+本プロジェクトの与件（要件定義）であり、第三者が作成・提供したもの。本リポジトリの設計判断が
+どの要件に答えたものかを追跡できるよう、原文のまま収録している。
+
+著作権は原著者に帰属する。MIT License の対象ではなく、再利用・改変・再配布の許諾を本
+リポジトリが与えるものではない。
+
+---------------------------------------------------------------------------
+2. .claude/skills/skill-creator/
+---------------------------------------------------------------------------
+
+Licensed under the Apache License, Version 2.0.
+The full license text is included at .claude/skills/skill-creator/LICENSE.txt.
+
+Apache License 2.0 のもとで収録している。ライセンス全文は
+.claude/skills/skill-creator/LICENSE.txt に同梱している。
+
+---------------------------------------------------------------------------
+Dependencies / 依存パッケージ
+---------------------------------------------------------------------------
+
+Third-party dependencies declared in package.json and requirements.txt are not
+vendored into this repository and remain under their own licenses.
+
+package.json と requirements.txt が宣言する依存パッケージは本リポジトリに同梱しておらず、
+それぞれのライセンスのもとにある。

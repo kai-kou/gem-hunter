@@ -19,32 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----------------------------------------------------------------------------
-Exclusions / 適用対象外
----------------------------------------------------------------------------
-
-The MIT License above does NOT apply to the following, which are the property
-of third parties and are redistributed under their own terms. They are
-included in this repository for reference only.
-上記 MIT License は以下には適用されない。いずれも第三者に権利が帰属し、それぞれ
-自身の条件のもとで収録している。
-
-1. `.claude/skills/skill-creator/`
-   Licensed under the Apache License, Version 2.0.
-   See `.claude/skills/skill-creator/LICENSE.txt` for the full license text.
-
-2. `docs/02_requirements/minimum-requirements.md`
-   The requirements specification ("与件") for this project, authored and
-   provided by a third party. It is reproduced verbatim so that the design
-   decisions in this repository can be traced back to the requirements they
-   answer. Copyright remains with its original author; it is NOT licensed
-   under the MIT License above, and no permission to reuse, modify, or
-   redistribute it is granted by this file.
-   本プロジェクトの与件（要件定義）であり、第三者が作成・提供したもの。本リポジトリの
-   設計判断がどの要件に答えたものかを追跡できるよう、原文のまま収録している。著作権は
-   原著者に帰属し、上記 MIT License の対象外である（再利用・改変・再配布の許諾を本
-   ファイルによって与えるものではない）。
-
-Third-party dependencies declared in `package.json` and `requirements.txt` are
-not vendored into this repository and remain under their own licenses.
