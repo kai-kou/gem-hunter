@@ -11,15 +11,19 @@ describe('LoginLink', () => {
 
     const link = screen.getByRole('link', { name: 'ログイン' })
     expect(link).toHaveAttribute('href', '/api/auth/login')
-    expect(screen.queryByRole('link', { name: 'ログアウト' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'ログアウト' })).not.toBeInTheDocument()
   })
 
-  it('ログイン時はログアウトリンク（/api/auth/logout）を表示する', () => {
+  it('ログイン時はログアウトボタン（POST フォーム経由）を表示する', () => {
     render(<LoginLink isLoggedIn={true} labels={labels} />)
 
-    const link = screen.getByRole('link', { name: 'ログアウト' })
-    expect(link).toHaveAttribute('href', '/api/auth/logout')
+    const button = screen.getByRole('button', { name: 'ログアウト' })
     expect(screen.queryByRole('link', { name: 'ログイン' })).not.toBeInTheDocument()
+
+    const form = button.closest('form')
+    expect(form).not.toBeNull()
+    expect(form).toHaveAttribute('method', 'post')
+    expect(form).toHaveAttribute('action', '/api/auth/logout')
   })
 
   it('ユーザー名・レート枠数値は表示しない（AC 未記載・YAGNI）', () => {

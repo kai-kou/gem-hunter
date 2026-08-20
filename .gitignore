@@ -61,3 +61,6 @@ worker-configuration.d.ts
 
 # 検証用に distDir を変えてビルドしたときの成果物（.next-r5verify 等）を追跡しない
 /.next-*/
+
+# TypeScript のインクリメンタルビルド情報（ビルドのたびに変わる生成物・#213 / #82）
+tsconfig.tsbuildinfo

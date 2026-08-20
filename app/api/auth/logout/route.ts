@@ -4,9 +4,15 @@ import { OAUTH_STATE_COOKIE_NAME, resolveLandingHost, SESSION_COOKIE_NAME } from
 
 /**
  * ログアウト（AR-5）。セッション Cookie を破棄して元の画面へ戻す。
- * 単純なリンクから叩けるよう GET にする（`login-link.tsx` は `next/link` の `<Link>`。
- * フォーム/JS を要求しない・実装手段の選択・SD-3 対象外。CSRF での強制ログアウトは実害が
- * 小さいと判断し許容する・PR #141 レビュー指摘への回答）。
+ * **POST 限定**（GET にしない）: `next/link` の `<Link>` は本番ビルドでビューポート内リンクを
+ * 自動プリフェッチするため、GET にすると `login-link.tsx` を表示しただけで
+ * `GET /api/auth/logout` が実行されセッションが破棄されてしまう（Playwright トレースで実測・
+ * 307 応答と `set-cookie` 空文字化を確認）。ブラウザ/プロキシの先読みでも同様に誤爆しうる。
+ * `login-link.tsx` 側は `<form method="post" action="/api/auth/logout">` から叩く。
+ * CSRF 対策: セッション Cookie は `sameSite: 'lax'`（発行元は `app/api/auth/callback/route.ts`。
+ * `oauth_state` Cookie も同様に `app/api/auth/login/route.ts` で `sameSite: 'lax'`）のため、
+ * クロスサイトからの POST 送信では Cookie が付与されず攻撃は成立しない。専用の CSRF トークン
+ * 導入は Issue #144 に残る。
  *
  * `oauth_state` は callback 成功時点で既に削除済みのはずだが、フロー中断
  * （state 不一致・認可拒否等）で残る可能性があるため防御的に同名 Cookie も削除する
@@ -21,7 +27,7 @@ function landingUrl(request: NextRequest): URL {
   return new URL('/', `${request.nextUrl.protocol}//${host}`)
 }
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const response = NextResponse.redirect(landingUrl(request))
   response.cookies.delete(SESSION_COOKIE_NAME)
   response.cookies.delete(OAUTH_STATE_COOKIE_NAME)
