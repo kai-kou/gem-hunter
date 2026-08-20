@@ -12,6 +12,9 @@ const labels = {
   dependentLabel: '被依存数',
   starsLabel: 'star',
   gemIndexLabel: 'Gem Index',
+  newBadge: '新着',
+  firstVisitNote: '初回として全件を表示しています',
+  rssLink: 'RSS で購読',
 }
 
 function makeDigest(items: DailyDigestModel['items']): DailyDigestModel {
@@ -121,7 +124,11 @@ describe('DailyDigest', () => {
 
     render(<DailyDigest digest={digest} labels={labels} locale={locale('ja')} />)
 
-    expect(screen.getByRole('status')).toHaveTextContent('今日は表示できる Gem がありません')
+    // FirstVisitNote も role="status" を常設する（`ui-ux-guidelines.md` §7.2・兄弟要素なので入れ子禁止に反しない）
+    // ため、空一覧の文言はテキストで特定する。
+    expect(
+      screen.getByText('今日は表示できる Gem がありません'),
+    ).toHaveAttribute('role', 'status')
     // 空のときはリストを描画しない
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
@@ -167,6 +174,9 @@ describe('DailyDigest', () => {
           dependentLabel: 'Used by',
           starsLabel: 'stars',
           gemIndexLabel: 'Gem Index',
+          newBadge: 'New',
+          firstVisitNote: 'Showing all items as your first visit',
+          rssLink: 'Subscribe via RSS',
         }}
         locale={locale('en')}
       />,
