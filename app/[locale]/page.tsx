@@ -11,13 +11,13 @@ import { tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
-<<<<<<< HEAD
-import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
-=======
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
-import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
+import {
+  parseSearchParams,
+  rawKeywordOf,
+  type RawSearchParams,
+} from '@/src/ui/url/search-params'
 import { LocaleSwitcher } from '@/src/ui/locale-switcher'
->>>>>>> origin/main
 import { Pagination } from '@/src/ui/pagination'
 import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
@@ -43,7 +43,6 @@ async function runSearch(
   }
 
   try {
-<<<<<<< HEAD
     // 境界（URL）で値オブジェクトへ変換する（domain-model.md §4）。
     // 🔴 不正値を黙って握りつぶさない（`trySearchKeyword` を使わない）。修飾子入りキーワード
     //    （`react is:private` 等）は `DomainValidationError` になるので、下の catch で
@@ -51,10 +50,10 @@ async function runSearch(
     //    idle 表示になり、拒否された事実がユーザーに伝わらない。
     const keyword = searchKeyword(rawKeyword)
 
-    const result = await searchRepositoriesUseCase()({
-=======
+    // SP-8: ログイン中はユーザー自身のアクセストークンで叩く（レート枠の切替）。トークンの
+    // 供給元が変わっても経路は `GithubRepositoryQuery`（ACL）のままなので、`is:public` 付与と
+    // mapper の private 除外という公開限定の防御はそのまま効く（NFR-33 / AC-12）。
     const result = await searchRepositoriesUseCase(accessToken)({
->>>>>>> origin/main
       keyword,
       page: tryPageNumber(rawPage),
       sort: trySortOrder(rawSort),
@@ -88,16 +87,12 @@ export default async function LocaleHome({
 
   const rawSearchParams = await searchParams
   const { keyword, page, sort, perPage } = parseSearchParams(rawSearchParams)
-<<<<<<< HEAD
   // 🔴 検索の実行にはキーワードの生値を使う（`parseSearchParams` は不正値を `''` へ倒すため、
   //    そのまま渡すと拒否理由が「未入力」にすり替わる）。入力欄の表示も生値にして、
   //    エラーを見たユーザーが自分の入力を直せるようにする。
   const rawKeyword = rawKeywordOf(rawSearchParams)
-  const state = await runSearch(rawKeyword, page, sort, perPage, messages)
-=======
   const accessToken = await getSessionAccessToken()
-  const state = await runSearch(keyword, page, sort, perPage, messages, accessToken)
->>>>>>> origin/main
+  const state = await runSearch(rawKeyword, page, sort, perPage, messages, accessToken)
   const basePath = `/${locale}`
   const searchState = { keyword, page, sort, perPage }
   const currentPath = buildSearchUrl(basePath, searchState)
