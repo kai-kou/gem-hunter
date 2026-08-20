@@ -172,6 +172,13 @@ npm run check          # bash tools/run_checks.sh。Lint/型/vitest/E2E 等を�
 > 🔵 **将来 Actions が復旧したら、この読み替えを外し「CI は PR ごとに両方を実行する」という記述へ戻す**
 > （ワークフロー定義自体は撤去済みなので復旧時は再導入が必要。詳細は `E-12` / Issue #77）。
 
+### 8.1 赤くなったときの判断手順（flaky レジストリ）
+
+`npm run check` が赤くなったら、まず [`docs/04_development/flaky-tests.md`](./flaky-tests.md) を確認する。
+**該当エントリが載っていれば** 既知の flaky として扱ってよい。**載っていなければ本物の失敗として扱う**
+（推測で「flaky だろう」と片付けてリトライに逃がさない・`sprint-development-rules.md` `SD-2` の
+「テストのスキップ・無効化で緑にしない」を骨抜きにしないため）。
+
 ---
 
 ## 9. 完了・成功の定義

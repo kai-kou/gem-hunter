@@ -195,6 +195,21 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 | `use cache` / `cacheLife` / `cacheTag` | Infrastructure の実装詳細 | 🔴 **ユースケース・ドメインから直接触らない**。キャッシュは `CachePort` 越しに扱う（`D-18` により Cloudflare での実体は HTTP `Cache-Control` + Workers Caching） |
 | `searchParams` | 入力の境界 | 🔴 **値オブジェクトへ変換してからユースケースへ渡す**（生の文字列を奥へ流さない・`NFR-19`） |
 
+### 5.1. `LocaleSwitcher` を `layout.tsx` へ一本化しない理由（`SP-8`）
+
+`LocaleSwitcher`（`src/ui/locale-switcher.tsx`）は共通の `app/[locale]/layout.tsx` に一本化せず、
+`app/[locale]/page.tsx` と詳細ページ（`app/[locale]/repos/[owner]/[repo]/page.tsx`）へ個別に配線している。
+
+**制約**: Next.js 16 + OpenNext Cloudflare は middleware / `proxy.ts` を採用しておらず、Server Component の
+`layout.tsx` から現在のパス名（`currentPath`）を安定して取得する標準手段が無い。`layout.tsx` は `params` から
+ロケールは取れるが、詳細ページの `owner`/`repo` セグメントまでは受け取らないため、切替後のリダイレクト先
+（ロケールだけを差し替えた同一パス）を共通レイアウト側で組み立てられない。
+
+**将来の再検討条件**: Next.js または OpenNext Cloudflare が middleware ベースの pathname 取得（あるいはそれに
+相当する標準手段）をサポートしたら、一本化を再検討する。
+
+参照: PR #141（`SP-8`）レビュー指摘 / `content/discussions/sprint-review-SP-8-20260820/whiteboard.md`。
+
 ---
 
 ## 6. 機械チェック（この設計は grep で守る）

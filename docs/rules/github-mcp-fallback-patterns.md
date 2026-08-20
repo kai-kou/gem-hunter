@@ -250,6 +250,26 @@ MCP は Issue・PR・レビュー・マージ・ファイル・search・Actions�
 （スクリプトは gh 失敗を `gh_unavailable` で明示 → 呼び出し元の Claude が MCP で直接操作・§4）が正しい終着形。
 ローカル実行では gh が全機能動作するため、**gh 経路の削除ではなく「クラウド = MCP 一次経路 / ローカル = gh」の併存を維持する**。
 
+### 2.6 `mcp__github__sub_issue_write` の `sub_issue_id` は Issue 番号ではなく内部 DB ID（2026-08-20・Issue #160）
+
+🔴 **`sub_issue_write` の `sub_issue_id` パラメータに Issue 番号（`#123` の `123`）をそのまま渡すと 404 になる。**
+このツールだけ他の `mcp__github__*`（`issue_read` / `issue_write` / `list_issues` / `search_issues` 等）と異なり、
+GitHub 内部の Issue DB ID（Issue 番号とは別体系の値）を要求する。上記のいずれの読み取り系ツールも
+DB ID をレスポンスに含まないため、そのままでは取得手段がない。
+
+**回避策（いずれかで DB ID を取得してから渡す）**:
+
+1. **公開 GitHub API を直叩きする**（認証不要・200 で到達可）:
+   `https://api.github.com/repos/{owner}/{repo}/issues/{N}` のレスポンス `id` フィールドが DB ID。
+   `curl`/`WebFetch` のどちらでも取得できる（§0 の「クラウドの gh 403」とは無関係の公開エンドポイントのため、
+   クラウド実行環境の egress プロキシでも到達できる）。
+2. **`mcp__github__issue_write`（method="update"）の no-op 更新を使う**: 対象 Issue に現行値と同じ `title` を渡して
+   更新すると、レスポンスに `id`（DB ID）が含まれる。本文・ラベル・状態への副作用は無い（`title` を変えなければ
+   実質的な変更が発生しない）。
+
+Epic 化・sub-issue 紐付けを行うセッションは、まずこの 2 回避策のいずれかで親・子両方の DB ID を取得してから
+`sub_issue_write` を呼ぶ（Issue 番号を直接渡して 404 を踏んでから初めて気づく、という試行錯誤を繰り返さない）。
+
 ## 3. git 操作（クラウドで生存）
 
 `git` は API プロキシとは別の git プロキシを通るため、以下は **そのまま使える**:
