@@ -35,6 +35,10 @@ describe('POST /api/auth/logout', () => {
 
 describe('GET /api/auth/logout', () => {
   it('GET ハンドラは export されていない（プリフェッチで副作用が起きないことの保証）', async () => {
+    // Next.js は route module（`route.ts`）の export 名で HTTP メソッドを解決するため、
+    // `GET` キーの不在がそのまま「GET リクエストはフレームワークにハンドリングされず
+    // 405 になる」＝プリフェッチ耐性を意味する（実リクエストでの 405 確認は
+    // `e2e/sp-8-auth.spec.ts` の回帰テストが担う）。
     const route = await import('./route')
 
     expect((route as { GET?: unknown }).GET).toBeUndefined()

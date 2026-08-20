@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
+import type { Result } from 'axe-core'
 import ja from '../messages/ja.json'
+import { createAxeBuilder } from './axe'
 import { searchFor } from './helpers'
 
 /**
@@ -48,6 +50,10 @@ type StubStats = {
 
 function uniqueKeyword(base: string): string {
   return `${base}-${randomBytes(4).toString('hex')}`
+}
+
+function seriousOrCritical(violations: Result[]): Result[] {
+  return violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
 }
 
 async function readStubStats(): Promise<StubStats> {
@@ -198,5 +204,23 @@ test('SP-8 回帰: /api/auth/logout への GET は 405 を返し副作用を持�
       cookies.find((c) => c.name === SESSION_COOKIE_NAME),
       'GET リクエストではセッション Cookie が破棄されないこと',
     ).toBeTruthy()
+  })
+})
+
+test('SP-8 回帰: ログイン済みヘッダーに axe の重大な違反がない（NFR-26）', async ({ page }) => {
+  // `e2e/a11y.spec.ts` / `e2e/sp-9-a11y.spec.ts` の axe 検査は未ログイン状態でしか描画しないため、
+  // ログアウト導線が `role="link"` から `<form method="post">` 内の `role="button"` に変わった
+  // ことを axe が一度も検査していなかった（レビュー指摘）。ログイン後のヘッダーを対象に補う。
+  await test.step('ダミー OAuth でログインする', async () => {
+    await page.goto('/api/auth/login')
+    await page.waitForURL(/\/ja(\?.*)?$/)
+  })
+
+  await test.step('ログイン済みヘッダー（POST フォーム化したログアウトボタン）に axe の重大な違反がない', async () => {
+    await expect(page.getByRole('button', { name: ja.common.auth.logout })).toBeVisible()
+
+    const results = await createAxeBuilder(page).analyze()
+    const violations = seriousOrCritical(results.violations)
+    expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
   })
 })

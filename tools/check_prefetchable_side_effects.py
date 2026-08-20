@@ -33,6 +33,13 @@
   - 文字列リテラルを保護したうえでコメント（`//` と `/* */`）を除去してから検査する
   - `.next` / `node_modules` / `dist` / `build` 等の生成物ディレクトリは対象外
 
+ツールの限界（既知の検出漏れ）:
+  - 検査 2（GET ハンドラ内 Cookie 変更）は `cookies.set(` / `cookies.delete(` が
+    ハンドラ本体に **直接** 現れる場合のみ検出する。Cookie 削除処理を共有ヘルパー関数へ
+    委譲されると（例: `clearSessionCookie(res)`）検出をすり抜ける。この限界がある分、
+    検査 1（`<Link href="/api/...">` の検出）が **第一の防衛線**であり、検査 2 は多層防御の
+    二段目という位置づけである。
+
 使い方:
   python3 tools/check_prefetchable_side_effects.py              # リポジトリ全体を検査
   python3 tools/check_prefetchable_side_effects.py path/a.tsx …  # 指定ファイルのみ検査
@@ -149,6 +156,48 @@ def find_matching_brace(text: str, open_idx: int) -> int:
     return n - 1
 
 
+def find_tag_end(text: str, start_idx: int) -> int:
+    """`text[start_idx]` 以降で、深さ 0 のタグ終端 `>` のインデックスを返す。
+
+    JSX 属性は `{...}`（式）や `(...)`（関数呼び出し・アロー関数）を含みうり、その中には
+    `onClick={() => doThing()}` のアロー演算子 `=>` や比較式 `{a > b}` のように `>` が
+    現れうる。非貪欲正規表現の `.*?/?>` はこれをタグ終端と誤認してしまうため、`{}` / `()`
+    の深さと文字列クォートを追跡しながら 1 文字ずつ走査し、深さ 0 の `>` だけをタグ終端と
+    みなす。見つからなければ -1 を返す。
+    """
+    i = start_idx
+    n = len(text)
+    brace_depth = 0
+    paren_depth = 0
+    quote: str | None = None
+    while i < n:
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "\"'`":
+            quote = ch
+            i += 1
+            continue
+        if ch == "{":
+            brace_depth += 1
+        elif ch == "}":
+            brace_depth = max(0, brace_depth - 1)
+        elif ch == "(":
+            paren_depth += 1
+        elif ch == ")":
+            paren_depth = max(0, paren_depth - 1)
+        elif ch == ">" and brace_depth == 0 and paren_depth == 0:
+            return i
+        i += 1
+    return -1
+
+
 def find_matching_paren(text: str, open_idx: int) -> int:
     """`text[open_idx] == '('` として、対応する `)` のインデックスを返す。"""
     depth = 0
@@ -182,9 +231,10 @@ def find_matching_paren(text: str, open_idx: int) -> int:
 # --------------------------------------------------------------------------- 検査1: <Link href="/api/...">
 
 # next/link の import 名（エイリアス）を拾う。`import Link from 'next/link'` /
-# `import NextLink from "next/link"` の両方に対応する。
+# `import NextLink from "next/link"` に加え、`import Link, { LinkProps } from 'next/link'`
+# のような named import 併記形にも対応する（末尾の `{ ... }` は任意）。
 LINK_IMPORT_RE = re.compile(
-    r"""import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]next/link['"]"""
+    r"""import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s*from\s+['"]next/link['"]"""
 )
 
 HREF_RE = re.compile(
@@ -201,9 +251,17 @@ def check_link_hrefs(rel: str, raw_text: str) -> list[str]:
     link_name = m.group(1)
 
     violations: list[str] = []
-    tag_re = re.compile(rf"<{re.escape(link_name)}\b(.*?)/?>", re.DOTALL)
-    for tag_match in tag_re.finditer(text):
-        attrs = tag_match.group(1)
+    tag_open_re = re.compile(rf"<{re.escape(link_name)}\b")
+    pos = 0
+    while True:
+        tag_match = tag_open_re.search(text, pos)
+        if not tag_match:
+            break
+        attrs_start = tag_match.end()
+        tag_end = find_tag_end(text, attrs_start)
+        if tag_end == -1:
+            break  # 対応するタグ終端が見つからない（壊れた/切り詰められた入力）
+        attrs = text[attrs_start:tag_end]
         href_match = HREF_RE.search(attrs)
         if href_match and href_match.group(1).startswith("/api/"):
             ln = line_of(text, tag_match.start())
@@ -211,6 +269,7 @@ def check_link_hrefs(rel: str, raw_text: str) -> list[str]:
                 f"{rel}:{ln}: <{link_name} href=\"{href_match.group(1)}\"> が next/link で "
                 f"/api/ をプリフェッチさせています（素の <a href> か <form> を使ってください）"
             )
+        pos = tag_end + 1
     return violations
 
 
@@ -220,6 +279,11 @@ def check_link_hrefs(rel: str, raw_text: str) -> list[str]:
 GET_FUNC_DECL_RE = re.compile(r"export\s+(?:async\s+)?function\s+GET\s*\(")
 # `export const GET = async (...) => { ... }` のアロー関数形にも対応する。
 GET_ARROW_DECL_RE = re.compile(r"export\s+const\s+GET\s*=\s*(?:async\s*)?\(")
+# `export const GET = async function (...) { ... }` の関数式代入形にも対応する
+# （関数名は無名 `function (` / 有名 `function foo(` のどちらも許容）。
+GET_FUNC_EXPR_RE = re.compile(
+    r"export\s+const\s+GET\s*=\s*(?:async\s+)?function\s*(?:[A-Za-z_$][\w$]*)?\s*\("
+)
 
 COOKIE_MUTATION_RE = re.compile(r"\bcookies\.(?:set|delete)\s*\(")
 
@@ -227,7 +291,7 @@ COOKIE_MUTATION_RE = re.compile(r"\bcookies\.(?:set|delete)\s*\(")
 def _extract_get_bodies(text: str) -> list[str]:
     """コメント除去済みテキストから GET ハンドラの本体（`{...}`）を全て抜き出す。"""
     bodies: list[str] = []
-    for decl_re in (GET_FUNC_DECL_RE, GET_ARROW_DECL_RE):
+    for decl_re in (GET_FUNC_DECL_RE, GET_ARROW_DECL_RE, GET_FUNC_EXPR_RE):
         for decl_match in decl_re.finditer(text):
             paren_open = decl_match.end() - 1
             paren_close = find_matching_paren(text, paren_open)
@@ -385,6 +449,38 @@ CASES: list[tuple[str, str, int]] = [
         "export async function GET(request: Request) {\n"
         "  // res.cookies.delete('session')\n  return NextResponse.json({})\n}\n",
         0,
+    ),
+    # 検査1: 属性内のアロー関数に含まれる `>` をタグ終端と誤認しない（実機再現バグ）。
+    # `onClick={() => doThing()}` の `=>` を旧実装（非貪欲 `.*?/?>`）は誤ってタグ終端と
+    # みなし、後続の href="/api/auth/logout" を取りこぼしていた。
+    (
+        "src/ui/order.tsx",
+        "import Link from 'next/link'\n"
+        'export const x = <Link onClick={() => doThing()} href="/api/auth/logout">out</Link>\n',
+        1,
+    ),
+    # 検査1: named import 併記形（`import Link, { LinkProps } from 'next/link'`）でも
+    # import 検出漏れでファイル丸ごとスキップにならない。
+    (
+        "src/ui/x.tsx",
+        "import Link, { LinkProps } from 'next/link'\n"
+        'export const x = <Link href="/api/auth/logout">logout</Link>\n',
+        1,
+    ),
+    # 検査1: next/link を import していないファイルは <Link href="/api/..."> 風の文字列が
+    # あっても誤検出しない（false positive 方向）。
+    (
+        "src/ui/no-import.tsx",
+        'export const x = <Link href="/api/auth/logout">logout</Link>\n',
+        0,
+    ),
+    # 検査2: 関数式代入形（`export const GET = async function (req) { ... }`）でも
+    # cookies.delete( を検出する。
+    (
+        "app/api/weird2/route.ts",
+        "export const GET = async function (request: Request) {\n"
+        "  const res = NextResponse.redirect('/')\n  res.cookies.delete('session')\n  return res\n}\n",
+        1,
     ),
 ]
 

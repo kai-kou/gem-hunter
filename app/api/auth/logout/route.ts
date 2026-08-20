@@ -9,7 +9,8 @@ import { OAUTH_STATE_COOKIE_NAME, resolveLandingHost, SESSION_COOKIE_NAME } from
  * `GET /api/auth/logout` が実行されセッションが破棄されてしまう（Playwright トレースで実測・
  * 307 応答と `set-cookie` 空文字化を確認）。ブラウザ/プロキシの先読みでも同様に誤爆しうる。
  * `login-link.tsx` 側は `<form method="post" action="/api/auth/logout">` から叩く。
- * CSRF 対策: セッション Cookie は `sameSite: 'lax'`（`src/composition/auth.ts`）のため、
+ * CSRF 対策: セッション Cookie は `sameSite: 'lax'`（発行元は `app/api/auth/callback/route.ts`。
+ * `oauth_state` Cookie も同様に `app/api/auth/login/route.ts` で `sameSite: 'lax'`）のため、
  * クロスサイトからの POST 送信では Cookie が付与されず攻撃は成立しない。専用の CSRF トークン
  * 導入は Issue #144 に残る。
  *
