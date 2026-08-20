@@ -47,7 +47,17 @@
       {
         "title": "Epic タイトル",
         "children": ["子 Issue 番号"],
+        "labels": ["Epic 自体に付けるラベル。散文の合意ではなく機械可読側に置く（付け間違えるとレーンの拾い分けが壊れるため）"],
+        "priority": "Epic 自体の priority。子に priority を代表させない場合は null",
         "reason": "束ねる根拠 1 文"
+      }
+    ],
+    "body_rewrite": [
+      {
+        "issue": "本文を書き換える Issue 番号",
+        "reason": "書き換える根拠 1 文",
+        "new_direction": "書き換え後の要求",
+        "out_of_scope": "対象集合の外の Issue を書き換える場合に、越境である旨と根拠を 1 文で記す（対象内なら省略可）"
       }
     ],
     "drop": [

@@ -4,8 +4,8 @@
 - 議題ID: `try-issue-refinement-20260820`
 - 論点: ユーザー指示『try-Issue を棚卸しして、似たものはマージ、優先度設定、トリアージする』に対する棚卸し判断。詳細な争点 A〜E は tools/discussion_specs/try_issue_refinement_spec.json を参照。
 - 参加者: `mission_po`, `process_skeptic`, `backlog_hygiene`, `app_quality`
-- 投稿数: 10
-- 更新: 2026-08-20T09:42:23+09:00
+- 投稿数: 12
+- 更新: 2026-08-20T09:53:51+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -425,3 +425,97 @@ machine-check Epic（8 件）の中身は実装コストの分散が大きい: `
     "#116 の射程は『テストの hermeticity 検証』か『秘匿情報の非露出検証』か（Issue 本文の曖昧性。射程で実装スコープと priority が変わる）。"
   ]
 }
+
+## ラウンド 4
+
+### `lead` — メモ
+<sub>2026-08-20T09:53:15+09:00</sub>
+
+# 訂正・追補（Layer 1 セルフレビューの指摘を受けて）
+
+> 議論記録（round 1〜3 の投稿）は **書き換えず**、本 note で訂正・追補する。記録の改竄を避けるため。
+
+## 訂正 1: consensus の「4 名の支持」は誤り（正: 4 名中 3 名）
+
+consensus 合意点 1 に「`#130 ← #139` の吸収だけが **4 名の支持を得た**」と書いたが誤り。
+`mission_po` は round 1 の争点 A で「#130+#139 も『domain-model 整合』と『ドキュメントのコード例示整合』で対象データが異なるため、切り口は近いが同一とまでは言えず、link_only 寄りを支持する」と明記し、round 2 でこの立場を撤回していない。
+
+**正**: 4 名中 3 名（`process_skeptic` / `backlog_hygiene` / `app_quality`）が統合を支持。`mission_po` は link_only 寄りを表明したが強い反対はしていない。verdict 本文（`merges[0].reason`）の「4 名中 3 名」が正しい。
+
+この訂正により、`process_skeptic` が付した **フェーズ分割の条件**（フェーズ 1 未完でフェーズ 2 に着手しない）は「全員一致の統合に対する念のための条件」ではなく、**反対意見を持つ参加者がいる中での妥協条件** として読む必要がある。着手時にこの条件を緩めてはならない。
+
+## 訂正 2: `getByRole` の件数
+
+`app_quality` の round 1 claim にある「`getByRole` は 79 件」は、どの数え方でも再現しない。
+
+**正**: `e2e/*.spec.ts` 限定で **78 件**、`e2e/helpers.ts` を含めた `e2e/` 配下全体で **80 件**。`getByTestId` **0 件** は正しい。
+
+#109 の機械検査を実装するセッションは、ベースラインとして **対象範囲つきの上記の数値** を使うこと（「79」を基準にすると初回から不一致になる）。
+
+## 訂正 3: #104 の検証コマンド
+
+`app_quality` の round 1 claim にある「`find tools -iname "*i18n*"` はヒットなし」は誤り。実際は `tools/discussion_specs/sp8_auth_i18n_spec.json` が 1 件ヒットする（議論 spec であり検査スクリプトではない）。
+
+**結論（i18n の対称性を強制する機械検査は存在しない）自体は正しい。** 裏取りに使うべきコマンドは `find tools -name "check_*i18n*"` / `find tools -name "*message*"`（いずれもヒットなし）。
+
+## 追補 1: `#130` を high に据え置く根拠の読み替え
+
+verdict の `priority_recommendations` は #130 の high 据え置き根拠を「①与件充足（表示データの正確性）」と書いたが、`app_quality` が round 2 で「今この瞬間ユーザーに見えている画面上の食い違いはゼロ・実態は死蔵フィールド」と訂正しており、この根拠は成り立たない。
+
+**正しい根拠**: 「②積み上げ可能性（ドキュメント ↔ 実装整合の継続検査の仕組み化）」。
+
+## 追補 2: #128 の priority 欠落（実運用上の欠陥）
+
+verdict の `body_rewrite` は「具体的な不一致の修正は #128 が担い、#130 は継続検査の仕組み化に徹する」と役割を分離したが、**#128 には priority ラベルが付いていない**。消化スロットの選択順（priority 降順 → sp 昇順）では「priority なし」は medium より後ろに置かれるため、**仕組み化だけの #130（high）が先に選ばれ、実害の受け皿である #128 が後回しになる**。
+
+`src/infrastructure/github/mapper.test.ts:81` が `AR-1` 違反の出どころを期待値として固定している以上、実害の受け皿にこそ優先度が要る。
+
+**追補**: `priority_recommendations` に `{"issue": 128, "from": "（欠落）", "to": "high", "reason": "mapper.test.ts:81 が AR-1 違反の出どころを期待値として固定しており、実害の修正を担うため"}` を追加する（@owner に諮る）。
+
+## 追補 3: #92 の処遇が verdict に記録されていない
+
+#92 は議論全体で最も意見が割れた 1 件（`mission_po` が high 昇格を主張、`process_skeptic` が medium + `sp:1〜2` の対案）だが、priority の変更が無いことを理由に `priority_recommendations` から落ちた。「議論の結果 medium で確定した」のか「単に落ちた」のかが verdict から読めない。
+
+**追補**: `{"issue": 92, "from": "medium", "to": "medium", "reason": "契約テストの大半は既存で、残るのはポート interface の JSDoc への文書化のみ。process_skeptic の対案を採用して medium 据え置き。sp は 2 → 1 に縮小する"}`。実際に @owner が `sp:2 → sp:1` を実行済み。
+
+## 追補 4: #128 の書き換えは対象集合の外（越境）である
+
+#128 は棚卸し対象 37 件（すべて `type:retro-try`）に含まれず、`type:improvement`＝改善 Issue レーンの Issue である。`backlog_hygiene` が論じたレーン境界（`improvement-lane-map.md` §2 ルール 2・#160）は「改善 Issue レーンが `type:retro-try` を扱わない」方向の禁止だが、**逆方向の越境**（振り返りレーンの棚卸しが改善 Issue レーンの Issue を書き換える）も、無記録で行えば同じくなし崩しになる。
+
+**追補**: #128 の本文改訂は「`app_quality` の実地確認の受け皿として例外的に行う越境」であり、`backlog_hygiene` が Epic ラベルで行った「明示的逸脱」と同じ扱いで記録する。#153（レーン境界の決定）の検討材料に含めること。
+
+## 追補 5: spec の `verdict_schema` を更新した
+
+verdict に `body_rewrite` キーを置いたが spec の `verdict_schema` が未宣言だった。`verdict_schema` のキーだけを列挙して verdict を適用する後続処理があれば、**#109 の本文反転（実装すると害がある要求の是正）が丸ごと落ちる**。
+
+**対応**: `tools/discussion_specs/try_issue_refinement_spec.json` の `verdict_schema` に `body_rewrite`（`issue` / `reason` / `new_direction` / `out_of_scope`）を追加した。あわせて `epics[]` に `labels` / `priority` を追加した（Epic のラベル決定と priority を付けない決定が consensus の散文にしかなく、verdict だけを読むセッションが `type:improvement` を付けてレーン規約に違反する事故を防ぐため）。
+
+## 棄却した指摘（敵対的検証で否定）
+
+- 「`improvement-lane-map.md` の Rule 1 / Rule 2 は §3 にあり、§2 という引用は誤り」→ **棄却**。実ファイルを確認したところ `## 2. 一意判定ルール` の項目 2 が `type:retro-try` の専管規定であり、`§2 Rule 2` の引用は正しい。`§3` は「レーン間の受け渡し」。
+- 「spec の `synthesizer.name_note` は既存 spec に無い独自キー」→ **棄却**。`tools/discussion_specs/cloudflare_infra_spec.json` に同じキーの前例がある。
+
+### `lead` — メモ
+<sub>2026-08-20T09:53:51+09:00</sub>
+
+# 訂正・追補（2）— セルフレビュー第 2 便の指摘
+
+## 訂正 4: 「最終更新日」の要件根拠の誤り
+
+`mission_po` の round 2 で、`#130` を high 継続支持へ転換する根拠として `minimum-requirements.md` §7（「詳細ページにリポジトリ名・オーナーアイコン・言語・Star 数・Watcher 数・Fork 数・Issue 数が表示される」）を引用したが、**この受け入れ基準に「最終更新日」は含まれていない**（実ファイル `docs/02_requirements/minimum-requirements.md` §7 の 11 項目を確認済み）。
+
+**正しい権威**:
+
+- `docs/02_requirements/prd.md:228` の `AR-1`「一覧カードに説明文・主要言語・star 数・**最終更新日**・topics を表示する」（`P1-MVP`）
+- `docs/03_design/data-model/domain-model.md:66`「『最終更新日』（`AR-1`）は `pushed_at` を使う（メタデータ更新で動く `updated_at` ではない）」
+
+この訂正が重要な理由: 誤った根拠のまま `#128` / `#130` に着手したセッションが §7 を開き、「最終更新日は与件チェックリストに無い＝品質ゲートに該当しない」と判断して `updatedAt` の出どころ是正をスコープから外す恐れがある。**実際には `AR-1` が `updated_at` の使用を明示的に禁じている** ため、要件違反が要件根拠の誤記によって見逃される。
+
+## 追補 6: `#130` の着手条件にレーンをまたぐ依存を明記する
+
+`#128`（`type:improvement`・改善 Issue レーン）と `#130`（`type:retro-try`・振り返りレーン）は、同一問題の「修正」と「再発防止検査」を担うが、**別レーン・別ハンドラ**（`self-improvement-loop` 消化モード vs `retro-try-handler`）が拾う。依存を明記しないと次のどちらかが起きる。
+
+- `#130` の検査スクリプトが `#128` の修正前に配線され、自分自身の不整合を検出し続ける（検査が最初から赤で、無効化の圧力がかかる）
+- `#128` だけ実装されて検査が永久に配線されない（本 verdict の `critical` が警告した「9 本中 5 本死蔵」パターンの再生産）
+
+**追補**: `#130` の着手条件に「`#128` の修正がマージ済みであること」を明記する。
