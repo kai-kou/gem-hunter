@@ -228,6 +228,10 @@ export async function measureFocusIndicator(
  */
 export async function readDigestPackageNames(page: Page): Promise<string[]> {
   const section = page.getByRole('region', { name: '今日の Gem' })
+  // 🔴 `locator.count()` は要素出現を自動リトライしないため、先にセクションの出現を待つ
+  //    （抽出元 `sp-14.spec.ts` が持っていた待機。SSR の現状では実害がないが、将来
+  //     クライアント側描画へ変わったときのフレークを防ぐ）。
+  await section.waitFor({ state: 'visible' })
   const items = section.locator('ol > li')
   const count = await items.count()
   const names: string[] = []
