@@ -168,6 +168,13 @@ else
   skip_check "配色コントラスト検査 (check_contrast.py)" "スクリプトが見つかりません"
 fi
 
+# 4.7. ADR 記録と README 必須記載のゲート（E-18 / E-19 / NFR-29〜NFR-32 / AC-11）
+if [ -f "$REPO_ROOT/tools/check_adr_coverage.py" ]; then
+  run_check "ADR / README 記載検査 (check_adr_coverage.py)" python3 tools/check_adr_coverage.py
+else
+  skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
