@@ -89,6 +89,13 @@ describe('encodeSessionCookie / decodeSessionCookie', () => {
     await expect(decodeSessionCookie(raw)).resolves.toBeNull()
   })
 
+  it('accessToken が空文字のペイロードを復号すると null（PR #141 レビュー指摘）', async () => {
+    vi.stubEnv('SESSION_ENCRYPTION_KEY', VALID_KEY)
+    const raw = await encodeSessionCookie({ accessToken: '' })
+
+    await expect(decodeSessionCookie(raw)).resolves.toBeNull()
+  })
+
   it('TTL（`exp`）を過ぎると null（期限切れは再ログインを要求する）', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-19T00:00:00.000Z'))

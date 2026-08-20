@@ -9,7 +9,6 @@
 //   POST /__stats/reset   同上
 //   GET  /login/oauth/authorize?client_id=&redirect_uri=&state=   （SP-8 OAuth モック）
 //   POST /login/oauth/access_token                                 同上
-//   GET  /user                                                      同上（AuthPort からは未使用）
 //
 // キーワード規約（q または repo 名に部分一致で判定）:
 //   通常のキーワード      → 複数件の結果（total_count は 2 ページ以上になる値）
@@ -226,20 +225,6 @@ const server = http.createServer((req, res) => {
     location.searchParams.set('state', state)
     res.writeHead(302, { location: location.toString() })
     return res.end()
-  }
-
-  // SP-8: `/user`（実装だけ用意する。AuthPort からは呼ばれない・将来の fetchViewer 拡張に備える）。
-  if (url.pathname === '/user') {
-    const auth = req.headers.authorization ?? ''
-    if (auth === OAUTH_USER_AUTH_HEADER || auth === `token ${OAUTH_ACCESS_TOKEN}`) {
-      return sendJson(res, 200, {
-        login: 'octostub-user',
-        id: 999001,
-        avatar_url:
-          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-      })
-    }
-    return sendJson(res, 401, { message: 'stub: Unauthorized' })
   }
 
   if (url.pathname === '/search/repositories') {

@@ -4,6 +4,9 @@ import {
   completeLoginUseCase,
   encodeSessionCookie,
   isAuthConfigured,
+  isSecureConnection,
+  OAUTH_STATE_COOKIE_NAME,
+  resolveLandingHost,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_TTL_SECONDS,
 } from '@/src/composition/auth'
@@ -12,12 +15,9 @@ import {
  * OAuth コールバック（AR-5）。`code`/`state` を受け取り、state を検証してからトークン交換し、
  * セッション Cookie を発行する。
  *
- * 🔴 `OAUTH_STATE_COOKIE_NAME` は `app/api/auth/login/route.ts` と同じ値を持つ（`oauth_state`）。
- * Next.js の route.ts は HTTP メソッド以外の任意 export を持たせない運用にしているため
- * （ビルド時の route export 検証との相性を避ける）、定数は各ファイルへ意図的に複製している
- * （値は whiteboard `sp8-auth-i18n-20260819` 争点 B/C で `oauth_state` に確定済み・実装手段の選択）。
+ * `OAUTH_STATE_COOKIE_NAME` は `src/composition/auth.ts` で一元管理する（3 route handler 間で
+ * 値が食い違うとログインがサイレントに壊れるため・PR #141 レビュー指摘）。
  */
-const OAUTH_STATE_COOKIE_NAME = 'oauth_state'
 
 /**
  * ログイン成否に関わらず遷移する先。US-2 と同じくロケール未指定は `/` → 既定ロケールへ（next.config.ts）。
@@ -28,10 +28,15 @@ const OAUTH_STATE_COOKIE_NAME = 'oauth_state'
  * 「このレスポンスをどのオリジンで受け取ったか」で暗黙にスコープされる一方、`Location` の
  * ホストが食い違うとブラウザは次のページを **別オリジン** として読み込み、そのオリジンには
  * 送られてこない Cookie を参照できなくなる（レート枠切替が反映されない障害の原因になる）。
- * 受信した `Host` ヘッダをそのまま使い、クライアントが到達したオリジンを保つ。
+ *
+ * 🔴 とはいえ受信した `Host` ヘッダをそのまま信頼すると、TLS の SNI で正規ドメインへ接続した上で
+ * `Host` ヘッダだけ別ドメインに書き換えるリクエストでオープンリダイレクトが成立してしまう
+ * （PR #141 レビュー指摘）。`resolveLandingHost()` で `GITHUB_OAUTH_CALLBACK_URL` から導出した
+ * 許可ホストと突き合わせ、一致する場合のみ受信した `Host` を使う。
  */
 function landingUrl(request: NextRequest): URL {
-  const host = request.headers.get('host') ?? request.nextUrl.host
+  const requestHost = request.headers.get('host') ?? request.nextUrl.host
+  const host = resolveLandingHost(requestHost)
   return new URL('/', `${request.nextUrl.protocol}//${host}`)
 }
 
@@ -74,7 +79,7 @@ export async function GET(request: NextRequest) {
     success.cookies.delete(OAUTH_STATE_COOKIE_NAME)
     success.cookies.set(SESSION_COOKIE_NAME, sessionValue, {
       httpOnly: true,
-      secure: true,
+      secure: isSecureConnection(request.nextUrl.protocol),
       sameSite: 'lax',
       path: '/',
       maxAge: SESSION_COOKIE_TTL_SECONDS,

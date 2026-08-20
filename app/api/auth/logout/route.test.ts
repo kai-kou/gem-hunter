@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/src/composition/auth', () => ({
   SESSION_COOKIE_NAME: 'gem_hunter_session',
+  OAUTH_STATE_COOKIE_NAME: 'oauth_state',
+  resolveLandingHost: (requestHost: string) => requestHost,
 }))
 
 describe('GET /api/auth/logout', () => {

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { buttonVariants } from './components/button'
 
 export type LoginLinkLabels = {
   login: string
@@ -21,18 +22,23 @@ type LoginLinkProps = {
  * composition root 経由で行う。本コンポーネントは純粋な表示に徹する
  * （`src/ui/` は「外部世界」である Cookie を直接読まない・ARCH-6）。
  * リンクは素の `<a href>` なのでクライアント JS 不要（`SearchForm` と同じ方針・NFR-3）。
+ *
+ * `buttonVariants({ variant: 'ghost', size: 'sm' })` 経由で描画する（`ui-ux-guidelines.md` §2.4
+ * 必須「高さとフォントサイズは cva の size variant 経由でのみ指定する」・PR #141 レビュー指摘）。
  */
 export function LoginLink({ isLoggedIn, labels }: LoginLinkProps) {
+  const className = buttonVariants({ variant: 'ghost', size: 'sm' })
+
   if (isLoggedIn) {
     return (
-      <Link href="/api/auth/logout" className="text-sm underline underline-offset-4">
+      <Link href="/api/auth/logout" className={className}>
         {labels.logout}
       </Link>
     )
   }
 
   return (
-    <Link href="/api/auth/login" className="text-sm underline underline-offset-4">
+    <Link href="/api/auth/login" className={className}>
       {labels.login}
     </Link>
   )

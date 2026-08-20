@@ -512,6 +512,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | OAuth クライアントシークレット（`GITHUB_OAUTH_CLIENT_SECRET`） | 同上 | 同上 |
 | OAuth コールバック URL（`GITHUB_OAUTH_CALLBACK_URL`） | デプロイ先に依存するため必ず外部注入する | 同上 |
 | セッション暗号化キー（`SESSION_ENCRYPTION_KEY`） | httpOnly Cookie の暗号化（`jose` `EncryptJWT`・32byte を base64url エンコード） | 同上 |
+| OAuth 認可/トークンエンドポイントの向き先（`GITHUB_OAUTH_ORIGIN`） | E2E でスタブサーバーへ向き先を差し替える用途（ループバックホストのみ許可・`oauth.ts`） | E2E 実行時のみ（本番・プレビューでは未設定のまま既定の `https://github.com` を使う） |
 | 既定ロケール | `ja`（`AR-4`） | 任意（既定値を持つ） |
 | キャッシュ接続情報 | 外部キャッシュを使う場合のみ（`NFR-17`） | 任意 |
 

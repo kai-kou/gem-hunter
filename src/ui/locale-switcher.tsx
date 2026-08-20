@@ -44,7 +44,7 @@ export function LocaleSwitcher({ currentLocale, currentPath, labels }: LocaleSwi
             aria-current={isCurrent ? 'true' : undefined}
             className={buttonVariants({
               variant: isCurrent ? 'secondary' : 'ghost',
-              size: 'sm',
+              size: 'default',
             })}
           >
             {labels.localeNames[option]}

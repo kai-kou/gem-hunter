@@ -1,5 +1,6 @@
 import { UpstreamError } from '../../domain/errors'
 import type { AuthPort } from '../../domain/ports/auth-port'
+import { resolveLoopbackOverridableOrigin } from './loopback-origin'
 
 /**
  * GitHub OAuth（自前実装・AR-5）。authorize URL 組み立てと token 交換のみを扱う。
@@ -12,9 +13,6 @@ import type { AuthPort } from '../../domain/ports/auth-port'
  */
 
 const DEFAULT_OAUTH_ORIGIN = 'https://github.com'
-
-/** OAuth token エンドポイントの送信先として許可するホスト名（ループバックのみ）。 */
-const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
 type OAuthCredentials = {
   clientId: string
@@ -42,27 +40,24 @@ export function oauthCredentialsConfigured(): boolean {
 }
 
 /**
- * 🔴 リクエスト時に毎回読む（`github-repository-query.ts` の `apiOrigin()` と同じ設計）。
- * 上書き先はループバックに限定する（E2E スタブ差し替え用途以外での誤設定・流出経路化を防ぐ）。
+ * `GITHUB_OAUTH_CALLBACK_URL` のオリジンのみを返す（秘匿値である client secret は含まない）。
+ * PR #141 レビュー指摘: callback/logout route handler のリダイレクト先を、クライアント送信の
+ * `Host` ヘッダではなくこの値で検証するために使う（オープンリダイレクト対策）。
  */
-function oauthOrigin(): string {
-  const configured = process.env.GITHUB_OAUTH_ORIGIN
-  if (configured === undefined) {
-    return DEFAULT_OAUTH_ORIGIN
+export function callbackOrigin(): string | null {
+  const raw = process.env.GITHUB_OAUTH_CALLBACK_URL
+  if (!raw) {
+    return null
   }
-
-  let url: URL
   try {
-    url = new URL(configured)
-  } catch (cause) {
-    throw new Error(`GITHUB_OAUTH_ORIGIN の形式が不正です: ${configured}`, { cause })
+    return new URL(raw).origin
+  } catch {
+    return null
   }
-  if (!LOOPBACK_HOSTNAMES.has(url.hostname)) {
-    throw new Error(
-      `GITHUB_OAUTH_ORIGIN はループバック（127.0.0.1 / localhost / ::1）のみ許可されています: ${configured}`,
-    )
-  }
-  return configured
+}
+
+function oauthOrigin(): string {
+  return resolveLoopbackOverridableOrigin('GITHUB_OAUTH_ORIGIN', DEFAULT_OAUTH_ORIGIN)
 }
 
 /** authorize へのリダイレクト先 URL を組み立てる（no-scope・`scope` パラメータを付けない）。 */

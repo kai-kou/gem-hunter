@@ -1,4 +1,5 @@
 import { EncryptJWT, jwtDecrypt } from 'jose'
+import { cookies } from 'next/headers'
 
 /**
  * セッション Cookie（本ログイン確立後の本体のみ・AR-5 / NFR-9）。
@@ -88,4 +89,16 @@ export async function decodeSessionCookie(raw: string): Promise<SessionPayload |
   } catch {
     return null
   }
+}
+
+/**
+ * Server Component（`app/[locale]/layout.tsx` 等）向けの Cookie ストア読み取り。
+ * 外部世界（HTTP Cookie ストア）への I/O は composition root ではなくここに閉じ込める
+ * （`architecture-rules.md` §1「外部世界に触るか？→ infrastructure/」・PR #141 レビュー指摘）。
+ * Route handler 側は `NextRequest.cookies`（引数経由）を使うため、こちらは
+ * `next/headers` の `cookies()` を使う Server Component 専用の経路。
+ */
+export async function readSessionCookieFromRequestScope(): Promise<string | null> {
+  const store = await cookies()
+  return store.get(SESSION_COOKIE_NAME)?.value ?? null
 }
