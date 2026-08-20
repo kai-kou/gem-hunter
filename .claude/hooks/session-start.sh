@@ -255,17 +255,26 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
       # 退避をクリーンアップ直前に置く。
       # 退避先を .git 配下にするのは `git clean -fd` の対象外だから（同じ理由で checkout の影響も受けない）。
       _backup_dir=""
+      _backup_failed=false
       if [ "$_untracked_count" -gt 0 ]; then
         _backup_dir="${PROJECT_DIR}/.git/untracked-backup/$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y%m%d-%H%M%S')"
+        # 退避は起動処理の一部なので、他の外部呼び出しと同じく timeout で上限を掛ける
+        # （.gitignore 漏れで巨大な未追跡ディレクトリがあるとき、起動を無制限にブロックしない）。
+        # timeout はパイプライン全体を包めないため bash -c を挟み、-o pipefail で
+        # 1 段目・2 段目の失敗も取りこぼさない。
         if mkdir -p "$_backup_dir" 2>/dev/null \
-           && git -C "$PROJECT_DIR" ls-files --others --exclude-standard -z \
-              | tar -C "$PROJECT_DIR" --null -T - -cf - 2>/dev/null \
-              | tar -C "$_backup_dir" -xf - 2>/dev/null; then
+           && timeout 30s bash -o pipefail -c '
+                git -C "$1" ls-files --others --exclude-standard -z \
+                  | tar -C "$1" --null -T - -cf - \
+                  | tar -C "$2" -xf -
+              ' _ "$PROJECT_DIR" "$_backup_dir" 2>/dev/null; then
           echo "[cleanup] 未追跡 ${_untracked_count} 件を ${_backup_dir} へ退避しました" >&2
         else
           echo "[cleanup] ⚠️ 未追跡ファイルの退避に失敗しました（このあとの clean で失われます）" >&2
-          rmdir "$_backup_dir" 2>/dev/null || true
+          # 途中まで展開されている場合があるので rmdir ではなく再帰削除する
+          rm -rf "${_backup_dir:?}" 2>/dev/null || true
           _backup_dir=""
+          _backup_failed=true
         fi
       fi
       git -C "$PROJECT_DIR" reset HEAD -- . >/dev/null 2>&1 || true
@@ -279,6 +288,9 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
       # 数少ないイベントの 1 つ・hook-events-reference.md §2）。stderr だけでは届かない。
       if [ -n "$_backup_dir" ]; then
         echo "⚠️ 前セッションの未追跡ファイル ${_untracked_count} 件をクリーンアップ前に \`${_backup_dir}\` へ退避しました（Issue #193）。必要なものが含まれていれば作業ブランチへ復元してコミットし、不要なら退避ごと削除してください。"
+      elif [ "$_backup_failed" = true ]; then
+        # 失われた事実こそ Claude に届く必要がある（stderr だけでは届かない）
+        echo "⚠️ 前セッションの未追跡ファイル ${_untracked_count} 件は退避に失敗し、クリーンアップで失われた可能性があります（Issue #193）。作業を進める前に、失われて困るものが無かったかを確認してください。"
       fi
       # 退避は直近 5 世代だけ残す（.git 配下が無限に膨らむのを防ぐ）
       _bk_root="${PROJECT_DIR}/.git/untracked-backup"
@@ -287,7 +299,7 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
           rm -rf "${_bk_root:?}/${_old}" 2>/dev/null || true
         done
       fi
-      unset _backup_dir _bk_root _old
+      unset _backup_dir _backup_failed _bk_root _old
     fi
     unset _untracked_count _has_changes _keep_args _g
   fi
