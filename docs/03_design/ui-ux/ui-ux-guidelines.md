@@ -42,7 +42,7 @@
 
 ## 2. デザイントークン（`NFR-13` の構成確定）
 
-### 2.1. カラートークン（5 系統・**計 9 トークン** × ライト/ダーク）
+### 2.1. カラートークン（6 系統・**計 10 トークン** × ライト/ダーク）
 
 CSS の `@theme` に以下の **セマンティックな名前** で定義する。生の色名（`slate-700` 等）をコンポーネントに直接書かない（配色変更が全画面に波及するのを防ぐ）。
 
@@ -52,12 +52,13 @@ CSS の `@theme` に以下の **セマンティックな名前** で定義する
 | `--color-fg` | 本文・見出し | **背景に対し 4.5:1 以上** |
 | `--color-fg-muted` | メタ情報（言語・star 数・更新日） | 🔴 **背景に対し 4.5:1 以上**（「薄いから免除」はない） |
 | `--color-border` | カード枠・区切り線 | UI コンポーネントとして **3:1 以上** |
-| `--color-accent` / `--color-accent-fg` | リンク・主ボタン | 背景に対し 4.5:1 以上 / フォーカスリングは **3:1 以上** |
+| `--color-accent` / `--color-accent-fg` | リンク・主ボタン | 背景に対し 4.5:1 以上 |
 | `--color-danger` / `--color-danger-fg` | エラー表示 | 4.5:1 以上 |
+| `--color-ring` | フォーカスリング | UI コンポーネントとして **3:1 以上**（WCAG 2.2 SC 1.4.11 非テキストコントラスト） |
 
-### 2.2. ✅ 実値の確定結果（`SP-2` の `E-9` で確定・2026-08-19）
+### 2.2. ✅ 実値の確定結果（`SP-2` の `E-9` で確定・2026-08-19。フォーカスリング行は `#179`〔`SP-10`〕で追加・2026-08-20）
 
-`tools/check_contrast.py`（`run_checks.sh` に組み込み済み）で実測した結果、以下の 9 トークン × ライト/ダーク計 18 値で全ペアがしきい値を満たす。実体は `app/globals.css` の既存 shadcn raw 変数（`--background` / `--muted` / `--foreground` / `--muted-foreground` / `--border` / `--accent` / `--accent-foreground` / `--destructive` / `--destructive-foreground`）に意味づけとして重ね、`@theme inline` で `--color-*` としてエイリアスする（採用方針は下記コラム参照）。
+`tools/check_contrast.py`（`run_checks.sh` に組み込み済み）で実測した結果、以下の 10 トークン × ライト/ダーク計 22 値で全ペアがしきい値を満たす。実体は `app/globals.css` の既存 shadcn raw 変数（`--background` / `--muted` / `--foreground` / `--muted-foreground` / `--border` / `--accent` / `--accent-foreground` / `--destructive` / `--destructive-foreground` / `--ring`）に意味づけとして重ね、`@theme inline` で `--color-*` としてエイリアスする（採用方針は下記コラム参照）。
 
 **ライトテーマ**
 
@@ -70,6 +71,8 @@ CSS の `@theme` に以下の **セマンティックな名前** で定義する
 | `--color-fg-muted` | `oklch(0.5 0 0)`（旧 `0.556` から調整） | vs `--color-bg` | 6.00:1 | 4.5:1 | PASS |
 | `--color-fg-muted` | 同上 | vs `--color-bg-subtle` | 5.50:1 | 4.5:1 | PASS |
 | `--color-border` | `oklch(0.6 0 0)`（旧 `0.922` から調整） | vs `--color-bg` | 3.95:1 | 3.0:1 | PASS |
+| `--color-ring` | `oklch(0.6 0 0)`（旧 `oklch(0.708 0 0)` から調整・`#179`。`--color-border`（ライト）と同値へ揃えた） | vs `--color-bg` | 3.95:1 | 3.0:1 | PASS |
+| `--color-ring` | 同上 | vs `--color-bg-subtle` | 3.62:1 | 3.0:1 | PASS |
 | `--color-accent` | `oklch(0.42 0.14 250)`（旧 `oklch(0.97 0 0)` から調整。グレーではなく彩度を持たせた） | vs `--color-bg` | 8.36:1 | 4.5:1 | PASS |
 | `--color-accent-fg` | `oklch(1 0 0)` | vs `--color-accent` | 8.36:1 | 4.5:1 | PASS |
 | `--color-danger` | `oklch(0.577 0.245 27.325)`（既存値のまま） | vs `--color-bg` | 4.76:1 | 4.5:1 | PASS |
@@ -86,6 +89,8 @@ CSS の `@theme` に以下の **セマンティックな名前** で定義する
 | `--color-fg-muted` | `oklch(0.708 0 0)`（既存値のまま） | vs `--color-bg` | 7.63:1 | 4.5:1 | PASS |
 | `--color-fg-muted` | 同上 | vs `--color-bg-subtle` | 5.83:1 | 4.5:1 | PASS |
 | `--color-border` | `oklch(0.55 0 0)`（旧 `oklch(1 0 0 / 10%)` から不透明値へ調整） | vs `--color-bg` | 4.08:1 | 3.0:1 | PASS |
+| `--color-ring` | `oklch(0.556 0 0)`（既存値のまま。ダークは元々 3:1 に足りていた） | vs `--color-bg` | 4.18:1 | 3.0:1 | PASS |
+| `--color-ring` | 同上 | vs `--color-bg-subtle` | 3.19:1 | 3.0:1 | PASS |
 | `--color-accent` | `oklch(0.72 0.16 250)`（旧 `oklch(0.269 0 0)` から調整） | vs `--color-bg` | 7.95:1 | 4.5:1 | PASS |
 | `--color-accent-fg` | `oklch(0.1 0 0)` | vs `--color-accent` | 8.26:1 | 4.5:1 | PASS |
 | `--color-danger` | `oklch(0.704 0.191 22.216)`（既存値のまま） | vs `--color-bg` | 6.84:1 | 4.5:1 | PASS |
