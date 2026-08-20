@@ -171,7 +171,9 @@ describe('toPublicRepositoryDetail', () => {
   })
 
   it('private が欠落した詳細は公開と推定せず UpstreamError にする（fail-closed）', () => {
-    const withoutPrivate: Record<string, unknown> = { ...(detailFixture as Record<string, unknown>) }
+    const withoutPrivate: Record<string, unknown> = {
+      ...(detailFixture as Record<string, unknown>),
+    }
     delete withoutPrivate.private
 
     expect(() => toPublicRepositoryDetail(withoutPrivate)).toThrow(UpstreamError)

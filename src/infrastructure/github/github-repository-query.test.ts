@@ -56,6 +56,37 @@ describe('GithubRepositoryQuery', () => {
     expect(requests[0].searchParams.get('q')).toContain('is:public')
   })
 
+  it('上流が private: true を含む検索結果を返しても search() の戻り値からは除外され、totalCount は上流値のまま（多層防御・AC-12）', async () => {
+    // 🔴 `is:public`（クエリ側の 1 層目）が効かなくなった状況の再現。
+    //    total_count は items 件数（3）と一致しない値にして、「総件数はフィルタで書き換えない」
+    //    契約が実装で守られていることを検証できるようにする。
+    server.use(
+      http.get('https://api.github.com/search/repositories', () =>
+        HttpResponse.json({
+          total_count: 999,
+          incomplete_results: false,
+          items: [
+            ...fixture.items,
+            {
+              ...fixture.items[0],
+              id: 4242,
+              name: 'secret',
+              full_name: 'acme/secret',
+              html_url: 'https://github.com/acme/secret',
+              private: true,
+            },
+          ],
+        }),
+      ),
+    )
+
+    const result = await makeQuery().search(searchQuery({ keyword: 'react' }))
+
+    expect(result.items.map((item) => item.fullName)).not.toContain('acme/secret')
+    expect(result.items).toHaveLength(2)
+    expect(result.totalCount).toBe(999)
+  })
+
   it('perPage を per_page パラメータへそのまま渡す', async () => {
     await makeQuery().search(searchQuery({ keyword: 'react', perPage: 100 }))
 
@@ -131,7 +162,7 @@ describe('GithubRepositoryQuery#findDetail', () => {
     expect(result).toBeNull()
   })
 
-  it('private: true の詳細レスポンスは null を返す（URL 直打ちで非公開リポジトリを読めないようにする）', async () => {
+  it('private: true の詳細レスポンスは null を返す（URL 直打ちで非公開リポジトリを読めないようにする・AC-12）', async () => {
     server.use(
       http.get('https://api.github.com/repos/:owner/:repo', () =>
         HttpResponse.json({ ...detailFixture, private: true }),

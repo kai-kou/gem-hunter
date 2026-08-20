@@ -1,5 +1,9 @@
 import { UpstreamError } from '../../domain/errors'
-import type { RepositoryDetail, RepositorySummary, SearchResult } from '../../domain/model/repository'
+import type {
+  RepositoryDetail,
+  RepositorySummary,
+  SearchResult,
+} from '../../domain/model/repository'
 import { repositoryDetailDto, searchRepositoriesDto } from './dto'
 
 /**
