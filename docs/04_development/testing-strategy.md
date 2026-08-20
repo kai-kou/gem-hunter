@@ -97,6 +97,7 @@
 | `AC-7`（ページネーションで 2 ページ目以降） | E2E + 値オブジェクト（`AR-2` ソート / `AR-3` 件数も同じ層で見る） |
 | `AC-8`（読み込み中・0 件・エラーの判別） | ACL（ステータス → ドメインエラー変換）+ E2E |
 | `AC-9`（レスポンシブ・キーボード完走） | E2E + axe（`NFR-11` / `NFR-26`） |
+| `AC-12`（認証済みでも private が表示されない・`NFR-33`） | 単体（キーワードの修飾子構文の拒否・`is:public` の付与・検索結果マッパーでの `private: true` 除外と `totalCount` 保持・詳細応答が `private: true` のときの「見つからない」扱い）+ E2E |
 | `NFR-5` / `NFR-17`（キャッシュ） | 結合（`X-Cache-Status` の assert・[Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §4.5）+ E2E |
 
 🔵 **自動テストの対象外**: `AC-1`（Next.js v16 + App Router で構築されている）と `AC-11`（README の記載）は構成・文書の確認事項であり、テストではなくセルフレビューのチェックリストで見る（対応が無いことを明示しておく）。
