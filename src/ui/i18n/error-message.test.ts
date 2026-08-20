@@ -97,7 +97,10 @@ describe.each([
   })
 
   it('二次レート制限で秒数が取れないときは UnknownRetry 文言へフォールバックする', () => {
-    const result = toErrorPresentation('rateLimitSecondary', messages, { locale, isLoggedIn: false })
+    const result = toErrorPresentation('rateLimitSecondary', messages, {
+      locale,
+      isLoggedIn: false,
+    })
 
     expect(result.message).toBe(messages.common.errors.rateLimitSecondaryUnknownRetry)
   })
