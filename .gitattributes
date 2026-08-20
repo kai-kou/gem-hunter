@@ -1,0 +1,42 @@
+# =============================================================================
+# GitHub Linguist の言語統計から「開発ハーネス」を除外する
+# =============================================================================
+#
+# 🔴 なぜ必要か:
+#   本リポジトリの成果物は Next.js 16 + TypeScript のアプリケーション（`src/` / `app/`）だが、
+#   AI 自律開発のためのハーネス（`tools/` の Python 57 本・`.claude/hooks/` の Shell 21 本）が
+#   コード量として大きいため、除外しないと GitHub の言語バーが
+#   「Python 57.7% / TypeScript 24% / Shell 13.6%」となり、
+#   **何で作られたプロダクトなのかが一目で誤って伝わる**（実測 2026-08-20）。
+#
+# 🔵 隠しているわけではない:
+#   ハーネスの存在・役割・実装場所は README「AI を利用した範囲と方法」（`NFR-31`）と
+#   `CLAUDE.md` に明示している。ここで調整しているのは
+#   「言語バーが成果物の技術スタックを表す」という一点だけ。
+#
+# ⚠️ `linguist-vendored` の意味:
+#   本来は第三者コードを示す属性だが、Linguist が提供する「統計から除外する」手段のうち
+#   最も一般的に使われるもの。`linguist-documentation` は文書向け、`linguist-generated` は
+#   生成物向けでいずれも実態と合わないため、これを採る。
+#   参照: https://github.com/github-linguist/linguist/blob/main/docs/overrides.md
+#
+# 反映タイミング: このファイルを `main` へコミットした後、GitHub 側の再計算を待つ（数分〜）。
+
+# --- 自律運用ハーネス（成果物ではない）---------------------------------------
+tools/**        linguist-vendored
+scripts/**      linguist-vendored
+.claude/**      linguist-vendored
+
+# --- 第三者著作物（`NOTICE` の除外対象）---------------------------------------
+# skill-creator は Apache-2.0 の第三者コード。`linguist-vendored` が本来の意味で正しい。
+# 上の `.claude/**` に含まれるが、意図が異なるため明示しておく。
+.claude/skills/skill-creator/**  linguist-vendored
+
+# --- 統計に残すもの（明示）---------------------------------------------------
+# アプリ本体・テスト・設定は成果物そのものなので除外しない。
+# 誤って上のパターンに巻き込まれないよう、打ち消しを書いておく。
+src/**          -linguist-vendored
+app/**          -linguist-vendored
+e2e/**          -linguist-vendored
+messages/**     -linguist-vendored
+config/**       -linguist-vendored
