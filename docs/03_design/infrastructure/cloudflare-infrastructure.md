@@ -157,6 +157,23 @@ flowchart TB
 - `ratelimits` は **`wrangler.jsonc` の宣言だけで有効になる**（事前のリソース作成コマンドは不要）。`namespace_id` はアカウント内で一意な任意の識別子、`period` は **10 秒か 60 秒のみ**。⚠️ wrangler 4.36.0 以上が必要
 - ⚠️ `wrangler deploy` は設定ファイルを source of truth として扱う。**Dashboard で変えた設定は次回デプロイで巻き戻る**
 
+🔴 **binding は宣言だけでは呼ばれない。実際に `limit()` を呼ぶ配線がある**（Issue #122・実装済み）。
+
+| 役割 | ファイル |
+|---|---|
+| composition root（唯一の呼び出し口） | `src/composition/rate-limit.ts` の `enforceSearchRateLimit(headers)` |
+| binding 取得 | `src/infrastructure/platform/cloudflare-bindings.ts` の `rateLimiterBinding()`（`getCloudflareContext()` を動的 import。Workers 実行環境の外（`npm test` / `next dev`）では `undefined`） |
+| binding ラッパー（`RateLimitPort` 実装） | `src/infrastructure/platform/rate-limit.ts` の `WorkersRateLimit` |
+| key 生成 | `src/infrastructure/platform/rate-limit-key.ts` の `clientIpOf()`（`cf-connecting-ip` → `x-forwarded-for` 先頭の順で解決）と `hashRateLimitKey()`（§9.1 の HMAC 化） |
+
+適用経路は **画面の検索（`app/[locale]/page.tsx`）と `GET /api/search`（`app/api/search/route.ts`）の 2 箇所**（リポジトリ詳細取得はスコープ外）。超過時は `RateLimitExceededError('rateLimitSecondary')` を投げ、画面はローカライズ済みメッセージを表示、API は **`429` + `Retry-After: 60`** を返す（`period=60` と一致させた保守的な上限値。Cloudflare の `limit()` は `{ success }` しか返さず復帰時刻を教えないため、窓の長さをそのまま使う）。
+
+**フェイルオープン**（間引かず黙って通す）にする条件は 3 つ。いずれも「間引くべきでない」ではなく「判定に必要な材料が揃わない」ケースであり、意図的な設計判断（`src/composition/rate-limit.ts` のコメント参照）:
+
+1. 接続元 IP を識別できない
+2. `RATE_LIMIT_SALT` が未設定（§7.2.1 / `env-vars.md`）
+3. binding が未提供（ローカル `npm test` / `next dev` 等の Workers 実行環境の外）
+
 ---
 
 ## 4. キャッシュ（`D-18` / `D-24`）
@@ -542,7 +559,7 @@ done
 | # | 設定 | 場所 |
 |---|---|---|
 | 1 | **invocation ログを無効化する** | `wrangler.jsonc` の `observability.logs.invocation_logs: false` |
-| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | `src/infrastructure/platform/rate-limit.ts`。salt は `wrangler versions secret put RATE_LIMIT_SALT`（§7.2.1） |
+| 2 | **Rate Limiting の key を HMAC 化する**（生 IP を渡さない） | key 生成は `src/infrastructure/platform/rate-limit-key.ts` の `hashRateLimitKey()`（HMAC-SHA256(salt, ip) の hex）。呼び出し口は `src/composition/rate-limit.ts`（§3.3 に配線の全体像）。salt は `wrangler versions secret put RATE_LIMIT_SALT`（§7.2.1）。**salt 未設定時はハッシュ化ではなくフェイルオープン**（判定自体をスキップする。生 IP へのフォールバックはしない） |
 | 3 | **Bot Fight Mode を有効化しない** | Dashboard（既定オフのまま触らない） |
 | 4 | **WAF Rate limiting rules を使わない** | Free は 1 ルール・IP 固定で `AR-5`（ログイン有無での枠分け）に使えない |
 

@@ -8,6 +8,9 @@ export interface RateLimiterBinding {
   limit(options: { key: string }): Promise<{ success: boolean }>
 }
 
+/** wrangler.jsonc の ratelimits[].simple.period と一致させる（60 秒）。 */
+export const RATE_LIMIT_PERIOD_SECONDS = 60
+
 /**
  * RATE_LIMITER binding のラッパー（`wrangler.jsonc` の `ratelimits` 宣言に対応）。
  * binding が未提供の環境（ローカル `npm test` 等・Cloudflare 実行環境の外）では、
@@ -17,14 +20,26 @@ export interface RateLimiterBinding {
  * cloudflare-infrastructure.md §9.1「Rate Limiting の key を HMAC 化する」）。本クラスは key の生成を行わない。
  */
 export class WorkersRateLimit implements RateLimitPort {
-  constructor(private readonly binding: RateLimiterBinding | undefined) {}
+  private readonly periodSeconds: number
+
+  constructor(
+    private readonly binding: RateLimiterBinding | undefined,
+    options?: { periodSeconds?: number },
+  ) {
+    this.periodSeconds = options?.periodSeconds ?? RATE_LIMIT_PERIOD_SECONDS
+  }
 
   async consume(key: string): Promise<RateLimitDecision> {
     if (!this.binding) {
       return { allowed: true }
     }
     const result = await this.binding.limit({ key })
-    // Cloudflare Rate Limiting binding の limit() は { success } しか返さないため retryAfterSeconds は設定しない
-    return { allowed: result.success }
+    if (!result.success) {
+      // Cloudflare Rate Limiting binding の limit() は { success } しか返さず、次の窓が開く正確な時刻を
+      // 教えてくれない。そのため wrangler.jsonc で宣言した period（＝窓の長さ）を
+      // 「次の窓が開くまでの最大待ち時間」として Retry-After に使う（保守的な上限値）。
+      return { allowed: false, retryAfterSeconds: this.periodSeconds }
+    }
+    return { allowed: true }
   }
 }

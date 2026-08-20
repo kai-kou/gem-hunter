@@ -1,7 +1,9 @@
 import { Suspense } from 'react'
+import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import { searchRepositoriesUseCase } from '@/src/composition/container'
+import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { tryPageNumber } from '@/src/domain/model/page-number'
@@ -56,6 +58,14 @@ async function runSearch(
     //    下の catch で「検索キーワードを確認してください」相当として画面に出す。null へ倒すと
     //    未入力と同じ idle 表示になり、拒否された事実がユーザーに伝わらない。
     const keyword = searchKeyword(rawKeyword)
+
+    // Issue #122: 自リクエストの間引き（RateLimitPort）。未入力（idle・上の early return）
+    // では枠を消費せず、値オブジェクトへの変換が通った（= 400 にならない）キーワードだけを
+    // 対象にする。超過時は `RateLimitExceededError` を投げ、下の catch がそのまま
+    // ローカライズ済み表示（`toErrorPresentation`）に繋げる（新しい分岐は足さない）。
+    // `headers()` の呼び出しでこのページは動的レンダリングになるが、既に `searchParams`
+    // を使っているため元から動的である（新たな制約ではない）。
+    await enforceSearchRateLimit(await headers())
 
     // SP-8: ログイン中はユーザー自身のアクセストークンで叩く（レート枠の切替）。トークンの
     // 供給元が変わっても経路は `GithubRepositoryQuery`（ACL）のままなので、`is:public` 付与と
