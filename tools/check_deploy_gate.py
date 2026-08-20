@@ -15,8 +15,10 @@ round 3・lead 判定「B: 本番デプロイの発火点」「C: 判定別の�
 
 【判定ロジック】
   1. open かつ `status:in-progress` ラベルの Issue を列挙する。
-  2. その中から「スプリント対象」を判定する: 本文/タイトルが `SP-\\d+` を含む、
-     または Issue コメントに `## 🏃 Session Sprint Planning` があるもの。
+  2. その中から「スプリント対象」を判定する: タイトルが `SP-\\d+` を含む、
+     または Issue コメントに `## 🏃 Session Sprint Planning` があるもの
+     （本文中の `SP-\\d+` 単純一致は判定に使わない。過去スプリントへの言及だけで
+     誤ってゲート対象になる誤検知を防ぐ・Issue #218）。
   3. スプリント対象 Issue ごとに、`## 🔍 Sprint Review 判定` を含み
      `**結果**: accepted|accepted_with_conditions|rejected` の行を持つコメントのうち
      最新のもの（`created_at` 最大）を採用する。
@@ -242,9 +244,19 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
 
 
 def is_sprint_issue(title: str, body: str, comments: list[dict]) -> bool:
-    """スプリント対象 Issue かどうか（タイトル/本文の `SP-n` 参照、または
-    `## 🏃 Session Sprint Planning` コメントの有無で判定する）。"""
-    if SPRINT_ID_RE.search(title) or SPRINT_ID_RE.search(body):
+    """スプリント対象 Issue かどうか（次の 2 条件のどちらかで判定する）。
+
+    1. タイトルが `SP-n` を含む（例: `feat(SP-10): ...`）
+    2. Issue コメントに `## 🏃 Session Sprint Planning` がある
+       （＝実際にスプリントとして着手された Issue）
+
+    本文（`body`）中の `SP-n` 単純一致は判定に使わない: 過去スプリントに *言及しているだけ*
+    の Issue（コメント 0 件）まで誤ってスプリント対象にしてしまい、Sprint Review 判定コメントが
+    構造上つかないため open の間ずっとデプロイゲートを塞ぎ続ける（Issue #218 で実際に発生）。
+    `body` 引数はシグネチャ互換のため残すが判定には使わない。
+    """
+    del body  # 判定には使わない（本文の部分一致は撤廃。docstring 参照）
+    if SPRINT_ID_RE.search(title):
         return True
     return any(SPRINT_PLANNING_MARKER in (c.get("body") or "") for c in comments)
 
@@ -326,13 +338,16 @@ def _self_test_is_sprint_issue() -> list[str]:
     # タイトルに SP-n
     if not is_sprint_issue("SP-3: 検索機能", "", []):
         failures.append("is_sprint_issue: タイトルの SP-n を検知できていない")
-    # 本文に SP-n（タイトルは無関係）
-    if not is_sprint_issue("何かの改善", "対応: SP-7 の一部", []):
-        failures.append("is_sprint_issue: 本文の SP-n を検知できていない")
-    # コメントに Sprint Planning マーカー
+    # タイトルに SP-n（feat(SP-10): 形式）
+    if not is_sprint_issue("feat(SP-10): 何かを追加", "", []):
+        failures.append("is_sprint_issue: feat(SP-n) 形式のタイトルを検知できていない")
+    # コメントに Sprint Planning マーカー（タイトルに SP-n が無くても対象・#231 の形）
     comments = [{"body": f"{SPRINT_PLANNING_MARKER}\n- ゴール: ...", "created_at": ""}]
     if not is_sprint_issue("改善: 何か", "", comments):
         failures.append("is_sprint_issue: Session Sprint Planning コメントを検知できていない")
+    # 本文で SP-n に言及しているだけ・コメント 0 件は対象外（#218 の再現・本文の部分一致は撤廃）
+    if is_sprint_issue("improvement: MVP 後の開発方針を決める", "過去の SP-11 / SP-12 を踏まえて…", []):
+        failures.append("is_sprint_issue: 本文の SP-n 言及だけで誤検知している（#218 再現ケース）")
     # いずれも無ければスプリント対象ではない（= ゲート対象外）
     if is_sprint_issue("bug: 何かが壊れている", "詳細説明", []):
         failures.append("is_sprint_issue: 非スプリント Issue を誤検知している")
