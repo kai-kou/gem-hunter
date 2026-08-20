@@ -111,4 +111,18 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 | [0010](./docs/adr/0010-no-token-rotation.md) | 複数トークンのローテーションを採用しない |
 | [0011](./docs/adr/0011-i18n-routing-and-default-locale.md) | i18n のルーティング設計と既定ロケールを、`next-intl` を不採用として自前実装で確定する |
 | [0012](./docs/adr/0012-optional-github-oauth.md) | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする |
-| [0013](./docs/adr/0013-zero-query-daily-digest.md) | キーワード非依存の発見面を日次の有限ダイジェストとして実装する |
+| [0013](./docs/adr/0013-public-operation-under-github-terms.md) | 第三者へ公開して運用する際の GitHub 利用規約上の立場を確定する |
+| [0014](./docs/adr/0014-zero-query-daily-digest.md) | キーワード非依存の発見面を日次の有限ダイジェストとして実装する |
+
+## ライセンスと権利表示
+
+本リポジトリのコードとドキュメントは [MIT License](./LICENSE) で公開している。
+
+ただし以下は **第三者に権利が帰属し、MIT License の対象外** である（詳細は [`NOTICE`](./NOTICE)）。
+
+| 対象 | 帰属 |
+|---|---|
+| [`docs/02_requirements/minimum-requirements.md`](./docs/02_requirements/minimum-requirements.md) | 本プロジェクトの **与件（要件定義）**。第三者が作成・提供したもので、設計判断の追跡のために原文のまま収録している。再利用・改変・再配布の許諾は与えていない |
+| [`.claude/skills/skill-creator/`](./.claude/skills/skill-creator) | Apache License 2.0（`LICENSE.txt` を同梱） |
+
+`package.json` の `"private": true` は npm レジストリへの誤公開を防ぐためのもので、本リポジトリの公開範囲とは無関係である（本プロダクトはアプリケーションであり、npm パッケージとして配布しない）。

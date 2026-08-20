@@ -175,6 +175,13 @@ else
   skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
 fi
 
+# 4.8. 副作用のある API ルートのプリフェッチ検査（#145 の再発防止）
+if [ -f "$REPO_ROOT/tools/check_prefetchable_side_effects.py" ]; then
+  run_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" python3 tools/check_prefetchable_side_effects.py
+else
+  skip_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
@@ -187,6 +194,19 @@ if [ -f "$REPO_ROOT/tools/self_review_check.py" ]; then
   run_check "セルフレビュー機械チェック (self_review_check.py)" python3 tools/self_review_check.py
 else
   skip_check "セルフレビュー機械チェック (self_review_check.py)" "スクリプトが見つかりません"
+fi
+
+# 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
+if [ -f "$REPO_ROOT/tools/retire_preview_aliases.py" ]; then
+  run_check "退役スクリプト self-test (retire_preview_aliases.py --self-test)" python3 tools/retire_preview_aliases.py --self-test
+else
+  skip_check "退役スクリプト self-test (retire_preview_aliases.py --self-test)" "スクリプトが見つかりません"
+fi
+
+if [ -f "$REPO_ROOT/tools/check_deploy_gate.py" ]; then
+  run_check "デプロイゲート self-test (check_deploy_gate.py --self-test)" python3 tools/check_deploy_gate.py --self-test
+else
+  skip_check "デプロイゲート self-test (check_deploy_gate.py --self-test)" "スクリプトが見つかりません"
 fi
 
 # --- サマリー表 ---

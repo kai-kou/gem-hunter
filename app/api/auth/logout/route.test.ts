@@ -7,14 +7,15 @@ vi.mock('@/src/composition/auth', () => ({
   resolveLandingHost: (requestHost: string) => requestHost,
 }))
 
-describe('GET /api/auth/logout', () => {
+describe('POST /api/auth/logout', () => {
   it("セッション Cookie と oauth_state Cookie を破棄して '/' へ遷移する", async () => {
-    const { GET } = await import('./route')
+    const { POST } = await import('./route')
 
     const request = new NextRequest('http://127.0.0.1:3100/api/auth/logout', {
+      method: 'POST',
       headers: { cookie: 'gem_hunter_session=encrypted-value; oauth_state=leftover-state' },
     })
-    const res = await GET(request)
+    const res = await POST(request)
 
     expect(res.status).toBe(307)
     expect(new URL(res.headers.get('location')!).pathname).toBe('/')
@@ -23,11 +24,23 @@ describe('GET /api/auth/logout', () => {
   })
 
   it('Cookie が無い状態でも安全に動く（冪等）', async () => {
-    const { GET } = await import('./route')
+    const { POST } = await import('./route')
 
-    const request = new NextRequest('http://127.0.0.1:3100/api/auth/logout')
-    const res = await GET(request)
+    const request = new NextRequest('http://127.0.0.1:3100/api/auth/logout', { method: 'POST' })
+    const res = await POST(request)
 
     expect(res.status).toBe(307)
+  })
+})
+
+describe('GET /api/auth/logout', () => {
+  it('GET ハンドラは export されていない（プリフェッチで副作用が起きないことの保証）', async () => {
+    // Next.js は route module（`route.ts`）の export 名で HTTP メソッドを解決するため、
+    // `GET` キーの不在がそのまま「GET リクエストはフレームワークにハンドリングされず
+    // 405 になる」＝プリフェッチ耐性を意味する（実リクエストでの 405 確認は
+    // `e2e/sp-8-auth.spec.ts` の回帰テストが担う）。
+    const route = await import('./route')
+
+    expect((route as { GET?: unknown }).GET).toBeUndefined()
   })
 })

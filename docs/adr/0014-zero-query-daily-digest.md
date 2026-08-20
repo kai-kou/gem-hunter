@@ -1,8 +1,8 @@
-# ADR 0013: キーワード非依存の発見面を日次の有限ダイジェストとして実装する
+# ADR 0014: キーワード非依存の発見面を日次の有限ダイジェストとして実装する
 
 - **状態**: **承認**
 - **日付**: 2026-08-20 JST
-- **対応要件**: `AR-9` / `AR-10` / `US-30`〜`US-33` / `D-26`〜`D-28` / `AC-9`
+- **対応要件**: `AR-9` / `AR-10` / `US-30`〜`US-33` / `D-27`〜`D-29` / `AC-9`
 - **関連**: [`decisions.md`](../../content/discussions/post-mvp-strategy-20260820/decisions.md)（本 ADR の決定源） / [ディープリサーチ](../../content/research/20260820-zero-query-discovery_deep_research.md) / [補完リサーチ](../../content/research/20260820-zero-query-discovery_supplement.md) / [ADR 0008](0008-pagination-over-infinite-scroll.md)（無限スクロール不採用の既存決定） / [ADR 0009](0009-hidden-gem-score-definition.md)（`Gem Index` の算出方法・本 ADR は再定義しない）
 
 ---
@@ -27,7 +27,7 @@ MVP（`M-2` / `S-1`）は `SP-11`（#212）で達成済みで、検索窓にキ�
 ### 2.2. 生成は日付を唯一のシードとする決定論的生成とし、サーバー側に状態を持たない
 
 - 並び順は **UTC 日付文字列（例 `YYYYMMDD`）を唯一のシード** として決定論的に生成する。同じ日は全ユーザーで同じ並びになり、リロードしても再現し、日付が変わると入れ替わる。
-- 候補データ（`Gem Index` 済みの静的 JSON・`D-27`）はバッチ生成済みのものをそのまま配信し、ランキング自体の並べ替え計算は **クライアント側** で行う（[補完リサーチ §2.3](../../content/research/20260820-zero-query-discovery_supplement.md)）。Worker は静的配信 + エッジキャッシュに徹し、Cloudflare Workers Free の CPU 予算（10ms/リクエスト）を消費するサーバー側計算を持たない。
+- 候補データ（`Gem Index` 済みの静的 JSON・`D-28`）はバッチ生成済みのものをそのまま配信し、ランキング自体の並べ替え計算は **クライアント側** で行う（[補完リサーチ §2.3](../../content/research/20260820-zero-query-discovery_supplement.md)）。Worker は静的配信 + エッジキャッシュに徹し、Cloudflare Workers Free の CPU 予算（10ms/リクエスト）を消費するサーバー側計算を持たない。
 - サーバーはリクエストごとの個人化状態を一切持たない（`D-6` / `D-14` を維持）。
 
 ### 2.3. 無限フィードを採らない（ADR 0008 の延長）

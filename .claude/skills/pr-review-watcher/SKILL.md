@@ -118,23 +118,33 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 | 3 | 指摘への自動対応（修正コミット or スキップ → スレッド返信 → **Resolve 必須**） |
 | 4 | Layer 0（機械ゲート）+ Layer 1 通過の確認 |
 | 5 | 自動マージ（squash・外部レビュアー応答待ちなし） |
-| 6 | **公開リポジトリへの反映（`publish-sync`）**。マージで生まれた差分をこのセッション内で反映まで完遂する。詳細は下記 |
-| 7 | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。詳細は下記 |
+| 6 | **公開リポジトリへの反映（`publish-sync`）は常に実行**。**本番デプロイはゲート判定を経由**: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は `tools/check_deploy_gate.py` が 0（デプロイ可）を返したときのみ実行（fail-closed）。詳細は下記 |
+| 7 | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）ならデプロイ → 疎通確認 → プレビュー環境の退役（`tools/retire_preview_aliases.py`）まで実行。詳細は下記 |
 | 8 | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102） |
 | 9 | マージ後フィードバックループ → `docs/rules/lessons/pr-review.md` に教訓追記（必須・`lessons-management.md` に従う） |
 
-### Step 6: マージ直後の公開反映（#449）
+### Step 6: マージ直後の公開反映とデプロイゲート（#449・`sprint-env-lifecycle-20260820` 決定）
 
 マージした瞬間が、公開リポジトリとのドリフトが生まれる瞬間である。**反映をセッション終了時や次回の
 定期ルーティンに先送りしない**（先送りが実際に 13〜17 時間の滞留を生んだ・#449）。
 
 - `post-merge-publish-check.sh`（PostToolUse・matcher `mcp__github__merge_pull_request`）が
   マージ成功を検知してドリフトを判定し、反映が要るときだけ指示を注入する。指示が来たら
-  `publish-sync` スキルに従って **push まで完遂する**（ユーザー確認は不要）。
-- 🔴 **本番反映（デプロイ）もセッションが実行する**（飼い主の明示指示・2026-08-19・`D-23`。`permissions.allow` に登録済み）:
-  Actions 制限中は本番デプロイ用ワークフローも無いため、`push` まで完遂したら続けてセッションが `npm run deploy` を
-  実行し本番反映まで完遂する（Actions 復旧を待たない）。🔴 **deploy 前に `main` HEAD で `npm run check` を再実行** し（合成状態の検証）、deploy 後は本番 URL の疎通を確認する（手順の正本は `cloudflare-infrastructure.md` §8.2）。⚠️ **これは「デプロイ実行」の委任であって、Layer 1 セルフレビュー・
-  指摘対応・マージ条件を省略してよいという意味ではない**（レビュー規律は従来どおり）。
+  `publish-sync` スキルに従って **push まで完遂する**（ユーザー確認は不要・PR 種別によらず常に実行）。
+- 🔴 **本番デプロイ（`npm run deploy`）の発火点は PR 種別で分岐する**（`sprint-env-lifecycle-20260820`
+  議論・lead 判定「B: 本番デプロイの発火点」・飼い主の明示指示 2026-08-19・`D-23`。`permissions.allow` に登録済み）:
+  - **スプリント PR（`Sprint Goal:` 行あり）**: このステップではデプロイしない。判定は Step 7 の
+    スプリントレビュー結果に委ねる（下記）。push（公開反映）だけ完遂して Step 7 へ進む。
+  - **非スプリント PR**（改善 Issue・retro-try・docs 等）: `python3 tools/check_deploy_gate.py` を実行し、
+    **デプロイ可のときだけ** デプロイする。デプロイしない場合はコマンド出力をそのまま PR/Issue
+    コメントに記録する（次に該当 PR が再チェックされるまでデプロイは保留のまま）。🔴 **終了コード
+    （0/1/2）の意味は `cloudflare-infrastructure.md` §8.2 の記載が SSOT**（本項では再掲しない）。
+  - このゲートの目的: レビュー待ちのスプリント成果物が `main` 経由で本番へ漏れる穴を塞ぐ（release_eng が
+    round 2 で採用した「デプロイの直列化」。穴を受け入れる案は撤回済み）。
+- デプロイを実行する場合は 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行** し（合成状態の検証）、
+  deploy 後は本番 URL の疎通を確認する。**手順の実体（コマンド列）は `cloudflare-infrastructure.md` §8.2
+  が SSOT**（本項では参照と判断基準のみを持ち、再掲しない）。⚠️ **これは「デプロイ実行」の委任であって、
+  Layer 1 セルフレビュー・指摘対応・マージ条件を省略してよいという意味ではない**（レビュー規律は従来どおり）。
 - **反映できないセッションでも黙って終わらせない**。`add_repo` が提供されない自動タスク実行モード
   （scheduled trigger・GitHub Issue/PR 起動・L-117）では push が 403 になるため、その場で
   `publish-sync` スキルの §5 に従って `[publish-sync]` Issue に失敗段階を記録する。
@@ -143,7 +153,8 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 
 ### Step 7: スプリントレビュー + レトロスペクティブ（マージ + 公開反映の直後・完了報告の前・必須）
 
-`sp1-review-retro-20260819` 議論（争点 C・lead 判定）の決定に基づく。**発火条件**: マージした PR 本文に
+`sp1-review-retro-20260819` 議論（争点 C・lead 判定）の決定に基づく。判定後のデプロイ・退役は
+`sprint-env-lifecycle-20260820` 議論（lead 判定 B/C/D）の決定に基づく。**発火条件**: マージした PR 本文に
 `Sprint Goal:` 行がある（= `SP-n` スプリントの PR）。無い場合は本ステップをスキップして Step 8 へ進む。
 
 **スコープは `SP-n` スプリントの成果物レビューに限定する**（改善 Issue・`type:retro-try` の PR は対象外）。
@@ -153,7 +164,10 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 1. **スプリントレビューを実行する**。既定は **fan-out 2 役割**（受け入れ判定役 / 残課題の仕分け役）。
    `sp:8` のときだけ `discussion-review` スキルに切り替え、議論全文は
    `content/discussions/sprint-review-SP-{n}-{YYYYMMDD}/` に残し、Issue コメントには結論サマリーだけ書く。
-2. 🔴 **受け入れ判定役の役割定義に必ず含める 4 点**（省略すると判定が浅くなり実効性が消える）:
+2. 🔴 **受け入れ判定役の役割定義に必ず含める 5 点**（省略すると判定が浅くなり実効性が消える）:
+   - `accepted_with_conditions` を選ぶ場合、**デプロイ可否（`deploy: yes|no`）を明示する**（既定は
+     `yes`。「条件」がプロセス・スコープ上の残課題でありコード自体の欠陥でないなら `yes` のまま出す。
+     本番影響ありと判断したときだけ `no` にする・`sprint-env-lifecycle-20260820` 争点 C）
    - 該当 `SP-n` 節が参照する **設計ドキュメントのポインタを 1 ホップ先まで辿る**（例:
      `user-story-map.md` → `cloudflare-infrastructure.md` 等の Cloudflare 固有ゲート）
    - テスト・依存規則チェック等は **実際に実行して結果で断定する**（「たぶん満たしている」は書かない・L-113）
@@ -169,22 +183,38 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
      旨を書かせる。機械検査（`check_ui_dimensions.py`）の対象外である 4 領域（動的 className に
      よるサイズ上書き / 推奨値の妥当性 / 未登録コンポーネント / 実ブラウザでの体感操作性）は、
      境界の事実として書く（基準の実体は書かない）
-3. 判定結果を **対象 Issue のコメント** として投稿する。書式は以下（`進捗:` 行は
-   `sprint-cycle-router` Step 3 の stale 再開判定が読むマーカーなので必ず末尾に置く）:
+3. 判定結果を **対象 Issue のコメント** として投稿する。**`デプロイ` 行を必ず含める**（`accepted` は
+   常に `yes`、`rejected` は常に `no`、`accepted_with_conditions` は受け入れ判定役が明示した値）。
+   `進捗:` 行は `sprint-cycle-router` Step 3 の stale 再開判定が読むマーカーなので必ず末尾に置き、
+   **結果とデプロイ要否が分かる形** で書く（次 firing がこのコメント 1 件だけで再開判断できるように）:
 
    ```markdown
    ## 🔍 Sprint Review 判定
    **結果**: accepted | accepted_with_conditions | rejected
+   **デプロイ**: yes | no
    **次 firing 必須**: {条件付き受け入れのときだけ・無ければ「なし」}
    **後続スプリントへ送る項目**: {箇条書き}
    **Issue クローズ条件**: {1 行}
-   進捗: Sprint Review まで完了。次は retrospective スキル起動
+   進捗: Sprint Review 判定済み（結果: {accepted|accepted_with_conditions|rejected}・デプロイ: {yes|no}）。次は{デプロイ実行 → 退役 → retrospective スキル起動 | retrospective スキル起動}
    ```
 
+3.5. **デプロイ・疎通確認・退役**（`デプロイ: yes` のときのみ実行。`rejected` または `deploy: no` は
+   本項を丸ごとスキップして 4 へ進む・fail-closed）:
+   - Step 6 のデプロイ手順（`main` HEAD で `npm run check` 再実行 → `npm run deploy` → 本番 URL 疎通確認。
+     **手順の実体は `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。
+   - デプロイ成功後、**そのスプリント PR の preview alias を退役する**:
+     `python3 tools/retire_preview_aliases.py --alias pr-<N>`（`<N>` は対象 PR 番号。本番と同一ビルドへ
+     張り替える＝「削除」ではなく「上書き」。削除 API が存在しないことは
+     `sprint-env-lifecycle-20260820` 争点 A/E で確定済み）。
+   - 完了したら **追加コメント** で `進捗:` を更新する（判定コメントを書き換えない・追記のみ):
+     `進捗: デプロイ完了（tag: <merge commit SHA>）・退役完了（alias: pr-<N>）。次は retrospective スキル起動`
+   - デプロイ・退役のいずれかが失敗した場合は、失敗段階とエラー全文を同じ追加コメントに記録し、
+     `進捗:` は「デプロイ未完了」または「退役未完了」のまま更新しない（次 firing の Step 3 再開が
+     正しく再試行できるようにするため・下記 §「Step 3 の再開」参照）。
 4. 続けて **`retrospective` スキルを起動** する（KPT 生成と Try の Issue 化。既存仕様のまま）。
 5. **対象 Issue をクローズする**（本ステップの最終アクション）。判定が `rejected` / `accepted_with_conditions` で
    次 firing に持ち越すものがある場合は **open のまま残す**（`status:in-progress` も維持）。
-6. 🔴 上記 1〜5 が未実施のまま完了報告しない（下記「注意事項」に完了条件として追加）。
+6. 🔴 上記 1〜5（`デプロイ: yes` のときは 3.5 を含む）が未実施のまま完了報告しない（下記「注意事項」に完了条件として追加）。
 
 🔴 **`SP-n` の PR 本文に `Closes #{Issue番号}` を書かない**（`pr-review-flow.md` の標準テンプレートの例外）。
 書くとマージ時点で Issue が閉じ、Step 7 が中断したときに **`sprint-cycle-router` Step 3（`status:in-progress`
@@ -207,3 +237,4 @@ AIレビュー指摘対応は **ユーザーに報告しない**。記録は PR 
 - 全体タイムアウトは 30 分。経過時は現状を PR コメントに記録（サイレント）
 - 他セッション対応中の PR（`active_session: true`・`--actionable-only` 出力に現れない）には介入しない（CP-4・L-109）
 - 🔴 `Sprint Goal:` 行のある PR をマージしたら、Step 7（スプリントレビュー + レトロスペクティブ）を実施済みでない限り完了報告しない
+- 🔴 Step 7 の判定が `デプロイ: yes` の場合、デプロイ・疎通確認・退役（3.5）を実施済みでない限り完了報告しない（`sprint-env-lifecycle-20260820` D）

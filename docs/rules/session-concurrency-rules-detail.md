@@ -34,6 +34,59 @@ discover スクリプト（プロジェクト定義）は対象の検出時に�
 | `status:in-progress` ラベル | 対象 Issue が別セッションにロックされていないか |
 | 他ブランチコミット | 同一対象の作業ブランチに既にコミットがないか（必要な工程のみ） |
 
+#### レイヤー 1 補強: 着手前の並行可否判定ツール（`tools/check_parallel_safety.py`・#197）
+
+**解決する問題**: レイヤー 1 のオープン PR チェックは「同一対象かどうか」の存在確認に留まり、
+「ファイルが競合するか」までは判定しない。実際に、候補 Issue のタイトル・本文だけから変更ファイルを
+目視で推測し「別ファイルなので並行可能」と判断したところ、着手後の実装調査で追加の変更ファイルが
+判明し、進行中 PR の占有ファイルと衝突してスコープから外す事態になった事例がある（`sprint-cycle-router`
+Issue #197）。原因は「実装調査の前に結論を出した」こと。
+
+**使い方**:
+
+```bash
+python3 tools/check_parallel_safety.py \
+    --in-flight "PR#183:app/[locale]/repos/[owner]/[repo]/page.tsx,src/foo.ts" \
+    --in-flight-json path/to/pr_files.json \
+    --candidate "#172:src/usecases/**,src/composition/container.ts" \
+    --candidate "#199:" \
+    [--json] [--self-test]
+```
+
+- `--in-flight "ラベル:path1,path2"`（繰り返し可）: 進行中 PR が既に占有している実ファイル一覧。
+  GitHub API 由来なので常にリテラル扱い（glob 展開しない）。
+- `--in-flight-json FILE`（繰り返し可）: `mcp__github__pull_request_read(method="get_files")` の
+  生 JSON をそのまま渡す経路。クラウドでは `gh` が 403 になりうるため MCP が一次経路（L-114）—
+  MCP の戻り値をファイルに落としてこの引数へ渡すのが標準手順。
+- `--candidate "ラベル:glob1,glob2"`（繰り返し可）: 候補 Issue の想定変更ファイル（glob 可）。
+- `--candidate "ラベル:"`（コロンの後が空）: 想定変更ファイルが **未確定** であることの明示。
+
+判定（候補ごと）: `conflict` / `undetermined` / `parallel_safe`。終了コード: `0` = 全候補
+`parallel_safe` / `1` = `conflict` あり / `3` = `conflict` は無いが `undetermined` あり
+（未確定を「並行可能」と誤読させないため `0` を返さない）。
+
+🔴 **中核の判定思想**: 想定変更ファイルが未確定の候補は、並行可能と判定しない。終了コード `3`
+（undetermined）を `0`（parallel_safe）と取り違えて「並行可能」と報告してはならない。**この思想は
+「候補が `--candidate "ラベル:"` で未宣言のとき」だけでなく、「宣言した glob（`*` / `?` を含む）が
+1 件も展開できなかったとき」にも適用される**（対象ディレクトリがローカルにまだ存在しない等）。
+展開ゼロの glob をパターン文字列そのものとしてファイル扱いすると、実際には衝突する変更（例:
+`src/usecases/**` 配下への追加）と交差せず `parallel_safe` に倒れる偽陰性が起きるため、この場合も
+`undetermined` に倒す（既に衝突が確定している候補は `conflict` が優先される）。
+
+**`tools/check_agent_scope_overlap.py` との違い**（用途を取り違えない）:
+
+| | `check_parallel_safety.py` | `check_agent_scope_overlap.py` |
+|---|---|---|
+| 判定対象 | **進行中の他者 × これから着手する自分**（非対称） | **同時に走らせる自分のサブエージェント同士**（対称） |
+| 判断の性質 | 着手するか否かの判断 | 並列委譲の分割設計 |
+| 呼び出し元 | `sprint-cycle-router` Step 4-1.5 | 委譲直前のオーケストレーター（`agent-team-summary.md`） |
+
+**位置づけ**: レイヤー 1（discover スクリプトの排他チェック）は「同一対象のオープン PR・ラベル・
+コミットの有無」という存在チェックに留まる。本ツールはその一歩先、「ファイルレベルで競合するか」まで
+機械判定してレイヤー 1 を補強するもの。呼び出し手順の正本は
+`.claude/skills/sprint-cycle-router/SKILL.md` §4（Step 4-1.5）— 本ファイルは CLI 契約と判定思想のみを持ち、
+呼び出しフローは複製しない。
+
 ### レイヤー 2: Issue ラベルによる論理ロック（処理開始時）
 
 各パイプラインスキルは処理開始時に **即座に** Issue の `status:waiting-claude` → `status:in-progress` にラベルを変更する。

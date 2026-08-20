@@ -256,7 +256,15 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 ## 5. コスト（`INF-2`）
 
-### 5.1. 月額 0 円の条件
+> 🔴 **現状（2026-08-20 実機確認）: 本アカウントは Workers Paid（$5/月 + 従量）である。**
+> したがって **§5.1「月額 0 円の条件」は満たしていない**（条件 1 を外れている）。現状に該当するのは
+> §5.4「Paid へ移行した場合に失うもの」の側である。§5.1 / §5.3 は **Free を選べた時点の判断記録** として残す。
+>
+> 実額の試算（含まれる 1,000 万リクエスト/月・撤退ライン $10 に触れる条件の逆算）は
+> [パブリック化レビュー](../../05_release/repository-publication-review.md) §7.3 が正本。
+> ⚠️ `D-19` が約束した Billable Usage API の日次ポーリングは **未実装**。
+
+### 5.1. 月額 0 円の条件（⚠️ 現在は満たしていない・上記注記を参照）
 
 | # | 条件 |
 |---|---|
@@ -333,6 +341,10 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 | **production** | Worker 本体（`wrangler deploy`） | `gem-hunter.<subdomain>.workers.dev` | 本番の PAT / OAuth |
 
 🔴 **プレビューに `[env.*]`（Wrangler Environments）を使わない**。`[env.*]` は `<name>-<env>` という **別 Worker** を作るため、PR ごとに使うと Free の Worker 数上限（100/アカウント）と棚卸しコストに直結する。**versions + preview alias なら Worker は増えない**。
+
+🔴 **preview alias は削除できない**（wrangler CLI・Cloudflare REST API のいずれにも delete 系エンドポイントが存在しないことを実測で確認済み）。能動的に効く唯一のレバーは Worker 全体の `previews_enabled` トグル（全 PR のプレビューを一括で無効化する。PR 単位の選択削除は不可能）だが、並行中の他 PR のプレビューも巻き添えにするため `SD-1`（プレビュー URL 必須）と両立せず、通常のスプリント後始末には使わない（インシデント対応で全プレビューを緊急停止したいときだけの手動 killswitch として想定する）。唯一の自動的な後始末は **1000-alias LRU 自動失効**（受動的。最近デプロイされた 1000 件の alias だけが保持され、それを超えた分は最古の alias から自動的に消える）。
+
+→ 「削除」ではなく **退役（retire）** で対応する: 完了したスプリントの alias に対して、そのときの本番ビルドと同じ成果物を `wrangler versions upload --preview-alias <name>` で再アップロードし、実効ルーティング先を張り替える。alias URL 自体は生き続けるが、古いスプリントのコードを配信し続ける状態は解消される（version オブジェクト自体は削除されず残る）。手順は §8.2.1。決定の経緯は [議論記録](../../../content/discussions/sprint-env-lifecycle-20260820/whiteboard.md)、決定ログは [`open-questions.md`](../../02_requirements/open-questions.md) `D-26`。
 
 ### 6.2. OAuth とプレビューの相性（`infrastructure-design.md` §8.1 の Cloudflare 版）
 
@@ -505,7 +517,27 @@ npx wrangler versions upload --preview-alias "pr-<N>" --tag "$SHA"
 
 出力された URL を **PR 本文に貼る**（`SD-1`）。🔴 **fail-closed を維持する**（旧 CI 版の思想を踏襲）: URL が取得できなければ、その場で PR を出さずに理由を特定するか、**PR 本文に「URL が取得できなかった理由」と「ローカル起動手順」を書く**（沈黙禁止・`SD-1`）。
 
-**本番（マージ後）**:
+**本番デプロイの発火点**（`D-26`・[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) 追記）:
+
+🔴 **本番デプロイの前に必ずゲート判定を通す。** マージ・push（公開反映）自体は妨げない — 止めるのは `npm run deploy` の呼び出しだけ。
+
+| PR の種類 | デプロイの発火点 |
+|---|---|
+| **スプリント PR**（`Sprint Goal:` 行あり） | マージ直後にはデプロイしない。**スプリントレビュー判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）になった時点** でデプロイする。`rejected` の間はデプロイしない（fail-closed。プレビューは差し戻し検証にまだ使うため退役もしない） |
+| **非スプリント PR**（改善 Issue・retro-try・docs 等） | 従来どおりマージ直後にデプロイを試みる。ただしその前に下記のゲート判定を通し、「待機」判定なら push のみで終える（デプロイの直列化。`main` は 1 本の Worker であり部分的デプロイができないため、判定未確定のスプリント成果物を巻き込んで出さない） |
+
+🔴 **`deploy: no` の限界**: `tools/check_deploy_gate.py` は Sprint Review コメントの `**結果**:` 行しか見ない（`accepted_with_conditions` の `deploy: no` 条件は判定に入らない）。したがって `deploy: no` は **そのスプリント自身の Step 7 デプロイ発火だけ** を止め、それ以降に別の PR（非スプリント PR も含む）がマージされて `npm run deploy` が実行されると、`deploy: no` のコミットも main HEAD の一部として本番へ出てしまう。他 PR 経由でそのコミットが本番に出ることを防ぐ仕組みではない（既知の限界として運用する。設計判断は議論 round 2 のとおり）。
+
+```bash
+python3 tools/check_deploy_gate.py
+# exit 0 = デプロイ可
+# exit 1 = 待機（main 上に判定未確定 or rejected のスプリント Issue が残っている）
+#          → push のみで終える。「デプロイ保留: 理由は #N の Sprint Review 未確定/rejected」を
+#            Issue / PR コメントに記録する
+# exit 2 = 判定不能 → デプロイしない（fail-closed）
+```
+
+**本番デプロイ**（ゲート判定が「デプロイ可」のときのみ実行）:
 
 ```bash
 git fetch origin +main:refs/remotes/origin/main && git checkout origin/main
@@ -514,11 +546,27 @@ npm run deploy                # = opennextjs-cloudflare build && wrangler deploy
 curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.dev/   # 5xx なら rollback を検討
 ```
 
-セッションがマージした直後に実行する。実行結果（デプロイ成功・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
+実行結果（ゲート判定・デプロイ成功可否・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
 
 - 🔴 **`npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）
-- 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替）
+- 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) §3.3 がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替。上記のスプリントレビューゲートはこのテストゲートを **置き換えず拡張** する）
 - **失敗したら本番へ進まない**（fail-closed）。疎通確認が 5xx なら `npx wrangler rollback` を検討し、判断と結果を記録する
+
+### 8.2.1. 🔴 プレビュー環境の退役（Sprint Review accepted 後）
+
+本番デプロイに成功したら、**そのスプリント PR の preview alias を退役する**（削除ではなく上書き。削除 API が存在しない理由は §6.1）。
+
+```bash
+python3 tools/retire_preview_aliases.py --list             # 対象確認（dry-run 兼用・書き込みなし）
+python3 tools/retire_preview_aliases.py --alias "pr-<N>"    # 1 件だけ退役する
+python3 tools/retire_preview_aliases.py --closed-prs        # クローズ済み PR 由来を一括退役する
+python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   # 併用: 和集合で退役する
+```
+
+- 実体は `wrangler versions upload --preview-alias <name>` で **本番と同じビルド成果物を再アップロード** し、alias の実効ルーティング先を張り替えること。alias URL 自体は残り続けるが、古いスプリントのコードは配信されなくなる（version オブジェクト自体は削除されず残る・§6.1）
+- 🔴 **`--closed-prs` は Sprint Review 判定を見ない**（`tools/retire_preview_aliases.py` の `select_closed_pr_aliases()` を確認）。判定基準は **PR の open/closed/merged だけ**（`pr-<N>` 形式の alias に紐づく PR がクローズ済みか）であり、`rejected` かどうかは判定に入らない。**`rejected` 判定の保護は Step 7（スプリントレビュー）からの自動退役の経路が担う** もので、`--closed-prs` の一括退役自体には効かない。squash マージ（Step 5）は Sprint Review（Step 7）より前に起きるため、差し戻し検証中（`rejected` で再検証待ち）のスプリントでも PR 自体は既にクローズ済みとなり、`--closed-prs` の対象に入ってしまう。**差し戻し検証中のスプリントがあるときは `--closed-prs` を使わず、対象を `--alias` で個別指定する**
+- `--closed-prs` と `--alias` は併用でき、対象は和集合になる（`sorted(set(targets) | set(args.alias))`）。`pr-<N>` 形式でない alias（`sp1` / `sp7` / `form-uiux` 等）は `--closed-prs` の自動選別対象にならないため、これらを退役するには併用時の `--alias` 指定が実際の使い道になる
+- 退役の実行結果（対象 alias・成否）は Issue / PR コメントに記録する
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
 
@@ -671,5 +719,6 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 | [Cloudflare インフラ リサーチ](../../01_research/infra/20260818-cloudflare-research.md) | 数値・一次情報の出典 |
 | [ADR 0002](../../adr/0002-cloudflare-workers-infrastructure.md) | 選定判断の記録 |
 | [`prd.md`](../../02_requirements/prd.md) | 要件 ID・環境変数の正本 |
-| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` / `D-23`（GitHub Actions 制限中の CI/CD 暫定運用）/ `D-24`（`D-18` の L2 実装改訂）の決定ログ |
+| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` / `D-23`（GitHub Actions 制限中の CI/CD 暫定運用）/ `D-24`（`D-18` の L2 実装改訂）/ `D-26`（プレビュー環境の退役・デプロイゲート）の決定ログ |
 | [議論記録](../../../content/discussions/cloudflare-infra-20260818/whiteboard.md) | 本設計に至った専門チームの議論 |
+| [議論記録（2026-08-20）](../../../content/discussions/sprint-env-lifecycle-20260820/whiteboard.md) | プレビュー環境の退役・デプロイゲートに関する専門チームの議論 |
