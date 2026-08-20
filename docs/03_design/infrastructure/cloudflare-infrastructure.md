@@ -518,6 +518,8 @@ npx wrangler versions upload --preview-alias "pr-<N>" --tag "$SHA"
 | **スプリント PR**（`Sprint Goal:` 行あり） | マージ直後にはデプロイしない。**スプリントレビュー判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）になった時点** でデプロイする。`rejected` の間はデプロイしない（fail-closed。プレビューは差し戻し検証にまだ使うため退役もしない） |
 | **非スプリント PR**（改善 Issue・retro-try・docs 等） | 従来どおりマージ直後にデプロイを試みる。ただしその前に下記のゲート判定を通し、「待機」判定なら push のみで終える（デプロイの直列化。`main` は 1 本の Worker であり部分的デプロイができないため、判定未確定のスプリント成果物を巻き込んで出さない） |
 
+🔴 **`deploy: no` の限界**: `tools/check_deploy_gate.py` は Sprint Review コメントの `**結果**:` 行しか見ない（`accepted_with_conditions` の `deploy: no` 条件は判定に入らない）。したがって `deploy: no` は **そのスプリント自身の Step 7 デプロイ発火だけ** を止め、それ以降に別の PR（非スプリント PR も含む）がマージされて `npm run deploy` が実行されると、`deploy: no` のコミットも main HEAD の一部として本番へ出てしまう。他 PR 経由でそのコミットが本番に出ることを防ぐ仕組みではない（既知の限界として運用する。設計判断は議論 round 2 のとおり）。
+
 ```bash
 python3 tools/check_deploy_gate.py
 # exit 0 = デプロイ可
@@ -550,10 +552,12 @@ curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.
 python3 tools/retire_preview_aliases.py --list             # 対象確認（dry-run 兼用・書き込みなし）
 python3 tools/retire_preview_aliases.py --alias "pr-<N>"    # 1 件だけ退役する
 python3 tools/retire_preview_aliases.py --closed-prs        # クローズ済み PR 由来を一括退役する
+python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   # 併用: 和集合で退役する
 ```
 
 - 実体は `wrangler versions upload --preview-alias <name>` で **本番と同じビルド成果物を再アップロード** し、alias の実効ルーティング先を張り替えること。alias URL 自体は残り続けるが、古いスプリントのコードは配信されなくなる（version オブジェクト自体は削除されず残る・§6.1）
-- `rejected` 判定のスプリントは退役しない（差し戻し検証にまだプレビューを使うため）
+- 🔴 **`--closed-prs` は Sprint Review 判定を見ない**（`tools/retire_preview_aliases.py` の `select_closed_pr_aliases()` を確認）。判定基準は **PR の open/closed/merged だけ**（`pr-<N>` 形式の alias に紐づく PR がクローズ済みか）であり、`rejected` かどうかは判定に入らない。**`rejected` 判定の保護は Step 7（スプリントレビュー）からの自動退役の経路が担う** もので、`--closed-prs` の一括退役自体には効かない。squash マージ（Step 5）は Sprint Review（Step 7）より前に起きるため、差し戻し検証中（`rejected` で再検証待ち）のスプリントでも PR 自体は既にクローズ済みとなり、`--closed-prs` の対象に入ってしまう。**差し戻し検証中のスプリントがあるときは `--closed-prs` を使わず、対象を `--alias` で個別指定する**
+- `--closed-prs` と `--alias` は併用でき、対象は和集合になる（`sorted(set(targets) | set(args.alias))`）。`pr-<N>` 形式でない alias（`sp1` / `sp7` / `form-uiux` 等）は `--closed-prs` の自動選別対象にならないため、これらを退役するには併用時の `--alias` 指定が実際の使い道になる
 - 退役の実行結果（対象 alias・成否）は Issue / PR コメントに記録する
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）

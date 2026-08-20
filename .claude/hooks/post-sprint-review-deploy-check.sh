@@ -52,11 +52,20 @@ detect_review_verdict() {
   fi
 
   # 結果行: **結果**: accepted | accepted_with_conditions | rejected
-  if [[ "$body" == *"**結果**:"*"rejected"* ]]; then
+  # PR #235 CRITICAL: 旧実装は body 全体へのグロブ一致だったため、マーカー行より後ろの
+  # 自由記述欄（例: 「以前 rejected だった箇所の再確認」）に語が含まれるだけで誤判定した。
+  # `^\*\*結果\*\*:` で行頭アンカーして該当行だけを抽出し、その行の中でのみ判定する。
+  local result_line
+  result_line=$(printf '%s\n' "$body" | grep -E '^\*\*結果\*\*:' | head -1)
+  if [[ -z "$result_line" ]]; then
+    echo "skip:no-result-line"; return 0
+  fi
+
+  if [[ "$result_line" == *"rejected"* ]]; then
     verdict="rejected"
-  elif [[ "$body" == *"**結果**:"*"accepted_with_conditions"* ]]; then
+  elif [[ "$result_line" == *"accepted_with_conditions"* ]]; then
     verdict="accepted_with_conditions"
-  elif [[ "$body" == *"**結果**:"*"accepted"* ]]; then
+  elif [[ "$result_line" == *"accepted"* ]]; then
     verdict="accepted"
   else
     echo "skip:no-result-line"; return 0
@@ -67,7 +76,10 @@ detect_review_verdict() {
   fi
 
   # デプロイ行: **デプロイ**: yes | no（未記載時は既定 yes・SKILL.md Step 7-3 の既定値と一致させる）
-  if [[ "$body" == *"**デプロイ**:"*"no"* ]]; then
+  # こちらも同じ理由で行頭アンカーした行だけを見る。
+  local deploy_line
+  deploy_line=$(printf '%s\n' "$body" | grep -E '^\*\*デプロイ\*\*:' | head -1)
+  if [[ -n "$deploy_line" && "$deploy_line" == *"no"* ]]; then
     deploy_flag="no"
   else
     deploy_flag="yes"
@@ -103,6 +115,8 @@ run_self_test() {
     '{"tool_name":"mcp__github__add_issue_comment","tool_input":{"body":"## 🔍 Sprint Review 判定\n**結果**: accepted_with_conditions\n**デプロイ**: no"}}'
   _case "rejected はデプロイ不要" "no-deploy-needed:rejected" \
     '{"tool_name":"mcp__github__add_issue_comment","tool_input":{"body":"## 🔍 Sprint Review 判定\n**結果**: rejected\n**デプロイ**: no"}}'
+  _case "自由記述欄に rejected/annotation を含んでも結果行だけで判定する（誤判定の退行防止・PR #235 CRITICAL）" "deploy-needed:accepted" \
+    '{"tool_name":"mcp__github__add_issue_comment","tool_input":{"body":"## 🔍 Sprint Review 判定\n**結果**: accepted\n**デプロイ**: yes\n**後続スプリントへ送る項目**: 以前 rejected だった箇所の再確認と annotation の見直し"}}'
   _case "判定マーカーが無いコメントは対象外" "skip:not-verdict" \
     '{"tool_name":"mcp__github__add_issue_comment","tool_input":{"body":"通常のコメントです"}}'
   _case "issue_write は対象外（body があっても別API）" "skip:not-comment-tool" \

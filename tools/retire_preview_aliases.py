@@ -46,6 +46,10 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mask_secrets import mask_value  # noqa: E402
+from repo_slug import resolve_repo_slug  # noqa: E402
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CF_API_BASE = "https://api.cloudflare.com/client/v4"
 GH_API_BASE = "https://api.github.com"
@@ -161,6 +165,23 @@ def exit_code_for(results: list[dict[str, Any]]) -> int:
     return EXIT_FAILED if any(not r.get("ok") for r in results) else EXIT_OK
 
 
+def should_fetch_next_page(result_info: dict[str, Any], fetched_count: int, page_item_count: int) -> bool:
+    """Cloudflare API の `result_info`（page/per_page/count/total_count）を見て
+    次ページを取得すべきか判定する（純粋関数）。
+
+    実測（2026-08-20 JST・GET .../versions?per_page=100）: `result_info` はペイロード直下にあり、
+    `{"page": 1, "per_page": 100, "count": 35, "total_count": 35}` の形。`total_pages` フィールドは
+    無いため `total_count` との比較で継続判定する。
+    """
+    if page_item_count == 0:
+        return False
+    total_count = result_info.get("total_count")
+    if total_count is None:
+        # total_count が取れない応答は継続条件を判定できないため、無限ループを避けて打ち切る
+        return False
+    return fetched_count < total_count
+
+
 # ---------------------------------------------------------------------------
 # 外部 I/O
 # ---------------------------------------------------------------------------
@@ -173,16 +194,32 @@ def _http_json(url: str, headers: dict[str, str]) -> Any:
 
 
 def fetch_versions(account_id: str, token: str, worker: str) -> list[dict[str, Any]]:
-    """Cloudflare API から version 一覧を取得する。"""
-    url = f"{CF_API_BASE}/accounts/{account_id}/workers/scripts/{worker}/versions?per_page=100"
-    try:
-        payload = _http_json(url, {"Authorization": f"Bearer {token}"})
-    except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError) as error:
-        raise Precondition(f"Cloudflare API に到達できません: {error}") from error
-    if not payload.get("success"):
-        raise Precondition(f"Cloudflare API がエラーを返しました: {payload.get('errors')}")
-    result = payload.get("result")
-    return result.get("items", []) if isinstance(result, dict) else (result or [])
+    """Cloudflare API から version 一覧を取得する（`result_info.total_count` を見て全ページ取得）。
+
+    100 件（1 ページの上限）を超えると古い alias から順に見落とすため（WARNING・PR #235）、
+    `should_fetch_next_page()` の判定に従ってページングする。
+    """
+    per_page = 100
+    page = 1
+    items: list[dict[str, Any]] = []
+    while True:
+        url = (
+            f"{CF_API_BASE}/accounts/{account_id}/workers/scripts/{worker}/versions"
+            f"?per_page={per_page}&page={page}"
+        )
+        try:
+            payload = _http_json(url, {"Authorization": f"Bearer {token}"})
+        except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError) as error:
+            raise Precondition(f"Cloudflare API に到達できません: {error}") from error
+        if not payload.get("success"):
+            raise Precondition(f"Cloudflare API がエラーを返しました: {payload.get('errors')}")
+        result = payload.get("result")
+        page_items = result.get("items", []) if isinstance(result, dict) else (result or [])
+        items.extend(page_items)
+        if not should_fetch_next_page(payload.get("result_info") or {}, len(items), len(page_items)):
+            break
+        page += 1
+    return items
 
 
 def fetch_pr_states(repo: str, numbers: list[int]) -> dict[int, str]:
@@ -434,7 +471,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allow-non-main", action="store_true", help="HEAD が origin/main でなくても実行する"
     )
-    parser.add_argument("--repo", default="kai-kou/gem-hunter", help="PR 状態を引く GitHub リポジトリ")
+    # owner/repo 解決は resolve_repo_slug() が SSOT（#215・check_deploy_gate.py と同じパターン）。
+    # ハードコードすると下流の bootstrap 済みリポジトリで誤ったリポジトリを参照する。
+    parser.add_argument(
+        "--repo", default=resolve_repo_slug(), help="PR 状態を引く GitHub リポジトリ（既定: git remote から解決）"
+    )
     parser.add_argument("--json", action="store_true", help="JSON で出力する")
     parser.add_argument("--self-test", action="store_true", help="ネットワーク不要の単体テスト")
     args = parser.parse_args(argv)
