@@ -20,20 +20,14 @@
 
 3 つの出力からファイルパスを抽出した和集合を「実 diff ファイル集合」とする。
 
-## 入力形式（採用）
+## 入力形式
 
-**主形式**: `--stdin` でサブエージェントの完了報告テキストをそのまま標準入力に流し込む。
+`--stdin` でサブエージェントの完了報告テキストをそのまま標準入力に流し込む
+（オーケストレーターが Bash から 1 コマンドで叩けることを最優先にした唯一の形式）。
 テキスト中からパスらしき文字列（`git status --short` 形式の行・バッククォート囲みのパス・
-スラッシュと拡張子を含むトークン）を正規表現で抽出する（ヒューリスティックのため 100% ではない。
-誤抽出を避けたい場合は副形式を使う）。
+スラッシュと拡張子を含むトークン）を正規表現で抽出する（ヒューリスティックのため 100% ではない）。
 
     cat agent_report.txt | python3 tools/check_agent_diff_claim.py --stdin
-
-**副形式**: `--claimed "path1,path2,..."` で明示リストを渡す（繰り返し指定可・カンマ区切り）。
-
-    python3 tools/check_agent_diff_claim.py --claimed "tools/a.py,tools/b.py"
-
-`--stdin` と `--claimed` は併用可（両方の抽出結果を合算する）。
 
 ## 判定
 
@@ -45,7 +39,7 @@
 ## 使い方
 
     python3 tools/check_agent_diff_claim.py --stdin < agent_report.txt
-    python3 tools/check_agent_diff_claim.py --claimed "tools/a.py" --json
+    python3 tools/check_agent_diff_claim.py --stdin --json < agent_report.txt
     python3 tools/check_agent_diff_claim.py --self-test
 """
 
@@ -63,7 +57,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # パスらしきトークン: 英数字/アンダースコアで始まり、スラッシュ・ドット・ハイフンを含み、
 # 最後に "." + 拡張子で終わる文字列。
 _PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9_]+")
-_VERSION_RE = re.compile(r"^\d+(\.\d+){1,}$")  # "2.1.198" のようなバージョン表記を除外する
 _URL_RE = re.compile(r"https?://\S+")  # ドメイン名がパストークンとして誤抽出されるのを防ぐため事前に除去する
 
 
@@ -71,8 +64,9 @@ def extract_claimed_paths(text: str) -> set[str]:
     """完了報告の自由文からパスらしきトークンを抽出する（ヒューリスティック）。
 
     URL 全体を先に除去してから走査するため「https://example.com/path.html」のような
-    ドメイン名を誤ってパス扱いしない。バージョン番号（"v2.1.198"）・拡張子が数字のみの
-    トークンも誤抽出として除外する。
+    ドメイン名を誤ってパス扱いしない。バージョン番号（"2.1.198" や "v2.1.198"）は、
+    拡張子相当の末尾セグメントが数字のみ（`ext.isdigit()`）になるため同じチェックで除外される
+    （専用の正規表現は不要 — フルマッチする文字列は定義上必ず末尾が数字のみになる）。
     """
     text = _URL_RE.sub(" ", text)
     candidates: set[str] = set()
@@ -80,8 +74,6 @@ def extract_claimed_paths(text: str) -> set[str]:
         tok = tok.strip("`'\"()[],;:")
         tok = tok.lstrip("./")
         if not tok:
-            continue
-        if _VERSION_RE.match(tok):
             continue
         ext = tok.rsplit(".", 1)[-1]
         if ext.isdigit():
@@ -243,7 +235,6 @@ def run_self_test() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--claimed", action="append", default=[], help="カンマ区切りの明示ファイルリスト（繰り返し指定可）")
     parser.add_argument("--stdin", action="store_true", help="標準入力から完了報告テキストを読みパスらしき文字列を抽出する")
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
@@ -252,15 +243,11 @@ def main() -> int:
     if args.self_test:
         return run_self_test()
 
-    claimed: set[str] = set()
-    for spec in args.claimed:
-        claimed.update(s.strip() for s in spec.split(",") if s.strip())
-    if args.stdin:
-        claimed |= extract_claimed_paths(sys.stdin.read())
-
-    if not args.claimed and not args.stdin:
+    if not args.stdin:
         parser.print_help()
         return 2
+
+    claimed: set[str] = extract_claimed_paths(sys.stdin.read())
 
     try:
         real = get_real_diff_files(REPO_ROOT)

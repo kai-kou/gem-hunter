@@ -3,8 +3,9 @@
 # スキーマ確認元（2026-08-20 実機確認・CP-2）:
 #   https://github.com/GitGuardian/ggshield/blob/main/.gitguardian.yaml
 #   （公式リポジトリが自身のスキャン設定に使っている実例。version: 2 直下に secret.ignored_paths /
-#    secret.ignored_matches を置く構造を確認済み。公式ドキュメントの当該リファレンスページは
-#    2026-08-20 時点で 404 のため、公式実例ファイルを一次情報として採用した）。
+#    secret.ignored_matches を置く構造を確認済み。公式ドキュメントの当該リファレンスページ
+#    https://docs.gitguardian.com/ggshield-docs/configuration も 2026-08-20 実機確認で到達でき、
+#    secret.ignored_paths のスキーマ（グロブパターン指定）が明記されており、本設定内容と一致する）。
 #
 # 背景: PR #143 で GitGuardian が「Generic Encryption Key」として検出した 2 件は、いずれも
 # テスト・E2E 専用の固定ダミー値（本番の値とは無関係。コード側にもコメントで明記済み）。

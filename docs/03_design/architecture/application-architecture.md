@@ -208,7 +208,7 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 **将来の再検討条件**: Next.js または OpenNext Cloudflare が middleware ベースの pathname 取得（あるいはそれに
 相当する標準手段）をサポートしたら、一本化を再検討する。
 
-参照: PR #141（`SP-8`）レビュー指摘 / `content/discussions/sprint-review-SP-8-20260820/whiteboard.md`。
+参照: PR #141（`SP-8`）レビュー指摘 / `content/discussions/sp8-auth-i18n-20260819/whiteboard.md`。
 
 ---
 

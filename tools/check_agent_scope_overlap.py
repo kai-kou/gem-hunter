@@ -16,22 +16,21 @@
 グロブは「対象なし」として警告する（意図したファイルが 1 つも存在しない = 設計ミスの兆候）。
 ディレクトリはファイルではないため重複判定の対象から除外する。
 
-## 入力形式（採用・オーケストレーターが Bash から 1 コマンドで叩けることを最優先にした）
+**パストラバーサル対策**: `glob.glob(..., root_dir=root)` は `root_dir` を指定してもパターン内の
+`..` を禁止しない（例: `--lane "evil:../../../../etc/*"` はリポジトリ外へ展開されうる）。展開後の
+各マッチを `(root / m).resolve()` し、`root.resolve()` 配下でないものは重複判定の集合に含めず、
+黙って捨てずに `out_of_scope` として警告に記録する。
 
-**主形式**: `--lane "name:glob1,glob2,..."` を担当（レーン）の数だけ繰り返し指定する。
+## 入力形式
+
+`--lane "name:glob1,glob2,..."` を担当（レーン）の数だけ繰り返し指定する
+（オーケストレーターが Bash から 1 コマンドで叩けることを最優先にした唯一の形式）。
 
     python3 tools/check_agent_scope_overlap.py \\
         --lane "impl:src/foo/**,src/bar.py" \\
         --lane "test:tests/**"
 
-**副形式**: JSON `{"レーン名": ["glob", ...], ...}` を `--lanes-json` に文字列で渡すか、
-`--stdin` で標準入力から読む（プログラムから呼ぶ場合向け）。
-
-    echo '{"impl": ["src/foo/**"], "test": ["tests/**"]}' \\
-        | python3 tools/check_agent_scope_overlap.py --stdin
-
-`--lane` / `--lanes-json` / `--stdin` は併用不可（いずれか 1 つ）。`--json` を付けると結果を
-JSON で出力する（人間向けテキストの既定出力と排他ではなく整形先の切り替え）。
+`--json` を付けると結果を JSON で出力する（人間向けテキストの既定出力と排他ではなく整形先の切り替え）。
 
 ## 使い方
 
@@ -52,21 +51,34 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def expand_lane(patterns: list[str], root: Path) -> tuple[set[str], list[str]]:
+def expand_lane(patterns: list[str], root: Path) -> tuple[set[str], list[str], list[str]]:
     """グロブ一覧を実ファイル（root からの相対パス文字列）の集合へ展開する。
 
     展開結果が空だったグロブは empty_globs に記録して呼び出し元が警告できるようにする。
     ディレクトリ一致はファイルではないため集合に含めない。
+    `root` 配下から外れたマッチ（パストラバーサル）は集合に含めず out_of_scope に記録する
+    （黙って捨てない・警告として可視化する）。
     """
     files: set[str] = set()
     empty_globs: list[str] = []
+    out_of_scope: list[str] = []
+    resolved_root = root.resolve()
     for pattern in patterns:
         matches = glob_mod.glob(pattern, root_dir=root, recursive=True)
-        file_matches = [m for m in matches if (root / m).is_file()]
-        if not file_matches:
+        file_matches: list[str] = []
+        pattern_out_of_scope: list[str] = []
+        for m in matches:
+            candidate = (root / m).resolve()
+            if not candidate.is_relative_to(resolved_root):
+                pattern_out_of_scope.append(m)
+                continue
+            if candidate.is_file():
+                file_matches.append(m)
+        if not file_matches and not pattern_out_of_scope:
             empty_globs.append(pattern)
+        out_of_scope.extend(pattern_out_of_scope)
         files.update(file_matches)
-    return files, empty_globs
+    return files, empty_globs, out_of_scope
 
 
 def check_overlap(lanes: dict[str, list[str]], root: Path = REPO_ROOT) -> dict:
@@ -74,10 +86,14 @@ def check_overlap(lanes: dict[str, list[str]], root: Path = REPO_ROOT) -> dict:
     expanded: dict[str, set[str]] = {}
     warnings: list[str] = []
     for name, patterns in lanes.items():
-        files, empty_globs = expand_lane(patterns, root)
+        files, empty_globs, out_of_scope = expand_lane(patterns, root)
         expanded[name] = files
         for g in empty_globs:
             warnings.append(f"レーン `{name}` のグロブ `{g}` は展開結果が空です（対象なし）")
+        for m in out_of_scope:
+            warnings.append(
+                f"レーン `{name}` のマッチ `{m}` はリポジトリ外（パストラバーサル）のため除外しました"
+            )
 
     names = list(expanded.keys())
     overlaps: dict[str, list[str]] = {}
@@ -172,6 +188,13 @@ def run_self_test() -> int:
     except ValueError:
         check("parse_lane_args グロブなしで ValueError", True)
 
+    # parse_lane_args: 異常系（レーン名が空）
+    try:
+        parse_lane_args([":glob"])
+        check("parse_lane_args レーン名が空で ValueError", False)
+    except ValueError:
+        check("parse_lane_args レーン名が空で ValueError", True)
+
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "dirA").mkdir()
@@ -197,8 +220,35 @@ def run_self_test() -> int:
         check("空グロブが警告になる", len(result_empty["warnings"]) == 1, str(result_empty))
 
         # ディレクトリ一致はファイル集合に含まれない
-        files, empty_globs = expand_lane(["dirA"], root)
+        files, empty_globs, out_of_scope = expand_lane(["dirA"], root)
         check("ディレクトリ単体一致はファイル扱いしない", files == set(), f"files={files}")
+
+        # パストラバーサル: root 配下から外れたマッチは除外され警告として記録される
+        outside = root.parent / f"outside_{root.name}.txt"
+        try:
+            outside.write_text("secret")
+            traversal_files, traversal_empty, traversal_out = expand_lane(["../" + outside.name], root)
+            check(
+                "パストラバーサルは重複判定の集合から除外される",
+                traversal_files == set(),
+                f"files={traversal_files}",
+            )
+            check(
+                "パストラバーサルは out_of_scope に記録される（黙って捨てない）",
+                len(traversal_out) == 1,
+                f"out_of_scope={traversal_out}",
+            )
+            result_traversal = check_overlap(
+                {"evil": ["../" + outside.name], "ok": ["dirA/**"]}, root=root
+            )
+            check(
+                "check_overlap 経由でもパストラバーサルは warnings に記録される",
+                any("パストラバーサル" in w for w in result_traversal["warnings"]),
+                str(result_traversal["warnings"]),
+            )
+        finally:
+            if outside.exists():
+                outside.unlink()
 
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")
     return 0 if failed == 0 else 1
@@ -206,9 +256,7 @@ def run_self_test() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--lane", action="append", default=[], help="'name:glob1,glob2' 形式で繰り返し指定（主形式）")
-    parser.add_argument("--lanes-json", dest="lanes_json", default=None, help="JSON 文字列 {\"レーン名\": [\"glob\",...]} で一括指定")
-    parser.add_argument("--stdin", action="store_true", help="標準入力から同形式の JSON を読む")
+    parser.add_argument("--lane", action="append", default=[], help="'name:glob1,glob2' 形式で繰り返し指定")
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
     args = parser.parse_args()
@@ -216,21 +264,13 @@ def main() -> int:
     if args.self_test:
         return run_self_test()
 
-    sources_used = sum([bool(args.lane), bool(args.lanes_json), args.stdin])
-    if sources_used == 0:
+    if not args.lane:
         parser.print_help()
-        return 2
-    if sources_used > 1:
-        print("❌ --lane / --lanes-json / --stdin は併用できません（いずれか 1 つ）", file=sys.stderr)
         return 2
 
     try:
-        if args.lane:
-            lanes = parse_lane_args(args.lane)
-        else:
-            raw = args.lanes_json if args.lanes_json is not None else sys.stdin.read()
-            lanes = json.loads(raw)
-    except (ValueError, json.JSONDecodeError) as e:
+        lanes = parse_lane_args(args.lane)
+    except ValueError as e:
         print(f"❌ 入力の解析に失敗: {e}", file=sys.stderr)
         return 2
 
