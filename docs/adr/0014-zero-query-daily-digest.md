@@ -125,9 +125,10 @@ ADR 0008 は検索結果一覧について「キーボード到達性・スク�
 |---|---|---|
 | 1 | しきい値・足切り基準の具体値 | `Gem Index` のどの範囲を「隠れた名品」として提示するかの具体値は未定。npm の実データ（S3 ダンプ）を見てから `SP-14` 着手直後に決定する |
 | 2 | 配信件数 | §2.1 の「既定 5 件」は暫定値。実データのボリューム・パーセンタイル分布を見てから確定する |
-| 3 | S3 ダンプの集計フィールド未検証 | Ecosyste.ms の S3 バルクダンプに `dependent_packages_count` / `rankings` 等の集計フィールドが含まれるかを着手直後に実ファイルで確認する。含まれない場合はパーセンタイルの自前計算または API 併用に切り替わり、見積もりが変わる |
-| 4 | `criticality_score` の鮮度未確認 | 最終 push が 2025-12-02 で cron の稼働継続が未確認（[補完リサーチ §4.6](../../content/research/20260820-zero-query-discovery_supplement.md)）。健全性フィルタに使う前に実測し、停止していれば OpenSSF Scorecard へ寄せる |
+| 3 | ~~S3 ダンプの集計フィールド未検証~~ **【解消・2026-08-20】** | 🔴 **S3 バルクダンプは `AccessDenied` で取得不可と実測判明。方針転換して Ecosyste.ms REST API の `rankings` フィールド（Ecosyste.ms 側で日次計算済みのパーセンタイル順位・0〜100・0 が最上位）を Gem Index の入力に採用した**（`open-questions.md` D-28 訂正注記）。`dependent_packages_count` は S3・REST 双方で実測確認（chalk=130085）、`rankings` も REST で確認（chalk: `stargazers_count=0.6435` / `dependent_packages_count=0.0005476`）。母集団は `registry.rb#top_percentage_for` により npm 単独スコープと確認済み。パーセンタイルの自前計算は不要 |
+| 4 | ~~`criticality_score` の鮮度未確認~~ **【解消・2026-08-20】** | 🔴 **`ossf/criticality_score` の GCS 公開データは 2025-07-25 を最後に約 13 ヶ月更新停止（cron 事実上死亡）を実測確認。想定どおり OpenSSF Scorecard（`api.scorecard.dev`・API キー不要・直近数日以内のスコア）へ寄せる**（`GET /projects/github.com/ossf/scorecard` が 200・評価日 2026-08-15 を実測）。ADR 本文は変更不要（「停止していれば Scorecard へ寄せる」記載が既にこの結論をカバー） |
 | 5 | Safari ITP の 7 日キャップは設計で消せない | フォールバック（§2.4）は任意機能ではなく必須要件として実装する（これ自体は確定済みの制約だが、実装漏れを防ぐため着手時チェック項目として残す） |
+| 6 | `top_percentage_for` の分母定義未確定 | `ecosyste-ms/packages` の `top_percentage_for` の分母（`packages_count`）が npm 全量か GitHub 解決済みサブセットかは実装ソース断片からは未確定。母集団の取り違え（`R-2` 違反）を避けるため、軽量サンプル比較で `SP-14` 着手中に確定させる（`rankings` を信頼する前提の健全性検証） |
 
 ---
 
