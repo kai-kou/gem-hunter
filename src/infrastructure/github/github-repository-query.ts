@@ -4,13 +4,21 @@ import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/rep
 import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
 import { resolveLoopbackOverridableOrigin } from './loopback-origin'
-import { toRepositoryDetail, toSearchResult } from './mapper'
+import { toPublicRepositoryDetail, toSearchResult } from './mapper'
 
 const DEFAULT_API_ORIGIN = 'https://api.github.com'
 
 function apiOrigin(): string {
   return resolveLoopbackOverridableOrigin('GITHUB_API_ORIGIN', DEFAULT_API_ORIGIN)
 }
+
+/**
+ * 🔴 検索クエリへ必ず付与する公開限定の修飾子。
+ * GitHub App の installation token（Bearer）で認証すると、そのトークンから見える private
+ * リポジトリまで `GET /search/repositories` の可視範囲に入ってしまう。本プロダクトの仕様は
+ * 「GitHub 公開リポジトリの検索」（prd.md L171）なので、検索の時点で公開に閉じる。
+ */
+const PUBLIC_ONLY_QUALIFIER = 'is:public'
 
 /** アクセストークンの供給口。未認証で叩く場合は null を返す。 */
 export type TokenProvider = () => Promise<string | null>
@@ -24,7 +32,13 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
 
   async search(query: SearchQuery): Promise<SearchResult> {
     const url = new URL('/search/repositories', apiOrigin())
-    url.searchParams.set('q', query.keyword)
+    // 🔴 公開限定の修飾子は **キーワードより前** に置く（多層防御の 2 層目）。
+    //    1 層目はドメイン側で、キーワードに検索式の構文（`名前:値`・大文字の `NOT` / `OR` /
+    //    `AND`）を含められないようにしている（`domain/model/search-keyword.ts`）。それでも
+    //    末尾に置く形は、キーワード末尾のトークン次第でこの修飾子が後置演算子の作用範囲へ
+    //    入りうる（例: 末尾 `NOT` に否定され「公開でないもの」＝ private 限定へ反転する）。
+    //    先頭に置けば、キーワード側に何が来ても公開限定条件が単独のトークンとして残る。
+    url.searchParams.set('q', `${PUBLIC_ONLY_QUALIFIER} ${query.keyword}`)
     url.searchParams.set('page', String(query.page))
     url.searchParams.set('per_page', String(query.perPage))
     // 🔴 仮定（実装手段レベル・SD-3 対象外）: relevance は GitHub API の既定挙動のため
@@ -49,7 +63,10 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     if (response === null) {
       return null
     }
-    return toRepositoryDetail(await response.json())
+
+    // 🔴 非公開リポジトリを「見つからない」として扱う判定は ACL（mapper）に集約している
+    //    （検索側の is:public だけでは詳細エンドポイントの直接アクセスを防げないため・NFR-33 / AC-12）。
+    return toPublicRepositoryDetail(await response.json())
   }
 
   private async request(url: URL, options: { notFoundAsNull: true }): Promise<Response | null>

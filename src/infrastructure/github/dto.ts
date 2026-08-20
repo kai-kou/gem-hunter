@@ -23,6 +23,12 @@ export const repositoryDto = z.object({
   // 🔴 nullable（コミットが一度もない空リポジトリでは null になりうる）。
   //    非 null 前提で必須にすると、検索結果 30 件中 1 件でも該当した瞬間に zod パース全体が失敗する。
   pushed_at: z.string().nullable(),
+  // 🔴 非公開リポジトリの判別に使う（installation token で認証すると、トークンから見える
+  //    private リポジトリまで API の可視範囲に入るため・prd.md L171「公開リポジトリの検索」）。
+  //    🔴 **必須**（fail-closed）: 欠落は「公開」と推定せず、上流異常（UpstreamError）として倒す。
+  //    optional にすると、上流やプロキシがこのフィールドを落とした瞬間に NFR-33 の多層防御のうち
+  //    2 層（検索結果の除外・詳細の 404 化）が同時に無効化される。実 GitHub API は常に返す。
+  private: z.boolean(),
   topics: z.array(z.string()).optional(),
   owner: ownerDto,
 })
@@ -51,6 +57,12 @@ export const repositoryDetailDto = z.object({
   forks_count: z.number(),
   open_issues_count: z.number(),
   updated_at: z.string(),
+  // 🔴 非公開リポジトリの判別に使う（installation token で認証すると、トークンから見える
+  //    private リポジトリまで API の可視範囲に入るため・prd.md L171「公開リポジトリの検索」）。
+  //    🔴 **必須**（fail-closed）: 欠落は「公開」と推定せず、上流異常（UpstreamError）として倒す。
+  //    optional にすると、上流やプロキシがこのフィールドを落とした瞬間に NFR-33 の多層防御のうち
+  //    2 層（検索結果の除外・詳細の 404 化）が同時に無効化される。実 GitHub API は常に返す。
+  private: z.boolean(),
   topics: z.array(z.string()).optional(),
   owner: ownerDto,
 })

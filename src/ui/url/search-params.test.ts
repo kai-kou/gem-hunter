@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SEARCH_PARAM_KEYS, parseSearchParams } from './search-params'
+import { SEARCH_PARAM_KEYS, parseSearchParams, rawKeywordOf } from './search-params'
 
 describe('SEARCH_PARAM_KEYS', () => {
   it('keyword は q、page は page、sort は sort、perPage は per_page に固定されている', () => {
@@ -80,5 +80,18 @@ describe('parseSearchParams', () => {
 
   it('per_page が配列で来たら先頭の値を採る', () => {
     expect(parseSearchParams({ per_page: ['50', '100'] })).toEqual({ ...DEFAULTS, perPage: 50 })
+  })
+})
+
+describe('rawKeywordOf', () => {
+  it('妥当性判定をせずに生の値を返す（未入力とエラーを画面で区別するため）', () => {
+    // parseSearchParams は不正値を '' へ倒すが、こちらは倒さない
+    expect(parseSearchParams({ q: 'react is:private' }).keyword).toBe('')
+    expect(rawKeywordOf({ q: 'react is:private' })).toBe('react is:private')
+  })
+
+  it('未指定は空文字・配列は先頭の値を採る', () => {
+    expect(rawKeywordOf({})).toBe('')
+    expect(rawKeywordOf({ q: ['react', 'vue'] })).toBe('react')
   })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { searchQuery } from '../../domain/model/search-query'
-import { repositoryCacheKey, searchResultCacheKey } from './cache-key'
+import { CACHE_SCHEMA_VERSION, repositoryCacheKey, searchResultCacheKey } from './cache-key'
 
 describe('searchResultCacheKey', () => {
   it('検索結果は search 名前空間になる', () => {
@@ -89,5 +89,45 @@ describe('repositoryCacheKey', () => {
     const composed = repositoryCacheKey(composedOwner, 'react')
     const decomposed = repositoryCacheKey(decomposedOwner, 'react')
     expect(composed).toBe(decomposed)
+  })
+})
+
+describe('CACHE_SCHEMA_VERSION', () => {
+  /**
+   * 🔴 期待値はすべて文字列リテラルで固定する（`CACHE_SCHEMA_VERSION` から組み立てない）。
+   *    バージョンを埋め込む自己参照の期待値だと、bump を巻き戻しても全テストが緑のままになり、
+   *    「既存キャッシュを論理的に無効化した」という意図をテストが守れない。
+   *
+   * 🔴 **bump するときは、この describe のリテラル（`v2` の箇所）も一緒に更新すること。**
+   *    そのひと手間が「バージョンを上げたのは意図的である」という明示になる。
+   */
+  it('現在のスキーマバージョンは v2 である（巻き戻し・意図しない変更を検出するガード）', () => {
+    expect(CACHE_SCHEMA_VERSION).toBe('v2')
+  })
+
+  it('検索結果のキーは名前空間の直後にスキーマバージョンを含む', () => {
+    const key = searchResultCacheKey(searchQuery({ keyword: 'next' }))
+    expect(key).toBe('search:v2:next:page=1:sort=relevance:per_page=20')
+  })
+
+  it('単一リポジトリのキーは名前空間の直後にスキーマバージョンを含む', () => {
+    const key = repositoryCacheKey('facebook', 'react')
+    expect(key).toBe('repository:v2:facebook/react')
+  })
+
+  it('スキーマバージョン導入後もキーワードの正規化（トリム・小文字化）は保たれる', () => {
+    const a = searchResultCacheKey(
+      searchQuery({ keyword: '  Next.js  ', page: 1, sort: 'stars', perPage: 20 }),
+    )
+    const b = searchResultCacheKey(
+      searchQuery({ keyword: 'next.js', page: 1, sort: 'stars', perPage: 20 }),
+    )
+    expect(a).toBe(b)
+    expect(a).toBe('search:v2:next.js:page=1:sort=stars:per_page=20')
+  })
+
+  it('スキーマバージョン導入後も owner/name の正規化・エンコードは保たれる', () => {
+    const key = repositoryCacheKey('  Face book  ', 'React')
+    expect(key).toBe('repository:v2:face%20book/react')
   })
 })

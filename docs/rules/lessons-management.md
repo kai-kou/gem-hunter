@@ -33,8 +33,7 @@
 | **Warm** | `docs/rules/lessons/<category>.md` | カテゴリ別の詳細レッスン | 上限なし（ただし dedup 推奨） | タスク依存 Read（スキル SKILL.md に記載） |
 | **Cold** | git 履歴 | 昇格済み・歴史的エントリ | — | 必要時 `git log` で参照 |
 
-カテゴリ: `pipeline` / `pr-review` / `audio-voice` / `content` / `session` / `sns-youtube` / `agent` /
-`agent-delegation` / `meta` / `marketing`
+カテゴリ（`<category>` の実体）は **`docs/rules/lessons/` 配下のファイル名が正本**（`ls docs/rules/lessons/` で確認する）。本ファイルに一覧を列挙するとカテゴリの追加・削除のたびにドリフトするため、列挙は置かない。新カテゴリを作るときは `docs/rules/lessons/<category>.md` を追加し、必要なら `lessons-core.md` の「Warm 層索引」に症状 → 参照先の 1 行を足す。
 
 ---
 

@@ -11,6 +11,7 @@
   "forks_count": 48000,
   "open_issues_count": 1200,
   "updated_at": "2026-08-18T00:00:00Z",
+  "private": false,
   "topics": ["javascript", "react"],
   "owner": {
     "login": "facebook",
