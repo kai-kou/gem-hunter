@@ -22,10 +22,9 @@ const repository: RepositoryDetailModel = {
   description: 'The library for web and native user interfaces.',
   primaryLanguage: 'JavaScript',
   stars: 233000,
-  watchers: 6800,
-  forks: 48000,
-  openIssues: 1100,
-  updatedAt: new Date('2026-08-18T09:00:00Z'),
+  watcherCount: 6800,
+  forkCount: 48000,
+  openIssueCount: 1100,
   topics: ['javascript'],
   htmlUrl: 'https://github.com/facebook/react',
 }

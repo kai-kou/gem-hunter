@@ -35,10 +35,10 @@ export type RepositoryDetail = {
   readonly primaryLanguage: string | null
   readonly stars: number
   /** 🔴 Watcher 数は subscribers_count（watchers_count は star のミラーで誤用禁止・prd.md FR-4 注記） */
-  readonly watchers: number
-  readonly forks: number
-  readonly openIssues: number
-  readonly updatedAt: Date
+  readonly watcherCount: number
+  readonly forkCount: number
+  /** GitHub の open_issues_count は Pull Request を含む（domain-model.md §2.2）。 */
+  readonly openIssueCount: number
   readonly topics: readonly string[]
   readonly htmlUrl: string
 }

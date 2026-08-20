@@ -56,7 +56,6 @@ export const repositoryDetailDto = z.object({
   subscribers_count: z.number(),
   forks_count: z.number(),
   open_issues_count: z.number(),
-  updated_at: z.string(),
   // 🔴 非公開リポジトリの判別に使う（installation token で認証すると、トークンから見える
   //    private リポジトリまで API の可視範囲に入るため・prd.md L171「公開リポジトリの検索」）。
   //    🔴 **必須**（fail-closed）: 欠落は「公開」と推定せず、上流異常（UpstreamError）として倒す。

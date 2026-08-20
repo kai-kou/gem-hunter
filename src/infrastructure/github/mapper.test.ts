@@ -150,10 +150,9 @@ describe('toPublicRepositoryDetail', () => {
     expect(detail?.owner.login).toBe('facebook')
     expect(detail?.description).toBe('The library for web and native user interfaces.')
     expect(detail?.primaryLanguage).toBe('JavaScript')
-    expect(detail?.forks).toBe(48000)
-    expect(detail?.openIssues).toBe(1200)
+    expect(detail?.forkCount).toBe(48000)
+    expect(detail?.openIssueCount).toBe(1200)
     expect(detail?.topics).toEqual(['javascript', 'react'])
-    expect(detail?.updatedAt.toISOString()).toBe('2026-08-18T00:00:00.000Z')
   })
 
   it('watchers は subscribers_count を使い、star のミラーである watchers_count は使わない', () => {
@@ -161,8 +160,8 @@ describe('toPublicRepositoryDetail', () => {
     const detail = toPublicRepositoryDetail(detailFixture)
 
     expect(detail?.stars).toBe(233000)
-    expect(detail?.watchers).toBe(6600)
-    expect(detail?.watchers).not.toBe(detail?.stars)
+    expect(detail?.watcherCount).toBe(6600)
+    expect(detail?.watcherCount).not.toBe(detail?.stars)
   })
 
   it('private: true の詳細は null（＝見つからない）として返す（詳細 URL 直打ちを塞ぐ・AC-12）', () => {

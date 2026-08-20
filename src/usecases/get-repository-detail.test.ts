@@ -13,10 +13,9 @@ const detail: RepositoryDetail = {
   description: 'The library for web and native user interfaces.',
   primaryLanguage: 'JavaScript',
   stars: 233000,
-  watchers: 6600,
-  forks: 48000,
-  openIssues: 1200,
-  updatedAt: new Date('2026-08-18T00:00:00Z'),
+  watcherCount: 6600,
+  forkCount: 48000,
+  openIssueCount: 1200,
   topics: ['javascript', 'react'],
   htmlUrl: 'https://github.com/facebook/react',
 }

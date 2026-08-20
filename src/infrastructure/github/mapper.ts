@@ -71,11 +71,10 @@ export function toPublicRepositoryDetail(raw: unknown): RepositoryDetail | null 
     description: dto.description,
     primaryLanguage: dto.language,
     stars: dto.stargazers_count,
-    // 🔴 watchers_count（star のミラー）ではなく subscribers_count を使う
-    watchers: dto.subscribers_count,
-    forks: dto.forks_count,
-    openIssues: dto.open_issues_count,
-    updatedAt: new Date(dto.updated_at),
+    // 🔴 watchers_count（star のミラー）ではなく subscribers_count を使う（domain-model.md §2.2）
+    watcherCount: dto.subscribers_count,
+    forkCount: dto.forks_count,
+    openIssueCount: dto.open_issues_count,
     topics: dto.topics ?? [],
     htmlUrl: dto.html_url,
   }

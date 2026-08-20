@@ -17,7 +17,7 @@ type RepositoryDetailLabels = {
  * 詳細画面（AC-5 / prd.md §8.2）。表示だけを持つ Server Component。文言は labels props 経由（E-4）。
  * 数値の書式は `locale` props に追従する。
  *
- * 🔴 Watcher 数は `repository.watchers`（GitHub の `subscribers_count` 由来。`domain-model.md` §2.2）。
+ * 🔴 Watcher 数は `repository.watcherCount`（GitHub の `subscribers_count` 由来。`domain-model.md` §2.2）。
  * Star 数と同じ値にならないことをテストで検証している（AC-5）。
  */
 export function RepositoryDetail({
@@ -40,9 +40,9 @@ export function RepositoryDetail({
 
   const stats = [
     { key: 'stars', label: labels.starCount, value: repository.stars, Icon: Star },
-    { key: 'watchers', label: labels.watcherCount, value: repository.watchers, Icon: Eye },
-    { key: 'forks', label: labels.forkCount, value: repository.forks, Icon: GitFork },
-    { key: 'openIssues', label: labels.openIssueCount, value: repository.openIssues, Icon: CircleDot },
+    { key: 'watchers', label: labels.watcherCount, value: repository.watcherCount, Icon: Eye },
+    { key: 'forks', label: labels.forkCount, value: repository.forkCount, Icon: GitFork },
+    { key: 'openIssues', label: labels.openIssueCount, value: repository.openIssueCount, Icon: CircleDot },
   ] as const
 
   return (
