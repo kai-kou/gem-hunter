@@ -4,6 +4,20 @@ import { z } from 'zod'
  * GitHub API のレスポンススキーマ（NFR-19）。
  * 🔴 アプリが実際に使うフィールドだけを宣言する（全項目を写さない）。
  */
+/**
+ * `href` へ流す URL の検証（`NFR-19` の入力検証・多層防御の最上流）。
+ *
+ * 🔴 `z.string()` のままでは `javascript:` / `data:` のような擬似スキームを素通しする。
+ *    `html_url` は詳細画面のタイトルリンク（`src/ui/repository-detail.tsx`）で `href` に
+ *    直結するため、URL 形式と https スキームをここで確定させる。
+ * 🔴 **fail-closed**: 実 GitHub API は常に `https://github.com/...` を返すので、外れる応答は
+ *    「安全な既定値へ丸める」のではなく上流異常（`UpstreamError`）として倒す（`private`
+ *    フィールドと同じ判断）。UI 層で毎回スキームを確かめる分岐を増やさずに済む。
+ */
+const httpsUrl = z.url().refine((value) => value.startsWith('https://'), {
+  message: 'must use the https scheme',
+})
+
 export const ownerDto = z.object({
   login: z.string(),
   avatar_url: z.string(),
@@ -13,7 +27,7 @@ export const repositoryDto = z.object({
   id: z.number(),
   name: z.string(),
   full_name: z.string(),
-  html_url: z.string(),
+  html_url: httpsUrl,
   description: z.string().nullable(),
   language: z.string().nullable(),
   stargazers_count: z.number(),
@@ -49,7 +63,7 @@ export const repositoryDetailDto = z.object({
   id: z.number(),
   name: z.string(),
   full_name: z.string(),
-  html_url: z.string(),
+  html_url: httpsUrl,
   description: z.string().nullable(),
   language: z.string().nullable(),
   stargazers_count: z.number(),

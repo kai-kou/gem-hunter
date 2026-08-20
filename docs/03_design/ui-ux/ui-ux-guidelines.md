@@ -375,6 +375,8 @@ Next.js の route announcer は **document title が変化しないと何もア�
 ✅ target="_blank" rel="noopener noreferrer" + sr-only で新規タブである旨を明示
 ```
 
+⚠️ **未適用箇所（Issue #287）**: `attribution-notice.tsx` のライセンスリンクは `rel` は満たすが `sr-only` 文言をまだ持っていない。本節を新設した時点での既知の乖離であり、同 Issue で解消する（解消したらこの注記を削除する）。
+
 ### 7.5. ターゲットサイズ（WCAG 2.2 の 2.5.8 / 2.5.5）
 
 🔴 **値の正本は §2.4**。本節は数値を繰り返さず、2 つの達成基準の関係と例外条項の解説に専念する。

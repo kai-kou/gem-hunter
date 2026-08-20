@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { locale } from '../domain/model/locale'
+import { getMessages } from '../shared/i18n/messages'
 import type { RepositoryDetail as RepositoryDetailModel } from '../domain/model/repository'
 import { RepositoryDetail } from './repository-detail'
 
@@ -13,6 +14,16 @@ const labels = {
   forkCount: 'fork 数',
   openIssueCount: 'issue 数',
   opensInNewTab: '（新しいタブで開きます）',
+}
+
+const enLabels = {
+  backLink: 'Back to results',
+  language: 'Language',
+  starCount: 'stars',
+  watcherCount: 'watchers',
+  forkCount: 'forks',
+  openIssueCount: 'open issues',
+  opensInNewTab: '(opens in a new tab)',
 }
 
 const repository: RepositoryDetailModel = {
@@ -86,15 +97,6 @@ describe('RepositoryDetail', () => {
   })
 
   it('en ロケールでも戻る導線が /en を指し、labels props の文言が反映される', () => {
-    const enLabels = {
-      backLink: 'Back to results',
-      language: 'Language',
-      starCount: 'stars',
-      watcherCount: 'watchers',
-      forkCount: 'forks',
-      openIssueCount: 'open issues',
-      opensInNewTab: '(opens in a new tab)',
-    }
     render(<RepositoryDetail repository={repository} labels={enLabels} locale={locale('en')} />)
 
     expect(screen.getByRole('link', { name: 'Back to results' })).toHaveAttribute('href', '/en')
@@ -132,6 +134,22 @@ describe('RepositoryDetail', () => {
     // タブナビゲーション奪取防止（noopener）とリファラー経由の遷移元漏洩防止（noreferrer）の両方が必要
     const rel = titleLink.getAttribute('rel') ?? ''
     expect(rel.split(/\s+/)).toEqual(expect.arrayContaining(['noopener', 'noreferrer']))
+  })
+
+  it('新規タブ告知の文言は括弧で始まる（アクセシブルネーム連結時の区切り・ui-ux-guidelines §7.4a）', () => {
+    // アクセシブルネームの計算はインライン要素の境界で空白を挿入しないため、区切りは
+    // 半角スペースではなく文言側の括弧が担う。ここを緩めると `fullName新しいタブで開きます`
+    // と連結して読み上げられるため、カタログの実値（props のモック値ではない）を固定する。
+    expect(getMessages(locale('ja')).detail.opensInNewTab).toMatch(/^（/)
+    expect(getMessages(locale('en')).detail.opensInNewTab).toMatch(/^\(/)
+  })
+
+  it('en ロケールでもタイトルリンクに新規タブ告知が乗る', () => {
+    render(<RepositoryDetail repository={repository} labels={enLabels} locale={locale('en')} />)
+
+    expect(
+      screen.getByRole('link', { name: `facebook/react${enLabels.opensInNewTab}` }),
+    ).toHaveAttribute('href', repository.htmlUrl)
   })
 
   it('primaryLanguage が null の場合は言語表示を出さない', () => {
