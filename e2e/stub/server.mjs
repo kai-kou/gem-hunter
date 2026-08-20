@@ -144,12 +144,6 @@ function sortManyRepos(list, sort) {
 
 const PORT = Number(process.env.E2E_STUB_PORT ?? 8788)
 
-<<<<<<< HEAD
-// SP-5 E2E 検証用のリクエストカウント（`/__stats` / `/__stats/reset` でのみ参照・更新する）。
-// `lastSearchQuery` は AC-12 E2E 用（アプリが GitHub へ送った `q` に `is:public` が
-// 含まれていることを画面越しに確認するため）。
-const stats = { searchCount: 0, detailCount: 0, lastSearchQuery: null }
-=======
 // SP-8: OAuth token 交換が返す固定アクセストークン。実 GitHub と同様この値を
 // `Authorization: Bearer <token>` で送ってきたリクエストだけを「ユーザー自身のレート枠」と
 // みなす（`userAuthSearchCount` / `userAuthDetailCount`）。未ログイン時も installation token の
@@ -160,7 +154,15 @@ const OAUTH_AUTHZ_CODE = 'stub-authz-code'
 const OAUTH_USER_AUTH_HEADER = `Bearer ${OAUTH_ACCESS_TOKEN}`
 
 // SP-5 / SP-8 E2E 検証用のリクエストカウント（`/__stats` / `/__stats/reset` でのみ参照・更新する）。
-const stats = { searchCount: 0, detailCount: 0, userAuthSearchCount: 0, userAuthDetailCount: 0 }
+// `lastSearchQuery` は AC-12 E2E 用（アプリが GitHub へ送った `q` に `is:public` が
+// 含まれていることを画面越しに確認するため）。
+const stats = {
+  searchCount: 0,
+  detailCount: 0,
+  userAuthSearchCount: 0,
+  userAuthDetailCount: 0,
+  lastSearchQuery: null,
+}
 
 function isUserAuthRequest(req) {
   return req.headers.authorization === OAUTH_USER_AUTH_HEADER
@@ -197,7 +199,6 @@ async function handleAccessTokenExchange(req, res) {
   }
   return sendJson(res, 200, { access_token: OAUTH_ACCESS_TOKEN, token_type: 'bearer', scope: '' })
 }
->>>>>>> origin/main
 
 function toSearchItem(repo) {
   const {
@@ -259,12 +260,9 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/__stats/reset' && req.method === 'POST') {
     stats.searchCount = 0
     stats.detailCount = 0
-<<<<<<< HEAD
-    stats.lastSearchQuery = null
-=======
     stats.userAuthSearchCount = 0
     stats.userAuthDetailCount = 0
->>>>>>> origin/main
+    stats.lastSearchQuery = null
     return sendJson(res, 200, stats)
   }
 

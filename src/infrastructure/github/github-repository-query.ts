@@ -3,12 +3,8 @@ import type { RepositoryDetail, SearchResult } from '../../domain/model/reposito
 import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
-<<<<<<< HEAD
-import { toPublicRepositoryDetail, toSearchResult } from './mapper'
-=======
 import { resolveLoopbackOverridableOrigin } from './loopback-origin'
-import { toRepositoryDetail, toSearchResult } from './mapper'
->>>>>>> origin/main
+import { toPublicRepositoryDetail, toSearchResult } from './mapper'
 
 const DEFAULT_API_ORIGIN = 'https://api.github.com'
 
