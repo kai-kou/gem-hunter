@@ -149,3 +149,54 @@ test('SP-8 Step 1: 未ログインのまま検索から詳細ページまで全�
     await expect(page.getByRole('heading', { name: 'octostub/octo-widgets' })).toBeVisible()
   })
 })
+
+test('SP-8 回帰: ログイン後にページ内リンクのプリフェッチが走ってもセッションは失われない', async ({
+  page,
+  context,
+}) => {
+  await test.step('ダミー OAuth でログインする', async () => {
+    await page.goto('/api/auth/login')
+    await page.waitForURL(/\/ja(\?.*)?$/)
+  })
+
+  await test.step('ページを表示したまま、ビューポート内リンクのプリフェッチが走る猶予を与える', async () => {
+    // `next/link` の自動プリフェッチはリンクを画面に描画した後に走る。ログアウト導線が
+    // GET ベースのリンクだった旧実装では、この待機の間に `GET /api/auth/logout` が
+    // プリフェッチされセッション Cookie が黙って破棄されていた（ファイル冒頭コメント参照）。
+    await page.waitForLoadState('networkidle')
+  })
+
+  await test.step('再読み込みしてもログアウトボタン（＝ログイン状態）が残っている', async () => {
+    await page.reload()
+    await expect(page.getByRole('button', { name: ja.common.auth.logout })).toBeVisible()
+
+    const cookies = await context.cookies()
+    expect(
+      cookies.find((c) => c.name === SESSION_COOKIE_NAME),
+      'ページ表示・再読み込みだけではセッション Cookie が破棄されないこと',
+    ).toBeTruthy()
+  })
+})
+
+test('SP-8 回帰: /api/auth/logout への GET は 405 を返し副作用を持たない', async ({
+  page,
+  context,
+}) => {
+  await test.step('ダミー OAuth でログインする', async () => {
+    await page.goto('/api/auth/login')
+    await page.waitForURL(/\/ja(\?.*)?$/)
+  })
+
+  await test.step('GET でログアウトエンドポイントを叩いても 405 が返り、セッションは残る', async () => {
+    // `context.request`（`page.request` と同一）はブラウザの Cookie ジャーを共有するため、
+    // ここでの GET にもセッション Cookie が付いて送られる。
+    const response = await page.request.get('/api/auth/logout', { maxRedirects: 0 })
+    expect(response.status()).toBe(405)
+
+    const cookies = await context.cookies()
+    expect(
+      cookies.find((c) => c.name === SESSION_COOKIE_NAME),
+      'GET リクエストではセッション Cookie が破棄されないこと',
+    ).toBeTruthy()
+  })
+})
