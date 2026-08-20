@@ -583,14 +583,14 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 | # | 主題 | 記録先 |
 |---|---|---|
-| 1 | Next.js 16 + App Router の採用 | 未作成 |
-| 2 | 認証方式（GitHub App の installation token + 任意 OAuth）と、与件が対象外とした認証を上乗せした理由 | ✅ [ADR 0003](../adr/0003-github-app-authentication.md)（サーバー側認証の方式選定）/ 任意 OAuth 部分は未作成 |
-| 3 | DB を持たない設計原則と、状態をクライアント側へ寄せる判断 | 未作成 |
-| 4 | キャッシュ抽象（Cache Port）を設ける判断と、YAGNI の例外とした理由 | 未作成 |
-| 5 | `FR-7` でページネーションを選び、無限スクロールを採らなかった理由 | 未作成 |
-| 6 | Hidden Gem を「被依存数に対する star の残差」と定義した理由（既存スコアを再実装しない判断を含む） | 未作成 |
-| 7 | 複数トークンのローテーションを採用しない判断 | 未作成 |
-| 8 | i18n のルーティング設計と既定ロケール | 未作成 |
+| 1 | Next.js 16 + App Router の採用 | ✅ [ADR 0006](../adr/0006-nextjs16-app-router.md) |
+| 2 | 認証方式（GitHub App の installation token + 任意 OAuth）と、与件が対象外とした認証を上乗せした理由 | ✅ [ADR 0003](../adr/0003-github-app-authentication.md)（サーバー側認証の方式選定）/ ✅ [ADR 0012](../adr/0012-optional-github-oauth.md)（任意 OAuth 部分） |
+| 3 | DB を持たない設計原則と、状態をクライアント側へ寄せる判断 | ✅ [ADR 0007](../adr/0007-no-database-client-side-state.md) |
+| 4 | キャッシュ抽象（Cache Port）を設ける判断と、YAGNI の例外とした理由 | ✅ [ADR 0005](../adr/0005-cache-port-yagni-exception-and-ttl.md) |
+| 5 | `FR-7` でページネーションを選び、無限スクロールを採らなかった理由 | ✅ [ADR 0008](../adr/0008-pagination-over-infinite-scroll.md) |
+| 6 | Hidden Gem を「被依存数に対する star の残差」と定義した理由（既存スコアを再実装しない判断を含む） | ✅ [ADR 0009](../adr/0009-hidden-gem-score-definition.md) |
+| 7 | 複数トークンのローテーションを採用しない判断 | ✅ [ADR 0010](../adr/0010-no-token-rotation.md) |
+| 8 | i18n のルーティング設計と既定ロケール | ✅ [ADR 0011](../adr/0011-i18n-routing-and-default-locale.md) |
 | 9 | **UI スタック（Tailwind v4 + shadcn/ui + Radix）の採用と、shadcn/ui 既定の Base UI を採らなかった理由** | ✅ [ADR 0001](../adr/0001-ui-stack.md) |
 
 ---
