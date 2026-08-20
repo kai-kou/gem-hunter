@@ -1,0 +1,27 @@
+{
+  "topic": "SP-8スプリントレビュー: ログインでレート枠を自分のものに切り替えられ、言語を選べる（PR #141・Issue #140）",
+  "brief": "PR #141（マージ済み・squash sha 5b7601a）が Issue #140（SP-8, sp:8）の成果物。US-2/US-4/US-5/E-11 を実装。設計は discussion-review（content/discussions/sp8-auth-i18n-20260819/whiteboard.md・4名2ラウンド）で合意形成済み。実装は auth_backend/locale_ui の並列実装 + 統合。Layer1セルフレビュー（7観点並列）で13件の指摘を得て、うち11件をCONFIRMEDとして修正・2件は設計判断としてスキップ（LocaleSwitcherのlayout.tsx一本化はNext.js16+OpenNext Cloudflareのmiddleware非採用によりpathname取得手段がないため個別配線を維持／logout GETのCSRFは実害が小さいため見送り）。run_checks結果は最終コミット時点でLint/型/テスト(261件)/E2E/依存規則/UI寸法/配色コントラスト/CJK Markdown/セルフレビュー機械チェックすべてPASS。プレビューURL https://pr-141-gem-hunter.kinamocchi-tech.workers.dev/ja は疎通確認済み（手順1・4を確認可能。手順2・3はOAuth App未登録のためプレビューでは導線非表示・ローカルビルド+ダミーOAuthのe2e/sp-8-auth.spec.tsで機械検証済み）。E2E実装中、Chromiumの実機タイミング揺らぎ（Secure Cookie over http の不安定な永続化・クロスオリジンリダイレクト直後のCookie未送出）を発見し、Secure属性を接続プロトコル由来の動的判定に変更、Step2の検索確認を再ログイン込みリトライ（最大3回）に修正して対応した（同一サーバーに対し20回以上連続成功を確認）。Sprint Planningコメントの編成欄は「discussion-review(4) + fan-out(2) + 統合(1)」で単独実行ではない。GitHub OAuth Appの実登録（local/production用2つ）はユーザー作業として未完了のまま残っている（verdict T-2）。",
+  "participants": [
+    {
+      "name": "acceptance_judge",
+      "model": "sonnet",
+      "lens": "受け入れ判定（Sprint Review Step7の必須4点を担当）: (1) user-story-map.md §5.3 SP-8節が参照する設計ドキュメントを1ホップ先まで辿る（infrastructure-design.md §8.1・prd.md AR-4/AR-5等）、実装がその記載と整合しているか確認する。(2) テスト・依存規則チェックは実際に実行して結果で断定する（bash tools/run_checks.sh・python3 tools/check_architecture_boundaries.py を自分で実行し、実行結果のみを根拠にする。実行せず「たぶん満たしている」と書かない）。(3) Sprint Planningコメントの編成欄が単独実行になっていないか確認する。(4) UI/デザイン変更（app/**・src/ui/**を含む差分）について docs/03_design/ui-ux/ui-ux-guidelines.md §2.4 を実際に開いて必須行を満たすか判定する。プレビュー画面は開けないため「目視確認した」とは書かず、コードで§2.4の推奨tierを使っているかを確認した結果である旨と、視覚的な最終判断は人間の操作レビューに委ねる旨を明記する。総合してaccepted/accepted_with_conditions/rejectedのいずれかを判定する"
+    },
+    {
+      "name": "backlog_triage",
+      "model": "sonnet",
+      "lens": "残課題の仕分け役: PR #141で残った既知事項（GitHub OAuth App未登録=ユーザー作業/verdict T-2、logout GETのCSRF未対応、LocaleSwitcherのlayout.tsx非一本化、E2Eの実機タイミング揺らぎ対応の頑健性）を洗い出し、それぞれ「次スプリントへ送るべきか」「別Issue化すべきか」「記録のみで十分か」を判定する。特にE2Eの再ログイン込みリトライが根本原因の解消ではなく症状への対処である点について、追加調査Issueを起票すべきか検討する"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "2レンズの claim/rebuttal を突き合わせ、Sprint Review の結果（accepted / accepted_with_conditions / rejected）を1つに決める。受け入れ判定役が実際に実行した検証結果（run_checks・architecture_boundaries）のみを根拠にする。後続スプリントへ送る項目・Issueクローズ条件を明記する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "result": "accepted | accepted_with_conditions | rejected",
+    "next_firing_required": "条件付き受け入れのときだけ記載。無ければ 'なし'",
+    "follow_up_items": ["後続スプリントへ送る項目"],
+    "issue_close_condition": "Issue クローズ条件（1行）"
+  }
+}
