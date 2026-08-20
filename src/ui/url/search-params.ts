@@ -4,7 +4,8 @@ import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
 import { tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 
 /**
- * 検索条件を URL クエリへ載せるためのパラメータ名契約（US-9 / AC-2）。
+ * 検索条件を URL クエリへ載せるためのパラメータ名契約（US-9 / AC-2 / NFR-2）。
+ * 名前・既定値・許容値の正本は docs/02_requirements/prd.md §2.4.1 で、本定数はその実装。
  * 1 箇所に固定し、この名前を他ファイルへ直書きしない。
  */
 export const SEARCH_PARAM_KEYS = {
