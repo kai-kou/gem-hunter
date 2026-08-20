@@ -35,7 +35,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 | `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | セッション機能が無効化される |
 | `RATE_LIMIT_SALT` | 検索経路の自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt | レート制限の間引きをしない（フェイルオープン） |
 
-上記はいずれも `src/infrastructure/` 配下の各ファイルが `process.env` から直接読む（秘匿情報を読んでよい層を 1 ファイルに限定する設計・`ARCH-5` / `NFR-22`）。`GITHUB_API_ORIGIN` はテスト専用のスタブ切替であり、アプリの実行時には使わない。
+上記はいずれも `src/infrastructure/` 配下の各ファイルが `process.env` から直接読む（秘匿情報を読んでよい層を 1 ファイルに限定する設計・`ARCH-5` / `NFR-22`）。`GITHUB_API_ORIGIN` と `GITHUB_OAUTH_ORIGIN` はテスト専用のスタブ切替であり（ループバック宛てのみ有効）、アプリの実行時には使わない。
 
 ### 技術スタック
 
@@ -76,7 +76,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 
 与件（[`minimum-requirements.md`](./docs/02_requirements/minimum-requirements.md) §1.2）は認証を明示的に「対象外」としているが、本プロダクトは **任意の GitHub OAuth ログイン** を MVP に含めている。
 
-- **未ログインでも全機能が使える。ログインで変わるのはレート枠だけ**（未ログイン = アプリ共有枠、ログイン = 各自の 30 req/分）。機能差は一切作らない
+- **未ログインでも全機能が使える。ログインで変わるのはレート枠だけ**（未ログイン = アプリの共有枠、ログイン = 各自のレート枠。具体値は [ADR 0012](./docs/adr/0012-optional-github-oauth.md)）。機能差は一切作らない
 - サーバー側の GitHub API 認証（[ADR 0003](./docs/adr/0003-github-app-authentication.md)）は共有のレート枠を全利用者で分け合う構成のため、利用者が増えるほど体感速度が悪化する。任意ログインはこの共有枠の逼迫に対する緩和手段として位置づける
 - 「実装しなくてよい」であって「実装してはならない」ではないと解釈し、与件の下限（§1.2 の対象外項目）を割らない範囲での上乗せとして扱う。認証を足したことを口実に、与件が対象外とした他の項目（お気に入り・通知・課金・独自スコアリング）をスコープへ広げることはしない
 
@@ -95,19 +95,19 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 
 ## 技術的意思決定の記録（ADR）
 
-`NFR-32` に対応。技術的意思決定は「なぜその選択をしたか / 何を捨てたか」を [`docs/adr/`](./docs/adr) に ADR として記録する。一覧（記録すべき主題は [PRD §12](./docs/02_requirements/prd.md#12-記録すべき-adr) を参照）。
+`NFR-32` に対応。技術的意思決定は「なぜその選択をしたか / 何を捨てたか」を [`docs/adr/`](./docs/adr) に ADR として記録する。記録すべき主題の一覧は [PRD §12](./docs/02_requirements/prd.md#12-記録すべき-adr) が正本であり、下表はそこへの索引として各 ADR の見出しを転記したもの（転記漏れ・言い換えによる食い違いは `tools/check_adr_coverage.py` が機械検査する）。
 
-| ADR | 主題 |
+| ADR | タイトル（各 ADR の見出しをそのまま転記） |
 |---|---|
-| [0001](./docs/adr/0001-ui-stack.md) | UI スタック（Tailwind v4 + shadcn/ui + Radix）の採用と、shadcn/ui 既定の Base UI を採らなかった理由 |
-| [0002](./docs/adr/0002-cloudflare-workers-infrastructure.md) | 事業者選定（Cloudflare Workers）の記録 |
-| [0003](./docs/adr/0003-github-app-authentication.md) | サーバー側の GitHub 認証を GitHub App の installation token にする決定 |
-| [0004](./docs/adr/0004-release-cycle-trunk-based.md) | 常設の dev 環境を持たず trunk-based を維持する決定 |
-| [0005](./docs/adr/0005-cache-port-yagni-exception-and-ttl.md) | Cache Port を YAGNI の意図的な例外として維持し、TTL 暫定値を確定する決定 |
-| [0006](./docs/adr/0006-nextjs16-app-router.md) | Next.js 16 + App Router の採用 |
+| [0001](./docs/adr/0001-ui-stack.md) | UI スタックに Tailwind CSS v4 + shadcn/ui（Radix UI 明示指定）を採用する |
+| [0002](./docs/adr/0002-cloudflare-workers-infrastructure.md) | インフラを Cloudflare Workers（`@opennextjs/cloudflare`）に確定し、wrangler CLI を運用の一次経路にする |
+| [0003](./docs/adr/0003-github-app-authentication.md) | サーバー側の GitHub 認証を GitHub App の installation token にする |
+| [0004](./docs/adr/0004-release-cycle-trunk-based.md) | リリースサイクルを trunk-based（PR プレビュー + `main` = 本番）に確定し、常設の dev 環境を持たない |
+| [0005](./docs/adr/0005-cache-port-yagni-exception-and-ttl.md) | Cache Port を YAGNI の意図的な例外として維持し、TTL 暫定値を確定する |
+| [0006](./docs/adr/0006-nextjs16-app-router.md) | Next.js 16 + App Router を採用する |
 | [0007](./docs/adr/0007-no-database-client-side-state.md) | DB を持たない設計原則と、状態をクライアント側へ寄せる判断 |
-| [0008](./docs/adr/0008-pagination-over-infinite-scroll.md) | ページネーションを選び、無限スクロールを採らなかった理由 |
-| [0009](./docs/adr/0009-hidden-gem-score-definition.md) | Hidden Gem の定義 |
-| [0010](./docs/adr/0010-no-token-rotation.md) | 複数トークンのローテーションを採用しない判断 |
-| [0011](./docs/adr/0011-i18n-routing-and-default-locale.md) | i18n のルーティング設計と既定ロケール |
-| [0012](./docs/adr/0012-optional-github-oauth.md) | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せした理由 |
+| [0008](./docs/adr/0008-pagination-over-infinite-scroll.md) | `FR-7` でページネーションを選び、無限スクロールを採らない |
+| [0009](./docs/adr/0009-hidden-gem-score-definition.md) | Hidden Gem を「被依存数に対する star の残差」と定義し、既存スコアを再実装しない |
+| [0010](./docs/adr/0010-no-token-rotation.md) | 複数トークンのローテーションを採用しない |
+| [0011](./docs/adr/0011-i18n-routing-and-default-locale.md) | i18n のルーティング設計と既定ロケールを、`next-intl` を不採用として自前実装で確定する |
+| [0012](./docs/adr/0012-optional-github-oauth.md) | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする |

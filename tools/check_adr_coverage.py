@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -48,25 +49,25 @@ def extract_section(markdown: str, heading: str) -> str:
     return rest[: next_heading.start()] if next_heading else rest
 
 
-def check_prd_section12(section: str, errors: list[str]) -> set[str]:
+def check_prd_section12(section: str, errors: list[str], prd_path: Path = PRD_PATH) -> set[str]:
     """§12 の表を検査し、リンク先 ADR のファイル名集合を返す。"""
     if not section.strip():
-        errors.append(f"{PRD_PATH.name} に「{SECTION_12_HEADING}」が見つからない（表の正本が消えている）")
+        errors.append(f"{prd_path.name} に「{SECTION_12_HEADING}」が見つからない（表の正本が消えている）")
         return set()
 
     for line in section.splitlines():
         if line.startswith("|") and "未作成" in line:
             subject = line.split("|")[2].strip() if line.count("|") >= 3 else line.strip()
-            errors.append(f"{PRD_PATH.name} §12 に未作成の ADR が残っている: {subject}")
+            errors.append(f"{prd_path.name} §12 に未作成の ADR が残っている: {subject}")
 
     linked: set[str] = set()
     for match in LINK_RE.finditer(section):
-        target = (PRD_PATH.parent / match.group(1)).resolve()
+        target = (prd_path.parent / match.group(1)).resolve()
         if "/adr/" not in match.group(1):
             continue
         linked.add(target.name)
         if not target.exists():
-            errors.append(f"{PRD_PATH.name} §12 の ADR リンクが壊れている: {match.group(1)}")
+            errors.append(f"{prd_path.name} §12 の ADR リンクが壊れている: {match.group(1)}")
     return linked
 
 
@@ -82,25 +83,45 @@ def check_readme(readme: str, errors: list[str]) -> None:
         errors.append("README に AI 利用の範囲と方法の節が無い（NFR-31）")
 
 
-def check_readme_lists_all_adrs(readme: str, adr_files: list[str], errors: list[str]) -> None:
+def adr_title(path: Path) -> str:
+    """ADR の H1 見出しから `ADR NNNN: ` 接頭辞を除いたタイトルを返す（取れなければ空文字）。"""
+    first_line = path.read_text(encoding="utf-8").split("\n", 1)[0].strip()
+    match = re.match(r"#\s*ADR\s*\d{4}:\s*(.+)$", first_line)
+    return match.group(1).strip() if match else ""
+
+
+def check_readme_lists_all_adrs(
+    readme: str, adr_files: list[str], errors: list[str], adr_dir: Path = ADR_DIR
+) -> None:
     for name in adr_files:
         if name not in readme:
             errors.append(f"README の ADR 一覧に載っていない ADR がある（NFR-32）: docs/adr/{name}")
+            continue
+        title = adr_title(adr_dir / name)
+        if not title:
+            errors.append(f"ADR の H1 見出しが `# ADR NNNN: タイトル` の形式でない: docs/adr/{name}")
+        elif title not in readme:
+            errors.append(
+                f"README の ADR 一覧のタイトルが ADR 本体の見出しと食い違っている（言い換え・転記漏れ）: "
+                f"docs/adr/{name} の「{title}」"
+            )
 
 
-def run_checks() -> list[str]:
+def run_checks(
+    prd_path: Path = PRD_PATH, readme_path: Path = README_PATH, adr_dir: Path = ADR_DIR
+) -> list[str]:
     errors: list[str] = []
 
-    prd = PRD_PATH.read_text(encoding="utf-8")
-    readme = README_PATH.read_text(encoding="utf-8")
-    adr_files = sorted(p.name for p in ADR_DIR.glob("[0-9][0-9][0-9][0-9]-*.md"))
+    prd = prd_path.read_text(encoding="utf-8")
+    readme = readme_path.read_text(encoding="utf-8")
+    adr_files = sorted(p.name for p in adr_dir.glob("[0-9][0-9][0-9][0-9]-*.md"))
 
     if not adr_files:
         errors.append("docs/adr/ に ADR が 1 本も無い（NFR-32）")
 
-    linked = check_prd_section12(extract_section(prd, SECTION_12_HEADING), errors)
+    linked = check_prd_section12(extract_section(prd, SECTION_12_HEADING), errors, prd_path)
     check_readme(readme, errors)
-    check_readme_lists_all_adrs(readme, adr_files, errors)
+    check_readme_lists_all_adrs(readme, adr_files, errors, adr_dir)
 
     for name in adr_files:
         if name not in linked and name not in readme:
@@ -156,16 +177,63 @@ def self_test() -> int:
     )
     expect(errors == [], f"満たしている README を誤検出している: {errors}")
 
+    # §12 の見出しそのものが消えたときに検出する
+    errors = []
+    check_prd_section12("", errors)
+    expect(len(errors) == 1 and SECTION_12_HEADING in errors[0], "§12 見出しの不在を検出できていない")
+
+    # run_checks() を一時 fixture で丸ごと通す（run_checks 内だけにある判定のカバー）
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        adr_dir = root / "adr"
+        adr_dir.mkdir()
+        (adr_dir / "0001-alpha.md").write_text("# ADR 0001: アルファを採用する\n", encoding="utf-8")
+        (adr_dir / "0002-beta.md").write_text("# ADR 0002: ベータを採用する\n", encoding="utf-8")
+        prd = root / "prd.md"
+        readme = root / "README.md"
+
+        def write(section_rows: str, readme_body: str) -> None:
+            prd.write_text(f"{SECTION_12_HEADING}\n{section_rows}\n", encoding="utf-8")
+            readme.write_text(readme_body, encoding="utf-8")
+
+        ok_readme = (
+            "`npm ci` `npm run dev` `npm test`\n`AR-5` の理由\n## AI を利用した範囲と方法\n"
+            "| [0001](./adr/0001-alpha.md) | アルファを採用する |\n"
+            "| [0002](./adr/0002-beta.md) | ベータを採用する |\n"
+        )
+        write("| 1 | a | ✅ [ADR 0001](./adr/0001-alpha.md) |\n| 2 | b | ✅ [ADR 0002](./adr/0002-beta.md) |", ok_readme)
+        expect(run_checks(prd, readme, adr_dir) == [], "満たしている fixture を誤検出している")
+
+        # 死蔵 ADR（§12 からも README からも参照されない）を検出する
+        write("| 1 | a | ✅ [ADR 0001](./adr/0001-alpha.md) |", ok_readme.replace("| [0002](./adr/0002-beta.md) | ベータを採用する |\n", ""))
+        found = run_checks(prd, readme, adr_dir)
+        expect(any("死蔵" in e for e in found), f"死蔵 ADR を検出できていない: {found}")
+
+        # README のタイトルが ADR の見出しと食い違うと検出する
+        write(
+            "| 1 | a | ✅ [ADR 0001](./adr/0001-alpha.md) |\n| 2 | b | ✅ [ADR 0002](./adr/0002-beta.md) |",
+            ok_readme.replace("ベータを採用する", "ベータの話"),
+        )
+        found = run_checks(prd, readme, adr_dir)
+        expect(any("食い違っている" in e for e in found), f"README タイトルの食い違いを検出できていない: {found}")
+
+        # ADR が 1 本も無いときに検出する
+        empty_dir = root / "empty"
+        empty_dir.mkdir()
+        write("| 1 | a | 記録先なし |", ok_readme)
+        found = run_checks(prd, readme, empty_dir)
+        expect(any("1 本も無い" in e for e in found), f"ADR ゼロ件を検出できていない: {found}")
+
     # README の ADR 一覧漏れを検出する
     errors = []
     check_readme_lists_all_adrs("0001-ui-stack.md だけ載っている", ["0001-ui-stack.md", "0002-x.md"], errors)
-    expect(len(errors) == 1 and "0002-x.md" in errors[0], "README の ADR 一覧漏れを検出できていない")
+    expect(any("0002-x.md" in e for e in errors), "README の ADR 一覧漏れを検出できていない")
 
     if failures:
         for label in failures:
             print(f"[adr-coverage] SELF-TEST FAIL: {label}", file=sys.stderr)
         return 1
-    print(f"[adr-coverage] self-test OK（{8 + len(REQUIRED_README_COMMANDS)} 項目）")
+    print(f"[adr-coverage] self-test OK（{15 + len(REQUIRED_README_COMMANDS)} 項目）")
     return 0
 
 
