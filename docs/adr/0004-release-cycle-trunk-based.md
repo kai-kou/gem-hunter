@@ -2,7 +2,7 @@
 
 - **状態**: **承認**（`M-4` 公開判断ゲートで、`[env.dev]` と gradual deployment の追加要否を再判定する）
 - **日付**: 2026-08-18 JST
-- **対応要件**: `D-21` / `D-16` / `INF-4` / `INF-20` / `INF-21` / `SD-1` / `CP-6` / `minimum-requirements.md` §4 / §6
+- **対応要件**: `D-21` / `D-26` / `D-16` / `INF-4` / `INF-20` / `INF-21` / `SD-1` / `CP-6` / `minimum-requirements.md` §4 / §6
 - **関連**: [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §6 / [議論記録](../../content/discussions/release-cycle-20260818/whiteboard.md) / Issue #38 / #39 / #40
 
 ---
@@ -76,10 +76,23 @@
 
 | 代償 | 緩和策 |
 |---|---|
-| `main` 上の合成状態が本番で初めて動く | `main` マージ後のテストゲート（Issue #39・`SP-4` のテスト CI 完成が前提） |
+| `main` 上の合成状態が本番で初めて動く | `main` マージ後のテストゲート（Issue #39・`SP-4` のテスト CI 完成が前提）。**2026-08-20 追記**: スプリント PR に限り、テストゲートの上にスプリントレビューゲートを重ねる（下記「スプリントレビューゲートの追加」） |
 | OAuth 経路を本番でしか検証できない（プレビューは PR ごとに URL が変わりコールバック URL を登録できない） | OAuth 自体が未実装のため現時点では顕在化しない。`M-4` で `[env.dev]` の要否を判定する |
 | 段階的な本番投入（カナリア）ができない | `INF-21`（ロールバック）で戻す。段階的展開の導入可否は Issue #40 で別途決定する |
 | ブランチ構成だけを見た第三者に「環境分離をしていない」と映る可能性 | README「設計上の判断」に理由を明記する（与件 §6 が要求する導線） |
+| **（2026-08-20 追記）** rejected 判定が続く間、その rejected スプリントと無関係な非スプリント PR のデプロイも足止めされる | `main` が 1 本の Worker である以上、部分的デプロイができないため不可避。「反映が遅れる」に留まり「壊れたコードが本番に出る」より軽いため trunk-based の 1 ホップ原則は維持できると判断する |
+
+---
+
+### スプリントレビューゲートの追加（2026-08-20 改訂・`D-26`）
+
+🔴 **`main` マージ後のテストゲート（§3.3・Issue #39）は、スプリント PR に限り「スプリントレビュー accepted ゲート」で拡張する。置き換えではない。**
+
+- **対象はスプリント PR（`Sprint Goal:` 行のある PR）のみ**。テストゲート（`npm run check` が `main` HEAD で通ること）は全 PR に引き続き必須の前提として残る。スプリントレビューゲートは、その上に **人格化された受け入れ判定**（accepted / accepted_with_conditions / rejected）を追加で通す。
+- **本番デプロイの発火点**: スプリント PR は Sprint Review 判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）になるまでデプロイしない。`rejected` の間はデプロイしない（fail-closed）。
+- **非スプリント PR**（改善 Issue・retro-try・docs 等）: 従来どおりマージ直後にデプロイするが、main 上に判定未確定または rejected のスプリント Issue が残っている間はデプロイを待機する（デプロイの直列化）。マージ・push 自体は妨げない — 止めるのは `npm run deploy` の呼び出しだけ。
+- **trunk-based の 1 ホップ構成は維持する**: main の巻き戻し・rejected コミットの revert は導入しない。rejected 後に必要な修正は次の PR として重ねてマージし、その Sprint Review で改めて accepted となった時点でゲートは自然に解除される。
+- 実装の詳細・コマンドは [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §8.2 が正本（本 ADR は理由と適用範囲のみを持つ）。決定ログは [`open-questions.md`](../02_requirements/open-questions.md) `D-26`。根拠は [議論記録](../../content/discussions/sprint-env-lifecycle-20260820/whiteboard.md)。
 
 ---
 
@@ -100,7 +113,8 @@
 
 | ドキュメント | 関係 |
 |---|---|
-| [`open-questions.md`](../02_requirements/open-questions.md) `D-21` | 決定ログ（本 ADR が理由と却下案の正本） |
-| [`cloudflare-infrastructure.md`](../03_design/infrastructure/cloudflare-infrastructure.md) §6 / §8 | 環境構成・CI/CD の実装の正本 |
+| [`open-questions.md`](../02_requirements/open-questions.md) `D-21` / `D-26` | 決定ログ（本 ADR が理由と却下案の正本） |
+| [`cloudflare-infrastructure.md`](../03_design/infrastructure/cloudflare-infrastructure.md) §6 / §8 | 環境構成・CI/CD の実装の正本（§8.2 がスプリントレビューゲート・退役手順の実体） |
 | [`roadmap.md`](../02_requirements/roadmap.md) `M-4` | 再判定のタイミング（OAuth 検証用 `[env.dev]` / gradual deployment の要否） |
-| [議論記録](../../content/discussions/release-cycle-20260818/whiteboard.md) | 5 レンズ・2 ラウンドの敵対的相互検証の全文 |
+| [議論記録](../../content/discussions/release-cycle-20260818/whiteboard.md) | 5 レンズ・2 ラウンドの敵対的相互検証の全文（trunk-based 決定の原議論） |
+| [議論記録（2026-08-20）](../../content/discussions/sprint-env-lifecycle-20260820/whiteboard.md) | スプリントレビューゲート追記の専門チーム議論 |

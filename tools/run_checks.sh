@@ -196,6 +196,19 @@ else
   skip_check "セルフレビュー機械チェック (self_review_check.py)" "スクリプトが見つかりません"
 fi
 
+# 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
+if [ -f "$REPO_ROOT/tools/retire_preview_aliases.py" ]; then
+  run_check "退役スクリプト self-test (retire_preview_aliases.py --self-test)" python3 tools/retire_preview_aliases.py --self-test
+else
+  skip_check "退役スクリプト self-test (retire_preview_aliases.py --self-test)" "スクリプトが見つかりません"
+fi
+
+if [ -f "$REPO_ROOT/tools/check_deploy_gate.py" ]; then
+  run_check "デプロイゲート self-test (check_deploy_gate.py --self-test)" python3 tools/check_deploy_gate.py --self-test
+else
+  skip_check "デプロイゲート self-test (check_deploy_gate.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="

@@ -218,6 +218,16 @@
             "timeout": 90
           }
         ]
+      },
+      {
+        "matcher": "mcp__github__add_issue_comment",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-sprint-review-deploy-check.sh",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
