@@ -27,7 +27,6 @@ type LoginLinkProps = {
  * ログアウトは副作用のある操作を GET に置かない方針（`route.ts` 側の POST 化）に合わせ、
  * クライアント JS 不要のプレーンな `<form method="post">` から叩く。
  *
-
  * `buttonVariants({ variant: 'ghost', size: 'sm' })` 経由で描画する（`ui-ux-guidelines.md` §2.4
  * 必須「高さとフォントサイズは cva の size variant 経由でのみ指定する」・PR #141 レビュー指摘）。
  */
@@ -45,9 +44,9 @@ export function LoginLink({ isLoggedIn, labels }: LoginLinkProps) {
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-html-link-for-pages -- `/api/auth/login` は
-    // ページではなく副作用のある API ルート（Cookie 発行）。`next/link` のプリフェッチ対象に
-    // したくないため意図的に素の `<a>` にする。
+    // `/api/auth/login` はページではなく副作用のある API ルート（Cookie 発行）。
+    // `next/link` のプリフェッチ対象にしたくないため意図的に素の `<a>` にする。
+    // eslint-disable-next-line @next/next/no-html-link-for-pages
     <a href="/api/auth/login" className={className}>
       {labels.login}
     </a>

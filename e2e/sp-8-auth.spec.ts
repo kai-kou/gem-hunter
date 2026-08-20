@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
+import ja from '../messages/ja.json'
 import { searchFor } from './helpers'
 
 /**
@@ -7,8 +8,17 @@ import { searchFor } from './helpers'
  * `docs/02_requirements/user-story-map.md` §5.3 `SP-8` の操作レビュー手順のうち
  * ログイン/ログアウト/レート枠切替を担当する（言語切替は `e2e/sp-8-locale.spec.ts`）。
  *
- * `src/ui/login-link.tsx` は `app/[locale]/layout.tsx` へまだ配線されていない（統合は別担当）
- * ため、ログイン/ログアウトは UI クリックではなく `/api/auth/{login,logout}` を直接叩く。
+ * `src/ui/login-link.tsx` は `app/[locale]/layout.tsx` に配線済み。ログインはダミー OAuth の
+ * リダイレクト連鎖をそのまま辿るため `/api/auth/login` への直接ナビゲーションで行うが、
+ * **ログアウトは UI のログアウトボタンをクリックする経路で行う**（`page.goto('/api/auth/logout')`
+ * のような GET 直叩きにしない）。理由: `app/api/auth/logout/route.ts` は POST 限定であり、
+ * GET は 405 を返すだけで副作用を持たない（旧実装は GET を受け付けており、`next/link` の
+ * `<Link href="/api/auth/logout">` を画面に表示しただけで自動プリフェッチが
+ * `GET /api/auth/logout` を実行し、セッション Cookie を黙って破棄するバグがあった。
+ * Playwright トレースで `307 GET /api/auth/logout?_rsc=...` → `set-cookie` 空文字化を実測して
+ * 特定した）。現在の `login-link.tsx` はログイン済み表示を `<form method="post"
+ * action="/api/auth/logout"><button type="submit">` に変更しており、本ファイルの Step 3 は
+ * この `<button role="button">` をクリックする形に追随している。
  * レート枠切替の観測は `/api/search`（`app/api/search/route.ts` がセッション Cookie を読む
  * 唯一の経路・SP-5 の X-Cache-Status 観測エンドポイントを流用）+ `/__stats` の
  * `userAuthSearchCount`（値が固定ユーザートークンと一致するリクエスト数）で行う
@@ -90,35 +100,24 @@ test('SP-8: 未ログインで全機能が使える／ログインでレート�
   })
 
   await test.step('Step 2: ログイン中に検索すると、レート枠がユーザー自身のものに切り替わる（/__stats の userAuthSearchCount）', async () => {
-    // 🔴 サーバー側ログ（`request.headers.get('cookie')`）で実測した結果、直前のクロス
-    // オリジン（同一サイト）リダイレクト連鎖の直後は `Cookie` ヘッダそのものが空で届く
-    // 実機タイミング揺らぎがある（`context.cookies()` には既に反映済みでも、である）。
-    // 一度発生すると同一ページ内でのナビゲーション再試行（`page.goto()`/`fetch()` いずれも）
-    // では直らないため、`/api/auth/login` を再実行してブラウザの Cookie ジャーを
-    // 作り直すところから最大 3 回リトライする（プロダクトコード自体は curl での手動フローで
-    // 常に正しいことを確認済みのため、実機タイミング固有の問題への対処）。
     const before = await readStubStats()
 
-    let succeeded = false
-    for (let attempt = 0; attempt < 3 && !succeeded; attempt += 1) {
-      if (attempt > 0) {
-        await page.goto('/api/auth/login')
-        await page.waitForURL(/\/ja(\?.*)?$/)
-      }
-      const keyword = uniqueKeyword(`sp8-auth-check-${attempt}`)
-      const response = await page.goto(`/api/search?q=${encodeURIComponent(keyword)}`)
-      expect(response?.status()).toBe(200)
-      const after = await readStubStats()
-      succeeded = after.userAuthSearchCount > before.userAuthSearchCount
-    }
+    const keyword = uniqueKeyword('sp8-auth-check')
+    const response = await page.goto(`/api/search?q=${encodeURIComponent(keyword)}`)
+    expect(response?.status()).toBe(200)
 
-    expect(succeeded, 'ユーザー自身のアクセストークンで検索できていること（最大3回試行・再ログイン込み）').toBe(
-      true,
-    )
+    const after = await readStubStats()
+    expect(
+      after.userAuthSearchCount,
+      'ユーザー自身のアクセストークンで検索できていること',
+    ).toBeGreaterThan(before.userAuthSearchCount)
   })
 
   await test.step('Step 3: ログアウトするとセッション Cookie が破棄され元に戻る', async () => {
-    await page.goto('/api/auth/logout')
+    // Step 2 で `/api/search`（JSON 応答）へ遷移済みのため、ログアウトボタンがある
+    // 画面へ一度戻る。
+    await page.goto('/ja')
+    await page.getByRole('button', { name: ja.common.auth.logout }).click()
     // Step 0 と同じ理由で waitForURL を使う（ナビゲーション完了を待ってから Cookie を確認する）。
     await page.waitForURL(/\/ja(\?.*)?$/)
 
