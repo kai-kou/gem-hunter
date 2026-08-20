@@ -136,12 +136,12 @@ export function DailyDigest({
 
         {/* RSS 購読リンク（US-32）。 */}
         <p className="mt-3 text-xs">
-          <a
+          <Link
             href="/api/digest/rss"
             className="text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring"
           >
             {labels.rssLink}
-          </a>
+          </Link>
         </p>
       </SeenDigestProvider>
     </section>
