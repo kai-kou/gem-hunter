@@ -111,6 +111,7 @@ e2e/                                # Playwright（操作レビュー手順の�
 | `CachePort` | `get(key)` / `set(key, value, ttl)` / `invalidate(key)` | `infrastructure/platform/` | `NFR-17`（YAGNI の意図的な例外。面積を広げない） |
 | `RateLimitPort` | `consume(key): Promise<Decision>` | `infrastructure/platform/` | `INF-n` / `NFR-7` |
 | `ClockPort` | `now(): Date` | `infrastructure/` | テスト決定性（`SD-2`） |
+| `AuthPort` | `exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` | `infrastructure/github/`（`oauth.ts`） | `W-3`（フェイクでユニットテストできる）。`AR-5` / `SP-8`。GitHub `/user` プロフィール取得は AC 未記載のため面積に含めない（YAGNI・`whiteboard/sp8-auth-i18n-20260819` 争点 C round2 決定） |
 
 🔴 **ポートを増やすときの条件**: `W-1`〜`W-3` のどれを守るかを 1 行で書き、本表に行を足す。**表に無いポートを実装しない。**
 
