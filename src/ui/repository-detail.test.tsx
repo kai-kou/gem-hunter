@@ -12,6 +12,7 @@ const labels = {
   watcherCount: 'watcher 数',
   forkCount: 'fork 数',
   openIssueCount: 'issue 数',
+  opensInNewTab: '（新しいタブで開きます）',
 }
 
 const repository: RepositoryDetailModel = {
@@ -35,7 +36,11 @@ describe('RepositoryDetail', () => {
       <RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />,
     )
 
-    expect(screen.getByRole('heading', { level: 1, name: 'facebook/react' })).toBeInTheDocument()
+    // 見出し内は GitHub への外部リンクになっており、sr-only の「新しいタブで開きます」も
+    // アクセシブルネームに含まれるため、見出し名はリンクテキスト + sr-only 文言の結合になる（Issue #148）。
+    expect(
+      screen.getByRole('heading', { level: 1, name: `facebook/react${labels.opensInNewTab}` }),
+    ).toBeInTheDocument()
     // オーナー名が fullName としてテキスト隣接表示されるため alt="" にしており、
     // 装飾画像扱い（role=presentation）になる（ui-ux-guidelines §7.4）→ getByRole('img') は使えない
     expect(container.querySelector('img')).toHaveAttribute(
@@ -88,6 +93,7 @@ describe('RepositoryDetail', () => {
       watcherCount: 'watchers',
       forkCount: 'forks',
       openIssueCount: 'open issues',
+      opensInNewTab: '(opens in a new tab)',
     }
     render(<RepositoryDetail repository={repository} labels={enLabels} locale={locale('en')} />)
 
@@ -109,6 +115,23 @@ describe('RepositoryDetail', () => {
       'href',
       '/ja?q=react&page=2&sort=stars&per_page=50',
     )
+  })
+
+  it('タイトルが GitHub の該当リポジトリページへの外部リンクになる（新しいタブで開く・Issue #148）', () => {
+    render(
+      <RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />,
+    )
+
+    // sr-only の「新しいタブで開きます」は <a> の内側に置くため、リンク自体の
+    // アクセシブルネームにも含まれる（リンク一覧で読み上げても新しいタブで開くことが伝わる）。
+    const titleLink = screen.getByRole('link', {
+      name: `facebook/react${labels.opensInNewTab}`,
+    })
+    expect(titleLink).toHaveAttribute('href', repository.htmlUrl)
+    expect(titleLink).toHaveAttribute('target', '_blank')
+    // タブナビゲーション奪取防止（noopener）とリファラー経由の遷移元漏洩防止（noreferrer）の両方が必要
+    const rel = titleLink.getAttribute('rel') ?? ''
+    expect(rel.split(/\s+/)).toEqual(expect.arrayContaining(['noopener', 'noreferrer']))
   })
 
   it('primaryLanguage が null の場合は言語表示を出さない', () => {

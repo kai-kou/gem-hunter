@@ -146,6 +146,7 @@ export default async function RepositoryDetailPage({
           watcherCount: messages.detail.watcherCount,
           forkCount: messages.detail.forkCount,
           openIssueCount: messages.detail.openIssueCount,
+          opensInNewTab: messages.detail.opensInNewTab,
         }}
         locale={locale}
         backHref={backHref}

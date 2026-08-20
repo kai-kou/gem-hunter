@@ -11,6 +11,7 @@ type RepositoryDetailLabels = {
   watcherCount: string
   forkCount: string
   openIssueCount: string
+  opensInNewTab: string
 }
 
 /**
@@ -62,7 +63,25 @@ export function RepositoryDetail({
           className="size-16 shrink-0 rounded-full"
         />
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold break-words">{repository.fullName}</h1>
+          <h1 className="text-2xl font-semibold break-words">
+            {/* GitHub の該当リポジトリページへの外部リンク（Issue #148）。新しいタブで開くことを
+                sr-only 文言で支援技術にも伝える。🔴 sr-only は `<a>` の **内側** に置く
+                （外に出すとリンク自体のアクセシブルネームに入らず、リンク一覧で読み上げたときに
+                新しいタブで開くことが伝わらない・ui-ux-guidelines §7.4a）。
+                noopener/noreferrer は新規タブからの window.opener 悪用・リファラー漏洩を防ぐ。 */}
+            <a
+              href={repository.htmlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+            >
+              {repository.fullName}
+              {/* 🔴 文言は括弧で始まる（`（新しいタブで開きます）` / `(opens in a new tab)`）。
+                  アクセシブルネームの計算はインライン要素の境界で空白を入れないため、区切りを
+                  半角スペースに頼ると「fullName新しいタブで開きます」と連結される。 */}
+              <span className="sr-only">{labels.opensInNewTab}</span>
+            </a>
+          </h1>
           {repository.primaryLanguage ? (
             <p className="text-muted-foreground mt-1 text-sm">
               <span className="sr-only">{labels.language}: </span>

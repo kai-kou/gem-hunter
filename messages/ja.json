@@ -70,6 +70,7 @@
     "watcherCount": "watcher 数",
     "forkCount": "fork 数",
     "openIssueCount": "issue 数",
+    "opensInNewTab": "（新しいタブで開きます）",
     "notFound": "リポジトリが見つかりませんでした。"
   }
 }

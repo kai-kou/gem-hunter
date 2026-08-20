@@ -64,4 +64,14 @@ test('SP-3: 詳細まで往復できる', async ({ page }) => {
     expect(watcherValue).toBe('96')
     expect(starValue).not.toBe(watcherValue)
   })
+
+  await test.step('Issue #148: タイトルは GitHub 本体への外部リンクになっている', async () => {
+    // フィクスチャ（octo-widgets）: html_url=https://github.com/octostub/octo-widgets
+    // sr-only の「新しいタブで開きます」は <a> の内側にあるため、リンクのアクセシブルネームは
+    // 「fullName + 新しいタブで開きます」になる（exact 一致にしない・repository-detail.tsx 参照）。
+    const titleLink = page.getByRole('link', { name: 'octostub/octo-widgets' })
+    await expect(titleLink).toHaveAttribute('href', 'https://github.com/octostub/octo-widgets')
+    await expect(titleLink).toHaveAttribute('target', '_blank')
+    await expect(titleLink).toHaveAttribute('rel', 'noopener noreferrer')
+  })
 })
