@@ -31,7 +31,13 @@ export function RepositoryList({
   searchState?: SearchUrlState
 }) {
   if (items.length === 0) {
-    return <p className="text-muted-foreground py-8 text-sm">{labels.empty}</p>
+    // 0 件は「視覚表現だけ」にせず role="status" で支援技術にも伝える（US-23 / US-26 / NFR-12）。
+    // role="alert" は使わない（0 件は緊急の割り込みではない・ui-ux-guidelines.md §7.2）。
+    return (
+      <p role="status" className="text-muted-foreground py-8 text-sm">
+        {labels.empty}
+      </p>
+    )
   }
 
   const localeTag = toIntlLocaleTag(locale)

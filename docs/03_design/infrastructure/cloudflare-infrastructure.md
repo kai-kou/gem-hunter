@@ -220,6 +220,19 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 | 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの GitHub App installation token** の残量・`D-20`） |
 | 補助 | `wrangler tail --format json` のライブストリーム | ⚠️ `invocation_logs: false` でも tail が拾えるかは **未確認**（§12 の 9）。主経路にしない |
 
+### 4.6. `GET /api/search` のエラー応答の契約（`SP-9`）
+
+エラー時の本文は **`kind`（+ 再試行情報）だけ** を返す。利用者向けの文言は画面側が `kind` から i18n で組み立てるため、応答に開発者向けメッセージを含めない（内部情報を漏らさない・`NFR-8`）。
+
+| HTTP | 本文 | 補足 |
+|---|---|---|
+| 400 | `{ "kind": "validation" }` | 検索条件が不正 |
+| 404 | `{ "kind": "notFound" }` | 対象なし |
+| 429 | `{ "kind": "rateLimitPrimary" \| "rateLimitSecondary", "retryAfter"?: ISO 8601, "retryAfterSeconds"?: number }` | `Retry-After` ヘッダも同時に付く |
+| 502 | `{ "kind": "network" \| "auth" \| "upstream" }` | 利用者が入力で直せない上流側の問題 |
+
+⚠️ **`/api/search?q=...` を直接開いて確認するときは、エラーでも文言が出ないのが正しい挙動**（不具合ではない）。判別条件の正本は [`prd.md`](../../02_requirements/prd.md) §7。
+
 🔵 **`X-Cache-Status` は「キャッシュが効いたことを外から観測できる」ための最小の仕掛け** であり、事業者を差し替えても残る（`src/infrastructure/platform/` の実装が付け替わるだけ）。付与位置が Route Handler になっても、キャッシュ判定ロジック自体（L2 `CachePort`）への依存関係は変わらない。
 
 ---

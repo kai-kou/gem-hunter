@@ -10,6 +10,20 @@
     "auth": {
       "login": "GitHubでログイン",
       "logout": "ログアウト"
+    },
+    "loading": "読み込み中",
+    "retry": "再試行",
+    "errors": {
+      "network": "接続できませんでした。通信環境を確認して、もう一度お試しください。",
+      "rateLimitPrimary": "リクエストの上限に達しました。{resetAt} 以降に再度お試しください。",
+      "rateLimitPrimaryUnknownReset": "リクエストの上限に達しました。しばらく時間をおいてから再度お試しください。",
+      "rateLimitPrimaryLoginHint": "GitHub にログインすると、使えるリクエストの上限が増えます。",
+      "rateLimitSecondary": "リクエストが集中しています。{retryAfterSeconds} 秒後に再度お試しください。",
+      "rateLimitSecondaryUnknownRetry": "リクエストが集中しています。しばらく時間をおいてから再度お試しください。",
+      "auth": "いま GitHub のデータを取得できません。しばらくしてから再度お試しください。",
+      "validation": "検索キーワードを確認してください。使えない文字が含まれているか、長さの上限を超えています。",
+      "notFound": "対象のリポジトリが見つかりませんでした。",
+      "upstream": "GitHub 側で問題が起きています。しばらくしてから再度お試しください。"
     }
   },
   "home": {
@@ -20,7 +34,6 @@
     "searchSubmit": "検索",
     "idle": "キーワードを入力して検索してください。",
     "resultCount": "{total} 件中 {shown} 件を表示",
-    "searchError": "検索できませんでした: {message}",
     "empty": "条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。",
     "starCount": "star 数",
     "updatedAt": "最終更新",
@@ -45,7 +58,6 @@
     "watcherCount": "watcher 数",
     "forkCount": "fork 数",
     "openIssueCount": "issue 数",
-    "notFound": "リポジトリが見つかりませんでした。",
-    "loadError": "取得できませんでした: {message}"
+    "notFound": "リポジトリが見つかりませんでした。"
   }
 }

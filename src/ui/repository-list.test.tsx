@@ -148,4 +148,10 @@ describe('RepositoryList', () => {
     expect(screen.getByText(/08\/18\/2026/)).toBeInTheDocument()
     expect(screen.getByText(/Updated/)).toBeInTheDocument()
   })
+
+  it('0 件のときは role="status" で支援技術にも伝える（US-23 / US-26 / NFR-12）', () => {
+    render(<RepositoryList items={[]} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent(labels.empty)
+  })
 })

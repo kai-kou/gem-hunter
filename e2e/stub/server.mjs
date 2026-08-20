@@ -16,6 +16,10 @@
 //   upstream-error を含む → HTTP 500
 //   rate-limit を含む     → HTTP 403 + x-ratelimit-remaining: 0 + x-ratelimit-reset
 //   not-found を含む（repo 名 or owner）→ HTTP 404（詳細 API のみ）
+//   sp9-network-down を含む       → 応答を書かずに接続を切る（fetch 自体の失敗＝到達不可を再現）
+//   sp9-secondary-rate-limit を含む → HTTP 403 + retry-after（二次レート制限）
+//   sp9-slow を含む                → 1.5 秒待ってから通常の結果（読み込み中表示の観測用）
+//   sp9-forbidden を含む           → HTTP 403 + x-ratelimit-remaining: 42（レート制限でない 403 = auth）
 //   private-mixed を含む  → AC-12 E2E 専用。上流が is:public を無視して private を混ぜて返す状況を
 //                             再現する（public 1 件 + private 1 件・total_count は 2）。
 //                             `octostub/octo-secret` の詳細も 200 + `private: true` で返す
@@ -83,6 +87,21 @@ const manyRepos = Array.from({ length: MANY_TOTAL }, (_, idx) => {
     },
   }
 })
+
+// SP-9 E2E 専用マーカー（`e2e/sp-9-*.spec.ts`）。`prd.md` §7 の種別判別を画面越しに確認するため、
+// 「fetch 自体の失敗」「二次レート制限」「遅い応答」をスタブ側で再現する（NFR-24: 外部 API はモック化）。
+// 🔴 `sp9-secondary-rate-limit` は既存マーカー `rate-limit` を部分文字列として含むため、
+//    ハンドラ内では **既存の `rate-limit` 判定より前** に評価すること。
+const SP9_NETWORK_DOWN_MARKER = 'sp9-network-down'
+const SP9_SECONDARY_RATE_LIMIT_MARKER = 'sp9-secondary-rate-limit'
+const SP9_SLOW_MARKER = 'sp9-slow'
+/**
+ * レート制限ではない 403（`x-ratelimit-remaining` が残っていて `retry-after` も無い）。
+ * `prd.md` §7 の判別順序で `auth` に落ちる経路を画面越しに確認するために使う。
+ */
+const SP9_FORBIDDEN_MARKER = 'sp9-forbidden'
+/** 読み込み中表示（US-22）を E2E から観測できる長さ。長すぎると 60 秒のテスト時間を圧迫する。 */
+const SP9_SLOW_DELAY_MS = 1500
 
 // AC-12 E2E 専用: `q` に `private-mixed` を含む検索でのみ使うデータセット
 // （`e2e/ac-12-private.spec.ts`）。GitHub App の installation token を使うと、
@@ -299,6 +318,34 @@ const server = http.createServer((req, res) => {
     stats.lastSearchQuery = q
     const page = url.searchParams.get('page') ?? '1'
 
+    // SP-9: fetch 自体を失敗させる（到達不可の再現）。応答を書かずにソケットを切る。
+    if (q.includes(SP9_NETWORK_DOWN_MARKER)) {
+      req.socket.destroy()
+      return
+    }
+    // SP-9: 二次レート制限（`retry-after` あり・`x-ratelimit-remaining` は出さない）。
+    // 🔴 既存の `rate-limit` 判定より前に置く（部分一致で先に食われるため）。
+    if (q.includes(SP9_SECONDARY_RATE_LIMIT_MARKER)) {
+      return sendJson(res, 403, { message: 'stub: secondary rate limit' }, { 'retry-after': '30' })
+    }
+    // SP-9: レート制限ではない 403（枠は残っている）→ auth 種別。
+    if (q.includes(SP9_FORBIDDEN_MARKER)) {
+      return sendJson(res, 403, { message: 'stub: forbidden' }, { 'x-ratelimit-remaining': '42' })
+    }
+    // SP-9: 遅い応答（読み込み中表示の観測用）。
+    // 🔴 テスト中断・ナビゲーション破棄でソケットが閉じた後に書き込むと
+    //    `ERR_STREAM_WRITE_AFTER_END` でスタブプロセスごと落ち、後続の spec が全滅する。
+    //    送信前に生存を確認し、切断時はタイマーを掃除する。
+    if (q.includes(SP9_SLOW_MARKER)) {
+      const timer = setTimeout(() => {
+        if (res.writableEnded || res.destroyed) {
+          return
+        }
+        sendJson(res, 200, searchResponse(PAGE_1_REPOS))
+      }, SP9_SLOW_DELAY_MS)
+      res.on('close', () => clearTimeout(timer))
+      return
+    }
     if (q.includes('zero-hits')) {
       return sendJson(res, 200, { total_count: 0, incomplete_results: false, items: [] })
     }

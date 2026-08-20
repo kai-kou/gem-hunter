@@ -2,7 +2,15 @@ import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import { DomainValidationError, RateLimitExceededError, UpstreamError } from '../../domain/errors'
+import {
+  AuthError,
+  DomainValidationError,
+  NetworkError,
+  NotFoundError,
+  RateLimitExceededError,
+  SearchQueryRejectedError,
+  UpstreamError,
+} from '../../domain/errors'
 import { repositoryFullName } from '../../domain/model/repository-full-name'
 import { searchQuery } from '../../domain/model/search-query'
 import detailFixture from './__fixtures__/repository-detail.json'
@@ -295,5 +303,252 @@ describe('GITHUB_API_ORIGIN 環境変数によるオリジン切り替え（E2E 
     await expect(makeQuery().search(searchQuery({ keyword: 'react' }))).rejects.toThrow(
       /GITHUB_API_ORIGIN/,
     )
+  })
+})
+
+/**
+ * prd.md §7「エラー種別の判別仕様」の判別ロジック（SP-9）。
+ * 判定順序そのものが仕様なので、条件が重なるケース（`retry-after` と
+ * `x-ratelimit-remaining: 0` の両方が付く 403 等）も含めて検証する。
+ */
+describe('エラー種別の判別（prd.md §7）', () => {
+  function stubSearch(response: () => Response) {
+    server.use(http.get('https://api.github.com/search/repositories', response))
+  }
+
+  async function searchError(): Promise<unknown> {
+    return makeQuery()
+      .search(searchQuery({ keyword: 'react' }))
+      .then(
+        () => {
+          throw new Error('エラーが投げられなかった')
+        },
+        (error: unknown) => error,
+      )
+  }
+
+  it('fetch 自体が失敗したら NetworkError（kind=network）', async () => {
+    stubSearch(() => HttpResponse.error())
+
+    const error = await searchError()
+
+    expect(error).toBeInstanceOf(NetworkError)
+    expect((error as NetworkError).kind).toBe('network')
+  })
+
+  it('404（notFoundAsNull なし）は NotFoundError（kind=notFound）', async () => {
+    stubSearch(() => HttpResponse.json({ message: 'Not Found' }, { status: 404 }))
+
+    const error = await searchError()
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect((error as NotFoundError).kind).toBe('notFound')
+  })
+
+  it('403 かつ retry-after ありは二次レート制限（秒数を保持する）', async () => {
+    stubSearch(() =>
+      HttpResponse.json(
+        { message: 'secondary' },
+        { status: 403, headers: { 'retry-after': '60' } },
+      ),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error).toBeInstanceOf(RateLimitExceededError)
+    expect(error.kind).toBe('rateLimitSecondary')
+    expect(error.retryAfterSeconds).toBe(60)
+  })
+
+  it('429 かつ retry-after ありも二次レート制限', async () => {
+    stubSearch(() =>
+      HttpResponse.json({ message: 'secondary' }, { status: 429, headers: { 'retry-after': '5' } }),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitSecondary')
+    expect(error.retryAfterSeconds).toBe(5)
+  })
+
+  // 🔴 prd.md §7 の表は一次（`x-ratelimit-remaining: 0`）を二次（`retry-after`）より先に置く。
+  //    両方付いた応答を二次に倒すと、一次のときだけ出る「ログインで枠を増やせる案内」
+  //    （`US-25` / `AR-5`・`toErrorPresentation` の `loginHint`）が消えるため順序が仕様の一部。
+  it('retry-after と x-ratelimit-remaining: 0 が同時に付いたら一次レート制限を優先する（判定順序・prd.md §7）', async () => {
+    const resetEpochSeconds = 1_800_000_000
+    stubSearch(() =>
+      HttpResponse.json(
+        { message: 'both' },
+        {
+          status: 403,
+          headers: {
+            'retry-after': '30',
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(resetEpochSeconds),
+          },
+        },
+      ),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitPrimary')
+    expect(error.retryAfter).toEqual(new Date(resetEpochSeconds * 1000))
+    // 秒数は補助情報として保持してよい（提示の主役は復帰時刻）
+    expect(error.retryAfterSeconds).toBe(30)
+  })
+
+  it('retry-after: 0 は二次レート制限として 0 秒を保持する（ヘッダ無しと区別する）', async () => {
+    stubSearch(() =>
+      HttpResponse.json({ message: 'secondary' }, { status: 403, headers: { 'retry-after': '0' } }),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitSecondary')
+    expect(error.retryAfterSeconds).toBe(0)
+  })
+
+  // `retry-after` は delta-seconds と HTTP-date の両形式が有効（RFC 9110 §10.2.3）。
+  it('retry-after が HTTP-date（未来）なら現在時刻との差を秒数として保持する', async () => {
+    const future = new Date(Date.now() + 120_000)
+    stubSearch(() =>
+      HttpResponse.json(
+        { message: 'secondary' },
+        { status: 429, headers: { 'retry-after': future.toUTCString() } },
+      ),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitSecondary')
+    // 秒未満の丸めとテスト実行のずれを許容する
+    expect(error.retryAfterSeconds).toBeGreaterThan(110)
+    expect(error.retryAfterSeconds).toBeLessThanOrEqual(120)
+  })
+
+  it('retry-after が過去の HTTP-date なら待機不要（0 秒）として扱う', async () => {
+    stubSearch(() =>
+      HttpResponse.json(
+        { message: 'secondary' },
+        { status: 429, headers: { 'retry-after': 'Wed, 21 Oct 2015 07:28:00 GMT' } },
+      ),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitSecondary')
+    expect(error.retryAfterSeconds).toBe(0)
+  })
+
+  it('retry-after が負値・解釈不能なら再試行情報として扱わない（403 は AuthError へ倒す）', async () => {
+    stubSearch(() =>
+      HttpResponse.json({ message: 'broken' }, { status: 403, headers: { 'retry-after': '-5' } }),
+    )
+
+    const error = await searchError()
+
+    expect(error).toBeInstanceOf(AuthError)
+  })
+
+  it('x-ratelimit-reset が壊れていても一次レート制限として扱い、復帰時刻は不明にする（Invalid Date を作らない）', async () => {
+    stubSearch(() =>
+      HttpResponse.json(
+        { message: 'primary' },
+        {
+          status: 403,
+          headers: {
+            'x-ratelimit-remaining': '0',
+            // ミリ秒が混入した値。秒として解釈すると Date のレンジを外れて Invalid Date になる
+            'x-ratelimit-reset': '99999999999999',
+          },
+        },
+      ),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitPrimary')
+    expect(error.retryAfter).toBeUndefined()
+  })
+
+  it('403 かつ x-ratelimit-remaining: 0 は一次レート制限（reset から復帰時刻を算出する）', async () => {
+    const resetEpochSeconds = 1_800_000_000
+    stubSearch(() =>
+      HttpResponse.json(
+        { message: 'primary' },
+        {
+          status: 403,
+          headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(resetEpochSeconds) },
+        },
+      ),
+    )
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitPrimary')
+    expect(error.retryAfter).toEqual(new Date(resetEpochSeconds * 1000))
+    expect(error.retryAfterSeconds).toBeUndefined()
+  })
+
+  it('429 で再試行情報が無ければ二次レート制限（秒数不明）', async () => {
+    stubSearch(() => HttpResponse.json({ message: 'too many' }, { status: 429 }))
+
+    const error = (await searchError()) as RateLimitExceededError
+
+    expect(error.kind).toBe('rateLimitSecondary')
+    expect(error.retryAfterSeconds).toBeUndefined()
+  })
+
+  it('401 は AuthError（kind=auth・内部情報を出さない汎用エラー）', async () => {
+    stubSearch(() => HttpResponse.json({ message: 'Bad credentials' }, { status: 401 }))
+
+    const error = await searchError()
+
+    expect(error).toBeInstanceOf(AuthError)
+    expect((error as AuthError).kind).toBe('auth')
+  })
+
+  it('レート制限以外の 403 は AuthError', async () => {
+    stubSearch(() => HttpResponse.json({ message: 'Forbidden' }, { status: 403 }))
+
+    const error = await searchError()
+
+    expect(error).toBeInstanceOf(AuthError)
+    expect((error as AuthError).kind).toBe('auth')
+  })
+
+  // 🔴 422 は「上流がクエリを受理しなかった」であって値オブジェクトの不変条件違反ではないため
+  //    `DomainValidationError` には写さない（`SearchQuery` は domain-model.md §4 の値オブジェクト
+  //    表に無い）。載せるのは利用者入力に由来するキーワードだけで、ACL が付与した公開限定修飾子
+  //    （`is:public`・`NFR-33`）は含めない。
+  it('422 は SearchQueryRejectedError（kind=validation・入力の修正を促す）', async () => {
+    stubSearch(() => HttpResponse.json({ message: 'Validation Failed' }, { status: 422 }))
+
+    const error = await searchError()
+
+    expect(error).toBeInstanceOf(SearchQueryRejectedError)
+    expect(error).not.toBeInstanceOf(DomainValidationError)
+    expect((error as SearchQueryRejectedError).kind).toBe('validation')
+    expect((error as SearchQueryRejectedError).keyword).toBe('react')
+  })
+
+  it('5xx は UpstreamError（kind=upstream）', async () => {
+    stubSearch(() => HttpResponse.json({ message: 'boom' }, { status: 503 }))
+
+    const error = await searchError()
+
+    expect(error).toBeInstanceOf(UpstreamError)
+    expect((error as UpstreamError).kind).toBe('upstream')
+  })
+
+  it('notFoundAsNull 付きの findDetail では 404 が従来どおり null（例外に変えない）', async () => {
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo', () =>
+        HttpResponse.json({ message: 'Not Found' }, { status: 404 }),
+      ),
+    )
+
+    await expect(makeQuery().findDetail(repositoryFullName('facebook', 'nope'))).resolves.toBeNull()
   })
 })

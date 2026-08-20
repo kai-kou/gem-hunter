@@ -50,6 +50,8 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | レート枠 | `RateLimitBudget` | GitHub API の残り呼び出し可能回数と回復時刻 | 「クォータ」と混在させない |
 | キャッシュキー | `CacheKey` | 検索結果・単一リポジトリの名前空間つきキー（`NFR-18`） | 命名規約を先に固定する。後から変えると全無効化される |
 | ロケール | `Locale` | `ja` / `en`。URL のパスセグメントで表す（`AR-4`） | |
+| エラー種別 | `ErrorKind` | 失敗の原因を利用者への提示単位で分類した 7 値（`network` / `rateLimitPrimary` / `rateLimitSecondary` / `auth` / `validation` / `notFound` / `upstream`）。判別条件の正本は [`prd.md`](../../02_requirements/prd.md) §7（`src/domain/errors.ts`） | 🔴 **利用者向けの文言はこの kind から i18n で引く**。各 `DomainError` の `message` は開発者向けのログ用であり、画面・API 応答へそのまま出さない（内部情報を漏らさない・`NFR-8`） |
+| 上流に拒否された検索条件 | `SearchQueryRejectedError` | GitHub が検索クエリを受理しなかった（HTTP 422）ことを表すエラー（`kind: 'validation'`） | 🔴 **`DomainValidationError`（値オブジェクトの不変条件違反）と混同しない**。載せる値は ACL が付与した `is:public` を除いた利用者入力のみ（`NFR-33`） |
 
 ### 2.2. 🔴 GitHub API の語との対応（腐敗防止層の変換表）
 

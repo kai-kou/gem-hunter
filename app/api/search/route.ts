@@ -1,10 +1,8 @@
 import type { NextRequest } from 'next/server'
 import { decodeSessionCookie, SESSION_COOKIE_NAME } from '@/src/composition/auth'
 import { searchRepositoriesWithCacheStatus } from '@/src/composition/container'
-import { DomainError, DomainValidationError, NotFoundError, RateLimitExceededError, UpstreamError } from '@/src/domain/errors'
+import { DomainError, type ErrorKind, RateLimitExceededError } from '@/src/domain/errors'
 import { searchKeyword } from '@/src/domain/model/search-keyword'
-import { formatMessage } from '@/src/shared/i18n/format-message'
-import { getMessages } from '@/src/shared/i18n/messages'
 import { parseSearchParams, SEARCH_PARAM_KEYS } from '@/src/ui/url/search-params'
 
 /**
@@ -24,10 +22,6 @@ import { parseSearchParams, SEARCH_PARAM_KEYS } from '@/src/ui/url/search-params
  * （現時点では 1 呼び出し元しかなく先回りの抽象化は避ける・YAGNI）。
  */
 export async function GET(request: NextRequest) {
-  // API 応答のメッセージ言語: このエンドポイントは locale セグメントを持たない（`/api/search` は
-  // `/[locale]/...` の外）。プロジェクトは日本語運用（CLAUDE.md「応答スタイル」）のため 'ja' 固定とする
-  // （実装手段の選択であり仕様分岐ではない・`SD-3`）。
-  const messages = getMessages('ja')
   // クエリ解釈を画面（page.tsx）と同じ `parseSearchParams` に一本化する（PR #120 セルフレビュー
   // 指摘・修正3・二重管理の解消）。`URLSearchParams` はブラケット記法での添字アクセス
   // （`params['q']`）を `.get('q')` のようには解決しない（未定義を返す）ため、
@@ -47,8 +41,7 @@ export async function GET(request: NextRequest) {
     // 値オブジェクトへの変換は境界（ここ）で行う（domain-model.md §4 / ARCH-R2）。
     // 画面（page.tsx）は空キーワードを「idle 状態」として黙って許すが、JSON API に
     // idle 相当の応答は無いため、ここでは throw する `searchKeyword` を使って
-    // DomainValidationError に倒し、下の catch で画面と同じ整形（formatMessage +
-    // messages.home.searchError）に載せる。
+    // DomainValidationError に倒し、下の catch で `kind: 'validation'` として返す。
     //
     // 🔴 keyword は `parseSearchParams` が返す既に正規化済みの文字列（`trySearchKeyword` が
     // 不正値を `''` へ倒した後の値）ではなく、`rawParams` の生の値をそのまま `searchKeyword`
@@ -84,19 +77,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     if (error instanceof DomainError) {
-      const headers = new Headers()
-      if (error instanceof RateLimitExceededError && error.retryAfter) {
-        // `Retry-After` は秒数（delta-seconds）と HTTP-date のどちらでも仕様上有効
-        // （RFC 9110 §10.2.3）。`RateLimitExceededError.retryAfter` は既に絶対時刻
-        // （GitHub のレート制限リセット時刻）を持つ `Date` なので、"今" を計算に持ち込む
-        // 秒数変換（クロックの注入が余分に要る）より HTTP-date 形式（`toUTCString()`）の
-        // ほうが素直で情報も落ちない。
-        headers.set('Retry-After', error.retryAfter.toUTCString())
-      }
-      return Response.json(
-        { error: formatMessage(messages.home.searchError, { message: error.message }) },
-        { status: domainErrorStatus(error), headers },
-      )
+      return errorResponse(error)
     }
     // ドメインエラーでない想定外の例外は、生のメッセージを外へ出さず Next.js の
     // 既定エラーハンドリングに委ねる（page.tsx の catch と同じ方針・rethrow）。
@@ -104,18 +85,54 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function domainErrorStatus(error: DomainError): number {
-  if (error instanceof DomainValidationError) {
-    return 400
+/**
+ * 🔴 応答に載せるのは `ErrorKind`（prd.md §7）と再試行情報だけで、`error.message` は載せない
+ * （message は開発者向けのログ用。内部情報を外へ出さない）。利用者向けの文言は受け取り側が
+ * kind から i18n で引く。
+ */
+function errorResponse(error: DomainError): Response {
+  const headers = new Headers()
+  const body: { kind: ErrorKind; retryAfter?: string; retryAfterSeconds?: number } = {
+    kind: error.kind,
   }
+
   if (error instanceof RateLimitExceededError) {
-    return 429
+    // 🔴 上流の `x-ratelimit-reset` が壊れていると Invalid Date が渡りうる（ACL 側でも null へ
+    //    倒しているが、ここでも防ぐ）。`toISOString()` は Invalid Date で RangeError を投げ、
+    //    429 ではなく未処理例外の 500 になってしまうため、有効な Date のときだけ載せる。
+    if (error.retryAfter && !Number.isNaN(error.retryAfter.getTime())) {
+      // `Retry-After` は秒数（delta-seconds）と HTTP-date のどちらでも仕様上有効
+      // （RFC 9110 §10.2.3）。一次レート制限の `retryAfter` は既に絶対時刻
+      // （GitHub のレート制限リセット時刻）を持つ `Date` なので、"今" を計算に持ち込む
+      // 秒数変換（クロックの注入が余分に要る）より HTTP-date 形式（`toUTCString()`）の
+      // ほうが素直で情報も落ちない。
+      headers.set('Retry-After', error.retryAfter.toUTCString())
+      body.retryAfter = error.retryAfter.toISOString()
+    } else if (error.retryAfterSeconds !== undefined) {
+      // 二次レート制限は相対秒数しか分からない（`retry-after` 由来）ので、そのまま秒数で返す。
+      headers.set('Retry-After', String(error.retryAfterSeconds))
+      body.retryAfterSeconds = error.retryAfterSeconds
+    }
   }
-  if (error instanceof NotFoundError) {
-    return 404
+
+  return Response.json(body, { status: statusOf(error.kind), headers })
+}
+
+/** エラー種別 → HTTP ステータス（prd.md §7）。 */
+function statusOf(kind: ErrorKind): number {
+  switch (kind) {
+    case 'validation':
+      return 400
+    case 'notFound':
+      return 404
+    case 'rateLimitPrimary':
+    case 'rateLimitSecondary':
+      return 429
+    // 到達不可・認証/権限・上流異常は、いずれも利用者が入力で直せない上流側の問題
+    // （認証エラーは内部情報を出さず汎用エラーとして扱う・prd.md §7）。
+    case 'network':
+    case 'auth':
+    case 'upstream':
+      return 502
   }
-  if (error instanceof UpstreamError) {
-    return 502
-  }
-  return 500
 }

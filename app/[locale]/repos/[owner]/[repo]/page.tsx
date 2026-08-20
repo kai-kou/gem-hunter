@@ -1,12 +1,14 @@
 import { notFound } from 'next/navigation'
-import { getSessionAccessToken } from '@/src/composition/auth'
+import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import { getRepositoryDetailUseCase } from '@/src/composition/container'
-import { DomainError } from '@/src/domain/errors'
+import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
-import { formatMessage } from '@/src/shared/i18n/format-message'
 import { getMessages } from '@/src/shared/i18n/messages'
+import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
+import { BackLink } from '@/src/ui/back-link'
+import { ErrorNotice } from '@/src/ui/error-notice'
 import { LocaleSwitcher } from '@/src/ui/locale-switcher'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
 
@@ -21,6 +23,12 @@ import { RepositoryDetail } from '@/src/ui/repository-detail'
  * 一覧へ戻るリンク（`backHref`）へそのまま乗せ直す（`RepositoryDetail` → `BackLink`）。
  * 直接この URL を開いた場合（検索条件なし）は既定値へ倒れ、`buildSearchUrl` が
  * クエリなしの `/{locale}` を返す（`BackLink` の既定と同じ挙動）。
+ *
+ * 🔴 **本ページに `<Suspense>`（および `loading.tsx`）を置かない**（SP-9 で検討のうえ見送り）。
+ * 取得結果が `null` のとき `notFound()` で **HTTP 404 を返す** のが `AC-5` の要件で、
+ * Suspense fallback が描画された時点でレスポンスヘッダが送出済みになり 404 を返せなくなる
+ * （Next.js `file-conventions/loading.md`「Place `notFound()` before those boundaries」）。
+ * 読み込み中表示（US-22）は検索一覧側（`app/[locale]/page.tsx`）で担保する。
  */
 export default async function RepositoryDetailPage({
   params,
@@ -39,7 +47,16 @@ export default async function RepositoryDetailPage({
   const rawSearchParams = await searchParams
   const searchState = parseSearchParams(rawSearchParams)
   const backHref = buildSearchUrl(`/${locale}`, searchState)
-  const currentPath = `/${locale}/repos/${owner}/${repo}`
+  /**
+   * 自分自身の URL（再試行・言語切替の行き先）。
+   *
+   * 🔴 検索条件（`page` / `sort` / `per_page`）を **落とさない**（落とすと再試行後の
+   * 「一覧へ戻る」が 1 ページ目・既定ソートに戻り `SP-7` の成果を壊す）。
+   * 🔴 `owner` / `repo` は Next.js が decodeURIComponent 済みで渡すため、URL へ戻すときは
+   * 必ず再エンコードする（`..` や `/` を含む値を踏ませたときに行き先がずれるのを防ぐ）。
+   */
+  const detailPath = `/${locale}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+  const currentPath = buildSearchUrl(detailPath, searchState)
 
   const accessToken = await getSessionAccessToken()
   let repository
@@ -47,11 +64,52 @@ export default async function RepositoryDetailPage({
     repository = await getRepositoryDetailUseCase(accessToken)({ owner, repo })
   } catch (error) {
     if (error instanceof DomainError) {
+      // 🔴 `error.message`（開発者向けの内部文言）は画面へ出さず、種別から文言を組み立てる
+      //    （NFR-9 / prd.md §7 / Issue #107）。
+      const kind: ErrorKind = error.kind
+      const rateLimit = error instanceof RateLimitExceededError ? error : undefined
+      const showAuthLink = isAuthConfigured()
       return (
         <main className="mx-auto w-full max-w-3xl px-4 py-10">
-          <p role="alert" className="text-destructive text-sm">
-            {formatMessage(messages.detail.loadError, { message: error.message })}
-          </p>
+          {/*
+            🔴 エラー時も見出し・言語切替を失わない（`NFR-12` / `US-26`）。これらを落とすと
+            見出しが 1 つも無い文書になり、スクリーンリーダーの見出しナビゲーションで到達できない。
+            また `role="alert"` は「動的な挿入・変化」で発火する仕様のため、初期 HTML に最初から
+            存在するこのケースでは読み上げられない。通常の見出し + 本文として構成し、
+            `role="alert"` に依存せずに内容が伝わるようにする。
+            見出しは対象リポジトリ名（成功パスの `RepositoryDetail` と同じ粒度）で、
+            `messages/*.json` へキーを増やさずに構成できる。
+          */}
+          <LocaleSwitcher
+            currentLocale={locale}
+            currentPath={currentPath}
+            labels={{
+              navLabel: messages.common.localeSwitcher.navLabel,
+              localeNames: messages.common.localeSwitcher.localeNames,
+            }}
+          />
+          <h1 className="mb-4 text-2xl font-semibold">{`${owner}/${repo}`}</h1>
+          <ErrorNotice
+            presentation={toErrorPresentation(kind, messages, {
+              locale,
+              retryAfter: rateLimit?.retryAfter,
+              retryAfterSeconds: rateLimit?.retryAfterSeconds,
+              isLoggedIn: accessToken !== null,
+            })}
+            // 再試行手段（US-24）: いま失敗した詳細 URL をそのまま開き直す。
+            retryHref={currentPath}
+            retryLabel={messages.common.retry}
+            loginHref={showAuthLink ? '/api/auth/login' : undefined}
+            loginLabel={showAuthLink ? messages.common.auth.login : undefined}
+          />
+          {/* 失敗しても行き止まりにしない（一覧へ戻れる・not-found.tsx と同じ導線）。 */}
+          <div className="mt-6">
+            <BackLink
+              locale={locale}
+              labels={{ backLink: messages.detail.backLink }}
+              href={backHref}
+            />
+          </div>
         </main>
       )
     }
