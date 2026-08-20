@@ -1,0 +1,47 @@
+{
+  "topic": "スプリントのプレビュー環境の後始末と、本番デプロイをスプリントレビュー判定に接続する仕組みを設計する（Issue #231）",
+  "brief": "飼い主の指示（原文）: 『現時点でスプリントごとの実行環境を用意していますが、古い環境を削除、最新の状態でデプロイされた本番環境のデプロイをする仕組みを構築してください。基本的には以下の流れを考えています / スプリント完了後のスプリントレビューが完了したらスプリントの環境を削除する / スプリントレビューで問題がなければ、本番環境にデプロイして反映させる / 専門チームを組成して対応してください』\n\n【オーケストレーターが実測で確定させた事実（推測ではない）】\n1. プレビュー環境は同一 Worker の version + preview alias。PR ごとに `npx wrangler versions upload --preview-alias pr-<N> --tag $SHA` で作る（docs/03_design/infrastructure/cloudflare-infrastructure.md §6.1 / §8.2 / §8.3）。`[env.*]` は使わない（Worker 数を増やさないため）。\n2. Cloudflare API `GET /accounts/{account_id}/workers/scripts/gem-hunter/versions` を実際に叩いた結果、version が蓄積しており、各 version の `annotations[\"workers/alias\"]` に `pr-219` `pr-212` 等が入っている（`metadata.has_preview: true`）。後始末の仕組みは現在存在しない。\n3. `npx wrangler versions --help` の実出力に delete サブコマンドは無い（view / list / upload / deploy / secret のみ）。wrangler 4.124.0。\n4. 公式ドキュメント（developers.cloudflare.com/workers/versions-and-deployments/preview-urls/）の Aliased preview URLs 節に『Aliases may be created during versions upload』『Only the 1000 most recently deployed aliases are retained. When a new alias is created beyond this limit, the least recently deployed alias is deleted』とある。alias 削除コマンドの記述は見つかっていない（REST API 側の削除可否は未確定＝この議論で確定させる対象）。\n5. セッションには CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID が供給されており `npx wrangler whoami` は成功する（User API Token）。curl での Cloudflare API 直叩きも成功している。\n6. 本番デプロイは現在 `.claude/skills/pr-review-watcher/SKILL.md` の **Step 6（マージ直後の公開反映）** に書かれている。『push まで完遂したら続けてセッションが npm run deploy を実行し本番反映まで完遂する』『deploy 前に main HEAD で npm run check を再実行』『deploy 後は本番 URL の疎通確認』。**Step 7（スプリントレビュー + レトロスペクティブ）はその後** に実行される。つまり現状は『レビュー判定の前にデプロイ済み』。\n7. Step 7 はスプリントレビュー判定を Issue コメントに `**結果**: accepted | accepted_with_conditions | rejected` の書式で投稿し、`retrospective` スキルを起動し、対象 Issue をクローズする（rejected / accepted_with_conditions で持ち越しがあるときは open のまま）。発火条件は『マージした PR 本文に Sprint Goal: 行がある』。\n8. GitHub Actions は制限中で使えない（D-23）。deploy-preview.yml / deploy-production.yml は撤去済み。CI もデプロイもセッションが直接実行する。`.claude/settings.json` の permissions.allow に wrangler の deploy 系が登録済み（飼い主の明示指示 2026-08-19）。\n9. ADR 0004（docs/adr/0004-release-cycle-trunk-based.md・承認済み）は『trunk-based を維持。作業ブランチ → PR（プレビュー）→ main（本番）の 1 ホップ。常設 dev 環境を持たない』と決めており、受け入れた代償として『main 上の合成状態が本番で初めて動く』を挙げ、緩和策を『main マージ後のテストゲート』（Issue #39）としている。preview alias を使った固定 dev 環境案は『シークレットが Worker 1 本の版チェーン全体で線形継承されるため dev 専用シークレットを分離できない』として却下されている。\n10. 既存の関連 Issue: #187『プレビュー version に secret が渡っておらず、認証とレート制限がプレビューで動作しない』が open。\n\n【この議論で決めること（争点）】\nA. プレビュー環境（version / preview alias）の後始末として **技術的に実行可能な手段は何か**。wrangler CLI・Cloudflare REST API・代替（無害化・alias 命名の変更・放置して LRU に任せる）を、公式ドキュメントと実 API の応答という一次情報で切り分ける。『できるはず』で書かない。\nB. 本番デプロイの発火点を、現在の Step 6（マージ直後）から Step 7（スプリントレビューが accepted）へ移すべきか。ADR 0004 の trunk-based（main = 本番）との整合、非スプリント PR（改善 Issue・retro-try・docs）の扱い、レビュー判定までの間 main と本番がずれることのリスクを含めて判断する。\nC. 判定が accepted_with_conditions / rejected のとき、本番デプロイと環境削除をそれぞれどうするか（fail-closed の設計）。Step 7 が中断したときに後始末が永久に実施されない経路を塞ぐ方法。\nD. 上記を **どこに実装するか**。SSOT を増やさないこと（同じ規則の実体を 2 箇所に書かない）。候補: `.claude/skills/pr-review-watcher/SKILL.md`（Step 6 / Step 7）・`docs/03_design/infrastructure/cloudflare-infrastructure.md` §8・新規 `tools/*.py`（後始末・棚卸し）・`.claude/hooks/`・`sprint-cycle-router` の決定木。実装コストと実効性（本当に守られるか）で評価し、費用対効果が合わないものは『入れない』と明言する。",
+  "participants": [
+    {
+      "name": "cf_platform",
+      "model": "sonnet",
+      "lens": "Cloudflare プラットフォームの事実確認レンズ（争点 A 担当）。preview alias と version のライフサイクルについて、`npx wrangler versions --help` / `npx wrangler --help` の実出力、Cloudflare 公式ドキュメント（WebFetch で developers.cloudflare.com を直接読む）、および Cloudflare REST API の実応答（`curl` + 環境変数 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID）で、次を一次情報で確定させる: (1) preview alias を明示的に削除する CLI / API が存在するか（存在しないなら『無い』と根拠付きで断定する） (2) version 自体を削除できるか、保持上限・自動失効はあるか (3) alias を別の version へ張り替えられるか（upload 時のみか） (4) `preview_urls` 設定や Worker subdomain API でプレビュー URL 群を一括で無効化できるか、その副作用（本番 URL も落ちないか）。🔴 破壊的な API（DELETE 系）は **実行せず**、ドキュメントと GET 応答だけで判断する（このリポジトリの本番 Worker を壊さない）。『できると思われる』は書かず、確認できた事実と確認できなかったことを分けて書く。"
+    },
+    {
+      "name": "release_eng",
+      "model": "sonnet",
+      "lens": "リリース工学レンズ（争点 B / C 担当）。本番デプロイの発火点を『マージ直後』から『スプリントレビュー accepted 後』へ移すことの是非を、ADR 0004（docs/adr/0004-release-cycle-trunk-based.md）と docs/03_design/infrastructure/cloudflare-infrastructure.md §8 を実際に読んだ上で判断する。特に: main にマージ済みだが未デプロイの状態が生まれること（trunk-based の前提が崩れないか）、後続 PR が先にマージされたときの合成状態、非スプリント PR（Sprint Goal: 行が無い PR）のデプロイ経路、rejected 判定が出たときに『既に本番へ出ている』or『出さない』のどちらが復旧しやすいか（wrangler rollback / versions deploy の実在するロールバック手段を前提に）。飼い主の指示は権威順の最上位であり『今のままでよい』という結論はコストを理由に選ばない — ただし指示の意図（レビューで問題がなければ本番へ）を満たす **より安全な形** があるなら具体的に提案する。"
+    },
+    {
+      "name": "harness_ops",
+      "model": "sonnet",
+      "lens": "ハーネス実装レンズ（争点 C / D 担当）。決めた規律が『ドキュメントに書いただけで守られない』ことを前提に、実装先を設計する。`.claude/skills/pr-review-watcher/SKILL.md` の Step 6 / Step 7、`.claude/hooks/`（settings.json の配線と post-merge-publish-check.sh / stop-*.sh の既存パターン）、`tools/` の既存スクリプト（check_pending_pr_reviews.py・check_publish_drift.py 等の書き方）を実際に読み、(1) 後始末（環境削除）の取り残しを次セッションが回収できる仕組み（どこに状態を持つか。新しい state ファイルや新ラベルを増やさない方針との整合） (2) 『レビュー accepted なのにデプロイしていない』『デプロイしたのにレビューしていない』を検知する手段 (3) 無人ルーティン（sprint-cycle-router）を止めない設計（Error か Warning か）を、実装コストと誤検知率で評価する。費用対効果が合わないものは『入れない』と明言する。新しい state ファイル・新ラベル・新ディレクトリ規約を作らない方針（SKILL.md Step 7 に明記済み）を尊重すること。"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "ドキュメント整合レンズ（争点 D 担当）。新しい設計を主張せず、既存記述との突合に徹する。今回の変更（環境の後始末 / デプロイ発火点の移動）に関係する記述を機械的に洗い出し『どのファイルのどの節を変える必要があるか』『どこが既に矛盾しているか』を列挙する。最低限確認する対象: docs/03_design/infrastructure/cloudflare-infrastructure.md（§6・§7.5・§8）・docs/adr/0004-release-cycle-trunk-based.md・docs/rules/pr-review-flow-summary.md・docs/rules/pr-review-flow.md・docs/rules/sprint-development-rules.md（SD-1）・.claude/skills/pr-review-watcher/SKILL.md・.claude/skills/sprint-cycle-router/SKILL.md・docs/02_requirements/open-questions.md（D-23 等の決定ログ）。出力はパスと節番号と『現在の記述 → 必要な変更の要旨』の表形式。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜D それぞれについて採用する結論を 1 つに決める。決定は必ず『どのファイルに何を書くか（新規 / 改修）』『どのツールを作るか（コマンド仕様）』まで落とす。飼い主の明示指示（レビュー完了後に環境を削除 / レビューで問題がなければ本番へデプロイ）は権威順の最上位であり、コストを理由に骨抜きにしない。ただし技術的に不可能な手段（例: alias 削除 API が存在しない）が確定した場合は、指示の意図を満たす代替を必ず 1 つ提示する（『できません』で終えない）。SSOT を増やさない。議論で否定された案は採用しない。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜D のいずれか",
+        "decision": "採用する結論",
+        "rationale": "根拠（一次情報のポインタ）",
+        "files": ["変更するファイルと変更内容"],
+        "tools": ["新規・改修するスクリプトとコマンド仕様"]
+      }
+    ],
+    "rejected": ["議論で否定された案と理由"],
+    "unknowns": ["確定できず、実装時に実機で確かめる必要がある事項"],
+    "follow_up_issues": [
+      {"title": "Issue タイトル", "labels": ["type:*", "sp:*", "priority:*"], "done_criteria": "完了条件"}
+    ]
+  }
+}
