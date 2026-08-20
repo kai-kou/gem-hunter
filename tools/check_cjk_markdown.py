@@ -59,6 +59,24 @@ CJK_WORD = (
 )
 CJK_WORD_RE = re.compile(f"[{CJK_WORD}]")
 
+# --- 整形対象外（第三者著作物の原文・#233）---------------------------------
+# 🔴 本プロジェクトの表記ルールを、**他者が書いた文書へ機械的に適用してはならない**。
+#    与件（外部提供の要件定義）は「原本（編集しない）」と定められており、公開時は
+#    第三者著作物として LICENSE の対象外に置いている。整形で本文が 1 文字でも変わると
+#    「原文のまま収録している」という権利表示自体が虚偽になる。
+#    パスはリポジトリルートからの相対で書く（前方一致ではなく完全一致で判定する）。
+EXCLUDED_PATHS = frozenset({
+    "docs/02_requirements/minimum-requirements.md",
+})
+
+
+def is_excluded(path: str) -> bool:
+    """整形・検査の対象外パスか判定する（第三者著作物の保護・#233）。"""
+    p = str(path).replace("\\", "/")
+    if p.startswith("./"):
+        p = p[2:]
+    return p in EXCLUDED_PATHS
+
 # 検査対象の記法スパン: **bold** と `code`。
 # bold は最短一致・改行を含まない。code はバッククォート1個で囲まれた範囲。
 SPAN_RE = re.compile(r"(\*\*(?!\s)(?:[^*]|\*(?!\*))+?(?<!\s)\*\*|`[^`\n]+?`)")
@@ -170,7 +188,7 @@ def changed_md_files() -> list[str]:
             files += rr.stdout.splitlines()
     seen, out = set(), []
     for f in files:
-        if f.endswith(".md") and f not in seen and Path(f).is_file():
+        if f.endswith(".md") and f not in seen and not is_excluded(f) and Path(f).is_file():
             seen.add(f)
             out.append(f)
     return out
@@ -203,6 +221,9 @@ def check_files(paths: list[str], fix: bool) -> int:
     total_violations = 0
     fixed_files = 0
     for path in paths:
+        if is_excluded(path):
+            print(f"[cjk-md] スキップ（整形対象外・第三者著作物）: {path}", file=sys.stderr)
+            continue
         p = Path(path)
         if not p.is_file():
             print(f"[cjk-md] スキップ（不在）: {path}", file=sys.stderr)
@@ -312,6 +333,30 @@ def self_test() -> int:
         else:
             failed += 1
             print(f"FAIL(under): paths={paths_in!r} unders={unders!r}\n  expected: {expected!r}\n  got:      {got!r}")
+
+    # 整形対象外パス（第三者著作物の保護・#233）
+    excluded_cases = [
+        ("docs/02_requirements/minimum-requirements.md", True),
+        ("./docs/02_requirements/minimum-requirements.md", True),   # 先頭 ./ を許容
+        ("docs/02_requirements/prd.md", False),                      # 同じディレクトリの別ファイルは対象
+        ("minimum-requirements.md", False),                          # 末尾一致では除外しない（完全一致のみ）
+        ("docs/02_requirements/minimum-requirements.md.bak", False), # 前方一致でも除外しない
+    ]
+    for path_in, expected in excluded_cases:
+        got = is_excluded(path_in)
+        if got == expected:
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(excluded): path={path_in!r} expected={expected} got={got}")
+
+    # 除外パスが実在すること（リネームで除外が静かに無効化されるのを防ぐ）
+    for rel in EXCLUDED_PATHS:
+        if (Path(__file__).resolve().parent.parent / rel).is_file():
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(excluded-exists): EXCLUDED_PATHS の {rel} が存在しない（リネーム漏れ？）")
 
     print(f"\n[cjk-md] self-test: {passed} passed / {failed} failed")
     return 0 if failed == 0 else 1

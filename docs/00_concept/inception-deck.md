@@ -361,6 +361,6 @@ star は注目度の指標であって利用実績ではない。約 600 万個�
 | [`open-questions.md`](../02_requirements/open-questions.md) | 各決定の理由・経緯の正本（`D-n` / `Q-n` / `R-n`） |
 | [`lean-canvas.md`](./lean-canvas.md) | 事業仮説の正本。本書 Q1 / Q2 / Q3 はこれを前提とする |
 | [`project-mission.md`](../project-mission.md) | ミッション・KPI・判断基準の正本。本書 Q9 はこれを射影したもの |
-| [`minimum-requirements.md`](../02_requirements/minimum-requirements.md) | 与件の原本（編集しない） |
+| [`minimum-requirements.md`](../02_requirements/minimum-requirements.md) | 与件の原本（**本文は編集しない**）。⚠️ パブリック化にあたり、冒頭に権利表示の 1 行だけをリポジトリ側の追記として付けている（第三者著作物であり `LICENSE` の対象外であることの明示）。要件本文そのものは 1 文字も変更していない |
 | [`user-story-map.md`](../02_requirements/user-story-map.md) | 実装単位への分解・リリーススライスの正本。スライス境界は本書 Q4 に従う |
 | [`roadmap.md`](../02_requirements/roadmap.md) | 時間軸・マイルストーン（`M-n`）の正本。**期日そのものの正本は本書 Q8** であり、ロードマップは日付の記入先を持つだけ |

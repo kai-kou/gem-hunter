@@ -51,14 +51,20 @@ BASE_SYNC_STATE = ".claude/base-sync-state.json"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     from check_cjk_markdown import process_text as _cjk_process_text
+    # 整形対象外パス（第三者著作物・#233）の判定も本体と共有する。
+    # ここで共有しないと「整形はされないが違反として警告され続ける」状態になり、
+    # 直しようのない Warning が毎 PR 出続けて他の指摘が埋もれる。
+    from check_cjk_markdown import is_excluded as _cjk_is_excluded
 except ImportError:
     # ツール自体が無い場合のみ黙って無効化（任意機能）
     _cjk_process_text = None
+    _cjk_is_excluded = None
 except Exception as _e:  # noqa: BLE001
     # ツールはあるが壊れている → 黙殺すると再発防止が機能しないので原因を出す
     print(f"[self-review] Warning: check_cjk_markdown の読み込みに失敗（CJK 検査を無効化）: {_e}",
           file=sys.stderr)
     _cjk_process_text = None
+    _cjk_is_excluded = None
 
 # Python 危険パターン検出（FAIR Layer 0 強化・#56）。
 try:
@@ -388,6 +394,17 @@ def tdd_and_sprint_checks(files: list[str]) -> tuple[list[str], list[str]]:
     if dup_warn:
         warnings.append(dup_warn)
     return errors, warnings
+
+
+# 🔵 パターンを分割リテラルで書く。ベタ書きすると **この検査自身のソース行がパターンに
+#    一致し**、本ファイルを変更した PR で必ず自分自身を「デバッグ痕跡」として誤検出する
+#    （実際に発生した・#233）。分割して書けば実行時の値は同じまま、ソース上には一致しない。
+DEBUG_TRACE_PATTERNS = ("console" ".log(", "debugger" ";", "import" " pdb")
+
+
+def has_debug_trace(lowered_line: str) -> bool:
+    """小文字化済みの 1 行にデバッグ痕跡パターンが含まれるか判定する。"""
+    return any(pat in lowered_line for pat in DEBUG_TRACE_PATTERNS)
 
 
 def cjk_violation_lines(text: str) -> list[int]:
@@ -837,6 +854,36 @@ def _self_test_subcheck_outcome() -> list[str]:
     return failures
 
 
+def _self_test_debug_trace() -> list[str]:
+    failures = []
+    # 実際のデバッグ痕跡は検出する
+    # ⚠️ フィクスチャも分割リテラルで組み立てる（ベタ書きするとこのテスト自身が
+    #    下の「自己誤検出」チェックに引っかかる。実際に起きた）
+    positives = (
+        "  " + "console" + ".log(x)",
+        "\t" + "debugger" + ";",
+        "import" + " pdb" + "; pdb.set_trace()",
+    )
+    for line in positives:
+        if not has_debug_trace(line.lower()):
+            failures.append(f"デバッグ痕跡として検出される想定: {line!r}")
+    # 通常のコードは検出しない
+    negatives = ("logger.info(x)", "const debuggerName = 1", "import pdfkit")
+    for line in negatives:
+        if has_debug_trace(line.lower()):
+            failures.append(f"デバッグ痕跡として検出されない想定: {line!r}")
+    # 🔴 回帰: 本ファイル自身のソースがパターンに一致してはならない（#233）
+    #    ここが壊れると、本ファイルを触る全 PR に直しようのない Warning が出続ける。
+    own_src = Path(__file__).read_text(encoding="utf-8")
+    for i, line in enumerate(own_src.splitlines(), 1):
+        if has_debug_trace(line.lower()):
+            failures.append(
+                f"self_review_check.py 自身の {i} 行目がデバッグ痕跡パターンに一致している"
+                f"（パターンをベタ書きしていないか確認）: {line.strip()[:60]}"
+            )
+    return failures
+
+
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
@@ -850,6 +897,7 @@ def run_self_test() -> int:
         ("SP-n/US-n 単語境界（issue2 回帰）", _self_test_sp_us_word_boundary),
         ("commit_files --root（issue3 回帰）", _self_test_commit_files_root_flag),
         ("補助チェッカー出力の振り分け", _self_test_subcheck_outcome),
+        ("デバッグ痕跡検出（自己誤検出の回帰）", _self_test_debug_trace),
     ]
     failed_groups = 0
     total_failures = 0
@@ -895,12 +943,14 @@ def main() -> int:
             if any(line.startswith(m) or line == m for m in CONFLICT_MARKERS):
                 errors.append(f"マージコンフリクト痕跡: {f}:{i}")
             low = line.lower()
-            if "console.log(" in low or "debugger;" in low or "import pdb" in low:
+            if has_debug_trace(low):
                 warnings.append(f"デバッグ痕跡の可能性: {f}:{i}")
 
         # CJK Markdown 半角スペース（CLAUDE.md「Markdown 出力ルール」）
         # 目視では見落とすため機械化（AI レビュアーの同種指摘を未然に防ぐ）
-        if f.endswith((".md", ".markdown")):
+        if f.endswith((".md", ".markdown")) and not (
+            _cjk_is_excluded is not None and _cjk_is_excluded(f)
+        ):
             cjk_lines = cjk_violation_lines(text)
             if cjk_lines:
                 shown = ", ".join(str(n) for n in cjk_lines[:8])
