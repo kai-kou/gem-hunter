@@ -39,7 +39,7 @@ function apiOrigin(): string {
 }
 
 /**
- * 🔴 検索クエリへ必ず AND 付与する修飾子。
+ * 🔴 検索クエリへ必ず付与する公開限定の修飾子。
  * GitHub App の installation token（Bearer）で認証すると、そのトークンから見える private
  * リポジトリまで `GET /search/repositories` の可視範囲に入ってしまう。本プロダクトの仕様は
  * 「GitHub 公開リポジトリの検索」（prd.md L171）なので、検索の時点で公開に閉じる。
@@ -58,8 +58,13 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
 
   async search(query: SearchQuery): Promise<SearchResult> {
     const url = new URL('/search/repositories', apiOrigin())
-    // 🔴 ユーザーが `is:private` 等を書いても公開に閉じるよう、常に AND で付与する。
-    url.searchParams.set('q', `${query.keyword} ${PUBLIC_ONLY_QUALIFIER}`)
+    // 🔴 公開限定の修飾子は **キーワードより前** に置く（多層防御の 2 層目）。
+    //    1 層目はドメイン側で、キーワードに検索式の構文（`名前:値`・大文字の `NOT` / `OR` /
+    //    `AND`）を含められないようにしている（`domain/model/search-keyword.ts`）。それでも
+    //    末尾に置く形は、キーワード末尾のトークン次第でこの修飾子が後置演算子の作用範囲へ
+    //    入りうる（例: 末尾 `NOT` に否定され「公開でないもの」＝ private 限定へ反転する）。
+    //    先頭に置けば、キーワード側に何が来ても公開限定条件が単独のトークンとして残る。
+    url.searchParams.set('q', `${PUBLIC_ONLY_QUALIFIER} ${query.keyword}`)
     url.searchParams.set('page', String(query.page))
     url.searchParams.set('per_page', String(query.perPage))
     // 🔴 仮定（実装手段レベル・SD-3 対象外）: relevance は GitHub API の既定挙動のため

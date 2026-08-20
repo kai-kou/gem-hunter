@@ -5,12 +5,12 @@ import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/lo
 import { tryPageNumber } from '@/src/domain/model/page-number'
 import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
 import type { SearchResult } from '@/src/domain/model/repository'
-import { trySearchKeyword } from '@/src/domain/model/search-keyword'
+import { searchKeyword } from '@/src/domain/model/search-keyword'
 import { tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
-import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
+import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
 import { Pagination } from '@/src/ui/pagination'
 import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
@@ -29,13 +29,19 @@ async function runSearch(
   rawPerPage: number,
   messages: Messages,
 ): Promise<SearchState> {
-  // 境界（URL）で値オブジェクトへ変換する（domain-model.md §4）
-  const keyword = trySearchKeyword(rawKeyword)
-  if (keyword === null) {
+  // キーワード未入力は「まだ検索していない」状態であってエラーではない（AC-2）。
+  if (rawKeyword.trim().length === 0) {
     return { status: 'idle' }
   }
 
   try {
+    // 境界（URL）で値オブジェクトへ変換する（domain-model.md §4）。
+    // 🔴 不正値を黙って握りつぶさない（`trySearchKeyword` を使わない）。修飾子入りキーワード
+    //    （`react is:private` 等）は `DomainValidationError` になるので、下の catch で
+    //    「検索できませんでした: {理由}」として画面に出す。null へ倒すと未入力と同じ
+    //    idle 表示になり、拒否された事実がユーザーに伝わらない。
+    const keyword = searchKeyword(rawKeyword)
+
     const result = await searchRepositoriesUseCase()({
       keyword,
       page: tryPageNumber(rawPage),
@@ -70,7 +76,11 @@ export default async function LocaleHome({
 
   const rawSearchParams = await searchParams
   const { keyword, page, sort, perPage } = parseSearchParams(rawSearchParams)
-  const state = await runSearch(keyword, page, sort, perPage, messages)
+  // 🔴 検索の実行にはキーワードの生値を使う（`parseSearchParams` は不正値を `''` へ倒すため、
+  //    そのまま渡すと拒否理由が「未入力」にすり替わる）。入力欄の表示も生値にして、
+  //    エラーを見たユーザーが自分の入力を直せるようにする。
+  const rawKeyword = rawKeywordOf(rawSearchParams)
+  const state = await runSearch(rawKeyword, page, sort, perPage, messages)
   const basePath = `/${locale}`
   const searchState = { keyword, page, sort, perPage }
 
@@ -80,7 +90,7 @@ export default async function LocaleHome({
       <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
 
       <SearchForm
-        keyword={keyword}
+        keyword={rawKeyword}
         action={basePath}
         labels={{
           inputLabel: messages.home.searchLabel,

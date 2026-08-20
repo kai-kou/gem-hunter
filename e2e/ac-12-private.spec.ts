@@ -77,3 +77,47 @@ test('AC-12: 認証済みでも private リポジトリが検索結果にも詳�
     }
   })
 })
+
+/**
+ * `AC-12` / `NFR-33`: 検索キーワードに修飾子を書いて公開限定条件を破ろうとしても通らない。
+ *
+ * キーワードは検索クエリ文字列へそのまま載るため、`is:private` のような修飾子を書けてしまうと
+ * アプリが付けている公開限定条件を打ち消せる（同一修飾子の重複指定は AND 解釈されない）。
+ * ドメイン（`search-keyword.ts`）で修飾子構文を拒否しているので、上流へ問い合わせる前に
+ * エラーになり、private が画面に出る経路自体が生まれない。
+ */
+test('AC-12: 修飾子入りキーワードは拒否され、上流へも問い合わせない', async ({ page }) => {
+  // スタブが private を混ぜて返すキーワードに修飾子を足す（拒否が効かなければ private が届く状況）
+  const injected = `${uniqueKeyword()} is:private`
+
+  await test.step('1. 修飾子入りキーワードで検索する', async () => {
+    await page.goto('/ja')
+    await fetch(`${STUB_ORIGIN}/__stats/reset`, { method: 'POST' })
+    await searchFor(page, injected)
+  })
+
+  await test.step('2. 日本語のエラーメッセージが表示される', async () => {
+    // Next.js のルートアナウンサーも role=alert を持つため、本文で絞り込む（strict mode 対策）
+    const alert = page.getByRole('alert').filter({ hasText: '検索できませんでした' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('修飾子')
+    await expect(alert).toContainText('使用できません')
+  })
+
+  await test.step('3. 入力した値は検索欄に残る（ユーザーが直せる）', async () => {
+    await expect(page.getByRole('searchbox', { name: ja.home.searchLabel })).toHaveValue(injected)
+  })
+
+  await test.step('4. private リポジトリも検索結果も 1 件も出ない', async () => {
+    await expect(page.getByRole('link', { name: PRIVATE_REPO })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: PUBLIC_REPO })).toHaveCount(0)
+    await expect(page.getByText(PRIVATE_DESCRIPTION)).toHaveCount(0)
+  })
+
+  await test.step('5. 上流（GitHub）へは問い合わせていない', async () => {
+    const response = await fetch(`${STUB_ORIGIN}/__stats`)
+    expect(response.ok).toBe(true)
+    const stats = (await response.json()) as { lastSearchQuery: string | null }
+    expect(stats.lastSearchQuery).toBeNull()
+  })
+})

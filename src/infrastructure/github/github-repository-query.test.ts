@@ -2,7 +2,7 @@ import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
+import { DomainValidationError, RateLimitExceededError, UpstreamError } from '../../domain/errors'
 import { repositoryFullName } from '../../domain/model/repository-full-name'
 import { searchQuery } from '../../domain/model/search-query'
 import detailFixture from './__fixtures__/repository-detail.json'
@@ -37,23 +37,23 @@ describe('GithubRepositoryQuery', () => {
     const result = await makeQuery().search(searchQuery({ keyword: 'react', page: 2 }))
 
     expect(result.items).toHaveLength(2)
-    // 公開リポジトリに閉じるため is:public が AND 付与される（下の専用テストも参照）
-    expect(requests[0].searchParams.get('q')).toBe('react is:public')
+    // 公開リポジトリに閉じるため is:public が先頭に付与される（下の専用テストも参照）
+    expect(requests[0].searchParams.get('q')).toBe('is:public react')
     expect(requests[0].searchParams.get('page')).toBe('2')
     expect(requests[0].searchParams.get('per_page')).toBe('20')
   })
 
-  it('検索クエリに is:public を AND 付与して公開リポジトリに閉じる（installation token の可視範囲対策）', async () => {
+  it('検索クエリの先頭に is:public を置いて公開リポジトリに閉じる（installation token の可視範囲対策）', async () => {
     await makeQuery().search(searchQuery({ keyword: 'react' }))
 
-    const q = requests[0].searchParams.get('q')
-    expect(q).toBe('react is:public')
+    // 🔴 完全一致で検証する。末尾に置くと、キーワード側の未知の構文（末尾の `NOT` 等）に
+    //    この修飾子が吸収・否定されうるため、位置そのものが防御の一部になっている。
+    //    なお修飾子構文そのものはキーワード側で拒否される（`search-keyword.ts`）。
+    expect(requests[0].searchParams.get('q')).toBe('is:public react')
   })
 
-  it('キーワードに is:private が含まれていても is:public を付与する（公開に閉じる）', async () => {
-    await makeQuery().search(searchQuery({ keyword: 'react is:private' }))
-
-    expect(requests[0].searchParams.get('q')).toContain('is:public')
+  it('キーワード側は修飾子構文を含められない（ドメインで拒否・多層防御の 1 層目）', () => {
+    expect(() => searchQuery({ keyword: 'react is:private' })).toThrow(DomainValidationError)
   })
 
   it('上流が private: true を含む検索結果を返しても search() の戻り値からは除外され、totalCount は上流値のまま（多層防御・AC-12）', async () => {

@@ -28,6 +28,17 @@ function firstValue(value: string | string[] | undefined): string | undefined {
 }
 
 /**
+ * URL に載っていたキーワードの **生の値**（妥当性判定・既定値への丸めをしない）。
+ *
+ * `parseSearchParams()` は「不正値は例外を投げず既定値へ倒す」設計のため、キーワードが
+ * ドメインの不変条件を満たさないと `''`（＝未入力）に潰れる。未入力とエラーを画面で
+ * 区別する側（`app/[locale]/page.tsx`）はこちらを使う。
+ */
+export function rawKeywordOf(input: RawSearchParams): string {
+  return firstValue(input[SEARCH_PARAM_KEYS.keyword]) ?? ''
+}
+
+/**
  * URL の生の値を素直な形へ正規化する（ドメインの妥当性判定は
  * `trySearchKeyword` / `tryPageNumber` / `tryParse`（`per-page` / `sort-order`）に委ねる。
  * 不正値は例外を投げず既定値へ倒す）。
