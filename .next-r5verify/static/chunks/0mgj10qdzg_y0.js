@@ -1,0 +1,1 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,58091,e=>{"use strict";var t=e.i(71645);e.s(["FocusOnNavigate",0,function({watch:e,targetId:u}){let c=(0,t.useRef)(!0);return(0,t.useEffect)(()=>{if(c.current){c.current=!1;return}document.getElementById(u)?.focus()},[e,u]),null}])}]);
