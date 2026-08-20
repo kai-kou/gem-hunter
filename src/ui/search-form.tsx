@@ -17,7 +17,8 @@ type SearchFormProps = {
 /**
  * 検索フォーム（US-9 / AC-2）。
  * GET フォームなのでクライアント JS を持たない（E-8 / NFR-3）。
- * 送信でキーワードが URL のクエリに反映される（パラメータ名は SEARCH_PARAM_KEYS が唯一の正本）。
+ * 送信でキーワードが URL のクエリに反映される（パラメータ名の正本は prd.md §2.4.1 で、
+ * SEARCH_PARAM_KEYS はその実装。名前を他ファイルへ直書きしない）。
  */
 export function SearchForm({ keyword, action, labels }: SearchFormProps) {
   return (
