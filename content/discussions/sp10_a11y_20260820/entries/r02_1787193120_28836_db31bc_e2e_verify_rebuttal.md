@@ -17,13 +17,13 @@ round1 で読んだ `e2e/sp-9-a11y.spec.ts` の内容から: 読み込み中を�
 ```
 これは `LoadingIndicator` 自身の既存ドキュメントコメントにある「`role="status"`（暗黙で `polite`）に `aria-live="polite"` を明示併記する」という **同じパターンを 1 段上の要素に移すだけ**。`getByRole('status')` はロケータの解決先要素が変わるだけで、テキスト内容（読み込み中は `LoadingIndicator` のラベル、解決後は件数文言）は今までと同じものを返し続ける。**この形なら `e2e/sp-9-a11y.spec.ts` は無改修のまま緑を維持できる**。壊れるのは `loading-indicator.test.tsx`（コンポーネント単体を隔離して role/aria-live を assert している unit test）だけになる。
 
-**intent-gate 権威順での結論**: `ui-ux-guidelines.md` §7.2（仕様）が要求しているのは「件数通知は `role="status"`（1 箇所のみ・入れ子禁止）」という **画面レベルの契約**であり、「`LoadingIndicator` というコンポーネント自身が role を持つこと」までは要求していない。`loading-indicator.test.tsx` の現行アサーションは後者（コンポーネント単体の実装詳細）を固定しているに過ぎず、これは 仕様 ではなく 現行コード 相当。§0/§3 item0 の 4 分岐でいう「最も単純な合理的解釈」は「role を section 側へ移し、仕様の要求（入れ子禁止・唯一の role=status）を満たす形へ両方を揃える」であり、a11y_impl の C-2 提案（削除するだけ）を **`role="status"` を section へ足す形に修正した上で採用すべき**。`loading-indicator.test.tsx` の書き換えは正当（仕様に矛盾するテストを守るための黙った実装改変ではなく、逆＝古い実装詳細を固定したテストを仕様に合わせて直す）。ただし `testing-strategy.md` §5 の順序（`test:` → `feat:`）を守り、コミットで「#180 是正に伴う仕様変更」と明記すること（L-113 のサイレント書き換え禁止と矛盾しない）。
+**intent-gate 権威順での結論**: `ui-ux-guidelines.md` §7.2（仕様）が要求しているのは「件数通知は `role="status"`（1 箇所のみ・入れ子禁止）」という **画面レベルの契約** であり、「`LoadingIndicator` というコンポーネント自身が role を持つこと」までは要求していない。`loading-indicator.test.tsx` の現行アサーションは後者（コンポーネント単体の実装詳細）を固定しているに過ぎず、これは 仕様 ではなく 現行コード 相当。§0/§3 item0 の 4 分岐でいう「最も単純な合理的解釈」は「role を section 側へ移し、仕様の要求（入れ子禁止・唯一の role=status）を満たす形へ両方を揃える」であり、a11y_impl の C-2 提案（削除するだけ）を **`role="status"` を section へ足す形に修正した上で採用すべき**。`loading-indicator.test.tsx` の書き換えは正当（仕様に矛盾するテストを守るための黙った実装改変ではなく、逆＝古い実装詳細を固定したテストを仕様に合わせて直す）。ただし `testing-strategy.md` §5 の順序（`test:` → `feat:`）を守り、コミットで「#180 是正に伴う仕様変更」と明記すること（L-113 のサイレント書き換え禁止と矛盾しない）。
 
 ### 2. gate_infra の時間見積り依頼 — 質問の前提を訂正した上で見積もる
 
 **訂正**: 「Lighthouse 3 画面 35.5 秒」（gate_infra 実測）と「`a11y.spec.ts` 36.5 秒」（私の実測）は **同じタイムアウト予算を取り合わない別ステップ**。gate_infra の R1 提案は Lighthouse を `run_checks.sh` の **専用ステップ**（新設 `RUN_CHECKS_LIGHTHOUSE_TIMEOUT`、既定 180 秒案）として叩く設計で、`RUN_CHECKS_E2E_TIMEOUT`（Playwright の `npm run test:e2e` 一括実行）とは別枠。したがって両者を単純合算して 1 つのタイムアウトと比較するのは誤り。「E2E 総時間」は Playwright ステップ（`e2e/*.spec.ts` 全ファイルが単一 `webServer` を共有する 1 プロセス実行）だけで見積もるべき質問だと解釈して答える。
 
-**見積り（外挿・未実測・要検証と明記）**: 実測できているのは `a11y.spec.ts`（2 テスト・real 36.5s、コールドビルド 1 回分を含む）だけ。`playwright.config.ts` は `workers: 1` かつ `webServer` を全 spec ファイルで共有するため、ビルド/起動コスト（概算 8〜10 秒: gate_infra 実測 `next build` 5.3 秒 + `next start` の ready 検出 + Chromium 起動）は **1 回だけ**発生し、残りは各テストの実行時間の積み上げ。
+**見積り（外挿・未実測・要検証と明記）**: 実測できているのは `a11y.spec.ts`（2 テスト・real 36.5s、コールドビルド 1 回分を含む）だけ。`playwright.config.ts` は `workers: 1` かつ `webServer` を全 spec ファイルで共有するため、ビルド/起動コスト（概算 8〜10 秒: gate_infra 実測 `next build` 5.3 秒 + `next start` の ready 検出 + Chromium 起動）は **1 回だけ** 発生し、残りは各テストの実行時間の積み上げ。
 - `a11y.spec.ts`（axe 2 回）: 実測 36.5s（ビルド込み）
 - `sp-9-a11y.spec.ts`（axe 4 回 + DOM 検証 1 回・5 テスト）: axe 1 回あたりのコストを `a11y.spec.ts` から逆算（(36.5 − 9)/2 ≒ 13.75s/回）すると概算 4×13.75 + 3 ≒ 58s
 - `sp-7.spec.ts`（1 テスト・5 ステップ・末尾で axe 1 回）: 概算 20〜25s

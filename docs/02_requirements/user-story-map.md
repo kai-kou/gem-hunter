@@ -440,7 +440,7 @@
   1. **マウスに触れず**、Tab と Enter だけで 検索 → 一覧 → 詳細 → 一覧 を完走する（フォーカスが常に見える）
   2. スマートフォン幅に縮める → 破綻しない
   3. ブラウザ拡大 200% → 破綻しない
-  4. CI で axe と Lighthouse（Accessibility = 100）が通る
+  4. `tools/run_checks.sh` で axe（serious/critical 違反 0）と Lighthouse（Accessibility = 100）が通る
 - **対応 `AC`**: `AC-9`
 - **見積もり**: `sp:8`（Lighthouse ゲートの較正を含む）
 

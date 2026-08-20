@@ -33,6 +33,7 @@
     "searchPlaceholder": "Search GitHub by keyword (e.g. react)",
     "searchSubmit": "Search",
     "idle": "Enter a keyword to search.",
+    "resultsHeading": "Search results",
     "resultCount": "Showing {shown} of {total} results",
     "empty": "No repositories matched. Try a different keyword.",
     "starCount": "stars",

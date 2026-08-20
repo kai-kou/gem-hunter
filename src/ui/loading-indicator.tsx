@@ -1,9 +1,13 @@
 /**
  * 処理中であることを伝える表示専用コンポーネント（`AC-8` / `US-22` / `US-26`）。
  *
- * `role="status"`（暗黙で `polite` + `atomic`）に `aria-live="polite"` を明示併記する。
- * 🔴 `role="alert"` + `aria-live="assertive"` の組み合わせは使わない
- * （iOS VoiceOver で二重読み上げになる・`ui-ux-guidelines.md` §7.2）。
+ * 🔴 `role="status"` / `aria-live` は自身で持たない（#180・`ui-ux-guidelines.md` §7.2）。
+ * このコンポーネントは常に `app/[locale]/page.tsx` の `<section id="search-status"
+ * role="status" aria-live="polite">` の内側にだけ `<Suspense>` の fallback として現れる。
+ * 以前は自身にも `role="status"` を持っていたため、外側の `section` と入れ子になり、
+ * 支援技術に対して未定義動作（二重読み上げ／無視のいずれも起こりうる）を生んでいた。
+ * ライブリージョンは画面に唯一（外側の `section`）とし、本コンポーネントは
+ * その中身を差し替えるテキスト表示だけを担う。
  *
  * 文言は視覚的にも表示し（`sr-only` にしない）、0 件・エラーと同じ領域で
  * 見た目が区別できるようにする。
@@ -15,11 +19,7 @@
  */
 export function LoadingIndicator({ label }: { label: string }) {
   return (
-    <p
-      role="status"
-      aria-live="polite"
-      className="text-muted-foreground animate-pulse py-8 text-sm motion-reduce:animate-none"
-    >
+    <p className="text-muted-foreground animate-pulse py-8 text-sm motion-reduce:animate-none">
       {label}
     </p>
   )

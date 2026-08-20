@@ -20,7 +20,7 @@
 【争点】
 A) Lighthouse をどう run_checks.sh に配線するか。lighthouse を npm 依存に足すか npx 実行か、対象 URL をどう用意するか（next build && next start か、E2E と同じ e2e/stub/server.mjs 前提の起動か、既に走っている playwright の webServer を再利用できるか）、Chromium バイナリ（/opt/pw-browsers/chromium）をどう Lighthouse に渡すか（CHROME_PATH）、Accessibility 100 の blocking 判定と Performance の記録のみをどう実装して run_checks のサマリー表に載せるか、実行時間とタイムアウト（既定 300 秒）に収まるか、収まらないなら専用タイムアウトを設けるか。**採らない案は『採らない』と明言すること**（例: Lighthouse CI（lhci）サーバーを立てる案、Actions 復旧を待つ案）。
 B) axe（E-13）の現状カバレッジで『WCAG 2.2 AA を目標として宣言し自動検証可能な範囲を組み込む』と言えるか。足りないなら何を足すか（検査対象画面・状態（読み込み中 / 0 件 / エラー / ログイン済み）・withTags による WCAG 2.2 ルールセット指定・serious/critical のみに絞っている現在の閾値の妥当性）。宣言そのものをどのドキュメントのどこに書くか（新しい SSOT を作らない）。
-C) E-15（キーボード完走 + フォーカス可視）の実装位置。#180 の入れ子解消と #179 のリングコントラスト是正を含む。GET フォームでページ全体が再読み込みされる本アプリで、§7.1 の『見出しへ focus() を移す』は本当に必要か（必要なら client component をどこに置くか / 不要ならガイドライン §7.1 の適用範囲を書き換えるべきか）。--ring トークンの値を変えるのか、ring の /50 不透明度をやめるのか、ring-offset を足すのか、ダークとライトで別値にするのか。**トークンを変えると全画面に波及する**点と、check_contrast.py の検査範囲を ring まで広げるかを併せて決める。
+C) E-15（キーボード完走 + フォーカス可視）の実装位置。#180 の入れ子解消と #179 のリングコントラスト是正を含む。GET フォームでページ全体が再読み込みされる本アプリで、§7.1 の『見出しへ focus() を移す』は本当に必要か（必要なら client component をどこに置くか / 不要ならガイドライン §7.1 の適用範囲を書き換えるべきか）。--ring トークンの値を変えるのか、ring の /50 不透明度をやめるのか、ring-offset を足すのか、ダークとライトで別値にするのか。**トークンを変えると全画面に波及する** 点と、check_contrast.py の検査範囲を ring まで広げるかを併せて決める。
 D) E-16（レスポンシブ・200% 拡大）を E2E でどう機械判定するか。『破綻しない』を判定可能な述語に落とす（候補: 横スクロールが発生しない = document.scrollingElement.scrollWidth <= clientWidth、要素の重なり検出、主要導線が操作可能なこと、テキストの折り返し）。ビューポートは何を使うか（375px / 320px / 1280px）。200% 拡大を Playwright でどう再現するか（deviceScaleFactor ではなく viewport 幅を半分にするのが実質等価か、CSS zoom か、--force-device-scale-factor か）。誤検知でルーティンを止めない設計にすること。
 E) fan-out(4) のファイル非重複分割は妥当か。想定は R1 判定基盤（tools/run_checks.sh・lighthouse 実行スクリプト・package.json）/ R2 キーボードとフォーカス（app/globals.css・src/ui/components/*.tsx・app/[locale]/page.tsx のライブリージョン）/ R3 レスポンシブと画像（src/ui/repository-list.tsx・src/ui/repository-detail.tsx・app/[locale]/layout.tsx）/ R4 E2E とドキュメント（e2e/*.spec.ts・docs/**）。R2 と R3 がどちらも src/ui を触る点、R4 の E2E が R2/R3 の実装に依存する点をどう捌くか（契約先行 → 依存役先行 → 並行実行のパターンが docs にある）。分割を変えるべきなら具体的なファイル割り当てを示すこと。
 - 参加者: `gate_infra`, `a11y_impl`, `e2e_verify`, `docs_trace`
@@ -81,7 +81,7 @@ E) fan-out(4) のファイル非重複分割は妥当か。想定は R1 判定�
 
 - Accessibility 100 は確定（変更なし）
 - **Performance 要件をドロップまたは明示化**（記録値のみ、ゲートしない）
-- **複数回実行の中央値**は CLS・Accessibility には不適用（決定論的なため）。Performance の揺らぎ対策のみ（既に注記に記載）
+- **複数回実行の中央値** は CLS・Accessibility には不適用（決定論的なため）。Performance の揺らぎ対策のみ（既に注記に記載）
 
 **3.3 user-story-map.md §5.3 SP-10 手順 4**
 
@@ -163,7 +163,7 @@ const overflow = await page.evaluate(() => {
 })
 expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1) // +1px は sub-pixel 丸め対策
 ```
-- `document.scrollingElement`（Next.js は標準モードのため `documentElement` と同一）の `clientWidth` は **縦スクロールバー分を既に除いた値**なので、スクロールバー由来の偽陽性は原理的に発生しない（`clientWidth` と `scrollWidth` を同じ要素の同じ座標系で比較しているため）。`+1px` の許容は必要（実測せず一般論として明記・要検証: 本実装後に実測して閾値を確定する）。
+- `document.scrollingElement`（Next.js は標準モードのため `documentElement` と同一）の `clientWidth` は **縦スクロールバー分を既に除いた値** なので、スクロールバー由来の偽陽性は原理的に発生しない（`clientWidth` と `scrollWidth` を同じ要素の同じ座標系で比較しているため）。`+1px` の許容は必要（実測せず一般論として明記・要検証: 本実装後に実測して閾値を確定する）。
 - 画像は `width`/`height` 属性指定済み（`repository-list.tsx`）で CLS は起きないが、初期表示直後は overflow 判定が安定しないことがあるため、`toBeVisible()` 等で主要要素の描画完了を待ってから評価する（`page.waitForLoadState('networkidle')` は不要、既存 spec と同じ locator 待機で足りる）。
 - 対象画面: `/ja`（検索前）・`/ja` 検索後・`/ja/repos/...` 詳細。3 画面 × 2 viewport（640/375）= 6 assert。
 
@@ -206,7 +206,7 @@ await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toH
 ### E) ファイル分割・実行順序への意見（e2e_verify 視点）
 
 - 新規 spec は既存命名規約（`sp-2.spec.ts`/`sp-5.spec.ts`/`sp-7.spec.ts`）に合わせ `e2e/sp-10.spec.ts` を新設（キーボード完走・フォーカス構造チェック・レスポンシブ/ズーム）。`e2e/a11y.spec.ts` は既存ファイルを拡張（withTags 追加等）し新設しない。
-- **R4 は R2/R3 に依存する**（brief 指摘のとおり）が、TDD の外側ループ（`testing-strategy.md` §5）に従うなら **R4 が先に Red の spec を書く**のが筋。ただし本ラウンドでは編集禁止のため、次ラウンドで R4 担当が selectors/roles だけ R2/R3 と事前合意してから contract-first で着手することを推奨（例: 結果一覧見出しを追加するなら `getByRole('heading', { name: ... , level: 2 })` を Tab 到達先にする、追加しないなら「一覧のリンクへ直接到達」を到達先にする — どちらでも `tabUntilFocused` は動くため、E2E 側はこの設計判断（§7.1 の tabIndex 実装要否）を待たずに書き始められる）。
+- **R4 は R2/R3 に依存する**（brief 指摘のとおり）が、TDD の外側ループ（`testing-strategy.md` §5）に従うなら **R4 が先に Red の spec を書く** のが筋。ただし本ラウンドでは編集禁止のため、次ラウンドで R4 担当が selectors/roles だけ R2/R3 と事前合意してから contract-first で着手することを推奨（例: 結果一覧見出しを追加するなら `getByRole('heading', { name: ... , level: 2 })` を Tab 到達先にする、追加しないなら「一覧のリンクへ直接到達」を到達先にする — どちらでも `tabUntilFocused` は動くため、E2E 側はこの設計判断（§7.1 の tabIndex 実装要否）を待たずに書き始められる）。
 - R2/R3 が両方 `src/ui` を触る点は分割を変えなくても runtime で解決可能: R2 は `app/globals.css` + `src/ui/components/*.tsx`（ring）+ ライブリージョン（`app/[locale]/page.tsx`）、R3 は `repository-list.tsx`/`repository-detail.tsx`/`layout.tsx`。ファイルレベルで重複していないので現行分割のままで問題ない（衝突するのは同じファイルを両方が編集する場合のみ）。
 
 ### 実測
@@ -223,7 +223,7 @@ await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toH
 1. `npx --yes lighthouse@13.4.1 --version` → `13.4.1` を正常取得（EXIT 0）。ネットワーク（npm registry）はこのコンテナから到達可能。
 2. `CHROME_PATH=/opt/pw-browsers/chromium` を設定して `npx lighthouse <url> --output=json --chrome-flags="--headless=new --no-sandbox --ssl-version-max=tls1.2"` を実行 → **成功**。JSON に `categories.accessibility.score`（0-1 の float。100 表記には ×100）、`categories.performance.score`、`runtimeError` が入る。
 3. **`CHROME_PATH` 未設定だと `ChromePathNotSetError` で即死**（exit 1・JSON 出力なし）。このコンテナには系統だった `google-chrome` 実行ファイルが存在しないため、Playwright と同じ `/opt/pw-browsers/chromium` を明示的に渡す以外の選択肢はない。`chrome-launcher` は自動ダウンロードしない（ネットワークで Chrome 本体を取ってくる動きは無い＝安全）。
-4. `npm run build` は **5.3 秒**で完走（`.next` は `.gitignore:49` で無視済み・リポジトリを汚さない）。`npm start -- --port 3100` の起動は `Ready in 137ms`。playwright.config.ts のコメントにある「180 秒の起動上限」は最悪系（コールドキャッシュの共有ランナー）を見込んだ値で、このコンテナの実測とは大きく乖離している。
+4. `npm run build` は **5.3 秒** で完走（`.next` は `.gitignore:49` で無視済み・リポジトリを汚さない）。`npm start -- --port 3100` の起動は `Ready in 137ms`。playwright.config.ts のコメントにある「180 秒の起動上限」は最悪系（コールドキャッシュの共有ランナー）を見込んだ値で、このコンテナの実測とは大きく乖離している。
 5. stub（`e2e/stub/server.mjs`）+ `next build && next start` を実際に起動し、`/ja`・`/ja?q=react`（一覧・検索実行後）・`/ja/repos/octostub/octo-widgets`（詳細）の 3 URL に Lighthouse を実行。**各回 11.7〜12.1 秒、3 回合計 35.5 秒**。現状のコードでは 3 画面とも `accessibility: 1`（100 点）、`performance: 0.99〜1`。
 6. `check_contrast.py` は `SEMANTIC_VARS`（background/muted/foreground/muted-foreground/border/accent/accent-foreground/destructive/destructive-foreground）のみを検査しており、`--ring` は対象外（`tools/check_contrast.py:178-188` に grep 一致なし）。brief の記述どおり「ring の 3:1 判定は見ていない」ことを確認した。
 
@@ -235,14 +235,14 @@ await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toH
 - **依存の入れ方**: `npx lighthouse@<pin>` の都度ネットワーク取得ではなく、**`lighthouse` を devDependencies に固定バージョンで追加**（既存の `@playwright/test": "1.56.1"` と同じ流儀）。理由: ① `npx eslint` / `npx tsc` は既にローカル devDependency 前提（bare npx 自動取得ではない）で、Lighthouse だけ都度ネットワーク依存にすると挙動が非対称になる ② レジストリ到達不能な瞬間があった場合に「依存未インストール」と同じ FAIL 扱いにできる（run_checks.sh の `DEPS_MISSING` パターンを踏襲できる）。
 - **CHROME_PATH**: `/opt/pw-browsers/chromium`（playwright と同一シンボリックリンク）をラッパー内でハードコード、または `PLAYWRIGHT_BROWSERS_PATH` から解決。E2E と実行系を分ける必要はない。
 - **対象 URL**: 一覧（`/ja?q=react` 相当・検索実行後の状態。何もしない `/ja` は空状態で情報量が少なく axe/Lighthouse の実質的なカバレッジが薄い）と詳細（`/ja/repos/octostub/octo-widgets`）の **2 画面** で十分（brief 確認事実と一致、実測 3 画面目の `/ja` 単体は付加価値が低いので削ってよい）。
-- **blocking / 記録のみの分離**: ラッパーは JSON をパースして (a) accessibility score < 1.0 → 非ゼロ exit（blocking）、(b) performance score はそのまま stdout に出力するだけで判定に使わない。run_checks.sh 側は 1 行のチェックとして追加（例 `run_check_timeout "Lighthouse a11y (一覧)" 120 node tools/run_lighthouse.mjs --url=... --page=list` を画面数ぶん）。Markdown サマリー表の PASS/FAIL 列にそのまま乗る（brief の「サマリー表への載せ方」は既存 `run_check_timeout` の枠組みをそのまま再利用すれば追加実装ゼロ）。Performance の記録は同じ行の中に `(perf=0.99)` のようにチェック名へ埋め込むか、別行 `INFO` ステータスを 1 つ新設するかは a11y_impl/e2e_verify の実装コストとの兼ね合いで決めてよいが、**新設するなら「INFO はサマリーに出るが OVERALL_EXIT に影響しない」ことをコメントで明記**すること（既存の PASS/FAIL/SKIP と混同されない設計にする）。
-- **チェッカー自体の落ちた/本当に落ちた の区別**: exit code だけでは run_checks.sh 側は区別できない（既存の仕組みが FAIL 一括り）が、**メッセージ文字列で区別可能**にできる。実測した `ChromePathNotSetError` のように、Chrome 起動失敗・JSON 未生成のケースは stderr にスタックトレースが残るので、ラッパー内で「JSON ファイルが生成されなかった」ことを検出したら `[run_lighthouse] INFRA_FAIL: Chrome 起動に失敗しました（詳細は上記ログ）` のような明示メッセージを先頭に出し、JSON が生成されて score だけ足りない場合は `[run_lighthouse] GATE_FAIL: Accessibility {n}/100（しきい値 100）` を出す。これは check_contrast.py 等の既存スクリプトが「未宣言変数」と「しきい値未達」を別メッセージで出している流儀と同じで、追加のハーネス変更は不要。
+- **blocking / 記録のみの分離**: ラッパーは JSON をパースして (a) accessibility score < 1.0 → 非ゼロ exit（blocking）、(b) performance score はそのまま stdout に出力するだけで判定に使わない。run_checks.sh 側は 1 行のチェックとして追加（例 `run_check_timeout "Lighthouse a11y (一覧)" 120 node tools/run_lighthouse.mjs --url=... --page=list` を画面数ぶん）。Markdown サマリー表の PASS/FAIL 列にそのまま乗る（brief の「サマリー表への載せ方」は既存 `run_check_timeout` の枠組みをそのまま再利用すれば追加実装ゼロ）。Performance の記録は同じ行の中に `(perf=0.99)` のようにチェック名へ埋め込むか、別行 `INFO` ステータスを 1 つ新設するかは a11y_impl/e2e_verify の実装コストとの兼ね合いで決めてよいが、**新設するなら「INFO はサマリーに出るが OVERALL_EXIT に影響しない」ことをコメントで明記** すること（既存の PASS/FAIL/SKIP と混同されない設計にする）。
+- **チェッカー自体の落ちた/本当に落ちた の区別**: exit code だけでは run_checks.sh 側は区別できない（既存の仕組みが FAIL 一括り）が、**メッセージ文字列で区別可能** にできる。実測した `ChromePathNotSetError` のように、Chrome 起動失敗・JSON 未生成のケースは stderr にスタックトレースが残るので、ラッパー内で「JSON ファイルが生成されなかった」ことを検出したら `[run_lighthouse] INFRA_FAIL: Chrome 起動に失敗しました（詳細は上記ログ）` のような明示メッセージを先頭に出し、JSON が生成されて score だけ足りない場合は `[run_lighthouse] GATE_FAIL: Accessibility {n}/100（しきい値 100）` を出す。これは check_contrast.py 等の既存スクリプトが「未宣言変数」と「しきい値未達」を別メッセージで出している流儀と同じで、追加のハーネス変更は不要。
 - **タイムアウト**: 実測 build 5 秒 + start 3 秒 + Lighthouse 2 画面 ×12 秒 ≒ 34 秒。専用タイムアウト env（例 `RUN_CHECKS_LIGHTHOUSE_TIMEOUT`、既定 180 秒）を E2E と同じパターンで新設すれば十分な余裕がある。既定の 300 秒（`RUN_CHECKS_TIMEOUT`）を流用すると Lint/型/vitest と取り合いになる問題は E2E と同じなので、E2E の前例（`RUN_CHECKS_E2E_TIMEOUT`）に倣うのが一貫性がある。
 - **採らない案**: ① **Lighthouse CI（lhci）サーバーを立てる案** — サーバー常駐・DB・設定ファイルが増える割に、ここで必要なのは「1 回叩いて score を見る」だけなので過剰実装（YAGNI）。CI という機構自体が無い前提（このセッションが直接叩く）とも整合しない。② **Actions 復旧を待つ案** — #77 は `status:blocked` で見通しが立たない。ユーザー確定事項として (a) 案を採ると決まっている以上、待ちは選択肢にならない。③ **E2E の webServer に相乗りする案（今回は採らない）** — build コストが低いことが実測でわかった以上、複雑化に見合わない。ビルド時間が将来 30 秒を超えるレベルまで悪化したら再検討でよい。
 
 ### 争点B: axe カバレッジ（infra 観点のみ）
 
-`e2e/axe.ts` の `createAxeBuilder` は `AxeBuilder` のオプション未指定 = 既定ルールセット（WCAG 2.0/2.1 A/AA 相当が中心）で動いている。`withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])` を足すのは **`e2e/axe.ts` 1 箇所の変更で済む低コストな改善**（infra 変更は不要）。実行時間への影響も誤差レベル（axe はブラウザ内 JS 実行で、ルール数が増えても走査自体はミリ秒〜数百ミリ秒オーダー）。ただし「WCAG 2.2 AA を目標として宣言できるか」という判定基準そのもの（どのタグを足すべきか・どの画面/状態を対象にするか）は a11y_impl/docs_trace の領分と考える。Lighthouse の accessibility 監査自体も axe-core をエンジンとして使っているため、**Lighthouse の accessibility=100 と Playwright の axe 直接実行は同じエンジンの重複実行**になる点は認識しておくべき（無駄ではない。Lighthouse は「素の DOM ロード直後」を、axe.spec.ts は「検索実行後の状態」を見ており対象タイミングが違う）。
+`e2e/axe.ts` の `createAxeBuilder` は `AxeBuilder` のオプション未指定 = 既定ルールセット（WCAG 2.0/2.1 A/AA 相当が中心）で動いている。`withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])` を足すのは **`e2e/axe.ts` 1 箇所の変更で済む低コストな改善**（infra 変更は不要）。実行時間への影響も誤差レベル（axe はブラウザ内 JS 実行で、ルール数が増えても走査自体はミリ秒〜数百ミリ秒オーダー）。ただし「WCAG 2.2 AA を目標として宣言できるか」という判定基準そのもの（どのタグを足すべきか・どの画面/状態を対象にするか）は a11y_impl/docs_trace の領分と考える。Lighthouse の accessibility 監査自体も axe-core をエンジンとして使っているため、**Lighthouse の accessibility=100 と Playwright の axe 直接実行は同じエンジンの重複実行** になる点は認識しておくべき（無駄ではない。Lighthouse は「素の DOM ロード直後」を、axe.spec.ts は「検索実行後の状態」を見ており対象タイミングが違う）。
 
 ### 実行時間・フレークのコスト評価（結論）
 
@@ -252,7 +252,7 @@ await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toH
 
 ### 争点E（fan-out分割・infra視点のみ）
 
-R1（判定基盤: `tools/run_checks.sh` / 新設 `tools/run_lighthouse.mjs` / `package.json`）は他ロールと**ファイルが競合しない**ため、R2（`app/globals.css` 等）・R3（`src/ui/*`）と並行着手して問題ない。R4（`e2e/*.spec.ts`）が R1 の新設スクリプトの挙動（対象 URL・スコア閾値）に依存する場合は、R1 が先に「対象 URL と判定ロジックのインターフェース」だけ 1 行仕様として共有すれば R4 は着手できる（契約先行）。
+R1（判定基盤: `tools/run_checks.sh` / 新設 `tools/run_lighthouse.mjs` / `package.json`）は他ロールと **ファイルが競合しない** ため、R2（`app/globals.css` 等）・R3（`src/ui/*`）と並行着手して問題ない。R4（`e2e/*.spec.ts`）が R1 の新設スクリプトの挙動（対象 URL・スコア閾値）に依存する場合は、R1 が先に「対象 URL と判定ロジックのインターフェース」だけ 1 行仕様として共有すれば R4 は着手できる（契約先行）。
 
 ---
 **要検証（他ロールに委ねる）**: axe の `withTags` 拡張が実際にどの新規違反を検出するか（B の本体判断）、ring コントラスト是正の具体的なトークン設計（C）、E2E での 200%/レスポンシブ判定述語（D）は本ロールの検証範囲外。
@@ -274,8 +274,8 @@ R1（判定基盤: `tools/run_checks.sh` / 新設 `tools/run_lighthouse.mjs` / `
 **重要な事実**: α=1.0（不透明）にしても、現状のライト `--ring: oklch(0.708 0 0)` は **2.593:1 が上限**（`--color-bg` 白地に対し L=0.708 では原理的に 3:1 に届かない）。つまり **不透明化だけでは足りず、ライトの L 値そのものを下げる必要がある**。ダークは不透明化だけで足りる（`oklch(0.556 0 0)` は α=1.0 で vs bg 4.183:1、vs `--muted`(カード面 0.269) でも 3.194:1 で通過）。
 
 **是正案（採用推奨）**:
-1. `app/globals.css` の `:root { --ring: oklch(0.708 0 0) }` → **`oklch(0.6 0 0)`** に変更。これは既存の `--border`（ライト）と**完全に同じ値**（§2.2 の表で 3.95:1 実測済み・新規 raw 値を増やさない）。再計算: vs `--color-bg` 白 = **3.947:1**、vs `--color-bg-subtle`（カード面 0.97）= **3.619:1**。両方 3:1 を安全マージン込みで通過。
-2. `.dark { --ring: oklch(0.556 0 0) }` は**変更不要**（vs bg 4.183:1 / vs card 3.194:1、既に通過）。
+1. `app/globals.css` の `:root { --ring: oklch(0.708 0 0) }` → **`oklch(0.6 0 0)`** に変更。これは既存の `--border`（ライト）と **完全に同じ値**（§2.2 の表で 3.95:1 実測済み・新規 raw 値を増やさない）。再計算: vs `--color-bg` 白 = **3.947:1**、vs `--color-bg-subtle`（カード面 0.97）= **3.619:1**。両方 3:1 を安全マージン込みで通過。
+2. `.dark { --ring: oklch(0.556 0 0) }` は **変更不要**（vs bg 4.183:1 / vs card 3.194:1、既に通過）。
 3. `focus-visible:ring-ring/50` → **`focus-visible:ring-ring`**（`/50` を外す）を `button.tsx` と `input.tsx` の両方に適用。
 4. 見落とし: `app/globals.css:149` の `@layer base { * { @apply border-border outline-ring/50; } }` も同じ `/50` パターンを **サイト全体のネイティブ `<a>` のデフォルトフォーカス** に適用している（Button 由来でない `Link`＝一覧の詳細リンク・`back-link.tsx`・`error-notice.tsx` の再試行リンクはここが効く）。ここも `outline-ring/50` → **`outline-ring`** に揃えないと、ボタン/入力欄だけ直って主要ナビゲーションリンクは 3:1 未達のまま残る。
 5. `check_contrast.py` の `CHECK_PAIRS` に `("ring", "background", 3.0, ...)` を追加できる状態にするのが (4) の効能でもある: `/50` を CSS 変数側でなく Tailwind ユーティリティ側の別ファイルで指定していると機械検査が拾えない。**opacity 修飾子を外して token 自体の値だけで 3:1 を満たす設計にすることで、初めて `check_contrast.py` が ring を機械検査できるようになる**（争点 A/B 側で `CHECK_PAIRS` 追加を推奨）。
@@ -286,7 +286,7 @@ R1（判定基盤: `tools/run_checks.sh` / 新設 `tools/run_lighthouse.mjs` / `
 
 `app/[locale]/page.tsx:300` の `<section aria-live="polite">` の中に、`Suspense` fallback として `LoadingIndicator`（`role="status"` + `aria-live="polite"` を自前で持つ）が挿入される。`LoadingIndicator` の呼び出し箇所は **全リポジトリ中この 1 箇所のみ**（grep 確認済み）。WAI-ARIA は入れ子のライブリージョンを避けるべきと明記しており、AT/ブラウザ組み合わせにより二重読み上げ・無視のいずれも起こりうる（未定義動作）。
 
-**是正案（採用推奨）**: `LoadingIndicator` から `role="status"` / `aria-live="polite"` を削除し、テキスト表示専用の `<p>` にする（外側の `section` が唯一のライブリージョンとして機能）。唯一の使用箇所なので**再利用時の汎用性を犠牲にしない**。`loading-indicator.test.tsx` の該当アサーション（`getByRole('status')` 等）を合わせて書き換える必要あり（Red→Green・R2 の TDD 対象）。0 件（`role="status"`, `repository-list.tsx:37`）と エラー（`role="alert"`, `error-notice.tsx:57`）は `section` の外にあるため対象外・現状のままでよい。
+**是正案（採用推奨）**: `LoadingIndicator` から `role="status"` / `aria-live="polite"` を削除し、テキスト表示専用の `<p>` にする（外側の `section` が唯一のライブリージョンとして機能）。唯一の使用箇所なので **再利用時の汎用性を犠牲にしない**。`loading-indicator.test.tsx` の該当アサーション（`getByRole('status')` 等）を合わせて書き換える必要あり（Red→Green・R2 の TDD 対象）。0 件（`role="status"`, `repository-list.tsx:37`）と エラー（`role="alert"`, `error-notice.tsx:57`）は `section` の外にあるため対象外・現状のままでよい。
 
 ## C-3. ルート変更時のフォーカス移動（§7.1）— ブリーフの前提を実地検証で覆す
 
@@ -295,12 +295,12 @@ R1（判定基盤: `tools/run_checks.sh` / 新設 `tools/run_lighthouse.mjs` / `
 - `search-form.tsx`: `<form method="get">` → 確かにネイティブフルリロード。ここは §7.1 の対象外で正しい。
 - `pagination.tsx` / `sort-picker.tsx` / `per-page-picker.tsx` / `repository-list.tsx` の詳細リンク / `back-link.tsx`: **すべて `next/link`**。App Router 配下で JS ハイドレーション後はクライアント遷移になる（フルリロードしない）。
 - `app/[locale]/layout.tsx:20-23` の `metadata.title` は **`'gem-hunter'` の静的 1 値のみ**。`app/[locale]/page.tsx` にも `app/[locale]/repos/[owner]/[repo]/page.tsx` にも `generateMetadata` は無い（grep 0 件）。つまり **一覧→詳細のクライアント遷移で `document.title` は一切変化しない**。ルートアナウンサー（brief引用の Next.js 既知挙動）は動きようがない。
-- 決定的な先例: 同ディレクトリの `not-found.tsx` は **まさにこの問題を PR #127 で対処済み**（`src/ui/set-document-title.tsx`、コメントに「ルートアナウンサーは `document.title` の変化だけを見る」と明記）。しかし成功パス（`repos/[owner]/[repo]/page.tsx`）には同等の仕組みが**無い**（grep 0 件）。0 件成功パスの詳細ページは deep link で開いても `<title>` が `gem-hunter` のまま（SSR 段階から `generateMetadata` 自体が無い）— a11y だけでなく地味な既存バグ。
-- さらに実装上の実害: `page.tsx:236` の `suspenseKey`（検索 URL 全体から生成）が `page.tsx:301`/`306` の両 `Suspense` の `key` に使われており、ページ送り・ソート・件数変更のたびに **`Pagination` を含む `SearchBody` 全体が unmount→remount される**。React の unmount はフォーカスを保持しない（ブラウザは `document.body` へ落とす）。つまり「Next page」リンクを Enter で押すと、**まさにそのリンク自体が消えてフォーカスが失われる**可能性が高い（要検証: Playwright で `document.activeElement` を押下前後で比較。`SortPicker`/`PerPagePicker` は Suspense 外にあるため対象外の可能性があるが、これも実測で確定させるべき）。
+- 決定的な先例: 同ディレクトリの `not-found.tsx` は **まさにこの問題を PR #127 で対処済み**（`src/ui/set-document-title.tsx`、コメントに「ルートアナウンサーは `document.title` の変化だけを見る」と明記）。しかし成功パス（`repos/[owner]/[repo]/page.tsx`）には同等の仕組みが **無い**（grep 0 件）。0 件成功パスの詳細ページは deep link で開いても `<title>` が `gem-hunter` のまま（SSR 段階から `generateMetadata` 自体が無い）— a11y だけでなく地味な既存バグ。
+- さらに実装上の実害: `page.tsx:236` の `suspenseKey`（検索 URL 全体から生成）が `page.tsx:301`/`306` の両 `Suspense` の `key` に使われており、ページ送り・ソート・件数変更のたびに **`Pagination` を含む `SearchBody` 全体が unmount→remount される**。React の unmount はフォーカスを保持しない（ブラウザは `document.body` へ落とす）。つまり「Next page」リンクを Enter で押すと、**まさにそのリンク自体が消えてフォーカスが失われる** 可能性が高い（要検証: Playwright で `document.activeElement` を押下前後で比較。`SortPicker`/`PerPagePicker` は Suspense 外にあるため対象外の可能性があるが、これも実測で確定させるべき）。
 
 **結論（§7.1 は書き換えない・実装すべき）**:
 - 対象範囲を明確化: **検索フォーム送信は対象外、ページ送り/ソート/件数切替/一覧⇄詳細のクライアント遷移が対象**（ドキュメント側にこの 1 行を足すのは docs_trace の担当範囲として提案）
-- 実装: (a) 一覧⇄詳細は `SetDocumentTitle` パターンを成功パスにも拡張（詳細ページに `item.fullName` を渡す。一覧側は既存の `messages.home.title` で可）。(b) ページ送り/ソート/件数切替は結果見出しに `tabIndex={-1}` を付け、`searchParams` 変化を検知する薄いクライアントコンポーネントで `.focus()` する。新規クライアントコンポーネントが最低 1〜2 個増える（`src/ui/` 配下）ため、R2 のファイル分割（globals.css / components/*.tsx / page.tsx ライブリージョン）に**新規ファイル追加の余地**を残しておくこと（E の分割案への申し送り）。
+- 実装: (a) 一覧⇄詳細は `SetDocumentTitle` パターンを成功パスにも拡張（詳細ページに `item.fullName` を渡す。一覧側は既存の `messages.home.title` で可）。(b) ページ送り/ソート/件数切替は結果見出しに `tabIndex={-1}` を付け、`searchParams` 変化を検知する薄いクライアントコンポーネントで `.focus()` する。新規クライアントコンポーネントが最低 1〜2 個増える（`src/ui/` 配下）ため、R2 のファイル分割（globals.css / components/*.tsx / page.tsx ライブリージョン）に **新規ファイル追加の余地** を残しておくこと（E の分割案への申し送り）。
 
 ## 採用しない案（明言）
 - ring: alpha だけ上げる案 → 数学的に届かないため不採用（上記）
@@ -386,7 +386,7 @@ Accessibility = 100 / Performance = 90 以上
 ```
 
 ### 判定結論
-✅ **権威順に反しない**。ユーザーが 2026-08-20 に明示確定した時点で、prd.md（仕様）は**下位階層**。新しい事実（Performance 要件ドロップ）は、ユーザー明示が上位であるため、prd.md を修正するのは権威順に従った正しい行動。
+✅ **権威順に反しない**。ユーザーが 2026-08-20 に明示確定した時点で、prd.md（仕様）は **下位階層**。新しい事実（Performance 要件ドロップ）は、ユーザー明示が上位であるため、prd.md を修正するのは権威順に従った正しい行動。
 
 ### 修正アプローチ
 **案 A**（推奨）: prd.md NFR-27 本文から Performance 要件を削除。注記も相応に削除。
@@ -473,11 +473,11 @@ R3: src/ui/repository-list.tsx + src/ui/repository-detail.tsx + app/[locale]/lay
 
 e2e_verify の自己批判（構造チェックは box-shadow の *値* の後退を捕まえられない）は正しい。私の round1 で確認済みの事実（`tools/check_contrast.py:178-188` の `SEMANTIC_VARS`/`CHECK_PAIRS` に ring が無い）と、a11y_impl が独立に出した提案（「opacity 修飾子を外して token 自体の値だけで 3:1 を満たす設計にすれば `check_contrast.py` が機械検査できる」）が三者一致した。
 
-**担当確定を明言する**: `check_contrast.py` への `("ring", "background", 3.0, ...)`（と `card` 面用の 1 ペア）追加は **R1（gate_infra）が実装する**。理由: これは UI 実装ファイルではなく「判定基盤」そのものであり、R1 が既に所有する `run_checks.sh` 系の機械ゲートスクリプト群と同じ性質。既存の `resolve_srgb`/`evaluate_theme` はトークン名を CSS から動的に読むので、**R2 が `--ring` の最終値を何に決めても R1 側のコード変更は「ペアを 1 行足すだけ」で完結**し、値の調整を待つ必要はない（`SEMANTIC_VARS` に `"ring"` を足し `CHECK_PAIRS` に行を足すだけ・opacity 修飾子が CSS 変数側から無くなっている前提は R2 の実装完了が条件）。E2E（e2e_verify/R4）は「リングが消えていないか」の存在チェックに専念してよい、と役割分担を確定させる。
+**担当確定を明言する**: `check_contrast.py` への `("ring", "background", 3.0, ...)`（と `card` 面用の 1 ペア）追加は **R1（gate_infra）が実装する**。理由: これは UI 実装ファイルではなく「判定基盤」そのものであり、R1 が既に所有する `run_checks.sh` 系の機械ゲートスクリプト群と同じ性質。既存の `resolve_srgb`/`evaluate_theme` はトークン名を CSS から動的に読むので、**R2 が `--ring` の最終値を何に決めても R1 側のコード変更は「ペアを 1 行足すだけ」で完結** し、値の調整を待つ必要はない（`SEMANTIC_VARS` に `"ring"` を足し `CHECK_PAIRS` に行を足すだけ・opacity 修飾子が CSS 変数側から無くなっている前提は R2 の実装完了が条件）。E2E（e2e_verify/R4）は「リングが消えていないか」の存在チェックに専念してよい、と役割分担を確定させる。
 
 ### 2) a11y_impl の `--ring` ライト値変更 → Lighthouse a11y=100 は維持されるか
 
-**断定はできない。ただし強い状況証拠がある**: 私が round1 で実測した「現状（`/50` 付き・2.51〜1.55:1 で未達）の 3 画面はすべて `accessibility: 1`（100 点）」という事実そのものが、**Lighthouse の accessibility カテゴリが今この非適合状態を一切検出していない**ことの直接証拠になる。Lighthouse の accessibility 監査は axe-core ベースの **静的 DOM スナップショット監査**で、`:focus-visible` をトリガーする操作（Tab 押下）を行わない。つまり「リングが 1.55:1 か 3.95:1 か」は監査対象の DOM 状態に現れず、**現状の失敗が既に見逃されている以上、値を変えても Lighthouse 側のスコアには反映されない可能性が高い**。
+**断定はできない。ただし強い状況証拠がある**: 私が round1 で実測した「現状（`/50` 付き・2.51〜1.55:1 で未達）の 3 画面はすべて `accessibility: 1`（100 点）」という事実そのものが、**Lighthouse の accessibility カテゴリが今この非適合状態を一切検出していない** ことの直接証拠になる。Lighthouse の accessibility 監査は axe-core ベースの **静的 DOM スナップショット監査** で、`:focus-visible` をトリガーする操作（Tab 押下）を行わない。つまり「リングが 1.55:1 か 3.95:1 か」は監査対象の DOM 状態に現れず、**現状の失敗が既に見逃されている以上、値を変えても Lighthouse 側のスコアには反映されない可能性が高い**。
 
 ただし私はこれを「axe-core のルールセットにその判定が無い」と一次情報で確認したわけではない（axe-core のソース/ルール定義までは round1 で読んでいない）。**言えないので明言する: R2 の実装後、必ず Lighthouse を再計測する。** これは私の設計上も自然な帰結で、run_checks.sh に配線した Lighthouse ステップは「一度実測して終わり」ではなく「R2/R3 の変更を含む PR がこのステップを通るかどうか」でゲートするものなので、再計測は追加作業ではなく **ゲートの本来の役目そのもの**。逆に言えば、C-2（LoadingIndicator の role/aria-live 削除）のような aria 属性の変更は axe-core の標準ルール（`aria-valid-attr-value` 等）に触れる可能性があり、こちらは ring より Lighthouse スコアに影響しうる変更として要注意（こちらも実装後の実測が必須）。
 
@@ -493,7 +493,7 @@ e2e_verify の自己批判（構造チェックは box-shadow の *値* の後�
 
 `run_checks.sh` 全体の壁時計時間としては Lighthouse ステップの追加分（約 44 秒）は、既存の E2E ステップ（600 秒予算）に比べれば誤差レベルの増分。
 
-**1 点だけ自分の round1 案にリスクを見つけたので修正する**: 私と e2e_verify はどちらも `next start --port 3100`（`playwright.config.ts` と同じポート）を使って実測した。`run_checks.sh` は E2E ステップ→（間に他の軽量チェック）→Lighthouse ステップの順で **逐次実行**なので通常は衝突しないはずだが、E2E 側のビルドプロセスが異常終了時に `--port 3100` を掴んだまま残るケース（今回私自身が手動起動したサーバーのプロセス終了に `kill` を要した）を考えると、**Lighthouse 側は port 3100 を再利用せず別ポート（例 3101）を使う**ほうが安全。コストはゼロ（env の port 番号を変えるだけ）なので、この修正を採用することを提案する。
+**1 点だけ自分の round1 案にリスクを見つけたので修正する**: 私と e2e_verify はどちらも `next start --port 3100`（`playwright.config.ts` と同じポート）を使って実測した。`run_checks.sh` は E2E ステップ→（間に他の軽量チェック）→Lighthouse ステップの順で **逐次実行** なので通常は衝突しないはずだが、E2E 側のビルドプロセスが異常終了時に `--port 3100` を掴んだまま残るケース（今回私自身が手動起動したサーバーのプロセス終了に `kill` を要した）を考えると、**Lighthouse 側は port 3100 を再利用せず別ポート（例 3101）を使う** ほうが安全。コストはゼロ（env の port 番号を変えるだけ）なので、この修正を採用することを提案する。
 
 ### `a11y_impl` — 反論
 <sub>2026-08-20T11:29:23+09:00</sub>
@@ -518,15 +518,15 @@ e2e_verify の自己批判（構造チェックは box-shadow の *値* の後�
 **ゲート設計への含意（結論）**: 「Lighthouse Accessibility=100 を blocking にすれば a11y は担保できる」という単純化は誤り。三層で守る設計が必要で、**どの層が何を担当するかを明確に切り分ける**:
 1. Lighthouse（axe-core・DOM 静的解析）— 広範囲の一般的違反（alt 欠落・ラベル欠落・ARIA 誤用等）。**フォーカスリング色は担当外**。
 2. `check_contrast.py`（本ラウンドで ring 拡張）— **トークン値そのものの 3:1 判定**。#179 のような「デザイントークンの後退」を確実に、決定論的に検知できる唯一の層。
-3. E2E 構造チェック（e2e_verify 提案）— リング自体の**消失**（`box-shadow: none` への regression）を検知。
+3. E2E 構造チェック（e2e_verify 提案）— リング自体の **消失**（`box-shadow: none` への regression）を検知。
 
-**含意**: Lighthouse=100 を blocking にする決定（ユーザー確定事項）は覆さないが、**それだけでは #179 類を防げないので、争点C の是正（`--ring` トークン変更 + `/50` 除去）と check_contrast.py 拡張を Lighthouse 配線と**同格の必須実装**として扱うべき**。「Lighthouse が緑だから ring は健全」という誤った安心感を生まないよう、docs_trace には §7.3 追記（3.で後述）にこの三層の役割分担を 1 行残すことを提案する。
+**含意**: Lighthouse=100 を blocking にする決定（ユーザー確定事項）は覆さないが、**それだけでは #179 類を防げないので、争点C の是正（`--ring` トークン変更 + `/50` 除去）と check_contrast.py 拡張を Lighthouse 配線と** 同格の必須実装 **として扱うべき**。「Lighthouse が緑だから ring は健全」という誤った安心感を生まないよう、docs_trace には §7.3 追記（3.で後述）にこの三層の役割分担を 1 行残すことを提案する。
 
 ## 3. `--ring` = `--border` と同値問題 — **自己批判を認める（部分的譲歩）**
 
 **計算結果**: ライトテーマは `--border: oklch(0.6 0 0)` と提案した `--ring: oklch(0.6 0 0)` は **sRGB で完全に同一値**（`(0.5021, 0.5021, 0.5021)`）。ダークテーマは `--border: oklch(0.55 0 0)` vs `--ring: oklch(0.556 0 0)`（変更なし）で自己コントラスト比 **1.025:1**（知覚的に区別不能なレベル）。
 
-**認める点**: `button.tsx` の `variant=outline` に限り、resting border（`border-border`）と focus border（`focus-visible:border-ring`）の**色そのもの**は視覚的に区別できない。これは事実で、争点 C の「区別できると言うなら根拠を」に対して「1px 境界線の色だけを見れば区別できない」と認める。
+**認める点**: `button.tsx` の `variant=outline` に限り、resting border（`border-border`）と focus border（`focus-visible:border-ring`）の **色そのもの** は視覚的に区別できない。これは事実で、争点 C の「区別できると言うなら根拠を」に対して「1px 境界線の色だけを見れば区別できない」と認める。
 
 **しかし全体としては区別できると主張する（部分譲歩に留める理由）**: フォーカス状態の一次的な視覚差分は境界線の色ではなく、**`focus-visible:ring-3` が追加する 3px の box-shadow の有無**（0px → 3px への幅の変化）である。これは色ではなく形状・面積の変化なので、①resting には box-shadow が無く focus には有る、という **バイナリな存在差** で常に区別可能（1px の境界線色が偶然一致しても、その外側に新たに 3px の面が出現する事実は変わらない）。したがって SC 1.4.1（色のみに頼らない）にも抵触しない。`variant=outline` 以外（`default`/`secondary`/`ghost`/`destructive`/`link`）は resting が `border-transparent` なので、境界線の色自体も透明→`--ring` へと明確に変化し、この問題は発生しない（`button.tsx:8` の base class 参照）。`input.tsx` は resting が `border-input`（ライト `oklch(0.922 0 0)`／ダーク `oklch(1 0 0 / 15%)`）で `--ring` と大きく異なるため無関係（問題なし）。
 
@@ -534,9 +534,9 @@ e2e_verify の自己批判（構造チェックは box-shadow の *値* の後�
 
 ## 4. docs_trace とのすり合わせ — §7.1 は対象外リストに無かった
 
-docs_trace の round1「結論」表（項目 1〜5）を確認したところ、**§7.1 の書き換えは挙げられていない**（挙げられているのは §7.3 新規追記＝リング 3:1・ライブリージョン入れ子禁止のみ）。これは私の round1 結論（「§7.1 は書き換えずに実装すべき」）と**矛盾しない**——docs_trace も暗黙に §7.1 を現状維持前提として扱っている。
+docs_trace の round1「結論」表（項目 1〜5）を確認したところ、**§7.1 の書き換えは挙げられていない**（挙げられているのは §7.3 新規追記＝リング 3:1・ライブリージョン入れ子禁止のみ）。これは私の round1 結論（「§7.1 は書き換えずに実装すべき」）と **矛盾しない**——docs_trace も暗黙に §7.1 を現状維持前提として扱っている。
 
-ただし docs_trace の §7.3 追記案には無い、**§7.1 自体に足すべき 1 行**を提案する: 「本節の対象は `next/link` によるクライアント遷移（ページ送り・ソート・件数切替・一覧⇄詳細）であり、`search-form.tsx` のネイティブ GET フォーム送信（フルリロード）は対象外」。理由は round1 で示した事実（`layout.tsx` の `title` が全ルート静的固定・`suspenseKey` remount で `Pagination` が unmount される）に基づく適用範囲の明確化であり、新しい決定の追加ではなく**既存要件の射程を文書上でも明確にするだけ**なので、docs_trace の「決定の記録先を統一する」方針（項目4）とも整合する。docs_trace へ次ラウンドでこの 1 行を §7.1 に追記するよう申し送る。
+ただし docs_trace の §7.3 追記案には無い、**§7.1 自体に足すべき 1 行** を提案する: 「本節の対象は `next/link` によるクライアント遷移（ページ送り・ソート・件数切替・一覧⇄詳細）であり、`search-form.tsx` のネイティブ GET フォーム送信（フルリロード）は対象外」。理由は round1 で示した事実（`layout.tsx` の `title` が全ルート静的固定・`suspenseKey` remount で `Pagination` が unmount される）に基づく適用範囲の明確化であり、新しい決定の追加ではなく **既存要件の射程を文書上でも明確にするだけ** なので、docs_trace の「決定の記録先を統一する」方針（項目4）とも整合する。docs_trace へ次ラウンドでこの 1 行を §7.1 に追記するよう申し送る。
 
 ### `e2e_verify` — 譲歩
 <sub>2026-08-20T11:32:00+09:00</sub>
@@ -573,13 +573,13 @@ round1 で読んだ `e2e/sp-9-a11y.spec.ts` の内容から: 読み込み中を�
 ```
 これは `LoadingIndicator` 自身の既存ドキュメントコメントにある「`role="status"`（暗黙で `polite`）に `aria-live="polite"` を明示併記する」という **同じパターンを 1 段上の要素に移すだけ**。`getByRole('status')` はロケータの解決先要素が変わるだけで、テキスト内容（読み込み中は `LoadingIndicator` のラベル、解決後は件数文言）は今までと同じものを返し続ける。**この形なら `e2e/sp-9-a11y.spec.ts` は無改修のまま緑を維持できる**。壊れるのは `loading-indicator.test.tsx`（コンポーネント単体を隔離して role/aria-live を assert している unit test）だけになる。
 
-**intent-gate 権威順での結論**: `ui-ux-guidelines.md` §7.2（仕様）が要求しているのは「件数通知は `role="status"`（1 箇所のみ・入れ子禁止）」という **画面レベルの契約**であり、「`LoadingIndicator` というコンポーネント自身が role を持つこと」までは要求していない。`loading-indicator.test.tsx` の現行アサーションは後者（コンポーネント単体の実装詳細）を固定しているに過ぎず、これは 仕様 ではなく 現行コード 相当。§0/§3 item0 の 4 分岐でいう「最も単純な合理的解釈」は「role を section 側へ移し、仕様の要求（入れ子禁止・唯一の role=status）を満たす形へ両方を揃える」であり、a11y_impl の C-2 提案（削除するだけ）を **`role="status"` を section へ足す形に修正した上で採用すべき**。`loading-indicator.test.tsx` の書き換えは正当（仕様に矛盾するテストを守るための黙った実装改変ではなく、逆＝古い実装詳細を固定したテストを仕様に合わせて直す）。ただし `testing-strategy.md` §5 の順序（`test:` → `feat:`）を守り、コミットで「#180 是正に伴う仕様変更」と明記すること（L-113 のサイレント書き換え禁止と矛盾しない）。
+**intent-gate 権威順での結論**: `ui-ux-guidelines.md` §7.2（仕様）が要求しているのは「件数通知は `role="status"`（1 箇所のみ・入れ子禁止）」という **画面レベルの契約** であり、「`LoadingIndicator` というコンポーネント自身が role を持つこと」までは要求していない。`loading-indicator.test.tsx` の現行アサーションは後者（コンポーネント単体の実装詳細）を固定しているに過ぎず、これは 仕様 ではなく 現行コード 相当。§0/§3 item0 の 4 分岐でいう「最も単純な合理的解釈」は「role を section 側へ移し、仕様の要求（入れ子禁止・唯一の role=status）を満たす形へ両方を揃える」であり、a11y_impl の C-2 提案（削除するだけ）を **`role="status"` を section へ足す形に修正した上で採用すべき**。`loading-indicator.test.tsx` の書き換えは正当（仕様に矛盾するテストを守るための黙った実装改変ではなく、逆＝古い実装詳細を固定したテストを仕様に合わせて直す）。ただし `testing-strategy.md` §5 の順序（`test:` → `feat:`）を守り、コミットで「#180 是正に伴う仕様変更」と明記すること（L-113 のサイレント書き換え禁止と矛盾しない）。
 
 ### 2. gate_infra の時間見積り依頼 — 質問の前提を訂正した上で見積もる
 
 **訂正**: 「Lighthouse 3 画面 35.5 秒」（gate_infra 実測）と「`a11y.spec.ts` 36.5 秒」（私の実測）は **同じタイムアウト予算を取り合わない別ステップ**。gate_infra の R1 提案は Lighthouse を `run_checks.sh` の **専用ステップ**（新設 `RUN_CHECKS_LIGHTHOUSE_TIMEOUT`、既定 180 秒案）として叩く設計で、`RUN_CHECKS_E2E_TIMEOUT`（Playwright の `npm run test:e2e` 一括実行）とは別枠。したがって両者を単純合算して 1 つのタイムアウトと比較するのは誤り。「E2E 総時間」は Playwright ステップ（`e2e/*.spec.ts` 全ファイルが単一 `webServer` を共有する 1 プロセス実行）だけで見積もるべき質問だと解釈して答える。
 
-**見積り（外挿・未実測・要検証と明記）**: 実測できているのは `a11y.spec.ts`（2 テスト・real 36.5s、コールドビルド 1 回分を含む）だけ。`playwright.config.ts` は `workers: 1` かつ `webServer` を全 spec ファイルで共有するため、ビルド/起動コスト（概算 8〜10 秒: gate_infra 実測 `next build` 5.3 秒 + `next start` の ready 検出 + Chromium 起動）は **1 回だけ**発生し、残りは各テストの実行時間の積み上げ。
+**見積り（外挿・未実測・要検証と明記）**: 実測できているのは `a11y.spec.ts`（2 テスト・real 36.5s、コールドビルド 1 回分を含む）だけ。`playwright.config.ts` は `workers: 1` かつ `webServer` を全 spec ファイルで共有するため、ビルド/起動コスト（概算 8〜10 秒: gate_infra 実測 `next build` 5.3 秒 + `next start` の ready 検出 + Chromium 起動）は **1 回だけ** 発生し、残りは各テストの実行時間の積み上げ。
 - `a11y.spec.ts`（axe 2 回）: 実測 36.5s（ビルド込み）
 - `sp-9-a11y.spec.ts`（axe 4 回 + DOM 検証 1 回・5 テスト）: axe 1 回あたりのコストを `a11y.spec.ts` から逆算（(36.5 − 9)/2 ≒ 13.75s/回）すると概算 4×13.75 + 3 ≒ 58s
 - `sp-7.spec.ts`（1 テスト・5 ステップ・末尾で axe 1 回）: 概算 20〜25s
@@ -618,16 +618,16 @@ export async function tabUntilFocused(page: Page, target: Locator, maxPresses = 
 ## 合意した点（4 名一致・または反論を経て収束）
 
 1. **Lighthouse はこのコンテナで実行できる**（gate_infra が実測: `CHROME_PATH=/opt/pw-browsers/chromium` 必須・未設定だと `ChromePathNotSetError` で即死。3 画面 35.5 秒・`next build` 5.3 秒）。ユーザー確定事項（案 (a)）は実装可能。
-2. **Lighthouse Accessibility = 100 は「a11y が担保された」ことを意味しない**。現状の未達リング（1.545:1）でも 3 画面すべて `accessibility: 1` が出ている（gate_infra 実測）。axe-core は `:focus-visible` を発火させないため、**#179 クラスの欠陥は Lighthouse でも axe でも検出できない**（a11y_impl・gate_infra が独立に到達し e2e_verify が追認）。→ **三層防御**で切り分ける:
+2. **Lighthouse Accessibility = 100 は「a11y が担保された」ことを意味しない**。現状の未達リング（1.545:1）でも 3 画面すべて `accessibility: 1` が出ている（gate_infra 実測）。axe-core は `:focus-visible` を発火させないため、**#179 クラスの欠陥は Lighthouse でも axe でも検出できない**（a11y_impl・gate_infra が独立に到達し e2e_verify が追認）。→ **三層防御** で切り分ける:
    - Lighthouse / axe（DOM 静的解析）: alt 欠落・ラベル欠落・ARIA 誤用など広範な一般違反
    - `check_contrast.py`（静的トークン検査）: **トークン値の 3:1 判定**。#179 クラスを決定論的に捕まえる唯一の層
-   - E2E（構造・到達）: リングの**消失**とフォーカスの**喪失・到達不能**
+   - E2E（構造・到達）: リングの **消失** とフォーカスの **喪失・到達不能**
 3. **`--ring` はライトのみ値を下げる必要がある**。α=1.0 にしてもライトの `oklch(0.708 0 0)` は上限 2.593:1 で 3:1 に届かない（a11y_impl が `check_contrast.py` の関数を import して計算）。ダークは `/50` を外すだけで通過（4.183:1 / 3.194:1）。
 4. **`/50` は 3 箇所すべてから外す**。`button.tsx` / `input.tsx` だけ直しても `globals.css:149` の `outline-ring/50` が効くネイティブ `<a>`（詳細リンク・戻るリンク・再試行リンク）が未達のまま残る（a11y_impl の発見）。加えて **Tailwind ユーティリティ側の `/NN` を使っている限り `check_contrast.py` は値を検査できない**（globals.css しか読まないため）。→ 「透明度は CSS 変数側に埋め込む・`ring`/`outline` にユーティリティ側 opacity を使わない」を実装ルールにすることで、初めて機械検査が成立する。
-5. **#180 の是正は「削除するだけ」では不足**。`LoadingIndicator` から `role="status"` を単純削除すると `e2e/sp-9-a11y.spec.ts` L58-75（`page.locator('main').getByRole('status')`）が 0 件マッチで**赤くなる**（e2e_verify が指摘）。→ **外側 `<section id="search-status">` に `role="status"` を足したうえで `LoadingIndicator` 側から `role`/`aria-live` を外す**。これで入れ子が解消し E2E は無改修で緑を維持、壊れるのは実装詳細を固定していた `loading-indicator.test.tsx` だけになる。権威順（仕様 > テスト > 現行コード）で正当（§7.2 が要求するのは「画面に唯一の `role="status"`」であってコンポーネントが role を持つことではない）。
-6. **§7.1 のフォーカス移動は「GET フォームだから不要」ではない**（a11y_impl が実地で反証）。`pagination` / `sort-picker` / `per-page-picker` / 詳細リンク / `back-link` は **すべて `next/link`** でクライアント遷移し、`layout.tsx` の `title` は全ルート静的固定・`generateMetadata` 0 件のため route announcer は発火しない。さらに `page.tsx:236` の `suspenseKey` remount で `Pagination` 自体が unmount され、**押したリンクが消えてフォーカスが `body` に落ちる**。→ §7.1 は書き換えず**実装する**。適用範囲（GET フォーム送信は対象外）を §7.1 に 1 行追記する。
-7. **200% 拡大は `page.setViewportSize({ width: 640 })`**（1280 の半分）で代理する。`deviceScaleFactor` / `--force-device-scale-factor` は CSS px のレイアウト幅を変えず reflow を検証できないため不採用、CSS `zoom` は「ブラウザズームへの対応」ではなく「zoom プロパティへの対応」を測ってしまうため不採用（e2e_verify・却下理由付き）。スマホ幅 375px は**別 viewport**として区別する（操作レビュー (2) と (3) は別 SC）。
-8. **時間予算は成立する**。Lighthouse は E2E とは**別ステップ・別タイムアウト**（新設 `RUN_CHECKS_LIGHTHOUSE_TIMEOUT` 既定 180 秒）なので加算されない。ポートは E2E（3100）と分けて 3101 を使う（gate_infra が自分の round1 案を自己修正）。
+5. **#180 の是正は「削除するだけ」では不足**。`LoadingIndicator` から `role="status"` を単純削除すると `e2e/sp-9-a11y.spec.ts` L58-75（`page.locator('main').getByRole('status')`）が 0 件マッチで **赤くなる**（e2e_verify が指摘）。→ **外側 `<section id="search-status">` に `role="status"` を足したうえで `LoadingIndicator` 側から `role`/`aria-live` を外す**。これで入れ子が解消し E2E は無改修で緑を維持、壊れるのは実装詳細を固定していた `loading-indicator.test.tsx` だけになる。権威順（仕様 > テスト > 現行コード）で正当（§7.2 が要求するのは「画面に唯一の `role="status"`」であってコンポーネントが role を持つことではない）。
+6. **§7.1 のフォーカス移動は「GET フォームだから不要」ではない**（a11y_impl が実地で反証）。`pagination` / `sort-picker` / `per-page-picker` / 詳細リンク / `back-link` は **すべて `next/link`** でクライアント遷移し、`layout.tsx` の `title` は全ルート静的固定・`generateMetadata` 0 件のため route announcer は発火しない。さらに `page.tsx:236` の `suspenseKey` remount で `Pagination` 自体が unmount され、**押したリンクが消えてフォーカスが `body` に落ちる**。→ §7.1 は書き換えず **実装する**。適用範囲（GET フォーム送信は対象外）を §7.1 に 1 行追記する。
+7. **200% 拡大は `page.setViewportSize({ width: 640 })`**（1280 の半分）で代理する。`deviceScaleFactor` / `--force-device-scale-factor` は CSS px のレイアウト幅を変えず reflow を検証できないため不採用、CSS `zoom` は「ブラウザズームへの対応」ではなく「zoom プロパティへの対応」を測ってしまうため不採用（e2e_verify・却下理由付き）。スマホ幅 375px は **別 viewport** として区別する（操作レビュー (2) と (3) は別 SC）。
+8. **時間予算は成立する**。Lighthouse は E2E とは **別ステップ・別タイムアウト**（新設 `RUN_CHECKS_LIGHTHOUSE_TIMEOUT` 既定 180 秒）なので加算されない。ポートは E2E（3100）と分けて 3101 を使う（gate_infra が自分の round1 案を自己修正）。
 9. **`NFR-27` の矛盾はドキュメント側だけで生じる**。配線案の実装には「Performance 90 以上」という閾値が最初から存在しない。ユーザー明示 > 仕様の権威順により `prd.md` を書き換えるのが正しい（docs_trace 判定）。数値は削除せず「目安値として計測・記録する（未達でもゲートしない）」の形にして差分を最小化する。
 
 ## 収束した対立点
@@ -635,9 +635,9 @@ export async function tabUntilFocused(page: Page, target: Locator, maxPresses = 
 | 対立 | 決着 |
 |---|---|
 | ring 色の後退を E2E で検知できるか | **できない**（e2e_verify が自己批判 → a11y_impl・gate_infra が同意）。`check_contrast.py` 拡張が担当層。実装は **R1**（判定基盤の所有者）が行い、値の確定を待たずにペアを足せる |
-| `--ring` = `--border` 同値でフォーカスが区別できないのでは | **`variant=outline` の 1px 境界線色だけは区別できない**と a11y_impl が譲歩。ただし `ring-3` の 3px box-shadow の**有無**というバイナリな形状差で区別可能（SC 1.4.1 にも抵触しない）。彩度を持たせる代替案は「色の意味体系」への影響が争点外のため不採用。**既知のトレードオフとして PR に 1 行明記する** |
-| `LoadingIndicator` から role を削除してよいか | **削除するだけは不可**（E2E を壊す）。**section 側に `role="status"` を足す**形へ修正して採用 |
-| ring 変更後も Lighthouse=100 か | **断定しない**。gate_infra が「変わらない可能性が高い」としつつ**実装後の再計測を必須**と明言。ゲートの本来の役目なので追加作業ではない |
+| `--ring` = `--border` 同値でフォーカスが区別できないのでは | **`variant=outline` の 1px 境界線色だけは区別できない** と a11y_impl が譲歩。ただし `ring-3` の 3px box-shadow の **有無** というバイナリな形状差で区別可能（SC 1.4.1 にも抵触しない）。彩度を持たせる代替案は「色の意味体系」への影響が争点外のため不採用。**既知のトレードオフとして PR に 1 行明記する** |
+| `LoadingIndicator` から role を削除してよいか | **削除するだけは不可**（E2E を壊す）。**section 側に `role="status"` を足す** 形へ修正して採用 |
+| ring 変更後も Lighthouse=100 か | **断定しない**。gate_infra が「変わらない可能性が高い」としつつ **実装後の再計測を必須** と明言。ゲートの本来の役目なので追加作業ではない |
 | E2E 総時間 | **約 145〜175 秒の外挿（実測ではない）**。R1 または実装後のセッションが全 spec を 1 回実測して確定する |
 
 ## 不採用（明言）

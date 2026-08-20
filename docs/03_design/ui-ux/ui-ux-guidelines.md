@@ -291,6 +291,18 @@ GitHub 検索結果の情報順序をベースラインに採る。
 
 ## 7. アクセシビリティ実装（`NFR-10`〜`NFR-14` / `NFR-26`）
 
+### 🔴 機械ゲートの三層防御（役割分担・SSOT はここ 1 箇所のみ）
+
+`SP-10` 実装スプリントの議論で確定（`content/discussions/sp10_a11y_20260820/`）。Lighthouse の Accessibility = 100 は「a11y が担保された」ことを意味しない（axe-core は `:focus-visible` を発火させないため、フォーカスリングの非テキストコントラスト等 SC 1.4.11 系の欠陥は検出できない）。1 層だけで守ろうとせず、以下 3 層で分担する。
+
+| 層 | 担当 | 検出できるもの |
+|---|---|---|
+| Lighthouse / axe（DOM 静的解析） | `tools/run_lighthouse.mjs`・`e2e/axe.ts` | alt 欠落・ラベル欠落・ARIA 誤用など広範な一般違反 |
+| `tools/check_contrast.py`（静的トークン検査） | デザイントークンの値 | フォーカスリング等のコントラスト値そのものの 3:1 判定（#179 クラスを決定論的に捕まえる唯一の層） |
+| E2E（構造・到達） | `e2e/sp-10.spec.ts` | フォーカスリングの **消失**、フォーカスの **喪失・到達不能** |
+
+「Lighthouse が緑だから a11y は健全」と早合点しない。
+
 ### 7.1. 🔴 Next.js 固有の必須対応: ルート変更のアナウンス
 
 Next.js の route announcer は **document title が変化しないと何もアナウンスしない**（既知の issue）。本アプリはページ送り・ソート切替で `searchParams` だけが変わるため **直撃する**。
@@ -304,6 +316,8 @@ Next.js の route announcer は **document title が変化しないと何もア�
 
 これがないと `AC-8`（状態変化を支援技術に伝える）を満たせない。
 
+🔴 **本節の対象は `next/link` によるクライアント遷移**（ページ送り・ソート・件数切替・一覧⇄詳細）であり、`search-form.tsx` のネイティブ GET フォーム送信（ページ全体のフルリロード）は対象外。
+
 ### 7.2. `aria-live`
 
 - 件数通知は **`role="status"`**（暗黙で `polite` + `atomic`）
@@ -315,6 +329,7 @@ Next.js の route announcer は **document title が変化しないと何もア�
 - 🔴 **`:focus` ではなく `:focus-visible`** を使う
 - 🔴 **`outline-none` を単独で書かない。** 必ず `focus-visible:ring-*` と対にする
 - リングのコントラストは **3:1 以上**、太さ 2px 相当以上
+- 🔴 **透明度は CSS 変数側に埋め込み、Tailwind ユーティリティ側の `/NN` サフィックスを `ring`/`outline` に使わない**（例: `focus-visible:ring-ring/50` は禁止。半透明にしたいなら `--ring: oklch(L C H / A%)` のように変数の宣言値へ alpha を埋め込む）。`tools/check_contrast.py` は CSS 変数の宣言値しか読まないため、ユーティリティ側 opacity を使うと機械検査が値を読めなくなる
 - sticky ヘッダーを置くなら、フォーカス移動先に **`scroll-margin-top`** をヘッダー高さ分設定する（WCAG 2.2 の 2.4.11）
 
 ### 7.4. 画像の代替テキスト（`NFR-14` の方針確定）
@@ -415,7 +430,7 @@ next.config: images.remotePatterns に
 - [ ] §1 のスタック以外のランタイム依存を追加していない
 - [ ] §2 のセマンティックトークン経由で色を参照している（生の色名の直書きがない）
 - [ ] §4.3 のカードリンクパターンを使っている（カード全体を `<a>` で包んでいない）
-- [ ] §4.4 の 4 状態が実装されている。**レイアウトシフトの有無は目視で判定せず、Lighthouse CI の CLS 実測値で判定する**（`NFR-1` の 0.1 以下）
+- [ ] §4.4 の 4 状態が実装されている。**レイアウトシフトの有無は目視で判定せず、`tools/run_checks.sh` で実行される Lighthouse の CLS 実測値で判定する**（`NFR-1` の 0.1 以下）
 - [ ] §5.2 のエラー種別ごとに文言が分かれている
 - [ ] §2.4 のコントロールサイズトークンを cva の `size` variant 経由でのみ参照し、`tools/check_ui_dimensions.py` が PASS する
 - [ ] §7.1 のフォーカス移動が実装されている（⚠️ **実装は `SP-10`（`E-15`）の射程**。`SP-9` は状態の可視化とアナウンスまでを担い、`AC-8` の完全達成は `SP-10` 時点）

@@ -130,6 +130,23 @@ else
   run_check_timeout "E2E (playwright test)" "$E2E_TIMEOUT_SEC" npx playwright test
 fi
 
+# 3.6. Lighthouse（Accessibility ゲート・SP-10 / Issue #181）
+# 🔴 Accessibility = 100 は blocking、Performance は記録のみ（run_checks.sh 内で判定に使わない）。
+#    E2E とは別ステップ・別タイムアウト（RUN_CHECKS_TIMEOUT を流用すると Lint/型/vitest と取り合いになる
+#    E2E と同じ理由）。実測 build 5 秒 + start 数秒 + 2 画面 12 秒/回 ≒ 40 秒台のため既定 180 秒で十分な余裕。
+LIGHTHOUSE_TIMEOUT_SEC="${RUN_CHECKS_LIGHTHOUSE_TIMEOUT:-180}"
+if [ "${SKIP_LIGHTHOUSE:-0}" = "1" ]; then
+  skip_check "Lighthouse (Accessibility gate)" "SKIP_LIGHTHOUSE=1 が指定されたためスキップしました。黙って緑にしないための明示表示"
+elif [ "$HAS_NODE_PROJECT" -eq 0 ]; then
+  skip_check "Lighthouse (Accessibility gate)" "package.json が無い（アプリコード導入前）"
+elif [ ! -f "$REPO_ROOT/node_modules/.bin/lighthouse" ]; then
+  echo "[run_checks] FAIL: Lighthouse (Accessibility gate)（lighthouse が未インストールのため実行できません。'npm ci' を実行してください）"
+  RESULTS+=("Lighthouse (Accessibility gate)|FAIL|0")
+  OVERALL_EXIT=1
+else
+  run_check_timeout "Lighthouse (Accessibility gate)" "$LIGHTHOUSE_TIMEOUT_SEC" node tools/run_lighthouse.mjs
+fi
+
 # 4. 依存規則（クリーンアーキテクチャ）
 if [ -f "$REPO_ROOT/tools/check_architecture_boundaries.py" ]; then
   run_check "依存規則 (check_architecture_boundaries.py)" python3 tools/check_architecture_boundaries.py

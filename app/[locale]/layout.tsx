@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
@@ -20,6 +20,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'gem-hunter',
   description: 'GitHub から埋もれた良質なリポジトリを見つける',
+}
+
+/**
+ * viewport export が無いと Next.js は `<meta name="viewport">` を一切出力せず、
+ * モバイルブラウザは既定の仮想ビューポート（980px 前後）でレイアウトしてしまい、
+ * 375px 幅の実測が成立しない（E-16 / NFR-15）。
+ * 🔴 `maximum-scale` / `user-scalable=no` は付けない（拡大を禁止すると
+ * WCAG 1.4.4 Resize Text 違反になる・ui-ux-guidelines.md §2.4）。
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 /** サポートロケール分の静的パラメータ（ja / en）。 */

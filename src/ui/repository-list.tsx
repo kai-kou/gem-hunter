@@ -57,7 +57,9 @@ export function RepositoryList({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`${item.owner.avatarUrl}${item.owner.avatarUrl.includes('?') ? '&' : '?'}s=80`}
-            alt={item.owner.login}
+            // オーナー名は owner/repo 形式でカード内にテキスト隣接表示されるため装飾扱い
+            // （ui-ux-guidelines.md §7.4・詳細ページ repository-detail.tsx と同じ方針）
+            alt=""
             width={40}
             height={40}
             className="size-10 shrink-0 rounded-full"
