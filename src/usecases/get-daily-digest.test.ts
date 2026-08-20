@@ -47,20 +47,33 @@ describe('getDailyDigest', () => {
     expect(a.items.map((x) => x.packageName)).toEqual(b.items.map((x) => x.packageName))
   })
 
-  it('違う seed では顔ぶれが変わる（US-31）', async () => {
+  it('連続する 2 日（20260820 → 20260821）で顔ぶれが必ず変わる（US-31 の本質）', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
     const a = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
     const b = await getDailyDigest({ seed: '20260821' as DateSeed, limit: 5 })
-    const c = await getDailyDigest({ seed: '20260901' as DateSeed, limit: 5 })
 
-    const namesA = a.items.map((x) => x.packageName).join(',')
-    const namesB = b.items.map((x) => x.packageName).join(',')
-    const namesC = c.items.map((x) => x.packageName).join(',')
+    const namesA = a.items.map((x) => x.packageName)
+    const namesB = b.items.map((x) => x.packageName)
 
-    // 3 seed のうち少なくとも 1 組は違う顔ぶれになる（SHA-256 の分散を前提とする決定論的検証）
-    const distinct = new Set([namesA, namesB, namesC]).size
-    expect(distinct).toBeGreaterThanOrEqual(2)
+    // 🔴 「3 seed 中 2 つ以上が異なる」という緩い判定にしない。US-31 が要求するのは
+    //    「翌日にはもう違う」ことであり、連続する 2 日が同一なら機能として壊れている。
+    expect(namesB).not.toEqual(namesA)
+  })
+
+  it('3 つの異なる seed がすべて異なる顔ぶれ / 並びになる（US-31）', async () => {
+    const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
+
+    const seeds = ['20260820', '20260821', '20260901'] as const
+    const names = await Promise.all(
+      seeds.map(async (seed) => {
+        const r = await getDailyDigest({ seed: seed as DateSeed, limit: 5 })
+        return r.items.map((x) => x.packageName).join(',')
+      }),
+    )
+
+    // 決定論的なので「たまたま通る」ことはない（毎回同じ入力・同じ出力）。
+    expect(new Set(names).size).toBe(seeds.length)
   })
 
   it('limit で先頭 N 件に切り詰める', async () => {
@@ -88,6 +101,39 @@ describe('getDailyDigest', () => {
     const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
 
     expect(result.items).toHaveLength(3)
+  })
+
+  it('候補プールが limit 以下のときは Gem Index で再ソートせず、日付ごとに並びが変わる', async () => {
+    // 🔴 縮退分岐（`get-daily-digest.ts` の `candidates.length <= limit`）の回帰テスト。
+    //    全件が必ず選ばれるため、ここで Gem Index asc に上書きすると並びが日付に依存しなくなり
+    //    US-31（毎日顔ぶれが変わる）が静かに壊れる。候補 5 件 / limit 5 で検証する。
+    const small = candidates.slice(0, 5)
+    const getDailyDigest = makeGetDailyDigest({ port: fakePort(small) })
+
+    const day1 = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+    const day2 = await getDailyDigest({ seed: '20260821' as DateSeed, limit: 5 })
+
+    const names1 = day1.items.map((x) => x.packageName)
+    const names2 = day2.items.map((x) => x.packageName)
+
+    // 全件が出るので「顔ぶれ」は同じ。変わるのは **並び順**。
+    expect([...names1].sort()).toEqual([...names2].sort())
+    expect(names2).not.toEqual(names1)
+
+    // Gem Index asc で上書きされていない（= シャッフル順のまま）ことを明示する。
+    const values1 = day1.items.map((x) => gemIndexValue(x.gemIndex))
+    expect(values1).not.toEqual([...values1].sort((a, b) => a - b))
+  })
+
+  it('候補プールが limit より多いときは選ばれたサブセットを Gem Index asc に並べる', async () => {
+    // 上のテストの対（候補 20 件 / limit 5）。縮退分岐に入らない側では再ソートが効く。
+    const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
+
+    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+
+    expect(candidates.length).toBeGreaterThan(5)
+    const values = result.items.map((x) => gemIndexValue(x.gemIndex))
+    expect(values).toEqual([...values].sort((a, b) => a - b))
   })
 
   it('選ばれたサブセット内は Gem Index asc（過小評価度が高い順）で並ぶ', async () => {

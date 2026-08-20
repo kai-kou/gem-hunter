@@ -269,9 +269,14 @@ export default async function LocaleHome({
     ? rawSearchParams.date[0]
     : rawSearchParams.date
   const dateSeed = tryDateSeed(rawDate, new Date())
+  //
+  // 🔴 **二重防御**: 候補プールの読み込みは `StaticGemDigest` 側で例外を投げない設計だが、
+  //    ここでも `.catch(() => null)` を張って「ダイジェストの失敗がトップページ全体を
+  //    500 にする」経路を塞ぐ（`app/` 配下に `error.tsx` は無く、失敗すれば既存の検索機能まで
+  //    巻き添えになる）。`null` は下の既存分岐でそのまま非表示に倒れる。
   const dailyDigest = hasKeyword
     ? null
-    : await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT })
+    : await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT }).catch(() => null)
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
@@ -316,6 +321,7 @@ export default async function LocaleHome({
           />
           <AttributionNotice
             meta={dailyDigest.meta}
+            locale={locale}
             labels={{ attribution: messages.home.digest.attribution }}
           />
         </>

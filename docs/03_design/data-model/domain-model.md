@@ -37,7 +37,9 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 
 | 用語（日本語） | コード上の識別子 | 定義 | 注意 |
 |---|---|---|---|
-| Gem（原石） | `Gem` | **被依存数（実利用）に対して star（注目度）が不釣り合いに小さい OSS**（[ミッション](../../project-mission.md)） | 🔴 MVP では **算出しない**（Phase 2）。「良いリポジトリ」一般を指す語として使わない |
+| Gem（原石） | `Gem` | **被依存数（実利用）に対して star（注目度）が不釣り合いに小さい OSS**（[ミッション](../../project-mission.md)）。`SP-14` で型として実体化した（`src/domain/model/gem.ts`）。候補プール JSON の 1 エントリに対応し、`packageName` / `repositoryFullName` / `dependentCount` / `stars` / `gemIndex` を持つ | 🔴 **MVP では算出しなかったが、`D-27`（`M-5` を「着手する」で通過）により Phase 2 が実装対象へ格上げされ、`SP-14` で実装済み**。「良いリポジトリ」一般を指す語として使わない。生テキスト（`description` 等）は持たない（`D-29`・再配信しない） |
+| 日次ダイジェスト | `DailyDigest` | ある日付シード（`DateSeed`）に対して確定した「今日の Gem」の並び（`src/domain/model/gem.ts`）。`date` / `items`（表示順）/ `meta` を持つ（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2） | 同じ `date` は全ユーザーで同じ `items`。「フィード」「タイムライン」と呼ばない（有限件数であることが設計の核・ADR 0014 §2.1） |
+| 出典メタデータ | `DigestMeta` | 候補プールの提供元・ライセンス・生成時刻（`source` / `license` / `sourceLicenseUrl` / `generatedAt`）。`D-29` の帰属表示に使う | 🔴 **表示は任意ではなく義務**（CC BY-SA 4.0）。`DailyDigest` から切り離して持ち回らない |
 | リポジトリ | `Repository` | GitHub 上の 1 リポジトリ。同一性は `owner/repo` | 「プロジェクト」「レポ」と混在させない |
 | リポジトリ識別子 | `RepositoryId` | `owner` と `name` の組。文字列 1 本では持たない | URL・キャッシュキーの素材（`NFR-18`） |
 | リポジトリ完全名 | `RepositoryFullName` | `"owner/repo"` 形式のブランド型（`src/domain/model/repository-full-name.ts`）。`RepositoryQueryPort#findDetail` の引数として使う | `RepositoryId`（`owner`/`name` を分解して持つ設計）とは別物。詳細取得のポート境界でのみ使う軽量な識別子 |
@@ -70,6 +72,10 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `language` | `primaryLanguage` | 「言語」だけだと `Locale` と紛れる |
 | `total_count` | `SearchResult.totalCount` | GitHub 検索は上限があるため **概算**。UI で「約」と表現する余地を残す |
 
+🔴 **`starCount` と `Gem.stars` の名前の衝突について（`SP-14`）**: 上表の `starCount` は **GitHub API → `RepositorySummary` / `RepositoryDetail`** の変換規則であり、`src/infrastructure/github/mapper.ts` の 1 箇所だけに適用される。一方 `Gem.stars`（`src/domain/model/gem.ts`）は **Gem Index の候補プール（Ecosyste.ms 由来の静的 JSON）** から来る別コンテキストの値で（§6 の **Gem Index コンテキスト**）、変換箇所も供給元も異なる。したがって現状は「同じ概念に 2 つの名前がある」のではなく「**別コンテキストの同名概念が別の識別子を持っている**」状態である。
+
+- ⚠️ ただし将来 2 コンテキストが同じ画面で混ざると読み手が取り違える。**`Gem.stars` を `starCount` へ寄せて統一するかどうかは別 Issue として扱う**（本ファイルは衝突の存在を明示するに留め、`gem.ts` の識別子は `SP-14` の PR では変更しない）。
+
 ---
 
 ## 3. エンティティ
@@ -95,6 +101,8 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `SortOrder` | `relevance` / `stars` / `updated`（`AR-2`） | 同上 |
 | `Locale` | `ja` / `en`（`AR-4`） | 既定ロケールに倒す |
 | `CacheKey` | 名前空間 + 正規化済みの構成要素（`NFR-18`） | 生成関数以外で組み立てない |
+| `DateSeed` | 🔴 **`YYYYMMDD` の 8 桁数字**（UTC）かつ **実在する日付**（`20260231` は不可・`Date.UTC` の往復一致で検証）。日次ダイジェストの唯一のシード（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2・`src/domain/model/date-seed.ts`） | `parse` は `DomainValidationError`。`tryParse(raw, now)` は **不正値・未指定を当日（UTC）へ倒す**（URL の `?date=` 改変で 500 にしない・ADR 0014 §2.2） |
+| `GemIndex` | **被依存数のパーセンタイル順位 − star のパーセンタイル順位**（`ADR 0009` §2.1・`src/domain/model/gem-index.ts`）。`gemIndex(value)` は有限数のみ、`computeGemIndex(dependentRank, starRank)` は入力を **0〜100** に制限する（Ecosyste.ms の `rankings` の値域） | `DomainValidationError`。🔴 **値が小さいほど上位**（`rankings` は 0 が最上位。並べ替えは昇順）。健全性（`criticality_score` / Scorecard）と 1 つのスコアに合算しない（`ADR 0009` §2.2） |
 
 **実装の型（決定）**: **ブランド型 + スマートコンストラクタ** を使う。クラスで包むのは振る舞いを持つものだけにし、単純な識別子・数値はブランド型で軽量に保つ。
 
@@ -140,9 +148,10 @@ repository:v2:vercel/next.js
 
 | サービス | 責務 | 状態 |
 |---|---|---|
-| `GemIndex`（Phase 2） | 被依存数と star の乖離から Gem 度を算出する | 🔴 **MVP では実装しない**。ミッションの中核なので **置き場所だけ** `src/domain/services/` に確保する |
+| `GemIndex` | 被依存数と star の乖離から Gem 度（過小評価度）を算出する | ✅ **`SP-14` で実装済み**。🔴 **置き場所は `src/domain/model/gem-index.ts`**（値オブジェクト + 算出関数 `computeGemIndex`）。**専用のサービス層（`src/domain/services/`）は作らない** — 実体は状態を持たない純粋関数 1 本であり、値オブジェクトのスマートコンストラクタと同じファイルに置くのが最も単純だから（`architecture-rules.md` の YAGNI）。当初 `src/domain/services/` に置き場所を確保する計画だったが、実装時に不要と判断して撤回した |
 
 - 健全性スコアは **自作しない**（OpenSSF に依存する・`GR-2` / `Q-1` / `Q-2`）。ドメインサービスとして再実装する誘惑を明示的に禁じる。
+- 上表のとおり **`src/domain/services/` ディレクトリは存在しない**。ドメインサービスに見えるものが出てきたら、まず「値オブジェクトの関数として置けないか」を先に問う。
 
 ---
 
@@ -153,7 +162,7 @@ repository:v2:vercel/next.js
 | **Search**（MVP） | 本アプリの中核。検索・一覧・詳細 | — |
 | **Gem Index**（Phase 2） | 被依存数・健全性を扱う | Search とは **別コンテキスト**。同じ `Repository` でも持つ属性が違う。共通化を急がない |
 | **GitHub**（外部・上流） | データ源 | 🔴 **腐敗防止層（`src/infrastructure/github/`）を必ず挟む**。上流の変更に本体を追随させない |
-| **Ecosyste.ms / OpenSSF**（Phase 2・外部・上流） | 被依存数・健全性の供給元 | 同じく ACL を挟む。`RepositoryQueryPort` と別ポートにする |
+| **Ecosyste.ms / OpenSSF**（Phase 2・外部・上流） | 被依存数・健全性の供給元 | 同じく ACL を挟む。`RepositoryQueryPort` と別ポートにする → ✅ **`SP-14` で `GemDigestPort`（`src/domain/ports/gem-digest-port.ts`・`listCandidates()` 1 本）として分離済み**。候補プールはバッチ生成の静的 JSON 経由で読むため、Worker から Ecosyste.ms を直接叩かない（`D-28`） |
 
 ---
 

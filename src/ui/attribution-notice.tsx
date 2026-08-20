@@ -1,4 +1,7 @@
 import type { DigestMeta } from '../domain/model/gem'
+import type { Locale } from '../domain/model/locale'
+import { formatMessage } from '../shared/i18n/format-message'
+import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 
 type AttributionNoticeLabels = {
   /**
@@ -14,33 +17,53 @@ type AttributionNoticeLabels = {
  * Ecosyste.ms（CC BY-SA 4.0）のパーセンタイル順位を入力に、こちらで日付シードで
  * 再算出した並び順を表示している旨を伝える。
  *
- * 単純な `<p>` + `<a>`。ARIA の追加ロールは不要（本文中の脚注扱い）。
+ * 単純な `<p>` + `<a>` + `<time>`。ARIA の追加ロールは不要（本文中の脚注扱い）。
+ *
+ * 🔴 生成時刻は **JST 表示**（`docs/rules/datetime-rules.md` §0）。書式は既存の
+ * `repository-list.tsx` と同じ `Intl.DateTimeFormat(localeTag, { timeZone: 'Asia/Tokyo' })`
+ * に揃え、機械可読値（ISO 8601 UTC）は `<time dateTime>` 側に残す。
  */
 export function AttributionNotice({
   meta,
   labels,
+  locale,
 }: {
   meta: DigestMeta
   labels: AttributionNoticeLabels
+  locale: Locale
 }) {
+  const localeTag = toIntlLocaleTag(locale)
+  const dateTimeFormat = new Intl.DateTimeFormat(localeTag, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Tokyo',
+  })
+
+  // 候補プール JSON が壊れていると `generatedAt` は空文字・非 ISO 文字列になりうる
+  // （`StaticGemDigest` はそこで throw せずフォールバックする）。`Intl` は Invalid Date で
+  // RangeError を投げるので、パースできた場合だけ整形し、それ以外は生値をそのまま出す。
+  const generatedAtDate = toValidDate(meta.generatedAt)
+  const generatedAtNode = generatedAtDate ? (
+    <time dateTime={meta.generatedAt}>{`${dateTimeFormat.format(generatedAtDate)} JST`}</time>
+  ) : (
+    <>{meta.generatedAt}</>
+  )
+
   // ライセンス URL は `sourceLicenseUrl`（例: CC BY-SA 4.0 の deed 頁）。ラベル文字列の中の
-  // `{license}` プレースホルダ位置を `<a>` に置き換えるため、テンプレートを事前分割する。
-  const template = labels.attribution
-  // `{source}` / `{license}` / `{generatedAt}` の 3 プレースホルダを保持したまま `{license}` の
-  // 前後で split し、リンクだけを差し込む。他プレースホルダは差し込み後に順次置換する。
-  const parts = splitOn(template, '{license}')
-  const before = fillPlaceholders(parts[0] ?? '', {
-    source: meta.source,
-    generatedAt: meta.generatedAt,
-  })
-  const after = fillPlaceholders(parts[1] ?? '', {
-    source: meta.source,
-    generatedAt: meta.generatedAt,
-  })
+  // `{license}` / `{generatedAt}` プレースホルダ位置を要素へ置き換えるため、事前分割する。
+  const [beforeLicense, afterLicense] = splitOn(labels.attribution, '{license}')
+  const [beforeHead, beforeTail] = splitOn(beforeLicense, '{generatedAt}')
+  const [afterHead, afterTail] = splitOn(afterLicense, '{generatedAt}')
+  const fill = (template: string) => formatMessage(template, { source: meta.source })
 
   return (
     <p className="text-muted-foreground mt-6 text-xs">
-      {before}
+      {fill(beforeHead)}
+      {beforeLicense.includes('{generatedAt}') ? generatedAtNode : null}
+      {fill(beforeTail)}
       <a
         href={meta.sourceLicenseUrl}
         rel="noopener noreferrer"
@@ -49,7 +72,9 @@ export function AttributionNotice({
       >
         {meta.license}
       </a>
-      {after}
+      {fill(afterHead)}
+      {afterLicense.includes('{generatedAt}') ? generatedAtNode : null}
+      {fill(afterTail)}
     </p>
   )
 }
@@ -64,12 +89,8 @@ function splitOn(template: string, token: string): [string, string] {
   return [template.slice(0, idx), template.slice(idx + token.length)]
 }
 
-/**
- * `{key}` プレースホルダを値で置換する（`formatMessage` と同じ規約だが、`{license}` を
- * 触らないため個別実装）。`$&` 等の特殊置換パターンを無害化するため置換関数形式を使う。
- */
-function fillPlaceholders(template: string, values: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (matched: string, key: string) =>
-    Object.prototype.hasOwnProperty.call(values, key) ? values[key] : matched,
-  )
+/** ISO 8601 としてパースできれば `Date`、できなければ `null`（Invalid Date を外へ出さない）。 */
+function toValidDate(value: string): Date | null {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }

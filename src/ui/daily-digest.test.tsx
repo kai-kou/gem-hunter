@@ -126,7 +126,7 @@ describe('DailyDigest', () => {
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 
-  it('見出しに tabIndex=-1 と id="daily-digest-heading" を持ちプログラマティック focus を受けられる（E-15 / SP-14 手順 5）', () => {
+  it('見出しは id="daily-digest-heading" を持ち section の aria-labelledby から参照される（SP-14 手順 5）', () => {
     const digest = makeDigest([
       {
         packageName: 'chalk',
@@ -141,7 +141,10 @@ describe('DailyDigest', () => {
 
     const heading = screen.getByRole('heading', { name: '今日の Gem', level: 2 })
     expect(heading).toHaveAttribute('id', 'daily-digest-heading')
-    expect(heading).toHaveAttribute('tabIndex', '-1')
+    // focus() する側（`FocusOnNavigate`）がまだ居ないので `tabIndex` は持たない（YAGNI）。
+    // 日付切替を next/link で実装するスプリントで配線とセットで復活させる。
+    expect(heading).not.toHaveAttribute('tabIndex')
+    expect(screen.getByRole('region', { name: '今日の Gem' })).toBeInTheDocument()
   })
 
   it('en ロケールでは英語書式（3 桁カンマ）・英語ラベル文言が反映される（E-4）', () => {

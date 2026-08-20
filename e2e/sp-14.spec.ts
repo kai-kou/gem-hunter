@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
+import { createAxeBuilder } from './axe'
+
 /**
  * SP-14: キーワードを入力しなくても、その日の Gem が一覧で出る（`ADR 0014` / `AR-9` / `US-30`〜`US-32`）。
  * `docs/02_requirements/user-story-map.md` §5.3 `SP-14` の操作レビュー手順（Issue #251）を
@@ -36,15 +38,16 @@ test.describe('SP-14: キーワード非依存の発見面', () => {
     await expect(page.getByRole('heading', { name: '今日の Gem', level: 2 })).toBeVisible()
   })
 
-  test('手順2: Gem が有限件数（1〜5 件）並んで見える（ADR 0014 §2.1・既定 5 件）', async ({
+  test('手順2: Gem がちょうど 5 件、重複なく並んで見える（ADR 0014 §2.1・既定 5 件）', async ({
     page,
   }) => {
     await page.goto('/ja?date=20260820')
     const names = await readDigestPackageNames(page)
-    // 0 件だと表示できる Gem がない旨のメッセージが出る（別分岐なので、ここでは 1 件以上を要求）。
-    expect(names.length).toBeGreaterThan(0)
-    // ADR 0014 §2.1 の「既定 5 件」に合わせる。実データ次第で調整するが、上限は 5。
-    expect(names.length).toBeLessThanOrEqual(5)
+    // 🔴 候補プール（`public/data/daily-digest.json`）は 294 件あり、`DAILY_DIGEST_LIMIT = 5`
+    //    なので **必ず 5 件** 出る。「1 件以上 5 件以下」だと 1 件しか出ない回帰を検出できない。
+    expect(names).toHaveLength(5)
+    // 同じ Gem が二重に描画されていない（重複表示の検出）。
+    expect(new Set(names).size).toBe(names.length)
   })
 
   test('手順3: リロード（同一 URL の再取得）で同じ並びが再現される（ADR 0014 §2.2 決定論性）', async ({
@@ -124,6 +127,37 @@ test.describe('SP-14: キーワード非依存の発見面', () => {
     )
     // 改変の明示（並び順を日付シードで再算出している旨・D-29）
     await expect(page.getByText(/日付シードで再算出/)).toBeVisible()
+  })
+
+  test('キーワード検索中はダイジェストを表示しない（排他表示・SP-1/SP-7/SP-10 との衝突回避）', async ({
+    page,
+  }) => {
+    // 🔴 このテストが無いと、後続セッションが `app/[locale]/page.tsx` の `hasKeyword` 分岐を
+    //    消しても SP-14 のテストは緑のまま、SP-1 / SP-7 / SP-10 だけが原因不明で落ちる
+    //    （検索結果一覧と Gem 一覧が同時に `<ol>` として並び、`getByRole('list').first()` が
+    //    Gem 一覧を先に拾うため）。排他表示そのものを SP-14 側で固定する。
+    await page.goto('/ja?q=react')
+
+    // 検索結果が描画されていること（＝検索経路が生きている状態での検証であること）を先に確認する。
+    await expect(page.getByRole('link', { name: 'octostub/octo-widgets' })).toBeVisible()
+
+    await expect(page.getByRole('heading', { name: '今日の Gem', level: 2 })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: '今日の Gem' })).toHaveCount(0)
+  })
+
+  test('未検索状態（ダイジェスト表示）に serious/critical の a11y 違反がない（NFR-26）', async ({
+    page,
+  }) => {
+    // 既存の a11y スイート（`e2e/a11y.spec.ts` / `sp-9-a11y.spec.ts`）はいずれも検索後の画面を
+    // 見ており、ダイジェストが表示された状態は一度も axe に掛かっていない。ここで埋める。
+    await page.goto('/ja?date=20260820')
+    await expect(page.getByRole('heading', { name: '今日の Gem', level: 2 })).toBeVisible()
+
+    const results = await createAxeBuilder(page).analyze()
+    const violations = results.violations.filter(
+      (v) => v.impact === 'serious' || v.impact === 'critical',
+    )
+    expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
   })
 
   test('en ロケール（/en）でも英語の見出しと出典表示が出る（E-4）', async ({ page }) => {

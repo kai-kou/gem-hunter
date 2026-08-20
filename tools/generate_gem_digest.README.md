@@ -8,6 +8,11 @@
 - 各パッケージの `rankings.dependent_packages_count` と `rankings.stargazers_count`（Ecosyste.ms 側で日次計算済みのパーセンタイル順位・0〜100・0 が最上位）から Gem Index を差分で算出する（`ADR 0009` §2.1）
 - 出力 JSON のトップレベルに **出典メタデータ**（`source` / `license` / `sourceLicenseUrl` / `generatedAt`）を付与する（`D-29`・帰属表示は必須）
 
+## 🔴 候補プールの制約（`SP-14` 時点の暫定）
+
+- 本 CLI が作る候補プールは **被依存数降順の上位 N 件**（`SP-14` 時点の `public/data/daily-digest.json` は **294 件**）に限定されており、[`ADR 0014`](../docs/adr/0014-zero-query-daily-digest.md) §2.6 の母集団不変条件（**npm 全量からさらにサンプリングしない**）を **まだ満たしていない**（同 ADR §5 の未確定事項 7）
+- 上位 N 件は被依存数が極めて高い有名パッケージ群に偏るため、`R-2` 違反（GitHub Trending の劣化コピー）に近づくリスクがある。**まず動く発見面を出すことを優先した暫定** であり、母集団の拡大は後続スプリントで行う（拡大時は ADR 0014 §2.2.2 の CPU 予算も再評価する）
+
 ## 使い方
 
 ```sh

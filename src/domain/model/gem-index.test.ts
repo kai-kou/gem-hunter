@@ -29,7 +29,9 @@ describe('computeGemIndex', () => {
   // 「値が小さいほど過小評価度が高い（= Gem として上位）」の並び意味になる。
   it('chalk 相当（dependentRank=0.0005476 / starRank=0.6435）で強い負値を返す', () => {
     const g = computeGemIndex(0.0005476, 0.6435)
-    expect(gemIndexValue(g)).toBeCloseTo(-0.643, 4)
+    // 🔴 期待値は丸めた定数ではなく式で書く。`toBeCloseTo(-0.643, 4)` は許容誤差 5e-5 に対し
+    //    実差が約 4.8e-5（許容幅の 95%）で、実装が僅かに変わるだけで偽陽性・偽陰性に転ぶ。
+    expect(gemIndexValue(g)).toBeCloseTo(0.0005476 - 0.6435, 10)
     expect(gemIndexValue(g)).toBeLessThan(0)
   })
 

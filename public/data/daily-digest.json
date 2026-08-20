@@ -4,148 +4,2066 @@
     "source": "Ecosyste.ms",
     "license": "CC BY-SA 4.0",
     "sourceLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "generatedAt": "2026-08-20T00:00:00Z"
+    "generatedAt": "2026-08-20T16:56:03.289Z"
   },
   "candidates": [
     {
-      "packageName": "chalk",
-      "repositoryFullName": "chalk/chalk",
-      "dependentCount": 130085,
-      "stars": 22000,
-      "gemIndex": -63.9
+      "packageName": "typescript",
+      "repositoryFullName": "microsoft/TypeScript",
+      "dependentCount": 488056,
+      "stars": 110165,
+      "gemIndex": -0.05046102153040092
     },
     {
-      "packageName": "debug",
-      "repositoryFullName": "debug-js/debug",
-      "dependentCount": 92000,
-      "stars": 11000,
-      "gemIndex": -70.2
+      "packageName": "eslint",
+      "repositoryFullName": "eslint/eslint",
+      "dependentCount": 424118,
+      "stars": 27456,
+      "gemIndex": -0.5917602052829924
     },
     {
-      "packageName": "ansi-styles",
-      "repositoryFullName": "chalk/ansi-styles",
-      "dependentCount": 41000,
-      "stars": 500,
-      "gemIndex": -85.4
+      "packageName": "react",
+      "repositoryFullName": "react/react",
+      "dependentCount": 275174,
+      "stars": 247323,
+      "gemIndex": -0.00388793546246171
     },
     {
-      "packageName": "supports-color",
-      "repositoryFullName": "chalk/supports-color",
-      "dependentCount": 55000,
-      "stars": 700,
-      "gemIndex": -82.1
+      "packageName": "mocha",
+      "repositoryFullName": "mochajs/mocha",
+      "dependentCount": 261831,
+      "stars": 22903,
+      "gemIndex": -0.6209197212514552
     },
     {
-      "packageName": "ms",
-      "repositoryFullName": "vercel/ms",
-      "dependentCount": 45000,
-      "stars": 5300,
-      "gemIndex": -60.5
+      "packageName": "@types/node",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 257481,
+      "stars": 51371,
+      "gemIndex": -0.39796589732069154
     },
     {
-      "packageName": "minimatch",
-      "repositoryFullName": "isaacs/minimatch",
-      "dependentCount": 65000,
-      "stars": 3400,
-      "gemIndex": -72.0
+      "packageName": "jest",
+      "repositoryFullName": "jestjs/jest",
+      "dependentCount": 241476,
+      "stars": 45468,
+      "gemIndex": -0.4130525256679581
     },
     {
-      "packageName": "semver",
-      "repositoryFullName": "npm/node-semver",
-      "dependentCount": 85000,
-      "stars": 4900,
-      "gemIndex": -75.3
+      "packageName": "prettier",
+      "repositoryFullName": "prettier/prettier",
+      "dependentCount": 231277,
+      "stars": 52205,
+      "gemIndex": -0.15611977469687793
     },
     {
-      "packageName": "graceful-fs",
-      "repositoryFullName": "isaacs/node-graceful-fs",
-      "dependentCount": 30000,
-      "stars": 1100,
-      "gemIndex": -68.7
+      "packageName": "webpack",
+      "repositoryFullName": "webpack/webpack",
+      "dependentCount": 216244,
+      "stars": 65979,
+      "gemIndex": -0.07740277149562853
+    },
+    {
+      "packageName": "react-dom",
+      "repositoryFullName": "react/react",
+      "dependentCount": 211813,
+      "stars": 220854,
+      "gemIndex": -0.0037236564992591025
+    },
+    {
+      "packageName": "@babel/core",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 197540,
+      "stars": 42703,
+      "gemIndex": -0.42394936044813125
+    },
+    {
+      "packageName": "babel-loader",
+      "repositoryFullName": "babel/babel-loader",
+      "dependentCount": 191645,
+      "stars": 4839,
+      "gemIndex": -1.3671842914265
+    },
+    {
+      "packageName": "eslint-plugin-import",
+      "repositoryFullName": "import-js/eslint-plugin-import",
+      "dependentCount": 171438,
+      "stars": 5939,
+      "gemIndex": -1.3376965838731072
+    },
+    {
+      "packageName": "rimraf",
+      "repositoryFullName": "isaacs/rimraf",
+      "dependentCount": 168689,
+      "stars": 5646,
+      "gemIndex": -1.3082902831183651
+    },
+    {
+      "packageName": "chai",
+      "repositoryFullName": "chaijs/chai",
+      "dependentCount": 168401,
+      "stars": 8266,
+      "gemIndex": -1.1047760275375351
+    },
+    {
+      "packageName": "@types/jest",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 163212,
+      "stars": 51371,
+      "gemIndex": -0.16871454140282774
     },
     {
       "packageName": "lodash",
       "repositoryFullName": "lodash/lodash",
-      "dependentCount": 175000,
-      "stars": 60000,
-      "gemIndex": -20.4
+      "dependentCount": 159122,
+      "stars": 61302,
+      "gemIndex": -0.10475521886886267
+    },
+    {
+      "packageName": "@babel/preset-env",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 158475,
+      "stars": 43983,
+      "gemIndex": -0.42375770160525233
+    },
+    {
+      "packageName": "babel-eslint",
+      "repositoryFullName": "babel/babel-eslint",
+      "dependentCount": 151269,
+      "stars": 2966,
+      "gemIndex": -1.6347368293813533
+    },
+    {
+      "packageName": "babel-core",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 147359,
+      "stars": 43983,
+      "gemIndex": -0.4237303218979967
+    },
+    {
+      "packageName": "husky",
+      "repositoryFullName": "typicode/husky",
+      "dependentCount": 134180,
+      "stars": 35280,
+      "gemIndex": -0.5079506932984843
+    },
+    {
+      "packageName": "rollup",
+      "repositoryFullName": "rollup/rollup",
+      "dependentCount": 130345,
+      "stars": 26301,
+      "gemIndex": -0.5845593107292781
+    },
+    {
+      "packageName": "chalk",
+      "repositoryFullName": "chalk/chalk",
+      "dependentCount": 130085,
+      "stars": 23306,
+      "gemIndex": -0.6429331023206046
+    },
+    {
+      "packageName": "@typescript-eslint/eslint-plugin",
+      "repositoryFullName": "typescript-eslint/typescript-eslint",
+      "dependentCount": 129460,
+      "stars": 16357,
+      "gemIndex": -0.8461737913103523
+    },
+    {
+      "packageName": "@typescript-eslint/parser",
+      "repositoryFullName": "typescript-eslint/typescript-eslint",
+      "dependentCount": 128359,
+      "stars": 16365,
+      "gemIndex": -0.8441476835427753
+    },
+    {
+      "packageName": "tslib",
+      "repositoryFullName": "Microsoft/tslib",
+      "dependentCount": 122729,
+      "stars": 1343,
+      "gemIndex": -2.2444887145828245
+    },
+    {
+      "packageName": "ts-node",
+      "repositoryFullName": "TypeStrong/ts-node",
+      "dependentCount": 120593,
+      "stars": 13131,
+      "gemIndex": -0.9230013547538499
+    },
+    {
+      "packageName": "eslint-config-prettier",
+      "repositoryFullName": "prettier/eslint-config-prettier",
+      "dependentCount": 120517,
+      "stars": 5886,
+      "gemIndex": -1.3445411743317404
+    },
+    {
+      "packageName": "webpack-cli",
+      "repositoryFullName": "webpack/webpack-cli",
+      "dependentCount": 112364,
+      "stars": 2563,
+      "gemIndex": -1.7615911847642927
+    },
+    {
+      "packageName": "@types/react",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 111414,
+      "stars": 50924,
+      "gemIndex": -0.21153660286891382
+    },
+    {
+      "packageName": "ts-jest",
+      "repositoryFullName": "kulshekhar/ts-jest",
+      "dependentCount": 109976,
+      "stars": 7075,
+      "gemIndex": -1.2196070228161575
+    },
+    {
+      "packageName": "css-loader",
+      "repositoryFullName": "webpack/css-loader",
+      "dependentCount": 109076,
+      "stars": 4320,
+      "gemIndex": -1.436181455971595
+    },
+    {
+      "packageName": "eslint-plugin-react",
+      "repositoryFullName": "jsx-eslint/eslint-plugin-react",
+      "dependentCount": 105111,
+      "stars": 9294,
+      "gemIndex": -1.0648288596521012
+    },
+    {
+      "packageName": "eslint-plugin-prettier",
+      "repositoryFullName": "prettier/eslint-plugin-prettier",
+      "dependentCount": 101897,
+      "stars": 3648,
+      "gemIndex": -1.5788577355130595
+    },
+    {
+      "packageName": "cross-env",
+      "repositoryFullName": "kentcdodds/cross-env",
+      "dependentCount": 100802,
+      "stars": 6525,
+      "gemIndex": -1.2514223820230626
+    },
+    {
+      "packageName": "babel-cli",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 99618,
+      "stars": 43983,
+      "gemIndex": -0.455590716611562
+    },
+    {
+      "packageName": "axios",
+      "repositoryFullName": "axios/axios",
+      "dependentCount": 97210,
+      "stars": 109225,
+      "gemIndex": -0.015880299776252053
+    },
+    {
+      "packageName": "vue",
+      "repositoryFullName": "vuejs/core",
+      "dependentCount": 95178,
+      "stars": 47441,
+      "gemIndex": -0.46646922390722567
     },
     {
       "packageName": "express",
       "repositoryFullName": "expressjs/express",
-      "dependentCount": 95000,
-      "stars": 65000,
-      "gemIndex": 5.1
+      "dependentCount": 93237,
+      "stars": 69377,
+      "gemIndex": -0.07994909542526896
     },
     {
-      "packageName": "react",
-      "repositoryFullName": "facebook/react",
-      "dependentCount": 250000,
-      "stars": 232000,
-      "gemIndex": 20.3
+      "packageName": "babel-preset-es2015",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 92275,
+      "stars": 43983,
+      "gemIndex": -0.45544700156711515
     },
     {
-      "packageName": "vue",
-      "repositoryFullName": "vuejs/vue",
-      "dependentCount": 55000,
-      "stars": 208000,
-      "gemIndex": 45.7
+      "packageName": "autoprefixer",
+      "repositoryFullName": "postcss/autoprefixer",
+      "dependentCount": 90847,
+      "stars": 22251,
+      "gemIndex": -0.6367454357131064
     },
     {
-      "packageName": "svelte",
-      "repositoryFullName": "sveltejs/svelte",
-      "dependentCount": 8000,
-      "stars": 82000,
-      "gemIndex": 55.9
+      "packageName": "webpack-dev-server",
+      "repositoryFullName": "webpack/webpack-dev-server",
+      "dependentCount": 90823,
+      "stars": 7848,
+      "gemIndex": -1.1445044701687117
     },
     {
-      "packageName": "picocolors",
-      "repositoryFullName": "alexeyraspopov/picocolors",
-      "dependentCount": 15000,
-      "stars": 4600,
-      "gemIndex": -35.1
+      "packageName": "babel-preset-env",
+      "repositoryFullName": "babel/babel-preset-env",
+      "dependentCount": 88608,
+      "stars": 3481,
+      "gemIndex": -1.5614422651659432
     },
     {
-      "packageName": "postcss",
-      "repositoryFullName": "postcss/postcss",
-      "dependentCount": 41000,
-      "stars": 28800,
-      "gemIndex": -8.6
+      "packageName": "style-loader",
+      "repositoryFullName": "webpack-contrib/style-loader",
+      "dependentCount": 86729,
+      "stars": 1665,
+      "gemIndex": -2.0502562204229418
+    },
+    {
+      "packageName": "tslint",
+      "repositoryFullName": "palantir/tslint",
+      "dependentCount": 86050,
+      "stars": 5903,
+      "gemIndex": -1.2869010969677648
+    },
+    {
+      "packageName": "@babel/cli",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 85571,
+      "stars": 42703,
+      "gemIndex": -0.4552745190783998
+    },
+    {
+      "packageName": "lint-staged",
+      "repositoryFullName": "lint-staged/lint-staged",
+      "dependentCount": 84635,
+      "stars": 13379,
+      "gemIndex": -0.9143493293585125
+    },
+    {
+      "packageName": "gulp",
+      "repositoryFullName": "gulpjs/gulp",
+      "dependentCount": 81436,
+      "stars": 32882,
+      "gemIndex": -0.5246072058169072
+    },
+    {
+      "packageName": "sass-loader",
+      "repositoryFullName": "webpack/sass-loader",
+      "dependentCount": 76602,
+      "stars": 3906,
+      "gemIndex": -1.4809474734443056
+    },
+    {
+      "packageName": "node-sass",
+      "repositoryFullName": "sass/node-sass",
+      "dependentCount": 76299,
+      "stars": 8478,
+      "gemIndex": -1.0793570374538406
     },
     {
       "packageName": "commander",
       "repositoryFullName": "tj/commander.js",
-      "dependentCount": 78000,
-      "stars": 27500,
-      "gemIndex": -25.3
+      "dependentCount": 74942,
+      "stars": 26734,
+      "gemIndex": -0.5602186443480918
     },
     {
-      "packageName": "yargs",
-      "repositoryFullName": "yargs/yargs",
-      "dependentCount": 46000,
-      "stars": 11400,
-      "gemIndex": -30.9
+      "packageName": "fs-extra",
+      "repositoryFullName": "jprichardson/node-fs-extra",
+      "dependentCount": 73834,
+      "stars": 9599,
+      "gemIndex": -1.0519877206950972
+    },
+    {
+      "packageName": "sinon",
+      "repositoryFullName": "sinonjs/sinon",
+      "dependentCount": 70717,
+      "stars": 9757,
+      "gemIndex": -1.0450332445861867
+    },
+    {
+      "packageName": "vue-template-compiler",
+      "repositoryFullName": "vuejs/vue",
+      "dependentCount": 69989,
+      "stars": 210216,
+      "gemIndex": -0.0030761163427449074
+    },
+    {
+      "packageName": "@types/react-dom",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 69864,
+      "stars": 48512,
+      "gemIndex": -0.17558687991177122
+    },
+    {
+      "packageName": "core-js",
+      "repositoryFullName": "zloirock/core-js",
+      "dependentCount": 68956,
+      "stars": 25517,
+      "gemIndex": -0.5965242952158681
+    },
+    {
+      "packageName": "babel-jest",
+      "repositoryFullName": "jestjs/jest",
+      "dependentCount": 68349,
+      "stars": 45468,
+      "gemIndex": -0.41176567378953766
+    },
+    {
+      "packageName": "@babel/preset-react",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 65620,
+      "stars": 43223,
+      "gemIndex": -0.42274464772146386
+    },
+    {
+      "packageName": "html-webpack-plugin",
+      "repositoryFullName": "jantimon/html-webpack-plugin",
+      "dependentCount": 65055,
+      "stars": 10726,
+      "gemIndex": -1.002265954499108
+    },
+    {
+      "packageName": "@rollup/plugin-node-resolve",
+      "repositoryFullName": "rollup/plugins",
+      "dependentCount": 63824,
+      "stars": 3758,
+      "gemIndex": -1.5319565109657607
+    },
+    {
+      "packageName": "nyc",
+      "repositoryFullName": "istanbuljs/nyc",
+      "dependentCount": 62707,
+      "stars": 5765,
+      "gemIndex": -1.3353324860860858
+    },
+    {
+      "packageName": "file-loader",
+      "repositoryFullName": "webpack-contrib/file-loader",
+      "dependentCount": 62566,
+      "stars": 1844,
+      "gemIndex": -1.9830661244730754
+    },
+    {
+      "packageName": "eslint-plugin-promise",
+      "repositoryFullName": "eslint-community/eslint-plugin-promise",
+      "dependentCount": 62226,
+      "stars": 1000,
+      "gemIndex": -2.5727238300215123
+    },
+    {
+      "packageName": "prop-types",
+      "repositoryFullName": "facebook/prop-types",
+      "dependentCount": 60306,
+      "stars": 4448,
+      "gemIndex": -1.4104170385759862
+    },
+    {
+      "packageName": "eslint-plugin-node",
+      "repositoryFullName": "mysticatea/eslint-plugin-node",
+      "dependentCount": 59465,
+      "stars": 955,
+      "gemIndex": -2.4914780354952977
+    },
+    {
+      "packageName": "request",
+      "repositoryFullName": "request/request",
+      "dependentCount": 58231,
+      "stars": 25520,
+      "gemIndex": -0.5752902354222938
+    },
+    {
+      "packageName": "eslint-plugin-jsx-a11y",
+      "repositoryFullName": "jsx-eslint/eslint-plugin-jsx-a11y",
+      "dependentCount": 55378,
+      "stars": 3610,
+      "gemIndex": -1.5541611313782677
+    },
+    {
+      "packageName": "@rollup/plugin-commonjs",
+      "repositoryFullName": "rollup/plugins",
+      "dependentCount": 54999,
+      "stars": 3758,
+      "gemIndex": -1.5706287869191753
+    },
+    {
+      "packageName": "moment",
+      "repositoryFullName": "moment/moment",
+      "dependentCount": 54055,
+      "stars": 47926,
+      "gemIndex": -0.15579121677047272
+    },
+    {
+      "packageName": "coveralls",
+      "repositoryFullName": "nickmerwin/node-coveralls",
+      "dependentCount": 53153,
+      "stars": 1063,
+      "gemIndex": -2.3486300638658135
+    },
+    {
+      "packageName": "npm-run-all",
+      "repositoryFullName": "mysticatea/npm-run-all",
+      "dependentCount": 51551,
+      "stars": 5700,
+      "gemIndex": -1.3316377379054039
+    },
+    {
+      "packageName": "karma",
+      "repositoryFullName": "karma-runner/karma",
+      "dependentCount": 49913,
+      "stars": 11959,
+      "gemIndex": -0.9552844358150604
+    },
+    {
+      "packageName": "babel-preset-react",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 49787,
+      "stars": 43983,
+      "gemIndex": -0.454555798771102
+    },
+    {
+      "packageName": "@types/mocha",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 49785,
+      "stars": 48512,
+      "gemIndex": -0.1676046346766611
+    },
+    {
+      "packageName": "eslint-config-standard",
+      "repositoryFullName": "standard/eslint-config-standard",
+      "dependentCount": 48621,
+      "stars": 2647,
+      "gemIndex": -1.834901498010424
+    },
+    {
+      "packageName": "postcss-loader",
+      "repositoryFullName": "webpack/postcss-loader",
+      "dependentCount": 48390,
+      "stars": 2843,
+      "gemIndex": -1.6225285598977526
+    },
+    {
+      "packageName": "eslint-plugin-standard",
+      "repositoryFullName": "standard/eslint-plugin-standard",
+      "dependentCount": 48323,
+      "stars": 125,
+      "gemIndex": -4.803509452121571
     },
     {
       "packageName": "glob",
       "repositoryFullName": "isaacs/node-glob",
-      "dependentCount": 62000,
-      "stars": 8700,
-      "gemIndex": -45.2
+      "dependentCount": 48165,
+      "stars": 8715,
+      "gemIndex": -1.0919622684077317
+    },
+    {
+      "packageName": "inquirer",
+      "repositoryFullName": "SBoudrias/Inquirer.js",
+      "dependentCount": 47744,
+      "stars": 21614,
+      "gemIndex": -0.6705593479658432
+    },
+    {
+      "packageName": "@babel/plugin-proposal-class-properties",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 47155,
+      "stars": 42703,
+      "gemIndex": -0.4541246186724845
+    },
+    {
+      "packageName": "eslint-plugin-vue",
+      "repositoryFullName": "vuejs/eslint-plugin-vue",
+      "dependentCount": 47028,
+      "stars": 4361,
+      "gemIndex": -1.452558535098743
+    },
+    {
+      "packageName": "url-loader",
+      "repositoryFullName": "webpack-contrib/url-loader",
+      "dependentCount": 46970,
+      "stars": 1403,
+      "gemIndex": -2.135955079560302
+    },
+    {
+      "packageName": "debug",
+      "repositoryFullName": "debug-js/debug",
+      "dependentCount": 46672,
+      "stars": 11451,
+      "gemIndex": -0.9885486610716903
+    },
+    {
+      "packageName": "@babel/runtime",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 46559,
+      "stars": 43983,
+      "gemIndex": -0.4220601518540392
+    },
+    {
+      "packageName": "ts-loader",
+      "repositoryFullName": "TypeStrong/ts-loader",
+      "dependentCount": 46150,
+      "stars": 3481,
+      "gemIndex": -1.537541576267604
+    },
+    {
+      "packageName": "react-scripts",
+      "repositoryFullName": "facebook/create-react-app",
+      "dependentCount": 45896,
+      "stars": 103317,
+      "gemIndex": -0.01787063786973033
+    },
+    {
+      "packageName": "rollup-plugin-node-resolve",
+      "repositoryFullName": "rollup/rollup-plugin-node-resolve",
+      "dependentCount": 45513,
+      "stars": 469,
+      "gemIndex": -3.164792334024167
+    },
+    {
+      "packageName": "sass",
+      "repositoryFullName": "sass/dart-sass",
+      "dependentCount": 45433,
+      "stars": 4214,
+      "gemIndex": -1.4961706573677471
+    },
+    {
+      "packageName": "istanbul",
+      "repositoryFullName": "gotwarlost/istanbul",
+      "dependentCount": 45223,
+      "stars": 8656,
+      "gemIndex": -1.0962019872613809
+    },
+    {
+      "packageName": "rollup-plugin-terser",
+      "repositoryFullName": "TrySound/rollup-plugin-terser",
+      "dependentCount": 44996,
+      "stars": 607,
+      "gemIndex": -2.9183637613082016
+    },
+    {
+      "packageName": "eslint-config-airbnb",
+      "repositoryFullName": "airbnb/javascript",
+      "dependentCount": 44436,
+      "stars": 148141,
+      "gemIndex": -0.009704503574682433
+    },
+    {
+      "packageName": "rollup-plugin-babel",
+      "repositoryFullName": "rollup/rollup-plugin-babel",
+      "dependentCount": 44190,
+      "stars": 705,
+      "gemIndex": -2.7174837878857567
+    },
+    {
+      "packageName": "@testing-library/react",
+      "repositoryFullName": "testing-library/react-testing-library",
+      "dependentCount": 43775,
+      "stars": 18778,
+      "gemIndex": -0.682360240318285
+    },
+    {
+      "packageName": "semver",
+      "repositoryFullName": "npm/node-semver",
+      "dependentCount": 43561,
+      "stars": 5457,
+      "gemIndex": -1.3587239248215657
+    },
+    {
+      "packageName": "yargs",
+      "repositoryFullName": "yargs/yargs",
+      "dependentCount": 42638,
+      "stars": 11511,
+      "gemIndex": -0.9904104893213198
+    },
+    {
+      "packageName": "dotenv",
+      "repositoryFullName": "motdotla/dotenv",
+      "dependentCount": 42583,
+      "stars": 20513,
+      "gemIndex": -0.6923263105901886
+    },
+    {
+      "packageName": "@babel/plugin-transform-runtime",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 42378,
+      "stars": 43223,
+      "gemIndex": -0.4218137333417663
+    },
+    {
+      "packageName": "rxjs",
+      "repositoryFullName": "ReactiveX/rxjs",
+      "dependentCount": 42178,
+      "stars": 31706,
+      "gemIndex": -0.5083338718032683
+    },
+    {
+      "packageName": "@vue/cli-service",
+      "repositoryFullName": "vuejs/vue-cli",
+      "dependentCount": 42142,
+      "stars": 29543,
+      "gemIndex": -0.533649698764335
+    },
+    {
+      "packageName": "uuid",
+      "repositoryFullName": "uuidjs/uuid",
+      "dependentCount": 41299,
+      "stars": 15318,
+      "gemIndex": -0.8447224287878075
+    },
+    {
+      "packageName": "eslint-plugin-react-hooks",
+      "repositoryFullName": "react/react",
+      "dependentCount": 41283,
+      "stars": 216894,
+      "gemIndex": -0.0014511308416230331
+    },
+    {
+      "packageName": "rollup-plugin-commonjs",
+      "repositoryFullName": "rollup/rollup-plugin-commonjs",
+      "dependentCount": 41102,
+      "stars": 501,
+      "gemIndex": -3.106556330910684
+    },
+    {
+      "packageName": "@storybook/react",
+      "repositoryFullName": "storybookjs/storybook",
+      "dependentCount": 41076,
+      "stars": 90877,
+      "gemIndex": -0.06505993395696326
+    },
+    {
+      "packageName": "@babel/preset-typescript",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 40818,
+      "stars": 42703,
+      "gemIndex": -0.4216494543335844
+    },
+    {
+      "packageName": "karma-chrome-launcher",
+      "repositoryFullName": "karma-runner/karma-chrome-launcher",
+      "dependentCount": 40738,
+      "stars": 467,
+      "gemIndex": -3.1810951283345523
+    },
+    {
+      "packageName": "@vue/cli-plugin-babel",
+      "repositoryFullName": "vuejs/vue-cli",
+      "dependentCount": 40684,
+      "stars": 29749,
+      "gemIndex": -0.5312728611241783
+    },
+    {
+      "packageName": "eslint-config-airbnb-base",
+      "repositoryFullName": "airbnb/javascript",
+      "dependentCount": 40487,
+      "stars": 148141,
+      "gemIndex": -0.007228274380914728
+    },
+    {
+      "packageName": "@types/lodash",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 40055,
+      "stars": 51353,
+      "gemIndex": -0.17430002768101288
+    },
+    {
+      "packageName": "grunt",
+      "repositoryFullName": "gruntjs/grunt",
+      "dependentCount": 39195,
+      "stars": 12242,
+      "gemIndex": -0.9412885326592053
+    },
+    {
+      "packageName": "less",
+      "repositoryFullName": "less/less.js",
+      "dependentCount": 38920,
+      "stars": 17027,
+      "gemIndex": -0.7746850429165218
+    },
+    {
+      "packageName": "postcss",
+      "repositoryFullName": "postcss/postcss",
+      "dependentCount": 38375,
+      "stars": 28172,
+      "gemIndex": -0.527527130670773
+    },
+    {
+      "packageName": "nodemon",
+      "repositoryFullName": "remy/nodemon",
+      "dependentCount": 37791,
+      "stars": 26680,
+      "gemIndex": -0.558466335407264
+    },
+    {
+      "packageName": "rollup-plugin-typescript2",
+      "repositoryFullName": "ezolenko/rollup-plugin-typescript2",
+      "dependentCount": 37702,
+      "stars": 820,
+      "gemIndex": -2.6215247631052323
+    },
+    {
+      "packageName": "tape",
+      "repositoryFullName": "tape-testing/tape",
+      "dependentCount": 37690,
+      "stars": 5757,
+      "gemIndex": -1.2812967184809552
+    },
+    {
+      "packageName": "@types/chai",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 37653,
+      "stars": 48512,
+      "gemIndex": -0.20942835559724587
+    },
+    {
+      "packageName": "extract-text-webpack-plugin",
+      "repositoryFullName": "webpack-contrib/extract-text-webpack-plugin",
+      "dependentCount": 37600,
+      "stars": 4016,
+      "gemIndex": -1.4838243642413906
+    },
+    {
+      "packageName": "@testing-library/jest-dom",
+      "repositoryFullName": "testing-library/jest-dom",
+      "dependentCount": 37321,
+      "stars": 4595,
+      "gemIndex": -1.4370306240713104
+    },
+    {
+      "packageName": "@storybook/addon-links",
+      "repositoryFullName": "storybookjs/storybook",
+      "dependentCount": 36931,
+      "stars": 90877,
+      "gemIndex": -0.06417439816883078
+    },
+    {
+      "packageName": "async",
+      "repositoryFullName": "caolan/async",
+      "dependentCount": 36565,
+      "stars": 28142,
+      "gemIndex": -0.5275272751068293
+    },
+    {
+      "packageName": "antd",
+      "repositoryFullName": "ant-design/ant-design",
+      "dependentCount": 36410,
+      "stars": 99092,
+      "gemIndex": -0.054109961192705724
+    },
+    {
+      "packageName": "vue-loader",
+      "repositoryFullName": "vuejs/vue-loader",
+      "dependentCount": 36237,
+      "stars": 4976,
+      "gemIndex": -1.3803969925842194
+    },
+    {
+      "packageName": "@vue/cli-plugin-eslint",
+      "repositoryFullName": "vuejs/vue-cli",
+      "dependentCount": 36236,
+      "stars": 29749,
+      "gemIndex": -0.5147187571713351
+    },
+    {
+      "packageName": "babel-preset-stage-0",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 36227,
+      "stars": 43983,
+      "gemIndex": -0.4533484646210786
+    },
+    {
+      "packageName": "typedoc",
+      "repositoryFullName": "TypeStrong/TypeDoc",
+      "dependentCount": 35918,
+      "stars": 7289,
+      "gemIndex": -1.1792276859469362
+    },
+    {
+      "packageName": "semantic-release",
+      "repositoryFullName": "semantic-release/semantic-release",
+      "dependentCount": 35747,
+      "stars": 23987,
+      "gemIndex": -0.679306393894006
+    },
+    {
+      "packageName": "babel-plugin-transform-runtime",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 35733,
+      "stars": 43983,
+      "gemIndex": -0.4533196469061082
+    },
+    {
+      "packageName": "classnames",
+      "repositoryFullName": "JedWatson/classnames",
+      "dependentCount": 35031,
+      "stars": 17783,
+      "gemIndex": -0.762911505112909
+    },
+    {
+      "packageName": "node-fetch",
+      "repositoryFullName": "bitinn/node-fetch",
+      "dependentCount": 34871,
+      "stars": 8856,
+      "gemIndex": -1.0798603847851393
+    },
+    {
+      "packageName": "mkdirp",
+      "repositoryFullName": "isaacs/node-mkdirp",
+      "dependentCount": 34778,
+      "stars": 199,
+      "gemIndex": -4.18900519016967
+    },
+    {
+      "packageName": "ava",
+      "repositoryFullName": "avajs/ava",
+      "dependentCount": 34776,
+      "stars": 20836,
+      "gemIndex": -0.6470038198535966
+    },
+    {
+      "packageName": "ora",
+      "repositoryFullName": "sindresorhus/ora",
+      "dependentCount": 34717,
+      "stars": 9736,
+      "gemIndex": -1.059818641450934
+    },
+    {
+      "packageName": "minimist",
+      "repositoryFullName": "minimistjs/minimist",
+      "dependentCount": 33291,
+      "stars": 662,
+      "gemIndex": -3.175567118360803
+    },
+    {
+      "packageName": "standard",
+      "repositoryFullName": "standard/standard",
+      "dependentCount": 33227,
+      "stars": 29089,
+      "gemIndex": -0.5413077172036596
+    },
+    {
+      "packageName": "react-test-renderer",
+      "repositoryFullName": "react/react",
+      "dependentCount": 33120,
+      "stars": 247323,
+      "gemIndex": 0.0029971081636571543
+    },
+    {
+      "packageName": "@commitlint/config-conventional",
+      "repositoryFullName": "conventional-changelog/commitlint",
+      "dependentCount": 33041,
+      "stars": 18690,
+      "gemIndex": -0.8585430571702675
+    },
+    {
+      "packageName": "shelljs",
+      "repositoryFullName": "shelljs/shelljs",
+      "dependentCount": 32986,
+      "stars": 14399,
+      "gemIndex": -0.8437093751813914
+    },
+    {
+      "packageName": "vue-router",
+      "repositoryFullName": "vuejs/router",
+      "dependentCount": 32952,
+      "stars": 4667,
+      "gemIndex": -1.6162621230362952
+    },
+    {
+      "packageName": "@testing-library/user-event",
+      "repositoryFullName": "testing-library/user-event",
+      "dependentCount": 32356,
+      "stars": 2319,
+      "gemIndex": -1.9062388512735593
+    },
+    {
+      "packageName": "webpack-merge",
+      "repositoryFullName": "survivejs/webpack-merge",
+      "dependentCount": 32351,
+      "stars": 2683,
+      "gemIndex": -1.7037097475470413
+    },
+    {
+      "packageName": "jsdom",
+      "repositoryFullName": "jsdom/jsdom",
+      "dependentCount": 31840,
+      "stars": 21651,
+      "gemIndex": -0.6599085951848741
+    },
+    {
+      "packageName": "@rollup/plugin-typescript",
+      "repositoryFullName": "rollup/plugins",
+      "dependentCount": 31792,
+      "stars": 3633,
+      "gemIndex": -1.5688796776056821
+    },
+    {
+      "packageName": "@storybook/addon-actions",
+      "repositoryFullName": "storybookjs/storybook",
+      "dependentCount": 31683,
+      "stars": 90876,
+      "gemIndex": -0.06108441120897576
+    },
+    {
+      "packageName": "@storybook/addon-essentials",
+      "repositoryFullName": "storybookjs/storybook",
+      "dependentCount": 31634,
+      "stars": 90877,
+      "gemIndex": -0.06371842244880928
+    },
+    {
+      "packageName": "vite",
+      "repositoryFullName": "vitejs/vite",
+      "dependentCount": 31388,
+      "stars": 82346,
+      "gemIndex": -0.08115380782208806
+    },
+    {
+      "packageName": "babel-runtime",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 31333,
+      "stars": 43983,
+      "gemIndex": -0.4205816417699467
+    },
+    {
+      "packageName": "browserify",
+      "repositoryFullName": "browserify/browserify",
+      "dependentCount": 31322,
+      "stars": 14527,
+      "gemIndex": -0.8647205435565689
+    },
+    {
+      "packageName": "less-loader",
+      "repositoryFullName": "webpack/less-loader",
+      "dependentCount": 31138,
+      "stars": 958,
+      "gemIndex": -2.427055702551992
+    },
+    {
+      "packageName": "@commitlint/cli",
+      "repositoryFullName": "conventional-changelog/commitlint",
+      "dependentCount": 30958,
+      "stars": 18696,
+      "gemIndex": -0.8582576182922934
+    },
+    {
+      "packageName": "eslint-loader",
+      "repositoryFullName": "webpack-contrib/eslint-loader",
+      "dependentCount": 30813,
+      "stars": 1048,
+      "gemIndex": -2.3539980922768597
+    },
+    {
+      "packageName": "babel-polyfill",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 30423,
+      "stars": 43983,
+      "gemIndex": -0.452543546340407
+    },
+    {
+      "packageName": "gh-pages",
+      "repositoryFullName": "tschaub/gh-pages",
+      "dependentCount": 30364,
+      "stars": 3348,
+      "gemIndex": -1.600798170960621
+    },
+    {
+      "packageName": "@types/hyper-function-component",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 30283,
+      "stars": 51336,
+      "gemIndex": -0.1564699484104666
+    },
+    {
+      "packageName": "bluebird",
+      "repositoryFullName": "petkaantonov/bluebird",
+      "dependentCount": 30080,
+      "stars": 20491,
+      "gemIndex": -0.6483543081062907
+    },
+    {
+      "packageName": "eslint-plugin-jest",
+      "repositoryFullName": "jest-community/eslint-plugin-jest",
+      "dependentCount": 29896,
+      "stars": 1169,
+      "gemIndex": -2.3006727499183395
+    },
+    {
+      "packageName": "enzyme",
+      "repositoryFullName": "airbnb/enzyme",
+      "dependentCount": 29834,
+      "stars": 19824,
+      "gemIndex": -0.6668445225374819
+    },
+    {
+      "packageName": "should",
+      "repositoryFullName": "shouldjs/should.js",
+      "dependentCount": 29283,
+      "stars": 1905,
+      "gemIndex": -2.0410378102994295
+    },
+    {
+      "packageName": "colors",
+      "repositoryFullName": "Marak/colors.js",
+      "dependentCount": 29121,
+      "stars": 5165,
+      "gemIndex": -1.3399139835348672
+    },
+    {
+      "packageName": "styled-components",
+      "repositoryFullName": "styled-components/styled-components",
+      "dependentCount": 28894,
+      "stars": 41119,
+      "gemIndex": -0.4430877435846327
+    },
+    {
+      "packageName": "@types/express",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 28802,
+      "stars": 48547,
+      "gemIndex": -0.17298579561555755
+    },
+    {
+      "packageName": "karma-jasmine",
+      "repositoryFullName": "karma-runner/karma-jasmine",
+      "dependentCount": 28620,
+      "stars": 537,
+      "gemIndex": -2.974903725015162
+    },
+    {
+      "packageName": "rollup-plugin-postcss",
+      "repositoryFullName": "egoist/rollup-plugin-postcss",
+      "dependentCount": 28580,
+      "stars": 690,
+      "gemIndex": -2.8101562555371937
+    },
+    {
+      "packageName": "babel-register",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 28395,
+      "stars": 42703,
+      "gemIndex": -0.45219858136297636
+    },
+    {
+      "packageName": "jquery",
+      "repositoryFullName": "jquery/jquery",
+      "dependentCount": 28173,
+      "stars": 59786,
+      "gemIndex": -0.08936775598221845
+    },
+    {
+      "packageName": "@rollup/plugin-babel",
+      "repositoryFullName": "rollup/plugins",
+      "dependentCount": 28094,
+      "stars": 3758,
+      "gemIndex": -1.5683461038833455
+    },
+    {
+      "packageName": "jasmine-core",
+      "repositoryFullName": "jasmine/jasmine",
+      "dependentCount": 26801,
+      "stars": 15822,
+      "gemIndex": -0.816524767292402
+    },
+    {
+      "packageName": "rollup-plugin-peer-deps-external",
+      "repositoryFullName": "pmowrer/rollup-plugin-peer-deps-external",
+      "dependentCount": 26633,
+      "stars": 111,
+      "gemIndex": -4.910070850624948
+    },
+    {
+      "packageName": "body-parser",
+      "repositoryFullName": "expressjs/body-parser",
+      "dependentCount": 26598,
+      "stars": 5499,
+      "gemIndex": -1.3122063169676716
+    },
+    {
+      "packageName": "uglify-js",
+      "repositoryFullName": "mishoo/UglifyJS",
+      "dependentCount": 26568,
+      "stars": 13150,
+      "gemIndex": -0.9091745420176305
+    },
+    {
+      "packageName": "babel-plugin-transform-object-rest-spread",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 26549,
+      "stars": 43983,
+      "gemIndex": -0.45202609887426104
+    },
+    {
+      "packageName": "gulp-rename",
+      "repositoryFullName": "hparra/gulp-rename",
+      "dependentCount": 26507,
+      "stars": 686,
+      "gemIndex": -2.709322805932302
+    },
+    {
+      "packageName": "@angular/core",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 26429,
+      "stars": 100988,
+      "gemIndex": -0.05311916604010895
+    },
+    {
+      "packageName": "del",
+      "repositoryFullName": "sindresorhus/del",
+      "dependentCount": 26159,
+      "stars": 1344,
+      "gemIndex": -2.1764498439897446
+    },
+    {
+      "packageName": "cz-conventional-changelog",
+      "repositoryFullName": "commitizen/cz-conventional-changelog",
+      "dependentCount": 25725,
+      "stars": 795,
+      "gemIndex": -2.6418899928910347
+    },
+    {
+      "packageName": "mini-css-extract-plugin",
+      "repositoryFullName": "webpack/mini-css-extract-plugin",
+      "dependentCount": 25645,
+      "stars": 4663,
+      "gemIndex": -1.3800528102107041
+    },
+    {
+      "packageName": "babel-preset-stage-2",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 25357,
+      "stars": 43983,
+      "gemIndex": -0.45182486930409316
+    },
+    {
+      "packageName": "underscore",
+      "repositoryFullName": "jashkenas/underscore",
+      "dependentCount": 25330,
+      "stars": 27332,
+      "gemIndex": -0.538177883451742
+    },
+    {
+      "packageName": "copy-webpack-plugin",
+      "repositoryFullName": "webpack/copy-webpack-plugin",
+      "dependentCount": 25162,
+      "stars": 2850,
+      "gemIndex": -1.6248010855553887
+    },
+    {
+      "packageName": "@angular/common",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 24687,
+      "stars": 100988,
+      "gemIndex": -0.05286227632942671
+    },
+    {
+      "packageName": "tslint-config-prettier",
+      "repositoryFullName": "prettier/tslint-config-prettier",
+      "dependentCount": 24110,
+      "stars": 1231,
+      "gemIndex": -2.3027106506196184
+    },
+    {
+      "packageName": "@angular/compiler",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 24110,
+      "stars": 100988,
+      "gemIndex": -0.05274810312467904
+    },
+    {
+      "packageName": "@types/jasmine",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 23664,
+      "stars": 51376,
+      "gemIndex": -0.1554256190240319
+    },
+    {
+      "packageName": "react-native",
+      "repositoryFullName": "react/react-native",
+      "dependentCount": 23543,
+      "stars": 126360,
+      "gemIndex": -0.006866670995963883
+    },
+    {
+      "packageName": "sinon-chai",
+      "repositoryFullName": "chaijs/sinon-chai",
+      "dependentCount": 23394,
+      "stars": 1087,
+      "gemIndex": -2.3925527727437372
+    },
+    {
+      "packageName": "zone.js",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 23195,
+      "stars": 100988,
+      "gemIndex": -0.052833725899429244
+    },
+    {
+      "packageName": "tsup",
+      "repositoryFullName": "egoist/tsup",
+      "dependentCount": 23096,
+      "stars": 11294,
+      "gemIndex": -1.244301097523816
+    },
+    {
+      "packageName": "react-router-dom",
+      "repositoryFullName": "remix-run/react-router",
+      "dependentCount": 23067,
+      "stars": 53041,
+      "gemIndex": -0.14037637405662803
+    },
+    {
+      "packageName": "uglifyjs-webpack-plugin",
+      "repositoryFullName": "webpack-contrib/uglifyjs-webpack-plugin",
+      "dependentCount": 23026,
+      "stars": 1368,
+      "gemIndex": -2.188594054665115
+    },
+    {
+      "packageName": "@angular/platform-browser",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 23006,
+      "stars": 100988,
+      "gemIndex": -0.05260538661874446
+    },
+    {
+      "packageName": "webpack-bundle-analyzer",
+      "repositoryFullName": "webpack/webpack-bundle-analyzer",
+      "dependentCount": 22731,
+      "stars": 12661,
+      "gemIndex": -0.9147326469393187
+    },
+    {
+      "packageName": "optimize-css-assets-webpack-plugin",
+      "repositoryFullName": "NMFR/optimize-css-assets-webpack-plugin",
+      "dependentCount": 22358,
+      "stars": 1133,
+      "gemIndex": -2.2815835292166833
+    },
+    {
+      "packageName": "@angular/compiler-cli",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 22263,
+      "stars": 100988,
+      "gemIndex": -0.052405583510436046
+    },
+    {
+      "packageName": "clean-webpack-plugin",
+      "repositoryFullName": "johnagan/clean-webpack-plugin",
+      "dependentCount": 22156,
+      "stars": 1940,
+      "gemIndex": -2.026340383902773
+    },
+    {
+      "packageName": "jsonwebtoken",
+      "repositoryFullName": "auth0/node-jsonwebtoken",
+      "dependentCount": 21931,
+      "stars": 18191,
+      "gemIndex": -0.7608580180728763
+    },
+    {
+      "packageName": "reflect-metadata",
+      "repositoryFullName": "rbuckton/reflect-metadata",
+      "dependentCount": 21618,
+      "stars": 3358,
+      "gemIndex": -1.5809933620346937
+    },
+    {
+      "packageName": "gulp-uglify",
+      "repositoryFullName": "terinjokes/gulp-uglify",
+      "dependentCount": 21522,
+      "stars": 1213,
+      "gemIndex": -2.2530008767881475
+    },
+    {
+      "packageName": "terser-webpack-plugin",
+      "repositoryFullName": "webpack/minimizer-webpack-plugin",
+      "dependentCount": 21370,
+      "stars": 1963,
+      "gemIndex": -1.9482389842741223
+    },
+    {
+      "packageName": "redux",
+      "repositoryFullName": "reduxjs/redux",
+      "dependentCount": 21274,
+      "stars": 61511,
+      "gemIndex": -0.08057883145087895
+    },
+    {
+      "packageName": "stylelint",
+      "repositoryFullName": "stylelint/stylelint",
+      "dependentCount": 21173,
+      "stars": 11513,
+      "gemIndex": -0.9904061323638775
+    },
+    {
+      "packageName": "@angular/platform-browser-dynamic",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 21147,
+      "stars": 100988,
+      "gemIndex": -0.05220578040212764
+    },
+    {
+      "packageName": "js-yaml",
+      "repositoryFullName": "nodeca/js-yaml",
+      "dependentCount": 20789,
+      "stars": 6624,
+      "gemIndex": -1.2507378863430516
+    },
+    {
+      "packageName": "grunt-contrib-jshint",
+      "repositoryFullName": "gruntjs/grunt-contrib-jshint",
+      "dependentCount": 20715,
+      "stars": 706,
+      "gemIndex": -2.6412176950384327
+    },
+    {
+      "packageName": "karma-mocha",
+      "repositoryFullName": "karma-runner/karma-mocha",
+      "dependentCount": 20647,
+      "stars": 380,
+      "gemIndex": -3.2850719854411463
+    },
+    {
+      "packageName": "path",
+      "repositoryFullName": "jinder/path",
+      "dependentCount": 20628,
+      "stars": 134,
+      "gemIndex": -4.6440553015669535
+    },
+    {
+      "packageName": "concurrently",
+      "repositoryFullName": "open-cli-tools/concurrently",
+      "dependentCount": 20534,
+      "stars": 7831,
+      "gemIndex": -1.2551438909719324
+    },
+    {
+      "packageName": "commitizen",
+      "repositoryFullName": "commitizen/cz-cli",
+      "dependentCount": 20397,
+      "stars": 16823,
+      "gemIndex": -0.8153795866327156
+    },
+    {
+      "packageName": "babel",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 20238,
+      "stars": 43223,
+      "gemIndex": -0.450991203941969
+    },
+    {
+      "packageName": "standard-version",
+      "repositoryFullName": "conventional-changelog/standard-version",
+      "dependentCount": 20218,
+      "stars": 7541,
+      "gemIndex": -1.1934653512005917
+    },
+    {
+      "packageName": "cheerio",
+      "repositoryFullName": "cheeriojs/cheerio",
+      "dependentCount": 20164,
+      "stars": 30446,
+      "gemIndex": -0.5351114893178944
+    },
+    {
+      "packageName": "karma-coverage",
+      "repositoryFullName": "karma-runner/karma-coverage",
+      "dependentCount": 19991,
+      "stars": 767,
+      "gemIndex": -2.5791571306952745
+    },
+    {
+      "packageName": "codecov",
+      "repositoryFullName": "codecov/codecov-node",
+      "dependentCount": 19925,
+      "stars": 293,
+      "gemIndex": -3.6451595358122963
+    },
+    {
+      "packageName": "eslint-plugin-flowtype",
+      "repositoryFullName": "gajus/eslint-plugin-flowtype",
+      "dependentCount": 19839,
+      "stars": 1077,
+      "gemIndex": -2.3108300358894773
+    },
+    {
+      "packageName": "@rollup/plugin-json",
+      "repositoryFullName": "rollup/plugins",
+      "dependentCount": 19764,
+      "stars": 3633,
+      "gemIndex": -1.565588987355074
+    },
+    {
+      "packageName": "del-cli",
+      "repositoryFullName": "sindresorhus/del-cli",
+      "dependentCount": 19690,
+      "stars": 332,
+      "gemIndex": -3.550396152049401
+    },
+    {
+      "packageName": "jshint",
+      "repositoryFullName": "jshint/jshint",
+      "dependentCount": 19674,
+      "stars": 8946,
+      "gemIndex": -1.0564997445827873
+    },
+    {
+      "packageName": "source-map-support",
+      "repositoryFullName": "evanw/node-source-map-support",
+      "dependentCount": 19601,
+      "stars": 2193,
+      "gemIndex": -1.8924120347515816
+    },
+    {
+      "packageName": "enzyme-adapter-react-16",
+      "repositoryFullName": "enzymejs/enzyme",
+      "dependentCount": 19545,
+      "stars": 19825,
+      "gemIndex": -0.6684692311490678
+    },
+    {
+      "packageName": "ws",
+      "repositoryFullName": "websockets/ws",
+      "dependentCount": 19475,
+      "stars": 22793,
+      "gemIndex": -0.640934374934973
+    },
+    {
+      "packageName": "supertest",
+      "repositoryFullName": "ladjs/supertest",
+      "dependentCount": 19319,
+      "stars": 13716,
+      "gemIndex": -0.9019840709127535
+    },
+    {
+      "packageName": "@babel/plugin-proposal-object-rest-spread",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 19208,
+      "stars": 42703,
+      "gemIndex": -0.4505599977201807
+    },
+    {
+      "packageName": "@angular/forms",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 19158,
+      "stars": 95643,
+      "gemIndex": -0.0516063710772024
+    },
+    {
+      "packageName": "@babel/polyfill",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 19057,
+      "stars": 42703,
+      "gemIndex": -0.4361862537160317
+    },
+    {
+      "packageName": "@babel/register",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 19043,
+      "stars": 43983,
+      "gemIndex": -0.41858291284752197
+    },
+    {
+      "packageName": "tsdx",
+      "repositoryFullName": "jaredpalmer/tsdx",
+      "dependentCount": 19033,
+      "stars": 11466,
+      "gemIndex": -0.989617678207972
+    },
+    {
+      "packageName": "react-redux",
+      "repositoryFullName": "reduxjs/react-redux",
+      "dependentCount": 18675,
+      "stars": 23456,
+      "gemIndex": -0.595894559190258
+    },
+    {
+      "packageName": "babel-plugin-add-module-exports",
+      "repositoryFullName": "59naga/babel-plugin-add-module-exports",
+      "dependentCount": 18621,
+      "stars": 729,
+      "gemIndex": -2.6193179461947036
+    },
+    {
+      "packageName": "web-vitals",
+      "repositoryFullName": "GoogleChrome/web-vitals",
+      "dependentCount": 18381,
+      "stars": 6975,
+      "gemIndex": -1.2473412677203322
+    },
+    {
+      "packageName": "@vitejs/plugin-vue",
+      "repositoryFullName": "vitejs/vite-plugin-vue",
+      "dependentCount": 18217,
+      "stars": 676,
+      "gemIndex": -3.404721352352779
+    },
+    {
+      "packageName": "karma-webpack",
+      "repositoryFullName": "webpack-contrib/karma-webpack",
+      "dependentCount": 18146,
+      "stars": 830,
+      "gemIndex": -2.5830892327592037
+    },
+    {
+      "packageName": "babel-plugin-transform-class-properties",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 17987,
+      "stars": 42703,
+      "gemIndex": -0.45033002106856024
+    },
+    {
+      "packageName": "gulp-util",
+      "repositoryFullName": "gulpjs/gulp-util",
+      "dependentCount": 17955,
+      "stars": 830,
+      "gemIndex": -2.584495774342305
+    },
+    {
+      "packageName": "bootstrap",
+      "repositoryFullName": "twbs/bootstrap",
+      "dependentCount": 17952,
+      "stars": 174603,
+      "gemIndex": -0.0009309141248147754
+    },
+    {
+      "packageName": "through2",
+      "repositoryFullName": "rvagg/through2",
+      "dependentCount": 17943,
+      "stars": 1908,
+      "gemIndex": -1.9571921877686647
+    },
+    {
+      "packageName": "chokidar",
+      "repositoryFullName": "paulmillr/chokidar",
+      "dependentCount": 17735,
+      "stars": 12210,
+      "gemIndex": -1.012232211600066
+    },
+    {
+      "packageName": "execa",
+      "repositoryFullName": "sindresorhus/execa",
+      "dependentCount": 17598,
+      "stars": 7585,
+      "gemIndex": -1.2456726183109714
+    },
+    {
+      "packageName": "vuex",
+      "repositoryFullName": "vuejs/vuex",
+      "dependentCount": 17404,
+      "stars": 28354,
+      "gemIndex": -0.5396561807572768
+    },
+    {
+      "packageName": "@angular/router",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 17318,
+      "stars": 100988,
+      "gemIndex": -0.05109259165583791
+    },
+    {
+      "packageName": "@types/fs-extra",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 17213,
+      "stars": 48512,
+      "gemIndex": -0.3898614662503837
+    },
+    {
+      "packageName": "gulp-babel",
+      "repositoryFullName": "babel/gulp-babel",
+      "dependentCount": 17138,
+      "stars": 1308,
+      "gemIndex": -2.2096625114335793
+    },
+    {
+      "packageName": "rollup-plugin-uglify",
+      "repositoryFullName": "TrySound/rollup-plugin-uglify",
+      "dependentCount": 17121,
+      "stars": 260,
+      "gemIndex": -3.7233630562769533
+    },
+    {
+      "packageName": "chai-as-promised",
+      "repositoryFullName": "chaijs/chai-as-promised",
+      "dependentCount": 17100,
+      "stars": 1422,
+      "gemIndex": -2.2217194414034833
+    },
+    {
+      "packageName": "@babel/eslint-parser",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 16772,
+      "stars": 43983,
+      "gemIndex": -0.41809007582297625
+    },
+    {
+      "packageName": "puppeteer",
+      "repositoryFullName": "puppeteer/puppeteer",
+      "dependentCount": 16722,
+      "stars": 95460,
+      "gemIndex": -0.05856371616953044
+    },
+    {
+      "packageName": "winston",
+      "repositoryFullName": "winstonjs/winston",
+      "dependentCount": 16466,
+      "stars": 24507,
+      "gemIndex": -0.6246159979235139
+    },
+    {
+      "packageName": "coffee-script",
+      "repositoryFullName": "jashkenas/coffeescript",
+      "dependentCount": 16366,
+      "stars": 16438,
+      "gemIndex": -0.7842165323343199
+    },
+    {
+      "packageName": "@storybook/addon-interactions",
+      "repositoryFullName": "storybookjs/storybook",
+      "dependentCount": 16286,
+      "stars": 90877,
+      "gemIndex": -0.061113516149809734
+    },
+    {
+      "packageName": "case-sensitive-paths-webpack-plugin",
+      "repositoryFullName": "Urthen/case-sensitive-paths-webpack-plugin",
+      "dependentCount": 16271,
+      "stars": 427,
+      "gemIndex": -3.106788992433311
+    },
+    {
+      "packageName": "grunt-contrib-watch",
+      "repositoryFullName": "gruntjs/grunt-contrib-watch",
+      "dependentCount": 16229,
+      "stars": 1965,
+      "gemIndex": -1.97083979823075
+    },
+    {
+      "packageName": "release-it",
+      "repositoryFullName": "release-it/release-it",
+      "dependentCount": 16134,
+      "stars": 8021,
+      "gemIndex": -1.2142331957957806
+    },
+    {
+      "packageName": "@types/styled-components",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 16110,
+      "stars": 51371,
+      "gemIndex": -0.15360502261139192
+    },
+    {
+      "packageName": "graphql",
+      "repositoryFullName": "graphql/graphql-js",
+      "dependentCount": 16004,
+      "stars": 20344,
+      "gemIndex": -0.6533100568295693
+    },
+    {
+      "packageName": "aws-sdk",
+      "repositoryFullName": "aws/aws-sdk-js",
+      "dependentCount": 15973,
+      "stars": 7604,
+      "gemIndex": -1.1515958473552312
+    },
+    {
+      "packageName": "esbuild",
+      "repositoryFullName": "evanw/esbuild",
+      "dependentCount": 15949,
+      "stars": 40007,
+      "gemIndex": -0.4522326058695778
+    },
+    {
+      "packageName": "qs",
+      "repositoryFullName": "ljharb/qs",
+      "dependentCount": 15944,
+      "stars": 8943,
+      "gemIndex": -1.0892790453420889
+    },
+    {
+      "packageName": "gulp-sourcemaps",
+      "repositoryFullName": "gulp-sourcemaps/gulp-sourcemaps",
+      "dependentCount": 15927,
+      "stars": 1094,
+      "gemIndex": -2.3888502243463297
+    },
+    {
+      "packageName": "@angular/cli",
+      "repositoryFullName": "angular/angular-cli",
+      "dependentCount": 15758,
+      "stars": 27018,
+      "gemIndex": -0.5595593667622024
+    },
+    {
+      "packageName": "raw-loader",
+      "repositoryFullName": "webpack-contrib/raw-loader",
+      "dependentCount": 15630,
+      "stars": 843,
+      "gemIndex": -2.5115078404982865
+    },
+    {
+      "packageName": "handlebars",
+      "repositoryFullName": "handlebars-lang/handlebars.js",
+      "dependentCount": 15556,
+      "stars": 18669,
+      "gemIndex": -0.7224167406834662
+    },
+    {
+      "packageName": "rollup-plugin-dts",
+      "repositoryFullName": "Swatinem/rollup-plugin-dts",
+      "dependentCount": 15465,
+      "stars": 876,
+      "gemIndex": -2.698833254026272
+    },
+    {
+      "packageName": "@angular/animations",
+      "repositoryFullName": "angular/angular",
+      "dependentCount": 15248,
+      "stars": 100988,
+      "gemIndex": -0.05029337922260426
+    },
+    {
+      "packageName": "@types/inquirer",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 15223,
+      "stars": 48512,
+      "gemIndex": -0.31021099324597806
+    },
+    {
+      "packageName": "grunt-contrib-clean",
+      "repositoryFullName": "gruntjs/grunt-contrib-clean",
+      "dependentCount": 15181,
+      "stars": 513,
+      "gemIndex": -3.0837729959229807
+    },
+    {
+      "packageName": "jest-cli",
+      "repositoryFullName": "jestjs/jest",
+      "dependentCount": 15041,
+      "stars": 45469,
+      "gemIndex": -0.4064813671398538
+    },
+    {
+      "packageName": "ejs",
+      "repositoryFullName": "mde/ejs",
+      "dependentCount": 15041,
+      "stars": 8117,
+      "gemIndex": -1.155182289413535
+    },
+    {
+      "packageName": "karma-jasmine-html-reporter",
+      "repositoryFullName": "dfederm/karma-jasmine-html-reporter",
+      "dependentCount": 15015,
+      "stars": 38,
+      "gemIndex": -6.734425343176499
+    },
+    {
+      "packageName": "vue-style-loader",
+      "repositoryFullName": "vuejs/vue-style-loader",
+      "dependentCount": 14833,
+      "stars": 222,
+      "gemIndex": -3.960719690930984
+    },
+    {
+      "packageName": "dayjs",
+      "repositoryFullName": "iamkun/dayjs",
+      "dependentCount": 14783,
+      "stars": 48669,
+      "gemIndex": -0.4043179082688173
+    },
+    {
+      "packageName": "@rollup/plugin-replace",
+      "repositoryFullName": "rollup/plugins",
+      "dependentCount": 14772,
+      "stars": 3633,
+      "gemIndex": -1.5657063180991537
+    },
+    {
+      "packageName": "webpack-node-externals",
+      "repositoryFullName": "liady/webpack-node-externals",
+      "dependentCount": 14658,
+      "stars": 1294,
+      "gemIndex": -2.275632705522032
+    },
+    {
+      "packageName": "jsdoc",
+      "repositoryFullName": "jsdoc/jsdoc",
+      "dependentCount": 14591,
+      "stars": 15452,
+      "gemIndex": -0.8656532787544986
+    },
+    {
+      "packageName": "@storybook/testing-library",
+      "repositoryFullName": "storybookjs/testing-library",
+      "dependentCount": 14559,
+      "stars": 56,
+      "gemIndex": -6.197956040362407
+    },
+    {
+      "packageName": "ajv",
+      "repositoryFullName": "ajv-validator/ajv",
+      "dependentCount": 14548,
+      "stars": 14807,
+      "gemIndex": -0.8950467962444724
+    },
+    {
+      "packageName": "flow-bin",
+      "repositoryFullName": "flowtype/flow-bin",
+      "dependentCount": 14469,
+      "stars": 532,
+      "gemIndex": -3.050112635596373
+    },
+    {
+      "packageName": "codelyzer",
+      "repositoryFullName": "mgechev/codelyzer",
+      "dependentCount": 14462,
+      "stars": 2467,
+      "gemIndex": -1.8507643730445142
+    },
+    {
+      "packageName": "json-loader",
+      "repositoryFullName": "webpack/json-loader",
+      "dependentCount": 14287,
+      "stars": 433,
+      "gemIndex": -3.209954067165358
+    },
+    {
+      "packageName": "@vue/test-utils",
+      "repositoryFullName": "vuejs/test-utils",
+      "dependentCount": 14280,
+      "stars": 1155,
+      "gemIndex": -2.5289385460435496
+    },
+    {
+      "packageName": "gulp-sass",
+      "repositoryFullName": "dlmanning/gulp-sass",
+      "dependentCount": 14272,
+      "stars": 1554,
+      "gemIndex": -2.1095068468047917
+    },
+    {
+      "packageName": "karma-phantomjs-launcher",
+      "repositoryFullName": "karma-runner/karma-phantomjs-launcher",
+      "dependentCount": 14203,
+      "stars": 281,
+      "gemIndex": -3.5939103194404898
     },
     {
       "packageName": "cross-spawn",
       "repositoryFullName": "moxystudio/node-cross-spawn",
-      "dependentCount": 35000,
-      "stars": 1100,
-      "gemIndex": -71.8
+      "dependentCount": 14155,
+      "stars": 1171,
+      "gemIndex": -2.3114597719150876
     },
     {
-      "packageName": "is-number",
-      "repositoryFullName": "jonschlinkert/is-number",
-      "dependentCount": 18000,
-      "stars": 130,
-      "gemIndex": -90.2
+      "packageName": "jasmine",
+      "repositoryFullName": "jasmine/jasmine-npm",
+      "dependentCount": 14127,
+      "stars": 378,
+      "gemIndex": -3.320280464475177
+    },
+    {
+      "packageName": "element-ui",
+      "repositoryFullName": "ElemeFE/element",
+      "dependentCount": 14048,
+      "stars": 53991,
+      "gemIndex": -0.12899866403477592
+    },
+    {
+      "packageName": "karma-sourcemap-loader",
+      "repositoryFullName": "demerzel3/karma-sourcemap-loader",
+      "dependentCount": 13993,
+      "stars": 73,
+      "gemIndex": -5.525415974640968
+    },
+    {
+      "packageName": "gulp-concat",
+      "repositoryFullName": "contra/gulp-concat",
+      "dependentCount": 13959,
+      "stars": 792,
+      "gemIndex": -2.6229639445545945
+    },
+    {
+      "packageName": "@emotion/styled",
+      "repositoryFullName": "emotion-js/emotion",
+      "dependentCount": 13904,
+      "stars": 17482,
+      "gemIndex": -0.7639795275500003
+    },
+    {
+      "packageName": "postcss-import",
+      "repositoryFullName": "postcss/postcss-import",
+      "dependentCount": 13885,
+      "stars": 1410,
+      "gemIndex": -2.1572292052950397
+    },
+    {
+      "packageName": "pre-commit",
+      "repositoryFullName": "observing/pre-commit",
+      "dependentCount": 13871,
+      "stars": 1880,
+      "gemIndex": -1.9990713723485845
+    },
+    {
+      "packageName": "mongoose",
+      "repositoryFullName": "Automattic/mongoose",
+      "dependentCount": 13842,
+      "stars": 27473,
+      "gemIndex": -0.5630680163509938
+    },
+    {
+      "packageName": "@babel/plugin-syntax-dynamic-import",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 13726,
+      "stars": 42703,
+      "gemIndex": -0.4167758437575209
+    },
+    {
+      "packageName": "@semantic-release/git",
+      "repositoryFullName": "semantic-release/git",
+      "dependentCount": 13724,
+      "stars": 276,
+      "gemIndex": -3.747310716985129
+    },
+    {
+      "packageName": "@types/jsonwebtoken",
+      "repositoryFullName": "DefinitelyTyped/DefinitelyTyped",
+      "dependentCount": 13620,
+      "stars": 48512,
+      "gemIndex": -0.16948117677434335
+    },
+    {
+      "packageName": "@babel/plugin-proposal-decorators",
+      "repositoryFullName": "babel/babel",
+      "dependentCount": 13612,
+      "stars": 43223,
+      "gemIndex": -0.41669370425342994
+    },
+    {
+      "packageName": "deepmerge",
+      "repositoryFullName": "TehShrike/deepmerge",
+      "dependentCount": 13604,
+      "stars": 2764,
+      "gemIndex": -1.693414932519678
+    },
+    {
+      "packageName": "jasmine-spec-reporter",
+      "repositoryFullName": "bcaudan/jasmine-spec-reporter",
+      "dependentCount": 13557,
+      "stars": 254,
+      "gemIndex": -3.7600982688167632
+    },
+    {
+      "packageName": "cssnano",
+      "repositoryFullName": "cssnano/cssnano",
+      "dependentCount": 13557,
+      "stars": 4773,
+      "gemIndex": -1.3804638876563855
+    },
+    {
+      "packageName": "regenerator-runtime",
+      "repositoryFullName": "facebook/regenerator",
+      "dependentCount": 13548,
+      "stars": 3824,
+      "gemIndex": -1.4827275681805798
+    },
+    {
+      "packageName": "cors",
+      "repositoryFullName": "expressjs/cors",
+      "dependentCount": 13273,
+      "stars": 6189,
+      "gemIndex": -1.2635242656456547
     }
   ]
 }

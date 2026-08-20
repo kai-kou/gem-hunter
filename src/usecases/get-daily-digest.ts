@@ -44,10 +44,16 @@ export function makeGetDailyDigest(deps: { port: GemDigestPort }): GetDailyDiges
     withKeys.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
 
     // 2. 先頭 limit 件を Gem Index asc（値が小さいほど過小評価度が高い）で並べる
+    //
+    // 🔴 ただし候補プールが limit 以下のときは Gem Index の再ソートを **しない**。全件が必ず
+    //    選ばれるため、決定論的シャッフル（1.）の結果を Gem Index asc で上書きすると順序が
+    //    日付に依存しなくなり、`US-31`（毎日顔ぶれが変わる）が静かに壊れる（候補プールが
+    //    バッチ障害等で縮退したときに顕在化する）。この場合はシャッフル順をそのまま出す。
     const picked = withKeys.slice(0, limit).map((x) => x.gem)
-    const items: readonly Gem[] = [...picked].sort(
-      (a, b) => gemIndexValue(a.gemIndex) - gemIndexValue(b.gemIndex),
-    )
+    const items: readonly Gem[] =
+      candidates.length <= limit
+        ? picked
+        : [...picked].sort((a, b) => gemIndexValue(a.gemIndex) - gemIndexValue(b.gemIndex))
 
     return { date: seed, items, meta }
   }
