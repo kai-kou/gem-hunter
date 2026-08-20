@@ -87,7 +87,9 @@ function toRfc822(isoDate: string): string | null {
   if (!isoDate) return null
   const date = new Date(isoDate)
   if (Number.isNaN(date.getTime())) return null
-  return date.toUTCString().replace('GMT', 'GMT')
+  // `toUTCString()` は RFC 822 互換の 'Thu, 20 Aug 2026 16:56:03 GMT' 形式を返す（RSS の
+  // `<lastBuildDate>` / `<pubDate>` はこの形式を要求する）。追加の変換は不要。
+  return date.toUTCString()
 }
 
 function stripTrailingSlash(value: string): string {
