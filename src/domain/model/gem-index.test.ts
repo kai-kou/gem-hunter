@@ -29,7 +29,7 @@ describe('computeGemIndex', () => {
   // 「値が小さいほど過小評価度が高い（= Gem として上位）」の並び意味になる。
   it('chalk 相当（dependentRank=0.0005476 / starRank=0.6435）で強い負値を返す', () => {
     const g = computeGemIndex(0.0005476, 0.6435)
-    expect(gemIndexValue(g)).toBeCloseTo(-0.6430, 4)
+    expect(gemIndexValue(g)).toBeCloseTo(-0.643, 4)
     expect(gemIndexValue(g)).toBeLessThan(0)
   })
 

@@ -2,7 +2,7 @@ import { DomainValidationError } from '../../domain/errors'
 import type { DigestMeta, Gem } from '../../domain/model/gem'
 import { gemIndex } from '../../domain/model/gem-index'
 import type { GemDigestPort } from '../../domain/ports/gem-digest-port'
-// eslint-disable-next-line @typescript-eslint/no-restricted-imports
+
 import digestJson from '../../../public/data/daily-digest.json'
 
 /**
@@ -75,11 +75,7 @@ function parseDigest(raw: unknown): { candidates: readonly Gem[]; meta: DigestMe
 
 function parseMeta(raw: unknown): DigestMeta {
   if (!isObject(raw)) {
-    throw new DomainValidationError(
-      'DigestMeta',
-      raw,
-      'meta はオブジェクトである必要があります',
-    )
+    throw new DomainValidationError('DigestMeta', raw, 'meta はオブジェクトである必要があります')
   }
   const source = raw as Partial<Record<keyof DigestMeta, unknown>>
   const source_ = source.source
@@ -124,10 +120,7 @@ function parseCandidate(raw: unknown, index: number): Gem {
       'packageName は非空の文字列である必要があります',
     )
   }
-  if (
-    typeof entry.repositoryFullName !== 'string' ||
-    !entry.repositoryFullName.includes('/')
-  ) {
+  if (typeof entry.repositoryFullName !== 'string' || !entry.repositoryFullName.includes('/')) {
     throw new DomainValidationError(
       `DailyDigestJson.candidates[${index}].repositoryFullName`,
       entry.repositoryFullName,

@@ -34,11 +34,7 @@ export function parse(raw: string): DateSeed {
   // 実在する UTC 日付か（`Date.UTC` はロールオーバーするため、往復で一致確認する）
   const epoch = Date.UTC(year, month - 1, day)
   const d = new Date(epoch)
-  if (
-    d.getUTCFullYear() !== year ||
-    d.getUTCMonth() !== month - 1 ||
-    d.getUTCDate() !== day
-  ) {
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
     throw new DomainValidationError(
       'DateSeed',
       raw,

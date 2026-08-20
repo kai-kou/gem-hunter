@@ -2,9 +2,10 @@ import { Suspense } from 'react'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import { searchRepositoriesUseCase } from '@/src/composition/container'
+import { getDailyDigestUseCase, searchRepositoriesUseCase } from '@/src/composition/container'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
+import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { tryPageNumber } from '@/src/domain/model/page-number'
 import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
@@ -17,6 +18,8 @@ import { getMessages, type Messages } from '@/src/shared/i18n/messages'
 import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
+import { AttributionNotice } from '@/src/ui/attribution-notice'
+import { DailyDigest } from '@/src/ui/daily-digest'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { LoadingIndicator } from '@/src/ui/loading-indicator'
@@ -26,6 +29,9 @@ import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
 import { SearchForm } from '@/src/ui/search-form'
 import { SortPicker } from '@/src/ui/sort-picker'
+
+/** `SP-14` の暫定既定件数（`ADR 0014` §2.1 / 未確定事項 #2・実データを見て確定するまでの暫定値）。 */
+const DAILY_DIGEST_LIMIT = 5
 
 /**
  * 検索の 4 状態（`ui-ux-guidelines.md` §4.4）。
@@ -251,6 +257,17 @@ export default async function LocaleHome({
   const statePromise = runSearch(rawKeyword, page, sort, perPage, accessToken)
   void statePromise.catch(() => undefined)
 
+  // SP-14: 日次ダイジェスト（キーワード非依存の発見面・`ADR 0014` §2.2）。
+  // `?date=YYYYMMDD` は不正値・未指定を当日（UTC）へフォールバックする（`tryParse` 契約）。
+  // 常時表示（設計判断）: 検索キーワード有無で分岐せず、既存 UI と縦に並べる（`daily-digest.tsx` の
+  // ドキュメントコメント参照）。データ取得はサーバー側で await するがレンダリングは非常に安価
+  // （静的 JSON + `slice` + `sort`）のため `<Suspense>` を挟まない。
+  const rawDate = Array.isArray(rawSearchParams.date)
+    ? rawSearchParams.date[0]
+    : rawSearchParams.date
+  const dateSeed = tryDateSeed(rawDate, new Date())
+  const dailyDigest = await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT })
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
       <LocaleSwitcher
@@ -272,6 +289,27 @@ export default async function LocaleHome({
           placeholder: messages.home.searchPlaceholder,
           submit: messages.home.searchSubmit,
         }}
+      />
+
+      {/*
+        SP-14: 発見面（`ADR 0014`）。検索フォームの直下・コントロール行より前に置き、
+        キーワード有無に関わらず常時表示する（`daily-digest.tsx` の設計判断コメント参照）。
+        出典表示（`D-29`）は同じセクションの末尾に置き、ライセンス URL と改変明示を伴う。
+      */}
+      <DailyDigest
+        digest={dailyDigest}
+        locale={locale}
+        labels={{
+          heading: messages.home.digest.heading,
+          empty: messages.home.digest.empty,
+          dependentLabel: messages.home.digest.dependentLabel,
+          starsLabel: messages.home.digest.starsLabel,
+          gemIndexLabel: messages.home.digest.gemIndexLabel,
+        }}
+      />
+      <AttributionNotice
+        meta={dailyDigest.meta}
+        labels={{ attribution: messages.home.digest.attribution }}
       />
 
       {/*

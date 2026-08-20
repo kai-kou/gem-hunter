@@ -6,7 +6,12 @@ import { makeInstallationTokenProvider } from '../infrastructure/github/installa
 import { CachingRepositoryQuery } from '../infrastructure/platform/cached-repository-query'
 import { InMemoryCache } from '../infrastructure/platform/cache'
 import { SystemClock } from '../infrastructure/system-clock'
-import { makeGetRepositoryDetail, type GetRepositoryDetail } from '../usecases/get-repository-detail'
+import { StaticGemDigest } from '../infrastructure/platform/static-gem-digest'
+import { makeGetDailyDigest, type GetDailyDigest } from '../usecases/get-daily-digest'
+import {
+  makeGetRepositoryDetail,
+  type GetRepositoryDetail,
+} from '../usecases/get-repository-detail'
 import { makeSearchRepositories, type SearchRepositories } from '../usecases/search-repositories'
 
 /**
@@ -51,10 +56,12 @@ function makeTokenProvider(clock: ClockPort, accessToken?: string | null): Token
   return makeInstallationTokenProvider({ clock })
 }
 
-function makeCachingRepositoryQuery(deps: {
-  onCacheStatus?: (status: 'HIT' | 'MISS') => void
-  accessToken?: string | null
-} = {}) {
+function makeCachingRepositoryQuery(
+  deps: {
+    onCacheStatus?: (status: 'HIT' | 'MISS') => void
+    accessToken?: string | null
+  } = {},
+) {
   const clock = new SystemClock()
   return new CachingRepositoryQuery({
     inner: new GithubRepositoryQuery({ token: makeTokenProvider(clock, deps.accessToken) }),
@@ -100,4 +107,13 @@ export function searchRepositoriesWithCacheStatus(accessToken?: string | null): 
     search: makeSearchRepositories({ repos }),
     getCacheStatus: () => status,
   }
+}
+
+/**
+ * SP-14: キーワード非依存の日次ダイジェスト（`ADR 0014`）。候補プールは静的 JSON
+ * （`StaticGemDigest`・`D-28`）から読み、並べ替えは usecase 側で日付シードから決定論的に行う。
+ * サーバー側に状態を持たない（`D-6` / `D-14`）ため、リクエストごとに使い捨てで組み立ててよい。
+ */
+export function getDailyDigestUseCase(): GetDailyDigest {
+  return makeGetDailyDigest({ port: new StaticGemDigest() })
 }
