@@ -1,0 +1,49 @@
+{
+  "topic": "gem-hunter の入力フォームの操作性（コントロール高さ・タッチターゲット・フォーム UX）を最新の一次情報で確定し、実装指針に落とす",
+  "brief": "ユーザー報告（原文）: 『スプリント1の成果について、入力フォームについて、縦幅が小さく操作性が良くありませんでした。最新のUI/UXのトレンド、ノウハウ、ベストプラクティスや有用なスキル定義などを詳細にリサーチして実装時の参考となるようにしてください。』\n\n一次観測（2026-08-19 JST・実コード）: (1) src/ui/components/input.tsx の高さが h-8 = 32px、px-2.5 py-1、text-base md:text-sm。(2) src/ui/components/button.tsx の size=default も h-8 = 32px、px-2.5、text-sm。(3) src/ui/search-form.tsx は GET フォーム（クライアント JS なし・E-8 / NFR-3）で flex gap-2、ラベルは sr-only、送信ボタンは『検索』テキスト。(4) app/page.tsx は max-w-3xl px-4 py-10。(5) これらは shadcn の radix-nova スタイルの既定値をそのまま採用した結果（SP-1 / PR #58）。(6) docs/03_design/ui-ux/ui-ux-guidelines.md §7.5 は WCAG 2.2 の下限 24x24 CSS px しか定めておらず、主要コントロールの実用的な最小高さ・タッチターゲットの基準が存在しない。これがライブラリ既定値を素通しさせた根本原因。\n\n技術制約: Next.js 16.3.1 App Router + React 19 + Tailwind CSS v4 + shadcn（style: radix-nova, baseColor: neutral, Radix UI）。検索フォームは Server Component の GET フォームで use client を付けない（E-8 / NFR-3 / INP）。NFR-21 により事業者固有 API をアプリコードへ持ち込まない。既存ガイドラインの制約: タイポスケールは 12/14/16/20/24px の 5 段階のみ、スペーシングは 4px グリッド（4/8/12/16/24/32）、固定幅禁止・white-space:nowrap 禁止・200% 拡大で横スクロールしないこと（NFR-15）、min-height で下限だけ固定。\n\n争点は少なくとも次の 5 つ:\nA) 主要コントロール（検索入力・送信ボタン）の最小高さを何 px に定めるべきか。44px（Apple HIG）/ 48px（Material 3）/ 40px+間隔 のどれを、どの一次情報を根拠に、どのブレークポイントで採るか。WCAG 2.2 の 2.5.8（24px・AA）と 2.5.5（44px・AAA）の関係、および『ターゲットサイズ』と『コントロール高さ』が別概念であることを踏まえて決める。既存の 4px グリッドとタイポスケール制約と衝突しないか。\nB) shadcn/radix-nova の h-8 既定をどう扱うか。(i) コンポーネント既定を書き換える (ii) size バリアント（lg 等）を使い分ける (iii) フォーム箇所だけ className で上書きする (iv) Tailwind テーマにサイズトークンを定義して両者が参照する。将来の shadcn 追加コンポーネントで同じ事故が再発しない形はどれか。デザインシステム運用として持続可能な選択を 1 つに決める。\nC) 検索フォーム自体の UX をどう設計するか。モバイルでの縦積み/横並び、ラベルの可視性（sr-only のままでよいか）、プレースホルダ依存の是非、iOS の 16px 未満でのオートズーム、type=search のネイティブクリアボタン、送信ボタンの文言とアイコン、入力欄の幅比率、フォーカスリングの視認性、Enter 送信の明示。JS を持たない GET フォームという制約下で実現できる範囲に限定すること。\nD) 確定した基準を docs/03_design/ui-ux/ui-ux-guidelines.md にどう書けば実装時に迷わないか。数値・適用対象・例外を含む書式。さらに、その基準を機械的に検証する手段（テスト・lint・CI）は現実的に作れるか（jsdom は実レイアウトを持たないため高さの実測はできない点を踏まえる）。\nE) この種の UI/UX 品質を継続的に担保するために導入価値のある Claude Code 資産（Agent Skills / plugin / MCP サーバー / サブエージェント定義）は何か。ユーザーが『有用なスキル定義など』と明示的に求めている。既に本リポジトリにあるもの（.claude/skills/ 配下 19 スキル）と重複せず、実際に UI 実装の質を上げるものだけを挙げる。",
+  "participants": [
+    {
+      "name": "mobile_touch",
+      "model": "sonnet",
+      "lens": "タッチ操作性とターゲットサイズ（Apple HIG の 44pt・Material 3 の 48dp・WCAG 2.2 の 2.5.8/2.5.5 の正確な要件と差異 / Fitts の法則と実測研究 / 親指到達域 / ターゲット間隔（spacing exception）/ ポインタ入力とタッチ入力で基準を変えるべきか / 32px が実際に何を悪化させるか）。2025〜2026 の一次情報を WebSearch/WebFetch で取得し、出典 URL と取得日を必ず添える"
+    },
+    {
+      "name": "form_ux",
+      "model": "sonnet",
+      "lens": "フォームと検索 UI のベストプラクティス（NN/g・GOV.UK Design System・U.S. Web Design System・Baymard 等の一次情報 / 可視ラベル vs プレースホルダ / 検索欄の適切な幅と高さ / 送信ボタンの文言・アイコン・配置 / モバイルでの縦積み判断 / 空状態と結果件数の提示 / 2026 時点のフォームデザイン潮流）。JS なしの GET フォームで実現可能な範囲に限定して提案する。出典 URL と取得日を必ず添える"
+    },
+    {
+      "name": "design_system",
+      "model": "sonnet",
+      "lens": "デザインシステム実装（shadcn の radix-nova スタイルが h-8 を既定にしている理由と想定文脈 / Tailwind CSS v4 の @theme でサイズトークンをどう定義するか / size バリアント設計 vs 既定書き換え vs 呼び出し側 className の得失 / 将来 shadcn add で入るコンポーネントに基準を効かせる方法 / Next.js 16 RSC 制約下での実装形）。context7 MCP（mcp__context7__resolve-library-id / query-docs）と WebSearch で最新ドキュメントを確認し、出典を添える。具体的な差分案（どのファイルの何行をどう変えるか）まで落とす"
+    },
+    {
+      "name": "a11y_wcag",
+      "model": "sonnet",
+      "lens": "アクセシビリティ（WCAG 2.2 の該当 SC の正確な適合レベルと除外条件 / iOS Safari の 16px 未満オートズーム / 200% ズームとリフロー 1.4.10 / フォーカスの外観 2.4.11・2.4.13 / ラベルと名前 2.5.3 / キーボード操作 / prefers-reduced-motion / タッチとポインタの両立）。既存ガイドライン §7 の記述との差分と、追記すべき項目を具体的に指摘する。出典 URL と取得日を必ず添える"
+    },
+    {
+      "name": "tooling_scout",
+      "model": "sonnet",
+      "lens": "UI/UX 品質を継続担保する Claude Code 資産の調査（Agent Skills / plugin / MCP サーバー / サブエージェント定義 / 自動検証ツール: axe-core・Playwright・Lighthouse CI・shadcn MCP 等）。本リポジトリ既存の .claude/skills/ 19 スキルと重複しないもの、かつ実際に UI 実装の質を上げるものだけを、導入コストと効果で選別する。公式一次情報（code.claude.com / 各ツール公式）を WebSearch/WebFetch で確認し出典を添える。過剰導入への警戒も述べる"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて採用する結論を 1 つに決める。決定は必ず『どのファイルに何を書くか』『数値は幾つか』まで落とす。既存ガイドラインの制約（4px グリッド・タイポスケール 5 段階・固定幅禁止・NFR-15）と衝突する提案は棄却するか、ガイドライン側の改訂として明示する。議論で否定された案は採用しない。ユーザー確認が要る仕様分岐（SD-3 第 2 系統）は open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "design": "採用する結論（数値・適用対象を含む）",
+        "evidence": ["根拠となる一次情報の URL"],
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統）"]
+  }
+}
