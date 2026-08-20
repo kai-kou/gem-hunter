@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+
+import { readDigestPackageNames } from './helpers'
 
 /**
  * SP-15: ダイジェストの鮮度と出典が保証され、再訪時に前回からの差分がわかる
@@ -7,19 +9,6 @@ import { expect, test, type Page } from '@playwright/test'
  *
  * データ源: `public/data/daily-digest.json`。`?date=YYYYMMDD` で顔ぶれを再現できる。
  */
-
-async function readDigestPackageNames(page: Page): Promise<string[]> {
-  const section = page.getByRole('region', { name: '今日の Gem' })
-  await expect(section).toBeVisible()
-  const items = section.locator('ol > li')
-  const count = await items.count()
-  const names: string[] = []
-  for (let i = 0; i < count; i++) {
-    const link = items.nth(i).getByRole('link').first()
-    names.push((await link.innerText()).trim())
-  }
-  return names
-}
 
 test.describe('SP-15: 鮮度・出典・差分・RSS', () => {
   test('手順1: 出典表示（Ecosyste.ms / CC BY-SA 4.0）とデータ生成日（JST）が出ている', async ({

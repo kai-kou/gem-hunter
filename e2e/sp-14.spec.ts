@@ -1,6 +1,7 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
 import { createAxeBuilder } from './axe'
+import { readDigestPackageNames } from './helpers'
 
 /**
  * SP-14: キーワードを入力しなくても、その日の Gem が一覧で出る（`ADR 0014` / `AR-9` / `US-30`〜`US-32`）。
@@ -12,22 +13,6 @@ import { createAxeBuilder } from './axe'
  * 並び替えは `getDailyDigest` usecase が `?date=YYYYMMDD` をシードにして決定論的に行うため、
  * `?date=` を付ければ「翌日まで待つ」ことなく顔ぶれの入れ替わりを検証できる（`ADR 0014` §2.2）。
  */
-
-/** 「今日の Gem」セクション内の順序どおりの packageName 一覧を取り出す。 */
-async function readDigestPackageNames(page: Page): Promise<string[]> {
-  const section = page.getByRole('region', { name: '今日の Gem' })
-  await expect(section).toBeVisible()
-  // セクション直下の <ol> の <li> だけを対象にする（Gem 数値内の入れ子リスト等の誤検出を避ける）。
-  const items = section.locator('ol > li')
-  const count = await items.count()
-  const names: string[] = []
-  for (let i = 0; i < count; i++) {
-    // 各 <li> の 1 本目の <a>（詳細ページへのリンク）のテキストが packageName に相当する。
-    const link = items.nth(i).getByRole('link').first()
-    names.push((await link.innerText()).trim())
-  }
-  return names
-}
 
 test.describe('SP-14: キーワード非依存の発見面', () => {
   test('手順1: /ja を開いた瞬間に「今日の Gem」が見出しとして表示される（AR-9）', async ({

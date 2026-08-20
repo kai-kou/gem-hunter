@@ -45,7 +45,13 @@ type RawCandidate = {
  * 固定なので、静的に既知の値へ倒す。`generatedAt` だけは推測できないため空文字にし、
  * 表示側（`AttributionNotice`）が生成時刻なしとして扱う。
  */
-const FALLBACK_META: DigestMeta = {
+/**
+ * 候補プールが読めない / 壊れているときに使う帰属メタデータ。`D-29` の帰属表示は省略できないため、
+ * フォールバック時も出典・ライセンスは保持し `generatedAt` だけを空にする。
+ * 🔴 RSS 配信側（`src/composition/digest-feed.ts`）からも同じ値を使う（定義を二重化すると
+ *    ライセンス変更時に片方だけ古くなる・Layer 1 セルフレビュー指摘）。
+ */
+export const FALLBACK_META: DigestMeta = {
   source: 'Ecosyste.ms',
   license: 'CC BY-SA 4.0',
   sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',

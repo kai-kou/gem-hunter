@@ -3,6 +3,7 @@ import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import { getDailyDigestUseCase, searchRepositoriesUseCase } from '@/src/composition/container'
+import { DAILY_DIGEST_LIMIT } from '@/src/composition/digest-feed'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
@@ -29,9 +30,6 @@ import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
 import { SearchForm } from '@/src/ui/search-form'
 import { SortPicker } from '@/src/ui/sort-picker'
-
-/** `SP-14` の暫定既定件数（`ADR 0014` §2.1 / 未確定事項 #2・実データを見て確定するまでの暫定値）。 */
-const DAILY_DIGEST_LIMIT = 5
 
 /**
  * 検索の 4 状態（`ui-ux-guidelines.md` §4.4）。

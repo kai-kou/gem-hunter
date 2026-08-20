@@ -281,6 +281,25 @@ def run_self_test() -> int:
         check("heal: missing generator -> not succeeded", heal["succeeded"] is False)
         check("heal: detail is set", bool(heal["detail"]))
 
+        # 8. heal 成功後の再評価: 再生成で generatedAt が最新化されたら fresh へ戻り exit 0 になる
+        #    （Layer 1 セルフレビュー指摘: 再評価しないと「修復済みなのに stale（exit 1）」を返す）
+        heal_target = tmp_dir / "heal-target.json"
+        heal_target.write_text(
+            json.dumps({"meta": {"generatedAt": "2026-08-15T12:00:00.000Z"}, "candidates": []}),
+            encoding="utf-8",
+        )
+        before = evaluate(heal_target, max_age_hours=48, now_utc=now)
+        check("heal-reeval: 修復前は stale", before["status"] == "stale")
+        check("heal-reeval: 修復前の exit code は 1", exit_code_for(before["status"]) == 1)
+        # 生成スクリプトが JSON を最新化したのと同じ状態を作る（subprocess は起動しない）。
+        heal_target.write_text(
+            json.dumps({"meta": {"generatedAt": "2026-08-20T11:30:00.000Z"}, "candidates": []}),
+            encoding="utf-8",
+        )
+        after = evaluate(heal_target, max_age_hours=48, now_utc=now)
+        check("heal-reeval: 再評価すると fresh", after["status"] == "fresh")
+        check("heal-reeval: 再評価後の exit code は 0", exit_code_for(after["status"]) == 0)
+
     if failures:
         print("FAIL: check_digest_freshness self-test", file=sys.stderr)
         for f in failures:
@@ -326,6 +345,11 @@ def main() -> None:
     heal_result = None
     if args.heal and result["status"] == "stale":
         heal_result = attempt_heal(DEFAULT_GENERATOR)
+        # 🔴 修復に成功したら鮮度を再評価してから出力・終了コードを決める。
+        #    再評価しないと「修復済みなのに stale（exit 1）」を返し、終了コードだけを見る
+        #    監視・cron ラッパーが不要な重複修復やアラートを出す（Layer 1 セルフレビュー指摘）。
+        if heal_result["succeeded"]:
+            result = evaluate(digest_path, args.max_age_hours)
         result["heal"] = heal_result
 
     if args.json:
@@ -333,6 +357,9 @@ def main() -> None:
     else:
         if result["status"] == "fresh":
             print(f"OK: 配信データは fresh です（{result['reason']}・生成: {result['generated_at_jst']}）")
+            if heal_result is not None and heal_result["succeeded"]:
+                # stale を検知して --heal で再生成し、その結果 fresh に戻ったケース。
+                print(f"  自己修復（--heal）: 成功 — {heal_result['detail']}")
         elif result["status"] == "stale":
             print(f"WARNING: 配信データが stale です（{result['reason']}・生成: {result['generated_at_jst']}）")
             if heal_result is not None:

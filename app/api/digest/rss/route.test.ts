@@ -71,6 +71,22 @@ describe('GET /api/digest/rss', () => {
     )
   })
 
+  it('許可ホストが設定されているとき、偽装 Host は許可ホストへ丸められる（cache poisoning 対策）', async () => {
+    // `resolveLandingHost()` は `GITHUB_OAUTH_CALLBACK_URL` から許可ホストを導出する
+    // （`src/composition/auth.ts`）。設定済みの状態で偽装 Host を送っても、RSS の
+    // <link> / <guid> には許可ホストが入る（`app/api/auth/callback/route.ts` と同じ方針）。
+    vi.stubEnv('GITHUB_OAUTH_CALLBACK_URL', 'https://gem-hunter.example/api/auth/callback')
+    getDailyDigestMock.mockResolvedValue(makeDigest())
+
+    const response = await GET(new Request('https://evil.example/api/digest/rss'))
+    const body = await response.text()
+
+    expect(body).toContain('<link>https://gem-hunter.example</link>')
+    expect(body).not.toContain('evil.example')
+
+    vi.unstubAllEnvs()
+  })
+
   it('usecase が例外を投げても 500 にせず空の RSS を返す', async () => {
     getDailyDigestMock.mockRejectedValue(new Error('候補プール読み込み失敗'))
 

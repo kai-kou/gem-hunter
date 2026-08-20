@@ -218,3 +218,22 @@ export async function measureFocusIndicator(
     },
   )
 }
+
+/**
+ * 「今日の Gem」セクション内の、順序どおりの packageName 一覧を取り出す（`SP-14` / `SP-15` の
+ * 操作レビューで共通に使う）。セクション直下の `<ol> > <li>` だけを対象にし、各 `<li>` の
+ * 1 本目の `<a>`（詳細ページへのリンク）のテキストを packageName とみなす。
+ * `sp-14.spec.ts` / `sp-15.spec.ts` で同一実装が重複していたため切り出した（`searchFor` と同じ方針）。
+ * `expect` は入れない（呼び出し側の `test.step()` の意図を優先する）。
+ */
+export async function readDigestPackageNames(page: Page): Promise<string[]> {
+  const section = page.getByRole('region', { name: '今日の Gem' })
+  const items = section.locator('ol > li')
+  const count = await items.count()
+  const names: string[] = []
+  for (let i = 0; i < count; i++) {
+    const link = items.nth(i).getByRole('link').first()
+    names.push((await link.innerText()).trim())
+  }
+  return names
+}
