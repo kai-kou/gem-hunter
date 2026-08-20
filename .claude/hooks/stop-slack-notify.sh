@@ -97,26 +97,6 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
         fi
         unset _pushed _wait
       fi
-
-      # 未追跡ファイルは自動コミットしない（上記の方針・Issue #94）が、黙って落とすと
-      # 次回セッション開始時のクリーンアップ（session-start.sh の `git clean -fd`・
-      # source=startup）で復元不能に消える（Issue #193・L-100 の残る穴）。
-      # 勝手にコミットせず、判断材料だけを渡す。
-      _untracked=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard -- . ':(exclude)content/analytics/cost_monthly/' 2>/dev/null || true)
-      if [ -n "$_untracked" ]; then
-        _untracked_n=$(printf '%s\n' "$_untracked" | wc -l | tr -d ' ')
-        {
-          echo "[stop-slack-notify] ⚠️ 未追跡ファイルが ${_untracked_n} 件あります（WIP 自動コミットの対象外・Issue #94 の方針）。"
-          echo "[stop-slack-notify]    次回セッション開始時のクリーンアップ（git clean -fd）で復元不能に削除されるおそれがあります（L-100）。"
-          echo "[stop-slack-notify]    残すなら git add → commit、不要なら削除するか .gitignore に追加してください:"
-          printf '%s\n' "$_untracked" | head -5 | sed 's/^/[stop-slack-notify]      - /'
-          if [ "$_untracked_n" -gt 5 ]; then
-            echo "[stop-slack-notify]      … 他 $((_untracked_n - 5)) 件"
-          fi
-        } >&2
-        unset _untracked_n
-      fi
-      unset _untracked
     fi
   fi
   unset _branch _timestamp _git_dir _merge_in_progress

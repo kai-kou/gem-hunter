@@ -110,12 +110,12 @@ if [[ "$has_uncommitted" = true ]] || [[ "$has_untracked" = true ]]; then
   else
     # 新規変更: has_uncommitted / has_untracked に応じて案内を分岐
     if [[ "$has_uncommitted" = true ]] && [[ "$has_untracked" = true ]]; then
-      hook_block "There are uncommitted changes and untracked files in the repository. Please commit and push the tracked changes, and either add, commit, remove, or ignore the untracked files as appropriate. Note: untracked files are NOT saved by the Stop hook's WIP auto-commit (by design, Issue #94) and may be deleted without recovery by the next session's cleanup (git clean -fd, L-100) — decide their fate now (Issue #193)."
+      hook_block "There are uncommitted changes and untracked files in the repository. Please commit and push the tracked changes, and either add, commit, remove, or ignore the untracked files as appropriate. Note: untracked files are NOT saved by the Stop hook's WIP auto-commit (by design, Issue #94). The next session's cleanup (git clean -fd, L-100) removes them from the working tree; they are copied to .git/untracked-backup/ beforehand as a last resort (Issue #193), but that backup is not pushed anywhere — decide their fate now."
     elif [[ "$has_uncommitted" = true ]]; then
       hook_block "There are uncommitted changes in the repository. Please commit and push these changes to the remote branch."
     else
       # has_untracked のみ true
-      hook_block "There are untracked files in the working directory. If these files should be version-controlled, add, commit, and push them. Otherwise, remove them or add them to .gitignore. Note: untracked files are NOT saved by the Stop hook's WIP auto-commit (by design, Issue #94) and may be deleted without recovery by the next session's cleanup (git clean -fd, L-100) — decide their fate now (Issue #193)."
+      hook_block "There are untracked files in the working directory. If these files should be version-controlled, add, commit, and push them. Otherwise, remove them or add them to .gitignore. Note: untracked files are NOT saved by the Stop hook's WIP auto-commit (by design, Issue #94). The next session's cleanup (git clean -fd, L-100) removes them from the working tree; they are copied to .git/untracked-backup/ beforehand as a last resort (Issue #193), but that backup is not pushed anywhere — decide their fate now."
     fi
   fi
 fi
