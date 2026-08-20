@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { decodeSessionCookie, SESSION_COOKIE_NAME } from '@/src/composition/auth'
 import { searchRepositoriesWithCacheStatus } from '@/src/composition/container'
+import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, type ErrorKind, RateLimitExceededError } from '@/src/domain/errors'
 import { searchKeyword } from '@/src/domain/model/search-keyword'
 import { parseSearchParams, SEARCH_PARAM_KEYS } from '@/src/ui/url/search-params'
@@ -55,6 +56,12 @@ export async function GET(request: NextRequest) {
     // `parseSearchParams` の page 解決はそのまま利用する）。
     const rawKeyword = rawParams[SEARCH_PARAM_KEYS.keyword] ?? ''
     const keyword = searchKeyword(rawKeyword)
+
+    // Issue #122: 自リクエストの間引き（RateLimitPort）。不正な入力（400 で弾く分）で
+    // 枠を消費しないよう `searchKeyword` の検証（値オブジェクト変換）の後に置き、
+    // GitHub API を実際に叩く（`search()`）前に間引く。超過時は `RateLimitExceededError`
+    // を投げ、下の catch → `errorResponse()` が 429 + `Retry-After` を返す（新しい分岐は足さない）。
+    await enforceSearchRateLimit(request.headers)
 
     // SP-8: セッション Cookie があればユーザー自身のレート枠で検索する（AR-5）。
     // このエンドポイントは元々 X-Cache-Status 観測・検証専用（用途はファイル冒頭コメント参照）

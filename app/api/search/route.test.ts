@@ -41,6 +41,13 @@ vi.mock('@/src/composition/auth', () => ({
   SESSION_COOKIE_NAME: 'gem_hunter_session',
 }))
 
+// Issue #122: `enforceSearchRateLimit`（composition root の RateLimitPort 配線）をモックする。
+// 既定では超過なし（resolve）とし、超過を検証するテストだけ `mockRejectedValueOnce` で上書きする。
+const enforceSearchRateLimitMock = vi.fn().mockResolvedValue(undefined)
+vi.mock('@/src/composition/rate-limit', () => ({
+  enforceSearchRateLimit: (...args: unknown[]) => enforceSearchRateLimitMock(...args),
+}))
+
 /**
  * `src/composition/container.ts` の `sharedCache` はモジュールスコープの単一インスタンス
  * （isolate 内で使い回す意図的な設計・`SP-5` whiteboard 決定）で、本テストファイル全体を通じて
@@ -65,6 +72,8 @@ beforeEach(() => {
   capturedTokenProvider = null
   decodeSessionCookieMock.mockReset()
   decodeSessionCookieMock.mockResolvedValue(null)
+  enforceSearchRateLimitMock.mockReset()
+  enforceSearchRateLimitMock.mockResolvedValue(undefined)
 })
 
 describe('GET /api/search — X-Cache-Status', () => {
@@ -255,5 +264,47 @@ describe('GET /api/search — SP-8: レート枠切替（セッション Cookie 
     )
 
     expect(decodeSessionCookieMock).toHaveBeenCalledWith('tampered-value')
+  })
+})
+
+/**
+ * Issue #122: composition root の `enforceSearchRateLimit`（RateLimitPort の配線）が
+ * 検証後・GitHub API 呼び出し前の位置で実際に呼ばれること、超過時に既存の
+ * `RateLimitExceededError` ハンドリング（429 + Retry-After・prd.md §7）へそのまま乗ることを検証する。
+ */
+describe('GET /api/search — Issue #122: RateLimitPort の配線', () => {
+  it('レート制限超過時に 429・Retry-After（秒数）・kind=rateLimitSecondary を返す', async () => {
+    const { RateLimitExceededError } = await import('@/src/domain/errors')
+    enforceSearchRateLimitMock.mockRejectedValueOnce(
+      new RateLimitExceededError('rateLimitSecondary', { retryAfterSeconds: 60 }),
+    )
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/search?q=rate-limit-port-check'),
+    )
+
+    expect(res.status).toBe(429)
+    expect(res.headers.get('Retry-After')).toBe('60')
+    await expectSafeErrorBody(res, { kind: 'rateLimitSecondary', retryAfterSeconds: 60 })
+    // 超過時は GitHub API を叩く前に間引かれるため、内側の search() は呼ばれない。
+    expect(searchMock).not.toHaveBeenCalled()
+  })
+
+  it('レート制限が超過していなければ従来どおり 200 を返し、enforceSearchRateLimit が1回だけ呼ばれる', async () => {
+    searchMock.mockResolvedValue(makeSearchResult({ totalCount: 1 }))
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/search?q=rate-limit-port-ok-check'),
+    )
+
+    expect(res.status).toBe(200)
+    expect(enforceSearchRateLimitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('入力が不正（空キーワード）で 400 になるときは enforceSearchRateLimit を呼ばない（枠を消費しない）', async () => {
+    const res = await GET(new NextRequest('http://localhost/api/search?q='))
+
+    expect(res.status).toBe(400)
+    expect(enforceSearchRateLimitMock).not.toHaveBeenCalled()
   })
 })
