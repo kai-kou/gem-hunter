@@ -34,7 +34,7 @@ GitHub API のレート制限（[PRD](../02_requirements/prd.md) §2.2）は本�
 
 ### 3.1. レート制限の回避とみなされる恐れがある
 
-`D-6`（2026-08-17）の決定時点から一貫して記録されている不採用理由は、**複数トークンを使い分ける行為自体が、GitHub のレート制限機構を意図的に迂回する運用とみなされうる**という懸念である（[`open-questions.md`](../02_requirements/open-questions.md) `D-6` 従属事項・[`inception-deck.md`](../00_concept/inception-deck.md) Q4.2・[ADR 0003](0003-github-app-authentication.md) §6）。
+`D-6`（2026-08-17）の決定時点から一貫して記録されている不採用理由は、**複数トークンを使い分ける行為自体が、GitHub のレート制限機構を意図的に迂回する運用とみなされうる** という懸念である（[`open-questions.md`](../02_requirements/open-questions.md) `D-6` 従属事項・[`inception-deck.md`](../00_concept/inception-deck.md) Q4.2・[ADR 0003](0003-github-app-authentication.md) §6）。
 
 ⚠️ **本 ADR は GitHub の利用規約・AUP の該当条項をリポジトリ内の一次情報として確認していない**（`R-8`「GitHub 利用規約・法務の一次確認」は [`open-questions.md`](../02_requirements/open-questions.md) §4 で **第三者へ公開する時点** の実施と定義されており未了）。したがって本 ADR で断定できるのは「懸念があるとして 3 回の決定ログにわたり一貫して不採用と判断されてきた」という事実であり、GitHub 側の規約文言そのものの引用ではない。裏付けの取れる範囲でのみ理由を記述する。
 
