@@ -1,0 +1,12 @@
+{
+  "id": "sprint-review-SP-10-20260820",
+  "topic": "SP-10（誰でも操作できる）のスプリントレビュー: 受け入れ判定と残課題の仕分け",
+  "brief": "対象: GitHub Issue #181（SP-10・sp:8・P1-MVP）／PR #183（squash マージ済み・main の f53bbbf）。プレビュー URL: https://pr-183-gem-hunter.kinamocchi-tech.workers.dev\n\n判定の正本: docs/02_requirements/user-story-map.md §5.3 SP-10 の操作レビュー手順 4 項目と、docs/02_requirements/prd.md §6 の AC-9。Issue のクローズ条件は user-story-map.md §7 運用ルール 10（操作レビュー手順の全項目を PR のプレビュー URL 上でなぞれた状態でマージされたときのみ）。\n\n実施済みの検証（実測値）: npm run check は最終コミット 1e739da のクリーンビルドで全 10 項目 PASS（Lint / tsc / vitest / E2E 49秒 / Lighthouse Accessibility gate / 依存規則 / UI 寸法 / 配色コントラスト / CJK / セルフレビュー機械チェック）。Lighthouse は一覧・詳細とも Accessibility 100/100。Layer 1 セルフレビューは 7 観点の並列フレッシュ文脈 → 敵対的検証で CONFIRMED 6 件（全件 PR 内で是正）・REFUTED 2 件・別 Issue 送出 2 件（#185 / #186）。\n\n既知の残件: e2e/sp-9-errors.spec.ts:164 が Issue #145（Cookie 送出タイミング）の既存 flake で約 40〜60% の頻度で落ちる（main 3/5・ブランチ 2/5 を worktree で実測。本 PR 起因ではないことを確認済み）。\n\n編成の記録: Issue #181 の Sprint Planning コメントに 編成: discussion-review（1 ラウンド）→ fan-out(4) と記載。実際には discussion-review 4 レンズ × 2 ラウンド → fan-out(4) → 統合・検証 4 エージェントで実施した。\n\n⚠️ プロセス上の逸脱が 1 件あった: 議論フェーズの参加者（e2e_verify）が担当範囲外でリポジトリを直接編集・コミット・push し、統合フェーズで同じ修正を割り当てていた別担当（R5）と作業が二重化した。内容は正しかったため巻き戻していないが、レトロで扱うべき事象。\n\n⚠️ もう 1 件: 検証用に distDir を変えてビルドした成果物 269 ファイルが Stop フックの WIP 自動コミットで混入し、GitGuardian に検出された（後から追跡除外して .gitignore に /.next-*/ を追加）。Issue #94（並行サブエージェント実行中の Stop フック WIP 自動コミット）と同根。",
+  "participants": [
+    "acceptance",
+    "design_acceptance",
+    "leftover_triage"
+  ],
+  "created_at": "2026-08-20T13:15:29+09:00",
+  "updated_at": "2026-08-20T13:15:29+09:00"
+}
