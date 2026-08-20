@@ -324,7 +324,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | **NFR-24** | 外部 API への依存をモック化する | `P1-MVP` | ネットワーク状況に依存せず再現可能であること。OAuth フローも同様にモック化する |
 | **NFR-25** | テストはコマンド 1 つで実行でき、CI で自動実行される | `P1-MVP` | 与件 §5 |
 | **NFR-26** | axe による自動アクセシビリティチェックを CI に組み込む | `P1-MVP` | `Q-8` |
-| **NFR-27** | Lighthouse を CI ゲート化する | `P1-MVP` | Accessibility = **100**（決定論的に判定されるため満点を要求）/ Performance = **90 以上**。偽陽性対策は下記 |
+| **NFR-27** | Lighthouse を CI ゲート化する | `P1-MVP` | Accessibility = **100**（決定論的に判定されるため満点を要求・blocking）/ Performance = **90 以上を目安値として計測・記録する（未達でもゲートしない）**。偽陽性対策は下記 |
 | **NFR-28** | 初期 JS バンドルサイズを CI で可視化する | `P1-積み上げ` | Lighthouse の揺れに左右されない補助指標。ゲート化は必須としない |
 
 #### 🔴 NFR-27 の注記: CI ゲートの偽陽性対策

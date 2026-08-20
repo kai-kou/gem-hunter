@@ -31,7 +31,13 @@ test.describe('SP-9: 各状態が支援技術に伝わる', () => {
     await page.goto('/ja')
     await searchFor(page, uniqueKeyword('zero-hits'))
 
-    await expect(page.locator('main').getByRole('status')).toContainText(ja.home.empty)
+    // 🔴 #180 是正（section へ role="status" 追加）後は main 内に role="status" が 2 つ存在する
+    // （① #search-status セクション＝件数文言「0 件中 0 件を表示」 ② RepositoryList の 0 件専用
+    // <p role="status">）。単純な getByRole('status') は strict mode violation で必ず落ちるため、
+    // 文言で対象を絞り込む（whiteboard round2 e2e_verify rebuttal・実機再現で確定）。
+    await expect(
+      page.locator('main').getByRole('status').filter({ hasText: ja.home.empty }),
+    ).toContainText(ja.home.empty)
 
     const results = await createAxeBuilder(page).analyze()
     const violations = seriousOrCritical(results.violations)

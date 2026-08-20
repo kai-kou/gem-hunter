@@ -4,12 +4,16 @@ import { describe, expect, it } from 'vitest'
 import { LoadingIndicator } from './loading-indicator'
 
 describe('LoadingIndicator', () => {
-  it('role="status" + aria-live="polite" で読み込み中を伝える（US-22 / US-26 / NFR-12）', () => {
+  it('読み込み中のラベルを表示する（US-22 / US-26 / NFR-12）', () => {
     render(<LoadingIndicator label="読み込み中" />)
 
-    const status = screen.getByRole('status')
-    expect(status).toHaveAttribute('aria-live', 'polite')
-    expect(status).toHaveTextContent('読み込み中')
+    expect(screen.getByText('読み込み中')).toBeInTheDocument()
+  })
+
+  it('自身は role="status" / aria-live を持たない（外側のライブリージョンへ一本化・#180・ui-ux-guidelines.md §7.2）', () => {
+    render(<LoadingIndicator label="読み込み中" />)
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('ラベルは視覚的にも表示する（0 件・エラーと区別できる・AC-8）', () => {

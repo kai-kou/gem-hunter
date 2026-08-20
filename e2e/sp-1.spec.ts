@@ -29,7 +29,15 @@ test('SP-1: 検索して一覧が出る', async ({ page }) => {
     await expect(page.getByRole('link', { name: 'octostub/octo-forms' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'octostub/octo-charts' })).toBeVisible()
 
-    // オーナーアイコン（アクセシブルな名前はオーナーの login）
-    await expect(page.getByRole('img', { name: 'octostub' }).first()).toBeVisible()
+    // オーナーアイコン（装飾画像・`alt=""`・`ui-ux-guidelines.md` §7.4）。
+    // オーナー名がテキストとして隣接表示される文脈のためアクセシブルネームを持たない設計
+    // なので、ロールでは取得できない。要素そのものを見て、退行検知として
+    // 「オーナーのアバター URL が反映されている」「明示サイズが指定されている」ことを確認する。
+    const avatar = items.first().locator('img')
+    await expect(avatar).toHaveCount(1)
+    await expect(avatar).toHaveAttribute('alt', '')
+    await expect(avatar).toHaveAttribute('src', /^data:image\/png.*[?&]s=80$/)
+    await expect(avatar).toHaveAttribute('width', '40')
+    await expect(avatar).toHaveAttribute('height', '40')
   })
 })

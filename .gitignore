@@ -58,3 +58,6 @@ node_modules/
 next-env.d.ts
 # `wrangler types` が生成する成果物（14,000 行超）。tsc は参照するがコミット対象にしない。
 worker-configuration.d.ts
+
+# 検証用に distDir を変えてビルドしたときの成果物（.next-r5verify 等）を追跡しない
+/.next-*/

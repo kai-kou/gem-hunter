@@ -90,7 +90,10 @@
   /* E-9: --color-border は UI コンポーネントとして 3:1 以上が必須。旧値 0.922 は --color-bg に対し 1.26:1 で全く未達だったため 0.6 へ調整 */
   --border: oklch(0.6 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* #179: 旧値 oklch(0.708 0 0) は不透明でも vs bg 上限 2.593:1 で 3:1 未達。
+     --border（ライト）と同値へ揃え、vs bg 3.947:1 / vs bg-subtle 3.619:1 を確保する
+     （tools/check_contrast.py 実測・SP-10 議論ラウンド1 a11y_impl）。 */
+  --ring: oklch(0.6 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -146,7 +149,12 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    /* #179: outline-ring/50 の Tailwind ユーティリティ側 opacity を外す。
+       ネイティブ <a> の既定フォーカス（詳細リンク・戻るリンク・再試行リンク等）にも効くため、
+       button.tsx / input.tsx と合わせて 3 箇所すべてから /NN を除去する。
+       透明度が必要な場合は CSS 変数側に oklch(L C H / A%) で埋め込む（tools/check_contrast.py が
+       Tailwind ユーティリティ側の opacity 修飾子を検査できないため）。 */
+    @apply border-border outline-ring;
   }
   body {
     @apply bg-background text-foreground;

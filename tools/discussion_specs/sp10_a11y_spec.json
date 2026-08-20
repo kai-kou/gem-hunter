@@ -1,0 +1,50 @@
+{
+  "topic": "SP-10（誰でも操作できる）の実装方針を着手前に確定する: Actions 停止下での a11y 機械ゲート・キーボード完走・レスポンシブ・画像方針",
+  "brief": "対象は GitHub Issue #181（SP-10・sp:8・P1-MVP）。参照要件は US-15 / E-13 / E-14 / E-15 / E-16 / E-17、対応 AC-9、関連 NFR-10〜NFR-15 / NFR-26 / NFR-27。操作レビュー手順（user-story-map.md §5.3 SP-10 が正本）は 4 項目: (1) マウスに触れず Tab と Enter だけで 検索 → 一覧 → 詳細 → 一覧 を完走しフォーカスが常に見える (2) スマートフォン幅で破綻しない (3) ブラウザ拡大 200% で破綻しない (4) CI で axe と Lighthouse（Accessibility = 100）が通る。\n\n【ユーザー確定事項（2026-08-20 JST・SD-3 第 2 系統の確認済み回答）】手順 4 の判定手段は Issue #173 の案 (a) を採る = Lighthouse をセッションがローカル実行して tools/run_checks.sh に配線する。Accessibility 100 は blocking ゲート、Performance は計測値の記録のみでブロックしない。あわせて user-story-map.md §5.3 SP-10 手順 4 と ui-ux-guidelines.md §9 の CLS 判定文言を実際に実行できる手段と一致させる。この決定は議論で覆さない（議論するのは『どう実装するか』であって『採るかどうか』ではない）。\n\n【確認済みの事実（実ファイルから採取）】\n- 実行基盤: GitHub Actions は停止中（#77・A-6・status:blocked）。機械ゲートは tools/run_checks.sh のみ（Lint / tsc --noEmit / vitest run / playwright test / check_architecture_boundaries.py / check_ui_dimensions.py / check_contrast.py / check_cjk_markdown.py --changed / self_review_check.py）。各チェックは RUN_CHECKS_TIMEOUT（既定 300 秒）付き、E2E だけ E2E_TIMEOUT_SEC。SKIP_E2E=1 で E2E を明示スキップできる（SKIP は表示される）。\n- Chromium は /opt/pw-browsers/chromium にプリインストール、PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers・PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1。playwright install は実行しない。Lighthouse は package.json の依存にもスクリプトにも存在しない（grep 0 件）。\n- axe は配線済み: e2e/axe.ts が @axe-core/playwright の AxeBuilder を型キャスト付きで生成、e2e/a11y.spec.ts が一覧画面（/ja で検索実行後）と詳細画面（/ja/repos/octostub/octo-widgets）で serious/critical 違反 0 件を検証。e2e/sp-9-a11y.spec.ts も別途存在。E2E は e2e/stub/server.mjs のスタブ GitHub API に対して実行される。\n- フォーカスリング（#179・sp:2・priority:high）: app/globals.css の --ring はライト oklch(0.708 0 0) / ダーク oklch(0.556 0 0)。button.tsx / input.tsx はいずれも 'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'。ring に /50 の不透明度が掛かるため実効コントラストがさらに落ちる。実測 2.51:1 で WCAG 2.2 SC 1.4.11（非テキストコントラスト 3:1）を満たさない。ui-ux-guidelines.md §7.3 は『:focus ではなく :focus-visible』『outline-none を単独で書かない』『リングのコントラストは 3:1 以上・太さ 2px 相当以上』を既に規定済み。コントラストの機械検査は tools/check_contrast.py（run_checks.sh 組み込み済み）だが、ring の 3:1 判定を見ているかは未確認。\n- ライブリージョンの入れ子（#180・sp:1・priority:high）: app/[locale]/page.tsx:300 に <section id=\"search-status\" aria-live=\"polite\"> があり、その中の <Suspense fallback={<LoadingIndicator/>}> が展開する LoadingIndicator は自身が role=\"status\" + aria-live=\"polite\" を持つ（src/ui/loading-indicator.tsx:19-20）。入れ子のライブリージョンで二重読み上げのリスクがある。RepositoryList の 0 件 role=\"status\"（src/ui/repository-list.tsx:37）と ErrorNotice の role=\"alert\"（src/ui/error-notice.tsx:57）は section の外にあり、コメントで意図が明記されている。\n- ルート変更時のフォーカス移動（E-15 の 🔴 必須項目）: grep で tabIndex は app / src/ui の .tsx に 1 件も無い。ui-ux-guidelines.md §7.1 が要求する『結果一覧の見出しに tabIndex={-1} を付け、検索実行・ページ送り・ソート変更の完了後にその見出しへ focus() を移す』は未実装。ただし本アプリの検索フォームは JS を持たない GET フォーム（E-8 / NFR-3）でページ全体が再読み込みされる点、ページ送り・ソート・件数切替が <a>/<form> ベースである点を踏まえて、そもそも client component を増やす必要があるのかから検討すること。\n- 画像（US-15 / E-17）: repository-list.tsx:58 は <img src={avatarUrl + '?s=80'} alt={item.owner.login} width={40} height={40} className='size-10' loading='lazy'>、repository-detail.tsx:56 は alt=\"\"。ui-ux-guidelines.md §7.4 は『オーナー名がテキストとして隣接表示される文脈では alt=\"\"（装飾扱い）』と確定済みで、一覧はカード内にリポジトリ名（owner/repo 形式）が隣接表示される。next/image は INF-11 により使わない方針がコメントで明記されている。US-15 は『オーナーアイコンが最適化配信され、読み込み時にレイアウトがずれない』（NFR-6 / NFR-1）。\n- viewport: app/[locale]/layout.tsx に viewport export は無い（grep 0 件）。metadata export のみ。\n- レスポンシブ: 200% 拡大・スマートフォン幅の破綻を検出する自動テストは存在しない（E2E は既定ビューポートのみ）。\n\n【争点】\nA) Lighthouse をどう run_checks.sh に配線するか。lighthouse を npm 依存に足すか npx 実行か、対象 URL をどう用意するか（next build && next start か、E2E と同じ e2e/stub/server.mjs 前提の起動か、既に走っている playwright の webServer を再利用できるか）、Chromium バイナリ（/opt/pw-browsers/chromium）をどう Lighthouse に渡すか（CHROME_PATH）、Accessibility 100 の blocking 判定と Performance の記録のみをどう実装して run_checks のサマリー表に載せるか、実行時間とタイムアウト（既定 300 秒）に収まるか、収まらないなら専用タイムアウトを設けるか。**採らない案は『採らない』と明言すること**（例: Lighthouse CI（lhci）サーバーを立てる案、Actions 復旧を待つ案）。\nB) axe（E-13）の現状カバレッジで『WCAG 2.2 AA を目標として宣言し自動検証可能な範囲を組み込む』と言えるか。足りないなら何を足すか（検査対象画面・状態（読み込み中 / 0 件 / エラー / ログイン済み）・withTags による WCAG 2.2 ルールセット指定・serious/critical のみに絞っている現在の閾値の妥当性）。宣言そのものをどのドキュメントのどこに書くか（新しい SSOT を作らない）。\nC) E-15（キーボード完走 + フォーカス可視）の実装位置。#180 の入れ子解消と #179 のリングコントラスト是正を含む。GET フォームでページ全体が再読み込みされる本アプリで、§7.1 の『見出しへ focus() を移す』は本当に必要か（必要なら client component をどこに置くか / 不要ならガイドライン §7.1 の適用範囲を書き換えるべきか）。--ring トークンの値を変えるのか、ring の /50 不透明度をやめるのか、ring-offset を足すのか、ダークとライトで別値にするのか。**トークンを変えると全画面に波及する**点と、check_contrast.py の検査範囲を ring まで広げるかを併せて決める。\nD) E-16（レスポンシブ・200% 拡大）を E2E でどう機械判定するか。『破綻しない』を判定可能な述語に落とす（候補: 横スクロールが発生しない = document.scrollingElement.scrollWidth <= clientWidth、要素の重なり検出、主要導線が操作可能なこと、テキストの折り返し）。ビューポートは何を使うか（375px / 320px / 1280px）。200% 拡大を Playwright でどう再現するか（deviceScaleFactor ではなく viewport 幅を半分にするのが実質等価か、CSS zoom か、--force-device-scale-factor か）。誤検知でルーティンを止めない設計にすること。\nE) fan-out(4) のファイル非重複分割は妥当か。想定は R1 判定基盤（tools/run_checks.sh・lighthouse 実行スクリプト・package.json）/ R2 キーボードとフォーカス（app/globals.css・src/ui/components/*.tsx・app/[locale]/page.tsx のライブリージョン）/ R3 レスポンシブと画像（src/ui/repository-list.tsx・src/ui/repository-detail.tsx・app/[locale]/layout.tsx）/ R4 E2E とドキュメント（e2e/*.spec.ts・docs/**）。R2 と R3 がどちらも src/ui を触る点、R4 の E2E が R2/R3 の実装に依存する点をどう捌くか（契約先行 → 依存役先行 → 並行実行のパターンが docs にある）。分割を変えるべきなら具体的なファイル割り当てを示すこと。",
+  "participants": [
+    {
+      "name": "gate_infra",
+      "model": "sonnet",
+      "lens": "機械ゲートの実装可能性（争点 A・B）。Lighthouse をこのコンテナで実際に走らせる具体手段（依存追加 / CHROME_PATH / 対象 URL の起動と待機 / JSON 出力のパース / blocking と記録の分離 / run_checks.sh のサマリー表への載せ方 / タイムアウト設計 / 失敗時に『チェッカー自体が落ちた』と『本当に落ちた』を区別できるか）に集中する。実行時間とフレークのコストを定量で見積もり、割に合わない案は明確に否定する。axe の現行カバレッジの穴も指摘する。"
+    },
+    {
+      "name": "a11y_impl",
+      "model": "sonnet",
+      "lens": "アクセシビリティ実装の正しさ（争点 C）。WCAG 2.2 の SC 1.4.11 / 2.4.7 / 2.4.11 / 4.1.3 に照らして、ring トークンの是正方法・ライブリージョン入れ子の解消・ルート変更時のフォーカス移動の要否を判定する。ui-ux-guidelines.md §7.1〜§7.4 の既存規定と実装の乖離を具体的に指摘し、規定側を直すべき箇所と実装側を直すべき箇所を分ける。『GET フォームで全ページ再読み込みされるなら route announcer 問題は起きない』という主張が本当に成立するか（Suspense ストリーミングでの部分更新・ブラウザバック・ページ送りリンク遷移を含めて）を検証する。"
+    },
+    {
+      "name": "e2e_verify",
+      "model": "sonnet",
+      "lens": "検証手段の実効性（争点 D・および B の閾値）。『破綻しない』『フォーカスが常に見える』『キーボードで完走できる』を、Playwright で偽陽性なく判定できる述語へ落とす。200% 拡大の再現手段の実質的等価性を根拠付きで判定する。既存 e2e/*.spec.ts の構成（helpers.ts / stub/server.mjs）を壊さない追加の仕方を示す。テストが退行を本当に捕まえるか（例: リングの色を戻したら赤くなるか）を自問し、捕まえられない案は否定する。"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合（争点 E および全体）。US-15 / E-13〜E-17 / AC-9 / NFR-10〜NFR-15 / NFR-26 / NFR-27 / SD-1〜SD-4 / Issue #173 #179 #180 #74 #77 と、user-story-map.md §5.3 SP-10・ui-ux-guidelines.md §7 §9・pr-review-flow-summary.md・sprint-development-rules.md の記述の矛盾を機械的に洗い出す。どのファイルのどの節を更新する必要があるかを列挙する。SSOT を増やしていないか（同じ規則の実体が 2 箇所に書かれていないか）を検査する。新しい事実を主張せず既存記述との突合に徹する。fan-out(4) の分割案でファイルが重複していないかも突合する。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて採用する設計を 1 つに決める。決定は『どのファイルに何を書くか（新規/改修の別）』『どのコマンドを叩くか』まで落とす。ユーザー確定事項（Lighthouse を run_checks.sh に配線・Accessibility 100 は blocking・Performance は記録のみ）は覆さない。議論で否定された案は採用しない。未確認事項は断定せず『実装時に潰す』として残す。争点 E は最終的なファイル割り当て表（役割 → 書き込み先ファイル・重複ゼロ）まで決める。"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "fanout": [
+      {
+        "role": "R1..R4",
+        "scope": "担当する実装範囲",
+        "files": ["排他的に書き込むファイルパス"],
+        "depends_on": ["先行して確定が要る役割"]
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）"]
+  }
+}

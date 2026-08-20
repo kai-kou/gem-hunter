@@ -10,7 +10,7 @@ SSOT: `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.1 / §2.2。
 WCAG 2.x の相対輝度式でコントラスト比を計算する。oklch() 記法のため、oklch → 線形 sRGB → sRGB の
 変換を自前実装する（外部ライブラリ・ネットワーク接続は使わない）。
 
-検査するペア（§2.1 の表に対応。計 9 ペア × ライト/ダーク = 18 判定）:
+検査するペア（§2.1 / §7.3 の表に対応。計 11 ペア × ライト/ダーク = 22 判定）:
   fg        vs bg         (>= 4.5:1)  本文
   fg        vs bg-subtle  (>= 4.5:1)  本文（カード面）
   fg-muted  vs bg         (>= 4.5:1)  メタ情報
@@ -20,6 +20,8 @@ WCAG 2.x の相対輝度式でコントラスト比を計算する。oklch() 記
   accent-fg vs accent     (>= 4.5:1)  アクセント面上のテキスト（主ボタン）
   danger    vs bg         (>= 4.5:1)  エラー文字色
   danger-fg vs danger     (>= 4.5:1)  エラー面上のテキスト
+  ring      vs bg         (>= 3.0:1)  フォーカスリング（非テキストコントラスト・WCAG 2.2 SC 1.4.11）
+  ring      vs bg-subtle  (>= 3.0:1)  フォーカスリング（カード面上）
 
 使い方:
   python3 tools/check_contrast.py            # app/globals.css を検査
@@ -185,6 +187,7 @@ SEMANTIC_VARS = [
     "accent-foreground",
     "destructive",
     "destructive-foreground",
+    "ring",
 ]
 
 # (fg変数, bg変数, しきい値, ラベル)
@@ -198,6 +201,8 @@ CHECK_PAIRS = [
     ("accent-foreground", "accent", 4.5, "--color-accent-fg vs --color-accent（主ボタン文字色）"),
     ("destructive", "background", 4.5, "--color-danger vs --color-bg（エラー文字色）"),
     ("destructive-foreground", "destructive", 4.5, "--color-danger-fg vs --color-danger（エラー面文字色）"),
+    ("ring", "background", 3.0, "--color-ring vs --color-bg（フォーカスリング・非テキストコントラスト・WCAG 2.2 SC 1.4.11）"),
+    ("ring", "muted", 3.0, "--color-ring vs --color-bg-subtle（カード面上のフォーカスリング）"),
 ]
 
 
@@ -259,7 +264,7 @@ def run_check() -> int:
         print(line)
 
     if ok_light and ok_dark:
-        print("[check_contrast] PASS: 9 トークン × ライト/ダーク 計 18 ペア、全てしきい値を満たしています")
+        print("[check_contrast] PASS: 11 ペア × ライト/ダーク 計 22 判定、全てしきい値を満たしています")
         return 0
 
     print("[check_contrast] FAIL: しきい値を下回るペアがあります")

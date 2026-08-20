@@ -28,13 +28,14 @@ const items: RepositorySummary[] = [
 
 describe('RepositoryList', () => {
   it('オーナーアイコンとリポジトリ名を表示する（AC-3）', () => {
-    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
+    const { container } = render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
 
     expect(screen.getByRole('link', { name: /facebook\/react/ })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'facebook' })).toHaveAttribute(
-      'src',
-      expect.stringContaining('avatars.githubusercontent.com'),
-    )
+    // オーナー名は fullName としてカード内にテキスト隣接表示されるため alt="" にしており、
+    // 装飾画像扱い（role=presentation）になる（ui-ux-guidelines §7.4）→ getByRole('img') は使えない
+    const img = container.querySelector('img')
+    expect(img).toHaveAttribute('src', expect.stringContaining('avatars.githubusercontent.com'))
+    expect(img).toHaveAttribute('alt', '')
   })
 
   it('カードは独立 URL の詳細ページへのリンクになっている（モーダルではない・AC-4）', () => {

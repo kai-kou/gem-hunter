@@ -83,7 +83,11 @@ test.describe('SP-9: 読み込み中と 0 件が区別できる', () => {
     })
 
     await test.step('2. 0 件であることが明示され、読み込み中・エラーとは別物として出ている', async () => {
-      const status = page.locator('main').getByRole('status')
+      // 🔴 #180 是正（section へ role="status" 追加）後は main 内に role="status" が 2 つ存在する
+      // （① #search-status セクション＝件数文言「0 件中 0 件を表示」 ② RepositoryList の 0 件専用
+      // <p role="status">）。単純な getByRole('status') は strict mode violation で必ず落ちるため、
+      // 文言で対象を絞り込む（whiteboard round2 e2e_verify rebuttal・実機再現で確定）。
+      const status = page.locator('main').getByRole('status').filter({ hasText: ja.home.empty })
       await expect(status).toContainText(ja.home.empty)
       // 読み込み中（US-22）と 0 件（US-23）を同じ表示にしない（AC-8）
       await expect(page.locator('main').getByText(ja.common.loading)).toHaveCount(0)

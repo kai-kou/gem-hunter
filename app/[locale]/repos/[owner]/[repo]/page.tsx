@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import { getRepositoryDetailUseCase } from '@/src/composition/container'
@@ -11,6 +12,7 @@ import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { LocaleSwitcher } from '@/src/ui/locale-switcher'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
+import { SetDocumentTitle } from '@/src/ui/set-document-title'
 
 /**
  * 独立 URL の詳細ページ（AC-4 / US-16 / US-17 / FR-5 / FR-6）。
@@ -122,6 +124,11 @@ export default async function RepositoryDetailPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      {/* `generateMetadata`（下記）は URL セグメントから SSR 時点の <title> を出すが、
+          ハイドレーション後に document.title が親レイアウトの既定値へ巻き戻らないことまでは
+          保証しないため、クライアント側でも確実に設定する（not-found.tsx / PR #127 と同じパターン）。
+          fullName は API 由来の正規表記（owner の大文字小文字を含む）で generateMetadata より正確。 */}
+      <SetDocumentTitle title={repository.fullName} />
       <LocaleSwitcher
         currentLocale={locale}
         currentPath={currentPath}
@@ -145,4 +152,26 @@ export default async function RepositoryDetailPage({
       />
     </main>
   )
+}
+
+/**
+ * ルート変更時のフォーカス移動・ライブリージョンとは別軸の対応（ui-ux-guidelines.md §7.1）:
+ * Next.js の route announcer は `document.title` の変化のみを見て発火するため、一覧→詳細の
+ * クライアント遷移でも SSR 段階から正しいタイトルを出す（E-15）。
+ *
+ * 🔴 `getRepositoryDetailUseCase` を呼び直してリポジトリ本体を再取得しない: `generateMetadata` は
+ * ページ本体のレンダリングとは独立して評価されうるため、ここで同じユースケースを呼ぶとキャッシュ
+ * TTL 内でも往復が増える（`src/composition/container.ts` の `sharedCache` は HIT するが、
+ * セッショントークンの再解決など無駄な非同期処理が増える）。`fullName` は通常 `owner/repo` と
+ * 一致する（GitHub の大文字小文字の正規化差はタイトルの実用上無視できる）ため、
+ * デコード済みの URL セグメントをそのままタイトルに使う。404 の場合は同ディレクトリの
+ * `not-found.tsx` が自身の `generateMetadata` で上書きするため、ここでは意識しない。
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ owner: string; repo: string }>
+}): Promise<Metadata> {
+  const { owner, repo } = await params
+  return { title: `${owner}/${repo}` }
 }

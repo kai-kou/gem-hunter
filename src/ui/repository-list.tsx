@@ -57,7 +57,9 @@ export function RepositoryList({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`${item.owner.avatarUrl}${item.owner.avatarUrl.includes('?') ? '&' : '?'}s=80`}
-            alt={item.owner.login}
+            // オーナー名は owner/repo 形式でカード内にテキスト隣接表示されるため装飾扱い
+            // （ui-ux-guidelines.md §7.4・詳細ページ repository-detail.tsx と同じ方針）
+            alt=""
             width={40}
             height={40}
             className="size-10 shrink-0 rounded-full"
@@ -73,7 +75,13 @@ export function RepositoryList({
             */}
             <Link
               href={`/${locale}/repos/${encodeURIComponent(item.owner.login)}/${encodeURIComponent(item.name)}${searchState ? buildSearchUrl('', searchState) : ''}`}
-              className="text-primary font-medium underline-offset-4 hover:underline after:absolute after:inset-0"
+              // 🔴 ネイティブ <a> のブラウザ既定フォーカス（outline: auto）は太さが約 1px しかなく
+              // `ui-ux-guidelines.md` §7.3 の「太さ 2px 相当以上」を満たさない（SP-10 実測で判明）。
+              // button.tsx / input.tsx / 結果見出し（page.tsx）と同じ `ring-3` パターンへ揃える。
+              // 🔴 ネイティブ <a> のブラウザ既定フォーカス（outline: auto）は太さが約 1px しかなく
+              // `ui-ux-guidelines.md` §7.3 の「太さ 2px 相当以上」を満たさない（SP-10 実測で判明）。
+              // button.tsx / input.tsx / 結果見出し（page.tsx）と同じ `ring-3` パターンへ揃える。
+              className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
             >
               {item.fullName}
             </Link>

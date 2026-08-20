@@ -18,6 +18,7 @@ import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
 import { ErrorNotice } from '@/src/ui/error-notice'
+import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { LoadingIndicator } from '@/src/ui/loading-indicator'
 import { LocaleSwitcher } from '@/src/ui/locale-switcher'
 import { Pagination } from '@/src/ui/pagination'
@@ -302,12 +303,38 @@ export default async function LocaleHome({
       ) : null}
 
       {/*
+        結果一覧の見出し（`E-15` / `ui-ux-guidelines.md` §7.1）。`tabIndex={-1}` を付け、
+        ページ送り・ソート・件数切替（next/link のクライアント遷移）の完了後に
+        `FocusOnNavigate` からここへ focus() を移す。検索フォームのネイティブ GET 送信
+        （フルリロード）は対象外（本コンポーネントごと初回マウントからやり直しになるため、
+        `FocusOnNavigate` 側の「初回描画では focus しない」設計がそのまま対象外を実現する）。
+      */}
+      <h2
+        id="results-heading"
+        tabIndex={-1}
+        className="mt-6 text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring rounded-sm"
+      >
+        {messages.home.resultsHeading}
+      </h2>
+
+      {/*
         ライブリージョン（初期 DOM に常設し、中身だけを書き換える・ui-ux-guidelines.md §7.2）。
         読み込み中（US-22）は fallback がストリーミングで先に届き、解決後は件数表示へ
         書き換わる。0 件表示（`RepositoryList` の role="status"）とは別要素・別文言なので
         区別できる（AC-8）。
+        🔴 訂正（PR #183 実測・0 件時は下記の `RepositoryList` 側 `role="status"` と 2 つ同時に
+        存在するため「唯一」は事実ではない）: この `section` が守るのは **入れ子にしない** こと。
+        `LoadingIndicator` は自身の role/aria-live を持たない表示専用コンポーネントへ変更済みで、
+        この `section`（`aria-live="polite"`）の **内側** に別のライブリージョンを重ねない
+        （`RepositoryList` の `role="status"` は本 `section` の **外**・兄弟要素であり、
+        入れ子ではないので問題ない・§7.2）。
       */}
-      <section id="search-status" aria-live="polite" className="text-muted-foreground mt-6 text-sm">
+      <section
+        id="search-status"
+        role="status"
+        aria-live="polite"
+        className="text-muted-foreground mt-6 text-sm"
+      >
         <Suspense key={suspenseKey} fallback={<LoadingIndicator label={messages.common.loading} />}>
           <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
         </Suspense>
@@ -325,6 +352,14 @@ export default async function LocaleHome({
           showAuthLink={isAuthConfigured()}
         />
       </Suspense>
+
+      {/*
+        `key={suspenseKey}` の Suspense 境界の外（= remount されない位置）に置く。
+        `watch={currentPath}` はページ送り・ソート・件数切替のたびに値が変わるため、
+        このコンポーネント自身は remount されずに props だけが更新され、初回判定
+        （`useRef`）が遷移を跨いで機能する（`focus-on-navigate.tsx` 参照）。
+      */}
+      <FocusOnNavigate watch={currentPath} targetId="results-heading" />
     </main>
   )
 }

@@ -33,6 +33,7 @@
     "searchPlaceholder": "キーワードで GitHub を検索(例: react)",
     "searchSubmit": "検索",
     "idle": "キーワードを入力して検索してください。",
+    "resultsHeading": "検索結果",
     "resultCount": "{total} 件中 {shown} 件を表示",
     "empty": "条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。",
     "starCount": "star 数",

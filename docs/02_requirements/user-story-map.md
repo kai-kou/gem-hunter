@@ -440,7 +440,12 @@
   1. **マウスに触れず**、Tab と Enter だけで 検索 → 一覧 → 詳細 → 一覧 を完走する（フォーカスが常に見える）
   2. スマートフォン幅に縮める → 破綻しない
   3. ブラウザ拡大 200% → 破綻しない
-  4. CI で axe と Lighthouse（Accessibility = 100）が通る
+  4. `tools/run_checks.sh` で以下の三層防御（`ui-ux-guidelines.md` §7）が **すべて** 通る:
+     `check_contrast.py`（デザイントークン宣言値のコントラスト 3:1・WCAG 2.2 SC 1.4.11）・
+     axe（serious/critical 違反 0）・Lighthouse（Accessibility = 100）。**加えて**
+     `e2e/sp-10.spec.ts` の実描画コントラスト計測（`measureFocusIndicator`）が緑であること
+     （静的トークン検査だけでは Tailwind ユーティリティ側の不透明度修飾子や `transition-all` の
+     遷移途中値を検知できないため・PR #183 実測で判明）
 - **対応 `AC`**: `AC-9`
 - **見積もり**: `sp:8`（Lighthouse ゲートの較正を含む）
 
