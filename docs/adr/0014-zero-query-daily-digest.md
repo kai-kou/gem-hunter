@@ -123,11 +123,12 @@ ADR 0008 は検索結果一覧について「キーボード到達性・スク�
 
 | # | 未確定事項 | 何が必要か |
 |---|---|---|
-| 1 | しきい値・足切り基準の具体値 | `Gem Index` のどの範囲を「隠れた名品」として提示するかの具体値は未定。npm の実データ（S3 ダンプ）を見てから `SP-14` 着手直後に決定する |
+| 1 | しきい値・足切り基準の具体値 | `Gem Index` のどの範囲を「隠れた名品」として提示するかの具体値は未定。npm の実データ（Ecosyste.ms REST API の `rankings`。下記 #3 参照）を見てから `SP-14` 着手直後に決定する |
 | 2 | 配信件数 | §2.1 の「既定 5 件」は暫定値。実データのボリューム・パーセンタイル分布を見てから確定する |
-| 3 | S3 ダンプの集計フィールド未検証 | Ecosyste.ms の S3 バルクダンプに `dependent_packages_count` / `rankings` 等の集計フィールドが含まれるかを着手直後に実ファイルで確認する。含まれない場合はパーセンタイルの自前計算または API 併用に切り替わり、見積もりが変わる |
-| 4 | `criticality_score` の鮮度未確認 | 最終 push が 2025-12-02 で cron の稼働継続が未確認（[補完リサーチ §4.6](../../content/research/20260820-zero-query-discovery_supplement.md)）。健全性フィルタに使う前に実測し、停止していれば OpenSSF Scorecard へ寄せる |
+| ~~3~~ | ~~S3 ダンプの集計フィールド未検証~~ | ✅ **解消済み（`SP-14` 着手時の議論型レビューで決着・2026-08-20）**: S3 バルクダンプは bot 保護（Anubis）により匿名アクセスが `AccessDenied` で技術的に不成立と実測確認。代わりに REST API の `rankings` フィールド（registry=npm 単位で閉じた事前計算済みパーセンタイル）をそのまま使う設計に変更した。詳細は `open-questions.md` の `D-28` 訂正注記と[議論記録](../../content/discussions/sp14-digest-pipeline-20260820/whiteboard.md)を参照 |
+| ~~4~~ | ~~`criticality_score` の鮮度未確認~~ | ✅ **解消済み（2026-08-20）**: GCS 公開データが 2025-07-25 以降 約13ヶ月更新停止しており実質デッドと確認。健全性フィルタは OpenSSF Scorecard（`api.scorecard.dev`・API キー不要・直近数日以内のスコアを返す実働サービスと実測確認済み）を採用する |
 | 5 | Safari ITP の 7 日キャップは設計で消せない | フォールバック（§2.4）は任意機能ではなく必須要件として実装する（これ自体は確定済みの制約だが、実装漏れを防ぐため着手時チェック項目として残す） |
+| 6 | `top_percentage_for`（Ecosyste.ms 実装）の分母定義 | `registry.packages_count` が npm 全量か GitHub 解決済みサブセットかがソース断片からは未確定（[議論記録](../../content/discussions/sp14-digest-pipeline-20260820/whiteboard.md) round2）。軽量サンプル比較で `SP-14` 着手直後に確認する |
 
 ---
 
