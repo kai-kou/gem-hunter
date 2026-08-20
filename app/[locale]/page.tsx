@@ -85,126 +85,117 @@ async function runSearch(
 }
 
 /**
- * 検索の実行と結果表示（`<Suspense>` 配下・US-22）。
+ * 検索の実行結果を待つ 2 つの表示（ライブリージョンの文言・結果本体）。
  *
- * 🔴 見出し・検索欄（LCP 対象要素）を遅いデータに依存させないため、**待つ部分だけ** を
- * 本コンポーネントへ切り出して `<Suspense>` で包む（`ui-ux-guidelines.md` §8.1）。
- * ルートセグメントの `loading.tsx` は「ページ全体」を fallback へ差し替えてしまい
- * LCP 要素まで消える上に、Loading UI は params を受け取れない仕様（Next.js の
- * `file-conventions/loading.md`「Loading UI components do not accept any parameters」）で
- * ロケール対応の読み込み文言を出せないため、こちらの経路を採る。
+ * 🔴 `<Suspense>` は **ライブリージョンの内側** に置く（`ui-ux-guidelines.md` §7.2:
+ * 「ライブリージョンは初期 DOM に空で常設し、中身を書き換える。要素ごと動的挿入しない」）。
+ * リージョン要素ごと動的挿入すると「読み込み中 → 157 件中 20 件を表示」の遷移が
+ * スクリーンリーダーへ一切通知されない（`NFR-12` / `US-26`）。
+ *
+ * 結果リスト本体と `ErrorNotice`（`role="alert"`）はライブリージョンの **外** に置き、
+ * polite リージョンへ assertive を入れ子にしない（同 §7.2）。そのため待つ処理は 2 箇所に
+ * 分かれるが、`runSearch()` の Promise を 1 本だけ作って両方へ渡すので検索は 1 回しか走らない。
  */
-async function SearchResults({
-  rawKeyword,
+async function SearchStatusText({
+  statePromise,
+  locale,
+  messages,
+}: {
+  statePromise: Promise<SearchState>
+  locale: Locale
+  messages: Messages
+}) {
+  const state = await statePromise
+
+  if (state.status === 'idle') {
+    return <>{messages.home.idle}</>
+  }
+  if (state.status === 'error') {
+    // エラー文言は `ErrorNotice`（role="alert"）が担当する。ここへ重ねると二重読み上げになる。
+    return null
+  }
+  return (
+    <>
+      {formatMessage(messages.home.resultCount, {
+        total: state.result.totalCount.toLocaleString(toIntlLocaleTag(locale)),
+        shown: String(state.result.items.length),
+      })}
+    </>
+  )
+}
+
+async function SearchBody({
+  statePromise,
   basePath,
   currentPath,
   searchState,
   locale,
   messages,
-  accessToken,
+  isLoggedIn,
   showAuthLink,
 }: {
-  rawKeyword: string
+  statePromise: Promise<SearchState>
   basePath: string
   currentPath: string
   searchState: { keyword: string; page: number; sort: string; perPage: number }
   locale: Locale
   messages: Messages
-  accessToken: string | null
+  isLoggedIn: boolean
   showAuthLink: boolean
 }) {
-  const state = await runSearch(
-    rawKeyword,
-    searchState.page,
-    searchState.sort,
-    searchState.perPage,
-    accessToken,
-  )
+  const state = await statePromise
+
+  if (state.status === 'error') {
+    return (
+      <ErrorNotice
+        presentation={toErrorPresentation(state.kind, messages, {
+          locale,
+          retryAfter: state.retryAfter,
+          retryAfterSeconds: state.retryAfterSeconds,
+          isLoggedIn,
+        })}
+        // 再試行手段（US-24）: いま失敗した検索 URL をそのまま開き直す。素の <a> なので
+        // クライアント JS を持たない（NFR-3）。
+        retryHref={currentPath}
+        retryLabel={messages.common.retry}
+        // ログイン導線は OAuth 設定が揃っているときだけ（layout.tsx と同じ判定）。
+        // 実際に出すかは `loginHint` の有無（= レート制限かつ未ログイン）で ErrorNotice が決める。
+        loginHref={showAuthLink ? '/api/auth/login' : undefined}
+        loginLabel={showAuthLink ? messages.common.auth.login : undefined}
+      />
+    )
+  }
+
+  if (state.status !== 'ok') {
+    return null
+  }
 
   return (
     <>
-      {state.status === 'ok' ? (
-        // 検索欄の直下に横並びのコントロール行（ソート切替 + 表示件数切替）を置く
-        // （ui-ux-guidelines.md §4.1）。モバイルでは flex-wrap で縦積みに落ちる。
-        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-          <SortPicker
-            basePath={basePath}
-            current={searchState}
-            labels={{
-              navLabel: messages.home.sortLabel,
-              options: messages.home.sortOptions,
-            }}
-          />
-          <PerPagePicker
-            basePath={basePath}
-            current={searchState}
-            labels={{
-              navLabel: messages.home.perPageLabel,
-              optionLabel: messages.home.perPageOptionLabel,
-            }}
-          />
-        </div>
+      <RepositoryList
+        items={state.result.items}
+        labels={{
+          empty: messages.home.empty,
+          starCount: messages.home.starCount,
+          updatedAt: messages.home.updatedAt,
+        }}
+        locale={locale}
+        searchState={searchState}
+      />
+      {state.result.items.length > 0 ? (
+        <Pagination
+          basePath={basePath}
+          current={searchState}
+          totalCount={state.result.totalCount}
+          labels={{
+            navLabel: messages.home.paginationLabel,
+            prev: messages.home.pagePrev,
+            next: messages.home.pageNext,
+            current: messages.home.pageCurrent,
+            limitReached: messages.home.pageLimitReached,
+          }}
+        />
       ) : null}
-
-      <section className="mt-6" aria-live="polite">
-        {state.status === 'idle' ? (
-          <p className="text-muted-foreground text-sm">{messages.home.idle}</p>
-        ) : null}
-
-        {state.status === 'error' ? (
-          <ErrorNotice
-            presentation={toErrorPresentation(state.kind, messages, {
-              locale,
-              retryAfter: state.retryAfter,
-              retryAfterSeconds: state.retryAfterSeconds,
-              isLoggedIn: accessToken !== null,
-            })}
-            // 再試行手段（US-24）: いま失敗した検索 URL をそのまま開き直す。素の <a> なので
-            // クライアント JS を持たない（NFR-3）。
-            retryHref={currentPath}
-            retryLabel={messages.common.retry}
-            // ログイン導線は OAuth 設定が揃っているときだけ（layout.tsx と同じ判定）。
-            // 実際に出すかは `loginHint` の有無（= レート制限かつ未ログイン）で ErrorNotice が決める。
-            loginHref={showAuthLink ? '/api/auth/login' : undefined}
-            loginLabel={showAuthLink ? messages.common.auth.login : undefined}
-          />
-        ) : null}
-
-        {state.status === 'ok' ? (
-          <>
-            <p className="text-muted-foreground text-sm">
-              {formatMessage(messages.home.resultCount, {
-                total: state.result.totalCount.toLocaleString(toIntlLocaleTag(locale)),
-                shown: String(state.result.items.length),
-              })}
-            </p>
-            <RepositoryList
-              items={state.result.items}
-              labels={{
-                empty: messages.home.empty,
-                starCount: messages.home.starCount,
-                updatedAt: messages.home.updatedAt,
-              }}
-              locale={locale}
-              searchState={searchState}
-            />
-            {state.result.items.length > 0 ? (
-              <Pagination
-                basePath={basePath}
-                current={searchState}
-                totalCount={state.result.totalCount}
-                labels={{
-                  navLabel: messages.home.paginationLabel,
-                  prev: messages.home.pagePrev,
-                  next: messages.home.pageNext,
-                  current: messages.home.pageCurrent,
-                  limitReached: messages.home.pageLimitReached,
-                }}
-              />
-            ) : null}
-          </>
-        ) : null}
-      </section>
     </>
   )
 }
@@ -233,6 +224,21 @@ export default async function LocaleHome({
   const basePath = `/${locale}`
   const searchState = { keyword, page, sort, perPage }
   const currentPath = buildSearchUrl(basePath, searchState)
+  const hasKeyword = rawKeyword.trim().length > 0
+
+  /**
+   * 🔴 `<Suspense>` に検索条件由来の `key` を与える（`US-22`）。React は transition 中の
+   * **既存の** 境界へ fallback を再表示しないため、key が無いとページング・ソート変更・
+   * 表示件数変更（`next/link` のクライアント遷移）で「読み込み中」が出ず、古い一覧が
+   * 残ったままになる。生キーワードを含めて作る（`currentPath` は不正値を丸めるため、
+   * 別の不正キーワードへ変えても key が変わらない）。
+   */
+  const suspenseKey = buildSearchUrl(basePath, { ...searchState, keyword: rawKeyword })
+
+  // 🔴 Promise は 1 本だけ作り、ライブリージョン側と結果本体側の両方へ渡す（検索は 1 回）。
+  //    どちらの await より前に reject しても unhandled rejection にしないため、no-op を 1 つ張る。
+  const statePromise = runSearch(rawKeyword, page, sort, perPage, accessToken)
+  void statePromise.catch(() => undefined)
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
@@ -258,18 +264,54 @@ export default async function LocaleHome({
       />
 
       {/*
-        読み込み中（US-22）。検索が解決するまで fallback がストリーミングで先に届く。
-        0 件表示（`RepositoryList` の role="status"）とは別要素・別文言なので区別できる（AC-8）。
+        検索欄の直下に横並びのコントロール行（ソート切替 + 表示件数切替）を置く
+        （ui-ux-guidelines.md §4.1）。モバイルでは flex-wrap で縦積みに落ちる。
+        🔴 `<Suspense>` の外に置く: 結果待ちやエラーでコントロールが DOM から消えると
+        レイアウトが上下に動き、Tab 順序が不安定になり、エラー時は「ソートを変えて
+        やり直す」回復手段まで絶たれる。現在値は searchParams から取れるので結果を待つ必要はない。
       */}
-      <Suspense fallback={<LoadingIndicator label={messages.common.loading} />}>
-        <SearchResults
-          rawKeyword={rawKeyword}
+      {hasKeyword ? (
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <SortPicker
+            basePath={basePath}
+            current={searchState}
+            labels={{
+              navLabel: messages.home.sortLabel,
+              options: messages.home.sortOptions,
+            }}
+          />
+          <PerPagePicker
+            basePath={basePath}
+            current={searchState}
+            labels={{
+              navLabel: messages.home.perPageLabel,
+              optionLabel: messages.home.perPageOptionLabel,
+            }}
+          />
+        </div>
+      ) : null}
+
+      {/*
+        ライブリージョン（初期 DOM に常設し、中身だけを書き換える・ui-ux-guidelines.md §7.2）。
+        読み込み中（US-22）は fallback がストリーミングで先に届き、解決後は件数表示へ
+        書き換わる。0 件表示（`RepositoryList` の role="status"）とは別要素・別文言なので
+        区別できる（AC-8）。
+      */}
+      <section id="search-status" aria-live="polite" className="text-muted-foreground mt-6 text-sm">
+        <Suspense key={suspenseKey} fallback={<LoadingIndicator label={messages.common.loading} />}>
+          <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
+        </Suspense>
+      </section>
+
+      <Suspense key={suspenseKey} fallback={null}>
+        <SearchBody
+          statePromise={statePromise}
           basePath={basePath}
           currentPath={currentPath}
           searchState={searchState}
           locale={locale}
           messages={messages}
-          accessToken={accessToken}
+          isLoggedIn={accessToken !== null}
           showAuthLink={isAuthConfigured()}
         />
       </Suspense>

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Button } from './components/button'
 import type { ErrorPresentation } from './i18n/error-message'
 
 type ErrorNoticeProps = {
@@ -8,7 +9,10 @@ type ErrorNoticeProps = {
   retryHref?: string
   /** 再試行導線のラベル（`common.retry`）。 */
   retryLabel?: string
-  /** ログイン開始 URL（`AR-5`）。`presentation.loginHint` があるときだけ使う。 */
+  /**
+   * ログイン開始 URL（`AR-5`）。`presentation.loginHint` があるときだけ使う。
+   * 🔴 これが無いときは `loginHint` 自体も出さない（リンクの無い案内だけを残すと行き止まりになる）。
+   */
   loginHref?: string
   /** ログイン導線のラベル（`common.auth.login`）。 */
   loginLabel?: string
@@ -21,9 +25,17 @@ type ErrorNoticeProps = {
  *   併記しない（iOS VoiceOver の二重読み上げ回避・`ui-ux-guidelines.md` §7.2）
  * - 表示するのは props で渡された文言だけ。例外オブジェクト・HTTP ステータス等の
  *   内部情報はここでは一切足さない（`NFR-9` / `ui-ux-guidelines.md` §5.1）
- * - ログイン導線は `presentation.loginHint`（= 一次レート制限かつ未ログイン）のときだけ出す（`US-25`）
+ * - ログイン導線は `presentation.loginHint`（= 一次レート制限かつ未ログイン）**かつ** `loginHref` /
+ *   `loginLabel` が渡されたときだけ出す。導線を出せないときは案内文も出さない（`US-25`）
  *
- * リンクは素の遷移なのでクライアント JS を必要としない（`LoginLink` / `BackLink` と同じ方針・`NFR-3`）。
+ * 導線は素の遷移なのでクライアント JS を必要としない（`LoginLink` / `BackLink` と同じ方針・`NFR-3`）。
+ * `Button asChild` で `Link` をラップし、見た目だけのテキストリンクにしない — 高さが
+ * `--size-control-xs`（24px）を下回るとタップターゲット要件に反するため
+ * （`ui-ux-guidelines.md` §2.4 / §5.2「再試行ボタン」・`NFR-10`）。
+ * 🔴 サイズは `size` variant 経由でのみ指定し、呼び出し側の `className` に生の `h-*` / `text-*` を
+ * 書かない（`ui-ux-guidelines.md` §2.4・`tools/check_ui_dimensions.py` の登録済み呼び出しサイト）。
+ * 色は `text-*` ユーティリティだと同機械検査がフォントサイズと区別できないため、トークンを直接
+ * 参照する任意プロパティ記法で書く（値は `app/globals.css` のトークンで、生の色は書かない）。
  *
  * 🔴 配色は `tools/check_contrast.py` が検証しているトークンの組み合わせだけを使う（`NFR-13`）。
  * 面を `bg-danger/5` のようなアルファ合成で塗ると `--color-danger` の実効コントラストが
@@ -40,27 +52,26 @@ export function ErrorNotice({
   const showRetry = retryHref !== undefined && retryLabel !== undefined
   const showLogin =
     presentation.loginHint !== undefined && loginHref !== undefined && loginLabel !== undefined
-  const linkClassName = 'text-primary text-sm underline-offset-4 hover:underline'
 
   return (
     <div role="alert" className="border-border rounded-lg border p-4">
-      <p className="text-danger text-sm">{presentation.message}</p>
-      {presentation.loginHint ? (
-        <p className="text-muted-foreground mt-2 text-sm">{presentation.loginHint}</p>
+      <p className="[color:var(--color-danger)]">{presentation.message}</p>
+      {showLogin ? (
+        <p className="mt-2 [color:var(--color-fg-muted)]">{presentation.loginHint}</p>
       ) : null}
       {showRetry || showLogin ? (
-        <p className="mt-3 flex flex-wrap gap-4">
+        <div className="mt-3 flex flex-wrap gap-3">
           {showRetry ? (
-            <Link href={retryHref} className={linkClassName}>
-              {retryLabel}
-            </Link>
+            <Button asChild size="xl">
+              <Link href={retryHref}>{retryLabel}</Link>
+            </Button>
           ) : null}
           {showLogin ? (
-            <Link href={loginHref} className={linkClassName}>
-              {loginLabel}
-            </Link>
+            <Button asChild variant="outline" size="lg">
+              <Link href={loginHref}>{loginLabel}</Link>
+            </Button>
           ) : null}
-        </p>
+        </div>
       ) : null}
     </div>
   )

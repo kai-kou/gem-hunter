@@ -27,6 +27,21 @@ function errorNotice(page: import('@playwright/test').Page) {
   return page.locator('main').getByRole('alert')
 }
 
+const STUB_ORIGIN = `http://127.0.0.1:${process.env.E2E_STUB_PORT ?? '8788'}`
+
+/**
+ * スタブへ実際に届いた検索リクエスト数（`e2e/stub/server.mjs` の `/__stats`・`sp-5.spec.ts` と同じ手口）。
+ * 「再試行を押した」ことを画面文言だけで確かめると、再試行が実際に走らなくても
+ * クリック前と同じ文言が出続けるので **常に真** の assert になる（SP-9 セルフレビュー指摘 6）。
+ */
+async function readSearchCount(): Promise<number> {
+  const res = await fetch(`${STUB_ORIGIN}/__stats`)
+  if (!res.ok) {
+    throw new Error(`stub の /__stats が応答しない（status=${res.status}）`)
+  }
+  return ((await res.json()) as { searchCount: number }).searchCount
+}
+
 test.describe('SP-9: エラーは種別ごとに区別され、再試行手段が示される', () => {
   test('ネットワーク到達不可: 接続できない旨 + 再試行リンクが出る（US-24）', async ({ page }) => {
     const keyword = uniqueKeyword('sp9-network-down')
@@ -40,13 +55,19 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
       await expect(errorNotice(page)).toContainText(ja.common.errors.network)
     })
 
-    await test.step('3. 再試行手段（同じ検索をやり直すリンク）が示される', async () => {
+    await test.step('3. 再試行手段（同じ検索をやり直すリンク）が示され、押すと実際に再取得が走る', async () => {
       const retry = page.locator('main').getByRole('link', { name: ja.common.retry })
       await expect(retry).toBeVisible()
       await expect(retry).toHaveAttribute('href', `/ja?q=${keyword}`)
+
+      const before = await readSearchCount()
       await retry.click()
       await expect(page).toHaveURL(new RegExp(`/ja\\?q=${keyword}$`))
       await expect(errorNotice(page)).toContainText(ja.common.errors.network)
+
+      // 🔴 文言の再確認だけでは「再試行が走らなくても必ず通る」assert になるため、
+      //    スタブへ届いた検索回数が増えたことで再取得を証明する。
+      expect(await readSearchCount()).toBeGreaterThan(before)
     })
 
     await test.step('4. レート制限固有の案内は出ない（種別で文言が違う）', async () => {
@@ -134,5 +155,85 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
       await page.getByRole('link', { name: ja.detail.backLink }).click()
       await expect(page).toHaveURL(/\/ja$/)
     })
+  })
+
+  /**
+   * 一次レート制限の **ログイン済み** 側（`US-25` の他方）。未ログイン側は上のテストが担当する。
+   * ログイン済みならレート枠は既に増えているので、ログイン導線を出しても回復手段にならない。
+   */
+  test('ログイン済みなら一次レート制限でもログイン導線が出ない（US-25）', async ({
+    page,
+    context,
+  }) => {
+    await test.step('1. ダミー OAuth でログインする（sp-8-auth.spec.ts と同じ手口）', async () => {
+      await page.goto('/api/auth/login')
+      await page.waitForURL(/\/ja(\?.*)?$/)
+      const cookies = await context.cookies()
+      expect(
+        cookies.find((c) => c.name === 'gem_hunter_session'),
+        'セッション Cookie が set されていること',
+      ).toBeTruthy()
+    })
+
+    await test.step('2. レート制限を返すキーワードで検索する', async () => {
+      await page.goto(`/ja?q=${uniqueKeyword('rate-limit')}`)
+      await expect(errorNotice(page)).toContainText(/\d{1,2}:\d{2}/)
+    })
+
+    await test.step('3. 上限の案内は出るが、ログイン導線は出ない', async () => {
+      await expect(errorNotice(page)).not.toContainText(ja.common.errors.rateLimitPrimaryLoginHint)
+      await expect(
+        page.locator('main').getByRole('link', { name: ja.common.auth.login }),
+      ).toHaveCount(0)
+    })
+  })
+
+  /**
+   * 403 でも `x-ratelimit-remaining` が 0 でなく `retry-after` も無い場合は
+   * レート制限ではなく `auth`（サーバー設定の問題）として扱う（`prd.md` §7 の判別順序）。
+   * `toErrorPresentation` の switch を取り違えても検知できるよう、他種別の文言が出ないことも見る。
+   */
+  test('レート制限ではない 403 は汎用エラー文言になる（prd.md §7 auth）', async ({ page }) => {
+    await page.goto('/ja')
+    await searchFor(page, uniqueKeyword('sp9-forbidden'))
+
+    await expect(errorNotice(page)).toContainText(ja.common.errors.auth)
+    await expect(errorNotice(page)).not.toContainText(ja.common.errors.rateLimitPrimaryLoginHint)
+    await expect(errorNotice(page)).not.toContainText(ja.common.errors.upstream)
+    await expect(errorNotice(page)).not.toContainText(ja.common.errors.network)
+    await expect(page.locator('main').getByRole('link', { name: ja.common.retry })).toBeVisible()
+  })
+
+  /**
+   * 詳細ページのエラー時も見出し・言語切替を失わない（SP-9 セルフレビュー指摘 4）。
+   * 見出しが 1 つも無い文書になると、スクリーンリーダーの見出しナビゲーションで到達できない。
+   */
+  test('詳細ページのエラー時も見出しと言語切替が残る（NFR-12 / US-26）', async ({ page }) => {
+    const repo = `rate-limit-${randomBytes(4).toString('hex')}`
+    await page.goto(`/ja/repos/octostub/${repo}`)
+
+    await expect(errorNotice(page)).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(`octostub/${repo}`)
+    await expect(page.getByRole('navigation', { name: ja.common.localeSwitcher.navLabel })).toBeVisible()
+  })
+
+  /**
+   * 詳細ページの再試行リンクが検索条件を落とさず、`owner` / `repo` を URL エンコードする
+   * （SP-9 セルフレビュー指摘 5）。落とすと再試行後の「一覧へ戻る」が 1 ページ目・既定ソートに
+   * 戻り、`SP-7` の成果を壊す。
+   */
+  test('詳細ページのエラー時の再試行リンクが検索条件を保持する（SP-7 の回帰）', async ({
+    page,
+  }) => {
+    const repo = `rate-limit-${randomBytes(4).toString('hex')}`
+    await page.goto(`/ja/repos/octostub/${repo}?q=many-hits&page=2&sort=stars&per_page=50`)
+
+    const retry = page.locator('main').getByRole('link', { name: ja.common.retry })
+    const href = await retry.getAttribute('href')
+    expect(href).toContain(`/ja/repos/octostub/${repo}`)
+    expect(href).toContain('q=many-hits')
+    expect(href).toContain('page=2')
+    expect(href).toContain('sort=stars')
+    expect(href).toContain('per_page=50')
   })
 })

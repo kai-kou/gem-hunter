@@ -57,6 +57,9 @@ COMPONENTS_DIR = "src/ui/components/"
 # 呼び出しサイト → { コンポーネント名: 必要な最低 tier }
 CALL_SITE_REQUIREMENTS: dict[str, dict[str, str]] = {
     "src/ui/search-form.tsx": {"Input": "xl", "Button": "xl"},
+    # エラー通知の導線（ui-ux-guidelines.md §5.2「再試行ボタン」）。再試行は主要導線 = xl、
+    # ログイン導線はそれに次ぐ lg。下限は小さい方の tier を登録する（両方が lg 以上であること）。
+    "src/ui/error-notice.tsx": {"Button": "lg"},
 }
 
 # tier の順序（小 → 大）。px 値ではなく「順序」のみを Python が持つ。

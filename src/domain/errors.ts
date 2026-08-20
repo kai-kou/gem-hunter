@@ -46,6 +46,27 @@ export class DomainValidationError extends DomainError {
   }
 }
 
+/**
+ * 上流（GitHub）が検索クエリを受理しなかった（HTTP 422）。
+ * 🔴 値オブジェクトの不変条件違反ではない（`SearchQuery` は domain-model.md §4 の値オブジェクト表に
+ * 無い）ため `DomainValidationError` とは別型にする。利用者への提示は「入力の修正を促す」で同じ
+ * なので `kind` は validation を共有する（prd.md §7）。
+ */
+export class SearchQueryRejectedError extends DomainError {
+  readonly kind = 'validation' as const
+
+  /**
+   * @param keyword 拒否されたクエリのうち **利用者入力に由来する部分**（判別できなければ null）。
+   *   ACL が検索時に付与する公開限定修飾子（`is:public`）は含めない（内部の防御実装を漏らさない・NFR-33）。
+   */
+  constructor(
+    readonly keyword: string | null,
+    message?: string,
+  ) {
+    super(message ?? '上流が検索クエリを受理しませんでした')
+  }
+}
+
 const DEFAULT_RATE_LIMIT_MESSAGE: Record<RateLimitKind, string> = {
   rateLimitPrimary: 'GitHub API のレート制限に達しました',
   rateLimitSecondary: 'GitHub API の二次レート制限に達しました',
@@ -55,18 +76,19 @@ const DEFAULT_RATE_LIMIT_MESSAGE: Record<RateLimitKind, string> = {
  * 上流（GitHub）のレート制限に達した。
  * 一次（枠の枯渇）は復帰時刻 `retryAfter`、二次（短時間の集中）は待機秒数
  * `retryAfterSeconds` を持つ（どちらも上流が返さなければ undefined）。
+ * 一次で `retry-after` も同時に返る応答があるため、両方を持つこともある（提示の主役は復帰時刻）。
  */
 export class RateLimitExceededError extends DomainError {
   /** 再試行可能になる時刻（一次レート制限の `x-ratelimit-reset` 由来）。 */
   readonly retryAfter?: Date
-  /** 再試行までの待機秒数（二次レート制限の `retry-after` 由来）。 */
+  /** 再試行までの待機秒数（`retry-after` 由来）。 */
   readonly retryAfterSeconds?: number
 
   constructor(
     readonly kind: RateLimitKind,
-    options: { retryAfter?: Date; retryAfterSeconds?: number; message?: string } = {},
+    options: { retryAfter?: Date; retryAfterSeconds?: number } = {},
   ) {
-    super(options.message ?? DEFAULT_RATE_LIMIT_MESSAGE[kind])
+    super(DEFAULT_RATE_LIMIT_MESSAGE[kind])
     this.retryAfter = options.retryAfter
     this.retryAfterSeconds = options.retryAfterSeconds
   }

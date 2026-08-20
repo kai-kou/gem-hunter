@@ -97,7 +97,10 @@ function errorResponse(error: DomainError): Response {
   }
 
   if (error instanceof RateLimitExceededError) {
-    if (error.retryAfter) {
+    // 🔴 上流の `x-ratelimit-reset` が壊れていると Invalid Date が渡りうる（ACL 側でも null へ
+    //    倒しているが、ここでも防ぐ）。`toISOString()` は Invalid Date で RangeError を投げ、
+    //    429 ではなく未処理例外の 500 になってしまうため、有効な Date のときだけ載せる。
+    if (error.retryAfter && !Number.isNaN(error.retryAfter.getTime())) {
       // `Retry-After` は秒数（delta-seconds）と HTTP-date のどちらでも仕様上有効
       // （RFC 9110 §10.2.3）。一次レート制限の `retryAfter` は既に絶対時刻
       // （GitHub のレート制限リセット時刻）を持つ `Date` なので、"今" を計算に持ち込む

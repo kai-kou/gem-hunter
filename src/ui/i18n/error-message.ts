@@ -1,23 +1,8 @@
+import type { ErrorKind } from '@/src/domain/errors'
 import type { Locale } from '@/src/domain/model/locale'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import type { Messages } from '@/src/shared/i18n/messages'
 import { toIntlLocaleTag } from './intl-locale-tag'
-
-/**
- * 利用者に提示するエラー種別（`prd.md` §7 の対応表）。
- *
- * `src/domain/` の判別結果と 1:1 で対応するが、ここでは domain の型を import せず
- * 同等のリテラルユニオンを持つ（`src/shared/i18n/messages.ts` の `MessageLocale` と同じ方針・ARCH-6/7）。
- * `src/ui/` は表示専用なので、エラーオブジェクトから種別を判定する責務は呼び出し側（`app/` 側の結線）にある。
- */
-export type ErrorKind =
-  | 'network'
-  | 'rateLimitPrimary'
-  | 'rateLimitSecondary'
-  | 'auth'
-  | 'validation'
-  | 'notFound'
-  | 'upstream'
 
 export type ErrorPresentation = {
   /** 利用者向けの本文（プレースホルダー補間済み）。 */
@@ -30,7 +15,7 @@ export type ErrorPresentation = {
 }
 
 type ErrorPresentationParams = {
-  locale: 'ja' | 'en'
+  locale: Locale
   /** 一次レート制限の復帰時刻（`x-ratelimit-reset` 由来）。取れない場合は省略する。 */
   retryAfter?: Date
   /** 二次レート制限の再試行までの秒数（`retry-after` 由来）。取れない場合は省略する。 */
@@ -42,16 +27,19 @@ type ErrorPresentationParams = {
 /**
  * 復帰時刻の表示書式。日付をまたぐ可能性があるため月日も出す。
  * タイムゾーンは一覧の更新日（`repository-list.tsx`）と揃えて `Asia/Tokyo` に固定する。
+ *
+ * 🔴 `timeZoneName: 'short'`（ja: `JST` / en: `GMT+9`）で基準を必ず併記する。表示が JST 固定なのに
+ * 基準が出ないと、日本国外の利用者が自分のローカル時刻と誤読し、まだ復帰していない時刻に
+ * 再試行して再び失敗する（`datetime-rules.md`: 人が読む日時は JST + 基準の明示）。
  */
-function formatResetAt(retryAfter: Date, locale: 'ja' | 'en'): string {
-  // `toIntlLocaleTag` はブランド型 `Locale` を受け取るが、値の実体は 'ja' | 'en' の
-  // リテラルなのでそのまま渡せる（検証は URL 解決時に済んでいる）。
-  return new Intl.DateTimeFormat(toIntlLocaleTag(locale as Locale), {
+function formatResetAt(retryAfter: Date, locale: Locale): string {
+  return new Intl.DateTimeFormat(toIntlLocaleTag(locale), {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'Asia/Tokyo',
+    timeZoneName: 'short',
   }).format(retryAfter)
 }
 

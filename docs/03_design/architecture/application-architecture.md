@@ -156,10 +156,28 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 
 | 層 | 扱い |
 |---|---|
-| `src/domain/errors.ts` | `DomainValidationError` / `RepositoryNotFoundError` / `RateLimitExceededError` / `UpstreamUnavailableError` / `UpstreamContractError` を **クラスとして定義** する |
-| `src/infrastructure/` | HTTP ステータス・例外を **上記ドメインエラーへ変換** する（`404` → `RepositoryNotFoundError`、`403 / 429 + レート枠ヘッダ` → `RateLimitExceededError`） |
+| `src/domain/errors.ts` | `DomainValidationError` / `SearchQueryRejectedError` / `NotFoundError` / `RateLimitExceededError` / `NetworkError` / `AuthError` / `UpstreamError` を **クラスとして定義** する。各クラスは利用者への提示単位を表す `ErrorKind`（7 値）を `kind` として持つ（判別条件の正本は [`prd.md`](../../02_requirements/prd.md) §7） |
+| `src/infrastructure/` | HTTP ステータス・例外を **上記ドメインエラーへ変換** する（変換表は下記） |
 | `src/usecases/` | ドメインエラーをそのまま送出する（握り潰さない・別型に包み直さない） |
 | `app/` | ドメインエラーを **UI の状態へ写す**（Not Found 表示 / レート制限の案内 / 再試行導線）。`aria-live` での通知は `NFR-12` |
+
+🔴 **利用者向けの文言は `kind` から i18n で引く。** 各エラーの `message` は開発者向けのログ用であり、画面にも API 応答にもそのまま出さない（内部情報を漏らさない・`NFR-8`）。
+
+### 4.1. 上流の応答 → ドメインエラーの変換表
+
+| 上流の応答 | ドメインエラー | `kind` |
+|---|---|---|
+| `fetch` 自体が失敗（到達不可） | `NetworkError` | `network` |
+| `403` / `429` かつ `x-ratelimit-remaining: 0` | `RateLimitExceededError` | `rateLimitPrimary` |
+| `403` / `429` かつ `retry-after` あり（上記以外） | `RateLimitExceededError` | `rateLimitSecondary` |
+| `401` / `403`（上記以外） | `AuthError` | `auth` |
+| `422` | `SearchQueryRejectedError` | `validation` |
+| `404` | `NotFoundError`（詳細取得は `null` へ倒す経路もある） | `notFound` |
+| `5xx`・スキーマ不一致 | `UpstreamError` | `upstream` |
+
+🔴 **判定順序は上表のとおり**（`prd.md` §7 の表と一致させる）。一次レート制限に `retry-after` が同時に付く応答があるため、`x-ratelimit-remaining: 0` を先に見ないとログイン導線（`AR-5` / `US-25`）が消える。
+
+🔵 **`SearchQueryRejectedError` は「上流がクエリを受理しなかった」を表す**（`DomainValidationError` は値オブジェクトの不変条件違反のみに残す・[ドメインモデル](../data-model/domain-model.md) §4）。
 
 - 値オブジェクトの生成は **不正なら例外**（`DomainValidationError`）。URL パラメータのように「不正でも落とさず既定値へ倒す」箇所では `tryParse`（`null` を返す変種）を使う。
 - 🔴 **`catch` して `console.error` だけして握り潰さない。** 握り潰しは失敗を「0 件」に化けさせ、`AC-5`（Not Found 表示）と区別できなくなる。

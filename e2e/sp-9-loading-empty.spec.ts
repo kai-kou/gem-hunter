@@ -48,6 +48,34 @@ test.describe('SP-9: 読み込み中と 0 件が区別できる', () => {
     })
   })
 
+  /**
+   * 🔴 クライアント遷移（`next/link` によるページング・ソート変更・表示件数変更）でも
+   * 読み込み中が出ることの回帰テスト（SP-9 セルフレビュー指摘 2）。
+   *
+   * React は transition 中に **既存の** `<Suspense>` 境界の fallback を再表示しないため、
+   * `key` が無いと「古い一覧が残ったまま無反応」に見える（`US-22` の主要導線が未達になる）。
+   * `page.goto()` のハード遷移では境界が毎回作り直されるので検知できない。
+   */
+  test('ページングのクライアント遷移でも読み込み中が出る（US-22）', async ({ page }) => {
+    const keyword = uniqueKeyword('sp9-slow')
+
+    await test.step('1. 応答が遅い検索の結果を表示しておく', async () => {
+      await page.goto(`/ja?q=${keyword}`)
+      await expect(page.getByRole('link', { name: 'octostub/octo-widgets' })).toBeVisible()
+      await expect(page.locator('main').getByText(ja.common.loading)).toHaveCount(0)
+    })
+
+    await test.step('2. 次のページへのリンク（クライアント遷移）を押すと読み込み中が出る', async () => {
+      await page.getByRole('link', { name: ja.home.pageNext }).click()
+      await expect(page.locator('main').getByRole('status')).toContainText(ja.common.loading)
+    })
+
+    await test.step('3. 2 ページ目の結果が届くと読み込み中は消える', async () => {
+      await expect(page).toHaveURL(/page=2/)
+      await expect(page.locator('main').getByText(ja.common.loading)).toHaveCount(0)
+    })
+  })
+
   test('0 件は該当なしの文言を role="status" で明示する（US-23 / US-26）', async ({ page }) => {
     await test.step('1. 該当のないキーワードで検索する', async () => {
       await page.goto('/ja')
@@ -67,4 +95,29 @@ test.describe('SP-9: 読み込み中と 0 件が区別できる', () => {
       await expect(page.getByRole('searchbox', { name: ja.home.searchLabel })).toBeEditable()
     })
   })
+})
+
+/**
+ * スタブサーバー自身の堅牢性（SP-9 セルフレビュー指摘 8）。
+ * 遅延応答（`sp9-slow`）の `setTimeout` が `res` の生存を確認せずに書き込むと、テスト中断や
+ * ナビゲーション破棄でソケットが閉じた後に `ERR_STREAM_WRITE_AFTER_END` でスタブプロセスが
+ * 落ち、後続の spec が全滅する。切断後もスタブが応答し続けることを直接確認する。
+ */
+test('スタブは遅延応答中にクライアントが切断しても落ちない（E2E 基盤の堅牢性）', async () => {
+  const stubOrigin = `http://127.0.0.1:${process.env.E2E_STUB_PORT ?? '8788'}`
+  const controller = new AbortController()
+
+  const pending = fetch(
+    `${stubOrigin}/search/repositories?q=${uniqueKeyword('sp9-slow')}&page=1`,
+    { signal: controller.signal },
+  ).catch(() => undefined)
+  // 応答が返る前（遅延 1.5 秒）に切断する
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  controller.abort()
+  await pending
+
+  // 遅延タイマーが発火し終わるまで待ってから、スタブがまだ生きていることを確認する
+  await new Promise((resolve) => setTimeout(resolve, 2_000))
+  const stats = await fetch(`${stubOrigin}/__stats`)
+  expect(stats.ok, 'スタブプロセスが生存していること').toBe(true)
 })
