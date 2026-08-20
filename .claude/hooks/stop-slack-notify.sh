@@ -56,12 +56,30 @@ unset _tele_script
 if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
   _branch=$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo "")
   if [ -n "$_branch" ] && [ "$_branch" != "main" ] && [ "$_branch" != "master" ]; then
-    if [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)" ]; then
+    # 進行中マージ／リベース／チェリーピックの検知（Issue #94 コメント 2026-08-20・PR #143 再発）。
+    # コンフリクト解消中に自動コミットが割り込むと MERGE_HEAD が消え、コンフリクトマーカーを
+    # 含むファイルがそのままコミットされる事故が実際に起きた。進行中は一切コミットせず警告のみ
+    # 出す（L-100 の目的＝未コミット作業の保全とは矛盾しない。作業ツリーはそのまま残るため）。
+    _git_dir=$(git -C "$REPO_ROOT" rev-parse --git-dir 2>/dev/null || echo "")
+    _merge_in_progress=false
+    if [ -n "$_git_dir" ]; then
+      if [ -f "$_git_dir/MERGE_HEAD" ] || [ -f "$_git_dir/CHERRY_PICK_HEAD" ] || \
+         [ -f "$_git_dir/REBASE_HEAD" ] || [ -d "$_git_dir/rebase-merge" ] || [ -d "$_git_dir/rebase-apply" ]; then
+        _merge_in_progress=true
+      fi
+    fi
+    if [ "$_merge_in_progress" = true ]; then
+      echo "[stop-slack-notify] マージ/リベース/チェリーピック進行中のため WIP 自動コミットをスキップしました（作業ツリーはそのまま保持・Issue #94）" >&2
+    elif [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)" ]; then
       _timestamp=$(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M' 2>/dev/null || date '+%Y-%m-%d %H:%M')
       # 月次コストテレメトリ（cost_monthly）は feature ブランチに混入させない（#106・#242）。
       # gitignore 化済みだが、gitignore 反映前の旧ブランチで追跡されている場合に備え
       # pathspec でも明示除外する（永続化は telemetry/cost-data ブランチが担う）。
-      git -C "$REPO_ROOT" add -A -- . ':(exclude)content/analytics/cost_monthly/' 2>/dev/null || true
+      # `git add -A` → `git add -u` に変更（Issue #94 コメント 2026-08-19 SP-5・PR #120 再発）:
+      # 追跡済みファイルの更新のみを対象にし、並行サブエージェントが作った検証用一時ファイル等の
+      # 未追跡ファイルを巻き込まない（未追跡は「まだ入れると決めていないもの」であり、自動コミットが
+      # 勝手に決めてよい対象ではない）。追跡ファイルの保全（L-100 の本体防御）は従来どおり維持する。
+      git -C "$REPO_ROOT" add -u -- . ':(exclude)content/analytics/cost_monthly/' 2>/dev/null || true
       # cost_monthly 以外に変更が無ければ何もコミットしない（空コミットを避ける）
       if ! git -C "$REPO_ROOT" diff --cached --quiet 2>/dev/null && \
          git -C "$REPO_ROOT" commit -m "[wip] セッション終了前自動コミット（${_timestamp}）"; then
@@ -81,7 +99,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
       fi
     fi
   fi
-  unset _branch _timestamp
+  unset _branch _timestamp _git_dir _merge_in_progress
 fi
 
 # ──────────────────────────────────────────

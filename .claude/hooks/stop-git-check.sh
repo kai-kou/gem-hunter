@@ -138,4 +138,15 @@ if [[ -n "$current_branch" ]]; then
   fi
 fi
 
+# --- Stash 残存検知（Issue #93・非ブロッキング）---
+# 並行サブエージェントが作業ツリー全体を触る `git stash` を実行したまま終了した可能性を警告する。
+# ブロックはしない（exit 0 のまま）。stash の中身は他の並行サブエージェントの未追跡ファイルを
+# 巻き込んでいる可能性があるため、ここで pop/drop を自動実行せず人間/後続セッションの判断に委ねる。
+_stash_list=$(git stash list 2>/dev/null || true)
+if [[ -n "$_stash_list" ]]; then
+  echo "[stop-git-check] 警告: git stash が残存しています。並行サブエージェントが作業ツリーを stash したまま終了した可能性があります（Issue #93）。内容を確認し、必要なら 'git stash pop' / 'git stash drop' で対応してください:" >&2
+  printf '%s\n' "$_stash_list" >&2
+fi
+unset _stash_list
+
 exit 0

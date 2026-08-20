@@ -13,6 +13,7 @@
 | `E2BIG: argument list too long` で全 Bash が停止 | L-106 |
 | `gh` が 403 を返す（`[gh-shim]` ガイダンスが出る） | L-114 |
 | スコープ外リポジトリへの `git clone` / `ls-remote` が 403、`add_repo` が無い | L-117 |
+| OpenNext Cloudflare のプレビューでのみリダイレクト / パス解決が期待どおりにならない | L-129 |
 
 ---
 
@@ -193,3 +194,42 @@ const browser = await chromium.launch({
 **対策**: Server Component の応答(SSR 応答)に動的な値を載せる目的でこの手法を採らない。動的ヘッダ・観測用の値が必要な場合は、Web 標準 `Response` を直接返せる **Route Handler** の応答で返す（Server Component は `Response` を経由せずレンダリングされるため、そもそも動的ヘッダを付与する手段がない）。
 
 **保持理由**: OpenNext Cloudflare（Next.js 16 相当）特有の実行モデルの制約で、同種の「Worker 側の状態をレンダリング内部へ運びたい」設計を再び試みると同じ壁にぶつかる。詳細な検証過程は `gem-hunter` の [`content/discussions/sp5-cache-design-20260819/whiteboard.md`](../../../content/discussions/sp5-cache-design-20260819/whiteboard.md) と [ADR 0005 §2.3](../../adr/0005-cache-port-yagni-exception-and-ttl.md#23-観測経路の決定x-cache-status-をどこに付与するか) を参照。
+
+---
+
+## L-129: OpenNext Cloudflare のパス処理で踏んだ罠（redirects の path-to-regexp 検証 / 拡張子付きパスの 404・2026-08-19・`SP-2`〜`SP-3`）
+
+> 同じ「OpenNext / Workers のパス処理」カテゴリの罠を 1 エントリにまとめる（引くときのキーワードが
+> どちらも「パスが期待どおりに解決しない」で同じため・Issue #102 コメント）。
+
+**症状 ①（`redirects()` の `destination` が 500 になる）**: `next.config` の `redirects()` に素の `:path` パラメータを
+含む `destination` を書くと、**Cloudflare プレビューでのみ** 500 になる（ローカル `next start` は正常）。
+
+**原因**: OpenNext のルーティング層が `redirects()` の `destination` を `path-to-regexp` の `compile()` に
+**検証有効（`validate: true`）** で通すため、`:path` のようなパラメータがスラッシュを含む値を拒否する。
+Next.js 本体は `compile()` を `{ validate: false }` で呼ぶため、ローカルでは再現しない。
+
+**切り分け方**: `path-to-regexp` の `match()` → `compile()` を直接評価する小さいスクリプトを書き、実際に渡す
+`destination` の値がラウンドトリップできるか（スラッシュ入りの値でも `compile()` が例外を投げないか）を確認する。
+
+**対策**: `destination` 側にも `(.*)` 等のパターンを明示し、`:path` の受け取り側でスラッシュを許容する形にする
+（PR #96 で適用済み・回帰テストあり）。
+
+**症状 ②（拡張子付きパスの 404）**: ロケール接頭辞なしの共有 URL で、末尾セグメントが「アセットらしい拡張子」で
+終わるパスの解決が拡張子によって割れる（`SP-3`・PR #106 のプレビュー実測・詳細は #97）。
+
+| パス | 実測 |
+|---|---|
+| `/repos/foo/user.github.io` | 307（正しくリダイレクトされる） |
+| `/repos/angular/angular.js` | **404** |
+| `/ja/repos/angular/angular.js` | 200（ロケール付きなら正常） |
+
+**原因（未確定）**: `.io` は通り `.js` は 404 になることから、**Worker より先に静的アセットハンドラがリクエストを
+処理している** ことが原因と考えられる（一次情報での確認は #97 の残作業。断定はしない）。
+
+**切り分け方**: ロケール接頭辞の有無・拡張子の有無を変えた組み合わせで実測し、どの条件で静的アセットハンドラに
+奪われるかのパターンを特定する。
+
+**保持理由**: OpenNext Cloudflare のルーティング層はローカル実行では再現しない罠を複数抱えており、
+「プレビューでだけ壊れる」を見たら一次候補として本カテゴリを疑えるようにする。詳細は Issue #97 / #102、
+症状 ① の修正は PR #96。
