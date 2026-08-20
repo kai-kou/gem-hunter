@@ -1,6 +1,7 @@
 # リポジトリのパブリック化 可否レビューと対応チェックリスト
 
-> **対象**: `kai-kou/gem-hunter`（2026-08-20 時点で `private`）
+> **対象**: `kai-kou/gem-hunter`
+> **現況**: ✅ **2026-08-20 JST に公開済み**（`visibility: public` / ライセンス判定 `MIT` / `main` にルールセット `protect-main` 適用済み）。本書は **調査時点（公開前）の判断過程をそのまま残したうえで**、各節に完了状態を追記している。「なぜ公開してよいと判断したか」を後から辿れるようにするのが目的で、結論だけに書き換えない。
 > **射程**: 🔴 **GitHub リポジトリのソース公開** に限る。`M-4`（第三者へ **サービス** を公開するかの判断ゲート・[`roadmap.md`](../02_requirements/roadmap.md) §3）とは別の判断である。両者の相互作用は §5 で扱う。
 > **調査日**: 2026-08-20 JST / **調査対象**: 追跡ファイル 589 件・全 50 コミット・リモートブランチ 46 本・Issue 110 件（open）
 
@@ -18,6 +19,8 @@
 ---
 
 ## 0. 結論
+
+> ✅ **後日追記（2026-08-20）**: 下記 4 件はすべて決着し、**公開まで完了した**。`B-1` は「原本のまま公開する」、`B-2` は MIT（第三者著作物は `NOTICE` へ分離）、`B-3` は「そのまま公開する」、`B-4` は根拠を訂正済み。以降の節は当時の判断過程の記録である。
 
 **技術的なブロッカーは無い。秘密情報の混入はゼロ件だった。** ただし公開前に決着させるべき事項が 4 件あり、うち **1 件はユーザーにしか判断できない**（§2 の `B-1`）。
 
@@ -234,18 +237,50 @@ telemetry/cost-data:content/analytics/cost_monthly/2026-08.json
 - [ ] 🔴 **本番 URL を正常応答させる**（§7.4）— 現在 404。Issue #231 / PR #235（別セッション）が対処中。**公開前に再確認する**
 - [ ] Issue #187（§7.5）— 公開の阻害要因ではない。§7.4 の退役完了で実質的に解消する
 
-### Phase 2: 公開（ユーザーのみ実行可能 — `A-6` 相当）
+### Phase 2: 公開（ユーザーのみ実行可能 — `A-6` 相当） — ✅ 完了（2026-08-20 JST）
 
-> 🔴 **前提**: §7.4 の本番 URL が正常応答すること。404 のまま公開すると、コードを見る前に評価を損なう。
+- [x] Settings → Danger Zone → Change visibility → Public
+- [x] 公開状態を実測で確認: `visibility: public` / 匿名 `GET /repos` が 200 / README・`LICENSE`・`NOTICE`・Issues・Pulls がいずれも匿名で 200
 
-- [ ] Settings → Danger Zone → Change visibility → Public（リポジトリ名の入力と影響への同意チェックが必要）
+### Phase 3: 公開直後 — 🔴 **すべてユーザー作業だった**（Claude 側からは実行不可）
 
-### Phase 3: 公開直後（Claude が実行できる）
+> 🔴 **当初「Claude が実行できる」と書いていたが誤りだった。** 公開後に実測したところ、リポジトリ設定系の書き込みは
+> **プロキシが例外なく遮断** しており、GitHub MCP にも該当ツールが無い（§7.6 と同じ構造）。
+>
+> | 経路 | 結果 |
+> |---|---|
+> | `GET /repos/{o}/{r}/rulesets` | 200（読み取りは通る） |
+> | `POST /repos/{o}/{r}/rulesets`（ブランチ保護の作成） | 🔴 403 プロキシ遮断 |
+> | `PATCH /repos/{o}/{r}`（description・セキュリティ機能） | 🔴 403 プロキシ遮断 |
 
-- [ ] **`main` にブランチ保護／ルールセットを設定**（公開して初めて Free プランで使える。`A-1` の機械強制。直接 push の禁止 + PR 経由の強制）
-- [ ] Secret scanning / Dependabot alerts / Code scanning を有効化し、初回検出をトリアージ（`.gitguardian.yaml` で除外済みのダミー 2 件は GitHub 側でも dismiss する）
+- [x] **`main` にルールセット `protect-main` を設定** — ✅ 完了（下記に実測値）
+- [ ] Secret scanning / Push protection / Dependabot alerts / Code scanning を有効化し、初回検出をトリアージ（テスト用ダミー鍵 2 件は GitHub 側で dismiss する。`.gitguardian.yaml` は ggshield 用で GitHub には効かない）
 - [ ] Actions の fork PR 実行ポリシーを「**Require approval for all outside collaborators**」以上に設定
 - [ ] リポジトリの description / topics を設定（公開リポジトリの第一印象）
+
+#### `protect-main` の実測値（`GET /rulesets/21082714`・2026-08-20）
+
+```
+name        : protect-main
+enforcement : active
+target      : branch
+bypass      : （空 = リポジトリ管理者・オーナーを含む全員に適用）
+conditions  : {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}
+rules       : deletion / non_fast_forward /
+              pull_request { required_approving_review_count: 0,
+                             allowed_merge_methods: ["squash"] }
+```
+
+🟢 **これで `A-1`（`main` への直接 push 禁止）が GitHub 側で機械強制されるようになった。** 従来はフック（`pre-git-push-check.sh`）の自主規制だけが支えだった。
+
+🔵 **意図的に入れなかったもの**:
+
+| ルール | 入れない理由 |
+|---|---|
+| `Require status checks to pass` | 🔴 GitHub Actions が使えない状態（`D-23`）で有効にすると、**チェックが 1 つも報告されず全マージが永久にブロックされる**。Actions 復活時に追加する |
+| `Required approvals` を 1 以上 | 🔴 **PR 自律化の恒久委任（`CLAUDE.md`）と両立しない**。承認者が現れるまで自動マージが止まる |
+| Bypass list への管理者追加 | `A-1` の意図は「オーナー自身も PR を経由する」こと。緊急時は Enforcement を一時的に Disabled にする |
+| `Require linear history` | squash マージのみ許可しているため、既に線形になる。二重の制約を置かない |
 
 ---
 
