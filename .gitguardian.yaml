@@ -1,0 +1,29 @@
+# GitGuardian（ggshield）除外設定（Issue #149）
+#
+# スキーマ確認元（2026-08-20 実機確認・CP-2）:
+#   https://github.com/GitGuardian/ggshield/blob/main/.gitguardian.yaml
+#   （公式リポジトリが自身のスキャン設定に使っている実例。version: 2 直下に secret.ignored_paths /
+#    secret.ignored_matches を置く構造を確認済み。公式ドキュメントの当該リファレンスページは
+#    2026-08-20 時点で 404 のため、公式実例ファイルを一次情報として採用した）。
+#
+# 背景: PR #143 で GitGuardian が「Generic Encryption Key」として検出した 2 件は、いずれも
+# テスト・E2E 専用の固定ダミー値（本番の値とは無関係。コード側にもコメントで明記済み）。
+# `*.test.ts` 全体や `src/` 全体のような広い除外は行わず、当該 2 ファイルのみを
+# secret.ignored_paths でパス指定して除外する（除外は最小範囲に留め、他ファイルへの
+# 本物のシークレット混入は引き続き検出させる）。
+#
+# ⚠️ 以下 2 ファイルはこの Issue の担当外（他 PR が占有中）のため、このコミットでは一切編集して
+# いない。ここではパスを参照するだけ。
+version: 2
+
+secret:
+  ignored_paths:
+    # playwright.config.ts: E2E スタブへ注入する OAuth ダミー設定（GITHUB_OAUTH_CLIENT_ID /
+    # GITHUB_OAUTH_CLIENT_SECRET）と、SESSION_ENCRYPTION_KEY の 32 バイト固定ダミー鍵
+    # （base64url）。stub は値を検証しないため固定文字列でよい
+    # （`infrastructure-design.md` §8.1 / whiteboard `sp8-auth-i18n-20260819` 争点 D）。
+    # 本番シークレットは別経路（実行時環境変数）で注入され、このファイルには入らない。
+    - playwright.config.ts
+    # src/infrastructure/platform/session-cookie.test.ts: 「異なる鍵では復号できない」ことを
+    # 検証するための VALID_KEY（32 バイト固定ダミー鍵・base64url）。テスト専用。
+    - src/infrastructure/platform/session-cookie.test.ts

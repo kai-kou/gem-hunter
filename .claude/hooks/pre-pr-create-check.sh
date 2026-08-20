@@ -195,6 +195,22 @@ Error を修正してから PR 作成を再実行してください（チェッ�
   fi
 fi
 
+# 5.5. WIP コミット残存チェック（非ブロッキング・警告のみ・Issue #94）
+# Stop フックの WIP 自動コミット（メッセージ先頭が "[wip] "）がブランチに残っていないか確認する。
+# 🔴 自動 squash / fixup はしない（履歴改変は破壊的で、レビュー中の PR に force-with-lease を
+# 強いる副作用が Issue #94 のコメントで複数回観測されている）。警告に留め、対応要否（そのまま
+# 出す/手動で reset --soft してまとめる）はセッションの判断に委ねる。
+wip_commit_warning=""
+_merge_base=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
+if [ -n "$_merge_base" ]; then
+  _wip_commits=$(git log --oneline "${_merge_base}..HEAD" 2>/dev/null | grep -E '^[0-9a-f]+ \[wip\]' || true)
+  if [ -n "$_wip_commits" ]; then
+    wip_commit_warning="[pre-pr-create-check] 警告: ブランチに Stop フック由来と思われる [wip] コミットが残っています（Issue #94）。履歴が読みにくくなる可能性があります。必要なら PR 作成前に手動で 'git reset --soft ${_merge_base}' 等でまとめ直してから再度コミットしてください（自動 squash はしません）:
+${_wip_commits}"
+  fi
+fi
+unset _merge_base _wip_commits
+
 # 6. Layer 1 セルフレビュー リマインダー（FAIR・全PR必須・非ブロッキング）
 # Layer 1（フレッシュ文脈レビュー）は PR 作成「後」に実行する必要があるためここではブロックしない。
 # 組み込み /code-review は disable-model-invocation で自律起動不可のため、同名 project スキル
@@ -211,6 +227,10 @@ if printf '%s' "$check_output" | grep -qE 'Warning|異常終了'; then
   _ctx="${_ctx}
 セルフレビュー Warning（非ブロック・対応要否を判断すること）:
 ${check_output}"
+fi
+if [ -n "$wip_commit_warning" ]; then
+  _ctx="${_ctx}
+${wip_commit_warning}"
 fi
 jq -n --arg ctx "$_ctx" '{
   "systemMessage": "[pre-pr-create-check] Layer 0 機械ゲート通過（Layer 1 リマインダーと Warning は Claude のコンテキストに注入済み）。",

@@ -17,7 +17,12 @@ CLAUDE.md「Markdown 出力ルール」の機械チェック＆自動整形ツ�
   python3 tools/check_cjk_markdown.py --fix <file.md> ...          # 自動整形して上書き
   python3 tools/check_cjk_markdown.py --changed                    # 変更された .md を対象に検出
   python3 tools/check_cjk_markdown.py --fix --changed              # 変更された .md を自動整形
+  python3 tools/check_cjk_markdown.py --changed --under docs/      # 変更された .md のうち docs/ 配下だけ対象
   python3 tools/check_cjk_markdown.py --self-test                  # セルフテスト
+
+Issue #85: 並行サブエージェント実行中に `--changed`（git 変更検知ベース）だけで一括整形すると、
+自分が担当していない・他エージェントが並行編集中のファイルまで書き換えてしまう事故があった。
+`--under DIR`（複数指定可）でパスを絞り込むことで、担当ディレクトリ配下だけを対象にできる。
 
 設計（誤検出を避けるための厳格化）:
   - フェンスドコードブロック（``` / ~~~）内は一切触らない
@@ -171,6 +176,29 @@ def changed_md_files() -> list[str]:
     return out
 
 
+def filter_under(paths: list[str], unders: list[str]) -> list[str]:
+    """paths のうち、unders のいずれかのディレクトリ配下にあるものだけを残す（Issue #85）。
+
+    unders が空（未指定）ならフィルタせず paths をそのまま返す。
+    プレフィックス一致による誤爆（`docs` 指定で `docsx/foo.md` まで拾う等）を避けるため、
+    パスの完全一致またはディレクトリ境界（`/`）を挟んだ一致だけを許容する。
+    """
+    if not unders:
+        return paths
+    norm_unders = [u.strip().rstrip("/") for u in unders if u.strip()]
+    norm_unders = [u for u in norm_unders if u]
+    if not norm_unders:
+        return paths
+    out = []
+    for p in paths:
+        pp = p[2:] if p.startswith("./") else p
+        for u in norm_unders:
+            if pp == u or pp.startswith(u + "/"):
+                out.append(p)
+                break
+    return out
+
+
 def check_files(paths: list[str], fix: bool) -> int:
     total_violations = 0
     fixed_files = 0
@@ -269,6 +297,22 @@ def self_test() -> int:
         failed += 1
         print(f"FAIL(detect): {v!r}")
 
+    # --under パス絞り込み（Issue #85）
+    under_cases = [
+        (["docs/a.md", "content/b.md", "docs/sub/c.md"], ["docs/"], ["docs/a.md", "docs/sub/c.md"]),
+        (["docs/a.md", "docsx/b.md"], ["docs"], ["docs/a.md"]),  # プレフィックス誤爆しない（docsx を含めない）
+        (["docs/a.md"], [], ["docs/a.md"]),  # --under 未指定なら無変更
+        (["./docs/a.md"], ["docs"], ["./docs/a.md"]),  # 先頭 ./ を許容
+        (["docs/a.md", "content/b.md"], ["docs", "content"], ["docs/a.md", "content/b.md"]),  # 複数指定
+    ]
+    for paths_in, unders, expected in under_cases:
+        got = filter_under(paths_in, unders)
+        if got == expected:
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(under): paths={paths_in!r} unders={unders!r}\n  expected: {expected!r}\n  got:      {got!r}")
+
     print(f"\n[cjk-md] self-test: {passed} passed / {failed} failed")
     return 0 if failed == 0 else 1
 
@@ -278,6 +322,13 @@ def main() -> int:
     ap.add_argument("files", nargs="*", help="対象 .md ファイル")
     ap.add_argument("--fix", action="store_true", help="自動整形して上書き")
     ap.add_argument("--changed", action="store_true", help="git で変更された .md を対象にする")
+    ap.add_argument(
+        "--under",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="このディレクトリ配下の .md だけを対象にする（複数指定可・--changed と併用して並行編集の巻き込みを防ぐ・#85）",
+    )
     ap.add_argument("--self-test", action="store_true", help="セルフテストを実行")
     args = ap.parse_args()
 
@@ -287,6 +338,8 @@ def main() -> int:
     paths = list(args.files)
     if args.changed:
         paths += changed_md_files()
+    if args.under:
+        paths = filter_under(paths, args.under)
     if not paths:
         print("対象ファイルがありません（ファイル指定または --changed が必要）", file=sys.stderr)
         return 0
