@@ -216,6 +216,7 @@ telemetry/cost-data:content/analytics/cost_monthly/2026-08.json
 - [x] `B-1` の結論を反映 — 原本を維持し、`LICENSE` の Exclusions とファイル冒頭の権利表示で第三者著作物であることを明示（要件本文は無改変・`inception-deck.md` の参照行にも例外を記録）
 - [x] `LICENSE`（MIT）を追加し、**与件** と `.claude/skills/skill-creator/`（Apache-2.0）を Exclusions として除外
 - [x] README にライセンス節と権利表示を追加
+- [x] 🔴 **与件を自動整形の対象外にした** — `tools/check_cjk_markdown.py` に `EXCLUDED_PATHS` を追加。本プロジェクトの CJK 表記ルールを他者の文書へ機械適用すると、整形で本文が変わり「原文のまま収録している」という権利表示自体が虚偽になる（実際に 1 度発生し、原本から作り直した）。self-test でパス判定と対象ファイルの実在を検証する
 - [x] `docs/rules/env-vars.md` の「private だから安全」を「collaborator 権限で保護されている」へ訂正（`B-4`）
 - [x] `M-4'`: 未使用のスキャフォールド資産（`public/*.svg` 5 件）を削除
 - [x] `M-6'`: `package.json` に `license` / `repository` を追加（`private: true` は npm 誤公開防止として意図的に維持）
