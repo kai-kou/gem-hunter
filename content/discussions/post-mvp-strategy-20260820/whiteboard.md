@@ -1,0 +1,12 @@
+<!-- discussion_whiteboard:auto -->
+# 🧑‍🏫 議論ホワイトボード: MVP 後の開発方針 — 初期コンセプト（Gem）の実現とキーワード非依存の発見体験
+
+- 議題ID: `post-mvp-strategy-20260820`
+- 論点: gem-hunter は MVP（M-2 / スライス S-1・SP-1〜SP-11）を達成済み。ユーザー（飼い主）の意向は 2 つ: (1) 初期コンセプト（docs/00_concept/initial-concept.md の Hidden Gems 発掘）を実現したい (2) キーワード入力だけでなく、キーワードを入力せずともリマインド的なリストアップができてもよい。現行ドキュメントの前提: prd.md §11 は Phase 2（GR-1〜GR-7 の Gem Index）を『構想として記述するが Phase 1 では実装しない』（D-3）としており、user-story-map.md のバックボーンは A-2『条件を組み立てる』を必ず経由する前提で組まれているため『キーワードなしの発見』に対応する US-n は存在しない。既定の次スライスは S-2 積み上げ（US-10 topics 絞り込み / US-27 degraded 表示 / US-28 お気に入り / US-29 検索履歴 / E-20 バンドル可視化 / E-21 翻訳仕上げ）。動かせない制約: DB を持たない（D-5 追補・状態は localStorage / Cookie / URL / 静的 JSON のみ）/ ログインは任意でありログインで機能差を作らない（D-6）/ サーバーに個人データを持たずログ出力もしない（D-14）/ サーバーレス関数前提（D-13）/ Cloudflare Workers Free、超過時は Paid $5 まで事前承認・撤退ライン月 $10（D-16・D-19）/ アプリコードに PaaS 固有 API を持ち込まない（NFR-21）/ 健全性スコアを自作せず OpenSSF に依存（R-3・GR-2）/ GitHub 純正検索で 1 行で書けるものは差別化にならない（R-2）/ Lighthouse Accessibility 100・キーボードのみで完走可能（AC-9）/ GitHub Actions は現在制限中で使えず、品質ゲートはセッションが tools/run_checks.sh を実行して担保している。リサーチ済みの事実は content/research/20260820-zero-query-discovery_deep_research.md（敵対的検証済み）と content/research/20260820-zero-query-discovery_supplement.md（補完リサーチ）にある。両方を必ず読むこと。議論の争点は次の 6 つ。A) 次に着手するのは何か（S-2 積み上げ / Gem Index のデータ基盤 / キーワード非依存の発見 UI のどれを先に置くか。中身が star ベースだと GitHub Trending の劣化コピーになり R-2 に抵触する一方、データ基盤を先に置くと動くものが出るまで長い） B) 『リマインド的なリストアップ』の実体は何か（日次の有限ダイジェスト / 時間分割シャッフル / 前回訪問からの差分 / package.json 貼り付けによる文脈入力 / RSS 配信 のどれを採るか。メール・push 通知は配信先リストの永続化が要るため D-14 と衝突する。localStorage 依存は Safari ITP の 7 日キャップで週 1 未満のアクセスでは消える） C) Gem Index をどう定義しどう見せるか（単一スコアに潰すか、多軸バッジで見せるか。Q-3 の正規化方法・母集団定義・閾値をこの場で決めるか先送りするか） D) 静的データを生成するバッチをどこで回すか（GitHub Actions が制限中・Workers Free・Ecosyste.ms の S3 バルクダンプは 2〜4 ヶ月毎更新。運用の手離れ D-15 を守れるか） E) CC BY-SA 4.0 の ShareAlike が自作ダイジェスト JSON に継承されるかをどう扱い、UI の帰属表示をどの粒度で行うか F) 既存の S-2 バックログ（US-28 お気に入り・US-29 検索履歴）は新方針の部品として再利用できるか、それとも別物か。
+- 参加者: `product_vision`, `ux_discovery`, `data_pipeline`, `constraints_guard`, `docs_trace`
+- 投稿数: 0
+- 更新: 2026-08-20T17:10:37+09:00
+
+> このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
+
+_（まだ投稿がありません）_
