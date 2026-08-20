@@ -70,6 +70,7 @@
     "watcherCount": "watchers",
     "forkCount": "forks",
     "openIssueCount": "open issues",
+    "opensInNewTab": "(opens in a new tab)",
     "notFound": "Repository not found."
   }
 }
