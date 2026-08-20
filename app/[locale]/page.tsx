@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { getSessionAccessToken } from '@/src/composition/auth'
 import { searchRepositoriesUseCase } from '@/src/composition/container'
 import { DomainError } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
@@ -10,7 +11,13 @@ import { tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
+<<<<<<< HEAD
 import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
+=======
+import { buildSearchUrl } from '@/src/ui/url/build-search-url'
+import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
+import { LocaleSwitcher } from '@/src/ui/locale-switcher'
+>>>>>>> origin/main
 import { Pagination } from '@/src/ui/pagination'
 import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
@@ -28,6 +35,7 @@ async function runSearch(
   rawSort: string,
   rawPerPage: number,
   messages: Messages,
+  accessToken: string | null,
 ): Promise<SearchState> {
   // キーワード未入力は「まだ検索していない」状態であってエラーではない（AC-2）。
   if (rawKeyword.trim().length === 0) {
@@ -35,6 +43,7 @@ async function runSearch(
   }
 
   try {
+<<<<<<< HEAD
     // 境界（URL）で値オブジェクトへ変換する（domain-model.md §4）。
     // 🔴 不正値を黙って握りつぶさない（`trySearchKeyword` を使わない）。修飾子入りキーワード
     //    （`react is:private` 等）は `DomainValidationError` になるので、下の catch で
@@ -43,6 +52,9 @@ async function runSearch(
     const keyword = searchKeyword(rawKeyword)
 
     const result = await searchRepositoriesUseCase()({
+=======
+    const result = await searchRepositoriesUseCase(accessToken)({
+>>>>>>> origin/main
       keyword,
       page: tryPageNumber(rawPage),
       sort: trySortOrder(rawSort),
@@ -76,16 +88,30 @@ export default async function LocaleHome({
 
   const rawSearchParams = await searchParams
   const { keyword, page, sort, perPage } = parseSearchParams(rawSearchParams)
+<<<<<<< HEAD
   // 🔴 検索の実行にはキーワードの生値を使う（`parseSearchParams` は不正値を `''` へ倒すため、
   //    そのまま渡すと拒否理由が「未入力」にすり替わる）。入力欄の表示も生値にして、
   //    エラーを見たユーザーが自分の入力を直せるようにする。
   const rawKeyword = rawKeywordOf(rawSearchParams)
   const state = await runSearch(rawKeyword, page, sort, perPage, messages)
+=======
+  const accessToken = await getSessionAccessToken()
+  const state = await runSearch(keyword, page, sort, perPage, messages, accessToken)
+>>>>>>> origin/main
   const basePath = `/${locale}`
   const searchState = { keyword, page, sort, perPage }
+  const currentPath = buildSearchUrl(basePath, searchState)
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <LocaleSwitcher
+        currentLocale={locale}
+        currentPath={currentPath}
+        labels={{
+          navLabel: messages.common.localeSwitcher.navLabel,
+          localeNames: messages.common.localeSwitcher.localeNames,
+        }}
+      />
       <h1 className="text-2xl font-semibold">{messages.home.title}</h1>
       <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
 

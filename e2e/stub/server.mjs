@@ -7,6 +7,8 @@
 //   GET /repos/{owner}/{repo}
 //   GET  /__stats        （SP-5 E2E 検証専用・実 GitHub API には存在しない裏口）
 //   POST /__stats/reset   同上
+//   GET  /login/oauth/authorize?client_id=&redirect_uri=&state=   （SP-8 OAuth モック）
+//   POST /login/oauth/access_token                                 同上
 //
 // キーワード規約（q または repo 名に部分一致で判定）:
 //   通常のキーワード      → 複数件の結果（total_count は 2 ページ以上になる値）
@@ -142,10 +144,60 @@ function sortManyRepos(list, sort) {
 
 const PORT = Number(process.env.E2E_STUB_PORT ?? 8788)
 
+<<<<<<< HEAD
 // SP-5 E2E 検証用のリクエストカウント（`/__stats` / `/__stats/reset` でのみ参照・更新する）。
 // `lastSearchQuery` は AC-12 E2E 用（アプリが GitHub へ送った `q` に `is:public` が
 // 含まれていることを画面越しに確認するため）。
 const stats = { searchCount: 0, detailCount: 0, lastSearchQuery: null }
+=======
+// SP-8: OAuth token 交換が返す固定アクセストークン。実 GitHub と同様この値を
+// `Authorization: Bearer <token>` で送ってきたリクエストだけを「ユーザー自身のレート枠」と
+// みなす（`userAuthSearchCount` / `userAuthDetailCount`）。未ログイン時も installation token の
+// Authorization ヘッダが既に付いていることがあるため、「値の一致」で判定する
+// （whiteboard `sp8-auth-i18n-20260819` 争点 D round2 決定）。
+const OAUTH_ACCESS_TOKEN = 'stub-access-token'
+const OAUTH_AUTHZ_CODE = 'stub-authz-code'
+const OAUTH_USER_AUTH_HEADER = `Bearer ${OAUTH_ACCESS_TOKEN}`
+
+// SP-5 / SP-8 E2E 検証用のリクエストカウント（`/__stats` / `/__stats/reset` でのみ参照・更新する）。
+const stats = { searchCount: 0, detailCount: 0, userAuthSearchCount: 0, userAuthDetailCount: 0 }
+
+function isUserAuthRequest(req) {
+  return req.headers.authorization === OAUTH_USER_AUTH_HEADER
+}
+
+/** リクエストボディを読み切る（`node:http` は自動でバッファしない）。 */
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    req.on('data', (chunk) => chunks.push(chunk))
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
+}
+
+/** `POST /login/oauth/access_token` は form-urlencoded / JSON のどちらでも受け付ける。 */
+function parseAccessTokenRequestBody(contentType, raw) {
+  if (contentType && contentType.includes('application/json')) {
+    try {
+      return JSON.parse(raw || '{}')
+    } catch {
+      return {}
+    }
+  }
+  return Object.fromEntries(new URLSearchParams(raw))
+}
+
+async function handleAccessTokenExchange(req, res) {
+  const raw = await readRequestBody(req)
+  const body = parseAccessTokenRequestBody(req.headers['content-type'], raw)
+
+  if (!body.code) {
+    return sendJson(res, 400, { error: 'bad_verification_code' })
+  }
+  return sendJson(res, 200, { access_token: OAUTH_ACCESS_TOKEN, token_type: 'bearer', scope: '' })
+}
+>>>>>>> origin/main
 
 function toSearchItem(repo) {
   const {
@@ -207,16 +259,44 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/__stats/reset' && req.method === 'POST') {
     stats.searchCount = 0
     stats.detailCount = 0
+<<<<<<< HEAD
     stats.lastSearchQuery = null
+=======
+    stats.userAuthSearchCount = 0
+    stats.userAuthDetailCount = 0
+>>>>>>> origin/main
     return sendJson(res, 200, stats)
+  }
+
+  // SP-8: OAuth token 交換（POST）。405 判定より前に置く（実装漏れると全 OAuth E2E が 405 で落ちる）。
+  if (url.pathname === '/login/oauth/access_token' && req.method === 'POST') {
+    return handleAccessTokenExchange(req, res)
   }
 
   if (req.method !== 'GET') {
     return sendJson(res, 405, { message: 'stub: method not allowed' })
   }
 
+  // SP-8: OAuth authorize。同意済みユーザーとして即座に 302 で redirect_uri へ返す
+  // （stub はレジストリを持たないため client_id/redirect_uri の値検証はしない）。
+  if (url.pathname === '/login/oauth/authorize') {
+    const state = url.searchParams.get('state') ?? ''
+    const redirectUri = url.searchParams.get('redirect_uri')
+    if (!redirectUri) {
+      return sendJson(res, 400, { message: 'stub: redirect_uri is required' })
+    }
+    const location = new URL(redirectUri)
+    location.searchParams.set('code', OAUTH_AUTHZ_CODE)
+    location.searchParams.set('state', state)
+    res.writeHead(302, { location: location.toString() })
+    return res.end()
+  }
+
   if (url.pathname === '/search/repositories') {
     stats.searchCount += 1
+    if (isUserAuthRequest(req)) {
+      stats.userAuthSearchCount += 1
+    }
     const q = url.searchParams.get('q') ?? ''
     stats.lastSearchQuery = q
     const page = url.searchParams.get('page') ?? '1'
@@ -264,6 +344,9 @@ const server = http.createServer((req, res) => {
   const detailMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)$/)
   if (detailMatch) {
     stats.detailCount += 1
+    if (isUserAuthRequest(req)) {
+      stats.userAuthDetailCount += 1
+    }
     const [, owner, repoName] = detailMatch
 
     if (repoName.includes('not-found') || owner.includes('not-found')) {

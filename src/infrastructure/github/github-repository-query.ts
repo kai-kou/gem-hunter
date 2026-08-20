@@ -3,39 +3,17 @@ import type { RepositoryDetail, SearchResult } from '../../domain/model/reposito
 import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
+<<<<<<< HEAD
 import { toPublicRepositoryDetail, toSearchResult } from './mapper'
+=======
+import { resolveLoopbackOverridableOrigin } from './loopback-origin'
+import { toRepositoryDetail, toSearchResult } from './mapper'
+>>>>>>> origin/main
 
 const DEFAULT_API_ORIGIN = 'https://api.github.com'
 
-/** installation token（Bearer）の送信先として許可するホスト名（ループバックのみ）。 */
-const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]'])
-
-/**
- * 🔴 リクエスト時に毎回読む（モジュール読み込み時に固定しない）。
- * `next build` 時点で焼き付くのを避け、E2E からローカルスタブへ向けられるようにする（E-11・SP-4）。
- *
- * 🔴 上書き先はループバックに限定する。`request()` は宛先を検証せず authorization ヘッダを
- * 付けるため、この env 変数ひとつでトークンの送信先を任意ホストへ切り替えられてしまう
- * （誤設定・混入がそのまま認証情報の流出経路になる）のを防ぐ。
- */
 function apiOrigin(): string {
-  const configured = process.env.GITHUB_API_ORIGIN
-  if (configured === undefined) {
-    return DEFAULT_API_ORIGIN
-  }
-
-  let url: URL
-  try {
-    url = new URL(configured)
-  } catch (cause) {
-    throw new Error(`GITHUB_API_ORIGIN の形式が不正です: ${configured}`, { cause })
-  }
-  if (!LOOPBACK_HOSTNAMES.has(url.hostname)) {
-    throw new Error(
-      `GITHUB_API_ORIGIN はループバック（127.0.0.1 / localhost / ::1）のみ許可されています: ${configured}`,
-    )
-  }
-  return configured
+  return resolveLoopbackOverridableOrigin('GITHUB_API_ORIGIN', DEFAULT_API_ORIGIN)
 }
 
 /**
