@@ -259,14 +259,19 @@ export default async function LocaleHome({
 
   // SP-14: 日次ダイジェスト（キーワード非依存の発見面・`ADR 0014` §2.2）。
   // `?date=YYYYMMDD` は不正値・未指定を当日（UTC）へフォールバックする（`tryParse` 契約）。
-  // 常時表示（設計判断）: 検索キーワード有無で分岐せず、既存 UI と縦に並べる（`daily-digest.tsx` の
-  // ドキュメントコメント参照）。データ取得はサーバー側で await するがレンダリングは非常に安価
-  // （静的 JSON + `slice` + `sort`）のため `<Suspense>` を挟まない。
+  //
+  // 🔴 **キーワード検索中は非表示にする**（ADR 0014 §2.1「開いた瞬間に見える」は未検索状態の
+  //    要件で、検索実行中まで並置する要件はない）。検索結果一覧と Gem 一覧が同時に `<ol>` として
+  //    DOM に並ぶと、既存 E2E の `getByRole('list').first()` が Gem 一覧を先に拾って検索結果を
+  //    取れなくなる（SP-1/SP-7/SP-10 と衝突）。「発見面」と「検索面」を排他表示にする。
+  //    データ取得はサーバー側で await するが、静的 JSON + slice + sort で安価。
   const rawDate = Array.isArray(rawSearchParams.date)
     ? rawSearchParams.date[0]
     : rawSearchParams.date
   const dateSeed = tryDateSeed(rawDate, new Date())
-  const dailyDigest = await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT })
+  const dailyDigest = hasKeyword
+    ? null
+    : await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT })
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
@@ -293,24 +298,28 @@ export default async function LocaleHome({
 
       {/*
         SP-14: 発見面（`ADR 0014`）。検索フォームの直下・コントロール行より前に置き、
-        キーワード有無に関わらず常時表示する（`daily-digest.tsx` の設計判断コメント参照）。
-        出典表示（`D-29`）は同じセクションの末尾に置き、ライセンス URL と改変明示を伴う。
+        キーワード未入力のときだけ表示する（上のコメント参照）。出典表示（`D-29`）は
+        同じ排他条件で表示し、ライセンス URL と改変明示を伴う。
       */}
-      <DailyDigest
-        digest={dailyDigest}
-        locale={locale}
-        labels={{
-          heading: messages.home.digest.heading,
-          empty: messages.home.digest.empty,
-          dependentLabel: messages.home.digest.dependentLabel,
-          starsLabel: messages.home.digest.starsLabel,
-          gemIndexLabel: messages.home.digest.gemIndexLabel,
-        }}
-      />
-      <AttributionNotice
-        meta={dailyDigest.meta}
-        labels={{ attribution: messages.home.digest.attribution }}
-      />
+      {dailyDigest !== null ? (
+        <>
+          <DailyDigest
+            digest={dailyDigest}
+            locale={locale}
+            labels={{
+              heading: messages.home.digest.heading,
+              empty: messages.home.digest.empty,
+              dependentLabel: messages.home.digest.dependentLabel,
+              starsLabel: messages.home.digest.starsLabel,
+              gemIndexLabel: messages.home.digest.gemIndexLabel,
+            }}
+          />
+          <AttributionNotice
+            meta={dailyDigest.meta}
+            labels={{ attribution: messages.home.digest.attribution }}
+          />
+        </>
+      ) : null}
 
       {/*
         検索欄の直下に横並びのコントロール行（ソート切替 + 表示件数切替）を置く
