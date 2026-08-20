@@ -21,6 +21,17 @@
 各マッチを `(root / m).resolve()` し、`root.resolve()` 配下でないものは重複判定の集合に含めず、
 黙って捨てずに `out_of_scope` として警告に記録する。
 
+**リテラルパス・フォールバック（#197）**: 並列委譲では「これから新規作成するファイル」を担当と
+して宣言するのが普通で、ディスク上にまだ存在しないためグロブ展開が空になる。`glob.glob()` の
+展開結果が真に空（マッチ 0 件）だったパターンは、**リテラルパスとして再解釈**してファイル集合に
+加える（存在するかどうかは問わない）。ディスク上に存在しない場合は「未作成のリテラルパスとして
+扱った」旨を警告に記録する（黙って拾わない）。**このフォールバックにメタ文字判定は使わない**
+（例えば `app/[locale]/repos/[owner]/[repo]/page.tsx` のような `[` `]` を含む Next.js 動的ルートの
+実在パスがこのリポジトリに存在し、素朴な「`[` `]` があればグロブ」という判定はこれを誤判定する。
+`glob.glob()` 自身の展開結果が空かどうかだけを基準にすることで、この種の実在パスは — 文字クラス
+としては何にもマッチしないため展開が空になり — 正しくリテラルパスとして拾われる）。リテラル
+解釈でも `root` 配下から外れる場合は既存の `out_of_scope` と同じ扱いにする。
+
 ## 入力形式
 
 `--lane "name:glob1,glob2,..."` を担当（レーン）の数だけ繰り返し指定する
@@ -51,20 +62,46 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def expand_lane(patterns: list[str], root: Path) -> tuple[set[str], list[str], list[str]]:
+def expand_lane(
+    patterns: list[str], root: Path
+) -> tuple[set[str], list[str], list[str], list[str]]:
     """グロブ一覧を実ファイル（root からの相対パス文字列）の集合へ展開する。
 
-    展開結果が空だったグロブは empty_globs に記録して呼び出し元が警告できるようにする。
-    ディレクトリ一致はファイルではないため集合に含めない。
-    `root` 配下から外れたマッチ（パストラバーサル）は集合に含めず out_of_scope に記録する
-    （黙って捨てない・警告として可視化する）。
+    グロブ展開が真に空（マッチ 0 件）だったパターンは **リテラルパスとして再解釈** し、
+    ディスク上の存否を問わずファイル集合へ加える（これから新規作成する予定のファイルを
+    拾うため）。存在しない場合は unmaterialized_literals に記録して呼び出し元が警告できる
+    ようにする（黙って拾わない）。
+
+    グロブがマッチしたがファイルではなかった場合（ディレクトリのみ一致）は empty_globs に
+    記録する。`root` 配下から外れたマッチ・リテラルパス（パストラバーサル）は集合に含めず
+    out_of_scope に記録する（黙って捨てない・警告として可視化する）。
     """
     files: set[str] = set()
     empty_globs: list[str] = []
     out_of_scope: list[str] = []
+    unmaterialized_literals: list[str] = []
     resolved_root = root.resolve()
     for pattern in patterns:
         matches = glob_mod.glob(pattern, root_dir=root, recursive=True)
+
+        if not matches:
+            # グロブ展開が真に空 → リテラルパスとして再解釈する（#197）。
+            # メタ文字（`[` `]` 等）の有無では判定しない — `glob.glob()` 自身の展開結果が
+            # 空かどうかだけを基準にする（Next.js 動的ルートの実在パス対策）。
+            candidate = (root / pattern).resolve()
+            if not candidate.is_relative_to(resolved_root):
+                out_of_scope.append(pattern)
+                continue
+            if candidate.is_dir():
+                # 既存ディレクトリはファイルではないため対象外（従来どおり「対象なし」扱い）
+                empty_globs.append(pattern)
+                continue
+            rel_str = candidate.relative_to(resolved_root).as_posix()
+            files.add(rel_str)
+            if not candidate.exists():
+                unmaterialized_literals.append(pattern)
+            continue
+
         file_matches: list[str] = []
         pattern_out_of_scope: list[str] = []
         for m in matches:
@@ -78,7 +115,7 @@ def expand_lane(patterns: list[str], root: Path) -> tuple[set[str], list[str], l
             empty_globs.append(pattern)
         out_of_scope.extend(pattern_out_of_scope)
         files.update(file_matches)
-    return files, empty_globs, out_of_scope
+    return files, empty_globs, out_of_scope, unmaterialized_literals
 
 
 def check_overlap(lanes: dict[str, list[str]], root: Path = REPO_ROOT) -> dict:
@@ -86,13 +123,21 @@ def check_overlap(lanes: dict[str, list[str]], root: Path = REPO_ROOT) -> dict:
     expanded: dict[str, set[str]] = {}
     warnings: list[str] = []
     for name, patterns in lanes.items():
-        files, empty_globs, out_of_scope = expand_lane(patterns, root)
+        files, empty_globs, out_of_scope, unmaterialized_literals = expand_lane(patterns, root)
         expanded[name] = files
         for g in empty_globs:
-            warnings.append(f"レーン `{name}` のグロブ `{g}` は展開結果が空です（対象なし）")
+            warnings.append(
+                f"レーン `{name}` のグロブ `{g}` はファイルに一致しませんでした"
+                "（ディレクトリのみ一致、または対象なし）"
+            )
         for m in out_of_scope:
             warnings.append(
-                f"レーン `{name}` のマッチ `{m}` はリポジトリ外（パストラバーサル）のため除外しました"
+                f"レーン `{name}` の `{m}` はリポジトリ外（パストラバーサル）のため除外しました"
+            )
+        for p in unmaterialized_literals:
+            warnings.append(
+                f"レーン `{name}` の `{p}` は未作成のリテラルパスとして扱いました"
+                "（ファイルはまだ存在しません）"
             )
 
     names = list(expanded.keys())
@@ -220,14 +265,16 @@ def run_self_test() -> int:
         check("空グロブが警告になる", len(result_empty["warnings"]) == 1, str(result_empty))
 
         # ディレクトリ一致はファイル集合に含まれない
-        files, empty_globs, out_of_scope = expand_lane(["dirA"], root)
+        files, empty_globs, out_of_scope, unmat = expand_lane(["dirA"], root)
         check("ディレクトリ単体一致はファイル扱いしない", files == set(), f"files={files}")
 
         # パストラバーサル: root 配下から外れたマッチは除外され警告として記録される
         outside = root.parent / f"outside_{root.name}.txt"
         try:
             outside.write_text("secret")
-            traversal_files, traversal_empty, traversal_out = expand_lane(["../" + outside.name], root)
+            traversal_files, traversal_empty, traversal_out, traversal_unmat = expand_lane(
+                ["../" + outside.name], root
+            )
             check(
                 "パストラバーサルは重複判定の集合から除外される",
                 traversal_files == set(),
@@ -249,6 +296,46 @@ def run_self_test() -> int:
         finally:
             if outside.exists():
                 outside.unlink()
+
+        # パストラバーサル（リテラルフォールバック経路）: 実在しないパスでも
+        # `..` で root の外へ出るものは out_of_scope として除外される
+        literal_traversal_files, _, literal_traversal_out, _ = expand_lane(
+            ["../nonexistent_literal_probe.txt"], root
+        )
+        check(
+            "リテラルフォールバックでもパストラバーサルは除外される",
+            literal_traversal_files == set() and len(literal_traversal_out) == 1,
+            f"files={literal_traversal_files} out_of_scope={literal_traversal_out}",
+        )
+
+        # リテラルパス・フォールバック（#197）: 存在しないファイルもリテラルパスとして
+        # ファイル集合に加わり、2 レーンで宣言されていれば重複として検出される
+        result_literal_dup = check_overlap(
+            {"a": ["not/yet/created.py"], "b": ["not/yet/created.py"]}, root=root
+        )
+        check(
+            "未作成のリテラルパスも重複として検出される",
+            result_literal_dup["has_overlap"] is True
+            and result_literal_dup["overlaps"].get("a×b") == ["not/yet/created.py"],
+            str(result_literal_dup),
+        )
+        check(
+            "未作成のリテラルパスは warnings に記録される（黙って拾わない）",
+            any("未作成のリテラルパス" in w for w in result_literal_dup["warnings"]),
+            str(result_literal_dup["warnings"]),
+        )
+
+        # `[` `]` を含む実在パス（Next.js 動的ルート）はメタ文字判定せずリテラル一致する
+        (root / "app" / "[locale]" / "repos" / "[owner]" / "[repo]").mkdir(parents=True)
+        bracket_path = root / "app" / "[locale]" / "repos" / "[owner]" / "[repo]" / "page.tsx"
+        bracket_path.write_text("export default function Page() {}\n")
+        bracket_pattern = "app/[locale]/repos/[owner]/[repo]/page.tsx"
+        bracket_files, _, _, bracket_unmat = expand_lane([bracket_pattern], root)
+        check(
+            "ブラケットを含む実在パスがメタ文字判定なしでリテラル一致する",
+            bracket_files == {bracket_pattern} and bracket_unmat == [],
+            f"files={bracket_files} unmat={bracket_unmat}",
+        )
 
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")
     return 0 if failed == 0 else 1
