@@ -2,7 +2,7 @@
 
 > **対象**: `kai-kou/gem-hunter`（2026-08-20 時点で `private`）
 > **射程**: 🔴 **GitHub リポジトリのソース公開** に限る。`M-4`（第三者へ **サービス** を公開するかの判断ゲート・[`roadmap.md`](../02_requirements/roadmap.md) §3）とは別の判断である。両者の相互作用は §5 で扱う。
-> **調査日**: 2026-08-20 JST / **調査対象**: 追跡ファイル 589 件・全 50 コミット・リモートブランチ 45 本・Issue 110 件（open）
+> **調査日**: 2026-08-20 JST / **調査対象**: 追跡ファイル 589 件・全 50 コミット・リモートブランチ 46 本・Issue 110 件（open）
 
 ---
 
@@ -126,14 +126,14 @@ telemetry/cost-data:content/analytics/cost_monthly/2026-08.json
 | コード | 誰でも閲覧・**フォーク可能** になる |
 | **Issue / PR** | **全件が公開される**（open 110 件 + クローズ済み全件 + PR 全件 + レビューコメント全件） |
 | **Actions の履歴とログ** | **公開される** |
-| ブランチ | **リモート 45 本すべて公開**（うち 43 本が `claude/*` の作業済みブランチ） |
+| ブランチ | **リモート 46 本すべて公開**（うち 43 本が `claude/*` の作業ブランチで、42 本はマージ済み） |
 | push ruleset | **無効化される** |
 | stars / watchers | 消去される（現在 0 のため実害なし） |
 | Wiki / Projects | `has_wiki: true` / `has_projects: true`。中身の有無を要確認 |
 
 ### 🟢 公開によって **得られる** もの（Free プランでは公開リポジトリ限定の機能）
 
-現在このリポジトリは **ブランチ保護がゼロ**（`main` を含め全 45 ブランチが `protected: false`）である。GitHub Free ではプライベートリポジトリにブランチ保護もルールセットも適用できないためで、これは `A-1`（`main` への直接 push 禁止）が **フックによる自主規制だけで支えられている** ことを意味する。
+現在このリポジトリは **ブランチ保護がゼロ**（`main` を含め全ブランチが `protected: false`）である。GitHub Free ではプライベートリポジトリにブランチ保護もルールセットも適用できないためで、これは `A-1`（`main` への直接 push 禁止）が **フックによる自主規制だけで支えられている** ことを意味する。
 
 **公開すると Free プランのままブランチ保護／ルールセットが使えるようになる**（[About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)）。`A-1` を GitHub 側で機械強制できるようになるのは、公開の純粋なメリットである。
 
@@ -149,7 +149,7 @@ telemetry/cost-data:content/analytics/cost_monthly/2026-08.json
 | **M-2'** | **Issue #187 が open のまま** | 「プレビュー version に secret が渡っておらず、認証とレート制限がプレビューで動作しない」。**レート制限が効かないプレビュー環境の URL が公開される** 状態なので、`M-1'` と合わせて先に潰すか、旧プレビュー version を破棄する |
 | **M-3'** | **`content/discussions/` の内部議論が全文公開される** | 飼い主の指示の逐語引用、プロセス逸脱の記録（役割外のサブエージェントが直接コミットした件、GitGuardian に検出された WIP 混入事故など）を含む。**秘密情報ではなく、むしろ「AI 自律開発の実像」を示す資産** だが、都合の悪い部分も含めて公開されることを認識した上で出す |
 | **M-4'** | **未使用のスキャフォールド資産** | `public/vercel.svg` `next.svg` `file.svg` `globe.svg` `window.svg` はアプリから未参照。Vercel を使っていないリポジトリで Vercel ロゴを再配布する形になるため削除が無難 |
-| **M-5'** | **停止済みブランチ 43 本** | `claude/*` の作業済みブランチが残存。公開しても害はないが、リポジトリの第一印象を損なう。`project-sync` の Abandoned ブランチ検出で一掃できる |
+| **M-5'** | **停止済みブランチ 42 本** | マージ済みの `claude/*` ブランチが残存。公開しても害はないが、リポジトリの第一印象を損なう。`project-sync` の Abandoned ブランチ検出で一掃できる |
 | **M-6'** | **`package.json` の `"private": true`** | npm 公開を防ぐフラグであり GitHub の公開可否とは無関係。ただし公開リポジトリで残っていると意図が読みにくいので、`license` フィールドとあわせて整理する |
 
 ---
@@ -184,7 +184,7 @@ telemetry/cost-data:content/analytics/cost_monthly/2026-08.json
 - [ ] `M-1'`: 実プレビュー URL を伏字化（`content/discussions/` は履歴記録なので、伏字化するか「当時の URL」と注記するかを選ぶ）
 - [ ] `M-2'`: Issue #187 を解消するか、露出しているプレビュー version を破棄する
 - [ ] `M-4'`: 未使用のスキャフォールド資産を削除
-- [ ] `M-5'`: マージ済み `claude/*` ブランチ 43 本を削除
+- [ ] `M-5'`: マージ済み `claude/*` ブランチ 42 本を削除
 - [ ] `M-6'`: `package.json` の `private` / `license` を整理
 - [ ] **Issue / PR 全件の最終スキャン**（本文・コメントに秘密情報や伏せたい記述がないか）。**リポジトリのファイルスキャンとは別に必要**
 - [ ] Wiki / Projects の中身を確認（空でなければ内容を確認）
