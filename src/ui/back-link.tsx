@@ -26,7 +26,13 @@ export function BackLink({
   return (
     <Link
       href={href ?? `/${locale}`}
-      className="text-primary text-sm underline-offset-4 hover:underline"
+      // 🔴 ネイティブ <a> のブラウザ既定フォーカス（outline: auto）は太さが約 1px しかなく
+      // `ui-ux-guidelines.md` §7.3 の「太さ 2px 相当以上」を満たさない（SP-10 実測で判明）。
+      // button.tsx / input.tsx / 結果見出し（page.tsx）と同じ `ring-3` パターンへ揃える。
+      // 🔴 ネイティブ <a> のブラウザ既定フォーカス（outline: auto）は太さが約 1px しかなく
+      // `ui-ux-guidelines.md` §7.3 の「太さ 2px 相当以上」を満たさない（SP-10 実測で判明）。
+      // button.tsx / input.tsx / 結果見出し（page.tsx）と同じ `ring-3` パターンへ揃える。
+      className="text-primary rounded-sm text-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
     >
       {labels.backLink}
     </Link>

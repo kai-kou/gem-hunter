@@ -39,6 +39,48 @@ const TARGETS = [
   { page: '詳細', url: `${BASE_URL}/ja/repos/octostub/octo-widgets` },
 ]
 
+/**
+ * Accessibility スコアからゲート判定を下す純粋関数（PR #183 レビュー指摘・実測で発見）。
+ *
+ * 🔴 なぜ丸め後の値で判定するか: `score` は浮動小数点（例 `0.9999999999999998`）で返ることがあり、
+ * 生の値で `score < 1.0` を判定すると、ログ表示（`Math.round(score * 100)` = 100）と実際の判定
+ * （GATE_FAIL）が食い違い、「Accessibility 100/100（しきい値 100）」と表示しながら失敗する
+ * 原因不明の GATE_FAIL になる。表示と判定を同じ丸め後の値（`rounded`）に統一する。
+ *
+ * `--self-test` で検証する（Chrome 起動不要・`tools/check_contrast.py --self-test` と同じ流儀）。
+ */
+export function evaluateAccessibilityGate(score) {
+  if (typeof score !== 'number' || Number.isNaN(score)) {
+    return { status: 'INFRA_FAIL', rounded: null }
+  }
+  const rounded = Math.round(score * 100)
+  return { status: rounded < 100 ? 'GATE_FAIL' : 'PASS', rounded }
+}
+
+function selfTest() {
+  const cases = [
+    { label: 'score=1.0 → PASS', input: 1.0, expectedStatus: 'PASS' },
+    {
+      label: '丸め誤差 score=0.9999999999999998（実質100点）→ PASS',
+      input: 0.9999999999999998,
+      expectedStatus: 'PASS',
+    },
+    { label: 'score=0.99 → GATE_FAIL', input: 0.99, expectedStatus: 'GATE_FAIL' },
+    { label: 'score=undefined → INFRA_FAIL', input: undefined, expectedStatus: 'INFRA_FAIL' },
+    { label: 'score=NaN → INFRA_FAIL', input: NaN, expectedStatus: 'INFRA_FAIL' },
+  ]
+  let ok = true
+  for (const c of cases) {
+    const result = evaluateAccessibilityGate(c.input)
+    const pass = result.status === c.expectedStatus
+    if (!pass) ok = false
+    console.log(
+      `[run_lighthouse --self-test] ${pass ? 'PASS' : 'FAIL'}: ${c.label}（実際: ${result.status}, rounded: ${result.rounded}）`,
+    )
+  }
+  return ok
+}
+
 /** @type {Array<{proc: import('node:child_process').ChildProcess, name: string}>} */
 const spawned = []
 
@@ -222,13 +264,13 @@ async function main() {
         console.error(`[run_lighthouse] INFRA_FAIL: ${target.page} のレポートに categories.accessibility/performance が含まれていません`)
         continue
       }
-      const a11y100 = Math.round(a11yScore * 100)
       const perf100 = Math.round(perfScore * 100)
-      if (a11yScore < 1.0) {
+      const gate = evaluateAccessibilityGate(a11yScore)
+      if (gate.status !== 'PASS') {
         hasGateFail = true
-        console.error(`[run_lighthouse] GATE_FAIL: ${target.page} Accessibility ${a11y100}/100（しきい値 100） (perf=${perf100})`)
+        console.error(`[run_lighthouse] GATE_FAIL: ${target.page} Accessibility ${gate.rounded}/100（しきい値 100） (perf=${perf100})`)
       } else {
-        summaryLines.push(`${target.page}: Accessibility ${a11y100}/100 (perf=${perf100})`)
+        summaryLines.push(`${target.page}: Accessibility ${gate.rounded}/100 (perf=${perf100})`)
       }
     }
 
@@ -261,4 +303,8 @@ async function main() {
   }
 }
 
-main()
+if (process.argv.includes('--self-test')) {
+  process.exitCode = selfTest() ? 0 : 1
+} else {
+  main()
+}

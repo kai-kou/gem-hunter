@@ -21,8 +21,6 @@ import {
  * 一本化されている。他ファイルに同等の判定ロジックは存在しない。
  */
 const nextConfig: NextConfig = {
-  // TEMP-R5-VERIFY: 検証専用の distDir 分離（他エージェントの .next と衝突させない）。verify 後に必ず削除する。
-  distDir: '.next-r5verify',
   async redirects() {
     return [
       {

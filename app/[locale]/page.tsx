@@ -312,9 +312,12 @@ export default async function LocaleHome({
         読み込み中（US-22）は fallback がストリーミングで先に届き、解決後は件数表示へ
         書き換わる。0 件表示（`RepositoryList` の role="status"）とは別要素・別文言なので
         区別できる（AC-8）。
-        🔴 `role="status"` はこの `section` だけが持つ（#180）。`LoadingIndicator` は
-        自身の role/aria-live を持たない表示専用コンポーネントへ変更済みで、入れ子のライブ
-        リージョンを避ける（画面に唯一の `role="status"` にする・§7.2）。
+        🔴 訂正（PR #183 実測・0 件時は下記の `RepositoryList` 側 `role="status"` と 2 つ同時に
+        存在するため「唯一」は事実ではない）: この `section` が守るのは **入れ子にしない** こと。
+        `LoadingIndicator` は自身の role/aria-live を持たない表示専用コンポーネントへ変更済みで、
+        この `section`（`aria-live="polite"`）の **内側** に別のライブリージョンを重ねない
+        （`RepositoryList` の `role="status"` は本 `section` の **外**・兄弟要素であり、
+        入れ子ではないので問題ない・§7.2）。
       */}
       <section
         id="search-status"
