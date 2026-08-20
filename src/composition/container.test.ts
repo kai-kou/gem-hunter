@@ -31,6 +31,9 @@ const detailFixture = {
   pushed_at: '2026-01-01T00:00:00Z',
   topics: [],
   owner: { login: 'octostub', avatar_url: 'https://example.test/avatar.png' },
+  // 🔴 `private` は詳細 DTO で必須（NFR-33 / AC-12 の fail-closed 判定に使う）。実 API の
+  //    `GET /repos/{owner}/{repo}` は常にこの値を返すため、フィクスチャにも必ず持たせる。
+  private: false,
 }
 
 const server = setupServer()
