@@ -298,12 +298,12 @@ export default async function LocaleHome({
         区別できる（AC-8）。
       */}
       <section id="search-status" aria-live="polite" className="text-muted-foreground mt-6 text-sm">
-        <Suspense key={suspenseKey} fallback={<LoadingIndicator label={messages.common.loading} />}>
+        <Suspense  fallback={<LoadingIndicator label={messages.common.loading} />}>
           <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
         </Suspense>
       </section>
 
-      <Suspense key={suspenseKey} fallback={null}>
+      <Suspense  fallback={null}>
         <SearchBody
           statePromise={statePromise}
           basePath={basePath}

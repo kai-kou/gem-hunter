@@ -214,7 +214,9 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
 
     await expect(errorNotice(page)).toBeVisible()
     await expect(page.getByRole('heading', { level: 1 })).toContainText(`octostub/${repo}`)
-    await expect(page.getByRole('navigation', { name: ja.common.localeSwitcher.navLabel })).toBeVisible()
+    await expect(
+      page.getByRole('navigation', { name: ja.common.localeSwitcher.navLabel }),
+    ).toBeVisible()
   })
 
   /**

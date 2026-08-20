@@ -92,7 +92,9 @@ test.describe('SP-9: 各状態が支援技術に伝わる', () => {
     await expect(region).toContainText(ja.common.loading)
 
     const handle = await region.elementHandle()
-    expect(handle, 'ライブリージョンが初期 DOM に存在すること').not.toBeNull()
+    if (handle === null) {
+      throw new Error('ライブリージョン（#search-status）が初期 DOM に存在しない')
+    }
 
     // 結果が届くまで待つ（ライブリージョンの中身が件数表示へ書き換わる）
     await expect(page.getByRole('link', { name: 'octostub/octo-widgets' })).toBeVisible()

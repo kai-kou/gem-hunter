@@ -107,10 +107,9 @@ test('スタブは遅延応答中にクライアントが切断しても落ち�
   const stubOrigin = `http://127.0.0.1:${process.env.E2E_STUB_PORT ?? '8788'}`
   const controller = new AbortController()
 
-  const pending = fetch(
-    `${stubOrigin}/search/repositories?q=${uniqueKeyword('sp9-slow')}&page=1`,
-    { signal: controller.signal },
-  ).catch(() => undefined)
+  const pending = fetch(`${stubOrigin}/search/repositories?q=${uniqueKeyword('sp9-slow')}&page=1`, {
+    signal: controller.signal,
+  }).catch(() => undefined)
   // 応答が返る前（遅延 1.5 秒）に切断する
   await new Promise((resolve) => setTimeout(resolve, 200))
   controller.abort()

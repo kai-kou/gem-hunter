@@ -330,12 +330,7 @@ const server = http.createServer((req, res) => {
     }
     // SP-9: レート制限ではない 403（枠は残っている）→ auth 種別。
     if (q.includes(SP9_FORBIDDEN_MARKER)) {
-      return sendJson(
-        res,
-        403,
-        { message: 'stub: forbidden' },
-        { 'x-ratelimit-remaining': '42' },
-      )
+      return sendJson(res, 403, { message: 'stub: forbidden' }, { 'x-ratelimit-remaining': '42' })
     }
     // SP-9: 遅い応答（読み込み中表示の観測用）。
     // 🔴 テスト中断・ナビゲーション破棄でソケットが閉じた後に書き込むと
