@@ -21,6 +21,7 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildDummyGitHubEnv } from '../e2e/stub/e2e-env.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.join(__dirname, '..')
@@ -187,12 +188,10 @@ async function main() {
     spawnTracked('next start', 'npx', ['next', 'start', '--port', APP_PORT], {
       env: {
         ...process.env,
-        GITHUB_API_ORIGIN: `http://127.0.0.1:${STUB_PORT}`,
-        GITHUB_OAUTH_ORIGIN: `http://127.0.0.1:${STUB_PORT}`,
-        GITHUB_OAUTH_CLIENT_ID: 'e2e-dummy-client-id',
-        GITHUB_OAUTH_CLIENT_SECRET: 'e2e-dummy-client-secret',
-        GITHUB_OAUTH_CALLBACK_URL: `${BASE_URL}/api/auth/callback`,
-        SESSION_ENCRYPTION_KEY: 'Z2VtLWh1bnRlci1lMmUtZHVtbXktc2Vzc2lvbi0zMmI',
+        // ダミー GitHub OAuth 環境変数一式は e2e/stub/e2e-env.mjs（共有モジュール）に集約済み。
+        // playwright.config.ts（E2E: stub 8788 / app 3100）と同じ値セットを個別に複製しない
+        // （SP-10・GitGuardian 誤検知の再発防止）。
+        ...buildDummyGitHubEnv({ stubPort: STUB_PORT, appUrl: BASE_URL }),
         PORT: APP_PORT,
       },
       stdio: 'inherit',

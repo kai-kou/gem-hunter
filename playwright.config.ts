@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
 
 /**
  * E2E 設定（SP-4・NFR-24 でネットワークを遮断するため、Next.js 本体をスタブ GitHub API へ向けて起動する）。
@@ -48,16 +49,10 @@ export default defineConfig({
         {
           command: `npm run build && npm start -- --port 3100`,
           env: {
-            GITHUB_API_ORIGIN: `http://127.0.0.1:${stubPort}`,
-            // SP-8: ダミー OAuth 設定を注入したローカルビルド（`infrastructure-design.md` §8.1）。
-            // 4 変数が揃うことでログイン導線が有効化される（`src/composition/auth.ts`）。
-            // stub は値を検証しないため固定文字列でよい（whiteboard `sp8-auth-i18n-20260819` 争点 D）。
-            GITHUB_OAUTH_ORIGIN: `http://127.0.0.1:${stubPort}`,
-            GITHUB_OAUTH_CLIENT_ID: 'e2e-dummy-client-id',
-            GITHUB_OAUTH_CLIENT_SECRET: 'e2e-dummy-client-secret',
-            GITHUB_OAUTH_CALLBACK_URL: 'http://127.0.0.1:3100/api/auth/callback',
-            // E2E 専用の 32 バイトダミー鍵（base64url）。本番の値とは無関係。
-            SESSION_ENCRYPTION_KEY: 'Z2VtLWh1bnRlci1lMmUtZHVtbXktc2Vzc2lvbi0zMmI',
+            // ダミー GitHub OAuth 環境変数一式は e2e/stub/e2e-env.mjs（共有モジュール）に集約済み。
+            // tools/run_lighthouse.mjs（Lighthouse 計測: stub 8799 / app 3101）と同じ値セットを
+            // 個別に複製しない（SP-10・GitGuardian 誤検知の再発防止）。
+            ...buildDummyGitHubEnv({ stubPort, appUrl: baseURL }),
             PORT: '3100',
           },
           url: baseURL,
