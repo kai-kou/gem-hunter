@@ -66,21 +66,21 @@ PR が **永久に未デプロイのまま main に積み上がる**（在庫リ
 | `rejected` | **実行しない** | fail-closed。コードは main に残るが本番には一切触れない |
 
 **rejected を「本番へ出す前」に止められることが、この設計の最大の利点。** 現行（Step 6 で即デプロイ）は
-rejected 判定が出た時点で **既に本番稼働中**であり、復旧には `wrangler rollback` の実行・結果検証という
+rejected 判定が出た時点で **既に本番稼働中** であり、復旧には `wrangler rollback` の実行・結果検証という
 追加アクションが要る。Step 7 後にデプロイへ倒す設計では、rejected の場合デプロイ自体が発生しないため
 **復旧アクションがゼロ**（ロールバックコマンドを打つ必要がない・失敗の可能性がある操作が 1 つ減る）。
 これは brief 事実 4 の `wrangler rollback` / `versions deploy <id>@100` という実在手段と比較しても
 「まだ出していない」の方が明確に安全側であり、B の結論を後押しする。
 
 ⚠️ **例外があるとすれば `accepted_with_conditions` の中で受け入れ判定役が明示的に「本番影響あり」と
-書いたケース**。現行テンプレ（Step 7-3 の書式）にはこの区別がないため、**受け入れ判定役の役割定義に
+書いたケース **。現行テンプレ（Step 7-3 の書式）にはこの区別がないため、** 受け入れ判定役の役割定義に
 1 行追加**することを推奨する: 「`accepted_with_conditions` を選ぶ場合、デプロイ可否（`deploy: yes/no`）を
 明示する」。デフォルトは `yes`。追加コストは Step 7 の fan-out プロンプト 1 行のみ（新規ファイル・新規
 ラベル不要、SKILL.md 本文の SSOT を増やさない）。
 
 ### 見落としてはいけない失敗モード: Step 7 が完走しないまま firing が尽きる
 
-デプロイを Step 7 accepted へ紐付けると、**Step 7 が中断した場合デプロイも永久に起きない**リスクが
+デプロイを Step 7 accepted へ紐付けると、**Step 7 が中断した場合デプロイも永久に起きない** リスクが
 生まれる（現行は Step 6 で即実行なので中断リスクがそもそも無い）。`sprint-cycle-router` Step 3 の
 stale 再開（4 時間超）が Sprint Review の再開を拾う設計は既にあるが（`進捗:` マーカー行）、
 **再開後に「判定は出ていたが deploy コマンドは未実行」というサブケースを明示的に扱う分岐が今は無い**。
@@ -131,7 +131,7 @@ alias の更新・削除に関する API 記述は存在しない（作成専用
 ```
 DELETE /accounts/{account_id}/workers/workers/{worker_id}
 ```
-のみで、**Worker 全体**を消す新 API（scripts ではなく workers リソース）。version 単位・alias 単位の DELETE エンドポイントはドキュメント中に一切見つからない。
+のみで、**Worker 全体** を消す新 API（scripts ではなく workers リソース）。version 単位・alias 単位の DELETE エンドポイントはドキュメント中に一切見つからない。
 
 実測（GET のみ・破壊操作なし）: `GET /accounts/{account}/workers/scripts/gem-hunter/versions` → `result_info.total_count: 35`（version が蓄積し続けている実データを確認）。
 
@@ -153,13 +153,13 @@ DELETE /accounts/{account_id}/workers/workers/{worker_id}
 GET /accounts/{account}/workers/scripts/gem-hunter/subdomain
 → {"result": {"enabled": true, "previews_enabled": true}, "success": true}
 ```
-`enabled`（workers.dev ルート = 本番）と `previews_enabled`（プレビュー URL 全体）は**独立したフィールド**。公式ドキュメント（Preview URLs ページ「Toggle Preview URLs」節）:
+`enabled`（workers.dev ルート = 本番）と `previews_enabled`（プレビュー URL 全体）は **独立したフィールド**。公式ドキュメント（Preview URLs ページ「Toggle Preview URLs」節）:
 > "Disabling Preview URLs will disable routing to both versioned and aliased preview URLs."
 > "Preview URLs are enabled by default when `workers_dev` is enabled... disabled by default when `workers_dev` is disabled" — しかし独立設定も可能
 
 **副作用**: `previews_enabled: false` にしても `enabled`（本番 workers.dev ルート）は変わらない設計 → **本番は落ちない**（このリポジトリの本番は現在 workers.dev 上で稼働・custom domain 未決定 = `cloudflare-infrastructure.md` 348 行目・`M-4` 未決）。ただし **全 PR のプレビューが同時に無効化される**（PR 単位の選択削除は不可能。ON/OFF の 2 値のみ）。
 
-このフィールドを書き換える PATCH は本タスクでは**実行していない**（破壊的変更を避ける指示のため GET のみで存在確認に留めた）。書き換え自体が可能かどうかの API 権限（トークンスコープ）は未検証。
+このフィールドを書き換える PATCH は本タスクでは **実行していない**（破壊的変更を避ける指示のため GET のみで存在確認に留めた）。書き換え自体が可能かどうかの API 権限（トークンスコープ）は未検証。
 
 ---
 
@@ -338,13 +338,13 @@ cf_platform の確定事実（個別 alias/version の選択削除手段が CLI 
 
 唯一 cf_platform が見つけた能動的レバーは `previews_enabled` の **全体トグル**（PR 単位ではなく全プレビュー一括 ON/OFF、本番 `enabled` とは独立）。これは「孤児掃除」の代替にならない（狙い撃ちできない）が、**緊急時（例: Issue #187 系のシークレット露出インシデントでプレビュー全体を即座に止めたい場合）の手動 killswitch としてなら具体的アクションになる**。ただし全 PR のプレビューを同時に落とす操作は他セッションの進行中レビューを巻き込むため、**自動検出→自動実行ではなく、`cloudflare-infrastructure.md` に手順を明文化するだけの手動緊急手順**（A-6 相当ではないが人間判断が要る操作）に留めるべき。
 
-→ **r1 の撤回: `tools/check_preview_env_drift.py` は作らない。project-sync への追加もしない。** 代わりに docs_trace の表（§8.3 行）に 1 点だけ提案する: 「削除は不可能。1000-alias LRU が唯一の自動失効機構。緊急時は `previews_enabled` トグル（手動・全体停止）」という **期待値を下げる記述**を書く。ドキュメント更新のみでコストほぼゼロ、かつ「守られるか」の問いに対して「何もしないことが正しい」という答えが常に真であり続ける（壊れようがない）。
+→ **r1 の撤回: `tools/check_preview_env_drift.py` は作らない。project-sync への追加もしない。** 代わりに docs_trace の表（§8.3 行）に 1 点だけ提案する: 「削除は不可能。1000-alias LRU が唯一の自動失効機構。緊急時は `previews_enabled` トグル（手動・全体停止）」という **期待値を下げる記述** を書く。ドキュメント更新のみでコストほぼゼロ、かつ「守られるか」の問いに対して「何もしないことが正しい」という答えが常に真であり続ける（壊れようがない）。
 
 ---
 
 ### Q2（PostToolUse matcher は tool_name にしか掛からないのでは）— **一部 concede + 具体化**
 
-確認結果: `docs/rules/hook-events-reference.md` と `post-merge-publish-check.sh` の実装により、**matcher は tool_name のみで掛かる**という指摘は正しい。だが `post-merge-publish-check.sh` 自体も同じ構造（matcher は `mcp__github__merge_pull_request` という tool_name のみ＝あらゆる PR のマージで発火し、`detect_merge()` が `tool_input.owner`/`.tool_input.repo`/`.tool_response.merged` を **jq で本文相当のフィールドを読んで** 絞り込んでいる）。**PostToolUse の stdin JSON には呼び出し時の tool_input 全パラメータが含まれる**ことは、いま `ToolSearch` で取得した実スキーマで裏取りできた: `mcp__github__add_issue_comment` の `body` はトップレベルの必須級パラメータ（コメント本文そのもの）であり、`.tool_input.body` として hook の stdin JSON に載る。よって `detect_merge()` と同じ関数形で:
+確認結果: `docs/rules/hook-events-reference.md` と `post-merge-publish-check.sh` の実装により、**matcher は tool_name のみで掛かる** という指摘は正しい。だが `post-merge-publish-check.sh` 自体も同じ構造（matcher は `mcp__github__merge_pull_request` という tool_name のみ＝あらゆる PR のマージで発火し、`detect_merge()` が `tool_input.owner`/`.tool_input.repo`/`.tool_response.merged` を **jq で本文相当のフィールドを読んで** 絞り込んでいる）。**PostToolUse の stdin JSON には呼び出し時の tool_input 全パラメータが含まれる** ことは、いま `ToolSearch` で取得した実スキーマで裏取りできた: `mcp__github__add_issue_comment` の `body` はトップレベルの必須級パラメータ（コメント本文そのもの）であり、`.tool_input.body` として hook の stdin JSON に載る。よって `detect_merge()` と同じ関数形で:
 
 ```bash
 # detect_review_verdict(): stdin JSON → match / skip:<reason>
@@ -377,7 +377,7 @@ if [[ "$body" != *"**結果**: accepted"* ]]; then echo "skip:not-accepted"; ret
 進捗: デプロイ完了（tag: <merge commit SHA>）。次は retrospective スキル起動
 ```
 
-Step 3 は「最新の `進捗:` 行」を読むので、①のまま session が力尽きれば次 firing は「次はデプロイ実行」を読んでそのまま再試行できる（`wrangler deploy` は idempotent・release_eng が既に指摘済み）。②まで到達していれば「次は retrospective」からそのまま先へ進む。**これは Q2 の hook より安価かつ確実**なので、優先順位を訂正する:
+Step 3 は「最新の `進捗:` 行」を読むので、①のまま session が力尽きれば次 firing は「次はデプロイ実行」を読んでそのまま再試行できる（`wrangler deploy` は idempotent・release_eng が既に指摘済み）。②まで到達していれば「次は retrospective」からそのまま先へ進む。**これは Q2 の hook より安価かつ確実** なので、優先順位を訂正する:
 
 - **主防御 = 進捗マーカーの文言拡張**（コスト: SKILL.md Step 7 テンプレ 1 箇所の書き換えのみ・新規ファイルゼロ）→ **入れる（最優先）**
 - **副防御 = Q2 の PostToolUse hook**（`post-sprint-review-deploy-check.sh`）→ 主防御が「セッションのクラッシュ」を既にカバーするため、残る守備範囲は「session が生きているのに SKILL.md の手順を誤って読み飛ばした（ロジックミス）」というより小さいリスクのみ。**優先度を下げて任意実装とする**（r1 の「入れる」を「入れてもよいが必須ではない・主防御で十分なら見送ってよい」に修正）。
@@ -385,7 +385,7 @@ Step 3 は「最新の `進捗:` 行」を読むので、①のまま session �
 ---
 
 ### 争点C/D 更新後の結論（3〜5行）
-- Q1: 孤児 alias 検出ツールは**撤回**（消せないものを検出しても行動に繋がらない＝自分の基準で不合格）。ドキュメントに期待値（削除不可・LRU 任せ・緊急時のみ手動 `previews_enabled` トグル）を書くだけに留める。
+- Q1: 孤児 alias 検出ツールは **撤回**（消せないものを検出しても行動に繋がらない＝自分の基準で不合格）。ドキュメントに期待値（削除不可・LRU 任せ・緊急時のみ手動 `previews_enabled` トグル）を書くだけに留める。
 - Q2: matcher 誤検知の指摘は妥当だが `post-merge-publish-check.sh` と同型の jq 絞り込みで解決可能（実スキーマで `tool_input.body` の存在を確認済み）。ただし matcher 候補の `issue_write` は誤りで `add_issue_comment` のみに訂正。
 - Q3: 「Issue が open のまま残る」だけでは不十分という指摘を受け入れる。`進捗:` マーカーの文言にデプロイ状態を持たせる（新規ファイル・ラベル無し）のが主防御。Q2 の hook は副防御へ格下げ。
 
@@ -436,7 +436,7 @@ revert する運用は導入しない**（trunk-based の 1 ホップ構成を�
 
 **実装先はゲート判定関数 1 つを共有し、新規ファイルを増やさない**: `harness_ops` が提案した
 `post-sprint-review-deploy-check.sh` の対象を「Sprint Review 判定コメント検知時」だけでなく
-**既存の `post-merge-publish-check.sh`（全マージで既に発火するフック）に同じゲート判定を追加**する形に
+**既存の `post-merge-publish-check.sh`（全マージで既に発火するフック）に同じゲート判定を追加** する形に
 広げることを推奨する（新規 hook を増やさず、既存 hook の判定ロジックを 1 関数追加）。
 
 ---
@@ -462,7 +462,7 @@ Cloudflare の制約で実装できず、検出のみに落とす」ことを明
 ### harness_ops への検証: Warning 相当フックだけでは「判定済み・デプロイ未実行」の再試行は担保されない
 
 **検証結果: 不足している。** `post-sprint-review-deploy-check.sh` は Sprint Review 判定コメントを
-投稿した **同一セッション・同一ターン直後**にしか発火しない（PostToolUse は当該ツール呼び出しへの
+投稿した **同一セッション・同一ターン直後** にしか発火しない（PostToolUse は当該ツール呼び出しへの
 反応であり、セッションが判定投稿の直後に力尽きた場合、injected `additionalContext` を読むターンが
 そもそも来ない）。harness_ops 自身が「Issue は open+in-progress のまま残るので Step 3 の stale 再開が
 拾う」とバックストップを主張しているが、**`sprint-cycle-router` Step 3 の再開手順（brief に引用されている
@@ -500,7 +500,7 @@ Cloudflare の制約で実装できず、検出のみに落とす」ことを明
 > ① accepted: ... 対象 version を特定し、**REST API で削除**（方式は #231 で決定待ち）
 とあるが、争点A・および本ラウンドの (b) 調査の結果、**version・alias を「削除」する REST API は存在しない**
 （一次情報で確認済み・#231 で決定を待っても出てこない）。実装するなら「削除」ではなく後述 (b) の
-**「同名 alias へのスタブ再アップロードによる無害化（tombstone）」**に書き換えるべき。「決定待ち」という
+**「同名 alias へのスタブ再アップロードによる無害化（tombstone）」** に書き換えるべき。「決定待ち」という
 書き方は「いずれ delete API が見つかる」という誤った期待を生むため、この表現は次版で修正を推奨する。
 
 ---
@@ -513,18 +513,18 @@ Cloudflare の制約で実装できず、検出のみに落とす」ことを明
 ```
 "workers/alias": props.previewAlias
 ```
-alias は **version アップロード POST のペイロードに乗る annotation の1つ**として実装されている。
+alias は **version アップロード POST のペイロードに乗る annotation の1つ** として実装されている。
 alias 専用の登録・更新エンドポイントは別に存在しない（= alias は「version に貼るラベル」であり、
 同じラベルを新しい version に貼れば、そのラベルの実効ルーティング対象は新しい version に移る、という
 設計になっている）。`cli.js` 内に alias 重複エラーのメッセージも見つからない（`already|exist|duplicate|conflict`
 + alias の組み合わせで grep したが該当なし）。
 
 **根拠2（本アカウントの実データ・非破壊 GET のみ）**: `GET .../versions`（4 ページ・35 件全件取得）を
-alias ごとに集計した結果、**同一 alias 文字列が複数 version にまたがって存在する**ケースが多数実在した:
+alias ごとに集計した結果、**同一 alias 文字列が複数 version にまたがって存在する** ケースが多数実在した:
 
 | alias | 出現 version 番号 |
 |---|---|
-| `pr-96` | 14, 15, 16, 17（**4 回**再利用） |
+| `pr-96` | 14, 15, 16, 17（**4 回** 再利用） |
 | `pr-168` | 30, 31 |
 | `pr-143` | 28, 29 |
 | `pr-127` | 24, 25 |
@@ -534,7 +534,7 @@ alias ごとに集計した結果、**同一 alias 文字列が複数 version �
 | `sp1` | 2, 13 |
 
 これは brief 事実1（PR への push のたびに同じ `--preview-alias pr-<N>` を再実行する現行運用）が
-**実際に何百回も成功してきた記録そのもの**である。つまり「同名 alias で新 version を upload できるか」は
+**実際に何百回も成功してきた記録そのもの** である。つまり「同名 alias で新 version を upload できるか」は
 仮説ではなく、**このリポジトリの CI/CD が毎日実行して壊れていない実績**。
 
 **根拠3（生存確認・非破壊 GET）**: 4 回再利用された `pr-96` の alias URL を直接叩いた。
@@ -551,7 +551,7 @@ $ curl -o /dev/null -w "%{http_code}" https://pr-96-gem-hunter.kinamocchi-tech.w
 
 **設計への転用（lead 向け提案）**: Sprint Review accepted 後、**その PR の alias 名でスタブ version
 （例: 「このプレビュー環境は完了しました」を返すだけの最小 Worker）を upload** すれば、
-- 元のコードは alias URL からは**もう配信されなくなる**（`SD-1` の「プレビュー URL で操作レビューできる」
+- 元のコードは alias URL からは **もう配信されなくなる**（`SD-1` の「プレビュー URL で操作レビューできる」
   という状態を意図的に終わらせられる）
 - ただし **version オブジェクト自体（元のコード）は削除されない**（争点A のとおり削除 API が無いため）。
   「クリーンアップ」の実体は **delete ではなく overwrite** になる、という認識をチームで共有すること。
@@ -567,7 +567,7 @@ $ curl -o /dev/null -w "%{http_code}" https://pr-96-gem-hunter.kinamocchi-tech.w
 
 ### (c) `previews_enabled` OFF は SD-1 と両立するか → **両立しない（明確に否定）**
 
-`sprint-development-rules.md` SD-1 は「スプリントの PR には**開けるプレビュー URL**を貼る」ことを
+`sprint-development-rules.md` SD-1 は「スプリントの PR には **開けるプレビュー URL** を貼る」ことを
 **PR ごとの個別レビュー時点**（Sprint Review よりずっと手前・PR 作成直後）で要求している。
 一方 `previews_enabled` は Worker 単位のフラグで、**全 PR のプレビューを同時に無効化する**（争点A で実測確認済み、
 GET `.../subdomain` → `{"enabled": true, "previews_enabled": true}` の独立フィールド）。
@@ -599,9 +599,9 @@ project-sync に足す」案（診断用途）には賛成しつつ、**「実�
 ---
 
 ### 争点E まとめ（3行）
-- (b) 同名 alias への張り替えは**可能**（wrangler 実装 + 本アカウントの実データ + 生存確認 curl の3点で確認）。ただし「削除」ではなく「スタブで上書き」であり、version 自体は残り続ける。
-- (c) `previews_enabled` OFF は**SD-1 と両立しない**（全PR一括無効化のため、並行中の他PRのレビューを破壊する。不採用が妥当）。
-- version 増加自体の課金・上限影響は**未確認（unknown）**。断定材料なし。実害ゼロと決めつけず、件数だけでも定期記録する低コスト策を推奨。
+- (b) 同名 alias への張り替えは **可能**（wrangler 実装 + 本アカウントの実データ + 生存確認 curl の3点で確認）。ただし「削除」ではなく「スタブで上書き」であり、version 自体は残り続ける。
+- (c) `previews_enabled` OFF は **SD-1 と両立しない**（全PR一括無効化のため、並行中の他PRのレビューを破壊する。不採用が妥当）。
+- version 増加自体の課金・上限影響は **未確認（unknown）**。断定材料なし。実害ゼロと決めつけず、件数だけでも定期記録する低コスト策を推奨。
 
 ## ラウンド 3
 
@@ -611,16 +611,16 @@ project-sync に足す」案（診断用途）には賛成しつつ、**「実�
 ## 4 レンズの議論を経て残った事実（lead が実測で再確認したものを含む）
 
 1. **PR 単位の version / preview alias を削除する CLI・REST API は存在しない**（cf_platform・harness_ops が独立に確認。wrangler 4.124.0 の `versions` に delete 系サブコマンドなし、公式 Preview URLs ページに削除経路の記述なし）。能動的に効く操作は Worker 全体の `previews_enabled` トグルのみで、これは並行中の他 PR のプレビューも巻き添えにするため `SD-1` と両立しない（不採用）。
-2. **同名 alias の張り替えは可能**（cf_platform が wrangler 実装と実データで実証。lead も Cloudflare API の実応答で追認 — 本アカウントには `pr-96` に 4 version、`pr-168` / `pr-143` / `pr-127` / `pr-120` / `pr-106` / `pr-88` / `sp1` に各 2 version が同名 alias で紐づいている）。ただしこれは「削除」ではなく **内容の上書き**であり、version オブジェクト自体は残る。
+2. **同名 alias の張り替えは可能**（cf_platform が wrangler 実装と実データで実証。lead も Cloudflare API の実応答で追認 — 本アカウントには `pr-96` に 4 version、`pr-168` / `pr-143` / `pr-127` / `pr-120` / `pr-106` / `pr-88` / `sp1` に各 2 version が同名 alias で紐づいている）。ただしこれは「削除」ではなく **内容の上書き** であり、version オブジェクト自体は残る。
 3. **古いプレビュー環境は現に生きている**（lead 実測: `pr-73` / `sp1` / `form-uiux` が HTTP 200 を返す）。つまり「古いスプリントのコードが今も公開され続けている」という飼い主の懸念は実在する。version は 35 件、うち alias 付きは 26 件。
 4. **`wrangler deploy` に `--preview-alias` は無い**（lead 実測: `deploy --help` の `--alias` はモジュール置換の別機能）。張り替えは `versions upload --preview-alias` 経由に限られる。
 5. **デプロイゲートには非スプリント PR という迂回路がある**（lead 指摘 → release_eng が選択肢 1「直列化」で塞ぐことに同意し、round 1 の「穴を受け入れる」を撤回）。スプリント PR のレビュー判定を待つ間に別セッションが非スプリント PR をマージすると、その Step 6 デプロイが `main` HEAD ごと本番へ出してしまうため。
 6. **Step 7 中断時にデプロイが永久に起きない経路がある**（release_eng 指摘 → harness_ops が「Issue が open のまま残るだけでは不十分」を受け入れ、`進捗:` マーカーにデプロイ状態を持たせる案へ修正）。
-7. **孤児 alias の「検出だけするツール」は入れない**（harness_ops が自身の費用対効果基準に照らして撤回）。ただし lead は、争点 E の結論により **検出は張り替えの入力として意味を持つ**ため、独立ツールではなく張り替えツールの dry-run として実装する。
+7. **孤児 alias の「検出だけするツール」は入れない**（harness_ops が自身の費用対効果基準に照らして撤回）。ただし lead は、争点 E の結論により **検出は張り替えの入力として意味を持つ** ため、独立ツールではなく張り替えツールの dry-run として実装する。
 
 ## 対立が残った点と lead の裁定
 
-- **「削除できないのだから放置 + 期待値のドキュメント化に留める」（harness_ops / docs_trace の round 2 案）を採らない。** 事実 3 の通り古いコードが公開され続けており、飼い主の指示の意図（スプリント完了後にその環境を残さない）が満たされない。事実 2 の張り替えが実装可能で、コストは本番デプロイで既に作ったビルド成果物を使い回す upload 1 回に収まる。**「削除はできないが、古い内容を配信し続ける状態は解消できる」**が採用する結論。
+- **「削除できないのだから放置 + 期待値のドキュメント化に留める」（harness_ops / docs_trace の round 2 案）を採らない。** 事実 3 の通り古いコードが公開され続けており、飼い主の指示の意図（スプリント完了後にその環境を残さない）が満たされない。事実 2 の張り替えが実装可能で、コストは本番デプロイで既に作ったビルド成果物を使い回す upload 1 回に収まる。**「削除はできないが、古い内容を配信し続ける状態は解消できる」** が採用する結論。
 - **version 増加の実害は unknown のまま**（cf_platform）。断定せず、張り替えツールに version 件数の出力を持たせて観測可能にする。
 
 ### `lead` — 判定

@@ -104,7 +104,7 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 |---|---|---|---|
 | **1** | `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue が存在する | 即対応（他ブランチより最優先・既存仕様どおり） | `claude-code-spec-sync` Step1 |
 | **2** | `check_pending_pr_reviews.py --mine --actionable-only`（相当）が非空 | レビュー対応・自動マージ・公開反映まで継続。新規スプリント着手より優先（CP-4: 中途 PR を放置して新規に手を広げない） | `pr-review-watcher` |
-| **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名 **または Sprint Review**}まで完了。次は {次にやること}」1 行）から続きを判定し再開（手順は §7 の中断条件と対）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
+| **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名 **または Sprint Review 判定済み（結果 / デプロイ要否）・デプロイ完了・退役完了**}まで完了。次は {次にやること}」1 行）から続きを判定し再開（手順は §7 の中断条件と対。**Sprint Review 判定済みでデプロイ・退役が未完了のケースは下記「Step 3 の再開: デプロイ・退役未完了の検出」を先に見る**）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
 | **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
@@ -112,6 +112,27 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
 | **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
 | **9** | 全部空 | no-op。`routine-idle` 通知は既存の 1 日 1 回自己抑制のまま | — |
+
+### Step 3 の再開: デプロイ・退役未完了の検出（`sprint-env-lifecycle-20260820` D）
+
+対象 Issue の **最新コメント**（または最新に近いコメント）が `## 🔍 Sprint Review 判定` で、
+かつそれ以降に「デプロイ完了」を示す追加コメント（`pr-review-watcher` Step 7-3.5 が投稿する
+`進捗: デプロイ完了（tag: ...）・退役完了（alias: ...）。次は retrospective スキル起動`）が **無い** 場合、
+判定は出ているがデプロイ・退役が未実行のまま前回 firing が力尽きたと判定する。
+
+```
+1. 最新の Sprint Review 判定コメントを読む（**結果** / **デプロイ** 行を取得）
+2. **デプロイ: no**（rejected、または accepted_with_conditions かつ deploy:no）→
+   デプロイ・退役は不要。そのまま retrospective 起動へ進む（`pr-review-watcher` Step 7-4 から再開）
+3. **デプロイ: yes** かつ後続に「デプロイ完了」コメントが無い →
+   retrospective 起動より **先に** `pr-review-watcher` Step 7-3.5（デプロイ → 疎通確認 → 退役）を
+   実行してから 4（retrospective）へ進む（`npm run deploy` と `retire_preview_aliases.py` は
+   いずれも idempotent なので再実行しても安全）
+4. **デプロイ: yes** かつ後続に「デプロイ完了」コメントが既にある →
+   デプロイ・退役は完了済み。retrospective 未実行なら Step 7-4 から再開
+```
+
+新規ラベル・新規 state ファイルは作らない（既存の Issue コメント読み取りだけで判定する）。
 
 ### Step 5 が `type` で絞らない理由（孤児 Issue の回収）
 
@@ -375,3 +396,4 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 | `tools/check_parallel_safety.py` | Step 4-1.5 の並行安全性判定スクリプト（CLI 契約・判定思想の詳細は `docs/rules/session-concurrency-rules-detail.md`「レイヤー 1 補強」） |
 | `tools/self_review_check.py` | 縦切り・`C-5`・TDD 順序の機械判定（PR 前チェック） |
 | `content/discussions/sprint-cycle-design-20260818/whiteboard.md` | 本設計の議論全文・却下案・合意経緯 |
+| `content/discussions/sprint-env-lifecycle-20260820/whiteboard.md` | Step 3 の「デプロイ・退役未完了の検出」の議論全文（削除不可・張り替え方式・デプロイゲートの決定経緯） |
