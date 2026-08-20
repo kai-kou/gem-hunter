@@ -10,6 +10,20 @@
     "auth": {
       "login": "Log in with GitHub",
       "logout": "Log out"
+    },
+    "loading": "Loading",
+    "retry": "Try again",
+    "errors": {
+      "network": "Could not connect. Check your network connection and try again.",
+      "rateLimitPrimary": "You have reached the request limit. Try again after {resetAt}.",
+      "rateLimitPrimaryUnknownReset": "You have reached the request limit. Wait a while and try again.",
+      "rateLimitPrimaryLoginHint": "Log in with GitHub to raise your request limit.",
+      "rateLimitSecondary": "Too many requests at once. Try again in {retryAfterSeconds} seconds.",
+      "rateLimitSecondaryUnknownRetry": "Too many requests at once. Wait a while and try again.",
+      "auth": "GitHub data is unavailable right now. Wait a while and try again.",
+      "validation": "Check your search keyword. It contains unsupported characters or is too long.",
+      "notFound": "The repository was not found.",
+      "upstream": "GitHub is having trouble right now. Wait a while and try again."
     }
   },
   "home": {
@@ -20,7 +34,6 @@
     "searchSubmit": "Search",
     "idle": "Enter a keyword to search.",
     "resultCount": "Showing {shown} of {total} results",
-    "searchError": "Search failed: {message}",
     "empty": "No repositories matched. Try a different keyword.",
     "starCount": "stars",
     "updatedAt": "Updated",
@@ -45,7 +58,6 @@
     "watcherCount": "watchers",
     "forkCount": "forks",
     "openIssueCount": "open issues",
-    "notFound": "Repository not found.",
-    "loadError": "Could not load: {message}"
+    "notFound": "Repository not found."
   }
 }

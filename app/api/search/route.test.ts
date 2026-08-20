@@ -82,52 +82,110 @@ describe('GET /api/search — X-Cache-Status', () => {
   })
 })
 
-describe('GET /api/search — domainErrorStatus のステータス分岐', () => {
-  it('DomainValidationError（空キーワード）は 400 を返す', async () => {
+/**
+ * SP-9: エラー応答は `ErrorKind`（prd.md §7）だけを返し、**生の `error.message` は載せない**
+ * （内部情報の漏洩防止・Issue #107）。利用者向けの文言は画面側が kind から i18n で引く。
+ */
+describe('GET /api/search — エラー応答（kind とステータスの対応）', () => {
+  it('DomainValidationError（空キーワード）は 400 と kind=validation を返す', async () => {
     const res = await GET(new NextRequest('http://localhost/api/search?q='))
 
     expect(res.status).toBe(400)
-    const body = (await res.json()) as { error: string }
-    expect(body.error).toContain('検索キーワードを入力してください')
+    expect(await res.json()).toEqual({ kind: 'validation' })
   })
 
-  it('NotFoundError は 404 を返す', async () => {
+  it('エラー応答に生の error.message を含めない（内部情報を出さない・Issue #107）', async () => {
+    const { UpstreamError } = await import('@/src/domain/errors')
+    searchMock.mockRejectedValue(new UpstreamError('内部の詳細メッセージ'))
+
+    const res = await GET(new NextRequest('http://localhost/api/search?q=no-message-leak-check'))
+
+    expect(await res.text()).not.toContain('内部の詳細メッセージ')
+  })
+
+  it('NetworkError は 502 と kind=network を返す', async () => {
+    const { NetworkError } = await import('@/src/domain/errors')
+    searchMock.mockRejectedValue(new NetworkError('到達できません'))
+
+    const res = await GET(new NextRequest('http://localhost/api/search?q=network-check'))
+
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ kind: 'network' })
+  })
+
+  it('AuthError は 502 と kind=auth を返す（利用者は対処できないため汎用エラー扱い）', async () => {
+    const { AuthError } = await import('@/src/domain/errors')
+    searchMock.mockRejectedValue(new AuthError('認証エラー'))
+
+    const res = await GET(new NextRequest('http://localhost/api/search?q=auth-check'))
+
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ kind: 'auth' })
+  })
+
+  it('NotFoundError は 404 と kind=notFound を返す', async () => {
     const { NotFoundError } = await import('@/src/domain/errors')
     searchMock.mockRejectedValue(new NotFoundError('見つかりません'))
 
     const res = await GET(new NextRequest('http://localhost/api/search?q=not-found-check'))
 
     expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ kind: 'notFound' })
   })
 
-  it('RateLimitExceededError は 429 と Retry-After ヘッダ（HTTP-date）を返す', async () => {
+  it('一次レート制限は 429・復帰時刻・Retry-After ヘッダ（HTTP-date）を返す', async () => {
     const { RateLimitExceededError } = await import('@/src/domain/errors')
-    const resetAt = new Date('2026-08-19T12:00:00.000Z')
-    searchMock.mockRejectedValue(new RateLimitExceededError('レート制限', resetAt))
+    const retryAfter = new Date('2026-08-19T12:00:00.000Z')
+    searchMock.mockRejectedValue(new RateLimitExceededError('rateLimitPrimary', { retryAfter }))
 
     const res = await GET(new NextRequest('http://localhost/api/search?q=rate-limit-check'))
 
     expect(res.status).toBe(429)
-    expect(res.headers.get('Retry-After')).toBe(resetAt.toUTCString())
+    // `Retry-After` は秒数（delta-seconds）と HTTP-date のどちらでも有効（RFC 9110 §10.2.3）。
+    // 一次レート制限は絶対時刻を持つため、"今" を計算に持ち込まない HTTP-date を使う。
+    expect(res.headers.get('Retry-After')).toBe(retryAfter.toUTCString())
+    expect(await res.json()).toEqual({
+      kind: 'rateLimitPrimary',
+      retryAfter: retryAfter.toISOString(),
+    })
   })
 
-  it('RateLimitExceededError で retryAfter が無い場合は Retry-After ヘッダを付けない', async () => {
+  it('二次レート制限は 429・待機秒数・Retry-After ヘッダ（秒数）を返す', async () => {
     const { RateLimitExceededError } = await import('@/src/domain/errors')
-    searchMock.mockRejectedValue(new RateLimitExceededError('レート制限'))
+    searchMock.mockRejectedValue(
+      new RateLimitExceededError('rateLimitSecondary', { retryAfterSeconds: 60 }),
+    )
 
-    const res = await GET(new NextRequest('http://localhost/api/search?q=rate-limit-no-header-check'))
+    const res = await GET(
+      new NextRequest('http://localhost/api/search?q=rate-limit-secondary-check'),
+    )
+
+    expect(res.status).toBe(429)
+    expect(res.headers.get('Retry-After')).toBe('60')
+    expect(await res.json()).toEqual({ kind: 'rateLimitSecondary', retryAfterSeconds: 60 })
+  })
+
+  it('再試行情報の無いレート制限は Retry-After ヘッダを付けない', async () => {
+    const { RateLimitExceededError } = await import('@/src/domain/errors')
+    searchMock.mockRejectedValue(new RateLimitExceededError('rateLimitSecondary'))
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/search?q=rate-limit-no-header-check'),
+    )
 
     expect(res.status).toBe(429)
     expect(res.headers.get('Retry-After')).toBeNull()
+    expect(await res.json()).toEqual({ kind: 'rateLimitSecondary' })
   })
 
-  it('UpstreamError は 502 を返す', async () => {
+  it('UpstreamError は 502 と kind=upstream を返す', async () => {
     const { UpstreamError } = await import('@/src/domain/errors')
     searchMock.mockRejectedValue(new UpstreamError('上流エラー'))
 
     const res = await GET(new NextRequest('http://localhost/api/search?q=upstream-check'))
 
     expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ kind: 'upstream' })
   })
 })
 

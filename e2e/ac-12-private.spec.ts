@@ -97,11 +97,14 @@ test('AC-12: 修飾子入りキーワードは拒否され、上流へも問い�
   })
 
   await test.step('2. 日本語のエラーメッセージが表示される', async () => {
-    // Next.js のルートアナウンサーも role=alert を持つため、本文で絞り込む（strict mode 対策）
-    const alert = page.getByRole('alert').filter({ hasText: '検索できませんでした' })
+    // SP-9 / Issue #107: 画面に出るのは `Error.message`（開発者向けの内部文言）ではなく
+    // 種別（`validation`）から引いた利用者向け文言になった（NFR-9 / prd.md §7）。
+    // 拒否された事実と「入力を直せばよい」ことが伝われば AC-12 の意図は満たされる
+    // （修飾子という内部理由そのものは出さない）。
+    // Next.js のルートアナウンサーも role=alert を持つため `<main>` 内へ絞る（strict mode 対策）。
+    const alert = page.locator('main').getByRole('alert')
     await expect(alert).toBeVisible()
-    await expect(alert).toContainText('修飾子')
-    await expect(alert).toContainText('使用できません')
+    await expect(alert).toContainText(ja.common.errors.validation)
   })
 
   await test.step('3. 入力した値は検索欄に残る（ユーザーが直せる）', async () => {

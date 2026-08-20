@@ -1,4 +1,12 @@
-import { RateLimitExceededError, UpstreamError } from '../../domain/errors'
+import {
+  AuthError,
+  type DomainError,
+  DomainValidationError,
+  NetworkError,
+  NotFoundError,
+  RateLimitExceededError,
+  UpstreamError,
+} from '../../domain/errors'
 import type { RepositoryDetail, SearchResult } from '../../domain/model/repository'
 import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
@@ -89,7 +97,7 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     try {
       response = await fetch(url, { headers })
     } catch (cause) {
-      throw new UpstreamError('GitHub API へ到達できませんでした', { cause })
+      throw new NetworkError('GitHub API へ到達できませんでした', { cause })
     }
 
     if (response.ok) {
@@ -98,21 +106,64 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     if (options?.notFoundAsNull && response.status === 404) {
       return null
     }
-    if (isRateLimited(response)) {
-      throw new RateLimitExceededError(
-        'GitHub API のレート制限に達しました',
-        resetAt(response) ?? undefined,
-      )
-    }
-    throw new UpstreamError(`GitHub API がエラーを返しました（HTTP ${response.status}）`)
+    throw toDomainError(response, url)
   }
 }
 
-function isRateLimited(response: Response): boolean {
-  if (response.status !== 403 && response.status !== 429) {
-    return false
+/**
+ * 🔴 HTTP 応答を prd.md §7「エラー種別の判別仕様」の種別へ落とす。**判定順序が仕様の一部**
+ * （403 は二次レート制限・一次レート制限・認証エラーのどれにもなりうるため、
+ * 再試行情報を持つ順に判定する）。
+ */
+function toDomainError(response: Response, url: URL): DomainError {
+  const { status } = response
+
+  if (status === 404) {
+    return new NotFoundError(`GitHub API が対象を返しませんでした（HTTP 404 ${url.pathname}）`)
   }
-  return response.headers.get('x-ratelimit-remaining') === '0' || response.status === 429
+
+  if (status === 403 || status === 429) {
+    const seconds = retryAfterSeconds(response)
+    if (seconds !== null) {
+      // 二次レート制限（短時間の集中）。retry-after 秒後に再試行できる。
+      return new RateLimitExceededError('rateLimitSecondary', { retryAfterSeconds: seconds })
+    }
+    if (response.headers.get('x-ratelimit-remaining') === '0') {
+      // 一次レート制限（枠の枯渇）。x-ratelimit-reset が復帰時刻。
+      return new RateLimitExceededError('rateLimitPrimary', {
+        retryAfter: resetAt(response) ?? undefined,
+      })
+    }
+    if (status === 429) {
+      // 再試行情報が無い 429。枠は残っているため二次レート制限として扱う（秒数は不明）。
+      return new RateLimitExceededError('rateLimitSecondary')
+    }
+  }
+
+  if (status === 401 || status === 403) {
+    // 🔴 内部情報を出さない汎用エラーとして扱う（サーバー設定の問題であり利用者は対処できない）。
+    return new AuthError(`GitHub API の認証・権限に問題があります（HTTP ${status}）`)
+  }
+
+  if (status === 422) {
+    return new DomainValidationError(
+      'SearchQuery',
+      url.searchParams.get('q'),
+      'GitHub API が検索クエリを受理しませんでした（HTTP 422）',
+    )
+  }
+
+  return new UpstreamError(`GitHub API がエラーを返しました（HTTP ${status}）`)
+}
+
+/** `retry-after`（秒数）。ヘッダが無い・秒数として読めない場合は null。 */
+function retryAfterSeconds(response: Response): number | null {
+  const retryAfter = response.headers.get('retry-after')
+  if (!retryAfter) {
+    return null
+  }
+  const seconds = Number(retryAfter)
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
 }
 
 function resetAt(response: Response): Date | null {
