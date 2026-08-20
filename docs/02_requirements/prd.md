@@ -592,6 +592,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | 7 | 複数トークンのローテーションを採用しない判断 | ✅ [ADR 0010](../adr/0010-no-token-rotation.md) |
 | 8 | i18n のルーティング設計と既定ロケール | ✅ [ADR 0011](../adr/0011-i18n-routing-and-default-locale.md) |
 | 9 | **UI スタック（Tailwind v4 + shadcn/ui + Radix）の採用と、shadcn/ui 既定の Base UI を採らなかった理由** | ✅ [ADR 0001](../adr/0001-ui-stack.md) |
+| 10 | **第三者へ公開して運用する際の GitHub 利用規約上の立場**（スクレイピング不採用・アバターを再配信しない・レート制限の遵守を設計制約として固定する判断） | ✅ [ADR 0013](../adr/0013-public-operation-under-github-terms.md) |
 
 ---
 
