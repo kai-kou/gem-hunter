@@ -247,6 +247,36 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
       _has_changes=true
     fi
     if [ "$_has_changes" = true ] || [ "$_untracked_count" -gt 0 ]; then
+      # 未追跡ファイルを削除する前に退避する（Issue #193・L-100 の最終防衛線）。
+      # Stop フックの WIP 自動コミットは追跡済みだけを保全する（`git add -u`・Issue #94 の方針）ため、
+      # 未追跡の新規成果物はここで消えると復元できない。Stop フックの警告（stop-git-check.sh の
+      # hook_block）は「Stop が発火し Claude が対処する」ことを前提にしており、
+      # `stop_hook_active=true` の再 Stop では素通りする。したがって Stop の発火に依存しない
+      # 退避をクリーンアップ直前に置く。
+      # 退避先を .git 配下にするのは `git clean -fd` の対象外だから（同じ理由で checkout の影響も受けない）。
+      _backup_dir=""
+      _backup_failed=false
+      if [ "$_untracked_count" -gt 0 ]; then
+        _backup_dir="${PROJECT_DIR}/.git/untracked-backup/$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y%m%d-%H%M%S')"
+        # 退避は起動処理の一部なので、他の外部呼び出しと同じく timeout で上限を掛ける
+        # （.gitignore 漏れで巨大な未追跡ディレクトリがあるとき、起動を無制限にブロックしない）。
+        # timeout はパイプライン全体を包めないため bash -c を挟み、-o pipefail で
+        # 1 段目・2 段目の失敗も取りこぼさない。
+        if mkdir -p "$_backup_dir" 2>/dev/null \
+           && timeout 30s bash -o pipefail -c '
+                git -C "$1" ls-files --others --exclude-standard -z \
+                  | tar -C "$1" --null -T - -cf - \
+                  | tar -C "$2" -xf -
+              ' _ "$PROJECT_DIR" "$_backup_dir" 2>/dev/null; then
+          echo "[cleanup] 未追跡 ${_untracked_count} 件を ${_backup_dir} へ退避しました" >&2
+        else
+          echo "[cleanup] ⚠️ 未追跡ファイルの退避に失敗しました（このあとの clean で失われます）" >&2
+          # 途中まで展開されている場合があるので rmdir ではなく再帰削除する
+          rm -rf "${_backup_dir:?}" 2>/dev/null || true
+          _backup_dir=""
+          _backup_failed=true
+        fi
+      fi
       git -C "$PROJECT_DIR" reset HEAD -- . >/dev/null 2>&1 || true
       GIT_LFS_SKIP_SMUDGE=1 git -C "$PROJECT_DIR" checkout -- . 2>/dev/null || true
       # CLEANUP_KEEP_GLOBS を -e 引数列に展開
@@ -254,6 +284,22 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
       for _g in ${CLEANUP_KEEP_GLOBS:-}; do _keep_args+=( -e "$_g" ); done
       git -C "$PROJECT_DIR" clean -fd "${_keep_args[@]}" 2>/dev/null || true
       echo "[cleanup] completed (${_untracked_count} untracked)" >&2
+      # 退避したことは Claude にも伝える（SessionStart は stdout がコンテキスト注入される
+      # 数少ないイベントの 1 つ・hook-events-reference.md §2）。stderr だけでは届かない。
+      if [ -n "$_backup_dir" ]; then
+        echo "⚠️ 前セッションの未追跡ファイル ${_untracked_count} 件をクリーンアップ前に \`${_backup_dir}\` へ退避しました（Issue #193）。必要なものが含まれていれば作業ブランチへ復元してコミットし、不要なら退避ごと削除してください。"
+      elif [ "$_backup_failed" = true ]; then
+        # 失われた事実こそ Claude に届く必要がある（stderr だけでは届かない）
+        echo "⚠️ 前セッションの未追跡ファイル ${_untracked_count} 件は退避に失敗し、クリーンアップで失われた可能性があります（Issue #193）。作業を進める前に、失われて困るものが無かったかを確認してください。"
+      fi
+      # 退避は直近 5 世代だけ残す（.git 配下が無限に膨らむのを防ぐ）
+      _bk_root="${PROJECT_DIR}/.git/untracked-backup"
+      if [ -d "$_bk_root" ]; then
+        ls -1 "$_bk_root" 2>/dev/null | sort -r | tail -n +6 | while IFS= read -r _old; do
+          rm -rf "${_bk_root:?}/${_old}" 2>/dev/null || true
+        done
+      fi
+      unset _backup_dir _backup_failed _bk_root _old
     fi
     unset _untracked_count _has_changes _keep_args _g
   fi
