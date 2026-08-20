@@ -134,14 +134,20 @@ export function DailyDigest({
           </ol>
         )}
 
-        {/* RSS 購読リンク（US-32）。 */}
+        {/*
+          RSS 購読リンク（US-33）。
+          🔴 素の <a> を使う（`<Link>` にすると next/link のプリフェッチが `/api/digest/rss`
+             を GET し `check_prefetchable_side_effects` に引っ掛かる。RSS は購読用途で
+             詳細画面のようなクライアント遷移対象ではないためプリフェッチ不要）。
+        */}
         <p className="mt-3 text-xs">
-          <Link
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a
             href="/api/digest/rss"
             className="text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring"
           >
             {labels.rssLink}
-          </Link>
+          </a>
         </p>
       </SeenDigestProvider>
     </section>
