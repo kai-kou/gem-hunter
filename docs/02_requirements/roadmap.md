@@ -206,7 +206,7 @@
 - **束ねるスプリント**: `SP-14` → `SP-15`（🔴 この順序は固定・[`user-story-map.md`](./user-story-map.md) §5.5）
 - **通過判定**（すべて満たすこと）
   - [ ] `SP-14` / `SP-15` の各操作レビュー手順を、PR のプレビュー URL 上で完走できる（`SD-1`）
-  - [ ] 着手直後に潰す前提（母集団の取り違え防止・S3 ダンプの集計フィールド有無・`criticality_score` の鮮度・Safari ITP 7 日キャップのフォールバック）が確認されている（[`decisions.md`](../../content/discussions/post-mvp-strategy-20260820/decisions.md) §6 の 4 点）
+  - [ ] 着手直後に潰す前提（母集団の取り違え防止・S3 ダンプの集計フィールド有無・`criticality_score` の鮮度・Safari ITP 7 日キャップのフォールバック）が確認されている（[ADR 0014](../adr/0014-zero-query-daily-digest.md) §5 の 4 点）
   - [ ] データ出典表示（Ecosyste.ms / CC BY-SA 4.0）と生成日が配信 JSON のトップレベルおよび UI の両方に出ている（`D-29`）
   - [ ] Ecosyste.ms の生テキスト（description 等）を再配信していない（`D-29`。数値・識別子・自作の派生値に限定）
 - **ここで初めて可能になること**: `M-3`（積み上げ・`S-2`）の統合設計に着手できる（`D-27`。Gem 発見の実装を踏まえて `US-10` 等を設計し直す）
