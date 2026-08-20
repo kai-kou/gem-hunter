@@ -11,7 +11,7 @@
 | 論点 | 決定 | 帰結 |
 |---|---|---|
 | 与件（`minimum-requirements.md`） | 🔴 **原本のまま公開する** | 第三者著作物として `LICENSE` の対象外を明示し、ファイル冒頭に権利表示を付ける（要件本文は無改変） |
-| ライセンス | 🔴 **MIT License** | `LICENSE` を追加。与件と `skill-creator`（Apache-2.0）は Exclusions として除外 |
+| ライセンス | 🔴 **MIT License** | `LICENSE` は MIT 原文のみ。第三者著作物（与件・`skill-creator`）は `NOTICE` へ分離 |
 | `telemetry/cost-data` | 🔴 **そのまま公開する** | 対応不要。AI 開発費の実測データとして公開する |
 | プレビュー URL | 🔴 **URL ごと公開する** | 🔴 **`M-4` の通過判定（`R-5` / `R-6` / `R-8`）と Issue #187 の解消が公開前の前提に入る**（§5・§6 Phase 1.5） |
 
@@ -213,8 +213,8 @@ telemetry/cost-data:content/analytics/cost_monthly/2026-08.json
 
 ### Phase 1: 公開前の整備（Claude が実行できる）
 
-- [x] `B-1` の結論を反映 — 原本を維持し、`LICENSE` の Exclusions とファイル冒頭の権利表示で第三者著作物であることを明示（要件本文は無改変・`inception-deck.md` の参照行にも例外を記録）
-- [x] `LICENSE`（MIT）を追加し、**与件** と `.claude/skills/skill-creator/`（Apache-2.0）を Exclusions として除外
+- [x] `B-1` の結論を反映 — 原本を維持し、`NOTICE` とファイル冒頭の権利表示で第三者著作物であることを明示（要件本文は無改変・`inception-deck.md` の参照行にも例外を記録）
+- [x] `LICENSE`（MIT）を追加し、第三者著作物（**与件** と `.claude/skills/skill-creator/`・Apache-2.0）は `NOTICE` へ分離した。⚠️ 当初は `LICENSE` 内に Exclusions 節を追記していたが、**公開後の実測で GitHub のライセンス判定が `NOASSERTION`（Other）になり MIT のバッジが出ないことが判明**。`LICENSE` を MIT 原文のみへ戻して解消した
 - [x] README にライセンス節と権利表示を追加
 - [x] 🔴 **与件を自動整形の対象外にした** — `tools/check_cjk_markdown.py` に `EXCLUDED_PATHS` を追加。本プロジェクトの CJK 表記ルールを他者の文書へ機械適用すると、整形で本文が変わり「原文のまま収録している」という権利表示自体が虚偽になる（実際に 1 度発生し、原本から作り直した）。self-test でパス判定と対象ファイルの実在を検証する
 - [x] `docs/rules/env-vars.md` の「private だから安全」を「collaborator 権限で保護されている」へ訂正（`B-4`）

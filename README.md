@@ -117,7 +117,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 
 本リポジトリのコードとドキュメントは [MIT License](./LICENSE) で公開している。
 
-ただし以下は **第三者に権利が帰属し、MIT License の対象外** である（詳細は [`LICENSE`](./LICENSE) の Exclusions 節）。
+ただし以下は **第三者に権利が帰属し、MIT License の対象外** である（詳細は [`NOTICE`](./NOTICE)）。
 
 | 対象 | 帰属 |
 |---|---|
