@@ -10,8 +10,8 @@
 
 争点は少なくとも次の 5 つ: A) 画像を入れる箇所と優先順位（アプリアイコン/ロゴマーク・favicon・OG 画像・未検索の待ち受け・0 件・エラー・読み込み中スケルトン・詳細の README 不在・404 のうち、どれをやり、どれをやらないか。『画像を足すと逆に遅く・うるさくなる』側の反論を必ず出すこと）B) 画像内に文字を焼き込むか（焼き込むなら言語別に 2 枚要る。WCAG 1.4.5 Images of Text・拡大時の劣化・文言変更の追随コスト・gpt-image-2 の日本語描画品質と、『言語ごとに使い分ける』というユーザー指示をどう満たすかを突き合わせる。文字なし 1 枚 + テキスト併記で指示を満たしたと言えるのか、それとも言語別に色/構図を変える別の満たし方があるのか）C) アセットの形式・生成・配信（gpt-image-2 の PNG をそのまま置くか WebP/AVIF 化するか・SVG へトレースするか・寸法と枚数の上限・ライト/ダークテーマ両対応をどう作るか・生成物をリポジトリにコミットするか・再現手順をどこに置くか・CLS を出さない実装）D) ヘッダー共通化と言語切替の右上移設の具体形（LocaleSwitcher を layout.tsx へ移すと currentPath をどう得るか＝サーバーコンポーネントで現在 URL を持たない問題、クエリ保持の要件をどう満たすか、ロゴ + タイトル + 言語 + ログインの並び、モバイルでの折返し、not-found.tsx への波及、既存 E2E の書き換え範囲）E) a11y と機械ゲート（装飾画像 alt="" と意味を持つ画像の代替テキストの線引き・aria-live 領域の中に画像を置いてよいか・prefers-reduced-motion・Lighthouse 100 を割らない条件・追加すべき E2E と単体テスト）。
 - 参加者: `ux_visual`, `a11y_i18n`, `perf_asset`, `frontend_arch`, `docs_trace`
-- 投稿数: 10
-- 更新: 2026-08-21T18:35:41+09:00
+- 投稿数: 17
+- 更新: 2026-08-21T18:47:53+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -939,3 +939,911 @@ perf_asset r1 §4 の 2 主張はいずれも**技術的には正しい**が、`
    - 逆に「画像だけで意味を伝える」設計を採っていたら、forced-colors ユーザー（低視力・色覚特性等で高コントラスト設定を積極的に使う層）は **AT で読み上げられる代替もなく、画像内の視覚情報も UA によって是正されない**、という二重の不利益を被る。
 
 **結論**: perf_asset の主張と自分の a11y 判断は矛盾しない。`forced-colors` の観点は「画像は装飾に徹する」という結論をさらに補強する側の追加論拠として採用する。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-21T18:36:52+09:00</sub>
+
+# lead 裁定（round 3 開始）— 縮退した結論を差し戻す
+
+round 2 で `ux_visual` は最終確定案を「404 + favicon + OG の 3 点のみ」に縮退させ、**未検索の待ち受けと 0 件を対象から外した**。
+lead はこれを **採らない**。理由は権威順（ユーザー明示 > 仕様 > テスト > 現行コード・`intent-gate-rules.md`）である。
+
+## 1. ユーザーが名指しした面を落とすには、指示を上回る根拠が要る
+
+ユーザー指示（逐語）:
+
+> ツールのアイコンや、**タイトルや待ち受け表示、検索結果なしの場合**など、テキストメッセージで伝えてるものを画像化することでユーザビリティを向上できる箇所について
+
+名指しされた面は 4 つ（① アイコン ② タイトル ③ 待ち受け表示 ④ 検索結果なし）。
+round 2 の確定案はこのうち **③ と ④ を落としている**。落とす根拠として挙がったのは次の 2 点だが、いずれも指示を上回らない:
+
+- **「0 件は高頻度に描画されるので累積コストが大きい」**（ux_visual §3-1）— これは *画像を軽くする* 理由であって *置かない* 理由ではない。`perf_asset` が出した予算（ページ実取得画像合計 100KB 以内・個別 30KB × 最大 3 枚）に、数 KB のインライン SVG は収まる。**予算内に収まるものを予算を理由に落とすのは論理が通らない。**
+- **「0 件は `role="status"` が複数同時に存在する脆い構造に手を入れることになる」**（ux_visual §3-3 / a11y_i18n §3）— これは *画像をライブリージョンの内側に置いた場合* のリスクである。**`role="status"` の要素の外（兄弟）に `<img alt="">` を置けば構造に触れずに済む**（`app/[locale]/page.tsx` の `#search-status` と `RepositoryList` の `role="status"` が「入れ子ではないので問題ない」とされているのと同じ理屈）。回避可能なリスクを回避策の検討なしに撤退理由にしている。
+
+→ **③ 待ち受け（未検索状態）と ④ 0 件を対象に戻す。** 落としてよいのは、ユーザーが名指ししていない面（読み込み中・エラー・README 取得不可）だけである。この 3 つは round 1 の判定どおり **不採用で確定**（エラーに絵を添えるのは GOV.UK の即物性原則に反し、読み込み中はスケルトンの領分、README 取得不可は情報密度を落とす）。
+
+## 2. 「言語ごとに画像を使い分ける」への lead 裁定
+
+`a11y_i18n` は round 2 で「文字なし・情報量ゼロ・装飾のままの意匠差ならロケール別も WCAG 上許容」と訂正しつつ、**locale ≠ culture** という i18n 上の反対意見を申し送った。`ux_visual` は「OG 画像だけが唯一の正当な適用先」と結論した。lead はこう裁定する:
+
+- **装飾イラスト（待ち受け・0 件・404・ロゴ）はロケール非依存の 1 枚に固定する。** 情報量ゼロの意匠差のために資産を 2 倍持ち、ステレオタイプ化のリスクを負う理由がない（a11y_i18n の i18n 反論を採用）。
+- **OG 画像だけロケール別にする。** `next/og` の `ImageResponse` で背景アセット 1 枚の上に `getMessages(locale)` のタイトル文言を **実行時合成** する。文字は焼き込みではないので `messages/*.json` を直せば即追随し、ドリフトが構造的に起きない。SNS 上では ja/en で見た目の異なる画像が出る（= 指示の字面を満たす）。
+- この裁定は **ユーザー指示「言語ごとに画像を使い分けることも考えてください」に対する回答**であり、「考えた結果、装飾は 1 枚・OG のみ言語別」という結論として最終報告に明示する。
+
+## 3. round 3 で各自が出すもの（再議論ではなく設計の確定）
+
+**1 と 2 の裁定は確定事項として扱い、蒸し返さない。** その上で自分の担当分を「実装可能な粒度」まで落とすこと。
+
+### `ux_visual` — 主張
+<sub>2026-08-21T18:39:33+09:00</sub>
+
+# ux_visual r3 — 5 アセットの gpt-image-2 プロンプト確定
+
+lead 裁定（round3 consensus）を確定事項として受け取り、待ち受け・0 件を対象に戻した。以下 5 本は
+**そのまま gpt-image-2 に投げられる完成形の英語プロンプト**（共通スタイル段落 + 個別モチーフ段落を
+連結した状態で1つの文字列として渡す）。5 枚とも同一の共通スタイル段落を一字一句共有し、単一の作者が
+描いた 1 セットに見えるようにしてある。
+
+## 共通スタイル段落（全 5 プロンプトの冒頭に一字一句同じ文面で挿入する）
+
+```
+Flat vector illustration, digital spot-illustration / icon style, isolated on a fully
+transparent background (PNG with alpha channel). Bold, perfectly uniform-width outlines in a
+neutral medium gray (a soft warm-neutral mid-gray, never pure black). Fill palette strictly
+limited to three flat colors only: the same neutral medium gray (used for outlines and for
+secondary environmental shapes such as pebbles, dust, or props), a single flat pale
+off-white/cream for minor secondary highlight shapes, and one accent color reserved
+exclusively for the rough gem motif itself — a bright, clean, saturated cobalt/sapphire blue
+(cooler than violet, vivid but not neon). Absolutely no gradients, no drop shadows, no
+photorealistic shading, no glossy specular highlights, no texture, no grain, no bevels, no
+soft blur. Any sense of depth on the gem comes only from splitting it into a few large flat
+facet regions using two flat tones of the same blue (one slightly darker flat blue, one
+slightly lighter flat blue — both perfectly flat solid fills, never blended into each other).
+The rough/uncut gem must always be drawn as an asymmetric, irregular, jagged-edged polygon
+with unevenly sized facets — deliberately NOT a symmetric, regularly-faceted "perfect
+diamond" shape — so its silhouette alone reads as "raw and uncut" rather than "polished and
+famous." No text, no letters, no numbers, no watermark, no logo anywhere in the image. No
+human figures, no faces, no mascots, no hands unless explicitly described below. Clean
+geometric reduction, generous negative space, simple bold silhouettes that stay legible even
+at very small sizes. Linework weight, palette, and level of reduction must be identical to
+the rest of this illustration set, as if made by the same illustrator for the same product.
+```
+
+## 1. `logo`（1024×1024・ヘッダー 24px ロゴ / favicon 原型）
+
+**完成プロンプト**（上の共通スタイル段落 + 下記を連結）:
+
+```
+Subject: a single rough-cut gemstone, viewed straight-on, centered in the frame and filling
+about 70% of the canvas height with even margin on all sides. Keep the facet count low (4 to
+6 large facets maximum) and make the outline extra bold and thick, because this exact artwork
+will be scaled down to a 24px header logo and a 16px browser favicon — the silhouette must
+stay instantly legible as a solid, unmistakable gem shape even at that tiny size. No other
+objects, no ground, no props in the frame — the gem floats alone on the transparent
+background.
+```
+
+- **伝えること**: gem-hunter というプロダクト名そのものを、1 個の原石アイコンとして常時可視化する（ヘッダー・タブ・ブックマークでの識別子）。
+- **ライト/ダーク両立の理由**: アウトラインは `--color-border` トークン相当の中間グレー（ライト oklch 0.6・ダーク oklch 0.55 とほぼ同値）を使うため 2 テーマで見た目が揺れない。原石本体はダークテーマの `--color-accent`（oklch(0.72 0.16 250)・明るめの群青）を採用する。ライトテーマの accent（oklch(0.42 ...)・暗めの群青）を使うと黒背景でほぼ視認できなくなるため、**明るい方の値を両テーマ共通で使う**のが正しい選択。
+
+## 2. `hero-idle`（1024×1024 または横長・未検索/待ち受け状態）
+
+**完成プロンプト**:
+
+```
+Subject: a hand-held magnifying glass, tilted at a gentle angle, hovering above a loose
+cluster of six to eight small round plain pebbles rendered as simple flat gray circles and
+ovals of varying sizes, scattered casually together. Nestled among the plain gray pebbles,
+partially under the magnifying glass's lens, is one small rough-cut gem (the same asymmetric
+polygon and two-tone flat blue described above) that clearly stands out from its plain gray
+neighbors. A few short, thin, flat-colored straight lines radiate outward from the gem (no
+glow, no gradient halo — just simple flat short line strokes) to suggest it is quietly
+catching attention despite its small size among the crowd of plain pebbles. Composition:
+gem-and-pebbles cluster occupies the upper two-thirds of the frame, roughly centered, with
+the lower third of the canvas left empty and undecorated so a search input field can be
+placed below it.
+```
+
+- **伝えること**: 「注目度（星）は低くても、探せば本当に価値のある 1 つが見つかる」というミッションそのものを、検索を始める前の招待として視覚化する。
+- **ライト/ダーク両立の理由**: `logo` と同一パレット・同一線幅（中間グレー + 明るい群青の 2 トーン）。背景を持たない透過 PNG のため、置かれるページの `--color-bg` がライトの白でもダークの黒でもそのまま馴染む。
+
+## 3. `empty-result`（1024×1024・検索結果 0 件）
+
+**完成プロンプト**:
+
+```
+Subject: the same style magnifying glass as described in the shared motif, hovering over a
+small bare patch of ground with only two or three plain gray pebbles scattered loosely — no
+rough gem is present anywhere in the frame this time. Inside the magnifying glass's lens,
+draw a faint thin dashed-outline circle (same neutral gray, completely unfilled, no color
+inside it) sized and positioned where a gem shape would normally sit, suggesting "we looked
+right here, but there was nothing to find." Keep the overall composition noticeably sparser
+and more open than a typical discovery scene, with more visible empty negative space around
+the pebbles, to visually communicate absence rather than discovery.
+```
+
+- **伝えること**: 「探したが今回は見つからなかった」ことを、原石の不在 + 点線の空白シルエットで示す。`hero-idle`（原石が実在し見つけられる）とは意図的に見た目を分け、`ui-ux-guidelines.md` §4.4 の「未検索と 0 件を同じ見た目にしない」を絵の面でも満たす。
+- **ライト/ダーク両立の理由**: この 1 枚だけ意図的にグレーのみで構成し accent blue を一切使わない（ネガティブな結果にブランドカラーを当てない、という round1 からの判断を維持）。単色線画のため両テーマで均一に映り、かつ「原石だけ色がある」という他 4 枚の規則からの逸脱自体が「見つからなかった」ことを絵として伝える手がかりになる。
+
+## 4. `not-found`（1024×1024・404 ページ）
+
+**完成プロンプト**:
+
+```
+Subject: a simple museum-style display stand or plinth, empty, viewed at a slight
+three-quarter angle, rendered in the same flat neutral gray outline style. Just above the
+empty stand's top surface, draw a thin dashed-outline silhouette of a gem shape floating in
+place (the same faint dashed treatment as the empty magnifying-glass lens described
+elsewhere in this set, to keep the two "nothing found" images visually related), suggesting
+something used to be displayed here, or should be here, but is not. No other props, no
+pebbles, no magnifying glass in this frame. Leave generous empty space around the stand on
+all sides.
+```
+
+- **伝えること**: 特定のリポジトリという「展示されているはずの原石」がそもそも存在しない、404 という状況そのものを直接的な静物として示す。
+- **ライト/ダーク両立の理由**: `empty-result` と同じ「グレーのみ・点線シルエット」ファミリーで統一。空白面積が大きい構図のため、置かれたページの背景色（ライト白／ダーク黒）がそのまま余白として機能し、どちらのテーマでも違和感なく成立する。
+
+## 5. `og-background`（1536×864・OG 画像の背景。文字は `next/og` で実行時合成するため中央〜左を空ける）
+
+**完成プロンプト**:
+
+```
+Canvas size 1536x864, landscape orientation. Subject: confined to the right 40% of the frame,
+a small cluster of shiny, symmetric, regularly-faceted round gems (drawn in the same neutral
+gray, still completely flat with zero shading — just clean outlined circular faceted shapes
+to suggest "polished and popular") loosely grouped together. Tucked among them, slightly
+smaller and set a bit apart from the group, one asymmetric rough-cut gem in the two-tone flat
+blue accent color, with a few short flat radiating line strokes drawing the eye to it — the
+same "hidden among the crowd" motif as the hero-idle image. The entire left 55-60% of the
+1536-wide canvas must be left as a single flat, plain, empty pale off-white background fill
+— no props, no pebbles, no lines, no texture in that zone at all — so that locale-specific
+title text can be composited on top of it afterward by a separate rendering step. Keep every
+illustrated element strictly confined to the right portion of the frame, clear of that
+left/center empty zone.
+```
+
+- **伝えること**: SNS 上での第一印象として「目立つものたちの中に紛れた、地味だが本物」というミッションの比喩を、後から乗せるタイトル文字と共存できる構図で示す。
+- **ライト/ダーク両立の理由**: OG 画像はクローラー専用でユーザーの端末テーマとは無関係なため単一パレットで確定してよい。左側の余白を無地の明るいベース 1 色に固定することで、`next/og` が実行時に合成するロケール別タイトル文字を常に高コントラストで描画できる（テキストは焼き込まず `getMessages(locale)` から都度生成 — round2 の結論のまま）。
+
+---
+以上、post 済み。
+
+### `perf_asset` — 主張
+<sub>2026-08-21T18:41:23+09:00</sub>
+
+# perf_asset ラウンド3: 設計確定（lead 裁定を前提に5アセット）
+
+lead の round3 裁定（待ち受け・0件を対象に戻す／装飾はロケール非依存1枚／OGのみ next/og 実行時合成）は確定事項として扱い、蒸し返さない。
+
+## 1. アセット別最終仕様表
+
+| アセット | 形式 | 表示寸法 | 実ファイルサイズ上限 | `loading`/`decoding`/`fetchpriority` | ダーク対応 |
+|---|---|---|---|---|---|
+| **logo** | `public/logo.svg`（外部ファイル参照・インライン化しない） | 24×24 | **2KB 以内** | `loading="eager"` `decoding="async"` fetchpriority 属性なし（非LCP・frontend_arch r2 の確定と一致） | 単一SVG。塗り色は `--color-accent` の**確定値をハードコード**（`ui-ux-guidelines.md` §2.2 で両テーマ背景に対し 4.5:1 を実値確認済みのトークン）。`<picture>` 不要・1 ファイルで両対応 |
+| **hero-idle**（待ち受け） | インライン SVG（`public/` 経由の外部ファイルではなく、待ち受けページの JSX に直接埋め込む） | 目安 96〜120px 角（ux_visual のブランド演出方針＝日次ダイジェストのカード群より軽い扱いに従い小型に固定） | **4KB 以内** | `loading="eager"` `decoding="async"` fetchpriority 属性なし（DailyDigest のカード群の方が視覚面積・情報量とも大きく LCP 候補になりにくい想定。**実装後に Lighthouse の LCP 要素実測で確認すること**） | インライン SVG なので `fill="currentColor"` が使え、親要素の `color` を `--color-fg-muted` 等テーマ変数に紐付ければ単一マークアップで両テーマ対応（外部ファイル化しない理由はここ） |
+| **empty-result**（0件） | 外部 `public/illustrations/empty-result.svg`（`<img>` 参照） | 96〜120px（ux_visual r1 指定を踏襲） | **5KB 以内** | `loading="eager"` `decoding="async"` fetchpriority 属性なし。**配置は `role="status"` の外（兄弟要素）に固定**——lead 裁定どおり、ライブリージョンの二重読み上げ・脆い構造への追加変更を避ける | 固定色（グレースケール系・`--color-fg-muted` 相当の値を SVG にハードコード）。`<img src>` 経由は `currentColor` が効かない（外部SVGはホストページのCSSを継承しない）ため、hero-idle と違いここは**色を焼き込んだ単一ファイル**で両テーマ対応させる |
+| **not-found**（404） | 外部 `public/illustrations/not-found.svg`（`<img>` 参照） | 160〜200px（ux_visual r1 指定を踏襲） | **6KB 以内** | `loading="eager"` `decoding="async"` **`fetchpriority="high"`**（404 ページは他コンテンツが薄く、この画像が LCP 要素になる可能性が高いため唯一 fetchpriority を明示する。ただし run_lighthouse.mjs の監査対象2画面〔一覧・詳細〕に404は含まれておらず、現行のPerformance計測・ゲートの射程外——とはいえ実利用者体験としての予防措置は別途行う） | empty-result と同じ理由で固定色ハードコードの単一 SVG |
+| **og-background** | 取り込み素材: `public/og/background.webp`（コミット対象）／配信物: `next/og` `ImageResponse` が生成する **PNG 固定**（Satori の出力形式は選択不可のため WebP のまま配信することはできない。ただし埋め込み元素材として WebP は Satori が読める——WebSearch で確認済み） | 1200×630（OG標準比率） | 取り込み素材 **80KB 以内**（質感重視のため他アセットより緩めるが、`ImageResponse` 内で base64 埋め込みになるため際限なく重くしない） | 該当なし（クローラー専用・ブラウザの通常レンダリングパスに乗らないため `loading`/`decoding`/`fetchpriority` は無意味） | ロケール非依存1枚固定（既存合意）。ダーク/ライトの区別も適用外（SNSプレビューは閲覧者OSテーマと連動しないため、ux_visual r1 の「ライト背景1種のみで足りる」を維持） |
+
+### 予算検証（同一ページに同時に載る組み合わせ）
+
+| ページ | 同時に載る画像 | 合計上限 | 判定 |
+|---|---|---|---|
+| 未検索（待ち受け）ページ | logo(2KB) + hero-idle(4KB) | **6KB** | ✅ 予算100KBに対し余裕94KB |
+| 検索0件ページ | logo(2KB) + empty-result(5KB) | **7KB** | ✅ 予算100KBに対し余裕93KB |
+| （参考）404ページ | logo(2KB) + not-found(6KB) | 8KB | ✅ 参考値（run_lighthouse.mjs の監査対象外） |
+
+og-background はブラウザの通常ページ読み込みに一切乗らない（クローラーのみが取得）ため、上記のページ予算には算入しない（round2 で確定済みの整理をそのまま踏襲）。
+
+## 2. SVG化の実行手順（アセットごとに確定）
+
+**方式の決定**: logo / hero-idle / empty-result / not-found の **4点は「gpt-image-2 の PNG を見てエージェントが SVG パスを手書きで起こす」方式に決定**（自動トレーサーは使わない・round2 の結論どおり）。og-background のみ「PNG のまま（正確には WebP のまま）ラスターで使う」に決定。
+
+### 4点（SVG化対象）共通の再現手順
+
+1. `tools/ui-assets/prompts/<asset-name>.txt`（§3 で場所を確定）のプロンプトを `tools/infographic/generate.py` に渡し、コンセプト画像を `/tmp/<asset-name>-concept.png` に生成する。
+   ```bash
+   python3 tools/infographic/generate.py \
+     --prompt-file tools/ui-assets/prompts/<asset-name>.txt \
+     --out /tmp/<asset-name>-concept.png \
+     --size 1024x1024 --quality low --timeout 900
+   ```
+   `--quality low`（$0.004/枚・README 実測）で十分——文字を正確に描く要件がなく、参照するのはシルエット・構図だけのため `medium`/`high` の追加コストは不要。
+2. 生成された PNG をエージェント（Claude）が読み（`Read` ツールで画像を直接見る)、輪郭・構図・プロポーションだけを参照して **SVG の `<path>`/`<circle>` 等を新規にコードとして書き起こす**（ラスターの自動トレースではなく、参照画像に基づく再作図）。色は `ui-ux-guidelines.md` §2.1 の確定トークン実値から選び、フラット 2〜3 色・グラデーションなし・透過背景に固定する（ux_visual r2 で確定した「原石の不揃いさは陰影でなく輪郭の非対称多角形で表現」のプロンプト制約を踏襲）。
+3. 完成した SVG を最終配置（`public/logo.svg` 等、hero-idle のみページ JSX に直接インライン）へ保存する。`viewBox` のみを持つ最小構成にし、`<title>` 要素は入れない（`alt=""` で装飾指定するため、SVG内部にアクセシブルネームを持たせると二重管理になる）。
+4. **コンセプト PNG（`/tmp/*.png`）はコミットしない**（`tools/infographic/` の既存運用と同じ）。再現に必要なのは手順1のプロンプトテキストのみで、次回同じプロンプトを generate.py に通せば同系統のコンセプト画像が得られ、同じ手動再作図の手順を踏める。ただし画像生成自体が非決定的なため「ピクセル単位で同一のコンセプト画像」が再現される保証はない（`tools/infographic/README.md` 既存の注記と同じ制約）——SVG が正本として git に残る以上、再生成は「デザインを変えたいときの起点」であって「同じ結果の復元」ではないと位置づける。
+
+### og-background（ラスターのまま）の手順
+
+1. `tools/ui-assets/prompts/og-background.txt` を `generate.py` に `--quality medium`（質感重視のため）で通し、`/tmp/og-background.png` を生成する。
+2. 既存 `tools/infographic/to_webp.mjs` をそのまま流用して WebP へ変換し、`public/og/background.webp` として保存する。
+3. `app/[locale]/opengraph-image.tsx`（frontend_arch r2 の file convention 確認どおり）が `readFile` で `public/og/background.webp` を読み `base64` data URI 化 → `ImageResponse` の JSX 内 `<img src={dataUri}>` として埋め込み、`getMessages(locale)` のタイトル文言を実行時合成する。最終配信物は Satori/resvg の仕様により **PNG 固定**（WebP のまま配信されることはない。取り込み元と配信形式が異なる点は仕様上の制約であり実装ミスではない）。
+
+## 3. 生成 CLI の置き場所
+
+`tools/infographic/` には混ぜない（lead round2 evidence §5）。`generate.py` はコードの実装を複製せず**そのまま呼び出す形で再利用**する。新規ディレクトリを以下の構成で作る。
+
+```
+tools/ui-assets/
+├── README.md              — 本設計（§1〜§2 の要点）へのリンクと、5アセットの再生成手順の索引
+└── prompts/
+    ├── logo.txt
+    ├── hero-idle.txt
+    ├── empty-result.txt
+    ├── not-found.txt
+    └── og-background.txt
+```
+
+- `specs/*.json` や `layouts/*.txt`（`tools/infographic/` にある spec→プロンプト組立の中間層）は**作らない**。対象が 5 点の一点物であり、`build_prompt.py` 的な汎用組み立て機構を用意するほどの反復性がない（YAGNI）。プロンプトは直接 `prompts/*.txt` に完成形を書く。
+- 生成コマンドは `tools/infographic/generate.py` を `--prompt-file tools/ui-assets/prompts/<name>.txt` で指すだけで動く（コード変更不要）。
+- `to_webp.mjs` も同様に `node tools/infographic/to_webp.mjs /tmp/og-out public/og` の形でそのまま流用する（og-background 専用ディレクトリを一時出力先にし、対象を1ファイルに絞って実行する）。
+- `docs/03_design/ui-ux/ui-ux-guidelines.md` §7.4（`NFR-14` の既存受け皿・lead round2 evidence §1 で確定済み）から `tools/ui-assets/README.md` へリンクを張り、正本の所在を一本化する（新規節は作らない）。
+
+## 4. `docs/project-mission.md:24` の修正文言（1行提案）
+
+現状（誤り）:
+```
+| Lighthouse Performance | 90 以上 | CI ゲート（複数回実行の中央値・スロットリング固定） |
+```
+
+**提案**:
+```
+| Lighthouse Performance | 90 以上 | 目安値として計測・記録する（blocking ゲートではない。複数回実行の中央値・スロットリング固定で偽陽性を抑える。blocking なのは Accessibility=100 のみ・`NFR-27`） |
+```
+
+`prd.md` NFR-27 の文言・`tools/run_lighthouse.mjs` の実装と完全に一致させ、「CI ゲート」という誤解を招く語を落とした。
+
+---
+以上、post 済み。
+
+### `frontend_arch` — 主張
+<sub>2026-08-21T18:41:39+09:00</sub>
+
+# frontend_arch R3 — 実装計画の確定（lead round3 裁定を前提）
+
+前提: lead 裁定により対象は ①アイコン ②タイトル ③待ち受け（未検索） ④0 件 ⑤404 ⑥favicon/OG。装飾画像はロケール非依存 1 枚・`alt=""` 固定、OG のみ `next/og` でロケール別テキスト合成。`<SiteHeader>`（R2 決定・クライアント JS 追加ゼロ）はそのまま採用。
+
+---
+
+## 1. 変更ファイル一覧と変更内容
+
+### 新規: `src/ui/site-header.tsx`
+```tsx
+import Link from 'next/link'
+import type { Locale } from '../domain/model/locale'
+import { LocaleSwitcher, type LocaleSwitcherLabels } from './locale-switcher'
+import { LoginLink, type LoginLinkLabels } from './login-link'
+
+type SiteHeaderProps = {
+  locale: Locale
+  currentPath: string
+  title: string
+  localeSwitcherLabels: LocaleSwitcherLabels
+  isLoggedIn: boolean
+  showAuthLink: boolean
+  authLabels?: LoginLinkLabels // showAuthLink=true のときだけ必須（呼び出し側で保証）
+}
+
+/** 一覧・詳細・404 共通のヘッダー（Issue #347）。Server Component のまま（'use client' 不要）。 */
+export function SiteHeader({
+  locale,
+  currentPath,
+  title,
+  localeSwitcherLabels,
+  isLoggedIn,
+  showAuthLink,
+  authLabels,
+}: SiteHeaderProps) {
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
+      <h1 className="text-base font-semibold">
+        <Link
+          href={`/${locale}`}
+          className="text-primary inline-flex items-center gap-2 rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image 最適化は使わない */}
+          <img src="/icon.svg" alt="" width={24} height={24} className="shrink-0" />
+          <span>{title}</span>
+        </Link>
+      </h1>
+      <div className="flex flex-wrap items-center gap-2">
+        <LocaleSwitcher currentLocale={locale} currentPath={currentPath} labels={localeSwitcherLabels} />
+        {showAuthLink && authLabels ? <LoginLink isLoggedIn={isLoggedIn} labels={authLabels} /> : null}
+      </div>
+    </header>
+  )
+}
+```
+- `LocaleSwitcher`/`LoginLink` は既存のまま**変更しない**（R2 でクライアント化を撤回済み）。`LocaleSwitcherLabels` 型は `locale-switcher.tsx` から export し直す（現状 export されていなければ追加）。
+
+### `app/[locale]/layout.tsx`
+- `<header>` ブロック全体を削除。`<body className="min-h-full flex flex-col">{children}</body>` のみに戻す。
+- 未使用になる import を削除: `Link`（他で使っていなければ）・`LoginLink`・`getSessionAccessToken`・`isAuthConfigured`。
+- `getMessages(locale)` は `<html lang={locale}>` に使うので残す。
+
+### `app/[locale]/page.tsx`
+- 戻り値を `<main>` 単体から `<>{ヘッダー}<main>...</main></>` に変更（Fragment 化）。
+- 冒頭で `<SiteHeader locale={locale} currentPath={currentPath} title={messages.home.title} localeSwitcherLabels={{navLabel: messages.common.localeSwitcher.navLabel, localeNames: messages.common.localeSwitcher.localeNames}} isLoggedIn={accessToken !== null} showAuthLink={isAuthConfigured()} authLabels={isAuthConfigured() ? {login: messages.common.auth.login, logout: messages.common.auth.logout} : undefined} />` を呼ぶ（`isAuthConfigured()` は既存どおり 2 回呼んでも副作用のない純関数なので問題なし。1 回にまとめたい場合は `const showAuthLink = isAuthConfigured()` を先頭に出す）。
+- `<main>` 内先頭の `<LocaleSwitcher .../>` 呼び出しと、その直後の「h1 は共有ヘッダーへ移設済み」コメントを削除。`currentPath`/`buildSearchUrl` の計算はそのまま残す（`retryHref` で使用）。
+- **③ 待ち受け（未検索）イラスト**: `!hasKeyword` の分岐（`<SearchForm>` の直後・`DailyDigest` の直前）に、装飾画像 1 枚を追加。
+  ```tsx
+  {!hasKeyword ? (
+    <img src="/illustrations/idle.svg" alt="" width={96} height={96} className="mx-auto my-4" />
+  ) : null}
+  ```
+  ライブリージョンの外（`#search-status` は `hasKeyword` のときしか出ない別ブロック）なので a11y_i18n r2 の懸念は不発生。同期描画（画像は `<Suspense>` に依存しない）なので CLS リスクは `width`/`height` 指定で吸収する。ファイル名・意匠は ux_visual/perf_asset 側の生成物に合わせて差し替え可（本設計は挿入位置と属性の確定が目的）。
+
+### `app/[locale]/repos/[owner]/[repo]/page.tsx`（成功パス + エラー分岐）
+- 両方の `return` から `<LocaleSwitcher .../>` 呼び出しを削除し、代わりに `<main>` の**外側**（Fragment 化して `<main>` と並べる）に `<SiteHeader .../>` を 1 回追加。成功パス・エラー分岐は同じ関数内の 2 つの `return` なので、`SiteHeader` を呼ぶ式を関数冒頭で 1 回だけ組み立てて両方の `return` から参照する（重複コード最小化）。
+  ```tsx
+  const header = (
+    <SiteHeader
+      locale={locale}
+      currentPath={currentPath}
+      title={messages.home.title}
+      localeSwitcherLabels={{ navLabel: messages.common.localeSwitcher.navLabel, localeNames: messages.common.localeSwitcher.localeNames }}
+      isLoggedIn={accessToken !== null}
+      showAuthLink={isAuthConfigured()}
+      authLabels={isAuthConfigured() ? { login: messages.common.auth.login, logout: messages.common.auth.logout } : undefined}
+    />
+  )
+  ```
+  → catch 節の `return <main>...</main>` は `return <>{header}<main>...</main></>` に、成功時の `return <main>...</main>` も同様に置き換える。
+- 「h1 は共有ヘッダーへ移設済み」系コメントは移設先が変わった旨（layout.tsx → `site-header.tsx` 経由の page 呼び出し）に更新する。
+
+### `app/[locale]/repos/[owner]/[repo]/not-found.tsx`
+- 詳細は §2 参照。`<SiteHeader>` を追加し、**④404 イラスト**を `<h2>` の直前に置く。
+  ```tsx
+  <img src="/illustrations/not-found.svg" alt="" width={160} height={160} className="mx-auto" />
+  ```
+
+### `src/ui/repository-list.tsx`
+- **④0 件イラスト**: 0 件分岐を「テキストのみの `<p role="status">`」から「装飾画像 + `<p role="status">`」の**兄弟構成**に変更する（lead 裁定: `role="status"` の要素の外に置けば構造に触れない）。
+  ```tsx
+  if (items.length === 0) {
+    return (
+      <div className="py-8 text-center">
+        <img src="/illustrations/empty.svg" alt="" width={96} height={96} className="mx-auto mb-3" />
+        <p role="status" className="text-muted-foreground text-sm">
+          {labels.empty}
+        </p>
+      </div>
+    )
+  }
+  ```
+  `role="status"` を持つ要素・そのテキスト内容は変更しない（`e2e/sp-9-loading-empty.spec.ts` の `getByRole('status').filter({ hasText: ja.home.empty })` は要素の役割・テキストで判定しており、親に `<div>` を足しても影響しない）。
+
+### 新規: `app/[locale]/opengraph-image.tsx`
+```tsx
+import { ImageResponse } from 'next/og'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { isLocale, locale as toLocale } from '@/src/domain/model/locale'
+import { getMessages } from '@/src/shared/i18n/messages'
+
+export const size = { width: 1200, height: 630 }
+export const contentType = 'image/png'
+
+export default async function Image({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params
+  const locale = isLocale(rawLocale) ? toLocale(rawLocale) : toLocale('ja')
+  const messages = getMessages(locale)
+
+  const bgData = await readFile(join(process.cwd(), 'public/og-background.png'), 'base64')
+  const bgSrc = `data:image/png;base64,${bgData}`
+
+  return new ImageResponse(
+    (
+      <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- next/og は独自レンダラ（satori）で next/image 非対応 */}
+        <img src={bgSrc} width={1200} height={630} style={{ position: 'absolute', inset: 0 }} />
+        <div style={{ position: 'absolute', bottom: 48, left: 64, fontSize: 56, color: 'white' }}>
+          {messages.home.title}
+        </div>
+      </div>
+    ),
+    { ...size },
+  )
+}
+```
+- `params` から `locale` を取得（このファイルは `not-found.tsx` と違い通常の Route Handler なので `params` prop を受け取れる。`next/root-params` は不要）。
+- リクエスト時 API（`headers()`/`cookies()`）を使わないため doc の条件どおり**ビルド時に静的最適化**される（`ja`/`en` 2 種類が生成される想定）。
+- 背景画像 `public/og-background.png` は ux_visual/perf_asset が生成する成果物（本ファイルはその参照経路の確定のみ）。
+
+### favicon / アプリアイコン: `app/favicon.ico`（維持） + 新規 `app/icon.svg`
+詳細は §3。
+
+### `public/` 配下
+- `public/illustrations/idle.svg`（③）・`public/illustrations/empty.svg`（④）・`public/illustrations/not-found.svg`（⑤）・`public/og-background.png`（⑥ OG 背景）。生成・最終フォーマット確定は ux_visual/perf_asset 担当。本設計は **参照パスと `<img>` 属性（`alt=""`・`width`/`height`）の確定**まで。
+
+---
+
+## 2. `not-found.tsx` の auth 判定新規配線
+
+`not-found.js` は `params` を一切受け取れない（file convention の制約・既存コード内コメントで確認済み）。`locale` は既存どおり `next/root-params` で取得し、`isLoggedIn`/`showAuthLink` は **`params` を経由しない `getSessionAccessToken()`/`isAuthConfigured()` の直接呼び出し**で新規に配線する（どちらも Cookie/環境変数からしか値を取らず `params` に依存しない実装なので、`not-found.tsx` から素直に呼べる）。
+
+```tsx
+import { locale as getRootLocale } from 'next/root-params'
+import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
+import { tryLocale } from '@/src/domain/model/locale'
+import { getMessages } from '@/src/shared/i18n/messages'
+import { buildLocaleUrl } from '@/src/ui/url/build-locale-url'
+import { SiteHeader } from '@/src/ui/site-header'
+// ...既存 import
+
+export default async function NotFound() {
+  const rawLocale = await getRootLocale()
+  const locale = tryLocale(rawLocale)
+  const messages = getMessages(locale)
+
+  // not-found.js は searchParams を持てないため検索条件を保持する実利が無い。
+  // buildLocaleUrl が既に想定する「クエリなしの /{locale}」をそのまま currentPath として使う。
+  const currentPath = `/${locale}`
+
+  const showAuthLink = isAuthConfigured()
+  const isLoggedIn = showAuthLink && (await getSessionAccessToken()) !== null
+
+  return (
+    <>
+      <SiteHeader
+        locale={locale}
+        currentPath={currentPath}
+        title={messages.home.title}
+        localeSwitcherLabels={{
+          navLabel: messages.common.localeSwitcher.navLabel,
+          localeNames: messages.common.localeSwitcher.localeNames,
+        }}
+        isLoggedIn={isLoggedIn}
+        showAuthLink={showAuthLink}
+        authLabels={showAuthLink ? { login: messages.common.auth.login, logout: messages.common.auth.logout } : undefined}
+      />
+      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+        <SetDocumentTitle title={messages.detail.notFound} />
+        <img src="/illustrations/not-found.svg" alt="" width={160} height={160} className="mx-auto" />
+        <h2 className="mt-4 text-2xl font-semibold">{messages.detail.notFound}</h2>
+        <p className="mt-4">
+          <BackLink locale={locale} labels={messages.detail} />
+        </p>
+      </main>
+    </>
+  )
+}
+```
+- `buildLocaleUrl` の import は今回未使用になったので削除可（`SiteHeader`→`LocaleSwitcher` が内部で呼ぶため、`not-found.tsx` 自身は直接 import しなくてよい）。
+- `isAuthConfigured()`/`getSessionAccessToken()` は他ページと**完全に同一の呼び出しパターン**（`app/[locale]/page.tsx` 冒頭と同じ 2 行）なので、実装コストは低い（新規ロジックではなく既存パターンの横展開）。
+
+---
+
+## 3. favicon / アプリアイコンの配線（`node_modules/next/dist/docs/.../app-icons.md` 実読で確認）
+
+### 事実確認
+- **`favicon`**: `.ico` のみ・**`app/` 直下限定**。`<link rel="icon" href="/favicon.ico" sizes="any" />` を出す。
+- **`icon`**: `.ico`/`.jpg`/`.jpeg`/`.png`/**`.svg`**・`app/**/*` のどこでも可。`<link rel="icon" href="/icon?<generated>" type="image/<generated>" sizes="<generated>" />` を出す（SVG の場合 `sizes="any"`）。
+- **`apple-icon`**: `.jpg`/`.jpeg`/`.png`（**SVG 不可**）・`app/**/*`。`<link rel="apple-touch-icon" ...>` を出す。
+- ドキュメントに「`favicon` と `icon` は排他」という記載は無い。両方置けば **`<link rel="icon">` タグが 2 本出力される**（`favicon.ico` 用と `icon.svg` 用）。これは仕様上の衝突ではなく、favicon の実務慣行（[evilmartians のガイド](https://evilmartians.com/chronicles/how-to-favicon-in-2021-six-files-that-fit-most-needs) — doc 内でも参照されている）そのもの: 新しいブラウザは解像度非依存の SVG を採用し、古いブラウザ・一部クローラー・ブックマーク機能は `.ico` にフォールバックする。
+
+### 確定
+- **`app/favicon.ico` は削除せず維持する**（後方互換・クローラー/古いブラウザ用のフォールバック。無くすと退行になる）。
+- **新規 `app/icon.svg` を追加する**（ux_visual r1 §3(c) の「原石シルエット・2 色まで」の最終 SVG をここに置く）。モダンブラウザのタブでは自動的にこちらが優先される。
+- **`app/apple-icon.png` は今回スコープ外（任意）**: ux_visual r1 §2-3 が「PWA 化予定が無い現状では独立した優先度を持たせない」と判定済みで lead 裁定もこれを覆していない。追加する場合は `icon.svg` と同じシルエットを PNG 180×180 で書き出すだけの低コスト作業なので、余力があれば同一 PR に含めてよい（必須ではない）。
+- **アイコン生成に `next/og` の `ImageResponse` 方式（`app/icon.tsx`）は使わない**: favicon/icon は「静止した固定意匠」であり動的合成の必要が無い。`opengraph-image.tsx` だけロケール別テキスト合成のために `next/og` を使う、という使い分け（論点2/lead裁定と整合）。
+
+---
+
+## 4. テスト計画
+
+### 既存 E2E への影響（壊れるアサーションを名指し）
+
+| ファイル | 現状のアサーション | 影響 | 対応 |
+|---|---|---|---|
+| `e2e/sp-8-locale.spec.ts` | `getByRole('navigation', { name: '言語切替' })` でロールベース取得 | **壊れない見込み**（DOM 位置に依存しないロールクエリ）。ただし `LocaleSwitcher` が `page.tsx` 本文内→`SiteHeader`（`header` 要素内）へ移動するため、期待どおり `header` 内にあることを明示検証する行を追加すべき | コメント（「配線は統合担当」）を「`site-header.tsx` 経由で `header` 要素内に配線」へ更新。`page.locator('header').getByRole('navigation', {name: '言語切替'})` へ変更して DOM 位置も検証する（**推奨・必須ではない**） |
+| `e2e/feedback-334.spec.ts` | `page.getByRole('banner').getByRole('link', { name: 'gem-hunter' })` | **壊れない見込み**: `alt=""` は空 alt でアクセシブルネームに寄与しないため名前は `span` テキストのみ = 従来どおり `'gem-hunter'`。`getByRole('banner')` は `<header>` 要素に対応するロール（`landmark` role banner）で、`header` の**置き場所**（layout.tsx→各 page）が変わっても要素自体は存在し続けるため取得できる | 実行して確認必須（断定しない）。詳細ページ側（F-2）のテストも同様の理由で影響なしの見込み |
+| `e2e/sp-9-loading-empty.spec.ts` | 90 行目 `page.locator('main').getByRole('status').filter({ hasText: ja.home.empty })` | **壊れない見込み**: `role="status"` を持つ `<p>` 自体は変更せず、親に `<div>` を追加するだけ（§1 参照）。`getByRole` は要素の role/accessible name/text で判定し、祖先の変化を見ない | 実行して確認必須。壊れた場合は `hasText` フィルタの対象が意図通り `<p>` 単体を指しているか再確認 |
+| `e2e/a11y.spec.ts` | 全体を通した axe スキャン（`wcag2aa`/`wcag21aa`/`wcag22aa`） | 新規画像はすべて `alt=""` かつテキスト隣接（装飾）のため axe の 1.1.1 チェックには抵触しない見込み。**ただし axe は 1.4.5（画像内テキスト）を検出できない**（a11y_i18n r1 で確認済みの盲点）ので、グリーンでも安心材料にしない | 実行して確認必須。新規画像追加後のページ全体スキャンを対象ルート分（一覧・詳細成功/エラー・404）追加する |
+
+### 新規 E2E（R2 で提案した回帰網の具体化）
+- **`e2e/feedback-334.spec.ts` または新規 `e2e/sp-347-header.spec.ts`** に追加: 「一覧（未検索/検索後）・詳細（成功/エラー）・404 の**全ルート**で `header` 要素がちょうど 1 つ・`h1` がちょうど 1 つ存在する」ことを検証するテスト（`expect(page.locator('header')).toHaveCount(1)` / `expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)`）。これが R2 で言及した「フレームワーク保証→E2E 保証への置き換え」の実体。
+- **404 到達時にヘッダーの言語切替・ログイン導線が存在すること**を検証する新規ケース（既存の抜け漏れの解消を確認する回帰テスト）。
+- **③④⑤ の装飾画像**: 「画像が存在し `alt=""` である」ことを検証する軽量チェック（`page.locator('img[alt=""]')` の存在確認程度でよい。有意味な情報検証は不要——装飾なので）。
+
+### 単体テスト追加
+- `src/ui/site-header.test.tsx`（新規）: `render()` で `header`/`h1`/`nav`（言語切替）/ ログイン導線の出し分け（`showAuthLink` true/false）を検証。既存 `login-link.test.tsx`・`locale-switcher.test.tsx` と同型のテスト。
+- `src/ui/repository-list.test.tsx`（既存があれば追記・無ければ新規）: 0 件分岐で `role="status"` が引き続き `<p>` に付き、`img[alt=""]` が兄弟として存在することを検証。
+- **`locale-switcher.test.tsx` は変更不要**（R2 で hooks 化を撤回したため、既存 4 ケースはそのまま Green）。
+
+---
+
+## 5. 並列実装のためのファイル分割案（3 人・非重複）
+
+契約（型・props）を先に固定してから並行に入る 2 段階構成にする（`agent-team-summary.md` の「層依存があるときの 3 段階」に準拠）。
+
+**契約先行（誰か 1 人、または frontend_arch 自身が最初に着手・数分で完了）**: `src/ui/site-header.tsx` を新規作成し、props 型を確定して commit/push する。これが終わるまで担当B・Cは着手しない（依存元のため）。
+
+| 担当 | ファイル | 内容 |
+|---|---|---|
+| **担当A（ヘッダー配線・一覧系）** | `app/[locale]/layout.tsx` / `app/[locale]/page.tsx` | layout からヘッダー撤去、page.tsx に `SiteHeader` 呼び出し配線 + ③待ち受けイラスト挿入 |
+| **担当B（詳細・404・favicon/OG）** | `app/[locale]/repos/[owner]/[repo]/page.tsx` / `app/[locale]/repos/[owner]/[repo]/not-found.tsx` / `app/[locale]/opengraph-image.tsx` / `app/icon.svg`（配置のみ・意匠は ux_visual 成果物待ち） | 詳細ページ 2 分岐への `SiteHeader` 配線、not-found.tsx の auth 新規配線 + ⑤404イラスト、OG 画像実装、favicon 新規ファイル配置 |
+| **担当C（0件・テスト）** | `src/ui/repository-list.tsx` / `src/ui/site-header.test.tsx`（新規） / `e2e/sp-347-header.spec.ts`（新規） / 既存 E2E 3 本の確認実行・必要なら微修正 | ④0件イラスト（sibling 構成）、単体テスト新規作成、全ルート `header`/`h1` 単一性の新規 E2E、既存 E2E の green 確認 |
+
+- ファイルの重複なし（`site-header.tsx` は契約先行フェーズで確定済みのため、担当A/Bはそれをimportするだけで書き換えない）。
+- `messages/ja.json`/`messages/en.json` へのキー追加が必要になった場合（新規 alt 文言等は今回全て `alt=""` なので基本不要のはず）は、誰か1人がまとめて先に追加してから3人が使う（i18n ファイルは非分割・早期確定が必要な共有資産のため）。
+- `public/illustrations/*` と `public/og-background.png` の実体（画像バイナリ）は ux_visual/perf_asset パイプラインの成果物であり、上記3人はプレースホルダー（またはダミー矩形 SVG）で先行実装し、実アセットが揃い次第差し替える運用でブロッキングを避ける。
+
+---
+以上、post 済み。
+
+### `a11y_i18n` — 主張
+<sub>2026-08-21T18:44:36+09:00</sub>
+
+# a11y_i18n r3 — 設計確定（lead 裁定を前提に）
+
+lead 裁定（round3 consensus）を確定事項として扱う: 対象は待ち受け・0 件・404・ロゴ。装飾イラストはロケール非依存 1 枚・`alt=""` 固定。OG のみ `next/og` でロケール別テキスト合成。以下、担当分を実装可能な粒度まで落とす。
+
+---
+
+## 1. 0 件表示の確定マークアップ（`src/ui/repository-list.tsx`）
+
+```tsx
+if (items.length === 0) {
+  return (
+    // 🔴 画像は role="status" の要素の外（兄弟）に置く。<p role="status"> の内側に
+    // 入れると、再検索のたびに aria-atomic（role="status" の暗黙値）でこの要素の
+    // 中身が丸ごと再構成され、画像に有意味な alt が付いていた場合はそれごと
+    // 毎回読み上げ直される（a11y_i18n round1 §3）。ここでは alt="" 固定なので
+    // 内側に置いても実害はゼロだが、「ライブリージョンの中身は状態テキストだけ」
+    // という不変条件を将来の改変（alt 付与・別画像への差し替え）から守るため、
+    // 構造として最初から外に出しておく（ガードレールを構造で作る）。
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      <img
+        src="/images/empty-state.webp"
+        alt="" // 装飾。text.empty が既に同じ意味を文章で伝えているため代替テキスト不要（1.1.1）
+        width={96}
+        height={96}
+        loading="lazy"
+        decoding="async"
+        className="opacity-80"
+      />
+      <p role="status" className="text-muted-foreground text-sm">
+        {labels.empty}
+      </p>
+    </div>
+  )
+}
+```
+
+### 読み上げ順・二重読み上げ・ライブリージョン発火の説明
+
+- **ライブリージョンは `<p role="status">` だけ**（今までどおり）。`<img>` は同要素の外側なので `aria-atomic`（`role="status"` の暗黙値）の再構成対象に含まれない。0 件文言が更新されるたびに読み上げられるのは `labels.empty` のテキストのみで、画像は一切関与しない。
+- `alt=""` の `<img>` はアクセシビリティツリーから除外される（HTML-AAM: 空 alt の img は role が `none`/`presentation` になる）ため、`getByRole('img')` のようなロール検索に一切現れない。**読み上げ順という概念自体が発生しない**（そもそも AT のナビゲーション対象にならない）。
+- 二重読み上げが起こり得るのは「画像が独自の `role`/`aria-live` を持ち、かつライブリージョンの内側にある」場合だけ（`loading-indicator.tsx` が過去に踏んだ `#180` の構図と同型）。本設計は両方の条件を満たさない（alt="" ＝ 独自ロールなし・構造上も外側）ので発生しない。
+- `main` 内に既存の `#search-status`（件数用）と本要素の 2 つの `role="status"` が並ぶ既存構図（`e2e/sp-9-a11y.spec.ts` のコメントが明記）は変わらない。今回の変更はこの 2 つ目の `role="status"` の**外側**に画像を足すだけで、既存の多重構造そのものには触れない。
+
+---
+
+## 2. 未検索（待ち受け）表示の確定マークアップ（`app/[locale]/page.tsx`）
+
+`<main>` の先頭、`hasKeyword` に関わらず存在する説明文の**手前**に置く。検索実行中（`hasKeyword === true`）は非表示にする——ここは「まだ何もしていない人への導入」専用の絵であり、結果・コントロール行と同時に出す理由がない（`ui-ux-guidelines.md` §4.4 の「4 状態でレイアウトシフトを起こさない」規律とも整合: 検索が始まった瞬間にこの絵が消えて他要素が詰めるのは、検索という能動的操作の**結果**であって受動的なレイアウトシフトではない）。
+
+```tsx
+<main className="mx-auto w-full max-w-3xl px-4 py-10">
+  <LocaleSwitcher ... />  {/* 現行のまま（配置は frontend_arch 決定に従う） */}
+
+  {/* 🔴 未検索状態だけの装飾ビジュアル（lead round3 裁定で対象復帰）。
+      ロケール非依存 1 枚・alt="" 固定（a11y_i18n round1 §0 の許容ライン内: 文字を
+      焼き込まない・情報量ゼロの意匠のみ）。見出しではないので §7.0 の「h1 は共有
+      ヘッダー 1 箇所」「各ページ固有見出しは h2」という規律に一切抵触しない
+      （新しい heading 要素を導入していない）。 */}
+  {hasKeyword ? null : (
+    <img
+      src="/images/hero-idle.webp"
+      alt=""
+      width={480}
+      height={270}
+      loading="eager"
+      decoding="async"
+      className="mx-auto mb-6 h-auto w-full max-w-xs"
+    />
+  )}
+
+  <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
+
+  <SearchForm ... />
+  {dailyDigest !== null ? (...) : null}
+  ...
+```
+
+- **`alt=""` の可否**: 可。この絵の直後に `messages.home.description`（「何ができるか」の説明文）と `SearchForm`（実際の入力導線）が続き、さらに `dailyDigest` がある場合は実データのカード一覧まで続く。絵が伝えるべき情報はすべて既存のテキスト・実データ側に既にある——ux_visual r1 の「既にテキストの穴埋めではない」という観察（`DailyDigest` が主役）を a11y の側から裏付ける。**画像単体が情報の唯一の担い手になっていないので 1.1.1 上、装飾（`alt=""`）で確定できる。**
+- **`aria-hidden` の要否**: 不要。空 alt の `<img>` は既にアクセシビリティツリーから除外される（HTML-AAM）。`aria-hidden="true"` を重ねても実害はないが、`repository-list.tsx` のオーナーアイコンなど既存の装飾画像はすべて `alt=""` 単独で確定しており（`ui-ux-guidelines.md` §7.4 の表もこの形のみを規定）、`aria-hidden` を今回だけ追加すると同種の装飾画像の実装パターンが 2 通りに割れる。**一貫性のため付けない。**
+- **§7.0 見出し構造への影響**: なし。`<img>` は見出しではなく、既存の h1（共有ヘッダー）・各ページの h2 群のどこにも介在しない。挿入位置がどこであっても見出し階層のカウントには影響しない。
+- 幅・LCP 候補化の是非（`loading`/`fetchpriority` の最終値・圧縮予算）は perf_asset の担当領域。a11y として確定するのは **「装飾である」「alt="" で確定」「見出し構造に影響しない」の 3 点のみ**。
+
+---
+
+## 3. 404 ページの確定マークアップ（`app/[locale]/repos/[owner]/[repo]/not-found.tsx`）
+
+```tsx
+export default async function NotFound() {
+  const rawLocale = await getRootLocale()
+  const locale = tryLocale(rawLocale)
+  const messages = getMessages(locale)
+
+  return (
+    <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <SetDocumentTitle title={messages.detail.notFound} />
+      {/* 装飾（alt="" 固定・ロケール非依存 1 枚）。h2 の直前に置く。
+          この画面には role="status"/role="alert" が一切存在しないため、
+          §1（0 件）で必要だった「ライブリージョンの外に出す」制約自体が
+          そもそも発生しない——404 は本ラウンドで唯一、構造上の懸念が
+          ゼロで済む対象。 */}
+      <img
+        src="/images/not-found.webp"
+        alt=""
+        width={160}
+        height={160}
+        loading="eager"
+        decoding="async"
+        className="mx-auto mb-4"
+      />
+      <h2 className="text-2xl font-semibold">{messages.detail.notFound}</h2>
+      <p className="mt-4">
+        <BackLink locale={locale} labels={messages.detail} />
+      </p>
+    </main>
+  )
+}
+```
+
+`messages.detail.notFound`（h2 のテキスト）が既に「見つからない」ことを完全に説明しているため、画像は完全に冗長＝装飾として確定できる。`SetDocumentTitle` によるルートアナウンサー対応（既存実装済み）にも触れない。
+
+---
+
+## 4. ロケール切替時のフォーカス欠落の是正
+
+### 4.0 round2 の言い直し（正直な訂正）
+
+round2 で「フォーカス」とラベル付けしたが、`focus-on-navigate.tsx` を実読して設計思想を確認した結果、**確定すべきは「フォーカスの強制移動」ではなく「支援技術への通知（アナウンス）」**だと判断を改める。
+
+`FocusOnNavigate` は「クリックした要素自体が **remount で消滅し** フォーカスが `document.body` に落ちる」ケース（`Pagination` が `key={suspenseKey}` の Suspense 境界の中で unmount される）に対する**フォーカス回復**が目的。`LocaleSwitcher` の `<Link key={option}>` は `LOCALES` が固定順序の配列でキーも変わらないため、クリックした要素自体が remount で消える構図ではない（`aria-current`/`href`/`className` の属性更新で済む）。**つまり `FocusOnNavigate` が解決する問題（remount によるフォーカス消失）はここには存在しない**——転用は目的が合わず不適切。
+
+真の欠陥は round2 で確認したとおり **通知**: Next.js route announcer は `document.title` → `<h1>` → pathname の順に読み上げ内容を決める（[Next.js 公式 a11y ドキュメント](https://nextjs.org/docs/architecture/accessibility)）が、本アプリの `layout.tsx` の `metadata.title` は `'gem-hunter'` 固定でロケール非依存、`h1`（`messages.home.title`）もブランド名で ja/en 同一——**言語切替では title も h1 も変化しないため、route announcer は何もアナウンスしない**。ここは新規実装が要る。
+
+### 4.1 確定案: 新規コンポーネント `LocaleSwitchAnnouncer`（`FocusOnNavigate` は転用しない・並置する）
+
+```tsx
+// src/ui/locale-switch-announcer.tsx（新規・'use client'）
+'use client'
+
+import { useEffect, useRef } from 'react'
+
+/**
+ * ロケール切替（`[locale]` セグメントを跨ぐ next/link 遷移）の完了を支援技術へ伝える。
+ *
+ * Next.js の route announcer は document.title の変化だけを見て読み上げを判断するが
+ * （`focus-on-navigate.tsx` 冒頭コメント / https://nextjs.org/docs/architecture/accessibility）、
+ * 本アプリの document.title は 'gem-hunter' 固定でロケール非依存のため、言語切替では
+ * 一切アナウンスされない（a11y_i18n round2 指摘）。`ui-ux-guidelines.md` §7.2 の
+ * ライブリージョン規律（初期 DOM に空で常設し、中身だけを書き換える）を踏襲し、
+ * `FocusOnNavigate` と同じ「初回マウント時は発火しない」ガードで、ロケールが
+ * 変化したときだけ内容を書き込む。
+ *
+ * 🔴 フォーカスは動かさない: `LocaleSwitcher` の各 `<Link key={option}>` は
+ * remount されない設計（`LOCALES` の固定配列・key 不変）で、クリックした要素は
+ * ブラウザの既定動作でフォーカスを保持し続ける。ここで forced focus() を呼ぶと、
+ * 既に正しく「現在のロケールリンク」に乗っているフォーカスを意味なく奪う恐れの方が
+ * 実害として大きいため、通知専任にする（`FocusOnNavigate` を流用しない理由）。
+ *
+ * ⚠️ 未検証事項（要 E2E・round3 で残す）: `[locale]` はアプリの root layout
+ * （`app/[locale]/layout.tsx`）自身のパラメータであり、ロケール切替時に
+ * `SiteHeader` 配下（本コンポーネントを含む）が remount されずに props 更新だけで
+ * 済むのか、それとも新しい React ツリーとして張り直されるのかは公式ドキュメントに
+ * 明記がない（`node_modules/next/dist/docs/` に該当記述なし）。remount される場合、
+ * 本コンポーネントも `isFirstRender` が再度 true になり、その回だけ何もアナウンス
+ * されない（フォーカス喪失は起きないが通知が抜ける）。この分岐を先回りして
+ * 複雑にする実装は今は行わない（YAGNI）。§5 の E2E で実機確認し、赤くなったら
+ * 本コンポーネントの設置位置を `SiteHeader` から `layout.tsx` の永続要素へ
+ * 昇格させる対応に切り替える。
+ */
+export function LocaleSwitchAnnouncer({
+  currentLocale,
+  announcedLabel,
+}: {
+  currentLocale: string
+  announcedLabel: string
+}) {
+  const liveRef = useRef<HTMLSpanElement>(null)
+  const isFirstRender = useRef(true)
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      // 初回マウント（ページを開いた瞬間）では発火しない。
+      isFirstRender.current = false
+      return
+    }
+    if (liveRef.current) {
+      liveRef.current.textContent = announcedLabel
+    }
+  }, [currentLocale, announcedLabel])
+
+  return <span ref={liveRef} role="status" aria-live="polite" className="sr-only" />
+}
+```
+
+```tsx
+// src/ui/locale-switcher.tsx（Server Component のまま・変更点は末尾に1行追加のみ）
+export function LocaleSwitcher({ currentLocale, currentPath, labels }: LocaleSwitcherProps) {
+  return (
+    <nav aria-label={labels.navLabel} className="flex flex-wrap items-center gap-1">
+      {LOCALES.map((option) => {
+        /* 既存のまま（変更なし） */
+      })}
+      <LocaleSwitchAnnouncer
+        currentLocale={currentLocale}
+        announcedLabel={labels.switchedAnnouncement}
+      />
+    </nav>
+  )
+}
+```
+
+- `LocaleSwitcher` 自体は **Server Component のまま**（frontend_arch round2 決定を尊重・hooks 化しない）。追加されるのは末尾の小さな `'use client'` リーフ 1 個だけで、これは既存の `FocusOnNavigate`（`page.tsx` が同じ形で使用中）と**同一クラスの許容済みパターン**——「入力欄とコントロールのトリガーだけ」という `NFR-3` の字義を厳密には超えるが、この逸脱は本 PR で新規に作るものではなく、既存コードベースに既に前例がある（`FocusOnNavigate` 自身がこの前例）。NFR-3 の解釈問題を新たに広げるものではない。
+- 新規 i18n キー: `messages.common.localeSwitcher.switchedAnnouncement`（ja: `"言語を日本語に切り替えました"` / en: `"Switched to English."`）。**ロケールごとに固定 1 文でよい**（動的に言語名を差し込む必要はない。今表示されているのが何語かは、その言語自身の文で言えば済む）。
+
+---
+
+## 5. 追加すべきテスト
+
+| ファイル | 追加内容 |
+|---|---|
+| `e2e/a11y.spec.ts` | **新規 axe スキャン 2 本**（現状は検索結果画面・詳細画面のみで、未検索状態と 404 は axe 未カバー）: ① `/ja` を未検索のまま開いて axe scan（serious/critical = 0）② `/ja/repos/does-not-exist/does-not-exist` を開いて axe scan（serious/critical = 0）。新規画像（`alt=""`）が axe の `image-alt` 等に抵触しないことをここで機械的に担保する |
+| `e2e/sp-9-loading-empty.spec.ts` | 既存の「0 件は該当なしの文言を role="status" で明示する」テストに手順を追加: 画像 `main img[alt=""]` が可視であることの確認、および **`status.locator('img')` の count が 0** であることの確認（§1 で確定した「ライブリージョンの外に置く」という構造契約をテストで固定する。壊れたら axe ではなく必ずこのテストが先に落ちる設計にする） |
+| `e2e/sp-6-idle.spec.ts` | 既存の「idle 文言は表示されず…」テストに手順を追加: `main img[alt=""]` が可視であること、`hasKeyword` になった後（検索実行後）は同 `<img>` が `toHaveCount(0)` になることを確認（検索中は非表示にする設計の回帰防止） |
+| `e2e/sp-6-notfound.spec.ts` | 既存テストに手順を追加: `main img[alt=""]` が可視であること |
+| `e2e/sp-8-locale.spec.ts` | **新規手順**を追加: ① 言語切替クリック直後に `document.activeElement` が切替前にクリックしたリンク（= 切替後は `aria-current="true"` を持つ要素）のままであること（`page.evaluate(() => document.activeElement?.textContent)` 等で検証。フォーカス保持を実機で確定させる——§4 の「未検証事項」をここで解消する）② 切替直後に `nav[aria-label] >> role=status` の内容が期待テキスト（`switchedAnnouncement`）に更新されること |
+| `src/ui/locale-switch-announcer.test.tsx`（新規・単体） | React Testing Library で: ① 初回 render 時は live region が空文字であること（`isFirstRender` ガードの検証）② `currentLocale` prop を変えて rerender すると `role="status"` の `textContent` が `announcedLabel` に更新されること |
+| `src/ui/locale-switcher.test.tsx` | 既存 4 ケースに `LocaleSwitchAnnouncer` が `<nav>` 内に描画されること（`role="status"` の存在）だけを軽く追加（詳細な発火ロジックは上記の専用単体テストに任せる。既存ケースの `currentPath` props API は変更しないため大規模書き換えは不要——frontend_arch round2 の決定どおりユニットテスト資産を壊さない） |
+| `src/ui/repository-list.test.tsx` | 0 件時の出力に `role="status"` の `<p>` と `<img alt="">` が兄弟であること（`img` が `status` 要素の**外**にあること）を検証するケースを追加。既存の 0 件ケースへの追記で足りる |
+
+## ラウンド 4
+
+### `lead` — 合意
+<sub>2026-08-21T18:46:56+09:00</sub>
+
+# lead 最終合意（round 4）— 争点 A〜E の決着
+
+round 3 で 4 レンズすべてが実装可能な粒度まで落とした。lead はこれを以下の形で確定させる。
+**1 点だけ round 3 の結論を覆す**（争点 C の「手書き SVG 再作図」）。理由を明示する。
+
+## 争点 A: 画像を入れる箇所
+
+| 面 | 判定 | 根拠 |
+|---|---|---|
+| ロゴ（ヘッダー） | **採用** | ユーザー明示①② |
+| favicon / アプリアイコン | **採用** | ユーザー明示① |
+| 未検索（待ち受け） | **採用** | ユーザー明示③（round 2 の縮退を lead が差し戻し済み） |
+| 検索結果 0 件 | **採用** | ユーザー明示④（同上） |
+| 404 | **採用** | 画面が最も空白で絵の効果が最大（ux_visual round 1） |
+| OG 画像 | **採用** | 言語別出し分けの唯一の正当な適用先 |
+| 読み込み中 | **不採用** | スケルトンの領分（#169 の別 Issue）。絵を足すと 4 状態の描き分けが濁る |
+| エラー | **不採用** | GOV.UK の即物性原則。謝罪・装飾はエラー回復を助けない |
+| README 取得不可 | **不採用** | 情報密度を落とすだけ |
+
+## 争点 B: 画像内に文字を焼き込むか / 言語別に分けるか
+
+- **装飾イラスト（ロゴ・待ち受け・0 件・404）**: 文字を一切焼き込まない。`alt=""` 固定。**ロケール非依存の 1 枚**。
+  - WCAG 1.4.5（Images of Text）を踏まないため。かつ a11y_i18n の i18n 反論（**locale は言語であって文化圏ではない**。言語に文化的モチーフを紐づけるとステレオタイプ化する）を採用。
+  - a11y_i18n は round 2 で「文字なし・情報量ゼロの意匠差ならロケール別も WCAG 上は許容」と訂正したが、**情報量ゼロの差分のために資産を 2 倍持ち同期し続けるコストに見合わない**ため採らない。
+- **OG 画像のみロケール別**: `next/og` の `ImageResponse` が背景アセット 1 枚の上に `getMessages(locale)` のタイトルを**実行時合成**する。
+  - 文字は焼き込みではないので `messages/*.json` を直せば即追随し、「テキストは新しいが画像は古い」というドリフトが構造的に起こらない。
+  - OG は SNS クローラーが取得するだけでブラウザの DOM に現れないため、`alt` / ライブリージョン / axe / Lighthouse のいずれの射程にも入らない。
+  - → **ユーザー指示「言語ごとに画像を使い分けることも考えてください」への回答は「装飾は 1 枚・OG のみ言語別」**。
+
+## 争点 C: アセットの形式・生成・配信 — 🔴 round 3 の結論を 1 点覆す
+
+`perf_asset` round 3 は「logo / hero-idle / empty-result / not-found の 4 点は **gpt-image-2 の PNG を参照してエージェントが SVG を手書きで再作図**」と決めた。**lead はこれを採らない。**
+
+- **理由 1（指示との整合・決定的）**: ユーザー指示は「gpt-image-2 を利用して……画像生成、活用するようにしてください」である。手書き再作図は gpt-image-2 を**ムードボードに格下げ**し、実際に配信される絵はエージェントの自作になる。これは指示の実質的な不履行。
+- **理由 2（予算は制約になっていない）**: lead が実測した（`tools/infographic/generate.py` + `sharp`）。`gpt-image-2` は `background: "transparent"` に対応し、アルファ付き PNG を返す。**256px へ縮小した WebP（アルファ保持）は 10.6KB**。表示寸法は 96〜160px なので 2× でも同水準に収まり、perf_asset 自身の予算（1 ページ合計 100KB・個別 30KB）に大きく余裕がある。**予算内に収まるものを予算を理由に作り直す必要はない。**
+- **理由 3（品質リスク）**: LLM が手書きする SVG パスの品質は未検証で、実測した gpt-image-2 の出力（フラットな均一線のベクター風・低品質設定でも実用水準）より良くなる保証がない。**検証済みのものを未検証のもので置き換えない。**
+
+**確定**: 全アセットを **gpt-image-2 の生成物そのもの**で配信する。形式は透過 WebP（`sharp` で縮小・変換）。ただし Next.js の `icon.*` file convention は WebP を受け付けない（`.ico/.jpg/.jpeg/.png/.svg` のみ）ため、**favicon だけ PNG** とする。
+
+| アセット | 生成 | 配信ファイル | 表示寸法 |
+|---|---|---|---|
+| logo | 1024²・透過 | `public/images/logo.webp`（96px へ縮小） | 24×24 |
+| favicon | 同じ生成物を流用 | `app/icon.png`（256px） | ブラウザ任せ |
+| hero-idle | 1024²・透過 | `public/images/hero-idle.webp`（640px） | 最大 320px |
+| empty-result | 1024²・透過 | `public/images/empty-result.webp`（256px） | 96〜120px |
+| not-found | 1024²・透過 | `public/images/not-found.webp`（320px） | 160px |
+| og-background | 1536×864・不透過 | `public/images/og-background.png`（1200×630 へ変換） | OG 1200×630 |
+
+- `app/favicon.ico` は**削除せず維持**（古いブラウザ・クローラーのフォールバック。`icon.*` と併存できることを frontend_arch が公式ドキュメント実読で確認済み）。
+- プロンプトの正本は `tools/ui-assets/prompts/*.txt`。生成は `tools/infographic/generate.py` を**そのまま呼ぶ**（API 実装を 2 つ持たない）。縮小・変換は新規 `tools/ui-assets/to_web_assets.mjs`（`sharp` 使用）。
+- 中間生成物（1024² の原寸 PNG）はコミットしない。**再生成は「同じ結果の復元」ではなく「デザインを変えたいときの起点」**（画像生成は非決定的）。正本は配信ファイル（git 管理）である。
+
+## 争点 D: ヘッダー共通化と言語切替の右上移設
+
+`frontend_arch` round 2 の決定（`<SiteHeader>` を page から呼ぶ・クライアント JS 追加ゼロ）を**そのまま採用**する。
+`LocaleSwitcher` は現行の `currentPath` props 版のまま（hooks 化しない → `NFR-3` 抵触なし・既存ユニットテスト無傷）。
+右上配置は `<header>` の `justify-between` 右ブロック（言語切替 + ログイン）で実現する。
+`layout.tsx` からヘッダーを外すことで失う「h1 単一性のフレームワーク強制」は、**全ルートで `header`/`h1` がちょうど 1 つ**を検証する新規 E2E で置き換える。
+
+## 争点 E: a11y と機械ゲート
+
+`a11y_i18n` round 3 の確定マークアップをそのまま採用する。要点:
+
+- 0 件の画像は **`role="status"` の要素の外（兄弟）** に置く（ライブリージョンの不変条件を構造で守る）。
+- すべての装飾画像は `alt=""` 単独（`aria-hidden` を重ねない。既存 `repository-list.tsx` の装飾画像と実装パターンを割らない）。
+- 新規見出し要素を作らないので `§7.0`（h1 は共有ヘッダー 1 箇所）に抵触しない。
+- **ロケール切替が支援技術へ一切通知されない既存欠陥**（`document.title` も `h1` も ja/en で不変のため route announcer が沈黙する）を、新規 `LocaleSwitchAnnouncer`（`sr-only` の `role="status"`・フォーカスは動かさない）で是正する。`FocusOnNavigate` は目的（remount によるフォーカス回復）が違うので転用しない。
+- 機械ゲートで blocking なのは **Lighthouse Accessibility = 100 のみ**（`tools/run_lighthouse.mjs` 5-7 行目のユーザー確定事項）。`docs/project-mission.md:24` の「CI ゲート」表記は誤りなので本 PR で 1 行修正する。
+
+## 残る未確認事項（実装時に潰す・断定しない）
+
+1. `opengraph-image.tsx` が `readFile(process.cwd() + 'public/...')` で背景を読む方式が、OpenNext + Cloudflare Workers のビルドで成立するか。**ビルドで検証する**。成立しなければ背景埋め込みを諦め、`ImageResponse` 内で図形とテキストだけを組む形に落とす（ロケール別テキスト合成という要件は維持できる）。
+2. ロケール切替時に `SiteHeader` 配下が remount されるか（`LocaleSwitchAnnouncer` の初回ガードが再度 true になるか）。**E2E で実機確認する**。赤くなったら設置位置を `layout.tsx` の永続要素へ昇格させる。
+3. `hero-idle` が LCP 要素になるか。**実装後に Lighthouse の LCP 要素実測で確認する**。
+
+### `lead` — 判定
+<sub>2026-08-21T18:47:53+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: 画像を入れる箇所",
+      "design": "ロゴ / favicon / 未検索の待ち受け / 検索結果 0 件 / 404 / OG の 6 面に採用。読み込み中・エラー・README 取得不可には入れない",
+      "artifacts": ["src/ui/site-header.tsx（新規）", "app/[locale]/page.tsx（改修）", "src/ui/repository-list.tsx（改修）", "app/[locale]/repos/[owner]/[repo]/not-found.tsx（改修）", "app/[locale]/opengraph-image.tsx（新規）", "app/icon.png（新規）"],
+      "rejected": "ux_visual round 2 の『404 + favicon + OG の 3 点のみ』への縮退。ユーザーが名指しした待ち受け・0 件を落とす根拠（頻度コスト・ライブリージョンの脆さ）はいずれも回避可能で、明示指示を上回らない"
+    },
+    {
+      "issue": "B: 画像内の文字焼き込みと言語別出し分け",
+      "design": "装飾イラストは文字を焼き込まずロケール非依存 1 枚・alt=\"\" 固定。OG 画像だけ next/og の ImageResponse で背景 1 枚の上に getMessages(locale) のタイトルを実行時合成し、ja/en で見た目を変える",
+      "artifacts": ["app/[locale]/opengraph-image.tsx（新規）", "messages/ja.json・messages/en.json（キー追加）"],
+      "rejected": "装飾イラストをロケール別に 2 枚持つ案。WCAG 上は許容されうるが、情報量ゼロの意匠差に同期コストを払う理由がなく、locale≠culture のステレオタイプ化リスクを負う"
+    },
+    {
+      "issue": "C: アセットの形式・生成・配信",
+      "design": "gpt-image-2 の生成物そのものを透過 WebP（favicon のみ PNG）へ変換して配信する。プロンプト正本は tools/ui-assets/prompts/、生成は tools/infographic/generate.py を再利用、縮小変換は新規 tools/ui-assets/to_web_assets.mjs（sharp）",
+      "artifacts": ["tools/ui-assets/prompts/*.txt（新規 5 本）", "tools/ui-assets/to_web_assets.mjs（新規）", "tools/ui-assets/README.md（新規）", "public/images/*.webp（新規）", "app/icon.png（新規）"],
+      "rejected": "perf_asset round 3 の『PNG を参照してエージェントが SVG を手書き再作図』。gpt-image-2 をムードボードに格下げしユーザー指示を実質不履行にする。実測で 256px 透過 WebP は 10.6KB であり予算（1 ページ 100KB）は制約になっていない。手書き SVG の品質は未検証"
+    },
+    {
+      "issue": "D: ヘッダー共通化と言語切替の右上移設",
+      "design": "layout.tsx からヘッダーを外し、Server Component の <SiteHeader> を一覧・詳細（成功/エラー）・404 の各 page から呼ぶ。LocaleSwitcher は currentPath props 版のまま（クライアント JS 追加ゼロ）。右上ブロックに言語切替 + ログインを置く",
+      "artifacts": ["src/ui/site-header.tsx（新規）", "app/[locale]/layout.tsx（改修）", "app/[locale]/page.tsx（改修）", "app/[locale]/repos/[owner]/[repo]/page.tsx（改修）", "app/[locale]/repos/[owner]/[repo]/not-found.tsx（改修）", "e2e/sp-347-header.spec.ts（新規）"],
+      "rejected": "LocaleSwitcher を usePathname/useSearchParams の Client Component にして layout に Suspense で埋める案（frontend_arch round 1）。NFR-3 と正面衝突し、JS を足さずに済む対案が実在するため撤回された"
+    },
+    {
+      "issue": "E: a11y と機械ゲート",
+      "design": "装飾画像は alt=\"\" 単独・role=\"status\" の外に配置。新規 LocaleSwitchAnnouncer で言語切替の無通知を是正（フォーカスは動かさない）。blocking ゲートは Lighthouse Accessibility=100 のみで、project-mission.md:24 の誤表記を修正する",
+      "artifacts": ["src/ui/locale-switch-announcer.tsx（新規）", "src/ui/locale-switcher.tsx（改修）", "docs/project-mission.md（1 行修正）", "e2e/a11y.spec.ts・sp-6-idle・sp-6-notfound・sp-8-locale・sp-9-loading-empty（改修）"],
+      "rejected": "FocusOnNavigate の転用によるフォーカス強制移動。remount によるフォーカス喪失という前提が言語切替では成立せず、正しく乗っているフォーカスを奪う実害の方が大きい"
+    }
+  ],
+  "assets": [
+    {"id": "logo", "purpose": "共有ヘッダーの h1 内ロゴ（24px）", "size": "1024x1024 生成 → 96px webp", "text_in_image": "no", "per_locale": "no", "motif": "原石 1 個・4〜6 面の大きなファセット・極太輪郭・小サイズでも判別できるシルエット"},
+    {"id": "favicon", "purpose": "app/icon.png（ブラウザタブ）", "size": "logo の生成物を 256px png へ", "text_in_image": "no", "per_locale": "no", "motif": "logo と同一意匠"},
+    {"id": "hero-idle", "purpose": "未検索（待ち受け）状態", "size": "1024x1024 生成 → 640px webp", "text_in_image": "no", "per_locale": "no", "motif": "虫眼鏡 + 灰色の小石の群れ + その中の 1 個だけ青い原石。下 1/3 を空ける"},
+    {"id": "empty-result", "purpose": "検索結果 0 件", "size": "1024x1024 生成 → 256px webp", "text_in_image": "no", "per_locale": "no", "motif": "虫眼鏡 + 小石だけ・原石なし・レンズ内に点線の空シルエット。灰色のみで accent を使わない"},
+    {"id": "not-found", "purpose": "404 ページ", "size": "1024x1024 生成 → 320px webp", "text_in_image": "no", "per_locale": "no", "motif": "空の展示台 + その上に浮かぶ点線の原石シルエット"},
+    {"id": "og-background", "purpose": "OG 画像の背景（文字は実行時合成）", "size": "1536x864 生成 → 1200x630 png", "text_in_image": "no", "per_locale": "no（文字だけ per_locale）", "motif": "右 40% に研磨済みの石の群れ + 紛れた青い原石。左 55-60% は無地の余白"}
+  ],
+  "tasks": [
+    {"id": "T-1", "title": "tools/ui-assets/ 一式（プロンプト 5 本・変換スクリプト・README）と 6 アセットの生成・配置", "actor": "claude", "depends_on": [], "sp": "sp:3"},
+    {"id": "T-2", "title": "契約先行: src/ui/site-header.tsx 新規作成 + LocaleSwitcherLabels の export + messages のキー追加", "actor": "claude", "depends_on": [], "sp": "sp:2"},
+    {"id": "T-3", "title": "layout.tsx からヘッダー撤去 + page.tsx への SiteHeader 配線 + 待ち受けイラスト", "actor": "claude", "depends_on": ["T-2"], "sp": "sp:3"},
+    {"id": "T-4", "title": "詳細ページ 2 分岐・not-found への SiteHeader 配線 + auth 新規配線 + 404 イラスト + opengraph-image.tsx + app/icon.png", "actor": "claude", "depends_on": ["T-2"], "sp": "sp:5"},
+    {"id": "T-5", "title": "0 件イラスト（role=status の兄弟）+ LocaleSwitchAnnouncer + 単体テスト + E2E 追加改修", "actor": "claude", "depends_on": ["T-2"], "sp": "sp:5"},
+    {"id": "T-6", "title": "ドキュメント更新（ui-ux-guidelines §7.4 拡張・project-mission.md:24 修正・ADR 0015 起票）", "actor": "claude", "depends_on": ["T-3", "T-4", "T-5"], "sp": "sp:2"},
+    {"id": "T-7", "title": "run_checks 実行・プレビューデプロイ・PR 作成", "actor": "claude", "depends_on": ["T-6"], "sp": "sp:2"}
+  ],
+  "critical": [
+    "opengraph-image.tsx が readFile(process.cwd()) で背景画像を読む方式は OpenNext + Cloudflare Workers のビルドで成立するか未検証。ビルドで確認し、駄目なら背景埋め込みを外して図形 + テキストのみへ落とす（ロケール別テキスト合成の要件は維持できる）",
+    "ロケール切替時に SiteHeader 配下が remount されるかが公式ドキュメントに明記されていない。remount される場合 LocaleSwitchAnnouncer の初回ガードが再度 true になり通知が抜ける。E2E で実機確認し、赤ければ設置位置を layout.tsx の永続要素へ昇格させる",
+    "layout.tsx からヘッダーを外すと『1 ページ h1 は 1 つ』のフレームワーク強制が失われ、運用規律 + E2E 保証に格下げされる。全ルートで header/h1 がちょうど 1 つであることの新規 E2E が必須（これを書かずにマージしない）"
+  ],
+  "open_questions": [
+    "『言語ごとに画像を使い分ける』の解釈: 本 verdict は『装飾イラストは 1 枚・OG のみ言語別テキスト合成』と決めた。装飾イラスト自体も ja/en で図案を変えたい場合はユーザー判断が要る（ただしチームは locale≠culture のステレオタイプ化リスクを理由に非推奨としている）"
+  ]
+}
