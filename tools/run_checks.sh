@@ -224,6 +224,15 @@ else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# WIP 自動コミット抑止ガードの回帰テスト（Issue #304 / L-131）。
+# 隔離した一時 git リポジトリでフックを実行し、変異テスト中の一時改変が拾われないこと・
+# マーカーが無ければ従来どおり保全されること・置き忘れが TTL で失効することを実測する。
+if [ -f "$REPO_ROOT/tools/test_wip_commit_guard.sh" ]; then
+  run_check "WIP 抑止ガード回帰テスト (test_wip_commit_guard.sh)" bash tools/test_wip_commit_guard.sh
+else
+  skip_check "WIP 抑止ガード回帰テスト (test_wip_commit_guard.sh)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="
