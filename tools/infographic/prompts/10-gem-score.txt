@@ -2,13 +2,13 @@ A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, d
 Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
 Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
 
-=== ABSOLUTE TEXT RULE ===
+--- ABSOLUTE TEXT RULE ---
 Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
 Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
 The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
 All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
 Hand-lettering must stay highly legible at a glance.
-=========================
+-------------------------
 
 
 TITLE (top banner, largest text):
