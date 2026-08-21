@@ -14,7 +14,7 @@
 | `gh` が 403 を返す（`[gh-shim]` ガイダンスが出る） | L-114 |
 | スコープ外リポジトリへの `git clone` / `ls-remote` が 403、`add_repo` が無い | L-117 |
 | OpenNext Cloudflare のプレビューでのみリダイレクト / パス解決が期待どおりにならない | L-129 |
-| 本番デプロイ系コマンド（`wrangler deploy` 等）が `permissions.allow` 済みでも auto mode classifier にブロックされる | L-130 |
+| 本番デプロイ系コマンド（`wrangler deploy` 等）が `permissions.allow` 済みでも auto mode classifier にブロックされることがある（毎回ではない） | L-130 |
 
 ---
 
@@ -237,53 +237,69 @@ Next.js 本体は `compile()` を `{ validate: false }` で呼ぶため、ロー
 
 ---
 
-## L-130: クラウドセッションは `wrangler deploy`（本番デプロイ）に到達できない — auto mode classifier がブロックする（2026-08-20 実機検証・Issue #288）
+## L-130: 本番デプロイ（`wrangler deploy`）は auto mode classifier にブロックされることがある（非決定的・原因未確定・2026-08-20 初出 / 2026-08-21 訂正・Issue #288 / #300）
 
-**症状**: `npm run deploy`（= `opennextjs-cloudflare build && wrangler deploy`）が
+**症状**: `npm run deploy`（= `opennextjs-cloudflare build && wrangler deploy --tag "$(git rev-parse --short=12 HEAD)"`）が
 `Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier.`
-で拒否される。無人ルーティンセッション（background / foreground 両方）で 3 回、有人セッションで 1 回、
-計 4 回すべて再現。`.claude/settings.json` の `permissions.allow` に `Bash(npm run deploy:*)` /
+で拒否されることがある。`.claude/settings.json` の `permissions.allow` に `Bash(npm run deploy:*)` /
 `Bash(npx wrangler deploy:*)` を追加済みでもブロックは解けない。
+
+🔴 **毎回ブロックされるわけではない**（初出時の「無人・有人を問わず 4 回すべて再現」という断定は 2026-08-21 に訂正した）。実測の内訳:
+
+| 区分 | 回数 | 内訳 |
+|---|---|---|
+| ブロック | 5 回 | 2026-08-20 07:45 JST 無人ルーティン 3 回（複合 background / 単独 background / 単独 foreground）/ 2026-08-21 09:17 JST 頃 有人 1 回 / 2026-08-21 11:40 JST 無人 1 回 |
+| **成功** | **2 回** | 2026-08-21 10:32 JST 無人ルーティン（Version `df728490-...` / tag `200743832fe6`）/ 2026-08-21 10:45 JST（tag `d9ab80106e59`） |
+
+同一コマンド・同一 `permissions.allow` 設定でも結果が割れており、**何が分かれ目かは未確定**。初回試行のエラー文言は
+`Stage 2 classifier error - blocking based on stage 1 assessment` で **transient と明示** されていた。
 
 **切り分け結果**:
 - `npx opennextjs-cloudflare build` は単体実行では成功する（`.open-next/worker.js` の生成まで完了）。
   ブロック対象は **ビルドではなく `wrangler deploy`（本番反映そのもの）**
 - `npx wrangler versions upload --preview-alias ...`（プレビュー反映）と `npx wrangler whoami` は成功する。
   wrangler バイナリ・Cloudflare API への到達・認証はブロック対象ではない
-- `python3 tools/check_deploy_gate.py --json` は `can_deploy: true` で通過している（プロジェクト側のゲートは
-  問題なく、ブロックは Claude Code 本体の auto mode classifier 側で起きている）
+- `python3 tools/check_deploy_gate.py --json` はプロジェクト側のゲートであり、分類器のブロックとは独立に判定される
+- **成功した実行も存在する**（上表の 2 回。Issue #263 のコメントと `tools/check_prod_drift.py` の出力で確認）
 
-**一次情報（公式ドキュメント・2026-08-20 `WebFetch` で確認）**:
-- auto mode classifier は「`permissions` システムの後段で動く第二のゲート」（`docs/en/auto-mode-config`:
-  "The classifier is a second gate that runs after the permissions system"）
-- 分類器は `autoMode` 設定を **プロジェクトの `.claude/settings.json` / `.claude/settings.local.json` からは
-  読まない**。読むのはユーザー設定 `~/.claude/settings.json`・managed settings・`--settings` フラグのみ
-  （同ページ: "The classifier doesn't read `autoMode` from project settings in `.claude/settings.json` or
-  `.claude/settings.local.json`"）
-- 本番デプロイは分類器の組み込み `soft_deny` リストに明示的に含まれる（`docs/en/permission-modes`:
-  "soft_deny: every built-in soft block rule, including force push, `curl | bash`, production deploys, and
-  auto-mode bypass"）。`production` 等デプロイ先を示すブランチへの push も「分類器が本番デプロイとして
-  独自に判断する」と明記されている
-- セッション内からの解除は公式非対応: `anthropics/claude-code` Issue #60004
-  （"Auto-mode permission classifier repeatedly denies user-authorized actions; cannot be unblocked
-  in-session"）は **Closed as not planned**。エージェントが `permissions.allow` を自己編集して解除しようと
-  する経路も同 Issue 内で「self-modification としてブロックされる」と報告されている
-- 🔴 **未確認（一次情報で裏取りできなかった）**: 「narrow な `Bash(...)` allow ルールは分類器より前段の
-  permission ルールで即座に解決される（decision order の step 1）」という一般記述（`docs/en/permission-modes`）
-  と、本エントリの実測（`Bash(npm run deploy:*)` 等の narrow allow ルールが存在してもブロックされた事実）が
-  一致しない。本番デプロイという行為が narrow allow ルールの前段解決の対象外になっているのか、他の要因が
-  あるのかは、公式ドキュメントの記述だけでは断定できない
+**一次情報（公式ドキュメント・2026-08-21 に `docs/en/auto-mode-config` / `docs/en/permission-modes` / `docs/en/errors` を全文確認）**:
+- auto mode classifier は「`permissions` システムの後段で動く第二のゲート」
+- 本番デプロイは分類器の組み込み `soft_deny` に含まれる。ただし `soft_deny` は `hard_deny` と違い
+  "destructive actions that user intent can clear"（`allow` 例外や explicit user intent で解除され得る）
+- **explicit user intent**: "if the user's message directly and specifically describes the exact action Claude is
+  about to take, the classifier allows it… General requests don't count as explicit intent."
+  → 「適切に対応して」のような一般的委任は要件を満たさない（**ユーザーのメッセージ** が対象で、Claude 自身の発話は対象外）
+- **繰り返しブロックの閾値**: 3 回連続または通算 20 回で auto mode が一時停止する。🔴 **headless（無人）では
+  プロンプトへフォールバックできないため、閾値に達したあとはアクションが実行されないまま静かに素通りする**（エラーにならない）
+- 分類器は `autoMode` をプロジェクトの `.claude/settings.json` / `.claude/settings.local.json` からは **読まない**。
+  読むのはユーザー設定 `~/.claude/settings.json`・managed settings・`--settings` のみ → 緩和は **A-6 相当**
+- 分類器は **CLAUDE.md とドキュメントの文脈を読む**（"The classifier reads the same CLAUDE.md content Claude itself loads"）
+- 分類器は **non-default branch のうち名前がデプロイ先を示すもの**（`production` / `release` / `gh-pages` 等）への
+  push を、それ自体で本番デプロイとして独自に判定する
+- 🔴 **未確認（一次情報で説明できない）**: 公式の decision order は「narrow な `Bash(...)` allow ルールは分類器より前段で
+  即座に解決される」と述べ、本番デプロイをその例外とする記述は **どこにもない**。にもかかわらず narrow allow が
+  ある状態でブロックされたという実測がある。バージョン差か未文書の例外かは断定できない
+- 🔴 **未確認**: `Stage 2 classifier error` / `stage 1` という語は公式ドキュメントに存在しない。性質が最も近いのは
+  「unparseable response」カテゴリで、**公式がリトライを推奨している**（"Retry the action; this usually succeeds on the next attempt."）
 
-**対策**:
-- 🔴 **回避しようとしてコマンドを分解しない**（`npm run deploy` を `opennextjs-cloudflare build && wrangler
-  deploy` に割って個別実行する、別名スクリプト経由で `wrangler deploy` を呼ぶ等）。分類器のブロックは
-  バグではなく設計された保護であり、迂回は分類器の意図に反する
-- 「マージ（`main` への反映）」と「本番デプロイ（`wrangler deploy` の実行）」を分離して扱う。マージ・push
-  自体は妨げられない。手順・乖離検知・分類器解除の選択肢は
-  `docs/03_design/infrastructure/cloudflare-infrastructure.md` §8.2.2 を参照
-- 分類器解除に必要な設定変更（`~/.claude/settings.json` 側の `autoMode` 調整・managed settings 側の調整等）は
-  **飼い主のアカウント権限が必要な操作** であり、Claude が自律的に行ってよい範囲ではない（A-6 相当）
+**対策（行動指針）**:
+- 🔴 **回避しようとしてコマンドを分解しない**（`npm run deploy` を `opennextjs-cloudflare build && wrangler deploy` に
+  割って個別実行する、別名スクリプト経由で `wrangler deploy` を呼ぶ等）。**分類器に気づかれないためにブランチ名を
+  選ぶ**（デプロイを引き起こす push を無害そうな名前のブランチへ向ける）のも同性質の迂回であり採らない。
+  分類器のブロックはバグではなく設計された保護
+- **リトライは同一セッション内で 1 回まで**。transient（unparseable response）なら 1 回で通ることが多い。2 回目も
+  ブロックされたら打ち切る。3 回目以降は根拠がないうえ、連続ブロックの閾値に達すると **headless では黙って
+  何も実行されない状態** になるだけ
+- **explicit user intent を人為的に作らない**。ユーザーが自分の言葉で `npm run deploy` を名指しした場合はそれが
+  intent として働くが、それを言わせるために確認を装うのは筋が悪い
+- 「マージ（`main` への反映）」と「本番デプロイ（`wrangler deploy` の実行）」を分離して扱う。マージ・push 自体は
+  妨げられない。手順・乖離検知・恒久対策は
+  `docs/03_design/infrastructure/cloudflare-infrastructure.md` §8.2.2 / §8.2.3 を参照
+- **恒久対策は `D-31`（Workers Builds へ発火点を移す）**。分類器の非決定性に本番リリースの生命線を預けない
+  （実測 7 試行中 5 ブロック）。移行後も本エントリは削除しない（制約自体は残るため）
 
-**保持理由**: 本番デプロイは `SD-1`（動作確認できる状態で終わる）と直結する重要な工程で、無人ルーティンで
-毎回再現するため踏み直しやすい。ビルドまでは成功してログが緑に見えるため、「デプロイが成功したように見えて
-実は本番へ出ていない」誤認を招きやすい。詳細は Issue #288。
+**保持理由**: 本番デプロイは `SD-1`（動作確認できる状態で終わる）と直結する重要な工程で、無人ルーティンで再現する。
+ビルドまでは成功してログが緑に見えるため、「デプロイが成功したように見えて実は本番へ出ていない」誤認を招きやすい。
+さらに **「必ずブロックされる」と思い込むと、実際には通る経路を最初から諦める**（試さずに保留する）判断を誘発する
+ため、非決定性そのものを記録に残す。詳細は Issue #288 / #300、議論記録は
+`content/discussions/prod-deploy-gate-20260821/whiteboard.md`。
