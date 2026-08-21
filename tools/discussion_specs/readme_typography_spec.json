@@ -1,0 +1,43 @@
+{
+  "topic": "詳細画面の README を書式どおりに表示する方式を確定する（Tailwind v4 / Workers 制約下）",
+  "brief": "飼い主フィードバック（2026-08-21・Issue #339）: 「README について参照できるようになったが**書式が反映されていない**」。実機スクリーンショットでは、README の見出し・リスト・インラインコード・コードブロックがすべて同じ大きさの素のテキストとして縦に並んでおり、階層も余白も付いていない（唯一 `code` 相当が等幅で出ている）。現状: PR #337 で `GET /repos/{o}/{r}/readme` を `Accept: application/vnd.github.html+json` で取得し、`src/ui/readme-html.ts` が sanitize-html で 1 パス変換（許可リスト・相対 URL 解決・target=_blank 付与・見出し +2 降格（h1→h3・h6 cap・id 保持）・30,000 文字での切り詰め）してから `src/ui/readme-section.tsx` が `dangerouslySetInnerHTML` で描画している。描画側のクラスは `className=\"mt-2 max-w-none space-y-3 text-sm leading-relaxed break-words\"` だけで、実装時のコメントは「`@tailwindcss/typography` は未導入（新規依存の追加禁止・タスクスコープ外）のため `prose` は使わない。見出し・段落・リストは既定のブラウザスタイルに委ねる」と書いている。ところが本プロジェクトは **Tailwind CSS v4**（`app/globals.css` の 1 行目が `@import \"tailwindcss\";`、他に `tw-animate-css` と `shadcn/tailwind.css` を import）であり、Tailwind の Preflight がブラウザ既定スタイル（見出しのサイズ・リストのマーカーとインデント・引用・表の枠）を打ち消すため『既定のブラウザスタイルに委ねる』が成立していない。これが書式が出ない直接原因である（この仮説自体も検証対象とする）。制約: ① Cloudflare Workers（OpenNext）で動く。バンドル上限 3 MB（gzip・現在 1372 KiB）・`limits.cpu_ms: 50`。CSS はビルド時に静的化されるので実行時 CPU には効かないが、バンドル/アセットサイズと Lighthouse への影響は見る ② `NFR-3` クライアント JS を増やさない（`use client` を足さない） ③ ダークモード（`app/globals.css` のセマンティックトークン）と `docs/03_design/ui-ux/ui-ux-guidelines.md`（§2 デザイントークン・§7 a11y・§8 表示状態）に整合させる ④ サニタイズの許可リスト（`ALLOWED_TAGS`）を超えるタグは描画されないので、スタイルを当てる対象は許可済みタグに限る ⑤ README は第三者が書いた HTML であり、スタイルのために許可タグ・許可属性（特に `class` / `style`）を広げるとサニタイズの前提が変わる ⑥ 見出しは +2 降格済みなので、README 内の最上位見出しは h3 として出てくる（プレーンな `h1` セレクタ前提のスタイルは当たらない）。争点は少なくとも次の 6 つ: A) 方式の選択 — `@tailwindcss/typography`（v4 では CSS 側の `@plugin \"@tailwindcss/typography\";` で読み込む形になっているはず。**最新の公式ドキュメントで v4 における導入方法・`prose` の使い方・`not-prose`・`prose-invert` / ダークモード対応の現行仕様を必ず一次情報で確認すること**）を入れるか、`app/globals.css` に自前のスコープ付き CSS（例 `.readme-content h3 { ... }`）を書くか、`readme-html.ts` の `transformTags` で各タグに Tailwind ユーティリティクラスを注入するか B) 降格済み見出し（h3 起点）と typography プラグインの既定スケール（h1/h2 前提）の噛み合わせをどう解決するか（`prose-headings:` 系の修飾で足りるか、降格の段数自体を見直すべきか） C) ダークモードの扱い（`prose-invert` を使うか、セマンティックトークンで自前定義するか。本プロジェクトのテーマ実装と整合するか） D) サニタイズとの整合 — `class` 属性を許可しないまま方式 A を成立させられるか（typography は親要素の `prose` クラスと子孫セレクタで効くはずなので許可リスト変更は不要という仮説の検証）。GitHub 由来の HTML が持つ独自クラス（`anchor` / `octicon` / `highlight` / `notranslate` 等）や `<img>` のバッジ、`<details>`/`<summary>`、絵文字画像（`g-emoji`）、シンタックスハイライト用の `<span class=\"pl-*\">` が現状どう落ちているか、書式再現にどこまで必要か E) バンドル・パフォーマンスへの影響（typography プラグイン導入時の CSS 増分の実測方法、Lighthouse への影響、`max-w-none` の扱い、モバイルでの表・コードブロックの横スクロール） F) 回帰をどう機械検査するか（現状 `tools/check_ui_dimensions.py` / `check_contrast.py` / axe / Lighthouse があるが、書式が当たっていないことは検知できなかった。E2E で「見出しの計算後フォントサイズが本文より大きい」等を検証できるか、その検査は過剰か）。",
+  "participants": [
+    {
+      "name": "tailwind_v4",
+      "model": "sonnet",
+      "lens": "Tailwind CSS v4 の現行仕様（**必ず一次情報を取得する**: context7 MCP の `mcp__context7__resolve-library-id` → `query-docs`、または WebFetch で tailwindcss.com の v4 ドキュメントと @tailwindcss/typography の README を確認。訓練データの v3 前提の知識で断定しない）。v4 でのプラグイン読み込み方法（`@plugin` ディレクティブ）・`prose` の適用単位・`prose-invert`・`prose-sm`/`prose-base` のスケール・`prose-headings:`/`prose-a:` 等の修飾子・`not-prose`・`max-w-none`・Preflight との関係・CSS 変数によるテーマ連携。本プロジェクトの `globals.css`（`@import \"tailwindcss\"` + `tw-animate-css` + `shadcn/tailwind.css`）と `postcss.config.mjs` に対して、具体的に何行足せば動くのかをファイルパスと差分レベルで示す"
+    },
+    {
+      "name": "readme_fidelity",
+      "model": "sonnet",
+      "lens": "書式の再現度（GitHub の README がどう見えるべきか vs 現在の出力）。`src/ui/readme-html.ts` の `ALLOWED_TAGS` / `ALLOWED_ATTRIBUTES` / `transformTags` を実際に読み、GitHub がレンダリングした HTML のどの要素が落ちているかを列挙する（`<details>`/`<summary>`・タスクリストのチェックボックス・シンタックスハイライトの `<span class=\"pl-*\">`・絵文字 `<g-emoji>` や `<img class=\"emoji\">`・バッジ画像・アンカーリンクの `<svg class=\"octicon\">`・脚注・アラート記法）。実際の GitHub README HTML を入手して（このセッションから `api.github.com` は自リポジトリ以外 403 になる可能性が高い。取得できない場合は `e2e/stub/server.mjs` のフィクスチャや公開ドキュメントから構造を推定し、**推定であることを明記** する）、どこまで再現すべきか・どこは捨てるべきかの線引きを提案する。見出し +2 降格が書式に与える影響も評価する"
+    },
+    {
+      "name": "perf_bundle",
+      "model": "sonnet",
+      "lens": "パフォーマンスとバンドル（Cloudflare Workers / OpenNext）。`@tailwindcss/typography` 導入時の CSS 出力増分を **実測する手順** を示し、可能なら実際に測る（`npm install` は親の許可が要るので、測れない場合は測定手順とおおよその見積もりを根拠つきで示す）。Worker バンドル 3 MB（gzip・現在 1372 KiB）と静的アセットの扱い（CSS は Workers Static Assets 側で配信されるのか Worker バンドルに入るのか。`open-next.config.ts` / `wrangler.jsonc` を読んで判定する）。Lighthouse（`tools/run_lighthouse.mjs`）の performance / accessibility への影響。巨大な README（30,000 文字上限）でのレンダリング負荷、モバイルでの表・コードブロックの横スクロール（`overflow-x-auto`）の必要性"
+    },
+    {
+      "name": "a11y_theme",
+      "model": "sonnet",
+      "lens": "アクセシビリティとテーマ整合。`docs/03_design/ui-ux/ui-ux-guidelines.md`（§2 デザイントークン・§2.4 コントロールサイズ・§7 a11y）と `app/globals.css` のセマンティックトークンを **実際に Read** し、README 本文のスタイルがトークン体系を壊さないかを判定する。ダークモードでのコントラスト（`tools/check_contrast.py` の対象範囲外になっていないか）、リンク色とフォーカスリング、コードブロックの背景色、見出しの視覚階層とセマンティック階層（h3 起点）のねじれ、`ui-ux-guidelines.md` に本件の規定を追記すべきか（追記するなら §番号と文言案）。第三者コンテンツをページ内に埋め込むことでサイトの視覚言語が壊れないか（README のバッジ画像が巨大に出る等）も見る"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜F それぞれについて採用する設計を 1 つに決める。決定は『どのファイルに何を書くか（新規/改修）』『先に書くテストは何か』まで落とす。飼い主の要望は『書式が反映されること』であり、これを満たさない結論（現状維持・軽微な手当てで済ませる）は採らない。一方でサニタイズの安全性を緩める方向（`class`/`style` 属性の無制限許可・許可タグの大幅拡張）は採らない。実装手段・ライブラリ選定は自律決定し、仕様解釈が 2 通り以上あり選択で成果物が変わるものだけ open_questions に挙げる。"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜F のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "tests": ["先に書くテスト（パスと観点）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統）"]
+  }
+}
