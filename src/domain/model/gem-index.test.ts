@@ -72,7 +72,13 @@ describe('computeGemIndex', () => {
   })
 })
 
-function makeGem(overrides: Partial<Gem> & { repositoryFullName: string; gemIndex: number }): Gem {
+function makeGem(overrides: {
+  repositoryFullName: string
+  gemIndex: number
+  packageName?: string
+  dependentCount?: number
+  stars?: number
+}): Gem {
   return {
     packageName: overrides.packageName ?? `pkg-${overrides.repositoryFullName}`,
     repositoryFullName: overrides.repositoryFullName,

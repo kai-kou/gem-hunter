@@ -26,7 +26,7 @@
 
 ### 論点2: `SortOrder` への `gem-index` 追加と API 送出の分離
 
-**推奨**: `SortOrder`（`src/domain/model/sort-order.ts`）の `ALLOWED_SORT_ORDERS` に `'gem-index'` を追加し、型は分割しない。「API へ送ってよい値」と「アプリ内ソート」の分離は **`src/infrastructure/github/github-repository-query.ts` の中だけ**で行う（既存の `if (query.sort !== 'relevance') { …sort/order を付与… }` を `!== 'relevance' && !== 'gem-index'` に広げるだけ）。GitHub 検索 API へ渡す `sort` を選ぶ判断は元々 ACL（infra/github）の仕事であり、新しい変換規則が 1 行増えるだけで済む。`gem-index` 指定時は `relevance` 相当（sort/order 無指定）で取得し、その後 usecase が並べ替える。
+**推奨**: `SortOrder`（`src/domain/model/sort-order.ts`）の `ALLOWED_SORT_ORDERS` に `'gem-index'` を追加し、型は分割しない。「API へ送ってよい値」と「アプリ内ソート」の分離は **`src/infrastructure/github/github-repository-query.ts` の中だけ** で行う（既存の `if (query.sort !== 'relevance') { …sort/order を付与… }` を `!== 'relevance' && !== 'gem-index'` に広げるだけ）。GitHub 検索 API へ渡す `sort` を選ぶ判断は元々 ACL（infra/github）の仕事であり、新しい変換規則が 1 行増えるだけで済む。`gem-index` 指定時は `relevance` 相当（sort/order 無指定）で取得し、その後 usecase が並べ替える。
 
 却下した代案: `SortOrder` を「API 用」「表示用」の 2 型に分割する。`SearchQuery`/`CacheKey`（`cache-key.ts` の `searchResultCacheKey` は `sort` を直接キーへ含める）・URL との 1:1 対応（`NFR-2`）を担う型が単一である前提を崩し、分岐が 1 パターンしかないのに恒久的な変換層を新設することになり YAGNI 違反（`application-architecture.md` §0 の W-1〜W-3 いずれにも該当しない）。
 
@@ -40,7 +40,7 @@
 ### 論点4: 新規ドメイン語の要否
 
 - `SortOrder` の許容値表（`domain-model.md` §4）に `gem-index` を追記する必要がある（新語ではなく既存語彙表の値追加）。
-- 新しい型・エンティティの追加は不要と判断する。`RepositorySummary` に `gemIndex` フィールドを足すかどうかは **UI 表示要件（バッジ表示等）が確定してから**の話であり、今回のソート機能だけなら並べ替え用の一時マップ（`repositoryFullName → GemIndex`）で完結し、`RepositorySummary` 自体は変更しない。表示要件が出た時点で別途 `domain-model.md` 更新が必要になる点は Issue に書き残す。
+- 新しい型・エンティティの追加は不要と判断する。`RepositorySummary` に `gemIndex` フィールドを足すかどうかは **UI 表示要件（バッジ表示等）が確定してから** の話であり、今回のソート機能だけなら並べ替え用の一時マップ（`repositoryFullName → GemIndex`）で完結し、`RepositorySummary` 自体は変更しない。表示要件が出た時点で別途 `domain-model.md` 更新が必要になる点は Issue に書き残す。
 - 「最大 1,000 件（10 ページ）」という数値は業務規則というより実装定数であり、ドメイン語彙表への追加は不要。ただし `prd.md` の `AR-n`（表示件数と同様の性質）に準ずる仕様値として、usecase 内定数化しコメントで根拠（GitHub 検索 API の 1000 件上限）を明記すること。
 
 同一 PR で `docs/03_design/data-model/domain-model.md` §4（`SortOrder` 行）の更新が必須。
@@ -52,7 +52,7 @@
 
 ## 論点1: 全ページ取得のキャッシュキー粒度
 
-**推奨**: 既存 `searchResultCacheKey`（`page`/`sort`/`per_page` を含む）とは別に、Gem Index 順ソート専用の**集約キー**を新設する。`page` を含めず、`keyword` + GitHub 側 `sort`（gem-index はアプリ内ソートなので GitHub API へは渡さない下層 sort、例えば relevance）+ `per_page=100` 固定 で構成する。取得した最大 1,000 件（10 ページ分）を **1 つの配列として 1 キーにまとめて cache.set** する。表示件数（`AR-3`: 20/50/100）や表示ページはこの集約結果をアプリ内でスライスするだけにし、スライス結果自体はキャッシュしない（CPU コストが軽いため）。
+**推奨**: 既存 `searchResultCacheKey`（`page`/`sort`/`per_page` を含む）とは別に、Gem Index 順ソート専用の **集約キー** を新設する。`page` を含めず、`keyword` + GitHub 側 `sort`（gem-index はアプリ内ソートなので GitHub API へは渡さない下層 sort、例えば relevance）+ `per_page=100` 固定 で構成する。取得した最大 1,000 件（10 ページ分）を **1 つの配列として 1 キーにまとめて cache.set** する。表示件数（`AR-3`: 20/50/100）や表示ページはこの集約結果をアプリ内でスライスするだけにし、スライス結果自体はキャッシュしない（CPU コストが軽いため）。
 
 根拠: 既存キーは「1 API 呼び出し = 1 キー」の対応が前提（`cache-key.ts` コメント「ソート順・表示件数はキャッシュ断片化を招くため構成要素に含める」）。Gem Index 順は「10 回の API 呼び出しの結果を 1 つの論理的な検索結果」として扱う必要があり、既存の 1:1 対応をそのまま使うと（ご指摘の通り）ページ送りのたびに 10 回再取得が走る。
 
@@ -60,7 +60,7 @@
 
 ## 論点2: TTL は既存 60 秒でよいか
 
-**推奨**: 既存 `TTL_SEARCH_SECONDS`（60 秒・`src/composition/container.ts`）とは別の定数（例 `TTL_SEARCH_ALL_PAGES_SECONDS`）を新設し、`TTL_DETAIL_SECONDS`（300 秒）と同じ暫定値を採用する。理由: `ADR 0005` §3.4「追補（2026-08-19 実施）」で確定した 60 秒は **1 検索 = 1 API 呼び出し** を前提にレート枠を逆算した値（`repository-publication-review.md` §7 が正本、本ファイルでは中身未確認だが ADR 本文に「1 検索あたりの API 呼び出し数 × 想定利用者数」と明記）。Gem Index ソートは 1 検索あたり最大 10 回の API 呼び出しになりうるため、同じ TTL のままだと**この経路だけレート消費が最大 10 倍**になり、ADR が確定させた計算の前提が崩れる。
+**推奨**: 既存 `TTL_SEARCH_SECONDS`（60 秒・`src/composition/container.ts`）とは別の定数（例 `TTL_SEARCH_ALL_PAGES_SECONDS`）を新設し、`TTL_DETAIL_SECONDS`（300 秒）と同じ暫定値を採用する。理由: `ADR 0005` §3.4「追補（2026-08-19 実施）」で確定した 60 秒は **1 検索 = 1 API 呼び出し** を前提にレート枠を逆算した値（`repository-publication-review.md` §7 が正本、本ファイルでは中身未確認だが ADR 本文に「1 検索あたりの API 呼び出し数 × 想定利用者数」と明記）。Gem Index ソートは 1 検索あたり最大 10 回の API 呼び出しになりうるため、同じ TTL のままだと **この経路だけレート消費が最大 10 倍** になり、ADR が確定させた計算の前提が崩れる。
 
 **ADR 改訂の要否**: 別 Issue ではなく **`ADR 0005` への追補（同一ドキュメントの改訂）を推奨**。理由: ADR 0005 §3.4 は「再決定条件」を「同時利用者 20 名規模」「L3 導入」の 2 つに限定しており、「1 検索あたりの API 呼び出し数が変わる」ケースを想定していない。TTL 決定の権威は既に ADR 0005 にあるため、新たな ADR を並列に作ると TTL の正本が 2 箇所に分裂する。ただし **数値の妥当性検証（R-5 相当の逆算のやり直し）自体は SP-16 のスコープ外**（CLAUDE.md「スコープ外の改善は別 Issue」）なので、SP-16 では暫定値（300 秒）を採用しつつ ADR 追補で明記し、正式な逆算は別 Issue で追う、という 2 段構えにする。
 
@@ -95,15 +95,15 @@
 ## 1. `sort` の値文字列: `gem-index`（推奨）／却下案 `gem_index`
 
 - **推奨**: `gem-index`（ケバブケース）
-  - 根拠: §2.4.1 の `sort` 許容値は `relevance` / `stars` / `updated` の単語のみで、複合語の先例が本コードベースにはまだない。ただし `per_page` の **キー名**は snake_case、URL の **値**側は GitHub API 由来の単語をそのまま渡す設計（`AR-2` 備考で「同じ UI に追加」と明記）。Gem Index は GitHub API に転送しない自前ソート（`GR-4`）なので、GitHub の語彙と衝突しない値にできる自由度があり、URL リテラルとしては kebab-case が Web の慣例（`ui-ux-guidelines.md` に反する記述はなし）。
+  - 根拠: §2.4.1 の `sort` 許容値は `relevance` / `stars` / `updated` の単語のみで、複合語の先例が本コードベースにはまだない。ただし `per_page` の **キー名** は snake_case、URL の **値** 側は GitHub API 由来の単語をそのまま渡す設計（`AR-2` 備考で「同じ UI に追加」と明記）。Gem Index は GitHub API に転送しない自前ソート（`GR-4`）なので、GitHub の語彙と衝突しない値にできる自由度があり、URL リテラルとしては kebab-case が Web の慣例（`ui-ux-guidelines.md` に反する記述はなし）。
   - `ALLOWED_SORT_ORDERS` へ追加するだけで既存の丸め処理（不正値→既定値）・`SortPicker` の `Record<..., string>` 型がそのまま効く。
 - **却下**: `gem_index`（スネークケース）
-  - 理由: `per_page` の snake_case は **キー名**の慣習であって値の慣習ではなく、`sort` の既存値に snake_case の先例がない。GitHub API の `sort` パラメータ自体は underscore を使う語（例: `updated`）もあるが複合語の実例がないため根拠が弱く、kebab の方が「URL の値」として一貫性が高い。
+  - 理由: `per_page` の snake_case は **キー名** の慣習であって値の慣習ではなく、`sort` の既存値に snake_case の先例がない。GitHub API の `sort` パラメータ自体は underscore を使う語（例: `updated`）もあるが複合語の実例がないため根拠が弱く、kebab の方が「URL の値」として一貫性が高い。
 
 ## 2. カードへの追加表示: Gem Index ランクの視覚ラベル（推奨）／却下案「生値の表示のみ」
 
-- **推奨**: `RepositoryList` の既存メタ行（`primaryLanguage` / star / updatedAt を並べている `<p className="... flex flex-wrap gap-x-4 gap-y-1 text-xs">`）に、Gem Index でソートされているときだけ **1 項目追記**する。
-  - 表示形式は `daily-digest.tsx` の踏襲: `<span aria-hidden="true">{labels.gemIndexLabel} </span>` + 数値。ただし操作レビュー手順 3 が求めるのは「なぜ上位なのか（被依存数と star の乖離）」であり、Gem Index の生値（-6.7 等）だけでは "乖離" が伝わらない。**被依存数ランクと star ランクの両方を持つのは `Gem` 型**（`gem.ts`）であり、`RepositorySummary`（検索結果の型）は `stars` は持つが被依存数ランクを持たない。検索結果はライブ検索（GitHub API 直叩き）で、静的配信の Gem Index（`GR-5`）とはデータ経路が別なため、被依存数ランクをこのカードに載せるのは本スプリントのスコープ外の可能性が高い（`RepositorySummary` にフィールドが無いなら "曖昧点" ではなく実装可否の技術的制約＝ SD-3 の確認対象ではないが、**親セッションへの申し送り事項**として明示する）。
+- **推奨**: `RepositoryList` の既存メタ行（`primaryLanguage` / star / updatedAt を並べている `<p className="... flex flex-wrap gap-x-4 gap-y-1 text-xs">`）に、Gem Index でソートされているときだけ **1 項目追記** する。
+  - 表示形式は `daily-digest.tsx` の踏襲: `<span aria-hidden="true">{labels.gemIndexLabel} </span>` + 数値。ただし操作レビュー手順 3 が求めるのは「なぜ上位なのか（被依存数と star の乖離）」であり、Gem Index の生値（-6.7 等）だけでは "乖離" が伝わらない。**被依存数ランクと star ランクの両方を持つのは `Gem` 型**（`gem.ts`）であり、`RepositorySummary`（検索結果の型）は `stars` は持つが被依存数ランクを持たない。検索結果はライブ検索（GitHub API 直叩き）で、静的配信の Gem Index（`GR-5`）とはデータ経路が別なため、被依存数ランクをこのカードに載せるのは本スプリントのスコープ外の可能性が高い（`RepositorySummary` にフィールドが無いなら "曖昧点" ではなく実装可否の技術的制約＝ SD-3 の確認対象ではないが、**親セッションへの申し送り事項** として明示する）。
   - 現実的な最小追加は「Gem Index の数値」を `labels.gemIndexLabel`（例: 日本語「Gem Index」= `daily-digest` と統一語）付きで出す。**生値（負数含む）をそのまま出してよい**: `daily-digest.tsx` が既に `gemIndexValue` の生数値（-63.9 等）を出典表示なしで直接見せている先例があり、符号は「相対順位（プラスなら過小評価、マイナスなら知名度先行）」の意味を持つため隠さない方がむしろ ux 的に正しい（符号の意味を `sortOptions.gemIndex` 選択時のみ 1 行の補助文言で説明する案は後述 §3）。
   - この結果が Gem Index を持たない（`Gem Index を持たない結果は末尾に残す`＝仕様①）場合、その項目には Gem Index 数値を出さず、代わりに §3 のバッジ/見出しで区別する。
 - **却下**: 「被依存数ランクと star ランクを両方カードに表示し乖離を数値で見せる」
@@ -184,7 +184,7 @@
 
 - 集約キーを新設すると、usecase が `CachePort` を直接持つことになり、キャッシュの責務が infra デコレータと usecase の 2 箇所に分裂する（`ADR 0005` が `CachePort` を YAGNI 例外として 1 箇所に閉じた前提が崩れる）
 - 既存キーは `sort=gem-index` を含むため通常閲覧のエントリとは別物になり、断片化の相互汚染は起きない
-- `rate` の懸念（ページ間の鮮度ずれで同一リポジトリが重複・欠落する）は実在するが、**マージ時に `RepositorySummary.id` で重複排除する**ことで観測可能な破綻は消える。欠落は「その時点の検索インデックスでは実際に落ちた」ケースと区別できず、`totalCount` 表示にも影響しない
+- `rate` の懸念（ページ間の鮮度ずれで同一リポジトリが重複・欠落する）は実在するが、**マージ時に `RepositorySummary.id` で重複排除する** ことで観測可能な破綻は消える。欠落は「その時点の検索インデックスでは実際に落ちた」ケースと区別できず、`totalCount` 表示にも影響しない
 - 🔵 `rate` の TTL 追補提案は **採用する**（キー設計とは独立に成立する）。`gem-index` 経路だけ 1 検索あたり最大 10 リクエストになり、`ADR 0005` が「1 検索 = 1 呼び出し」で逆算した 60 秒の前提が崩れるため、**同一 PR で ADR 0005 に追補を書く**。TTL 値そのものの再逆算は本スプリントのスコープ外なので別 Issue へ回す
 
 ### `ux` が申し送った 1 点への裁定（カードの表示内容）
