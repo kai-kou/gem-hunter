@@ -99,6 +99,10 @@ const ALLOWED_ATTRIBUTES: Record<string, string[]> = {
   h5: ['id'],
   h6: ['id'],
   ol: ['start'],
+  // 🔴 `tabindex` は README 由来の値を通すためではなく、**こちらが固定値 '0' を注入する**ために
+  //    許可する（下の `transformTags.pre` を参照）。README 側が書いた `tabindex` は
+  //    `transformTags` が属性を作り直すため残らない。
+  pre: ['tabindex'],
   th: ['colspan', 'rowspan'],
   td: ['colspan', 'rowspan'],
 }
@@ -150,6 +154,11 @@ export function sanitizeReadmeHtml(
     //    ページのスタイルに従わせる方針であり、第三者由来の CSS を解釈させる必要がない。
     parseStyleAttributes: false,
     transformTags: {
+      // 🔴 コードブロックは typography プラグインが `overflow-x: auto` を付けるため、横に長い
+      //    コード行があるとスクロール領域になる。フォーカス可能な子要素を持たないスクロール領域は
+      //    キーボードのみの利用者が中身へ到達できない（WCAG 2.1.1・axe `scrollable-region-focusable`）。
+      //    README 由来の属性は捨て、こちらが `tabindex="0"` だけを与える。
+      pre: () => ({ tagName: 'pre', attribs: { tabindex: '0' } }),
       h1: (_tagName, attribs) => headingTag(HEADING_SHIFT.h1, attribs),
       h2: (_tagName, attribs) => headingTag(HEADING_SHIFT.h2, attribs),
       h3: (_tagName, attribs) => headingTag(HEADING_SHIFT.h3, attribs),

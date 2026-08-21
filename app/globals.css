@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+/* README 本文（第三者 HTML）の書式付与に使う。Tailwind v4 は tailwind.config.js を
+   持たないため CSS 側の @plugin ディレクティブでプラグインを読み込む（Issue #339）。 */
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -162,4 +165,66 @@
   html {
     @apply font-sans;
   }
+}
+
+/* README 本文（第三者 HTML）の typography（Issue #339・whiteboard round3 争点 A）。
+   @tailwindcss/typography の --tw-prose-* は 18 項目すべてを本プロジェクトの
+   セマンティックトークンへマッピングする。リテラル色（oklch(/#/rgb(）は 1 つも書かない
+   （tools/check_prose_tokens.py が機械検査する）。
+   🔴 prose-invert / --tw-prose-invert-* は定義しない。各セマンティックトークンは
+   :root / .dark で自己反転する（例: --color-fg）ため、参照するだけでダーク追従が
+   完成し、「invert 側 18 項目を書き漏らす」失敗モード自体が発生しない。
+   @layer で囲まない: プラグインが生成する .prose 用 CSS 自身のレイヤーより手前で
+   上書きが負けないよう、意図的にレイヤー外（最優先）の位置に置く。 */
+.prose {
+  --tw-prose-body: var(--color-fg);
+  --tw-prose-headings: var(--color-fg);
+  --tw-prose-lead: var(--color-fg-muted);
+  --tw-prose-links: var(--color-accent);
+  --tw-prose-bold: var(--color-fg);
+  --tw-prose-counters: var(--color-fg-muted);
+  --tw-prose-bullets: var(--color-border);
+  --tw-prose-hr: var(--color-border);
+  --tw-prose-quotes: var(--color-fg);
+  --tw-prose-quote-borders: var(--color-border);
+  --tw-prose-captions: var(--color-fg-muted);
+  --tw-prose-kbd: var(--color-fg);
+  /* README 内で <kbd> が使われることはほぼ無い想定のため、無彩の transparent にする
+     （whiteboard round2 tailwind_v4 案「使わないなら無害な値でよい」）。 */
+  --tw-prose-kbd-shadows: transparent;
+  --tw-prose-code: var(--color-fg);
+  --tw-prose-pre-code: var(--color-fg);
+  --tw-prose-pre-bg: var(--color-bg-subtle);
+  --tw-prose-th-borders: var(--color-border);
+  --tw-prose-td-borders: var(--color-border);
+}
+
+/* README 見出しのスケール（Issue #339・whiteboard round3 争点 B）。
+   readme-html.ts が見出しを +2 降格する（h1→h3 … h6 cap）ため、README 内の最上位見出しは
+   h3 として出てくる。ページのセクション見出し（<h2>「README」・text-lg = 18px）を
+   視覚的に超えないよう、h3=16px / h4=14px を基準に太さと余白だけで 4 段階を作る
+   （§2.3 の 5 段階タイプスケールに中間値を足さない・a11y_theme round1 §4）。 */
+.prose h3 {
+  font-size: 1rem; /* 16px */
+  font-weight: 700;
+}
+.prose h4 {
+  font-size: 1rem; /* 16px */
+  font-weight: 600;
+}
+.prose h5 {
+  font-size: 0.875rem; /* 14px */
+  font-weight: 600;
+}
+.prose h6 {
+  font-size: 0.875rem; /* 14px。本文と同サイズになるため weight 差 + 余白で階層を伝える */
+  font-weight: 500;
+}
+/* コードブロックのフォーカスリング（Issue #339・Layer 1 レビュー指摘）。
+   `readme-html.ts` が `pre` へ `tabindex="0"` を注入し、横に長いコード行のスクロール領域へ
+   キーボードで到達できるようにしている（WCAG 2.1.1）。到達したことが見えないと意味がないため、
+   サイト共通のフォーカスリング（`--color-ring`）を当てる（§7.3 の太さ 2px 相当以上）。 */
+.readme-content pre:focus-visible {
+  outline: 3px solid var(--color-ring);
+  outline-offset: 2px;
 }

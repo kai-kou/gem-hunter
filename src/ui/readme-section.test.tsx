@@ -42,6 +42,20 @@ describe('ReadmeSection', () => {
     expect(screen.getByRole('heading', { name: 'Title', level: 3 })).toBeInTheDocument()
   })
 
+  it('README 本文コンテナは readme-content と prose を持つ（Issue #339・E2E がこのクラスで要素を掴む契約）', async () => {
+    const element = await ReadmeSection({
+      readmePromise: Promise.resolve('<p>hello</p>'),
+      htmlUrl: HTML_URL,
+      labels,
+    })
+    const { container } = render(element)
+
+    const readmeContent = container.querySelector('.readme-content')
+    expect(readmeContent).not.toBeNull()
+    expect(readmeContent).toHaveClass('prose')
+    expect(readmeContent).toHaveClass('max-w-none')
+  })
+
   it('README 本文の XSS ベクタはサニタイズされて描画に混ざらない', async () => {
     const element = await ReadmeSection({
       readmePromise: Promise.resolve('<p>hello</p><script>window.__hacked = true</script>'),
@@ -114,6 +128,26 @@ describe('ReadmeSection', () => {
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     expect(link).toHaveTextContent(labels.opensInNewTab)
+  })
+
+  it('README 本文のスクロールコンテナはキーボードで到達できるリージョンである（WCAG 2.1.1 / 2.4.7・#348 指摘対応）', async () => {
+    const element = await ReadmeSection({
+      readmePromise: Promise.resolve('<p>hello</p>'),
+      htmlUrl: HTML_URL,
+      labels,
+    })
+    const { container } = render(element)
+
+    const scrollContainer = container.querySelector('.readme-content')
+    expect(scrollContainer).not.toBeNull()
+    expect(scrollContainer).toHaveAttribute('tabindex', '0')
+    expect(scrollContainer).toHaveAttribute('role', 'region')
+    expect(scrollContainer).toHaveAttribute('aria-labelledby', 'readme-heading')
+
+    // 外側の <section> からは aria-labelledby を外す（同じ名前のリージョンが入れ子で
+    // 2 つできるのを避ける・h2#readme-heading 自体は残す）
+    const section = container.querySelector('section')
+    expect(section).not.toHaveAttribute('aria-labelledby')
   })
 
   it('README 内の相対リンクは htmlUrl を基準に絶対 URL へ解決される', async () => {
