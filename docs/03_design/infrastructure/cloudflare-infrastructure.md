@@ -549,6 +549,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.
 実行結果（ゲート判定・デプロイ成功可否・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
 
 - 🔴 **`npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）
+- 🔴 **`npm run deploy` は本番 version に `--tag "$(git rev-parse --short=12 HEAD)"` を付ける**（Issue #288）。このタグが `tools/check_prod_drift.py` の厳密判定（SHA 一致）の入力になるため、**`wrangler deploy` を手で叩いてタグを省略しない**（省略すると乖離検知が日時ベースの緩い判定へ後退する）。`git rev-parse` が失敗したときは空タグでデプロイせずコマンド全体が失敗する
 - 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) §3.3 がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替。上記のスプリントレビューゲートはこのテストゲートを **置き換えず拡張** する）
 - **失敗したら本番へ進まない**（fail-closed）。疎通確認が 5xx なら `npx wrangler rollback` を検討し、判断と結果を記録する
 
@@ -567,6 +568,58 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 - 🔴 **`--closed-prs` は Sprint Review 判定を見ない**（`tools/retire_preview_aliases.py` の `select_closed_pr_aliases()` を確認）。判定基準は **PR の open/closed/merged だけ**（`pr-<N>` 形式の alias に紐づく PR がクローズ済みか）であり、`rejected` かどうかは判定に入らない。**`rejected` 判定の保護は Step 7（スプリントレビュー）からの自動退役の経路が担う** もので、`--closed-prs` の一括退役自体には効かない。squash マージ（Step 5）は Sprint Review（Step 7）より前に起きるため、差し戻し検証中（`rejected` で再検証待ち）のスプリントでも PR 自体は既にクローズ済みとなり、`--closed-prs` の対象に入ってしまう。**差し戻し検証中のスプリントがあるときは `--closed-prs` を使わず、対象を `--alias` で個別指定する**
 - `--closed-prs` と `--alias` は併用でき、対象は和集合になる（`sorted(set(targets) | set(args.alias))`）。`pr-<N>` 形式でない alias（`sp1` / `sp7` / `form-uiux` 等）は `--closed-prs` の自動選別対象にならないため、これらを退役するには併用時の `--alias` 指定が実際の使い道になる
 - 退役の実行結果（対象 alias・成否）は Issue / PR コメントに記録する
+
+### 8.2.2. 🔴 クラウドセッションは `wrangler deploy` に到達できない（auto mode classifier・2026-08-20 実機検証・Issue #288）
+
+**クラウド実行環境の Claude セッション（有人・無人を問わず）は、上記 8.2 の「本番デプロイ」コマンド
+（`npm run deploy` = `opennextjs-cloudflare build && wrangler deploy --tag "$(git rev-parse --short=12 HEAD)"`）を実行できない。**
+`Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier.`
+で拒否される（無人ルーティン 3 回・有人セッション 1 回、計 4 回すべて再現。`.claude/settings.json` の
+`permissions.allow` に許可済みでも解除されない）。一方、`npx opennextjs-cloudflare build`（ビルド）と
+`npx wrangler versions upload --preview-alias ...`（プレビュー反映）は成功する。**ブロック対象は本番反映
+（`wrangler deploy`）そのものに限られる**（切り分けの詳細・一次情報の出典は
+[`docs/rules/lessons/cloud-environment.md` L-130](../../rules/lessons/cloud-environment.md) 参照）。
+
+一次情報（公式ドキュメント）によれば、auto mode classifier は `permissions` システムの後段で動く
+第二のゲートであり、本番デプロイは分類器の組み込み保護対象（`soft_deny`）として明示的に扱われる。
+分類器の設定（`autoMode`）はプロジェクトの `.claude/settings.json` からは読まれず、ユーザー設定
+`~/.claude/settings.json` または managed settings のみが対象になる。セッション内からの解除は公式に
+非対応（`anthropics/claude-code` Issue #60004・Closed as not planned）。
+
+**結果として、「マージ = 本番反映」ではなく、マージ（公開反映）と本番デプロイの実行は分離している。**
+マージ・push は自律的に完了できるが、本番デプロイの実行そのものはこの制約に阻まれる場面がある
+（上記 8.2 のゲート判定を通過していても実行できない）。
+
+**乖離検知**: `main` の内容と本番稼働中のコードが乖離していないかは `tools/check_prod_drift.py`
+で検知する（実装は別レーンが担当。オプション・終了コードの詳細は同スクリプト自身を参照する）。
+
+**分類器を解除するための選択肢（いずれも飼い主の判断・実行が必要。Claude が自律的に設定変更を行って
+解除する経路ではない）**:
+
+1. `~/.claude/settings.json`（ユーザー設定）の `autoMode.allow` に本番デプロイを許可する例外ルールを
+   追加する
+2. Organization の managed settings 側で `autoMode` を調整する（組織管理者権限が必要）
+3. 分類器がブロックした都度、Claude Code の `/permissions` 画面「Recently denied」からユーザー自身が
+   手動で承認・リトライする
+4. 本番デプロイの実行自体を、飼い主自身（または GitHub Actions の制限が解除された場合は CI/CD）が担う
+   運用に切り替える
+5. 🟢 **[Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)（Cloudflare native の Git 連携）へ発火点を移す**
+   — Cloudflare ダッシュボードで Worker に GitHub リポジトリを接続すると、**`main` への push ごとに
+   Cloudflare 側がビルドしてデプロイする**。Claude は `wrangler deploy` を打つ必要がなくなり、分類器と
+   構造的に衝突しなくなる（マージ = 本番反映に戻る）
+
+> 🔵 **5 が構造的な解決である理由**: 1〜3 は分類器の保護を弱める方向で、しかも 1 は飼い主の全プロジェクト・
+> 全セッションに影響する。4 は自律運用（`CP-6`）を後退させる。5 だけが **Claude の権限を広げずに**
+> マージから本番反映までを自動化する。
+>
+> ⚠️ **5 の前提**: Cloudflare の GitHub App の接続は **ダッシュボードでの 1 回きりの対話的認可が必須** で
+> API からは実行できない（[API リファレンス](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/)
+> が明記）。接続後のビルド設定・手動トリガーは API で操作できる。また **ダッシュボード上の Worker 名と
+> Wrangler 設定の `name` が一致していないとビルドが失敗する**。
+>
+> ⚠️ **5 を採るときに検証が要る点**: 本プロジェクトは OpenNext（`opennextjs-cloudflare build`）を挟むため、
+> Workers Builds のビルドコマンドをその形に設定できるか・シークレット（`wrangler secret`）が
+> ビルド環境から参照できるかを、切り替え前に確認する。
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
 

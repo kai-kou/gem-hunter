@@ -20,7 +20,7 @@
     "check": "bash tools/run_checks.sh",
     "preview:build": "opennextjs-cloudflare build",
     "preview:upload": "opennextjs-cloudflare build && wrangler versions upload",
-    "deploy": "opennextjs-cloudflare build && wrangler deploy",
+    "deploy": "opennextjs-cloudflare build && SHA=$(git rev-parse --short=12 HEAD) && test -n \"$SHA\" && wrangler deploy --tag \"$SHA\"",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv"
   },
   "dependencies": {
