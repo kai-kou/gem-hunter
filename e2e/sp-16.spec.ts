@@ -13,17 +13,16 @@ import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
  * `repositoryFullName` で 1 件も重ならない。素のまま E2E を回すと gemIndex 付きの結果が常に 0 件になり、
  * 手順 3（なぜ上位かのバッジ表示）・手順 5（Index なしが末尾に残る）を検証できない。
  *
- * このため、本ファイルは `composition/container.ts` に **候補プールの読み込み元を環境変数で
- * 差し替えられる口**（`makeGemDigestPort()` 共通化・lead 判定の設計）が実装され、その環境変数が
- * `playwright.config.ts`（`webServer.env`）経由で Next.js サーバーへ渡されることを前提にしている。
+ * このため、本ファイルは `composition/container.ts` の `makeGemDigestPort()`（候補プールの読み込み元を
+ * 環境変数 `GEM_DIGEST_SOURCE_PATH` で差し替えられる口・usecase 役が実装確定済み）を前提にしている。
+ * 未設定時は本番同様 `public/data/daily-digest.json` を使い、読み込み失敗時は例外を投げず既定プールへ
+ * フォールバックする（`GemDigestPort` の fail-soft 契約）。
  *
- * 🔴 **未実装なら本ファイルは Red のまま**（`sprint-development-rules.md` `SD-2` は正しい順序として
- * これを許容する）。以下 3 点が揃うまでは手順 3・4・5 のアサーションが失敗する:
- *   1. `src/composition/container.ts`: `GEM_DIGEST_SOURCE_PATH` 環境変数があれば、そのパスの JSON を
- *      `fs.readFileSync` で読み `StaticGemDigest(parsed)` へ渡す（省略時は従来どおり本番 JSON）。
- *   2. `playwright.config.ts`（or `e2e/stub/e2e-env.mjs`）: E2E の `webServer.env` に
+ * 🔴 **本ファイル単独では Red のまま**（`sprint-development-rules.md` `SD-2` は正しい順序としてこれを
+ * 許容する）。以下 2 点が揃うまでは手順 3・4・5 のアサーションが失敗する（`container.ts` 側は実装済み）:
+ *   1. `playwright.config.ts`（or `e2e/stub/e2e-env.mjs`）: E2E の `webServer.env` に
  *      `GEM_DIGEST_SOURCE_PATH: path.join(__dirname, 'e2e/fixtures/gem-digest-pool.json')` を追加する。
- *   3. `e2e/fixtures/gem-digest-pool.json`: 下記 `EXPECTED_CANDIDATE_POOL` と同じ内容
+ *   2. `e2e/fixtures/gem-digest-pool.json`: 下記 `EXPECTED_CANDIDATE_POOL` と同じ内容
  *      （`GemDigestPort#listCandidates()` が返す `{ candidates: Gem[], meta: DigestMeta }` の
  *      JSON 表現。`Gem` の形は `src/domain/model/gem.ts`）を用意し、`repositoryFullName` を
  *      検索スタブの `many-hits` データセット（`octostub/many-01`〜`many-60`・`e2e/stub/server.mjs`）
@@ -95,18 +94,23 @@ test.describe('SP-16: 検索結果の Gem Index 順並べ替え', () => {
 
     await test.step('手順3: 各カードで、なぜ上位なのか（被依存数と star の乖離）がわかる', async () => {
       const items = page.getByRole('list').first().locator(':scope > li')
-      const topCard = items.first()
 
       // `daily-digest.tsx` と同じパターン（被依存数・star・Gem Index の 3 数値を並置・
       // `repository-list.tsx` の `item.gemIndex !== undefined` 分岐）。
-      await expect(topCard.getByText('被依存数', { exact: false })).toBeVisible()
-      await expect(topCard.getByText(/900/)).toBeVisible()
-      await expect(topCard.getByText('Gem Index', { exact: false })).toBeVisible()
-      await expect(topCard.getByText(/-50/)).toBeVisible()
+      // gemIndex 昇順で並ぶため、`EXPECTED_CANDIDATE_POOL` の rank 順（先頭が最上位）と
+      // カードの表示順が一致することも同時に検証する。
+      for (const candidate of EXPECTED_CANDIDATE_POOL) {
+        const card = items.nth(candidate.rank - 1)
+        await expect(card.getByRole('link')).toHaveText(candidate.fullName)
+        await expect(card.getByText('被依存数', { exact: false })).toBeVisible()
+        await expect(card.getByText(new RegExp(String(candidate.dependentCount)))).toBeVisible()
+        await expect(card.getByText('Gem Index', { exact: false })).toBeVisible()
+        await expect(card.getByText(new RegExp(String(candidate.gemIndex)))).toBeVisible()
+      }
 
-      // 候補プールに存在しない項目（Index なし群）にはバッジが出ない。
-      const lastVisibleCard = items.nth(19)
-      await expect(lastVisibleCard.getByText('Gem Index', { exact: false })).toHaveCount(0)
+      // 候補プールに存在しない項目（Index なし群・1 ページ目の 6 件目以降）にはバッジが出ない。
+      const firstNonCandidateCard = items.nth(EXPECTED_CANDIDATE_POOL.length)
+      await expect(firstNonCandidateCard.getByText('Gem Index', { exact: false })).toHaveCount(0)
     })
 
     await test.step('手順4: 2 ページ目へ進んでも、Gem Index の大小関係が破綻していない', async () => {
@@ -134,27 +138,23 @@ test.describe('SP-16: 検索結果の Gem Index 順並べ替え', () => {
         page.getByText(/60 件中/, { exact: false }),
       ).toBeVisible()
 
-      // 候補プールに存在しない項目（例: many-02）は除外されず、どこかのページに残っている。
-      await page.goto(page.url()) // 現在の URL（2 ページ目・gemIndex 順）を維持したまま再取得
+      // 候補プールに存在しない項目（例: many-02）は除外されず、どこかのページに残っている
+      // （3 ページ・20 件/ページで 60 件全てを走査する）。
       const page1Url = new URL(page.url())
       page1Url.searchParams.delete(SEARCH_PARAM_KEYS.page)
-      await page.goto(page1Url.pathname + page1Url.search)
 
       const namesSeen = new Set<string>()
       for (const pageNum of [1, 2, 3] as const) {
-        const url = new URL(page.url())
+        const url = new URL(page1Url)
         if (pageNum > 1) {
           url.searchParams.set(SEARCH_PARAM_KEYS.page, String(pageNum))
-          await page.goto(url.pathname + url.search)
         }
-        const links = page.getByRole('list').first().locator(':scope > li a').first()
+        await page.goto(url.pathname + url.search)
         const items = page.getByRole('list').first().locator(':scope > li')
         const count = await items.count()
         for (let i = 0; i < count; i++) {
-          const text = await items.nth(i).getByRole('link').innerText()
-          namesSeen.add(text)
+          namesSeen.add(await items.nth(i).getByRole('link').innerText())
         }
-        void links
       }
       // Index を持たない代表例（候補プール外）が絞り込まれず出現している。
       expect(namesSeen.has('octostub/many-02')).toBe(true)
