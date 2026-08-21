@@ -1,0 +1,48 @@
+{
+  "topic": "SP-16: キーワード検索結果を Gem Index 順に並べ替える実装の設計を確定する",
+  "brief": "確定仕様（D-30・Issue #285・飼い主決定 2026-08-21）: ① Gem Index を持たない検索結果は「上位に集めたうえで末尾に残す」（絞り込まない・件数不変）。② 並べ替えの範囲は「最大 1,000 件を取得してから並べ替える」（GitHub 検索 API の 1,000 件上限が天井）。この 2 点は議論で覆さない前提とする。\n\n実測（2026-08-21）: 候補プール public/data/daily-digest.json は 294 候補・ユニークリポジトリ 227・ユニーク owner 145・gemIndex レンジ -6.734〜0.003。全件が repositoryFullName（owner/repo）を保持。npm のみが対象で PyPI 由来のリポジトリには Gem Index が付かない。したがって任意キーワードの検索結果の大半は Index を持たない。\n\nD-28 の符号の向き（実装の正本）: Gem Index = rankings.dependent_packages_count - rankings.stargazers_count で、値が小さいほど過小評価度が高い（昇順が上位）。Ecosyste.ms の rankings は 0 が最上位の順位である点に注意。\n\n現行実装の所在: (1) src/usecases/search-repositories.ts は RepositoryQueryPort.search() を素通しする薄いラッパー。(2) src/infrastructure/github/github-repository-query.ts の search() は単一ページのみ取得し、sort=relevance のときは sort パラメータ自体を送らない。(3) src/ui/sort-picker.tsx は src/domain/model/sort-order.ts の ALLOWED_SORT_ORDERS = ['relevance','stars','updated'] を map してリンクを描画するだけ（クライアント JS なし）。(4) public/data/daily-digest.json は src/infrastructure/platform/static-gem-digest.ts の StaticGemDigest（GemDigestPort）が読み、現状は日次ダイジェスト経路からのみ使われる。(5) キャッシュは src/infrastructure/platform/cached-repository-query.ts の CachingRepositoryQuery（read-through + single-flight）で、キーは src/infrastructure/platform/cache-key.ts の searchResultCacheKey が keyword:page:sort:per_page を全て含めて生成する。(6) 検索結果と候補プールを突合するコードは存在しない（新規ロジックが要る）。\n\n隣接する既知問題: Issue #276 は src/domain/model/gem-index.ts の computeGemIndex がアプリから一度も呼ばれない死にコードで、本番の算出は tools/generate_gem_digest.mjs の重複実装が担っていると指摘している。SP-16 は Gem Index を「計算」せず JSON 内の既算出値を突合するだけなので直接のブロッカーではないが、スコープに混ぜない。\n\n争点は 7 つ:\n(1) 最大 1,000 件の取得を sort=gemIndex を選んだときだけ発火させるか、常時行うか。NFR-5 のレート予算（検索は 30 req/分の枠）との兼ね合い。\n(2) 全件取得結果のキャッシュキーの粒度。既存 searchResultCacheKey は page と sort を含むため全件取得結果の再利用に使えない。keyword+perPage 単位の新キーを足すのか、既存キーの体系を変えるのか、CACHE_SCHEMA_VERSION をどう扱うのか。\n(3) gemIndex ソート時の「ページ」の意味。GitHub API への再クエリではなく取得済み配列のスライスにすべきか。その場合 AC-6（詳細から戻ってもキーワード・ページ・ソート・件数が保持される）と AC-7（1,000 件を超えるページを要求しない・maxPageFor による二層の境界）との整合をどう取るか。\n(4) 検索結果 × 候補プール（227 リポジトリ）の join をどの層で行うか。新規ユースケースを作るか、RepositoryQueryPort を拡張するか、ドメインサービスとして切り出すか。architecture-rules.md の依存規則 ARCH-1〜ARCH-7 と domain-model.md §4 の値オブジェクト規律に照らして判断する。\n(5) Index を持たない結果同士の内部順序。D-30 は「末尾に残す」しか規定していない。元の relevance 順を保つのか、別の基準を入れるのか。安定ソートの要否。\n(6) NFR-5 のレート予算の守り方。enforceSearchRateLimit（Issue #122）が「1 論理検索 = 最大 10 API 呼び出し」を正しく数えられているか。数えられていない場合に何をどう直すか。\n(7) sp:8 に収まるか。収まらないと判断した場合の縦切り分割案（技術レイヤー分割は C-5 違反なので採らない）。分割するなら 1 本目だけで「検索 → 並べ替え → 詳細 → 復帰」が完結する形にする。\n\n制約: Next.js 16 App Router + React 19 + Tailwind v4、Cloudflare Workers（OpenNext）。検索フォームとソート UI はクライアント JS を持たない（E-8 / NFR-3）。NFR-21 により PaaS 固有 API をアプリコードへ持ち込まない。テストは TDD 主体（SD-2・testing-strategy.md）で、操作レビュー手順は E2E に写す。",
+  "participants": [
+    {
+      "name": "domain_arch",
+      "model": "sonnet",
+      "lens": "ドメインモデルとアーキテクチャ（争点 4 が主担当・1 と 3 にも意見を出す）。docs/rules/architecture-rules.md の依存規則 ARCH-1〜ARCH-7、docs/03_design/architecture/application-architecture.md、docs/03_design/data-model/domain-model.md §2（ユビキタス言語）§4（値オブジェクト = ブランド型 + スマートコンストラクタ）を実際に読み、検索結果と候補プールの join をどの層に置くべきかを決める。既存の src/usecases/search-repositories.ts・src/domain/model/sort-order.ts・src/infrastructure/platform/static-gem-digest.ts を読んで、RepositoryQueryPort と GemDigestPort をどう束ねるかの具体案（ファイルパスと関数シグネチャ）まで落とす。ドメイン語彙（Gem Index・過小評価度）が domain-model.md §2 に登録済みかを確認し、新語を導入するなら同 PR で更新すべき箇所を挙げる。1 箇所しか使わない抽象化を先回りで作らない（YAGNI）ことにも留意する"
+    },
+    {
+      "name": "rate_cache",
+      "model": "sonnet",
+      "lens": "レート予算とキャッシュ設計（争点 1・2・6 が主担当）。docs/02_requirements/prd.md の NFR-5 / NFR-7 / NFR-17、docs/adr/0005-cache-port-yagni-exception-and-ttl.md、src/infrastructure/platform/cached-repository-query.ts、src/infrastructure/platform/cache-key.ts を実際に読む。1 検索が最大 10 API 呼び出しに増えることの影響を数値で評価し（検索枠 30 req/分に対して何人の同時利用まで耐えるか）、全件取得結果をどのキー粒度でキャッシュすべきかを決める。CACHE_SCHEMA_VERSION の扱い（バンプが要るか）も判断する。enforceSearchRateLimit（Issue #122 / src 配下を grep して実装を特定する）が複数ページ取得をどう数えるかを実装を読んで確認し、数え漏れがあれば具体的な修正箇所を指摘する。single-flight（request coalescing）が全件取得でも効くかを検証する"
+    },
+    {
+      "name": "ux_paging",
+      "model": "sonnet",
+      "lens": "UX とページング契約（争点 3・5 が主担当）。docs/02_requirements/prd.md の §2.4.1（URL パラメータ契約表）・§6 の AC-6 / AC-7、src/domain/model/page-number.ts・per-page.ts、src/ui/sort-picker.tsx、src/ui/url/search-params.ts を実際に読む。gemIndex ソート時の『ページ』を取得済み配列のスライスにした場合に、AC-6（詳細から戻る）と AC-7（到達不能ページを要求しない・maxPageFor の二層境界）が壊れないかを具体的に検証する。総件数表示・ページ数表示が他のソートと食い違わないか、Index を持たない結果が末尾に混ざることを利用者にどう伝えるか（あるいは伝えないか）、カードに『なぜ上位か（被依存数と star の乖離）』をどう出すかを、docs/03_design/ui-ux/ui-ux-guidelines.md を読んだうえで提案する。争点 5（Index なし同士の内部順序）は利用者から見てどう振る舞うべきかで決める"
+    },
+    {
+      "name": "scope_test",
+      "model": "sonnet",
+      "lens": "スコープとテスト戦略（争点 7 が主担当・全争点に対して『それは本当に sp:8 に収まるか』を問う）。docs/rules/sprint-development-rules.md の SD-1〜SD-4、docs/04_development/testing-strategy.md、docs/02_requirements/user-story-map.md §5.2（スプリントがレビュー可能であるための 5 条件）§5.3 の SP-16 を実際に読む。他の 3 レンズが出す設計案の合計工数を批判的に見積もり、sp:8 を超えると判断したら縦切り分割案を出す（技術レイヤー分割は C-5 違反なので採らない。1 本目だけで操作レビューが完走できる形にする）。あわせて TDD の進め方（どのテストを最初に書くか）と、SP-16 の操作レビュー手順 6 項目を E2E（e2e/sp-16.spec.ts）へどう写すかの具体案を出す。外部 API のモック方針（NFR-24）にも触れる。既存の e2e/sp-7.spec.ts（ソート UI 関連）を読んで再利用できる部分を特定する"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 1〜7 それぞれについて採用する結論を 1 つに決める。決定は必ず『どのファイルに何を書くか』『どの関数のシグネチャがどうなるか』まで落とす。D-30 の確定仕様（① 末尾に残す ② 最大 1,000 件取得）は前提であり覆さない。architecture-rules.md の依存規則・NFR-5 のレート予算・AC-6 / AC-7 と衝突する提案は棄却する。議論で否定された案は採用しない。sp:8 を超えると判断した場合は縦切り分割を decisions に明記する。ユーザー確認が要る新たな仕様分岐（SD-3 第 2 系統）が見つかったら open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 1〜7 のいずれか",
+        "design": "採用する結論（ファイルパス・関数シグネチャ・数値を含む）",
+        "evidence": ["根拠となる要件 ID / ADR / 実コードの参照"],
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "split": {
+      "needed": "true / false",
+      "plan": "縦切り分割が必要な場合の分割案（不要なら空文字）"
+    },
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統）"]
+  }
+}
