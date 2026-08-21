@@ -2,11 +2,17 @@ import { Suspense } from 'react'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import { getDailyDigestUseCase, searchRepositoriesUseCase } from '@/src/composition/container'
+import {
+  getDailyDigestUseCase,
+  listGemFacetsUseCase,
+  searchRepositoriesUseCase,
+} from '@/src/composition/container'
 import { DAILY_DIGEST_LIMIT } from '@/src/composition/digest-feed'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
+import type { GemFacet } from '@/src/domain/model/gem'
+import { GEM_INDEX_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { tryPageNumber } from '@/src/domain/model/page-number'
 import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
@@ -148,6 +154,7 @@ async function SearchBody({
   messages,
   isLoggedIn,
   showAuthLink,
+  gemFacetsPromise,
 }: {
   statePromise: Promise<SearchState>
   basePath: string
@@ -157,6 +164,11 @@ async function SearchBody({
   messages: Messages
   isLoggedIn: boolean
   showAuthLink: boolean
+  /**
+   * `sort=gem-index` のときだけ渡す（`SP-16`）。それ以外は `undefined`
+   * のままにし `RepositoryList` へ渡さない（無駄な取得をしない・`D-L`）。
+   */
+  gemFacetsPromise?: Promise<ReadonlyMap<string, GemFacet>>
 }) {
   const state = await statePromise
 
@@ -185,6 +197,10 @@ async function SearchBody({
     return null
   }
 
+  // 🔴 二重防御（`static-gem-digest.ts` と同じ方針）: 候補プールの読み込み失敗が
+  // 検索結果一覧の表示まで巻き添えにしない。失敗時は「Gem Index 情報なし」相当（`undefined`）へ倒す。
+  const gemFacets = gemFacetsPromise ? await gemFacetsPromise.catch(() => undefined) : undefined
+
   return (
     <>
       <RepositoryList
@@ -193,9 +209,13 @@ async function SearchBody({
           empty: messages.home.empty,
           starCount: messages.home.starCount,
           updatedAt: messages.home.updatedAt,
+          gemIndexValueLabel: messages.home.gemIndexValueLabel,
+          gemIndexDependentLabel: messages.home.gemIndexDependentLabel,
+          gemIndexUnavailableHeading: messages.home.gemIndexUnavailableHeading,
         }}
         locale={locale}
         searchState={searchState}
+        gemFacets={gemFacets}
       />
       {state.result.items.length > 0 ? (
         <Pagination
@@ -254,6 +274,13 @@ export default async function LocaleHome({
   //    どちらの await より前に reject しても unhandled rejection にしないため、no-op を 1 つ張る。
   const statePromise = runSearch(rawKeyword, page, sort, perPage, accessToken)
   void statePromise.catch(() => undefined)
+
+  // SP-16: `sort=gem-index` のときだけ Gem Index の候補プールを取得する（無駄な取得をしない）。
+  const gemFacetsPromise =
+    hasKeyword && sort === GEM_INDEX_SORT_ORDER ? listGemFacetsUseCase()() : undefined
+  if (gemFacetsPromise) {
+    void gemFacetsPromise.catch(() => undefined)
+  }
 
   // SP-14: 日次ダイジェスト（キーワード非依存の発見面・`ADR 0014` §2.2）。
   // `?date=YYYYMMDD` は不正値・未指定を当日（UTC）へフォールバックする（`tryParse` 契約）。
@@ -404,6 +431,7 @@ export default async function LocaleHome({
           messages={messages}
           isLoggedIn={accessToken !== null}
           showAuthLink={isAuthConfigured()}
+          gemFacetsPromise={gemFacetsPromise}
         />
       </Suspense>
 

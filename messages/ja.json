@@ -42,8 +42,12 @@
     "sortOptions": {
       "relevance": "関連度",
       "stars": "star 数",
-      "updated": "更新日時"
+      "updated": "更新日時",
+      "gem-index": "Gem Index 順"
     },
+    "gemIndexValueLabel": "Gem Index",
+    "gemIndexDependentLabel": "被依存数",
+    "gemIndexUnavailableHeading": "Gem Index 情報なし",
     "perPageLabel": "表示件数",
     "perPageOptionLabel": "{count} 件",
     "paginationLabel": "検索結果のページ",

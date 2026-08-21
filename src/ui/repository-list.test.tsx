@@ -33,7 +33,9 @@ const items: RepositorySummary[] = [
 
 describe('RepositoryList', () => {
   it('オーナーアイコンとリポジトリ名を表示する（AC-3）', () => {
-    const { container } = render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
+    const { container } = render(
+      <RepositoryList items={items} labels={labels} locale={locale('ja')} />,
+    )
 
     expect(screen.getByRole('link', { name: /facebook\/react/ })).toBeInTheDocument()
     // オーナー名は fullName としてカード内にテキスト隣接表示されるため alt="" にしており、
@@ -159,5 +161,137 @@ describe('RepositoryList', () => {
     render(<RepositoryList items={[]} labels={labels} locale={locale('ja')} />)
 
     expect(screen.getByRole('status')).toHaveTextContent(labels.empty)
+  })
+
+  describe('gemFacets（SP-16・Gem Index 順ソート時のみ）', () => {
+    const twoItems: RepositorySummary[] = [
+      {
+        id: 1,
+        fullName: 'octostub/ranked-one',
+        name: 'ranked-one',
+        owner: { login: 'octostub', avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4' },
+        description: null,
+        primaryLanguage: null,
+        stars: 10,
+        lastPushedAt: new Date('2026-08-18T09:00:00Z'),
+        topics: [],
+        htmlUrl: 'https://github.com/octostub/ranked-one',
+      },
+      {
+        id: 2,
+        fullName: 'octostub/unranked-two',
+        name: 'unranked-two',
+        owner: { login: 'octostub', avatarUrl: 'https://avatars.githubusercontent.com/u/2?v=4' },
+        description: null,
+        primaryLanguage: null,
+        stars: 20,
+        lastPushedAt: new Date('2026-08-18T09:00:00Z'),
+        topics: [],
+        htmlUrl: 'https://github.com/octostub/unranked-two',
+      },
+    ]
+
+    function facetMap(): ReadonlyMap<string, GemFacet> {
+      return new Map([
+        ['octostub/ranked-one', { gemIndex: gemIndex(-0.42), dependentCount: 12345 }],
+      ])
+    }
+
+    it('gemFacets を渡さない場合は Gem Index 情報を一切表示しない（回帰なし）', () => {
+      render(<RepositoryList items={twoItems} labels={labels} locale={locale('ja')} />)
+
+      expect(screen.queryByText(labels.gemIndexUnavailableHeading)).not.toBeInTheDocument()
+      expect(screen.queryByText(/-0\.42/)).not.toBeInTheDocument()
+    })
+
+    it('facet を持つカードには Gem Index 値と被依存数を追記する（D-L）', () => {
+      render(
+        <RepositoryList
+          items={twoItems}
+          labels={labels}
+          locale={locale('ja')}
+          gemFacets={facetMap()}
+        />,
+      )
+
+      expect(screen.getByText(/-0\.42/)).toBeInTheDocument()
+      expect(screen.getByText(/12,345/)).toBeInTheDocument()
+    })
+
+    it('facet を持たないカードには Gem Index 値を出さない', () => {
+      render(
+        <RepositoryList
+          items={twoItems}
+          labels={labels}
+          locale={locale('ja')}
+          gemFacets={facetMap()}
+        />,
+      )
+
+      const unrankedCard = screen
+        .getByRole('link', { name: /octostub\/unranked-two/ })
+        .closest('li')
+      expect(unrankedCard).not.toBeNull()
+      expect(unrankedCard).not.toHaveTextContent('-0.42')
+    })
+
+    it('両グループが存在するときだけ、非保有分の直前に区切り見出しを 1 本挿入する（D-M）', () => {
+      render(
+        <RepositoryList
+          items={twoItems}
+          labels={labels}
+          locale={locale('ja')}
+          gemFacets={facetMap()}
+        />,
+      )
+
+      expect(screen.getAllByText(labels.gemIndexUnavailableHeading)).toHaveLength(1)
+    })
+
+    it('全件が facet を持つ場合は区切り見出しを出さない', () => {
+      const allRanked = new Map([
+        ['octostub/ranked-one', { gemIndex: gemIndex(-0.42), dependentCount: 1 }],
+        ['octostub/unranked-two', { gemIndex: gemIndex(-0.1), dependentCount: 2 }],
+      ])
+      render(
+        <RepositoryList
+          items={twoItems}
+          labels={labels}
+          locale={locale('ja')}
+          gemFacets={allRanked}
+        />,
+      )
+
+      expect(screen.queryByText(labels.gemIndexUnavailableHeading)).not.toBeInTheDocument()
+    })
+
+    it('全件が facet を持たない場合は区切り見出しを出さない', () => {
+      render(
+        <RepositoryList
+          items={twoItems}
+          labels={labels}
+          locale={locale('ja')}
+          gemFacets={new Map()}
+        />,
+      )
+
+      expect(screen.queryByText(labels.gemIndexUnavailableHeading)).not.toBeInTheDocument()
+    })
+
+    it('fullName の大文字小文字が違っても突合できる（gemFacetKey の小文字化）', () => {
+      const mixedCaseItems: RepositorySummary[] = [
+        { ...twoItems[0], fullName: 'Octostub/Ranked-One' },
+      ]
+      render(
+        <RepositoryList
+          items={mixedCaseItems}
+          labels={labels}
+          locale={locale('ja')}
+          gemFacets={facetMap()}
+        />,
+      )
+
+      expect(screen.getByText(/-0\.42/)).toBeInTheDocument()
+    })
   })
 })
