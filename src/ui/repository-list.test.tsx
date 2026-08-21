@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { gemIndex } from '../domain/model/gem-index'
+import type { GemFacet } from '../domain/model/gem'
 import { locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { RepositoryList } from './repository-list'
@@ -9,6 +11,9 @@ const labels = {
   empty: '条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。',
   starCount: 'star 数',
   updatedAt: '最終更新',
+  gemIndexValueLabel: 'Gem Index',
+  gemIndexDependentLabel: '被依存数',
+  gemIndexUnavailableHeading: 'Gem Index 情報なし',
 }
 
 const items: RepositorySummary[] = [
