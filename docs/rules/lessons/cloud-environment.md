@@ -280,7 +280,7 @@ Next.js 本体は `compile()` を `{ validate: false }` で呼ぶため、ロー
   バグではなく設計された保護であり、迂回は分類器の意図に反する
 - 「マージ（`main` への反映）」と「本番デプロイ（`wrangler deploy` の実行）」を分離して扱う。マージ・push
   自体は妨げられない。手順・乖離検知・分類器解除の選択肢は
-  `docs/03_design/infrastructure/cloudflare-infrastructure.md` §8.2 を参照
+  `docs/03_design/infrastructure/cloudflare-infrastructure.md` §8.2.2 を参照
 - 分類器解除に必要な設定変更（`~/.claude/settings.json` 側の `autoMode` 調整・managed settings 側の調整等）は
   **飼い主のアカウント権限が必要な操作** であり、Claude が自律的に行ってよい範囲ではない（A-6 相当）
 

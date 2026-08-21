@@ -45,8 +45,9 @@ tag/message とも空**（`wrangler versions view` の出力で `Tag: -` / `Mess
     デプロイ成功後の疎通確認と合わせて「本当に反映されたか」を再確認する用途）
   - `sprint-cycle-router` のプリフライト（新規スプリントに着手する前に、前回スプリントの成果物が
     実際に本番へ出ているかを検知し、出ていなければ Issue 化してから着手する用途）
-  本スクリプトは `tools/run_checks.sh` へは配線しない（ネットワーク非依存であるべき PR 作成前
-  チェックに本番疎通依存の検査を混ぜると、本番側の一時的な事情で PR が赤くなるため）。
+  本スクリプトの **本判定（本番疎通あり）は `tools/run_checks.sh` へ配線しない**（ネットワーク非依存で
+  あるべき PR 作成前チェックに本番疎通依存の検査を混ぜると、本番側の一時的な事情で PR が赤くなるため）。
+  ただし **`--self-test` はネットワーク非依存なので配線する**（判定ロジック自体の退行を機械で守る）。
 
 【禁止事項】本スクリプトは読み取り専用コマンドのみを実行する。`wrangler deploy` /
 `wrangler versions deploy` / `wrangler rollback` 等の書き込み系コマンドは一切呼ばない。
@@ -57,7 +58,7 @@ tag/message とも空**（`wrangler versions view` の出力で `Tag: -` / `Mess
 使い方:
     python3 tools/check_prod_drift.py
     python3 tools/check_prod_drift.py --json
-    python3 tools/check_prod_drift.py --ref HEAD          # main HEAD の解決に使う ref（既定: HEAD）
+    python3 tools/check_prod_drift.py --ref HEAD          # 比較対象の git ref（既定: origin/main）
     python3 tools/check_prod_drift.py --self-test         # ネットワーク不要のユニットテスト
 """
 
@@ -69,6 +70,9 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mask_secrets import mask_text  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JST = timezone(timedelta(hours=9))
@@ -105,13 +109,17 @@ def _run(cmd: list[str], timeout: int = 60) -> tuple[bool, str]:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout, cwd=REPO_ROOT,
         )
-    except FileNotFoundError:
-        return False, f"コマンドが見つかりません: {cmd[0]}"
     except subprocess.TimeoutExpired:
         return False, f"コマンドがタイムアウトしました（{timeout}秒）: {' '.join(cmd)}"
+    except OSError as e:
+        # FileNotFoundError（npx 不在）も PermissionError も OSError のサブクラス。
+        # ここで捕まえ損ねると呼び出し元まで例外が抜け、fail-closed の exit 2 を通らずに
+        # Python 既定の exit 1（＝「乖離あり」と誤読される）で落ちる。
+        return False, f"コマンドを実行できません（{type(e).__name__}: {e}）: {' '.join(cmd)}"
     if result.returncode != 0:
         err = (result.stderr or result.stdout).strip()
-        return False, err or f"コマンド実行失敗（exit {result.returncode}）: {' '.join(cmd)}"
+        # 失敗理由は Issue / PR コメントへ転記されうるため、秘匿値を必ず落としてから返す。
+        return False, mask_text(err) or f"コマンド実行失敗（exit {result.returncode}）: {' '.join(cmd)}"
     return True, result.stdout
 
 
@@ -142,23 +150,7 @@ def fetch_latest_production_deployment() -> tuple[dict | None, str | None]:
         data = _extract_json(out)
     except json.JSONDecodeError as e:
         return None, f"wrangler deployments list の JSON パースに失敗（{e}）"
-    if not isinstance(data, list):
-        return None, "wrangler deployments list の応答形式が想定外です（配列でない）"
-
-    real_deployments = [
-        d for d in data
-        if isinstance(d, dict)
-        and (d.get("annotations") or {}).get("workers/triggered_by") == DEPLOYMENT_TRIGGER
-        and d.get("versions")
-    ]
-    if not real_deployments:
-        return None, REASON_NO_DEPLOYMENT_FOUND
-
-    latest = max(real_deployments, key=lambda d: d.get("created_on") or "")
-    version_id = latest["versions"][0].get("version_id")
-    if not version_id:
-        return None, "最新デプロイに version_id が含まれていません"
-    return {"version_id": version_id, "created_on": latest.get("created_on")}, None
+    return select_latest_deployment(data)
 
 
 def fetch_version_tag(version_id: str) -> tuple[str | None, str | None]:
@@ -192,6 +184,44 @@ def resolve_head(ref: str) -> tuple[dict | None, str | None]:
 # ──────────────────────────────────────────────
 # 判定ロジック（純関数・API/subprocess 非依存 = --self-test の対象）
 # ──────────────────────────────────────────────
+
+
+def select_latest_deployment(data: object) -> tuple[dict | None, str | None]:
+    """`wrangler deployments list --json` のパース済み応答から、実際に本番へ昇格された
+    最新デプロイを 1 件選ぶ。Returns (deployment_or_none, error_reason)。
+
+    🔴 **`fetch_latest_production_deployment` からフィルタ条件を分離してあるのは、
+    この判定を `--self-test` で検証できるようにするため**（self-test 側に同じ条件を
+    複製すると、本体の条件が壊れても self-test は PASS のままになる）。
+    """
+    if not isinstance(data, list):
+        return None, "wrangler deployments list の応答形式が想定外です（配列でない）"
+
+    real_deployments = [
+        d for d in data
+        if isinstance(d, dict)
+        and (d.get("annotations") or {}).get("workers/triggered_by") == DEPLOYMENT_TRIGGER
+        and d.get("versions")
+    ]
+    if not real_deployments:
+        return None, REASON_NO_DEPLOYMENT_FOUND
+
+    latest = max(real_deployments, key=lambda d: d.get("created_on") or "")
+    versions = latest.get("versions") or []
+    # 🔴 段階デプロイ（`wrangler versions deploy --percentage`・#40 で導入検討中）が走ると
+    # versions に複数版が同居する。先頭を無条件に「本番稼働版」とすると、10% しか出ていない
+    # 新版を見て「反映済み」と誤判定しうる（フェイルオープン）。100% の版が 1 つに定まる
+    # ときだけ判定し、それ以外は判定不能へ倒す。
+    fully_promoted = [v for v in versions if v.get("percentage") == 100]
+    if len(fully_promoted) != 1:
+        return None, (
+            "本番デプロイが段階昇格中（100% の版が一意に定まらない）ため判定不能です"
+            f"（versions={[(v.get('version_id'), v.get('percentage')) for v in versions]}）"
+        )
+    version_id = fully_promoted[0].get("version_id")
+    if not version_id:
+        return None, "最新デプロイに version_id が含まれていません"
+    return {"version_id": version_id, "created_on": latest.get("created_on")}, None
 
 
 def sha_matches(tag: str, head_sha: str) -> bool:
@@ -365,28 +395,64 @@ def _self_test_extract_json() -> list[str]:
 
 
 def _self_test_fetch_deployment_filters_non_deployment() -> list[str]:
-    """fetch_latest_production_deployment 相当のフィルタロジックを直接検証する
-    （version_upload だけの応答からは deployment を選ばないこと。実データ形状を使う）。
+    """本体の `select_latest_deployment` を **直接呼んで** 検証する（実データ形状を使う）。
+
+    🔴 フィルタ条件をここに複製しないこと。複製すると本体が壊れても PASS のままになる。
     """
     failures = []
-    sample = [
-        {
-            "id": "d1", "annotations": {"workers/triggered_by": "version_upload"},
-            "versions": [{"version_id": "vX", "percentage": 100}],
-            "created_on": "2026-08-20T20:00:00.000000Z",
-        },
-        {
-            "id": "d2", "annotations": {"workers/triggered_by": "deployment"},
-            "versions": [{"version_id": "vY", "percentage": 100}],
-            "created_on": "2026-08-19T03:01:40.443777Z",
-        },
-    ]
-    real = [
-        d for d in sample
-        if (d.get("annotations") or {}).get("workers/triggered_by") == DEPLOYMENT_TRIGGER and d.get("versions")
-    ]
-    if len(real) != 1 or real[0]["id"] != "d2":
-        failures.append(f"deployment フィルタが version_upload を誤って含めている: {real}")
+    upload_newer = {
+        # 実測（2026-08-21）では preview アップロードの triggered_by は "upload" で返る。
+        "id": "d1", "annotations": {"workers/triggered_by": "upload"},
+        "versions": [{"version_id": "vX", "percentage": 100}],
+        "created_on": "2026-08-20T20:00:00.000000Z",
+    }
+    deployment_older = {
+        "id": "d2", "annotations": {"workers/triggered_by": "deployment"},
+        "versions": [{"version_id": "vY", "percentage": 100}],
+        "created_on": "2026-08-19T03:01:40.443777Z",
+    }
+
+    # ① version_upload（新しい）より deployment（古い）を選ぶ = preview を本番と誤認しない
+    got, err = select_latest_deployment([upload_newer, deployment_older])
+    if err is not None or not got or got.get("version_id") != "vY":
+        failures.append(f"version_upload を誤って本番デプロイとして選んでいる: got={got!r} err={err!r}")
+
+    # ② deployment が複数あるときは created_on 最大を選ぶ
+    deployment_newer = {
+        "id": "d3", "annotations": {"workers/triggered_by": "deployment"},
+        "versions": [{"version_id": "vZ", "percentage": 100}],
+        "created_on": "2026-08-20T19:30:23.803431Z",
+    }
+    got, err = select_latest_deployment([deployment_older, deployment_newer])
+    if err is not None or not got or got.get("version_id") != "vZ":
+        failures.append(f"最新の deployment を選べていない: got={got!r} err={err!r}")
+
+    # ③ version_upload しか無ければ「本番デプロイ実績なし」= 判定不能へ倒す（fail-closed）
+    got, err = select_latest_deployment([upload_newer])
+    if got is not None or err != REASON_NO_DEPLOYMENT_FOUND:
+        failures.append(f"version_upload のみの応答を本番デプロイとして扱っている: got={got!r} err={err!r}")
+
+    # ③-2 段階昇格中（100% の版が一意でない）は判定不能へ倒す（フェイルオープン防止）
+    got, err = select_latest_deployment([{
+        "id": "d5", "annotations": {"workers/triggered_by": "deployment"},
+        "versions": [{"version_id": "vNEW", "percentage": 10}, {"version_id": "vOLD", "percentage": 90}],
+        "created_on": "2026-08-20T19:30:23.803431Z",
+    }])
+    if got is not None or not err:
+        failures.append(f"段階昇格中を確定した本番版として扱っている: got={got!r} err={err!r}")
+
+    # ④ 応答形式が想定外（配列でない）なら判定不能へ倒す
+    got, err = select_latest_deployment({"unexpected": True})
+    if got is not None or not err:
+        failures.append(f"配列でない応答をエラーにしていない: got={got!r} err={err!r}")
+
+    # ⑤ version_id 欠落は判定不能へ倒す（空文字を版として採用しない）
+    got, err = select_latest_deployment([{
+        "id": "d4", "annotations": {"workers/triggered_by": "deployment"},
+        "versions": [{"percentage": 100}], "created_on": "2026-08-20T19:30:23.803431Z",
+    }])
+    if got is not None or not err:
+        failures.append(f"version_id 欠落を判定不能にしていない: got={got!r} err={err!r}")
     return failures
 
 
@@ -439,7 +505,12 @@ def main() -> None:
                      "0=乖離なし / 1=乖離あり / 2=判定不能。",
     )
     parser.add_argument("--json", action="store_true", help="機械可読な JSON で出力する")
-    parser.add_argument("--ref", default="HEAD", help="main HEAD の解決に使う git ref（既定: HEAD）")
+    parser.add_argument(
+        "--ref", default="origin/main",
+        help="比較対象の git ref（既定: origin/main）。作業ブランチの HEAD を既定にすると、"
+             "別ブランチ上のセッションが古いコミットと比べて『乖離なし』と誤判定するため origin/main を既定にする。"
+             "呼び出し前に `git fetch origin main` しておくこと（fetch 済みでなければ解決に失敗し exit 2）。",
+    )
     parser.add_argument("--self-test", action="store_true", help="ネットワーク不要のユニットテストを実行")
     args = parser.parse_args()
 
@@ -461,7 +532,13 @@ def main() -> None:
         _emit_error(f"本番バージョン詳細の取得に失敗しました（{terr}）", args.json)
         sys.exit(2)
 
-    result = decide(head, deployment, tag)
+    try:
+        result = decide(head, deployment, tag)
+    except (ValueError, TypeError) as e:
+        # 日時文字列が想定外（小数秒の桁数・タイムゾーン表記のゆれ等）でも、無捕捉例外で
+        # exit 1（＝「乖離あり」）に化けさせない。判定不能として exit 2 に倒す。
+        _emit_error(f"日時の解釈に失敗したため判定できません（{type(e).__name__}: {e}）", args.json)
+        sys.exit(2)
     result["head_sha"] = head["sha"]
     result["head_committed_at"] = head["committed_at"]
     result["prod_version_id"] = deployment["version_id"]

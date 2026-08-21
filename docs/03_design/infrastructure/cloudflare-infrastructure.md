@@ -549,6 +549,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.
 実行結果（ゲート判定・デプロイ成功可否・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
 
 - 🔴 **`npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）
+- 🔴 **`npm run deploy` は本番 version に `--tag "$(git rev-parse --short=12 HEAD)"` を付ける**（Issue #288）。このタグが `tools/check_prod_drift.py` の厳密判定（SHA 一致）の入力になるため、**`wrangler deploy` を手で叩いてタグを省略しない**（省略すると乖離検知が日時ベースの緩い判定へ後退する）。`git rev-parse` が失敗したときは空タグでデプロイせずコマンド全体が失敗する
 - 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) §3.3 がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替。上記のスプリントレビューゲートはこのテストゲートを **置き換えず拡張** する）
 - **失敗したら本番へ進まない**（fail-closed）。疎通確認が 5xx なら `npx wrangler rollback` を検討し、判断と結果を記録する
 
@@ -571,7 +572,7 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 ### 8.2.2. 🔴 クラウドセッションは `wrangler deploy` に到達できない（auto mode classifier・2026-08-20 実機検証・Issue #288）
 
 **クラウド実行環境の Claude セッション（有人・無人を問わず）は、上記 8.2 の「本番デプロイ」コマンド
-（`npm run deploy` = `opennextjs-cloudflare build && wrangler deploy`）を実行できない。**
+（`npm run deploy` = `opennextjs-cloudflare build && wrangler deploy --tag "$(git rev-parse --short=12 HEAD)"`）を実行できない。**
 `Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier.`
 で拒否される（無人ルーティン 3 回・有人セッション 1 回、計 4 回すべて再現。`.claude/settings.json` の
 `permissions.allow` に許可済みでも解除されない）。一方、`npx opennextjs-cloudflare build`（ビルド）と

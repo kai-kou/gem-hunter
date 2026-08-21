@@ -47,7 +47,7 @@ import urllib.request
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mask_secrets import mask_value  # noqa: E402
+from mask_secrets import mask_text, mask_value  # noqa: E402
 from repo_slug import resolve_repo_slug  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -263,28 +263,15 @@ def head_matches_main() -> bool:
     return bool(head) and proc.returncode == 0 and proc.stdout.strip() == head
 
 
-_BEARER_RE = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
 
 
 def mask_output(text: str, secrets: dict[str, str] | None = None) -> str:
     """wrangler 等の出力から既知の秘匿値を除去する（純粋関数・Issue/PR コメント記録用・WARNING PR #235）。
 
-    `secrets` 省略時はセッション環境変数（`CLOUDFLARE_API_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`）の
-    実値を対象にする。`mask_secrets.py` は「変数名 → マスク値」の対で動く設計（`mask_if_sensitive`）で
-    任意テキストへの適用手段が無いため、値の置換自体はここで行い `mask_value()` のみ再利用する。
+    実体は `mask_secrets.mask_text()`（PR #289 で共通化。`check_prod_drift.py` と共有する）。
+    本関数は後方互換のための薄い別名であり、新規コードは `mask_text()` を直接使う。
     """
-    if not text:
-        return text
-    if secrets is None:
-        secrets = {
-            name: os.environ.get(name, "")
-            for name in ("CLOUDFLARE_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
-        }
-    masked = text
-    for value in secrets.values():
-        if value:
-            masked = masked.replace(value, mask_value(value))
-    return _BEARER_RE.sub("Bearer ****", masked)
+    return mask_text(text, secrets)
 
 
 def run_retire(alias: str, tag: str, dry_run: bool) -> dict[str, Any]:

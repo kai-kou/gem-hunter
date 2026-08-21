@@ -215,6 +215,15 @@ else
   skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 本番乖離検知は「--self-test だけ」を配線する（判定ロジックの退行を機械で守るため）。
+# 本判定（`check_prod_drift.py` を引数なしで実行）は本番疎通に依存するので配線しない
+# （本番側の一時的な事情で PR が赤くなるのを避ける・Issue #288）。
+if [ -f "$REPO_ROOT/tools/check_prod_drift.py" ]; then
+  run_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" python3 tools/check_prod_drift.py --self-test
+else
+  skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="

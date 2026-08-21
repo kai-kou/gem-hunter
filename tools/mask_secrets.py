@@ -11,6 +11,7 @@ NOTE: GitHub Variables の一覧表示には必ず以下のいずれかを使う
   ❌ gh variable list を直接実行すると全ての値が平文でターミナルに流れる
 """
 
+import os
 import re
 
 # 秘匿性の高い変数名に含まれるキーワードパターン（大文字小文字不問）
@@ -82,3 +83,31 @@ def mask_if_sensitive(name: str, value: str) -> str:
     if is_sensitive_var(name):
         return mask_value(value)
     return value
+
+
+_BEARER_RE = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
+
+# 任意テキストへのマスク適用で既定の対象にするセッション環境変数
+DEFAULT_SECRET_VARS = ("CLOUDFLARE_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
+
+
+def mask_text(text: str, secrets: dict[str, str] | None = None) -> str:
+    """任意テキスト（外部コマンドの stdout/stderr 等）から既知の秘匿値を除去する。
+
+    上の `mask_value()` は「値そのもの」を、`mask_if_sensitive()` は「変数名と値の対」を
+    扱うのに対し、本関数は **秘匿値がどこに埋まっているか分からないテキスト全体** を対象にする。
+    外部コマンドの出力を Issue / PR コメントへ転記する経路（`retire_preview_aliases.py` /
+    `check_prod_drift.py`）が共通で使う（PR #235 の `mask_output` をここへ集約した）。
+
+    `secrets` 省略時は `DEFAULT_SECRET_VARS` の実値を対象にする。純粋関数として使いたい場合は
+    `secrets={}` を明示的に渡す（環境変数を読まなくなる）。
+    """
+    if not text:
+        return text
+    if secrets is None:
+        secrets = {name: os.environ.get(name, "") for name in DEFAULT_SECRET_VARS}
+    masked = text
+    for value in secrets.values():
+        if value:
+            masked = masked.replace(value, mask_value(value))
+    return _BEARER_RE.sub("Bearer ****", masked)
