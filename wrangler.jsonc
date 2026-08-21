@@ -11,7 +11,13 @@
   "limits": { "cpu_ms": 50 },
   // 🔴 `period` を変えたら src/infrastructure/platform/rate-limit.ts の RATE_LIMIT_PERIOD_SECONDS も
   //    同じ値へ更新する（超過時の Retry-After に使うため、ずれると案内した秒数と実際の窓が食い違う）。
+  //    RATE_LIMITER_GEM_INDEX（SP-16 争点6）も同じ period=60 を使う（src/composition/rate-limit.ts が
+  //    両バインディングへ同じ RATE_LIMIT_PERIOD_SECONDS を渡すため）。
+  //    limit=6 は「sort=gemIndex の 1 検索は最大 10 回の upstream 呼び出し（per_page=100 × 最大10ページ）」
+  //    という前提で、通常枠（60 req/60s）の 1/10 にすることで upstream 呼び出し換算の予算を
+  //    通常検索と同水準に保つための値（rate_cache の争点6 提案・whiteboard round3 lead 裁定）。
   "ratelimits": [
-    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "RATE_LIMITER_GEM_INDEX", "namespace_id": "1002", "simple": { "limit": 6, "period": 60 } }
   ]
 }

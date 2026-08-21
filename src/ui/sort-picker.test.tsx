@@ -5,7 +5,7 @@ import { SortPicker } from './sort-picker'
 
 const labels = {
   navLabel: '並び順',
-  options: { relevance: '関連度', stars: 'star 数', updated: '更新日時' },
+  options: { relevance: '関連度', stars: 'star 数', updated: '更新日時', gemIndex: 'Gem Index 順' },
 }
 
 describe('SortPicker', () => {

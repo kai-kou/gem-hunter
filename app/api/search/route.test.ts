@@ -307,4 +307,25 @@ describe('GET /api/search — Issue #122: RateLimitPort の配線', () => {
     expect(res.status).toBe(400)
     expect(enforceSearchRateLimitMock).not.toHaveBeenCalled()
   })
+
+  /**
+   * SP-16 争点6: `sort=gemIndex` は 1 検索が最大 10 回の upstream 呼び出しになるため、
+   * `enforceSearchRateLimit` へ `sort` を渡し、composition root 側で別スロット
+   * （低い上限）を選ばせる必要がある（whiteboard round3 lead 裁定）。
+   */
+  it('sort=gemIndex を enforceSearchRateLimit の第2引数へそのまま渡す', async () => {
+    searchMock.mockResolvedValue(makeSearchResult({ totalCount: 1 }))
+
+    await GET(new NextRequest('http://localhost/api/search?q=gem-index-rate-check&sort=gemIndex'))
+
+    expect(enforceSearchRateLimitMock).toHaveBeenCalledWith(expect.anything(), 'gemIndex')
+  })
+
+  it('sort 未指定なら enforceSearchRateLimit の第2引数は既定値（relevance）になる', async () => {
+    searchMock.mockResolvedValue(makeSearchResult({ totalCount: 1 }))
+
+    await GET(new NextRequest('http://localhost/api/search?q=gem-index-rate-default-check'))
+
+    expect(enforceSearchRateLimitMock).toHaveBeenCalledWith(expect.anything(), 'relevance')
+  })
 })

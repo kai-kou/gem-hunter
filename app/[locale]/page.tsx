@@ -70,7 +70,9 @@ async function runSearch(
     // ローカライズ済み表示（`toErrorPresentation`）に繋げる（新しい分岐は足さない）。
     // `headers()` の呼び出しでこのページは動的レンダリングになるが、既に `searchParams`
     // を使っているため元から動的である（新たな制約ではない）。
-    await enforceSearchRateLimit(await headers())
+    // 🔴 SP-16 争点6: `rawSort` を渡し、`sort=gemIndex`（最大 10 倍の upstream 呼び出し）なら
+    // 別スロット・低い上限で消費させる（`src/composition/rate-limit.ts` が分岐する）。
+    await enforceSearchRateLimit(await headers(), rawSort)
 
     // SP-8: ログイン中はユーザー自身のアクセストークンで叩く（レート枠の切替）。トークンの
     // 供給元が変わっても経路は `GithubRepositoryQuery`（ACL）のままなので、`is:public` 付与と

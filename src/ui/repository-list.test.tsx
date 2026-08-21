@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { gemIndex } from '../domain/model/gem-index'
 import { locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { RepositoryList } from './repository-list'
@@ -9,6 +10,8 @@ const labels = {
   empty: '条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。',
   starCount: 'star 数',
   updatedAt: '最終更新',
+  dependentLabel: '被依存数',
+  gemIndexLabel: 'Gem Index',
 }
 
 const items: RepositorySummary[] = [
@@ -154,5 +157,31 @@ describe('RepositoryList', () => {
     render(<RepositoryList items={[]} labels={labels} locale={locale('ja')} />)
 
     expect(screen.getByRole('status')).toHaveTextContent(labels.empty)
+  })
+
+  it('gemIndex を持つ結果は被依存数・star・Gem Index の 3 数値を並置する（SP-16・操作レビュー手順3）', () => {
+    const withGemIndex: RepositorySummary[] = [
+      {
+        ...items[0],
+        gemIndex: gemIndex(-1.234),
+        dependentCount: 42,
+      },
+    ]
+
+    render(<RepositoryList items={withGemIndex} labels={labels} locale={locale('ja')} />)
+
+    // daily-digest.test.tsx と同じ作法（ラベル + 数値が別テキストノードに分かれるため正規表現で拾う）。
+    expect(screen.getByText(/42/)).toBeInTheDocument()
+    expect(screen.getByText('233,000')).toBeInTheDocument()
+    expect(screen.getByText(/-1\.234/)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(labels.dependentLabel))).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(labels.gemIndexLabel))).toBeInTheDocument()
+  })
+
+  it('gemIndex を持たない結果は 3 数値バッジを出さない（候補プール外・既存表示のまま）', () => {
+    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.queryByText(labels.dependentLabel, { exact: false })).not.toBeInTheDocument()
+    expect(screen.queryByText(labels.gemIndexLabel, { exact: false })).not.toBeInTheDocument()
   })
 })

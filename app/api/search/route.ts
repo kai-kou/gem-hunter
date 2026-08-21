@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       rawParams[key] = value
     }
   }
-  const { page } = parseSearchParams(rawParams)
+  const { page, sort } = parseSearchParams(rawParams)
 
   try {
     // 値オブジェクトへの変換は境界（ここ）で行う（domain-model.md §4 / ARCH-R2）。
@@ -61,7 +61,9 @@ export async function GET(request: NextRequest) {
     // 枠を消費しないよう `searchKeyword` の検証（値オブジェクト変換）の後に置き、
     // GitHub API を実際に叩く（`search()`）前に間引く。超過時は `RateLimitExceededError`
     // を投げ、下の catch → `errorResponse()` が 429 + `Retry-After` を返す（新しい分岐は足さない）。
-    await enforceSearchRateLimit(request.headers)
+    // 🔴 SP-16 争点6: `sort` を渡し、`sort=gemIndex`（最大 10 倍の upstream 呼び出し）なら
+    // 別スロット・低い上限で消費させる（`src/composition/rate-limit.ts` が分岐する）。
+    await enforceSearchRateLimit(request.headers, sort)
 
     // SP-8: セッション Cookie があればユーザー自身のレート枠で検索する（AR-5）。
     // このエンドポイントは元々 X-Cache-Status 観測・検証専用（用途はファイル冒頭コメント参照）

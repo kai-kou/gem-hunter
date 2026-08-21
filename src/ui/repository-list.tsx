@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { gemIndexValue } from '../domain/model/gem-index'
 import type { Locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
@@ -8,6 +9,14 @@ type RepositoryListLabels = {
   empty: string
   starCount: string
   updatedAt: string
+  /**
+   * 被依存数の視覚ラベル（`SP-16`）。`item.gemIndex` を持つカードでのみ使う。
+   * `daily-digest.tsx` の `dependentLabel` と同じ文言（`messages/*.json` の
+   * `home.digest.dependentLabel`）を呼び出し側が渡す想定（省略可・後方互換）。
+   */
+  dependentLabel?: string
+  /** Gem Index の視覚ラベル（`SP-16`）。`home.digest.gemIndexLabel` を想定。 */
+  gemIndexLabel?: string
 }
 
 /**
@@ -90,11 +99,29 @@ export function RepositoryList({
             ) : null}
             <p className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
               {item.primaryLanguage ? <span>{item.primaryLanguage}</span> : null}
+              {/*
+                🔴 SP-16: 候補プールに存在するリポジトリ（`item.gemIndex !== undefined`）だけ
+                被依存数・Gem Index を追加表示する（`dependentCount` は常に `gemIndex` とペアで
+                埋まる・`repository.ts` の doc comment）。操作レビュー手順 3「なぜ上位なのか
+                （被依存数と star の乖離）がわかる」を満たすため、star と並べて 3 数値を置く
+                （`daily-digest.tsx` の dependentLabel/starsLabel/gemIndexLabel パターンを流用）。
+                候補プールに無いリポジトリ（227 件しかない）は従来どおり star のみを表示する。
+              */}
+              {item.gemIndex !== undefined && item.dependentCount !== undefined ? (
+                <span>
+                  {labels.dependentLabel} {numberFormat.format(item.dependentCount)}
+                </span>
+              ) : null}
               <span>
                 <span aria-hidden="true">★ </span>
                 <span className="sr-only">{labels.starCount} </span>
                 {numberFormat.format(item.stars)}
               </span>
+              {item.gemIndex !== undefined ? (
+                <span>
+                  {labels.gemIndexLabel} {numberFormat.format(gemIndexValue(item.gemIndex))}
+                </span>
+              ) : null}
               <span>
                 {labels.updatedAt} {dateFormat.format(item.lastPushedAt)}
               </span>

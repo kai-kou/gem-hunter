@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs'
+
 import type { CachePort } from '../domain/ports/cache-port'
 import type { ClockPort } from '../domain/ports/clock-port'
+import type { GemDigestPort } from '../domain/ports/gem-digest-port'
 import type { TokenProvider } from '../infrastructure/github/github-repository-query'
 import { GithubRepositoryQuery } from '../infrastructure/github/github-repository-query'
 import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
@@ -72,11 +75,43 @@ function makeCachingRepositoryQuery(
 }
 
 /**
+ * Gem Index 候補プールの取得口を組み立てる（`SP-14` の `getDailyDigestUseCase()` と
+ * `SP-16` の `searchRepositoriesUseCase()` が同じ差し替え口を共有する・whiteboard
+ * `sp16-gem-index-sort-20260821` round3 決定 8）。
+ *
+ * `GEM_DIGEST_SOURCE_PATH` が設定されていれば、本番の `public/data/daily-digest.json`
+ * ではなくそのパスの JSON を候補プールとして読む（E2E 専用の固定候補プールを注入し、
+ * 検索スタブの `repositoryFullName` と一致させて決定論的に検証するための差し替え口）。
+ * 本番では未設定のため常に既定の静的 JSON を使う。読み込みに失敗した場合も例外にせず
+ * 既定の候補プールへフォールバックする（`GemDigestPort` の「例外を投げない」契約・
+ * `static-gem-digest.ts` と同じ fail-soft 方針）。
+ */
+function makeGemDigestPort(): GemDigestPort {
+  const overridePath = process.env.GEM_DIGEST_SOURCE_PATH
+  if (!overridePath) {
+    return new StaticGemDigest()
+  }
+  try {
+    const raw = readFileSync(overridePath, 'utf-8')
+    return new StaticGemDigest(JSON.parse(raw))
+  } catch (cause) {
+    console.warn(
+      `[container] GEM_DIGEST_SOURCE_PATH（${overridePath}）の読み込みに失敗しました。既定の候補プールへフォールバックします: ${String(cause)}`,
+    )
+    return new StaticGemDigest()
+  }
+}
+
+/**
  * SP-5: 検索結果の取得（HIT/MISS の観測は `searchRepositoriesWithCacheStatus()` を使う）。
  * SP-8: `accessToken` を渡すとユーザー自身のレート枠で検索する（省略時は installation token）。
+ * SP-16: `sort=gemIndex` の並べ替え用に `GemDigestPort`（候補プール）を束ねる。
  */
 export function searchRepositoriesUseCase(accessToken?: string | null): SearchRepositories {
-  return makeSearchRepositories({ repos: makeCachingRepositoryQuery({ accessToken }) })
+  return makeSearchRepositories({
+    repos: makeCachingRepositoryQuery({ accessToken }),
+    gemDigest: makeGemDigestPort(),
+  })
 }
 
 /**
@@ -104,7 +139,7 @@ export function searchRepositoriesWithCacheStatus(accessToken?: string | null): 
     },
   })
   return {
-    search: makeSearchRepositories({ repos }),
+    search: makeSearchRepositories({ repos, gemDigest: makeGemDigestPort() }),
     getCacheStatus: () => status,
   }
 }
@@ -113,7 +148,9 @@ export function searchRepositoriesWithCacheStatus(accessToken?: string | null): 
  * SP-14: キーワード非依存の日次ダイジェスト（`ADR 0014`）。候補プールは静的 JSON
  * （`StaticGemDigest`・`D-28`）から読み、並べ替えは usecase 側で日付シードから決定論的に行う。
  * サーバー側に状態を持たない（`D-6` / `D-14`）ため、リクエストごとに使い捨てで組み立ててよい。
+ * SP-16: 候補プールの読み込み元は `searchRepositoriesUseCase()` と共通の `makeGemDigestPort()`
+ * を使う（`GEM_DIGEST_SOURCE_PATH` の差し替え口を共有・whiteboard round3 決定 8）。
  */
 export function getDailyDigestUseCase(): GetDailyDigest {
-  return makeGetDailyDigest({ port: new StaticGemDigest() })
+  return makeGetDailyDigest({ port: makeGemDigestPort() })
 }

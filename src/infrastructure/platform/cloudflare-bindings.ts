@@ -8,6 +8,21 @@ import type { RateLimiterBinding } from './rate-limit'
  */
 type EnvWithRateLimiter = {
   RATE_LIMITER?: RateLimiterBinding
+  /** SP-16 争点6: `sort=gemIndex` 専用の別スロット（`wrangler.jsonc` の低い上限のエントリ）。 */
+  RATE_LIMITER_GEM_INDEX?: RateLimiterBinding
+}
+
+async function bindingOf(
+  name: keyof EnvWithRateLimiter,
+): Promise<RateLimiterBinding | undefined> {
+  try {
+    const { getCloudflareContext } = await import('@opennextjs/cloudflare')
+    const context = await getCloudflareContext({ async: true })
+    const env = context?.env as EnvWithRateLimiter | undefined
+    return env?.[name]
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -22,12 +37,14 @@ type EnvWithRateLimiter = {
  * 静的 import にすると、この関数を呼ばないテストまで巻き添えで壊れるため、呼び出し時にのみ動的 import する。
  */
 export async function rateLimiterBinding(): Promise<RateLimiterBinding | undefined> {
-  try {
-    const { getCloudflareContext } = await import('@opennextjs/cloudflare')
-    const context = await getCloudflareContext({ async: true })
-    const env = context?.env as EnvWithRateLimiter | undefined
-    return env?.RATE_LIMITER
-  } catch {
-    return undefined
-  }
+  return bindingOf('RATE_LIMITER')
+}
+
+/**
+ * SP-16 争点6: `sort=gemIndex` 専用の別スロット（`wrangler.jsonc` の `RATE_LIMITER_GEM_INDEX`）。
+ * `sort=gemIndex` は 1 検索が最大 10 回の upstream 呼び出しになるため（全件取得）、
+ * 通常枠（`RATE_LIMITER`）とは別に低い上限で消費させる（`src/composition/rate-limit.ts` 側で選択）。
+ */
+export async function gemIndexRateLimiterBinding(): Promise<RateLimiterBinding | undefined> {
+  return bindingOf('RATE_LIMITER_GEM_INDEX')
 }
