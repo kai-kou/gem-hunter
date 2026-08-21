@@ -1,0 +1,29 @@
+Flat vector illustration, digital spot-illustration / icon style, isolated on a fully
+transparent background (PNG with alpha channel). Bold, perfectly uniform-width outlines in a
+neutral medium gray (a soft warm-neutral mid-gray, never pure black). Fill palette strictly
+limited to three flat colors only: the same neutral medium gray (used for outlines and for
+secondary environmental shapes such as pebbles, dust, or props), a single flat pale
+off-white/cream for minor secondary highlight shapes, and one accent color reserved
+exclusively for the rough gem motif itself — a bright, clean, saturated cobalt/sapphire blue
+(cooler than violet, vivid but not neon). Absolutely no gradients, no drop shadows, no
+photorealistic shading, no glossy specular highlights, no texture, no grain, no bevels, no
+soft blur. Any sense of depth on the gem comes only from splitting it into a few large flat
+facet regions using two flat tones of the same blue (one slightly darker flat blue, one
+slightly lighter flat blue — both perfectly flat solid fills, never blended into each other).
+The rough/uncut gem must always be drawn as an asymmetric, irregular, jagged-edged polygon
+with unevenly sized facets — deliberately NOT a symmetric, regularly-faceted "perfect
+diamond" shape — so its silhouette alone reads as "raw and uncut" rather than "polished and
+famous." No text, no letters, no numbers, no watermark, no logo anywhere in the image. No
+human figures, no faces, no mascots, no hands unless explicitly described below. Clean
+geometric reduction, generous negative space, simple bold silhouettes that stay legible even
+at very small sizes. Linework weight, palette, and level of reduction must be identical to
+the rest of this illustration set, as if made by the same illustrator for the same product.
+
+Subject: the same style magnifying glass as described in the shared motif, hovering over a
+small bare patch of ground with only two or three plain gray pebbles scattered loosely — no
+rough gem is present anywhere in the frame this time. Inside the magnifying glass's lens,
+draw a faint thin dashed-outline circle (same neutral gray, completely unfilled, no color
+inside it) sized and positioned where a gem shape would normally sit, suggesting "we looked
+right here, but there was nothing to find." Keep the overall composition noticeably sparser
+and more open than a typical discovery scene, with more visible empty negative space around
+the pebbles, to visually communicate absence rather than discovery.

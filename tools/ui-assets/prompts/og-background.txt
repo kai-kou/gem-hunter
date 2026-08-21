@@ -1,0 +1,33 @@
+Flat vector illustration, digital spot-illustration / icon style, isolated on a fully
+transparent background (PNG with alpha channel). Bold, perfectly uniform-width outlines in a
+neutral medium gray (a soft warm-neutral mid-gray, never pure black). Fill palette strictly
+limited to three flat colors only: the same neutral medium gray (used for outlines and for
+secondary environmental shapes such as pebbles, dust, or props), a single flat pale
+off-white/cream for minor secondary highlight shapes, and one accent color reserved
+exclusively for the rough gem motif itself — a bright, clean, saturated cobalt/sapphire blue
+(cooler than violet, vivid but not neon). Absolutely no gradients, no drop shadows, no
+photorealistic shading, no glossy specular highlights, no texture, no grain, no bevels, no
+soft blur. Any sense of depth on the gem comes only from splitting it into a few large flat
+facet regions using two flat tones of the same blue (one slightly darker flat blue, one
+slightly lighter flat blue — both perfectly flat solid fills, never blended into each other).
+The rough/uncut gem must always be drawn as an asymmetric, irregular, jagged-edged polygon
+with unevenly sized facets — deliberately NOT a symmetric, regularly-faceted "perfect
+diamond" shape — so its silhouette alone reads as "raw and uncut" rather than "polished and
+famous." No text, no letters, no numbers, no watermark, no logo anywhere in the image. No
+human figures, no faces, no mascots, no hands unless explicitly described below. Clean
+geometric reduction, generous negative space, simple bold silhouettes that stay legible even
+at very small sizes. Linework weight, palette, and level of reduction must be identical to
+the rest of this illustration set, as if made by the same illustrator for the same product.
+
+Canvas size 1536x864, landscape orientation. Subject: confined to the right 40% of the frame,
+a small cluster of shiny, symmetric, regularly-faceted round gems (drawn in the same neutral
+gray, still completely flat with zero shading — just clean outlined circular faceted shapes
+to suggest "polished and popular") loosely grouped together. Tucked among them, slightly
+smaller and set a bit apart from the group, one asymmetric rough-cut gem in the two-tone flat
+blue accent color, with a few short flat radiating line strokes drawing the eye to it — the
+same "hidden among the crowd" motif as the hero-idle image. The entire left 55-60% of the
+1536-wide canvas must be left as a single flat, plain, empty pale off-white background fill
+— no props, no pebbles, no lines, no texture in that zone at all — so that locale-specific
+title text can be composited on top of it afterward by a separate rendering step. Keep every
+illustrated element strictly confined to the right portion of the frame, clear of that
+left/center empty zone.
