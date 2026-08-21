@@ -277,6 +277,31 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
           _backup_failed=true
         fi
       fi
+      # 変異テストマーカーが残っている＝前セッションが `mutation_guard.sh end` を実行せずに
+      # 終わった、という意味（Issue #304 / L-131）。この状態では Stop フックの WIP 自動コミットが
+      # 抑止されているため、**追跡ファイルの変更が一度もコミットされていない**。直後の
+      # `checkout -- .` はそれを無退避で捨てるので、パッチとして退避してからマーカーを外す
+      # （マーカーの持ち主のセッションは既に終了しており、残すと次セッションの保全まで殺す）。
+      _wip_guard_lib="${PROJECT_DIR}/.claude/hooks/lib/wip_guard.sh"
+      if [ "$_has_changes" = true ] && [ -f "$_wip_guard_lib" ]; then
+        # shellcheck disable=SC1090
+        source "$_wip_guard_lib"
+        _mutation_marker=$(wip_guard_marker_path "$PROJECT_DIR" 2>/dev/null || echo "")
+        if [ -n "$_mutation_marker" ] && [ -f "$_mutation_marker" ]; then
+          _patch_dir="${_backup_dir:-${PROJECT_DIR}/.git/untracked-backup/$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y%m%d-%H%M%S')}"
+          if mkdir -p "$_patch_dir" 2>/dev/null \
+             && git -C "$PROJECT_DIR" diff HEAD >"${_patch_dir}/tracked-changes.patch" 2>/dev/null \
+             && [ -s "${_patch_dir}/tracked-changes.patch" ]; then
+            echo "[cleanup] 変異テストマーカーが残存していたため、追跡ファイルの変更を ${_patch_dir}/tracked-changes.patch へ退避しました（Issue #304）" >&2
+            _mutation_patch="${_patch_dir}/tracked-changes.patch"
+          else
+            rm -f "${_patch_dir}/tracked-changes.patch" 2>/dev/null || true
+          fi
+          rm -f "$_mutation_marker" 2>/dev/null || true
+        fi
+      fi
+      unset _wip_guard_lib _mutation_marker _patch_dir
+
       git -C "$PROJECT_DIR" reset HEAD -- . >/dev/null 2>&1 || true
       GIT_LFS_SKIP_SMUDGE=1 git -C "$PROJECT_DIR" checkout -- . 2>/dev/null || true
       # CLEANUP_KEEP_GLOBS を -e 引数列に展開
@@ -292,6 +317,10 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
         # 失われた事実こそ Claude に届く必要がある（stderr だけでは届かない）
         echo "⚠️ 前セッションの未追跡ファイル ${_untracked_count} 件は退避に失敗し、クリーンアップで失われた可能性があります（Issue #193）。作業を進める前に、失われて困るものが無かったかを確認してください。"
       fi
+      if [ -n "${_mutation_patch:-}" ]; then
+        echo "⚠️ 前セッションが変異テストマーカー（\`.git/MUTATION_IN_PROGRESS\`）を残したまま終了していたため、未コミットだった追跡ファイルの変更を \`${_mutation_patch}\` へ退避してマーカーを解除しました（Issue #304 / L-131）。**意図的に壊した変異が混ざっている可能性があるので、そのまま適用せず内容を確認してください**（適用は \`git apply\`）。"
+      fi
+      unset _mutation_patch
       # 退避は直近 5 世代だけ残す（.git 配下が無限に膨らむのを防ぐ）
       _bk_root="${PROJECT_DIR}/.git/untracked-backup"
       if [ -d "$_bk_root" ]; then

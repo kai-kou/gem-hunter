@@ -28,6 +28,17 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
   _branch=$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo "")
   if [ -n "$_branch" ] && [ "$_branch" != "main" ] && [ "$_branch" != "master" ]; then
+    # 変異テスト等の一時改変中は WIP 自動コミットを抑止する（Issue #304 / L-131）。
+    # 実装をわざと壊している最中に自動コミットが走ると、その壊れた状態が push される。
+    _mutation_guard=false
+    _wip_guard_lib="$(cd "$(dirname "$0")" && pwd)/lib/wip_guard.sh"
+    if [ -f "$_wip_guard_lib" ]; then
+      # shellcheck disable=SC1090
+      source "$_wip_guard_lib"
+      if wip_guard_active_here "PreCompact" "$REPO_ROOT"; then _mutation_guard=true; fi
+    fi
+    unset _wip_guard_lib
+
     # マージ済みブランチでは [wip] コミットを積まない（古い版へ巻き戻すバグ防止）
     _default_branch=$(git -C "$REPO_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
     # 明示 refspec で remote-tracking ref を確実に更新（Issue #78・素の fetch だと古いまま残りうる）
@@ -35,6 +46,8 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
     _merged=$(git -C "$REPO_ROOT" branch --merged "origin/${_default_branch}" --format='%(refname:short)' 2>/dev/null | grep -Fx "$_branch" || true)
     if [ -n "$_merged" ]; then
       echo "[PreCompact] ブランチ '${_branch}' はマージ済みのため [wip] コミットをスキップします" >&2
+    elif [ "$_mutation_guard" = true ]; then
+      : # 抑止理由は wip_guard_active が stderr に出力済み（Issue #304）
     elif [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)" ]; then
       _timestamp=$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z' 2>/dev/null || date '+%Y-%m-%d %H:%M')
       git -C "$REPO_ROOT" add -A 2>/dev/null || true
@@ -51,7 +64,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
       fi
     fi
   fi
-  unset _branch _timestamp _default_branch _merged 2>/dev/null || true
+  unset _branch _timestamp _default_branch _merged _mutation_guard 2>/dev/null || true
 fi
 
 exit 0

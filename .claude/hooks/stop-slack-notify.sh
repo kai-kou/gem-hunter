@@ -68,8 +68,21 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
         _merge_in_progress=true
       fi
     fi
+    # 変異テスト等の一時改変中は WIP 自動コミットを抑止する（Issue #304 / L-131）。
+    # 実装をわざと壊している最中に自動コミットが走ると、その壊れた状態が push される。
+    _mutation_guard=false
+    _wip_guard_lib="$(cd "$(dirname "$0")" && pwd)/lib/wip_guard.sh"
+    if [ -f "$_wip_guard_lib" ]; then
+      # shellcheck disable=SC1090
+      source "$_wip_guard_lib"
+      if wip_guard_active_here "stop-slack-notify" "$REPO_ROOT"; then _mutation_guard=true; fi
+    fi
+    unset _wip_guard_lib
+
     if [ "$_merge_in_progress" = true ]; then
       echo "[stop-slack-notify] マージ/リベース/チェリーピック進行中のため WIP 自動コミットをスキップしました（作業ツリーはそのまま保持・Issue #94）" >&2
+    elif [ "$_mutation_guard" = true ]; then
+      : # 抑止理由は wip_guard_active が stderr に出力済み
     elif [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)" ]; then
       _timestamp=$(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M' 2>/dev/null || date '+%Y-%m-%d %H:%M')
       # 月次コストテレメトリ（cost_monthly）は feature ブランチに混入させない（#106・#242）。
@@ -99,7 +112,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
       fi
     fi
   fi
-  unset _branch _timestamp _git_dir _merge_in_progress
+  unset _branch _timestamp _git_dir _merge_in_progress _mutation_guard
 fi
 
 # ──────────────────────────────────────────

@@ -33,6 +33,17 @@ fi
 if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
   _branch=$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo "")
   if [ -n "$_branch" ] && [ "$_branch" != "main" ] && [ "$_branch" != "master" ]; then
+    # 変異テスト等の一時改変中は WIP 自動コミットを抑止する（Issue #304 / L-131）。
+    # 実装をわざと壊している最中に自動コミットが走ると、その壊れた状態が push される。
+    _mutation_guard=false
+    _wip_guard_lib="$(cd "$(dirname "$0")" && pwd)/lib/wip_guard.sh"
+    if [ -f "$_wip_guard_lib" ]; then
+      # shellcheck disable=SC1090
+      source "$_wip_guard_lib"
+      if wip_guard_active_here "PostCompact" "$REPO_ROOT"; then _mutation_guard=true; fi
+    fi
+    unset _wip_guard_lib
+
     # マージ済みブランチでは [wip] コミットを積まない（古い版へ巻き戻すバグ防止）
     _default_branch=$(git -C "$REPO_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
     # 明示 refspec で remote-tracking ref（origin/<default>）を確実に更新する（Issue #78）。
@@ -43,6 +54,11 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
     if [ -n "$_merged" ]; then
       echo "[PostCompact] ブランチ '${_branch}' はマージ済み（origin/${_default_branch} 基準）のため [wip] コミットをスキップします" >&2
       echo "[PostCompact] → 新規作業は 'git checkout ${_default_branch} && git pull && git checkout -b <new>' で新ブランチを切ってください" >&2
+      _skip_wip_commit=true
+    fi
+
+    if [ "$_mutation_guard" = true ]; then
+      # 抑止理由は wip_guard_active が stderr に出力済み（Issue #304）
       _skip_wip_commit=true
     fi
 
@@ -64,7 +80,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
       fi
     fi
   fi
-  unset _branch _timestamp _default_branch _merged _skip_wip_commit 2>/dev/null || true
+  unset _branch _timestamp _default_branch _merged _skip_wip_commit _mutation_guard 2>/dev/null || true
 fi
 
 # 圧縮後のルール再確認リマインダーは SessionStart フックが担当（stdout 注入が有効なのは

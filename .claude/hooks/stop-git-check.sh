@@ -96,8 +96,21 @@ if [[ -n "$_untracked_files" ]]; then
   has_untracked=true
 fi
 
+# 変異テスト等の一時改変中は「コミットしてください」と迫らない（Issue #304 / L-131）。
+# 意図的に壊した状態をコミットさせるとブロック解除のために事故が起きるため、警告に留める。
+_wip_guard_lib="$HOOK_DIR/lib/wip_guard.sh"
+_mutation_guard=false
+if [[ -f "$_wip_guard_lib" ]]; then
+  # shellcheck disable=SC1090
+  source "$_wip_guard_lib"
+  if wip_guard_active_here "stop-git-check"; then _mutation_guard=true; fi
+fi
+unset _wip_guard_lib
+
 # 未コミット変更 or 未追跡ファイルがある場合
-if [[ "$has_uncommitted" = true ]] || [[ "$has_untracked" = true ]]; then
+if [[ "$_mutation_guard" = true ]] && { [[ "$has_uncommitted" = true ]] || [[ "$has_untracked" = true ]]; }; then
+  echo "[stop-git-check] 変異テスト中のためコミット要求をスキップしました。変異を戻してから 'bash tools/mutation_guard.sh end' を実行してください（Issue #304 / L-131）" >&2
+elif [[ "$has_uncommitted" = true ]] || [[ "$has_untracked" = true ]]; then
   if check_residual_files; then
     # 残留ファイル: mainと同一内容なのでクリーンアップを案内
     hook_block "ワーキングディレクトリに前セッションの残留ファイルがあります（origin/main と同一内容のためコミット不要）。以下のコマンドでクリーンアップしてください:
