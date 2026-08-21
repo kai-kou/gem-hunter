@@ -103,15 +103,18 @@ test.describe('SP-14: キーワード非依存の発見面', () => {
     await page.goto('/ja?date=20260820')
 
     // ライセンスは <a> でクリック可能（改変元へ辿れる）。ラベル文言は messages/ja.json に一致。
-    await expect(page.getByText(/Data via Ecosyste\.ms/)).toBeVisible()
+    // 🔴 D-32（#308）で出典行を「このデータについて: …」へ刷新した。出典元（Ecosyste.ms）と
+    //    ライセンスリンク、改変の明示という D-29 の 3 要件は文言が変わっても満たし続ける。
+    await expect(page.getByText(/このデータについて/)).toBeVisible()
+    await expect(page.getByText(/Ecosyste\.ms/)).toBeVisible()
     const licenseLink = page.getByRole('link', { name: 'CC BY-SA 4.0' })
     await expect(licenseLink).toBeVisible()
     await expect(licenseLink).toHaveAttribute(
       'href',
       'https://creativecommons.org/licenses/by-sa/4.0/',
     )
-    // 改変の明示（並び順を日付シードで再算出している旨・D-29）
-    await expect(page.getByText(/日付シードで再算出/)).toBeVisible()
+    // 改変の明示（並び順を日付から毎日算出している旨・D-29）
+    await expect(page.getByText(/日付をもとに毎日算出/)).toBeVisible()
   })
 
   test('キーワード検索中はダイジェストを表示しない（排他表示・SP-1/SP-7/SP-10 との衝突回避）', async ({
@@ -148,7 +151,8 @@ test.describe('SP-14: キーワード非依存の発見面', () => {
   test('en ロケール（/en）でも英語の見出しと出典表示が出る（E-4）', async ({ page }) => {
     await page.goto('/en?date=20260820')
     await expect(page.getByRole('heading', { name: "Today's Gems", level: 2 })).toBeVisible()
-    await expect(page.getByText(/Data via Ecosyste\.ms/)).toBeVisible()
-    await expect(page.getByText(/recomputed from the day/)).toBeVisible()
+    await expect(page.getByText(/About this data/)).toBeVisible()
+    await expect(page.getByText(/Ecosyste\.ms/)).toBeVisible()
+    await expect(page.getByText(/recomputed daily from the date/)).toBeVisible()
   })
 })

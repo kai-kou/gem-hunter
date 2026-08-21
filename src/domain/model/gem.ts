@@ -46,7 +46,7 @@ export type Gem = {
 
 /**
  * 出典メタデータ（`D-29` の帰属表示・必須）。候補プール JSON のトップレベルに載り、UI の
- * 出典表示（`Data via Ecosyste.ms（CC BY-SA 4.0）`）へそのまま流す。
+ * 出典表示（「このデータについて: … Ecosyste.ms（CC BY-SA 4.0）…」）へそのまま流す。
  */
 export type DigestMeta = {
   /** データ提供元（例 `Ecosyste.ms`）。 */
