@@ -22,7 +22,13 @@ if (files.length === 0) {
 let totalKb = 0;
 for (const file of files) {
   const out = path.join(dstDir, file.replace(/\.png$/, ".webp"));
-  await sharp(path.join(srcDir, file)).webp({ quality: 90 }).toFile(out);
+  try {
+    await sharp(path.join(srcDir, file)).webp({ quality: 90 }).toFile(out);
+  } catch (err) {
+    console.error(`変換に失敗した: ${path.join(srcDir, file)} -> ${out}`);
+    console.error(`  ${err.message}`);
+    process.exit(1);
+  }
   const kb = fs.statSync(out).size / 1024;
   totalKb += kb;
   console.log(`${path.basename(out).padEnd(24)} ${kb.toFixed(0)}KB`);
