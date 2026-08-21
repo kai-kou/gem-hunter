@@ -178,6 +178,7 @@
    上書きが負けないよう、意図的にレイヤー外（最優先）の位置に置く。 */
 .prose {
   --tw-prose-body: var(--color-fg);
+  --tw-prose-headings: var(--color-fg);
   --tw-prose-lead: var(--color-fg-muted);
   --tw-prose-links: var(--color-accent);
   --tw-prose-bold: var(--color-fg);
