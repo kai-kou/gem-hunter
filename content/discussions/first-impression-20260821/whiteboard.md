@@ -1,0 +1,18 @@
+<!-- discussion_whiteboard:auto -->
+# 🧑‍🏫 議論ホワイトボード: 初見ユーザーのフィードバック 10 件（用語・説明・データ整合・体感速度）への対応方針を確定する（Issue #308）
+
+- 議題ID: `first-impression-20260821`
+- 論点: 飼い主が本番相当のトップページ（スマートフォン）を初めて触った際の生のフィードバック 10 件。原文: ①「今日の Gem」とあるが『Gem って何？』となった ②「キーワードで GitHub のリポジトリを検索します。」が初期のままで、どういったツールなのか説明しきれていない ③「被依存数」が分からなかった。説明を増やすより直感的に分かる名称にしたい ④「Gem Index」も同様 ⑤「Data via Ecosyste.ms」って何？となった ⑥「検索結果 / キーワードを入力して検索してください。」はない方が自然に思えた ⑦ 一覧と詳細とでスター数などが不一致しているのが気になった ⑧（要望）詳細で README が読めるといい ⑨ 検索→Gem Index 順とした際に検索にかかる時間が長く不安になった。早くすることも大切だが、なぜ時間がかかっているのかも分かると良い ⑩ 検索リストに Gem Index の数値がなく不安になった。
+
+既知の技術的事実（調査済み・前提として扱ってよい）: (a) ダイジェストの stars / dependentCount は Ecosyste.ms バッチが生成した静的 JSON `public/data/daily-digest.json`（generatedAt = 2026-08-20T16:56Z のスナップショット・候補 294 件 / ユニークリポジトリ 227）由来。一方、詳細画面 `RepositoryDetail` は GitHub API のライブ値。出所が違うので star 数が一致しない。 (b) `sort=gem-index` は GitHub 検索 API に無い自前指標のため、`src/usecases/search-repositories.ts` が per_page=100 × 最大 10 ページを **逐次** 取得してから並べ替える（D-30 ②の代償として open-questions.md に記録済み）。 (c) 検索一覧への Gem Index 表示は SP-16 / PR #293 で実装済み（`src/ui/repository-list.tsx` の `gemFacets`）。本番 URL に出ていない理由の候補は「本番デプロイ経路の移行（D-31）が未完で main と本番が乖離している」か「候補プール 227 リポジトリの被覆率が低く、多くの検索結果が Gem Index 情報なし側に落ちる」。 (d) Gem Index = 被依存数パーセンタイル順位 − star パーセンタイル順位。値が小さい（強い負値）ほど過小評価＝上位（ADR 0009 / gem-index.ts）。0 が最上位のランキングを入力にするため、UI に出る値は -6.7〜0.0 程度の負数になる。 (e) 文言は `messages/ja.json` / `messages/en.json` の 2 言語。UI は props 経由で受け取る（E-4）。 (f) 候補プールに `react` → `react/react` のような誤ったリポジトリ名解決が混ざっている（正しくは facebook/react）。
+
+争点: A) 「Gem」というプロダクト中核語をどう扱うか（残して説明を足すか / 表示語を変えるか）と、トップの説明文をどう書き直すか。B) 「被依存数」「Gem Index」の表示名をどうするか（直感的な代案を複数出し、誤解を生まないかを相互検証する。負数が並ぶ Gem Index を数値のまま出すのが妥当かも含む）。C) 出典表示（Data via Ecosyste.ms）と idle 文言・「検索結果」見出しの扱い。D) 一覧（静的プール）と詳細（ライブ API）の数値不一致をどう解消するか（片方に寄せる / 鮮度を明示する / 表示項目を削る）。E) gem-index 順検索の体感時間（最大 10 リクエスト逐次）を、速度と透明性の両面でどう改善するか。F) 詳細画面での README 表示（要望⑧）を今スプリントに入れるか別 Issue にするか。
+
+制約: NFR-21（アプリコードに PaaS 固有 API を持ち込まない）/ NFR-3（トップはクライアント JS を持たない Server Component 方針）/ D-29（Ecosyste.ms の生テキストは再配信しない・帰属表示は省略できない）/ NFR-5 のレート予算 / ドメイン語彙の SSOT は docs/03_design/data-model/domain-model.md / 受け入れ条件の SSOT は docs/02_requirements/prd.md §6。YAGNI（1 箇所しか使わない抽象を先回りしない）。スコープ外の発見は別 Issue に切り出す。
+- 参加者: `newcomer_ux`, `domain_naming`, `data_integrity`, `perf_transparency`, `docs_trace`
+- 投稿数: 0
+- 更新: 2026-08-21T12:45:13+09:00
+
+> このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
+
+_（まだ投稿がありません）_
