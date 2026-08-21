@@ -53,6 +53,29 @@ test.describe('Issue #339: README の書式反映（typography トークン回�
     })
   })
 
+  test('README 本文の文字色がサイトのトークン由来である（プラグイン既定の gray スケールを使わない）', async ({
+    page,
+  }) => {
+    await page.goto(README_RICH_PATH)
+
+    const paragraph = page.locator('.readme-content p').first()
+    await expect(paragraph).toBeVisible()
+
+    // 🔴 `--tw-prose-*` をセマンティックトークンへ全マッピングする設計（争点 A の必須条件）が
+    //    実際に効いているかを、**計算後の色** で確認する。プラグイン本体は既定の gray スケールを
+    //    `@layer utilities` の中で定義しており、こちらの上書きは unlayered なので勝つはずだが、
+    //    「勝っているつもり」で退行しても静的検査では気づけない（`check_prose_tokens.py` は
+    //    `app/globals.css` の記述しか見ない）。ページ全体の前景色と一致することを実測で押さえる。
+    const { readmeColor, pageColor } = await paragraph.evaluate((el) => ({
+      readmeColor: getComputedStyle(el).color,
+      pageColor: getComputedStyle(document.body).color,
+    }))
+
+    expect(readmeColor, `README 本文の色（${readmeColor}）がページ本文の色（${pageColor}）と一致`).toBe(
+      pageColor,
+    )
+  })
+
   test('README 内のリストにマーカーが付き、インデントされている', async ({ page }) => {
     await page.goto(README_RICH_PATH)
 
