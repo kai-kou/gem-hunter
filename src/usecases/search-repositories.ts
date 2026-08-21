@@ -77,7 +77,7 @@ async function searchRankedByGemIndex(
   // D-30①: 絞り込まない。Index あり群を先頭に、Index なし群を末尾に残す（2 段階パーティション）。
   const withIndex = joined.filter(hasGemIndex)
   const withoutIndex = joined.filter((item) => !hasGemIndex(item))
-  withIndex.sort((a, b) => gemIndexValue(a.gemIndex) - gemIndexValue(b.gemIndex))
+  withIndex.sort((a, b) => gemIndexValue(b.gemIndex) - gemIndexValue(a.gemIndex))
   const ranked = [...withIndex, ...withoutIndex]
 
   // gemIndex ソートの「ページ」は取得済み配列のスライス（whiteboard round3 決定 5）。
