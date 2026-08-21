@@ -16,18 +16,8 @@ import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from '../infrastructure/p
  *
  * 判定できない事情（接続元不明・salt 未設定・binding 未提供）があれば **フェイルオープン**（黙って通す）。
  * これは「握り潰し」ではなく、設定不備や実行環境の違いでサービス全体を止めないための意図的な設計判断。
- *
- * 🔴 **`cost`（PR #293 セルフレビュー指摘・修正②・レート増幅対策）**: `sort=gem-index` は
- * 1 リクエストで最大 `GEM_INDEX_FETCH_MAX_PAGES` 回の上流呼び出しに増幅するため、既定の
- * 「1 リクエスト = 1 消費」のままだと同一 IP から少数回叩くだけで共有枠を単独で使い切れる。
- * 呼び出し側（`app/[locale]/page.tsx` / `app/api/search/route.ts`）が `sort=gem-index` のときだけ
- * `cost` に取得予定ページ数の上限を渡し、その回数だけ `limiter.consume` を呼ぶ。1 回でも
- * 拒否されたら残りは消費せず即座に例外を投げる（フェイルオープンの既存方針は変えない）。
  */
-export async function enforceSearchRateLimit(
-  headers: Headers,
-  options?: { cost?: number },
-): Promise<void> {
+export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
   // 1. 接続元 IP を識別できない（Workers 実行環境の外・ヘッダ欠落等）場合は、
   //    そもそも誰を制限すべきか判定できないため間引かない。
   const ip = clientIpOf(headers)
@@ -55,21 +45,15 @@ export async function enforceSearchRateLimit(
 
   const key = `search:${await hashRateLimitKey(ip, salt)}`
   const limiter = new WorkersRateLimit(binding, { periodSeconds: RATE_LIMIT_PERIOD_SECONDS })
-  const cost = options?.cost ?? 1
+  const decision = await limiter.consume(key)
 
-  // 🔴 逐次消費（並列にしない）: 1 回でも拒否されたら残りは消費せず即座に打ち切る
-  // （拒否後も残りコストを消費し続けると、拒否の原因になった超過分をさらに広げてしまう）。
-  for (let i = 0; i < cost; i += 1) {
-    const decision = await limiter.consume(key)
-
-    if (!decision.allowed) {
-      // 自リクエストの間引きは「短時間の集中により一定時間後に再試行できる」性質であり、
-      // prd.md §7 の二次レート制限（`retry-after` 秒後に再試行可能と提示）の定義と一致する。
-      // 一次レート制限（枠の枯渇・復帰時刻提示）とは性質が異なるため、新しい ErrorKind や
-      // メッセージカタログを増やさず既存の `rateLimitSecondary` を再利用する。
-      throw new RateLimitExceededError('rateLimitSecondary', {
-        retryAfterSeconds: decision.retryAfterSeconds,
-      })
-    }
+  if (!decision.allowed) {
+    // 自リクエストの間引きは「短時間の集中により一定時間後に再試行できる」性質であり、
+    // prd.md §7 の二次レート制限（`retry-after` 秒後に再試行可能と提示）の定義と一致する。
+    // 一次レート制限（枠の枯渇・復帰時刻提示）とは性質が異なるため、新しい ErrorKind や
+    // メッセージカタログを増やさず既存の `rateLimitSecondary` を再利用する。
+    throw new RateLimitExceededError('rateLimitSecondary', {
+      retryAfterSeconds: decision.retryAfterSeconds,
+    })
   }
 }

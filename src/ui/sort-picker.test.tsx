@@ -9,12 +9,11 @@ const labels = {
     relevance: '関連度',
     stars: 'star 数',
     updated: '更新日時',
-    'gem-index': 'Gem Index 順',
   },
 }
 
 describe('SortPicker', () => {
-  it('relevance / stars / updated / gem-index の 4 リンクを表示する（SP-16）', () => {
+  it('relevance / stars / updated の 3 リンクを表示する（gem-index 撤去・初見フィードバック対応）', () => {
     render(
       <SortPicker
         basePath="/ja"
@@ -26,25 +25,7 @@ describe('SortPicker', () => {
     expect(screen.getByRole('link', { name: '関連度' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'star 数' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '更新日時' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Gem Index 順' })).toBeInTheDocument()
-  })
-
-  it('gem-index リンクの href に sort=gem-index が乗り、ページは 1 に戻る（SP-16）', () => {
-    render(
-      <SortPicker
-        basePath="/ja"
-        current={{ keyword: 'react', page: 3, sort: 'relevance', perPage: 50 }}
-        labels={labels}
-      />,
-    )
-
-    const href = screen.getByRole('link', { name: 'Gem Index 順' }).getAttribute('href') ?? ''
-    const params = new URLSearchParams(href.split('?')[1])
-
-    expect(params.get('q')).toBe('react')
-    expect(params.get('sort')).toBe('gem-index')
-    expect(params.get('per_page')).toBe('50')
-    expect(params.has('page')).toBe(false)
+    expect(screen.queryByRole('link', { name: 'Gem Index 順' })).not.toBeInTheDocument()
   })
 
   it('現在の並び順に aria-current="true" が付く', () => {

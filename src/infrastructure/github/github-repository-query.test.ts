@@ -122,13 +122,6 @@ describe('GithubRepositoryQuery', () => {
     expect(requests[0].searchParams.get('order')).toBe('desc')
   })
 
-  it('sort が gem-index のときは sort / order パラメータを付けない（GitHub 検索 API に無い自前指標のため）', async () => {
-    await makeQuery().search(searchQuery({ keyword: 'react', sort: 'gem-index' }))
-
-    expect(requests[0].searchParams.has('sort')).toBe(false)
-    expect(requests[0].searchParams.has('order')).toBe(false)
-  })
-
   it('403 かつレート制限枯渇なら RateLimitExceededError を投げる', async () => {
     server.use(
       http.get('https://api.github.com/search/repositories', () =>

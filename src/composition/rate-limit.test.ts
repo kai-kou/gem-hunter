@@ -107,80 +107,15 @@ describe('enforceSearchRateLimit', () => {
     expect(hashRateLimitKey).toHaveBeenCalledWith(IP, SALT)
   })
 
-  /**
-   * ②CRITICAL 修正（PR #293 セルフレビュー指摘）: `sort=gem-index` は 1 リクエストで
-   * 最大 10 回の上流呼び出しに増幅するため、消費コストを呼び出し側から指定できるようにする。
-   */
-  describe('cost オプション（②CRITICAL・レート増幅対策）', () => {
-    it('cost 省略時は既定 1 回だけ consume する（後方互換）', async () => {
-      clientIpOf.mockReturnValue(IP)
-      vi.stubEnv('RATE_LIMIT_SALT', SALT)
-      rateLimiterBinding.mockResolvedValue(BINDING)
-      hashRateLimitKey.mockResolvedValue('hashed-key')
-      consume.mockResolvedValue({ allowed: true })
+  it('1 リクエストにつき consume は 1 回だけ呼ぶ', async () => {
+    clientIpOf.mockReturnValue(IP)
+    vi.stubEnv('RATE_LIMIT_SALT', SALT)
+    rateLimiterBinding.mockResolvedValue(BINDING)
+    hashRateLimitKey.mockResolvedValue('hashed-key')
+    consume.mockResolvedValue({ allowed: true })
 
-      await enforceSearchRateLimit(HEADERS)
+    await enforceSearchRateLimit(HEADERS)
 
-      expect(consume).toHaveBeenCalledTimes(1)
-    })
-
-    it('cost=10 を指定すると 10 回 consume する（すべて許可）', async () => {
-      clientIpOf.mockReturnValue(IP)
-      vi.stubEnv('RATE_LIMIT_SALT', SALT)
-      rateLimiterBinding.mockResolvedValue(BINDING)
-      hashRateLimitKey.mockResolvedValue('hashed-key')
-      consume.mockResolvedValue({ allowed: true })
-
-      await expect(enforceSearchRateLimit(HEADERS, { cost: 10 })).resolves.toBeUndefined()
-
-      expect(consume).toHaveBeenCalledTimes(10)
-    })
-
-    it('途中の消費で拒否されたら、それ以上 consume せず即座に例外を投げる', async () => {
-      clientIpOf.mockReturnValue(IP)
-      vi.stubEnv('RATE_LIMIT_SALT', SALT)
-      rateLimiterBinding.mockResolvedValue(BINDING)
-      hashRateLimitKey.mockResolvedValue('hashed-key')
-      consume
-        .mockResolvedValueOnce({ allowed: true })
-        .mockResolvedValueOnce({ allowed: true })
-        .mockResolvedValueOnce({ allowed: false, retryAfterSeconds: 42 })
-
-      const error = await enforceSearchRateLimit(HEADERS, { cost: 10 }).catch((e) => e)
-
-      expect(error).toBeInstanceOf(RateLimitExceededError)
-      expect((error as RateLimitExceededError).kind).toBe('rateLimitSecondary')
-      expect((error as RateLimitExceededError).retryAfterSeconds).toBe(42)
-      // 3 回目で拒否されたら、4〜10 回目は呼ばない。
-      expect(consume).toHaveBeenCalledTimes(3)
-    })
-
-    it('フェイルオープン経路（IP 不明）は cost によらず consume を呼ばない', async () => {
-      clientIpOf.mockReturnValue(null)
-      vi.stubEnv('RATE_LIMIT_SALT', SALT)
-
-      await expect(enforceSearchRateLimit(HEADERS, { cost: 10 })).resolves.toBeUndefined()
-
-      expect(consume).not.toHaveBeenCalled()
-    })
-
-    it('フェイルオープン経路（salt 未設定）は cost によらず consume を呼ばない', async () => {
-      clientIpOf.mockReturnValue(IP)
-      vi.stubEnv('RATE_LIMIT_SALT', '')
-
-      await expect(enforceSearchRateLimit(HEADERS, { cost: 10 })).resolves.toBeUndefined()
-
-      expect(consume).not.toHaveBeenCalled()
-    })
-
-    it('フェイルオープン経路（binding 未提供）は cost によらず consume を呼ばない', async () => {
-      clientIpOf.mockReturnValue(IP)
-      vi.stubEnv('RATE_LIMIT_SALT', SALT)
-      rateLimiterBinding.mockResolvedValue(undefined)
-
-      await expect(enforceSearchRateLimit(HEADERS, { cost: 10 })).resolves.toBeUndefined()
-
-      expect(consume).not.toHaveBeenCalled()
-    })
+    expect(consume).toHaveBeenCalledTimes(1)
   })
 })

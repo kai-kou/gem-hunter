@@ -20,26 +20,28 @@ export type Gem = {
   readonly packageName: string
   /** GitHub リポジトリ完全名（`owner/repo`）。詳細画面へのリンク解決に使う。 */
   readonly repositoryFullName: string
-  /** 被依存パッケージ数（Ecosyste.ms `dependent_packages_count`・実利用の量）。 */
+  /**
+   * 被依存パッケージ数（Ecosyste.ms `dependent_packages_count`・実利用の量）。
+   * 🔴 GitHub API のライブ値ではなく **Ecosyste.ms が独自にクロールした値**（`stars` と同じ出所・
+   * 鮮度の注意点は `stars` の JSDoc を参照）。
+   */
   readonly dependentCount: number
-  /** star 数（GitHub `stargazers_count`・注目度）。 */
+  /**
+   * star 数（GitHub `stargazers_count`・注目度）。
+   *
+   * 🔴 **出所と鮮度（`SP-16` 初見ユーザーフィードバック議論で判明）**: この値は GitHub API の
+   * ライブ値ではなく **Ecosyste.ms が独自にクロールした値**。銘柄ごとにクロール時点が大きく
+   * ばらつき、サンプル調査（20 件）では 6 件が 700 日超・最大 2.7 年前のクロール結果だった。
+   * そのため詳細画面（`GithubRepositoryQuery.findDetail` 経由の GitHub API ライブ値）の star 数
+   * とは一致しないことがある。UI 側はこの値を **参考値** として表示する（`dependentCount` も
+   * 同じく Ecosyste.ms 由来で同じ注意点が当てはまる）。
+   */
   readonly stars: number
   /**
    * 過小評価度（`ADR 0009` の `Gem Index`）。被依存数パーセンタイル順位 − star パーセンタイル
    * 順位。並び順にのみ使い、健全性（`criticality_score` / Scorecard）とは合算しない。
    */
   readonly gemIndex: GemIndex
-}
-
-/**
- * キーワード検索結果を Gem Index 順に並べ替える際の突合用ファセット（`SP-16`）。
- * 候補プール（`Gem`）から検索結果（`RepositorySummary`）へ渡す最小限の値だけを運ぶ —
- * 検索結果側の型（`repository.ts`）に候補プール由来のフィールドを持ち込まない（コンテキスト分離・
- * `domain-model.md` §6「Gem Index コンテキスト」）。
- */
-export type GemFacet = {
-  readonly gemIndex: GemIndex
-  readonly dependentCount: number
 }
 
 /**
