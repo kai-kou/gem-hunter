@@ -1,3 +1,4 @@
+import type { Gem } from '../domain/model/gem'
 import type { GemIndex } from '../domain/model/gem-index'
 import { gemIndexValue } from '../domain/model/gem-index'
 import { maxPageFor, pageNumber } from '../domain/model/page-number'
@@ -60,7 +61,7 @@ async function searchRankedByGemIndex(
 ): Promise<SearchResult> {
   const [{ items, totalCount, incompleteResults }, { candidates }] = await Promise.all([
     fetchUpToApiLimit(query, deps.repos),
-    deps.gemDigest.listCandidates(),
+    fetchGemDigestCandidatesSafely(deps.gemDigest),
   ])
 
   const candidateByFullName = new Map(
@@ -85,6 +86,24 @@ async function searchRankedByGemIndex(
   const pageItems = ranked.slice(start, start + query.perPage)
 
   return { totalCount, incompleteResults, items: pageItems }
+}
+
+/**
+ * `GemDigestPort#listCandidates()` の失敗を呼び出し側でも fail-soft にする（PR #303 セルフ
+ * レビュー指摘1）。`gem-digest-port.ts` の doc コメント（「候補が 0 件でも例外にせず空配列」）は
+ * 実装側の努力目標に過ぎず、将来 `StaticGemDigest` 以外の実装が一時的に throw する可能性がある。
+ * ここで捕まえて候補プール空として続行することで、Gem Index が付かないだけで検索結果自体は
+ * 返す（`GemDigestPort` が掲げる「配信は止めず鮮度のみ劣化」という設計哲学どおりにする）。
+ */
+async function fetchGemDigestCandidatesSafely(
+  gemDigest: GemDigestPort,
+): Promise<{ candidates: readonly Gem[] }> {
+  try {
+    const { candidates } = await gemDigest.listCandidates()
+    return { candidates }
+  } catch {
+    return { candidates: [] }
+  }
 }
 
 function hasGemIndex(

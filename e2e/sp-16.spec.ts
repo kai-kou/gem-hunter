@@ -18,15 +18,14 @@ import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
  * 未設定時は本番同様 `public/data/daily-digest.json` を使い、読み込み失敗時は例外を投げず既定プールへ
  * フォールバックする（`GemDigestPort` の fail-soft 契約）。
  *
- * 🔴 **本ファイル単独では Red のまま**（`sprint-development-rules.md` `SD-2` は正しい順序としてこれを
- * 許容する）。以下 2 点が揃うまでは手順 3・4・5 のアサーションが失敗する（`container.ts` 側は実装済み）:
- *   1. `playwright.config.ts`（or `e2e/stub/e2e-env.mjs`）: E2E の `webServer.env` に
- *      `GEM_DIGEST_SOURCE_PATH: path.join(__dirname, 'e2e/fixtures/gem-digest-pool.json')` を追加する。
+ * 🔵 **本ファイルは Green**（同一 PR で以下 2 点が揃っている・実測済み）:
+ *   1. `playwright.config.ts`（`e2e/stub/e2e-env.mjs` 経由）: E2E の `webServer.env` に
+ *      `GEM_DIGEST_SOURCE_PATH: path.join(__dirname, 'e2e/fixtures/gem-digest-pool.json')` を追加済み。
  *   2. `e2e/fixtures/gem-digest-pool.json`: 下記 `EXPECTED_CANDIDATE_POOL` と同じ内容
  *      （`GemDigestPort#listCandidates()` が返す `{ candidates: Gem[], meta: DigestMeta }` の
  *      JSON 表現。`Gem` の形は `src/domain/model/gem.ts`）を用意し、`repositoryFullName` を
  *      検索スタブの `many-hits` データセット（`octostub/many-01`〜`many-60`・`e2e/stub/server.mjs`）
- *      の一部と **意図的に一致させる**。
+ *      の一部と **意図的に一致させている**。
  *
  * `many-hits` を含むキーワードはスタブ側で無改修のまま `page` / `per_page` / `sort` を実際に反映する
  * 60 件データセットを返す（`e2e/sp-7.spec.ts` が既に検証済み）ため、本ファイルはスタブ自体の変更を
@@ -59,6 +58,8 @@ test.describe('SP-16: 検索結果の Gem Index 順並べ替え', () => {
     page,
   }) => {
     const keyword = uniqueGemIndexKeyword()
+    /** 手順4 で 2 ページ目へ進んだ直後の URL（`page=2` を含む）。手順6 の往復検証で使う。 */
+    let page2Url = ''
 
     await test.step('手順1: プレビュー URL でキーワード検索する（既定: 関連度順・1 ページ目）', async () => {
       await page.goto('/ja')
@@ -137,6 +138,9 @@ test.describe('SP-16: 検索結果の Gem Index 順並べ替え', () => {
       for (let i = 0; i < count; i++) {
         await expect(items.nth(i).getByText('Gem Index', { exact: false })).toHaveCount(0)
       }
+
+      // 手順6（詳細往復）で `page=2` のまま入る/戻ることを検証するために、この時点の URL を保持する。
+      page2Url = page.url()
     })
 
     await test.step('手順5: Gem Index を持たない結果が末尾に残っている（件数が減っていない）', async () => {
@@ -170,19 +174,31 @@ test.describe('SP-16: 検索結果の Gem Index 順並べ替え', () => {
     })
 
     await test.step('手順6: 詳細へ入って戻る → キーワード・ページ・ソートがすべて元のまま', async () => {
-      const gemIndexUrl = new URL(page.url())
-      gemIndexUrl.searchParams.set(SEARCH_PARAM_KEYS.sort, 'gemIndex')
-      gemIndexUrl.searchParams.delete(SEARCH_PARAM_KEYS.page)
-      await page.goto(gemIndexUrl.pathname + gemIndexUrl.search)
+      // 🔴 手順4 で進んだ 2 ページ目（`page=2`）の URL をそのまま使う（`page` を消してから
+      // 遷移すると 1 ページ目扱いになり「page が往復保存されるか」を一度も検証できない）。
+      expect(page2Url).not.toBe('')
+      await page.goto(page2Url)
+      await expect(page).toHaveURL(new RegExp(`[?&]${SEARCH_PARAM_KEYS.page}=2(&|$)`))
 
       const listUrlBeforeDetail = page.url()
-      await page.getByRole('link', { name: 'octostub/many-30' }).click()
-      await expect(page).toHaveURL(/\/ja\/repos\/octostub\/many-30(\?|$)/)
-      await expect(page.getByRole('heading', { name: 'octostub/many-30' })).toBeVisible()
+
+      // 2 ページ目の先頭カード（Index を持たない群・件名は取得順で決まる）を使う。
+      const firstItemLink = page.getByRole('list').first().locator(':scope > li').first().getByRole('link')
+      const firstItemFullName = await firstItemLink.innerText()
+      const [owner, name] = firstItemFullName.split('/')
+
+      await firstItemLink.click()
+      await expect(page).toHaveURL(
+        new RegExp(`/ja/repos/${owner}/${name}(\\?|$)`),
+      )
+      await expect(page.getByRole('heading', { name: firstItemFullName })).toBeVisible()
 
       await page.getByRole('link', { name: '一覧へ戻る' }).click()
 
+      // page=2 のまま戻ってきたことを URL 全体の一致で検証する（page が落ちていれば
+      // `listUrlBeforeDetail`＝`page=2` の URL と一致しない）。
       await expect(page).toHaveURL(listUrlBeforeDetail)
+      await expect(page).toHaveURL(new RegExp(`[?&]${SEARCH_PARAM_KEYS.page}=2(&|$)`))
       await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toHaveValue(keyword)
       await expect(
         page

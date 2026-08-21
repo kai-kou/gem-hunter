@@ -89,6 +89,15 @@ function fakeGemDigest(candidates: Gem[]): GemDigestPort {
   }
 }
 
+/** `listCandidates()` が必ず失敗する `GemDigestPort`（fail-soft 検証用）。 */
+function throwingGemDigest(): GemDigestPort {
+  return {
+    async listCandidates() {
+      throw new Error('gem digest source unavailable')
+    },
+  }
+}
+
 function gem(repositoryFullName: string, indexValue: number, dependentCount = 100): Gem {
   return {
     packageName: repositoryFullName.split('/')[1],
@@ -253,6 +262,47 @@ describe('searchRepositories', () => {
       expect(received).toHaveLength(2) // raw fetch は 2 ページとも行われる（100 件ちょうどで打ち切らない）
       expect(result.totalCount).toBe(101)
       expect(result.items).toEqual([expect.objectContaining({ fullName: 'org/last' })])
+    })
+
+    it('GemDigestPort#listCandidates() が失敗しても検索結果は返す（Gem Index なしで続行・fail-soft）', async () => {
+      const received: SearchQuery[] = []
+      const page1 = [repo('a/one'), repo('b/two')]
+      const searchRepositories = makeSearchRepositories({
+        repos: pagedFakePort([page1], received),
+        gemDigest: throwingGemDigest(),
+      })
+
+      const result = await searchRepositories({ keyword: 'react', sort: 'gemIndex' })
+
+      // 例外が伝播せず、候補プール空として扱われる＝取得順のまま両方とも Index なしで返る。
+      expect(result.items.map((item) => item.fullName)).toEqual(['a/one', 'b/two'])
+      expect(result.items.every((item) => item.gemIndex === undefined)).toBe(true)
+    })
+
+    it('101 ページ目にあたる 10 ページ目まで全件 100 件で埋まっていても 11 ページ目を要求しない（1,000 件で頭打ち）', async () => {
+      const received: SearchQuery[] = []
+      const RAW_MAX_PAGES = 10
+      const pages = Array.from({ length: RAW_MAX_PAGES }, (_, p) =>
+        Array.from({ length: 100 }, (_, i) => repo(`org/p${p}-r${i}`)),
+      )
+      const searchRepositories = makeSearchRepositories({
+        repos: pagedFakePort(pages, received),
+        gemDigest: emptyGemDigest,
+      })
+
+      const result = await searchRepositories({
+        keyword: 'react',
+        sort: 'gemIndex',
+        page: 1,
+        perPage: 100,
+      })
+
+      // 10 ページとも 100 件ちょうどで埋まっているため break 条件（`items.length < RAW_PER_PAGE`）
+      // には引っかからないが、`RAW_MAX_PAGES` の for ループ上限自体が 11 ページ目の要求を止める。
+      expect(received).toHaveLength(RAW_MAX_PAGES)
+      expect(received.every((query) => query.page <= RAW_MAX_PAGES)).toBe(true)
+      expect(result.totalCount).toBe(1000)
+      expect(result.items).toHaveLength(100) // page=1, perPage=100 のスライス
     })
 
     it('ページ番号・表示件数に応じて取得済み配列をスライスする（totalCount は生値のまま）', async () => {
