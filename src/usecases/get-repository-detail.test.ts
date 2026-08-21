@@ -16,6 +16,7 @@ const detail: RepositoryDetail = {
   watcherCount: 6600,
   forkCount: 48000,
   openIssueCount: 1200,
+  lastPushedAt: new Date('2026-08-01T00:00:00Z'),
   topics: ['javascript', 'react'],
   htmlUrl: 'https://github.com/facebook/react',
 }
@@ -28,6 +29,9 @@ function fakePort(received: RepositoryFullName[], result: RepositoryDetail | nul
     async findDetail(name) {
       received.push(name)
       return result
+    },
+    async findReadme() {
+      throw new Error('unused in this test')
     },
   }
 }

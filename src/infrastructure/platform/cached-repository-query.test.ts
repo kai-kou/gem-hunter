@@ -40,6 +40,7 @@ function makeRepositoryDetail(overrides: Partial<RepositoryDetail> = {}): Reposi
     watcherCount: 0,
     forkCount: 0,
     openIssueCount: 0,
+    lastPushedAt: new Date('2026-08-15T03:00:00Z'),
     topics: [],
     htmlUrl: 'https://github.com/facebook/react',
     ...overrides,
