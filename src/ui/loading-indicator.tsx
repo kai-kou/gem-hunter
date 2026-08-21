@@ -14,13 +14,26 @@
  *
  * ⚠️ `ui-ux-guidelines.md` §4.4 が読み込み中に定める 🔵 推奨（実データと同一寸法の
  * カード形状スケルトン・0〜300ms は何も出さない）は **まだ満たしていない**。本実装はテキスト
- * 1 行であり、§4.4 は現状を支持する根拠ではない（🔵 は必須ではないため本スプリントの範囲外）。
- * スケルトン化は別 Issue で対応する。
+ * + イラストであり、§4.4 は現状を支持する根拠ではない（🔵 は必須ではないため本スプリントの
+ * 範囲外）。Issue #347 のユーザーフィードバックを受け、スケルトンではなくイラスト表示を
+ * 明示的に採用した（Issue #359）。スケルトン化は引き続き別 Issue（#169）で検討する。
  */
 export function LoadingIndicator({ label }: { label: string }) {
   return (
-    <p className="text-muted-foreground animate-pulse py-8 text-sm motion-reduce:animate-none">
-      {label}
-    </p>
+    <div className="py-8 text-center">
+      {/* eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image の最適化は使わない */}
+      <img
+        src="/images/loading.webp"
+        alt=""
+        width={256}
+        height={256}
+        loading="eager"
+        decoding="async"
+        className="mx-auto mb-2 h-16 w-16"
+      />
+      <p className="text-muted-foreground animate-pulse text-sm motion-reduce:animate-none">
+        {label}
+      </p>
+    </div>
   )
 }

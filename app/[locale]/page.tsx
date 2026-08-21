@@ -301,8 +301,8 @@ export default async function LocaleHome({
         <img
           src="/images/hero-idle.webp"
           alt=""
-          width={640}
-          height={640}
+          width={768}
+          height={432}
           loading="eager"
           decoding="async"
           className="mx-auto mb-4 h-auto w-full max-w-xs"
