@@ -1,8 +1,13 @@
 import { DomainValidationError } from '../errors'
 import { DEFAULT_PER_PAGE } from './per-page'
 
-/** GitHub 検索 API が返せる最大件数（1,000 件）。 */
-const API_RESULT_LIMIT = 1000
+/**
+ * GitHub 検索 API が返せる最大件数（1,000 件）。
+ * 🔴 単一の定義元（SSOT・PR #293 セルフレビュー指摘・修正③）。`gem-index` 順ソートの内部取得
+ * 上限ページ数（`src/usecases/search-repositories.ts` の `GEM_INDEX_FETCH_MAX_PAGES`）も
+ * ここから導出する。数値を 2 箇所に直書きしない。
+ */
+export const API_RESULT_LIMIT = 1000
 
 /** GitHub 検索 API が返せる最大件数（1,000 件）と既定表示件数（`PerPage` の既定値）から決まる上限。 */
 export const MAX_PAGE = Math.floor(API_RESULT_LIMIT / DEFAULT_PER_PAGE)

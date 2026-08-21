@@ -52,7 +52,11 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     // 🔴 仮定（実装手段レベル・SD-3 対象外）: relevance は GitHub API の既定挙動のため
     // sort/order パラメータを付けない。stars/updated は星の多い順・更新が新しい順が自然なため
     // order=desc を固定で付与する。
-    if (query.sort !== 'relevance') {
+    // 🔴 gem-index（`SP-16`）は GitHub 検索 API に存在しない自前指標（過小評価度・
+    // `src/domain/model/gem-index.ts`）なので送出できない。relevance 相当（sort/order 無指定）
+    // で取得し、並べ替えは usecase 側がアプリ内で行う（`GithubRepositoryQuery` は ACL であり、
+    // API に無いソートを偽装しない）。
+    if (query.sort !== 'relevance' && query.sort !== 'gem-index') {
       url.searchParams.set('sort', query.sort)
       url.searchParams.set('order', 'desc')
     }

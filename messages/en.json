@@ -42,8 +42,12 @@
     "sortOptions": {
       "relevance": "Relevance",
       "stars": "Stars",
-      "updated": "Updated"
+      "updated": "Updated",
+      "gem-index": "Gem Index"
     },
+    "gemIndexValueLabel": "Gem Index",
+    "gemIndexDependentLabel": "Used by",
+    "gemIndexUnavailableHeading": "No Gem Index data",
     "perPageLabel": "Results per page",
     "perPageOptionLabel": "{count} per page",
     "paginationLabel": "Search results pages",

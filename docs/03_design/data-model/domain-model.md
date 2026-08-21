@@ -100,11 +100,12 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `SearchKeyword` | 空白のみ不可・前後トリム・長さ上限 | `DomainValidationError`（UI は「検索を促す表示」に倒す・`AC-3`） |
 | `PageNumber` | 1 以上の整数。上限は GitHub 検索の到達可能範囲 | `tryParse` は既定値 `1` に倒す（URL 改変で 500 にしない） |
 | `PerPage` | 🔴 **20 / 50 / 100 のみ**（`AR-3`。任意値はキャッシュ断片化を招く） | `tryParse` は既定値に倒す |
-| `SortOrder` | `relevance` / `stars` / `updated`（`AR-2`） | 同上 |
+| `SortOrder` | `relevance` / `stars` / `updated` / `gem-index`（`AR-2`・`gem-index` は `SP-16`。GitHub 検索 API に無い自前指標のため API へは送出せずアプリ内で並べ替える・`src/infrastructure/github/github-repository-query.ts`） | 同上 |
 | `Locale` | `ja` / `en`（`AR-4`） | 既定ロケールに倒す |
 | `CacheKey` | 名前空間 + 正規化済みの構成要素（`NFR-18`） | 生成関数以外で組み立てない |
 | `DateSeed` | 🔴 **`YYYYMMDD` の 8 桁数字**（UTC）かつ **実在する日付**（`20260231` は不可・`Date.UTC` の往復一致で検証）。日次ダイジェストの唯一のシード（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2・`src/domain/model/date-seed.ts`） | `parse` は `DomainValidationError`。`tryParse(raw, now)` は **不正値・未指定を当日（UTC）へ倒す**（URL の `?date=` 改変で 500 にしない・ADR 0014 §2.2） |
 | `GemIndex` | **被依存数のパーセンタイル順位 − star のパーセンタイル順位**（`ADR 0009` §2.1・`src/domain/model/gem-index.ts`）。`gemIndex(value)` は有限数のみ、`computeGemIndex(dependentRank, starRank)` は入力を **0〜100** に制限する（Ecosyste.ms の `rankings` の値域） | `DomainValidationError`。🔴 **値が小さいほど上位**（`rankings` は 0 が最上位。並べ替えは昇順）。健全性（`criticality_score` / Scorecard）と 1 つのスコアに合算しない（`ADR 0009` §2.2） |
+| `GemFacet` | 🔴 **`SP-16`・値オブジェクトではなく突合用の型**（`{ gemIndex: GemIndex; dependentCount: number }`・`src/domain/model/gem.ts`）。候補プール（`Gem`）から検索結果（`RepositorySummary`）の Gem Index 順ソートへ渡す最小限のファセット。`gemFacetKey(repositoryFullName)` が突合キー（大文字小文字を吸収）を作り、`toGemFacetMap(candidates)` がキー → `GemFacet` のマップを作る（同一リポジトリが複数パッケージで重複する場合は Gem Index が小さい方を残す）。`sortByGemIndex(items, facets)` が Gem Index 昇順に並べ替え、`facets` に無い項目は元の相対順を保ったまま末尾に残す（いずれも `src/domain/model/gem-index.ts`） | 不変条件なし（検証は既に済んだ `Gem` / `GemIndex` から作るため） |
 
 **実装の型（決定）**: **ブランド型 + スマートコンストラクタ** を使う。クラスで包むのは振る舞いを持つものだけにし、単純な識別子・数値はブランド型で軽量に保つ。
 

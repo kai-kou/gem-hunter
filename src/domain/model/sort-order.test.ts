@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import { DomainValidationError } from '../errors'
-import { DEFAULT_SORT_ORDER, parse, tryParse } from './sort-order'
+import { DEFAULT_SORT_ORDER, GEM_INDEX_SORT_ORDER, parse, tryParse } from './sort-order'
 
 describe('parse', () => {
-  it('relevance / stars / updated を受け入れる', () => {
+  it('relevance / stars / updated / gem-index を受け入れる', () => {
     expect(parse('relevance')).toBe('relevance')
     expect(parse('stars')).toBe('stars')
     expect(parse('updated')).toBe('updated')
+    expect(parse('gem-index')).toBe('gem-index')
   })
 
   it('許可されていない値を拒否する', () => {
@@ -23,5 +24,15 @@ describe('tryParse', () => {
     expect(tryParse(undefined)).toBe(DEFAULT_SORT_ORDER)
     expect(tryParse('')).toBe(DEFAULT_SORT_ORDER)
     expect(tryParse('stars')).toBe('stars')
+  })
+
+  it('gem-index を受け入れる', () => {
+    expect(tryParse('gem-index')).toBe(GEM_INDEX_SORT_ORDER)
+  })
+})
+
+describe('GEM_INDEX_SORT_ORDER', () => {
+  it('値は gem-index である', () => {
+    expect(GEM_INDEX_SORT_ORDER).toBe('gem-index')
   })
 })

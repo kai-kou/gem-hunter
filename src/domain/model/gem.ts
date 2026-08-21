@@ -32,6 +32,17 @@ export type Gem = {
 }
 
 /**
+ * キーワード検索結果を Gem Index 順に並べ替える際の突合用ファセット（`SP-16`）。
+ * 候補プール（`Gem`）から検索結果（`RepositorySummary`）へ渡す最小限の値だけを運ぶ —
+ * 検索結果側の型（`repository.ts`）に候補プール由来のフィールドを持ち込まない（コンテキスト分離・
+ * `domain-model.md` §6「Gem Index コンテキスト」）。
+ */
+export type GemFacet = {
+  readonly gemIndex: GemIndex
+  readonly dependentCount: number
+}
+
+/**
  * 出典メタデータ（`D-29` の帰属表示・必須）。候補プール JSON のトップレベルに載り、UI の
  * 出典表示（`Data via Ecosyste.ms（CC BY-SA 4.0）`）へそのまま流す。
  */
