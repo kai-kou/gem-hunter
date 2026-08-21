@@ -569,16 +569,16 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 - `--closed-prs` と `--alias` は併用でき、対象は和集合になる（`sorted(set(targets) | set(args.alias))`）。`pr-<N>` 形式でない alias（`sp1` / `sp7` / `form-uiux` 等）は `--closed-prs` の自動選別対象にならないため、これらを退役するには併用時の `--alias` 指定が実際の使い道になる
 - 退役の実行結果（対象 alias・成否）は Issue / PR コメントに記録する
 
-### 8.2.2. 🔴 クラウドセッションは `wrangler deploy` に到達できない（auto mode classifier・2026-08-20 実機検証・Issue #288）
+### 8.2.2. 🔴 本番デプロイは auto mode classifier にブロックされることがある（非決定的・2026-08-20 初出 / 2026-08-21 訂正・Issue #288 / #300）
 
-**クラウド実行環境の Claude セッション（有人・無人を問わず）は、上記 8.2 の「本番デプロイ」コマンド
-（`npm run deploy` = `opennextjs-cloudflare build && wrangler deploy --tag "$(git rev-parse --short=12 HEAD)"`）を実行できない。**
+**クラウド実行環境の Claude セッションは、上記 8.2 の「本番デプロイ」コマンド
+（`npm run deploy` = `opennextjs-cloudflare build && wrangler deploy --tag "$(git rev-parse --short=12 HEAD)"`）が
 `Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier.`
-で拒否される（無人ルーティン 3 回・有人セッション 1 回、計 4 回すべて再現。`.claude/settings.json` の
-`permissions.allow` に許可済みでも解除されない）。一方、`npx opennextjs-cloudflare build`（ビルド）と
-`npx wrangler versions upload --preview-alias ...`（プレビュー反映）は成功する。**ブロック対象は本番反映
-（`wrangler deploy`）そのものに限られる**（切り分けの詳細・一次情報の出典は
-[`docs/rules/lessons/cloud-environment.md` L-130](../../rules/lessons/cloud-environment.md) 参照）。
+で拒否されることがある。** 🔴 **毎回ではない**（2026-08-21 訂正・#300）: 実測は **ブロック 5 回・成功 2 回** で、
+同一コマンド・同一 `permissions.allow` 設定でも結果が割れており、分かれ目は未確定。一方、
+`npx opennextjs-cloudflare build`（ビルド）と `npx wrangler versions upload --preview-alias ...`（プレビュー反映）は
+一貫して成功する。**ブロック対象は本番反映（`wrangler deploy`）そのものに限られる**（実測の内訳・一次情報の出典・
+リトライの上限を含む行動指針は [`docs/rules/lessons/cloud-environment.md` L-130](../../rules/lessons/cloud-environment.md) 参照）。
 
 一次情報（公式ドキュメント）によれば、auto mode classifier は `permissions` システムの後段で動く
 第二のゲートであり、本番デプロイは分類器の組み込み保護対象（`soft_deny`）として明示的に扱われる。
@@ -588,14 +588,16 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 
 **結果として、「マージ = 本番反映」ではなく、マージ（公開反映）と本番デプロイの実行は分離している。**
 マージ・push は自律的に完了できるが、本番デプロイの実行そのものはこの制約に阻まれる場面がある
-（上記 8.2 のゲート判定を通過していても実行できない）。
+（上記 8.2 のゲート判定を通過していても実行できない）。🔴 **「必ずブロックされる」と決めつけて試さないのも誤り**
+（実際に通る経路を最初から諦めることになる）。ブロックされたときのリトライは同一セッション内で 1 回まで（`L-130`）。
 
 **乖離検知**: `main` の内容と本番稼働中のコードが乖離していないかは `tools/check_prod_drift.py`
 で検知する（実装は別レーンが担当。オプション・終了コードの詳細は同スクリプト自身を参照する）。
 
 **🟢 決定済みなのは「発火点の移行先」だけ（2026-08-21・飼い主決定 = `D-31`）: 下記 5（Workers Builds）を採用する。**
-🔴 **デプロイのタイミングを決める運用（`D-26` のデプロイゲート）は未決のまま** であり、そこを決めずに
-切り替えると `D-26` が無効化される（§8.2.3 の「移行時に決める積み残し」を参照）。移行手順は §8.2.3。
+🟢 **デプロイのタイミングを決める運用（`D-26` のデプロイゲート）も決定済み**（2026-08-21・P-1 = 案 (a)）:
+Deploy command をゲート込みの `npm run deploy:ci` にすることで、Workers Builds へ移行しても `D-26` は維持される。
+移行手順・設定値は §8.2.3。
 以下は検討した選択肢の全体（いずれも飼い主の判断・実行が必要で、Claude が自律的に設定変更を行って
 解除する経路ではない）:
 
@@ -603,7 +605,8 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
    追加する
 2. Organization の managed settings 側で `autoMode` を調整する（組織管理者権限が必要）
 3. 分類器がブロックした都度、Claude Code の `/permissions` 画面「Recently denied」からユーザー自身が
-   手動で承認・リトライする
+   手動で承認・リトライする（🔴 **無人ルーティンでは `/permissions` 画面が存在せず機能しない**。
+   有人セッション限定の手段）
 4. 本番デプロイの実行自体を、飼い主自身（または GitHub Actions の制限が解除された場合は CI/CD）が担う
    運用に切り替える
 5. ✅ **採用（`D-31`）: [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)（Cloudflare native の Git 連携）へ発火点を移す**
@@ -636,29 +639,43 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 
 ⚠️ **ダッシュボードでの接続は「決めてから」行う。** 接続した瞬間から `main` への push が本番へ流れ始めるため、
 下記が未解決のまま接続すると **`D-26` のデプロイゲートが無効化される**（`rejected` 判定のスプリントも本番で
-稼働し続ける）。
+稼働し続ける）。🟢 **P-1 / P-2 はいずれも 2026-08-21 に決着済み**（下記）。接続を依頼できる状態にゃ。
 
-**P-1. `D-26` のデプロイゲートをどう維持するか（🔴 未決・接続前に決める）**
+**P-1. `D-26` のデプロイゲートをどう維持するか（🟢 決定済み・2026-08-21・議論記録 `content/discussions/prod-deploy-gate-20260821/whiteboard.md`）**
 
 `D-26` は「`Sprint Goal:` 行のあるスプリント PR は、マージ直後ではなく **Sprint Review 判定が `accepted`
-になった時点** でデプロイする（`rejected` の間はデプロイしない・fail-closed）」と定めている。現行フローでは
-Sprint Review は **マージ後** に実施される（`pr-review-watcher` Step 7）。一方 Workers Builds は
-**push をトリガーにする** ため、`tools/check_deploy_gate.py` が呼ばれず判定を飛ばして本番へ出る。
+になった時点** でデプロイする（`rejected` の間はデプロイしない・fail-closed）」と定めている。一方 Workers Builds は
+**push をトリガーにする** ため、素のままでは `tools/check_deploy_gate.py` が呼ばれず判定を飛ばして本番へ出る。
 
-| 案 | 内容 | トレードオフ |
+🟢 **採用: 案 (a) — Deploy command をゲート込みにする。** Workers Builds の本番ブランチは `main`（リポジトリの
+default branch）のままとし、Deploy command に `npm run deploy:ci`（= `bash tools/workers_build_deploy.sh`）を指定する。
+このスクリプトはビルド環境で `python3 tools/check_deploy_gate.py` を実行し、**exit 0 のときだけ `npm run deploy` へ進む**。
+
+🔴 **ゲートが閉じているときは exit 0 で握り潰さず、その終了コードのままビルドを失敗させる。**
+Workers Builds が「Deploy command が exit 0 でデプロイしなかった場合にビルドを成功扱いにするか」を公式ドキュメントに
+明記していない（2026-08-21 時点で未確認）ため、その未文書の挙動に依存しない設計にしている。
+**ビルドが赤くなるのは「デプロイ保留中」の可視化であって故障ではない**（本番は更新されていない = fail-closed が成立している）。
+
+| 案 | 内容 | 判定 |
 |---|---|---|
-| **(a)** | Deploy command をゲート込みにする（`check_deploy_gate.py` を実行し `can_deploy=false` なら **デプロイせず正常終了** する npm script を用意し、それを Deploy command に指定する） | `D-26` をそのまま維持できる。ビルド環境に Python と GitHub API アクセス（トークンをビルド変数へ）が要る。**未検証** |
-| **(b)** | Sprint Review 判定が出るまで `main` にマージしない（判定をマージ前へ動かす） | 追加の実装が不要。ただし `pr-review-watcher` Step 7 の運用（マージ後にレビューとレトロ）を組み替える必要がある |
+| **(a)** ✅ | Deploy command をゲート込みにする（`npm run deploy:ci`） | **採用**。ビルドイメージには Python 3.13.3 と git がプリインストール済み（公式 build-image で確認）。Claude が実行するアクションは「`main` へのマージ」だけになり、`wrangler deploy` は分類器の管轄外（Cloudflare のビルド環境）へ移る |
+| (b) | Sprint Review 判定が出るまで `main` にマージしない | **非採用**。Sprint Review の滞留が `main` への統合全体を止め、非スプリント PR まで巻き込む（#288 / #308 が実際に滞留した） |
+| (c) | `deploy-live` 専用ブランチを本番ブランチに指定し、ゲート判定はセッション側で実行する | **検討のうえ撤回**。分類器は **non-default branch のうち名前がデプロイ先を示すもの**（`production` / `release` / `gh-pages` 等）への push を独自に本番デプロイと判定する。しかも分類器は CLAUDE.md とドキュメントを読むため、**正しく文書化するほど検知されやすくなる**。名前を隠して回避するのは `L-130` の迂回禁止に触れる |
 
-🔵 **(a) が本命**（運用を変えずに済む）だが、ビルド環境の制約が未検証。**接続作業の前に (a) の実現性を
-実機で確認し、駄目なら (b) を採る**。
+**P-2. シークレットの引き継ぎ（🟢 決定済み・専用の検証ビルドは挟まない）**
 
-**P-2. シークレットの引き継ぎを、本番へ流す前に確認する**
+Wrangler の公式ドキュメントが **「Wrangler will not delete your secrets (encrypted environment variables) unless you
+run `wrangler secret delete <key>`」「Secrets are never deleted by a deployment」** と明記しており、これは
+**実行元の環境に依存しない一般仕様**（secrets は Cloudflare アカウント側の Worker に紐づく）。したがって
+「Deploy command を一時的に `echo skip` にして無害化ビルドを 1 回走らせる」という当初案は **過剰なので採らない**
+（手順を 1 段増やすだけで得るものがない）。
 
-接続直後にいきなり本番デプロイを走らせない。**Deploy command を一時的に無害なコマンド（例: `echo skip`）に
-しておいてビルドを 1 回走らせ**、ビルド環境とシークレット解決を確認してから本来の Deploy command に差し替える。
-🔴 `RATE_LIMIT_SALT` が未解決だとレート制限判定ごとスキップされる（**フェイルオープンでエラーにならない**）ため、
-気づかないまま本番が無防備になる。
+代わりに **初回の実デプロイの前後で確認する**:
+
+1. 初回デプロイ前に `npx wrangler secret list` を実行し、既存 secrets の **名前一覧**（`RATE_LIMIT_SALT` を含む）を記録する
+2. デプロイ後に同じコマンドを再実行し、名前一覧が一致することを突合する
+3. レート制限が効くエンドポイントへ短時間に連続アクセスし、制限応答が返ることを 1 回だけ確認する
+   （🔴 `RATE_LIMIT_SALT` が未解決だと **フェイルオープンでエラーにならない** ため、動作で確かめないと気づけない）
 
 #### 飼い主の操作（API では実行できない・1 回だけ）
 
@@ -673,9 +690,9 @@ Cloudflare の GitHub App の接続は **ダッシュボードでの対話的認
 | Worker 名 | `gem-hunter` | 🔴 **ダッシュボード上の Worker 名と `wrangler.jsonc` の `name` が一致していないとビルドが失敗する**（[公式](https://developers.cloudflare.com/workers/ci-cd/builds/troubleshoot/)）。本プロジェクトは一致済み |
 | 本番ブランチ | `main` | trunk-based（`D-21`） |
 | Build command | **空にする** | `npm run deploy` が `opennextjs-cloudflare build` を内包しているため、build と deploy を二重に走らせない |
-| Deploy command | `npm run deploy` | 既定は `npx wrangler deploy` だが、それだと OpenNext のビルド成果物が更新されない（§8.2 の注意書きと同じ罠）。SHA タグ付与も `npm run deploy` 側に入っている |
+| Deploy command | `npm run deploy:ci` | = `bash tools/workers_build_deploy.sh`。`D-26` のゲート判定を通してから `npm run deploy` を実行する（P-1 の決定）。既定の `npx wrangler deploy` のままだと ① OpenNext のビルド成果物が更新されない ② ゲートが素通りする、の 2 つの罠を踏む。SHA タグ付与も `npm run deploy` 側に入っている |
 | Non-production branch builds | 🔴 **有効化しない**（本番ブランチのトリガーだけを接続する） | 既定の `npx wrangler versions upload` は **alias を付けない**。PR ごとのプレビューは既存の `--preview-alias pr-<N>` 運用（§6.1）が担っており、両方走ると ① レビュアーがどちらの URL が最新か誤認する ② alias なし version は `retire_preview_aliases.py`（`pr-<N>` 形式のみ判定）の **退役対象外** になり orphan として蓄積する ③ push のたびに Cloudflare API のレート制限（#117 で 248 秒待機を実測）を追加消費する。**一本化するなら退役スクリプトを alias なし version に対応させてから**（別 Issue） |
-| Build variables and secrets | 🔴 **Next.js のビルドに必要な変数をここへ入れる** | [公式の Next.js ガイド](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)が明記。**ビルド変数はランタイムには渡らない**（ランタイム値は Settings → Variables & Secrets 側） |
+| Build variables and secrets | 🔴 **`GH_TOKEN` を Secret 種別で登録する**（+ Next.js のビルドに必要な変数があればここへ） | `npm run deploy:ci` が呼ぶ `check_deploy_gate.py` は GitHub API で Issue を読む。ビルド環境に `gh` は無いので `GH_TOKEN` / `GITHUB_TOKEN` のフォールバック経路を使う。🔴 **専用の fine-grained PAT を新規発行し、対象リポジトリを `gem-hunter` のみ・権限を `Issues: Read-only` + `Metadata: Read-only` に限定する**（他用途のトークンを流用しない。classic PAT の `repo` スコープは過剰権限）。有効期限を設定しておくと、切れたときにビルドが赤くなって気づける。⚠️ ビルド変数は `npm run deploy` を含む同一ビルド環境の全プロセス（npm 依存パッケージのライフサイクルスクリプトを含む）から参照できるため、**権限を絞ることが唯一の緩和策**。[公式の Next.js ガイド](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)のとおり **ビルド変数はランタイムには渡らない**（ランタイム値は Settings → Variables & Secrets 側） |
 
 #### 🔴 移行前に検証する 3 点
 
@@ -709,10 +726,10 @@ GitHub App の **切断** は接続と同様にダッシュボード操作が必
 - ✅ **「マージ = 本番反映」が回復する**（`INF-20` の原則へ復帰。`D-23` で暫定緩和した部分が不要になる）
 - ✅ Claude は `wrangler deploy` を打たなくなるため、分類器と構造的に衝突しない（`L-130` の制約が
   デプロイ経路に影響しなくなる。**ただし制約自体は残るので `L-130` は削除しない**）
-- ⚠️ `tools/check_deploy_gate.py` によるゲート判定（`D-26`: スプリント PR は Sprint Review 判定まで
-  デプロイしない）は、**push をトリガーにする Workers Builds では効かなくなる**。ゲートを維持するなら
-  「判定が出るまで main にマージしない」へ運用を移すか、Workers Builds 側のビルド無効化トグルを使う。
-  🔴 **この点は移行時に決める必要がある**（本節は選択肢の提示に留める）
+- ✅ `tools/check_deploy_gate.py` によるゲート判定（`D-26`: スプリント PR は Sprint Review 判定まで
+  デプロイしない）は **Deploy command の中で維持される**（P-1 の決定・`npm run deploy:ci`）。ゲートが閉じている
+  間はビルドが失敗扱いになり、本番は更新されない（fail-closed）
+- ⚠️ ゲート待機のたびにダッシュボードへ赤いビルドが残る。これは異常ではなく「デプロイ保留中」の可視化にゃ
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
 

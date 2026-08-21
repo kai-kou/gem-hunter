@@ -15,7 +15,7 @@ test.describe('SP-15: 鮮度・出典・差分・RSS', () => {
     page,
   }) => {
     await page.goto('/ja')
-    // 出典テキスト（`AttributionNotice`）が可視。D-32（#308）で「このデータについて: …」へ刷新済み。
+    // 出典テキスト（`AttributionNotice`）が可視。D-33（#308）で「このデータについて: …」へ刷新済み。
     await expect(page.getByText(/このデータについて/)).toBeVisible()
     await expect(page.getByText(/Ecosyste\.ms/)).toBeVisible()
     const licenseLink = page.getByRole('link', { name: 'CC BY-SA 4.0' })

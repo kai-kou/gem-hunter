@@ -101,12 +101,12 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `SearchKeyword` | 空白のみ不可・前後トリム・長さ上限 | `DomainValidationError`（UI は「検索を促す表示」に倒す・`AC-3`） |
 | `PageNumber` | 1 以上の整数。上限は GitHub 検索の到達可能範囲 | `tryParse` は既定値 `1` に倒す（URL 改変で 500 にしない） |
 | `PerPage` | 🔴 **20 / 50 / 100 のみ**（`AR-3`。任意値はキャッシュ断片化を招く） | `tryParse` は既定値に倒す |
-| `SortOrder` | `relevance` / `stars` / `updated`（`AR-2`）。🔴 **`gem-index`（`SP-16`）は `D-32`（2026-08-21）により撤去済み**。候補プールの被覆率不足で機能として成立しなかったため（[`open-questions.md`](../../02_requirements/open-questions.md) `D-32`）。旧 URL の `sort=gem-index` は不正値として既定値へ丸める | 同上 |
+| `SortOrder` | `relevance` / `stars` / `updated`（`AR-2`）。🔴 **`gem-index`（`SP-16`）は `D-33`（2026-08-21）により撤去済み**。候補プールの被覆率不足で機能として成立しなかったため（[`open-questions.md`](../../02_requirements/open-questions.md) `D-33`）。旧 URL の `sort=gem-index` は不正値として既定値へ丸める | 同上 |
 | `Locale` | `ja` / `en`（`AR-4`） | 既定ロケールに倒す |
 | `CacheKey` | 名前空間 + 正規化済みの構成要素（`NFR-18`） | 生成関数以外で組み立てない |
 | `DateSeed` | 🔴 **`YYYYMMDD` の 8 桁数字**（UTC）かつ **実在する日付**（`20260231` は不可・`Date.UTC` の往復一致で検証）。日次ダイジェストの唯一のシード（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2・`src/domain/model/date-seed.ts`） | `parse` は `DomainValidationError`。`tryParse(raw, now)` は **不正値・未指定を当日（UTC）へ倒す**（URL の `?date=` 改変で 500 にしない・ADR 0014 §2.2） |
 | `GemIndex` | **被依存数のパーセンタイル順位 − star のパーセンタイル順位**（`ADR 0009` §2.1・`src/domain/model/gem-index.ts`）。`gemIndex(value)` は有限数のみ、`computeGemIndex(dependentRank, starRank)` は入力を **0〜100** に制限する（Ecosyste.ms の `rankings` の値域） | `DomainValidationError`。🔴 **値が小さいほど上位**（`rankings` は 0 が最上位。並べ替えは昇順）。健全性（`criticality_score` / Scorecard）と 1 つのスコアに合算しない（`ADR 0009` §2.2） |
-| ~~`GemFacet`~~ | 🔴 **`D-32`（2026-08-21）により撤去**（`{ gemIndex: GemIndex; dependentCount: number }`・旧 `src/domain/model/gem.ts`）。`SP-16` が検索結果（`RepositorySummary`）を候補プール（`Gem`）と突合し Gem Index 順に並べ替えるために持っていた型で、`gemFacetKey` / `toGemFacetMap` / `sortByGemIndex`（旧 `src/domain/model/gem-index.ts`）とともに削除済み。並べ替え適用先（検索結果一覧）が撤去されたため、突合専用のこの型に存在理由がなくなった。**`GemIndex` 型・`computeGemIndex` は撤去しない**（「今日の Gem」＝日次ダイジェストが使い続ける） | （撤去済み） |
+| ~~`GemFacet`~~ | 🔴 **`D-33`（2026-08-21）により撤去**（`{ gemIndex: GemIndex; dependentCount: number }`・旧 `src/domain/model/gem.ts`）。`SP-16` が検索結果（`RepositorySummary`）を候補プール（`Gem`）と突合し Gem Index 順に並べ替えるために持っていた型で、`gemFacetKey` / `toGemFacetMap` / `sortByGemIndex`（旧 `src/domain/model/gem-index.ts`）とともに削除済み。並べ替え適用先（検索結果一覧）が撤去されたため、突合専用のこの型に存在理由がなくなった。**`GemIndex` 型・`computeGemIndex` は撤去しない**（「今日の Gem」＝日次ダイジェストが使い続ける） | （撤去済み） |
 
 **実装の型（決定）**: **ブランド型 + スマートコンストラクタ** を使う。クラスで包むのは振る舞いを持つものだけにし、単純な識別子・数値はブランド型で軽量に保つ。
 
@@ -164,7 +164,7 @@ repository:v2:vercel/next.js
 | コンテキスト | 位置づけ | 関係 |
 |---|---|---|
 | **Search**（MVP） | 本アプリの中核。検索・一覧・詳細 | — |
-| **Gem Index**（Phase 2） | 被依存数・健全性を扱う | Search とは **別コンテキスト**。同じ `Repository` でも持つ属性が違う。共通化を急がない。🔴 **両コンテキストの突合（`SP-16`・`GemFacet` 経由で検索結果へ Gem Index を適用する経路）は `D-32` により撤去済み**。現在は「今日の Gem」（日次ダイジェスト）に閉じたコンテキストとして存在する |
+| **Gem Index**（Phase 2） | 被依存数・健全性を扱う | Search とは **別コンテキスト**。同じ `Repository` でも持つ属性が違う。共通化を急がない。🔴 **両コンテキストの突合（`SP-16`・`GemFacet` 経由で検索結果へ Gem Index を適用する経路）は `D-33` により撤去済み**。現在は「今日の Gem」（日次ダイジェスト）に閉じたコンテキストとして存在する |
 | **GitHub**（外部・上流） | データ源 | 🔴 **腐敗防止層（`src/infrastructure/github/`）を必ず挟む**。上流の変更に本体を追随させない |
 | **Ecosyste.ms / OpenSSF**（Phase 2・外部・上流） | 被依存数・健全性の供給元 | 同じく ACL を挟む。`RepositoryQueryPort` と別ポートにする → ✅ **`SP-14` で `GemDigestPort`（`src/domain/ports/gem-digest-port.ts`・`listCandidates()` 1 本）として分離済み**。候補プールはバッチ生成の静的 JSON 経由で読むため、Worker から Ecosyste.ms を直接叩かない（`D-28`） |
 

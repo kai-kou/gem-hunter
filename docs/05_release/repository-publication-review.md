@@ -351,7 +351,7 @@ rules       : deletion / non_fast_forward /
 - レート制限（`NFR-7`）は **クライアント単位** であり、上流の 30 req/分という **総量** は守らない。多数の別クライアントが同時に来れば枯れる。枯れたときの挙動は `SP-9` で実装済み（レート制限超過を区別して伝え、再試行手段を提供する）
 - 枯渇が実際に起きた場合の緩和策は任意 OAuth ログイン（[ADR 0012](../adr/0012-optional-github-oauth.md)・ログインすると各自のレート枠を使う）。⚠️ **Issue #187 が解消されるまでプレビューではこの緩和が働かない**
 
-⚠️ **`SP-16`（`sort=gem-index`）は本逆算の前提が成り立たない（PR #293 セルフレビュー指摘）**: 上表「1 検索あたりの上流呼び出し」は **1 回** を前提にしているが、`sort=gem-index` は内部で最大 10 ページを逐次取得するため **1 検索あたり最大 10 リクエスト** になりうる（`src/usecases/search-repositories.ts` の `GEM_INDEX_FETCH_MAX_PAGES`）。🔴 **`sort=gem-index` 自体が `D-32`（2026-08-21）により撤去されたため、本注記は解消済み**（[`open-questions.md`](../02_requirements/open-questions.md) `D-32`）。1 検索あたりの上流呼び出しは常に 1 回に戻り、再逆算は不要になった。
+⚠️ **`SP-16`（`sort=gem-index`）は本逆算の前提が成り立たない（PR #293 セルフレビュー指摘）**: 上表「1 検索あたりの上流呼び出し」は **1 回** を前提にしているが、`sort=gem-index` は内部で最大 10 ページを逐次取得するため **1 検索あたり最大 10 リクエスト** になりうる（`src/usecases/search-repositories.ts` の `GEM_INDEX_FETCH_MAX_PAGES`）。🔴 **`sort=gem-index` 自体が `D-33`（2026-08-21）により撤去されたため、本注記は解消済み**（[`open-questions.md`](../02_requirements/open-questions.md) `D-33`）。1 検索あたりの上流呼び出しは常に 1 回に戻り、再逆算は不要になった。
 
 ### 7.3. `R-6`: 運用コストの試算 — ✅ 完了（**Workers Paid** と確定）
 

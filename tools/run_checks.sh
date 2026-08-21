@@ -209,6 +209,12 @@ else
   skip_check "デプロイゲート self-test (check_deploy_gate.py --self-test)" "スクリプトが見つかりません"
 fi
 
+if [ -f "$REPO_ROOT/tools/workers_build_deploy.sh" ]; then
+  run_check "Workers Builds デプロイ入口 self-test (workers_build_deploy.sh --self-test)" bash tools/workers_build_deploy.sh --self-test
+else
+  skip_check "Workers Builds デプロイ入口 self-test (workers_build_deploy.sh --self-test)" "スクリプトが見つかりません"
+fi
+
 if [ -f "$REPO_ROOT/tools/check_digest_freshness.py" ]; then
   run_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" python3 tools/check_digest_freshness.py --self-test
 else
