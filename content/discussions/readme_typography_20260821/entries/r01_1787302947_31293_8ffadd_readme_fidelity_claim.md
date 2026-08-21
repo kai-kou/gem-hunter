@@ -73,7 +73,7 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 | 絵文字画像 `<g-emoji>` | **タグ自体が非標準要素**。`ALLOWED_TAGS` に無いため落ちる | 中のテキスト（Unicode 絵文字 or alt）は残る想定だが要実機確認 |
 | バッジ・アンカー用 `<svg class="octicon">` | 落ちる | `svg` は `ALLOWED_TAGS` に無し。見出し横のリンクアイコン等が消える（実害は小さい） |
 | 脚注 `<sup id="fnref-...">` / `<section class="footnotes">` | `sup` はタグ許可だが `id`/`class` 属性は許可されていない（`ALLOWED_ATTRIBUTES` に `sup` のエントリ無し） | 脚注番号は表示されるがジャンプできない可能性 |
-| `<table>` の `class="table" `等の GitHub 独自属性 | 落ちる（`table`/`th`/`td` の属性は `colspan`/`rowspan` のみ許可） | 罫線自体は自前 CSS 次第（後述） |
+| `<table>` の `class="table" ` 等の GitHub 独自属性 | 落ちる（`table`/`th`/`td` の属性は `colspan`/`rowspan` のみ許可） | 罫線自体は自前 CSS 次第（後述） |
 
 ⚠️ **推定であることの明記**: `api.github.com` への直接アクセスがこのセッションから 403 になる可能性が高いため、上記は `src/ui/readme-html.ts` の許可リストとの静的突き合わせによる推定。`bcaudan/jasmine-spec-reporter` の README には `<details>` やアラート記法が含まれていない（今回の実出力では未観測）。実測が要る場合は `<details>` や `> [!NOTE]` を含む README（例: 多くの大型 OSS）で別途 curl 検証が望ましい。
 

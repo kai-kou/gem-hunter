@@ -2,10 +2,10 @@
 # 🧑‍🏫 議論ホワイトボード: 詳細画面の README を書式どおりに表示する方式を確定する（Tailwind v4 / Workers 制約下）
 
 - 議題ID: `readme_typography_20260821`
-- 論点: 飼い主フィードバック（2026-08-21・Issue #339）: 「README について参照できるようになったが**書式が反映されていない**」。実機スクリーンショットでは、README の見出し・リスト・インラインコード・コードブロックがすべて同じ大きさの素のテキストとして縦に並んでおり、階層も余白も付いていない（唯一 `code` 相当が等幅で出ている）。現状: PR #337 で `GET /repos/{o}/{r}/readme` を `Accept: application/vnd.github.html+json` で取得し、`src/ui/readme-html.ts` が sanitize-html で 1 パス変換（許可リスト・相対 URL 解決・target=_blank 付与・見出し +2 降格（h1→h3・h6 cap・id 保持）・30,000 文字での切り詰め）してから `src/ui/readme-section.tsx` が `dangerouslySetInnerHTML` で描画している。描画側のクラスは `className="mt-2 max-w-none space-y-3 text-sm leading-relaxed break-words"` だけで、実装時のコメントは「`@tailwindcss/typography` は未導入（新規依存の追加禁止・タスクスコープ外）のため `prose` は使わない。見出し・段落・リストは既定のブラウザスタイルに委ねる」と書いている。ところが本プロジェクトは **Tailwind CSS v4**（`app/globals.css` の 1 行目が `@import "tailwindcss";`、他に `tw-animate-css` と `shadcn/tailwind.css` を import）であり、Tailwind の Preflight がブラウザ既定スタイル（見出しのサイズ・リストのマーカーとインデント・引用・表の枠）を打ち消すため『既定のブラウザスタイルに委ねる』が成立していない。これが書式が出ない直接原因である（この仮説自体も検証対象とする）。制約: ① Cloudflare Workers（OpenNext）で動く。バンドル上限 3 MB（gzip・現在 1372 KiB）・`limits.cpu_ms: 50`。CSS はビルド時に静的化されるので実行時 CPU には効かないが、バンドル/アセットサイズと Lighthouse への影響は見る ② `NFR-3` クライアント JS を増やさない（`use client` を足さない） ③ ダークモード（`app/globals.css` のセマンティックトークン）と `docs/03_design/ui-ux/ui-ux-guidelines.md`（§2 デザイントークン・§7 a11y・§8 表示状態）に整合させる ④ サニタイズの許可リスト（`ALLOWED_TAGS`）を超えるタグは描画されないので、スタイルを当てる対象は許可済みタグに限る ⑤ README は第三者が書いた HTML であり、スタイルのために許可タグ・許可属性（特に `class` / `style`）を広げるとサニタイズの前提が変わる ⑥ 見出しは +2 降格済みなので、README 内の最上位見出しは h3 として出てくる（プレーンな `h1` セレクタ前提のスタイルは当たらない）。争点は少なくとも次の 6 つ: A) 方式の選択 — `@tailwindcss/typography`（v4 では CSS 側の `@plugin "@tailwindcss/typography";` で読み込む形になっているはず。**最新の公式ドキュメントで v4 における導入方法・`prose` の使い方・`not-prose`・`prose-invert` / ダークモード対応の現行仕様を必ず一次情報で確認すること**）を入れるか、`app/globals.css` に自前のスコープ付き CSS（例 `.readme-content h3 { ... }`）を書くか、`readme-html.ts` の `transformTags` で各タグに Tailwind ユーティリティクラスを注入するか B) 降格済み見出し（h3 起点）と typography プラグインの既定スケール（h1/h2 前提）の噛み合わせをどう解決するか（`prose-headings:` 系の修飾で足りるか、降格の段数自体を見直すべきか） C) ダークモードの扱い（`prose-invert` を使うか、セマンティックトークンで自前定義するか。本プロジェクトのテーマ実装と整合するか） D) サニタイズとの整合 — `class` 属性を許可しないまま方式 A を成立させられるか（typography は親要素の `prose` クラスと子孫セレクタで効くはずなので許可リスト変更は不要という仮説の検証）。GitHub 由来の HTML が持つ独自クラス（`anchor` / `octicon` / `highlight` / `notranslate` 等）や `<img>` のバッジ、`<details>`/`<summary>`、絵文字画像（`g-emoji`）、シンタックスハイライト用の `<span class="pl-*">` が現状どう落ちているか、書式再現にどこまで必要か E) バンドル・パフォーマンスへの影響（typography プラグイン導入時の CSS 増分の実測方法、Lighthouse への影響、`max-w-none` の扱い、モバイルでの表・コードブロックの横スクロール） F) 回帰をどう機械検査するか（現状 `tools/check_ui_dimensions.py` / `check_contrast.py` / axe / Lighthouse があるが、書式が当たっていないことは検知できなかった。E2E で「見出しの計算後フォントサイズが本文より大きい」等を検証できるか、その検査は過剰か）。
+- 論点: 飼い主フィードバック（2026-08-21・Issue #339）: 「README について参照できるようになったが **書式が反映されていない**」。実機スクリーンショットでは、README の見出し・リスト・インラインコード・コードブロックがすべて同じ大きさの素のテキストとして縦に並んでおり、階層も余白も付いていない（唯一 `code` 相当が等幅で出ている）。現状: PR #337 で `GET /repos/{o}/{r}/readme` を `Accept: application/vnd.github.html+json` で取得し、`src/ui/readme-html.ts` が sanitize-html で 1 パス変換（許可リスト・相対 URL 解決・target=_blank 付与・見出し +2 降格（h1→h3・h6 cap・id 保持）・30,000 文字での切り詰め）してから `src/ui/readme-section.tsx` が `dangerouslySetInnerHTML` で描画している。描画側のクラスは `className="mt-2 max-w-none space-y-3 text-sm leading-relaxed break-words"` だけで、実装時のコメントは「`@tailwindcss/typography` は未導入（新規依存の追加禁止・タスクスコープ外）のため `prose` は使わない。見出し・段落・リストは既定のブラウザスタイルに委ねる」と書いている。ところが本プロジェクトは **Tailwind CSS v4**（`app/globals.css` の 1 行目が `@import "tailwindcss";`、他に `tw-animate-css` と `shadcn/tailwind.css` を import）であり、Tailwind の Preflight がブラウザ既定スタイル（見出しのサイズ・リストのマーカーとインデント・引用・表の枠）を打ち消すため『既定のブラウザスタイルに委ねる』が成立していない。これが書式が出ない直接原因である（この仮説自体も検証対象とする）。制約: ① Cloudflare Workers（OpenNext）で動く。バンドル上限 3 MB（gzip・現在 1372 KiB）・`limits.cpu_ms: 50`。CSS はビルド時に静的化されるので実行時 CPU には効かないが、バンドル/アセットサイズと Lighthouse への影響は見る ② `NFR-3` クライアント JS を増やさない（`use client` を足さない） ③ ダークモード（`app/globals.css` のセマンティックトークン）と `docs/03_design/ui-ux/ui-ux-guidelines.md`（§2 デザイントークン・§7 a11y・§8 表示状態）に整合させる ④ サニタイズの許可リスト（`ALLOWED_TAGS`）を超えるタグは描画されないので、スタイルを当てる対象は許可済みタグに限る ⑤ README は第三者が書いた HTML であり、スタイルのために許可タグ・許可属性（特に `class` / `style`）を広げるとサニタイズの前提が変わる ⑥ 見出しは +2 降格済みなので、README 内の最上位見出しは h3 として出てくる（プレーンな `h1` セレクタ前提のスタイルは当たらない）。争点は少なくとも次の 6 つ: A) 方式の選択 — `@tailwindcss/typography`（v4 では CSS 側の `@plugin "@tailwindcss/typography";` で読み込む形になっているはず。**最新の公式ドキュメントで v4 における導入方法・`prose` の使い方・`not-prose`・`prose-invert` / ダークモード対応の現行仕様を必ず一次情報で確認すること**）を入れるか、`app/globals.css` に自前のスコープ付き CSS（例 `.readme-content h3 { ... }`）を書くか、`readme-html.ts` の `transformTags` で各タグに Tailwind ユーティリティクラスを注入するか B) 降格済み見出し（h3 起点）と typography プラグインの既定スケール（h1/h2 前提）の噛み合わせをどう解決するか（`prose-headings:` 系の修飾で足りるか、降格の段数自体を見直すべきか） C) ダークモードの扱い（`prose-invert` を使うか、セマンティックトークンで自前定義するか。本プロジェクトのテーマ実装と整合するか） D) サニタイズとの整合 — `class` 属性を許可しないまま方式 A を成立させられるか（typography は親要素の `prose` クラスと子孫セレクタで効くはずなので許可リスト変更は不要という仮説の検証）。GitHub 由来の HTML が持つ独自クラス（`anchor` / `octicon` / `highlight` / `notranslate` 等）や `<img>` のバッジ、`<details>`/`<summary>`、絵文字画像（`g-emoji`）、シンタックスハイライト用の `<span class="pl-*">` が現状どう落ちているか、書式再現にどこまで必要か E) バンドル・パフォーマンスへの影響（typography プラグイン導入時の CSS 増分の実測方法、Lighthouse への影響、`max-w-none` の扱い、モバイルでの表・コードブロックの横スクロール） F) 回帰をどう機械検査するか（現状 `tools/check_ui_dimensions.py` / `check_contrast.py` / axe / Lighthouse があるが、書式が当たっていないことは検知できなかった。E2E で「見出しの計算後フォントサイズが本文より大きい」等を検証できるか、その検査は過剰か）。
 - 参加者: `tailwind_v4`, `readme_fidelity`, `perf_bundle`, `a11y_theme`
 - 投稿数: 10
-- 更新: 2026-08-21T18:15:22+09:00
+- 更新: 2026-08-21T18:32:01+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -16,7 +16,7 @@
 
 ## 結論
 
-`@tailwindcss/typography` 導入案が最も低コストかつ安全。**Tailwind v4 では `tailwind.config.js` を新設せず、`app/globals.css` に `@plugin "@tailwindcss/typography";` を 1 行追加するだけ**で有効化できる。`prose max-w-none dark:prose-invert` を `readme-section.tsx` の `<div>` に付与し、降格済み見出し（README 内は `h3`〜`h6` に強制シフト済み・`readme-html.ts:27-34`）は `prose-h3:text-lg prose-h3:font-semibold` 等の要素修飾子でスケール調整する。Preflight を切る選択肢は他 UI（shadcn コンポーネント全体）を壊すため不採用が正しい。
+`@tailwindcss/typography` 導入案が最も低コストかつ安全。**Tailwind v4 では `tailwind.config.js` を新設せず、`app/globals.css` に `@plugin "@tailwindcss/typography";` を 1 行追加するだけ** で有効化できる。`prose max-w-none dark:prose-invert` を `readme-section.tsx` の `<div>` に付与し、降格済み見出し（README 内は `h3`〜`h6` に強制シフト済み・`readme-html.ts:27-34`）は `prose-h3:text-lg prose-h3:font-semibold` 等の要素修飾子でスケール調整する。Preflight を切る選択肢は他 UI（shadcn コンポーネント全体）を壊すため不採用が正しい。
 
 ## 根拠
 
@@ -38,15 +38,15 @@ v4 は CSS-first configuration で `tailwind.config.js` を前提としない。
 
 **本プロジェクトへの具体差分**:
 - `package.json`（devDependencies に追加。実行はしない・スコープ外）: `"@tailwindcss/typography": "^0.5"` 相当を 1 行追加
-- `/home/user/gem-hunter/app/globals.css` の **4 行目**（現状 1〜3 行目は `@import` 3 本、5 行目が `@custom-variant dark`）に `@plugin "@tailwindcss/typography";` を **1 行挿入**するだけ。`@import` ブロックの直後・`@custom-variant` の前が自然な位置。
+- `/home/user/gem-hunter/app/globals.css` の **4 行目**（現状 1〜3 行目は `@import` 3 本、5 行目が `@custom-variant dark`）に `@plugin "@tailwindcss/typography";` を **1 行挿入** するだけ。`@import` ブロックの直後・`@custom-variant` の前が自然な位置。
 - `postcss.config.mjs` は **変更不要**（`@tailwindcss/postcss` が既に CSS 内の `@plugin` ディレクティブを解決する。v3 のように `plugins: [require('@tailwindcss/typography')]` を JS 側に書く必要はない）。
 
 → 合計で **CSS 1 行 + package.json 1 行**。`tailwind.config.js` 新設は不要（v4 では非推奨/存在しない前提）。
 
 ### 2. `prose` の適用単位・サイズスケール
 
-- `prose` はクラスを当てた要素の**子孫**（見出し・段落・リスト・コード等）に CSS セレクタベースでスタイルを適用する（コンポーネント登録ではなく通常のユーティリティクラス）。
-- 既定で `max-width: 65ch` 相当が付く。**コンテナ幅に合わせるには `max-w-none` を明示的に追加**する必要がある（`readme-section.tsx:128` は既に `max-w-none` を単独クラスとして使っているので、`prose max-w-none` の並びに違和感なく統合できる）。
+- `prose` はクラスを当てた要素の **子孫**（見出し・段落・リスト・コード等）に CSS セレクタベースでスタイルを適用する（コンポーネント登録ではなく通常のユーティリティクラス）。
+- 既定で `max-width: 65ch` 相当が付く。**コンテナ幅に合わせるには `max-w-none` を明示的に追加** する必要がある（`readme-section.tsx:128` は既に `max-w-none` を単独クラスとして使っているので、`prose max-w-none` の並びに違和感なく統合できる）。
 - サイズスケール: `prose-sm` / `prose-base`（既定） / `prose-lg` / `prose-xl` / `prose-2xl`。本プロジェクトの現行クラスが `text-sm` のため、`prose-sm` を選ぶのが最も既存デザインとの差分が小さい。
 
 ### 3. ダークモード
@@ -54,21 +54,21 @@ v4 は CSS-first configuration で `tailwind.config.js` を前提としない。
 - `@tailwindcss/typography` は `dark:prose-invert` で切り替える仕様（CSS 変数ベースの配色反転）。
 - 本プロジェクトは `app/globals.css:5` に `@custom-variant dark (&:is(.dark *));` を定義しており、**`.dark` 祖先クラスの有無で切り替える方式**（`app/[locale]/layout.tsx` は未 Read だが、`globals.css` の `@custom-variant` 定義から Tailwind 標準の `dark:` バリアントを `.dark` クラスベースで再定義していることが確認できる。これは shadcn の標準パターン）。
 - `dark:prose-invert` は Tailwind の `dark:` バリアント機構に乗るユーティリティなので、**この `@custom-variant` 再定義と完全に噛み合う**（`dark:` の実体が何であれ、`dark:prose-invert` はその条件下で `prose-invert` を適用するだけ）。矛盾なし。
-- ⚠️ `app/[locale]/layout.tsx` 側で実際に `<html class="dark">` のように**クラスをどこで付け外ししているか**は未確認（読む指示のファイルには含まれていたが本ラウンドでは `globals.css` の定義確認を優先した）。**未確認**: layout.tsx 内の具体的なテーマ切り替えトリガー（`next-themes` 等の使用有無）。他の参加者のレンズで確認済みなら整合性チェックだけで済む。
+- ⚠️ `app/[locale]/layout.tsx` 側で実際に `<html class="dark">` のように **クラスをどこで付け外ししているか** は未確認（読む指示のファイルには含まれていたが本ラウンドでは `globals.css` の定義確認を優先した）。**未確認**: layout.tsx 内の具体的なテーマ切り替えトリガー（`next-themes` 等の使用有無）。他の参加者のレンズで確認済みなら整合性チェックだけで済む。
 
 ### 4. 降格済み見出し（README 最上位が `h3`）のスケール調整
 
-`prose-headings:` は h1〜h6 と `th` に一括適用、`prose-h3:` のように**個別タグ修飾子**も存在する（Context7 確認済み: `class-reference.md`）。例:
+`prose-headings:` は h1〜h6 と `th` に一括適用、`prose-h3:` のように **個別タグ修飾子** も存在する（Context7 確認済み: `class-reference.md`）。例:
 
 ```html
 <article class="prose prose-sm max-w-none prose-h3:text-base prose-h3:font-semibold prose-h4:text-sm">
 ```
 
-`readme-html.ts:27-34` の `HEADING_SHIFT`（`h1→h3` … `h5/h6→h6`）と組み合わせても、**`prose-h3:` 等のタグセレクタは DOM 上の実タグ名に対して効く**ため、シフト後のタグ構成のままで見た目のスケールだけ `prose-h3:` 系ユーティリティで復元・調整できる。デフォルトの `prose` は「文書内の最上位見出しが `h1`」を想定した相対スケールを持つため、**無調整だと `h3` 始まりの見た目がやや小さめになる可能性がある**——これは実装フェーズで実ブラウザ確認が必要な項目であり、本ラウンドでは「調整手段が存在する」ことまでを確認する。
+`readme-html.ts:27-34` の `HEADING_SHIFT`（`h1→h3` … `h5/h6→h6`）と組み合わせても、**`prose-h3:` 等のタグセレクタは DOM 上の実タグ名に対して効く** ため、シフト後のタグ構成のままで見た目のスケールだけ `prose-h3:` 系ユーティリティで復元・調整できる。デフォルトの `prose` は「文書内の最上位見出しが `h1`」を想定した相対スケールを持つため、**無調整だと `h3` 始まりの見た目がやや小さめになる可能性がある**——これは実装フェーズで実ブラウザ確認が必要な項目であり、本ラウンドでは「調整手段が存在する」ことまでを確認する。
 
 ### 5. `not-prose` の用途
 
-`prose` 適用範囲内で「ここだけは prose のスタイルを外したい」ブロックに使う一括除外ユーティリティ（Context7 確認済み: `plugin.md` の Generated Variants 記載）。本件では、README 本文全体を `prose` 化する方針であれば、通常は不要。ただし将来的に README 内に**埋め込みウィジェットやカスタムブロックを許可リストに追加する**場合、その要素にだけ `not-prose` を当てて prose のリセットから逃がす、という用途はありうる（現状の `ALLOWED_TAGS`・`readme-html.ts:46-92` を見る限り、そのような要素は今のところ存在しないため**現時点で使う場面はない**）。
+`prose` 適用範囲内で「ここだけは prose のスタイルを外したい」ブロックに使う一括除外ユーティリティ（Context7 確認済み: `plugin.md` の Generated Variants 記載）。本件では、README 本文全体を `prose` 化する方針であれば、通常は不要。ただし将来的に README 内に **埋め込みウィジェットやカスタムブロックを許可リストに追加する** 場合、その要素にだけ `not-prose` を当てて prose のリセットから逃がす、という用途はありうる（現状の `ALLOWED_TAGS`・`readme-html.ts:46-92` を見る限り、そのような要素は今のところ存在しないため **現時点で使う場面はない**）。
 
 ### 6. Preflight と typography の関係（Preflight を切る選択肢について）
 
@@ -76,7 +76,7 @@ Context7 の公式説明（`README.md` / `_autodocs/README.md`）:
 
 > "By default, Tailwind removes browser styling, which is useful for application UIs but can be surprising for content from rich-text editors or markdown files. The `@tailwindcss/typography` plugin aims to provide excellent typography **without the downsides of disabling base styles**."
 
-つまり **typography プラグインは「Preflight を維持したまま、`.prose` 配下だけスコープを絞って装飾を復元する」ことこそが存在意義**であり、Preflight と typography はセットで使うのが公式に想定された設計。
+つまり **typography プラグインは「Preflight を維持したまま、`.prose` 配下だけスコープを絞って装飾を復元する」ことこそが存在意義** であり、Preflight と typography はセットで使うのが公式に想定された設計。
 
 **Preflight を切る案が不可な根拠**: `app/globals.css:150-165` の `@layer base` は `* { @apply border-border outline-ring; }` `body { @apply bg-background text-foreground; }` `html { @apply font-sans; }` を Preflight 前提の CSS カスケードで組んでおり、Preflight（ブラウザ既定値のリセット）を切ると shadcn コンポーネント一式（`button.tsx` / `input.tsx` 等、コメントに明記あり）のフォーカスリング・ボーダー・フォント指定が二重定義・崩れの原因になる。**Preflight はグローバル適用**（v4 でも無効化オプションは「プラグイン全体を読み込まない」単位でしか存在せず、`.readme-content` だけスコープを絞って切ることはできない）。→ **不可（他 UI 全体を道連れにする）**。
 
@@ -84,17 +84,17 @@ Context7 の公式説明（`README.md` / `_autodocs/README.md`）:
 
 | 案 | 実装コスト | 保守性 | 安全性 | 備考 |
 |---|---|---|---|---|
-| **① `@tailwindcss/typography`** | 低（CSS 1 行 + `package.json` 1 行 + `readme-section.tsx` のクラス変更のみ） | 高（Tailwind 公式・アップデート追従・テーマトークンとの連動は別途要検証） | 高（サニタイズ後の HTML に対する**装飾のみ**。属性・タグの許可を増やさない） | 見出しスケール調整は `prose-h3:` 等で対応可（§4） |
+| **① `@tailwindcss/typography`** | 低（CSS 1 行 + `package.json` 1 行 + `readme-section.tsx` のクラス変更のみ） | 高（Tailwind 公式・アップデート追従・テーマトークンとの連動は別途要検証） | 高（サニタイズ後の HTML に対する **装飾のみ**。属性・タグの許可を増やさない） | 見出しスケール調整は `prose-h3:` 等で対応可（§4） |
 | ② 自前スコープ付き CSS（`.readme-content h3{...}` 等） | 中〜高（見出し・リスト・コード・テーブル・blockquote 等を手動で網羅、ダークモード分岐も自前実装） | 低（Tailwind のテーマトークン変更に追従させる保守が継続的に発生。属人化しやすい） | 高（同上、サニタイズ済み HTML への装飾のみ） | 既存コメント（`readme-section.tsx:125` 「新規依存の追加禁止」）は本タスクで見直し対象と推定 |
 | ③ `transformTags` でタグごとに Tailwind ユーティリティを直接注入 | 中（`readme-html.ts` の変換ロジックに全許可タグ分のクラス付与処理を追加） | 中（`sanitize-html` の `class` 属性をサニタイズの許可リストに追加する必要があり、`readme-html.ts` の責務が「サニタイズ」から「サニタイズ+スタイリング」に肥大化） | **要注意**: `class` 属性をサニタイズ対象に加えると、任意の CSS クラス名文字列がサニタイズ後 HTML に残る経路が新たに生まれる（XSS 直結ではないが、CSS インジェクション的な想定外スタイル適用のリスク面で①③より監査コストが増える。既存の `ALLOWED_ATTRIBUTES`（`readme-html.ts:94-104`）は意図的に最小構成を保っている設計思想と衝突する） | 非推奨 |
 
 ## 推奨
 
-**① `@tailwindcss/typography` プラグイン導入**を推奨する。理由:
+**① `@tailwindcss/typography` プラグイン導入** を推奨する。理由:
 - 変更範囲が最小（CSS 1 行 + 依存追加 + コンポーネントのクラス変更）で `sanitize-html` の許可リストに一切手を入れない（③のセキュリティ懸念を回避）
 - Preflight との併用が公式設計そのもの（§6 の一次情報）
 - ダークモード・見出し降格・レスポンシブサイズの全要件が `dark:prose-invert` / `prose-h3:` / `prose-sm` の標準修飾子だけで満たせる（§2〜4）
-- `readme-section.tsx:125` のコメント「新規依存の追加禁止（タスクスコープ外）」は**当時のタスクスコープの制約であり、今回の書式修正タスクではこの制約自体を見直す**必要がある（実装担当・スコープ判定は他の参加者の議論に委ねる）
+- `readme-section.tsx:125` のコメント「新規依存の追加禁止（タスクスコープ外）」は **当時のタスクスコープの制約であり、今回の書式修正タスクではこの制約自体を見直す** 必要がある（実装担当・スコープ判定は他の参加者の議論に委ねる）
 
 ## 未確認事項
 
@@ -172,7 +172,7 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 | 絵文字画像 `<g-emoji>` | **タグ自体が非標準要素**。`ALLOWED_TAGS` に無いため落ちる | 中のテキスト（Unicode 絵文字 or alt）は残る想定だが要実機確認 |
 | バッジ・アンカー用 `<svg class="octicon">` | 落ちる | `svg` は `ALLOWED_TAGS` に無し。見出し横のリンクアイコン等が消える（実害は小さい） |
 | 脚注 `<sup id="fnref-...">` / `<section class="footnotes">` | `sup` はタグ許可だが `id`/`class` 属性は許可されていない（`ALLOWED_ATTRIBUTES` に `sup` のエントリ無し） | 脚注番号は表示されるがジャンプできない可能性 |
-| `<table>` の `class="table" `等の GitHub 独自属性 | 落ちる（`table`/`th`/`td` の属性は `colspan`/`rowspan` のみ許可） | 罫線自体は自前 CSS 次第（後述） |
+| `<table>` の `class="table" ` 等の GitHub 独自属性 | 落ちる（`table`/`th`/`td` の属性は `colspan`/`rowspan` のみ許可） | 罫線自体は自前 CSS 次第（後述） |
 
 ⚠️ **推定であることの明記**: `api.github.com` への直接アクセスがこのセッションから 403 になる可能性が高いため、上記は `src/ui/readme-html.ts` の許可リストとの静的突き合わせによる推定。`bcaudan/jasmine-spec-reporter` の README には `<details>` やアラート記法が含まれていない（今回の実出力では未観測）。実測が要る場合は `<details>` や `> [!NOTE]` を含む README（例: 多くの大型 OSS）で別途 curl 検証が望ましい。
 
@@ -233,10 +233,10 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 `@tailwindcss/typography` の `prose` は独自の `--tw-prose-body` / `--tw-prose-headings` / `--tw-prose-links` / `--tw-prose-code` 等（既定値は Tailwind の gray/slate スケールへの直書き）を持つ。これをそのまま使うと:
 
 - `ui-ux-guidelines.md` §2.1 「生の色名（`slate-700` 等）をコンポーネントに直接書かない」に文面上は違反しないが（コンポーネント側には書かれない）、**実質は同じ問題**——サイトの配色とは独立した第二のカラースケールが `prose` プラグインの内部に生まれ、以後どちらのスケールを更新すべきか判断コストが発生する（本ガイドライン §2.1 冒頭の意図「配色変更が全画面に波及するのを防ぐ」が壊れる）。
-- `--tw-prose-*` は CSS カスタムプロパティなので上書き自体は可能（Tailwind Typography 公式が想定する拡張点）。**採用するなら全項目を `app/globals.css` 内でセマンティックトークンへエイリアスする**ことを必須にする（例: `--tw-prose-body: var(--color-fg); --tw-prose-headings: var(--color-fg); --tw-prose-links: var(--color-accent); --tw-prose-bold: var(--color-fg); --tw-prose-counters: var(--color-fg-muted); --tw-prose-bullets: var(--color-border); --tw-prose-hr: var(--color-border); --tw-prose-quotes: var(--color-fg); --tw-prose-quote-borders: var(--color-border); --tw-prose-captions: var(--color-fg-muted); --tw-prose-code: var(--color-fg); --tw-prose-th-borders: var(--color-border); --tw-prose-td-borders: var(--color-border);` と、ダーク側の `--tw-prose-invert-*` 一式も同様に）。1 項目でも上書き漏れがあれば §3 のゲート抜けが起きる（下記）。
-- ②（自前スコープ CSS）はそもそも `var(--color-*)` を直接参照するだけなので、この「上書き必須リスト」を持つ必要がない。**新規トークンをゼロに保てる**という点でテーマ整合が最も単純。
+- `--tw-prose-*` は CSS カスタムプロパティなので上書き自体は可能（Tailwind Typography 公式が想定する拡張点）。**採用するなら全項目を `app/globals.css` 内でセマンティックトークンへエイリアスする** ことを必須にする（例: `--tw-prose-body: var(--color-fg); --tw-prose-headings: var(--color-fg); --tw-prose-links: var(--color-accent); --tw-prose-bold: var(--color-fg); --tw-prose-counters: var(--color-fg-muted); --tw-prose-bullets: var(--color-border); --tw-prose-hr: var(--color-border); --tw-prose-quotes: var(--color-fg); --tw-prose-quote-borders: var(--color-border); --tw-prose-captions: var(--color-fg-muted); --tw-prose-code: var(--color-fg); --tw-prose-th-borders: var(--color-border); --tw-prose-td-borders: var(--color-border);` と、ダーク側の `--tw-prose-invert-*` 一式も同様に）。1 項目でも上書き漏れがあれば §3 のゲート抜けが起きる（下記）。
+- ②（自前スコープ CSS）はそもそも `var(--color-*)` を直接参照するだけなので、この「上書き必須リスト」を持つ必要がない。**新規トークンをゼロに保てる** という点でテーマ整合が最も単純。
 
-**具体策（②を選ぶ場合の指針）**: `app/globals.css` の `@layer base` の外（README 専用スコープ）に `.readme-content` を追加し、`h3`〜`h6` / `p` / `a` / `code` / `pre` / `blockquote` / `table th,td` 等の要素セレクタで **既存 10 トークンのみ**を `color:` / `background-color:` / `border-color:` に指定する。新しい `--readme-*` 変数を作る誘惑があるが、作った時点で `check_contrast.py` の検査対象外になる（§3 参照）ので避ける。
+**具体策（②を選ぶ場合の指針）**: `app/globals.css` の `@layer base` の外（README 専用スコープ）に `.readme-content` を追加し、`h3`〜`h6` / `p` / `a` / `code` / `pre` / `blockquote` / `table th,td` 等の要素セレクタで **既存 10 トークンのみ** を `color:` / `background-color:` / `border-color:` に指定する。新しい `--readme-*` 変数を作る誘惑があるが、作った時点で `check_contrast.py` の検査対象外になる（§3 参照）ので避ける。
 
 ---
 
@@ -246,12 +246,12 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 
 このことから README スタイリングへの指針:
 
-- **`prose-invert`（`dark:prose-invert` として `.dark` 祖先で発火させる想定のクラス）は採用しない**。理由は 2 つ: (a) `prose-invert` も独自の invert カラースケールを持ち §1 と同じ二重管理問題を抱える、(b) それ以前に **`.dark` トグル自体が未実装**なので、`prose-invert` を今書いても検証しようがない（動作確認できない状態で終わる= `SD-1` 違反リスク）。
-- ②（自前 CSS）で `var(--color-fg)` 等のトークン参照だけを書けば、**`dark:` バリアントも `prose-invert` も一切不要**——トークン自体が `.dark` セレクタ配下で値を持っているため（例: `--foreground` は `:root` で `oklch(0.145 0 0)`、`.dark` で `oklch(0.985 0 0)`）、`.dark` が将来配線された瞬間に README 本文も自動で追従する。**ダークモード対応の実装コストをゼロにできる**のがトークン直参照の最大の利点であり、これは①でも `--tw-prose-*` を上書きしてさえいれば同様に効く（`--tw-prose-invert-*` も上書き必須な点は §1 の通り）。
+- **`prose-invert`（`dark:prose-invert` として `.dark` 祖先で発火させる想定のクラス）は採用しない**。理由は 2 つ: (a) `prose-invert` も独自の invert カラースケールを持ち §1 と同じ二重管理問題を抱える、(b) それ以前に **`.dark` トグル自体が未実装** なので、`prose-invert` を今書いても検証しようがない（動作確認できない状態で終わる= `SD-1` 違反リスク）。
+- ②（自前 CSS）で `var(--color-fg)` 等のトークン参照だけを書けば、**`dark:` バリアントも `prose-invert` も一切不要**——トークン自体が `.dark` セレクタ配下で値を持っているため（例: `--foreground` は `:root` で `oklch(0.145 0 0)`、`.dark` で `oklch(0.985 0 0)`）、`.dark` が将来配線された瞬間に README 本文も自動で追従する。**ダークモード対応の実装コストをゼロにできる** のがトークン直参照の最大の利点であり、これは①でも `--tw-prose-*` を上書きしてさえいれば同様に効く（`--tw-prose-invert-*` も上書き必須な点は §1 の通り）。
 - コードブロック背景・引用罫線・表罫線・リンク色の具体的な割当（両テーマで破綻しないことを確認済みの既存トークンのみを使う）:
   - コードブロック（`pre`, `code`）背景: `--color-bg-subtle`（カード面トークン。ライト `oklch(0.97 0 0)` / ダーク `oklch(0.269 0 0)`。地の `--color-bg` と視覚的に区別がつく値としてすでに確定済み）
   - 引用（`blockquote`）左罫線・表（`table`）罫線: `--color-border`（**既に 3:1 ゲート済み**。§2.2 の実測表でライト 3.95:1 / ダーク 4.08:1 が PASS 確認済み——罫線は非テキストなので 3:1 要件で足りる）
-  - リンク色: `--color-accent`（§2.1 の用途表に明記の「リンク・主ボタン」用トークン。4.5:1 ゲート済み）。⚠️ 現状 `readme-section.tsx` L138 の「GitHub で見る」リンクは `text-primary` を使っており `--color-accent` ではない（`--primary` は `check_contrast.py` の検査対象外トークン）。README **本文中**のリンク（第三者 HTML 由来で数が多い）はこの既存の慣習に倣わず、**ゲート対象の `--color-accent` を明示的に使う**ことを推奨する（本文リンクは 1 本の「GitHub で見る」リンクと違って数量・出現箇所を制御できないため、機械ゲートの網に必ず載せておきたい）。
+  - リンク色: `--color-accent`（§2.1 の用途表に明記の「リンク・主ボタン」用トークン。4.5:1 ゲート済み）。⚠️ 現状 `readme-section.tsx` L138 の「GitHub で見る」リンクは `text-primary` を使っており `--color-accent` ではない（`--primary` は `check_contrast.py` の検査対象外トークン）。README **本文中** のリンク（第三者 HTML 由来で数が多い）はこの既存の慣習に倣わず、**ゲート対象の `--color-accent` を明示的に使う** ことを推奨する（本文リンクは 1 本の「GitHub で見る」リンクと違って数量・出現箇所を制御できないため、機械ゲートの網に必ず載せておきたい）。
 
 ---
 
@@ -263,7 +263,7 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 
 - README 用に **新しい raw 色**（例: `--tw-prose-code: #1f2937` のような Tailwind Typography の既定値、または自前 CSS で新規に書いた `--readme-code-bg: oklch(...)`）を導入すると、**このゲートは一切関知しない**。検査対象の変数名リストにもペアリストにも載らないため、閾値割れのまま気づかず merge されうる。
 - したがって **③（サニタイズ時のユーティリティクラス注入）は特に危険**: 注入するクラス（例 `prose-slate` や独自の `text-gray-700` 相当）が実質的に新しい色を持ち込むが、注入場所が `readme-html.ts`（サニタイズ変換）なので `app/globals.css` を見ている `check_contrast.py` からは完全に不可視。
-- **推奨**: README のスタイル（①でも②でも）は §1/§2 で述べた **既存 10 トークンの再利用のみ**に限定する。新規色をゼロに保てば、README のコントラストは `check_contrast.py` の既存 22 判定にただ乗りする形で保証される——**README 専用の新しいコントラスト検査を追加開発する必要がなくなる**（YAGNI・CLAUDE.md「1 箇所しか使わない抽象化レイヤーを先回りで追加しない」の精神にも合致）。
+- **推奨**: README のスタイル（①でも②でも）は §1/§2 で述べた **既存 10 トークンの再利用のみ** に限定する。新規色をゼロに保てば、README のコントラストは `check_contrast.py` の既存 22 判定にただ乗りする形で保証される——**README 専用の新しいコントラスト検査を追加開発する必要がなくなる**（YAGNI・CLAUDE.md「1 箇所しか使わない抽象化レイヤーを先回りで追加しない」の精神にも合致）。
 - 逆に、もし①を採用して `--tw-prose-*` の上書きを 1 項目でも忘れた場合、または②で `--readme-*` のような新変数を作ってしまった場合は、`check_contrast.py` 側の「検査対象変数リスト」（現状 9 個固定）を拡張する追加実装が必要になる。**この追加実装が要る設計は避けるべき**——ゲートを README 側の都合で毎回拡張し続けるのは持続可能でない。
 
 ---
@@ -276,11 +276,11 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 - 詳細ページの「README」セクション見出しは `h2`（`readme-section.tsx` L116: `text-lg font-semibold` = 18px）。
 - README 本文の見出しは `+2` シフト済みで `h3`〜`h6`（`h1→h3, h2→h4, h3→h5, h4以降→h6` で cap）。
 
-`ui-ux-guidelines.md` §2.3 のタイポスケールは **`12/14/16/20/24px` の 5 段階のみ、中間値を足さない**が正本。ここで 1 点、既存コードとの整合に注意が必要: セクション見出し「README」自体が `text-lg`（18px）を使っており、**厳密には 5 段階のどれにも一致しない**（既存の実装で、本タスクのスコープ外の既存差分だが、README 見出しのサイズ設計はこの 18px を「超えてはいけない上限」として扱う必要がある）。
+`ui-ux-guidelines.md` §2.3 のタイポスケールは **`12/14/16/20/24px` の 5 段階のみ、中間値を足さない** が正本。ここで 1 点、既存コードとの整合に注意が必要: セクション見出し「README」自体が `text-lg`（18px）を使っており、**厳密には 5 段階のどれにも一致しない**（既存の実装で、本タスクのスコープ外の既存差分だが、README 見出しのサイズ設計はこの 18px を「超えてはいけない上限」として扱う必要がある）。
 
 **指針（視覚とセマンティックのねじれ防止）**:
 
-1. README 本文の `h3`〜`h6`（4 段階）に、5 段階スケールのうち **18px（セクション h2）未満の範囲**——`16px` と `14px` の 2 段階しか実質使えない（`12px` は本文メタ情報用途で埋まっており、見出しに転用すると §2.3 のカード内規約と衝突するため避ける。よって見出し専用に残るのは 16px と 14px の 2 段階のみ）。4 段階を 2 サイズに収めるには **フォントウェイトを併用**して差をつける（§2.3 の「カード内 3 段階」がすでに size + weight の組み合わせで階層を作っている前例に倣う）。
+1. README 本文の `h3`〜`h6`（4 段階）に、5 段階スケールのうち **18px（セクション h2）未満の範囲**——`16px` と `14px` の 2 段階しか実質使えない（`12px` は本文メタ情報用途で埋まっており、見出しに転用すると §2.3 のカード内規約と衝突するため避ける。よって見出し専用に残るのは 16px と 14px の 2 段階のみ）。4 段階を 2 サイズに収めるには **フォントウェイトを併用** して差をつける（§2.3 の「カード内 3 段階」がすでに size + weight の組み合わせで階層を作っている前例に倣う）。
 2. 具体案:
 
    | タグ（変換後） | 元の見出しレベル | 視覚サイズ | ウェイト |
@@ -290,9 +290,9 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
    | `h5` | 元 `h3` | `14px`（`text-sm`） | `600`（semibold） |
    | `h6` | 元 `h4`〜`h6`（cap） | `14px`（`text-sm`） | `500`（medium） |
 
-   いずれも `18px`（セクション h2「README」）を **上回らない**ため、「README 内の見出しがページ側の h2 より大きく見える事故」を構造的に防げる。
-3. これは②（スコープ付き CSS で `.readme-content h3 {...}` 等をタグごとに個別指定）なら自然に書ける。①（`prose`）は既定で `h3`/`h4` に `1.25em`/`1.125em` 相当の相対サイズを割り当てており、かつ **「+2 シフト後のタグである」ことをプラグインは知らない**ため、上記の size/weight テーブルを含め見出し関連の `--tw-prose-*`・および Typography プラグインの `h3`,`h4`,`h5`,`h6` 個別スタイル（CSS では `font-size` は変数化されておらずクラスごとの静的値のため、上書きには `[&_h3]:text-base [&_h3]:font-bold` のような追加の Tailwind 個別指定が結局必要になる）を **全て上書き**することになり、プラグイン採用の省力化メリットがほぼ消える。この点でも②が実装コストで有利。
-4. 見出しに `id="user-content-*"` が保持される（`readme-html.ts` L15, L97-100）ため、フォーカス時のアウトライン（§7.3 の `focus-visible:ring-*`）は見出し自体ではなくページ内アンカー`<a href="#...">`側の話であり本節と独立——ただし README 内リンクがアンカー遷移する際、フォーカス移動先の見出しに `scroll-margin-top` が必要かは sticky ヘッダーの有無次第（§7.3 末尾）。本アプリの共有ヘッダーが sticky でなければ不要、sticky であれば README 内アンカー着地点にも同じ配慮が要る（要確認事項として残す）。
+   いずれも `18px`（セクション h2「README」）を **上回らない** ため、「README 内の見出しがページ側の h2 より大きく見える事故」を構造的に防げる。
+3. これは②（スコープ付き CSS で `.readme-content h3 {...}` 等をタグごとに個別指定）なら自然に書ける。①（`prose`）は既定で `h3`/`h4` に `1.25em`/`1.125em` 相当の相対サイズを割り当てており、かつ **「+2 シフト後のタグである」ことをプラグインは知らない** ため、上記の size/weight テーブルを含め見出し関連の `--tw-prose-*`・および Typography プラグインの `h3`,`h4`,`h5`,`h6` 個別スタイル（CSS では `font-size` は変数化されておらずクラスごとの静的値のため、上書きには `[&_h3]:text-base [&_h3]:font-bold` のような追加の Tailwind 個別指定が結局必要になる）を **全て上書き** することになり、プラグイン採用の省力化メリットがほぼ消える。この点でも②が実装コストで有利。
+4. 見出しに `id="user-content-*"` が保持される（`readme-html.ts` L15, L97-100）ため、フォーカス時のアウトライン（§7.3 の `focus-visible:ring-*`）は見出し自体ではなくページ内アンカー `<a href="#...">` 側の話であり本節と独立——ただし README 内リンクがアンカー遷移する際、フォーカス移動先の見出しに `scroll-margin-top` が必要かは sticky ヘッダーの有無次第（§7.3 末尾）。本アプリの共有ヘッダーが sticky でなければ不要、sticky であれば README 内アンカー着地点にも同じ配慮が要る（要確認事項として残す）。
 
 ---
 
@@ -300,7 +300,7 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 
 `readme-section.tsx` の現状ラッパー（L127-130）は `max-w-none space-y-3 text-sm leading-relaxed break-words` のみで、**画像・表・コードブロックのサイズ制御が一切ない**。これは①②③どの方式を選んでも共通で対処が必要な、**既存の実際の不具合**（未着手状態の欠陥であり本 Issue のスコープ内）。
 
-- **画像の溢れ**: `readme-html.ts` は GitHub 由来の `width` / `height` 属性をそのまま透過する（L191-196）。README 冒頭に並ぶバッジ画像は通常小さいので問題にならないが、**スクリーンショット画像（`width="1200"` 等）はコンテナ幅を突破する**。`img { max-width: 100%; height: auto }` を README スコープに必須で追加する（`ui-ux-guidelines.md` §8.3 「画像は `width`/`height` を必須指定」という**サイト自前コンポーネント**向けの規約とは別に、**README のような可変・信頼できない寸法の画像には `max-width:100%` の上書きが必要**——この違いを明示的にドキュメント化すべき、§6 参照）。
+- **画像の溢れ**: `readme-html.ts` は GitHub 由来の `width` / `height` 属性をそのまま透過する（L191-196）。README 冒頭に並ぶバッジ画像は通常小さいので問題にならないが、**スクリーンショット画像（`width="1200"` 等）はコンテナ幅を突破する**。`img { max-width: 100%; height: auto }` を README スコープに必須で追加する（`ui-ux-guidelines.md` §8.3 「画像は `width`/`height` を必須指定」という **サイト自前コンポーネント** 向けの規約とは別に、**README のような可変・信頼できない寸法の画像には `max-width:100%` の上書きが必要**——この違いを明示的にドキュメント化すべき、§6 参照）。
 - **表の溢れ**: `table`/`th`/`td` は許可タグ（`readme-html.ts` L74-83）。列数が多い表は `min-width` を強制し、ページ全体を横スクロールさせうる（`ui-ux-guidelines.md` §3 「200% 拡大で横スクロールが発生しないこと（`NFR-15`）」に抵触するリスク）。**表だけを `overflow-x: auto` のコンテナで囲み、ページ本体を横スクロールさせない**（本セッションの Artifact 執筆規約と同じ考え方だが、これはこのプロジェクト自身の `NFR-15` からも独立に要求される）。表に罫線が全く見えない（ブラウザ既定は無地）ことも視認性の問題なので `--color-border` で明示。
 - **コードブロックの溢れ**: `pre` も同様に長い1行コードが横に伸びる。`pre { overflow-x: auto }` をコンテナ単位で（ページではなく）許可する。
 - **GitHub 独自装飾の残骸**: `sanitize-html` の許可属性リスト（`ALLOWED_ATTRIBUTES`、L94-104）には `div`/`span` の属性が一切含まれない。GitHub HTML によくある `align="center"` や `class="..."` は自動的に落ちるため、**中央寄せ等の意図は失われるが崩れた見た目（属性だけ浮く等）にはならない**——これは安全側の劣化で対処不要、ドキュメントに「意図的な仕様」として書き添える程度でよい。
@@ -348,7 +348,7 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 
 ## 反対されうる点（先回り）
 
-- 「`@tailwindcss/typography` は業界標準で保守コストが低い」という反論は理解できるが、**このプロジェクトはすでに配色をトークン化・実測ゲート化済み**という特殊事情があり、プラグインの既定カラースケールをそのまま使うことは選択肢にない（全上書きが前提になる時点で「導入の手軽さ」という利点が縮む）。
+- 「`@tailwindcss/typography` は業界標準で保守コストが低い」という反論は理解できるが、**このプロジェクトはすでに配色をトークン化・実測ゲート化済み** という特殊事情があり、プラグインの既定カラースケールをそのまま使うことは選択肢にない（全上書きが前提になる時点で「導入の手軽さ」という利点が縮む）。
 - §4 の見出しサイズ案（16px/14px の 2 段階 + weight）は「4 段階の視覚差が乏しく単調では」という指摘がありうる。しかし §2.3 の「中間値を足さない」という 🔴 規定と、README h2 セクション見出し（18px）を超えない制約を両立させると、使える踏み台はこの 2 段階しか残らない。18px 制約自体を緩めたいなら、それは §7.0 の見出し階層改訂（`Issue #334 F-1/F-2`）を再度動かす話になり、本 Issue のスコープを超える。
 - ②（自前 CSS）を推す一方で、実装工数（コードの型・DDD 上の置き場所）は自分のレンズの管轄外なので `impl_readme` / `arch_domain` 側の判断を優先してよい。ここでの主張は「a11y/テーマ整合の観点では②が最も低リスク」という点に限定する。
 
@@ -373,7 +373,7 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 ### 1. CSS配信経路の実測（`open-next.config.ts` / `wrangler.jsonc` / `next.config.ts` を確認）
 
 - `wrangler.jsonc`: `"main": ".open-next/worker.js"`, `"assets": { "directory": ".open-next/assets", "binding": "ASSETS" }`。
-- `.open-next/worker.js`（router）は `await import("./server-functions/default/handler.mjs")` で本体を**動的import**。CSSファイル名（`2zfgn5tn_e7wb.css`）は `handler.mjs` 内に **パス文字列としてのみ** 52箇所出現し、CSS本文（セレクタ・宣言）は埋め込まれていない（`grep -c "font-family|@media"` = 10件で、いずれもJSのマニフェスト文字列・断片であり実CSSブロックではない）。
+- `.open-next/worker.js`（router）は `await import("./server-functions/default/handler.mjs")` で本体を **動的import**。CSSファイル名（`2zfgn5tn_e7wb.css`）は `handler.mjs` 内に **パス文字列としてのみ** 52箇所出現し、CSS本文（セレクタ・宣言）は埋め込まれていない（`grep -c "font-family|@media"` = 10件で、いずれもJSのマニフェスト文字列・断片であり実CSSブロックではない）。
 - `.open-next/assets/_next/static/chunks/2zfgn5tn_e7wb.css` が実CSS本体（raw 40,585B / gzip 8,178B）。`du -sh .open-next/assets` = 928K。
 - `docs/03_design/infrastructure/cloudflare-infrastructure.md` L65: 「Workers Static Assets（JS/CSS/フォント・無料・無制限）」と明記済み。**静的アセットに3MB制限は適用されない**（同ファイルL286の「Worker バンドル: 3MB（圧縮後）」はWorkerスクリプト側のみ）。
 
@@ -386,21 +386,21 @@ RSC ストリーミングのため素の HTML には README 本文が直接出�
 Total Upload: 6631.44 KiB / gzip: 1372.29 KiB
 ```
 
-`dry-run --outdir` で吐き出された実バンドル `worker.js`（6.79MB raw）を直接 `gzip -c | wc -c` した結果 **1,405,428 B ≈ 1.34MB**。3MB上限に対し**現状で約45%消費、残headroom約1.66MB**。
+`dry-run --outdir` で吐き出された実バンドル `worker.js`（6.79MB raw）を直接 `gzip -c | wc -c` した結果 **1,405,428 B ≈ 1.34MB**。3MB上限に対し **現状で約45%消費、残headroom約1.66MB**。
 
 ⚠️ **副次的な発見（本タスクのスコープ外だが記録）**: `cloudflare-infrastructure.md` §5.3 が指定する計測コマンド `gzip -c .open-next/worker.js | wc -c` は、動的import前の router stub のみを測る（実測746B）。実際にデプロイされる本体（`handler.mjs` 込み・1.34MB gzip）を捕捉できておらず、**この計測手順は現状の3MB判定に対して使い物にならない過小評価になっている**。`npx wrangler deploy --dry-run` の `Total Upload ... / gzip:` 行、または `dry-run --outdir` してから対象ファイルを直接gzipする方法への修正が必要。README書式化とは独立の既存ドキュメント不備のため、自分では変更せず別Issue化を推奨（担当外のためここでは提起のみ）。
 
 ### 3. `@tailwindcss/typography` 導入時のCSS増分見積もり（npm installはしていない。`npm view` によるメタデータ照会と、npmレジストリからのtarball直接ダウンロード＋展開のみ）
 
-- `npm view @tailwindcss/typography` → v0.5.20、`peerDependencies.tailwindcss: ">=3.0.0 || >=4.0.0 || insiders"`。プロジェクトは `tailwindcss: "^4"` + `@tailwindcss/postcss` のCSS-first構成（`app/globals.css` に `@import "tailwindcss"` 方式）。typography v0.5.20のREADMEはv4向けに `@plugin "@tailwindcss/typography";` を`globals.css`へ追記する方式を明記しており、現行の設定スタイル（`@import "tw-animate-css"` 等）と整合する。
-- パッケージ本体を展開すると `src/styles.js`（prose全バリエーションのCSS-in-JS定義）が45,863B。ただしTailwind v4はJITで**実際にHTML中で使用されたクラスだけ**を最終CSSに生成する。README描画では想定使用クラスは `prose`・サイズ修飾（例 `prose-sm`）・`dark:prose-invert` 程度に限られる見込みで、45.9KB全体が出力に載ることはない。
+- `npm view @tailwindcss/typography` → v0.5.20、`peerDependencies.tailwindcss: ">=3.0.0 || >=4.0.0 || insiders"`。プロジェクトは `tailwindcss: "^4"` + `@tailwindcss/postcss` のCSS-first構成（`app/globals.css` に `@import "tailwindcss"` 方式）。typography v0.5.20のREADMEはv4向けに `@plugin "@tailwindcss/typography";` を `globals.css` へ追記する方式を明記しており、現行の設定スタイル（`@import "tw-animate-css"` 等）と整合する。
+- パッケージ本体を展開すると `src/styles.js`（prose全バリエーションのCSS-in-JS定義）が45,863B。ただしTailwind v4はJITで **実際にHTML中で使用されたクラスだけ** を最終CSSに生成する。README描画では想定使用クラスは `prose`・サイズ修飾（例 `prose-sm`）・`dark:prose-invert` 程度に限られる見込みで、45.9KB全体が出力に載ることはない。
 - **見積もり**（実測ではない）: 使用クラスを絞った場合、追加CSSは raw で数KB〜十数KB、gzipで1〜3KB程度。現状の全体CSS（gzip 8.2KB）に対して相対的に小さく、静的アセット総量（928KB）から見ても無視できる増分。
 - **実測が必要な理由**: JITの生成結果はマークアップに依存するため、上記は一次情報（npmメタデータ・パッケージソース）からの合理的な見積もりであり、`npm install` して実ビルドしないと確定しない。導入を決めた回のPRで `gzip -c .open-next/assets/_next/static/chunks/*.css | wc -c` の前後比較を記録することを推奨。
 
 ### 4. `limits.cpu_ms: 50` への影響
 
 - `wrangler.jsonc` コメント: 「Free では意味を持たないが、Paid へ上げた瞬間に denial-of-wallet 対策として効く」。CSSはNext.jsビルド時に静的ファイルとして書き出され、リクエスト時にWorkerが実行するのはHTML生成（Reactレンダリング）とサニタイズ（`readme-html.ts`）のみ。CSS配信自体はWorkers Static AssetsがWorker実行を経由せず直接返す設計（`INF-10`: 「リクエストは無料・無制限」）。
-- したがって**仮説は支持される**: ①②③のどの方式でもCSS自体はcpu_ms消費に寄与しない。唯一CPU時間に乗るのは③（サニタイズ時にユーティリティクラス注入）で `readme-html.ts` の変換パスにクラス文字列の付与処理が追加される点だが、既存のタグ/属性フィルタ処理（cheerio等ベースの1パス変換）に対する追加コストは軽微（文字列結合レベル）と見積もる。cpu_ms観点では①②③に有意差はない。
+- したがって **仮説は支持される**: ①②③のどの方式でもCSS自体はcpu_ms消費に寄与しない。唯一CPU時間に乗るのは③（サニタイズ時にユーティリティクラス注入）で `readme-html.ts` の変換パスにクラス文字列の付与処理が追加される点だが、既存のタグ/属性フィルタ処理（cheerio等ベースの1パス変換）に対する追加コストは軽微（文字列結合レベル）と見積もる。cpu_ms観点では①②③に有意差はない。
 
 ### 5. 30,000文字上限のレンダ負荷（`src/ui/readme-html.ts` L23）
 
@@ -421,8 +421,8 @@ Total Upload: 6631.44 KiB / gzip: 1372.29 KiB
 
 `break-words`（= `overflow-wrap: break-word`）はテキストの折返しには効くが、**`<table>` や `<pre><code>` のようなブロック要素の横溢れは防げない**（`overflow-wrap` は連続する長い「単語」の途中改行を許可するだけで、tableの列幅・pre内の改行なしコードには無関係）。`ALLOWED_TAGS` に `table` / `pre` / `code` / `img` が含まれる（`readme-html.ts` L62-85）ため、幅の広い表・改行のない長いコード行が実際に流れてくるREADMEでは、現行実装だとページ全体が横スクロールする（モバイルUXの既知の不具合パターン）。
 
-- **どの要素に `overflow-x: auto` を当てるべきか**: `table` 単体と `pre` 単体の**それぞれに** `overflow-x: auto; max-width: 100%; display: block`（またはtableを `<div class="overflow-x-auto">` でラップ）が必要。バッジ画像（`<img>` の連続）はインライン要素として自然に折り返すため追加対策は基本不要。裸URLの長いリンクテキストは `break-words` で概ねカバーされる。
-- **①`@tailwindcss/typography` を選んだ場合**: proseの既定CSSは `pre` に `overflow-x: auto` を持つ（Tailwind Typographyの標準仕様）が、**`table` には横スクロールラッパーを付けない既知の制限がある**（v0.5.x系で継続している挙動）。①を採用しても table 対策は**別途**必要になる＝①だけで横溢れ問題が解決するわけではない。
+- **どの要素に `overflow-x: auto` を当てるべきか**: `table` 単体と `pre` 単体の **それぞれに** `overflow-x: auto; max-width: 100%; display: block`（またはtableを `<div class="overflow-x-auto">` でラップ）が必要。バッジ画像（`<img>` の連続）はインライン要素として自然に折り返すため追加対策は基本不要。裸URLの長いリンクテキストは `break-words` で概ねカバーされる。
+- **①`@tailwindcss/typography` を選んだ場合**: proseの既定CSSは `pre` に `overflow-x: auto` を持つ（Tailwind Typographyの標準仕様）が、**`table` には横スクロールラッパーを付けない既知の制限がある**（v0.5.x系で継続している挙動）。①を採用しても table 対策は **別途** 必要になる＝①だけで横溢れ問題が解決するわけではない。
 - **②自前スコープCSSを選んだ場合**: `pre`・`table` それぞれに直接ルールを書けるため、むしろシンプルに両方カバーできる。
 - **③サニタイズ時にクラス注入を選んだ場合**: `readme-html.ts` の変換パスで `<table>` を `<div class="overflow-x-auto">…</div>` でラップする処理を足せば、CSSセレクタに頼らず構造的に解決できる（他方式より確実だが実装コストは増える）。
 
@@ -436,7 +436,7 @@ Total Upload: 6631.44 KiB / gzip: 1372.29 KiB
 
 **書式適用後に見るべき指標（推奨・自分では実装しない）**:
 1. `result.report.audits['cumulative-layout-shift'].numericValue`（詳細ページ）を手動確認し、README非同期到着によるCLS悪化がないか
-2. `tools/run_lighthouse.mjs` は perf非ゲートのままでよいが、**E2Eスタブ側のREADME fixtureに table・長いコードブロック・長いURL・バッジ画像行を追加**し、Playwright側で横スクロール発生（`scrollWidth > clientWidth`）の有無を検証するテストケースを追加することを推奨（担当は readme_render / rev_tests 想定）
+2. `tools/run_lighthouse.mjs` は perf非ゲートのままでよいが、**E2Eスタブ側のREADME fixtureに table・長いコードブロック・長いURL・バッジ画像行を追加** し、Playwright側で横スクロール発生（`scrollWidth > clientWidth`）の有無を検証するテストケースを追加することを推奨（担当は readme_render / rev_tests 想定）
 3. 静的アセット総量の前後比較（`.open-next/assets` の du -sh）をPR記録に残す
 
 ---
@@ -444,9 +444,9 @@ Total Upload: 6631.44 KiB / gzip: 1372.29 KiB
 ## 反対されうる点
 
 - **「見積もり」の精度**: §3のCSS増分見積もりは `npm install` していない一次情報（パッケージメタデータ・ソース展開）からの推定であり、実際にJITでビルドしないと確定しない。導入PRでの実測比較を必須にすべき、という反論はもっとも。
-- **cloudflare-infrastructure.md §5.3の計測手順の不備（§2の副次的発見）は、本タスクのスコープ（README書式）と無関係**という指摘はありうる。ただし「3MB上限に対する現在の消費率」を正しく報告するために実測方法を修正した経緯であり、他の参加者が③案などでバンドルサイズを判断材料にする場合に誤った基準を使わないよう申し送りが必要と判断し記載した。
-- **table横溢れの「①でも別途対策が必要」という主張**は、Tailwind Typographyの具体的バージョン挙動に依存する。v0.5.20時点のsrc/styles.js中身までは検証したが、実際にレンダリングして確認したわけではない（npm installしていないため）。readme_render/readme_fidelityレンズでの実装時に、最終的に採用したバージョンで実挙動を確認してほしい。
-- **cpu_ms影響ゼロという結論**は「CSSファイル配信」に限った話であり、③案（サニタイズ時のクラス注入）が複雑な変換ロジック（正規表現多用等）になった場合はサニタイズ全体のCPU時間が増える可能性がある。今回は「軽微」という定性評価に留まり、実測（`npx wrangler tail --format json`でのcpuTime計測）はしていない。
+- **cloudflare-infrastructure.md §5.3の計測手順の不備（§2の副次的発見）は、本タスクのスコープ（README書式）と無関係** という指摘はありうる。ただし「3MB上限に対する現在の消費率」を正しく報告するために実測方法を修正した経緯であり、他の参加者が③案などでバンドルサイズを判断材料にする場合に誤った基準を使わないよう申し送りが必要と判断し記載した。
+- **table横溢れの「①でも別途対策が必要」という主張** は、Tailwind Typographyの具体的バージョン挙動に依存する。v0.5.20時点のsrc/styles.js中身までは検証したが、実際にレンダリングして確認したわけではない（npm installしていないため）。readme_render/readme_fidelityレンズでの実装時に、最終的に採用したバージョンで実挙動を確認してほしい。
+- **cpu_ms影響ゼロという結論** は「CSSファイル配信」に限った話であり、③案（サニタイズ時のクラス注入）が複雑な変換ロジック（正規表現多用等）になった場合はサニタイズ全体のCPU時間が増える可能性がある。今回は「軽微」という定性評価に留まり、実測（`npx wrangler tail --format json` でのcpuTime計測）はしていない。
 
 ## ラウンド 2
 
@@ -455,11 +455,11 @@ Total Upload: 6631.44 KiB / gzip: 1372.29 KiB
 
 ## 対 `a11y_theme`: 反論 + 部分譲歩
 
-**部分譲歩（あなたの数え方は過小評価だった）**: `a11y_theme` が挙げた上書き対象リスト（13 項目）は正確ではない。Context7 一次情報（`_autodocs/types.md`・`_autodocs/README.md`）で確認した **`--tw-prose-*` の完全な一覧は 18 項目**（`body / headings / lead / links / bold / counters / bullets / hr / quotes / quote-borders / captions / kbd / kbd-shadows / code / pre-code / pre-bg / th-borders / td-borders`）で、あなたのリストは `lead` `kbd` `kbd-shadows` `pre-code` `pre-bg` の 5 項目が抜けていた。公式ドキュメントも明記: *"The plugin utilizes 36 CSS custom properties, with 18 for light mode and 18 for dark mode."* — つまり `dark:prose-invert` を使う設計なら **正確には 18 + 18 = 36 項目**の上書きが要り、あなたの懸念（上書き漏れリスク）は**むしろ過小評価だった**という点は認める。
+**部分譲歩（あなたの数え方は過小評価だった）**: `a11y_theme` が挙げた上書き対象リスト（13 項目）は正確ではない。Context7 一次情報（`_autodocs/types.md`・`_autodocs/README.md`）で確認した **`--tw-prose-*` の完全な一覧は 18 項目**（`body / headings / lead / links / bold / counters / bullets / hr / quotes / quote-borders / captions / kbd / kbd-shadows / code / pre-code / pre-bg / th-borders / td-borders`）で、あなたのリストは `lead` `kbd` `kbd-shadows` `pre-code` `pre-bg` の 5 項目が抜けていた。公式ドキュメントも明記: *"The plugin utilizes 36 CSS custom properties, with 18 for light mode and 18 for dark mode."* — つまり `dark:prose-invert` を使う設計なら **正確には 18 + 18 = 36 項目** の上書きが要り、あなたの懸念（上書き漏れリスク）は **むしろ過小評価だった** という点は認める。
 
 **しかし反論: `dark:prose-invert` 自体を使わなければ、上書きは 18 項目で済み、しかも「漏れ」が構造的に発生しなくなる。**
 
-Typography プラグインの invert 機構は「`--tw-prose-invert-*` という**別の変数セット**を定義しておき、`prose-invert` クラスが `--tw-prose-body: var(--tw-prose-invert-body)` のように**変数の参照先を丸ごと差し替える**」仕組み（Context7 確認: `configuration.md` の `Add Custom Color Theme` サンプルが `--tw-prose-invert-*` を独立した色値の並びとして定義している）。
+Typography プラグインの invert 機構は「`--tw-prose-invert-*` という **別の変数セット** を定義しておき、`prose-invert` クラスが `--tw-prose-body: var(--tw-prose-invert-body)` のように **変数の参照先を丸ごと差し替える**」仕組み（Context7 確認: `configuration.md` の `Add Custom Color Theme` サンプルが `--tw-prose-invert-*` を独立した色値の並びとして定義している）。
 
 一方、本プロジェクトのセマンティックトークン（`--color-fg` 等）は **すでに `:root` と `.dark` の両方で異なる値を持つ**（`app/globals.css:71-111` / `113-148`）。つまり:
 
@@ -489,9 +489,9 @@ Typography プラグインの invert 機構は「`--tw-prose-invert-*` という
 }
 ```
 
-`--color-fg` は `:root` で `oklch(0.145 0 0)`・`.dark` で `oklch(0.985 0 0)` と**すでに自己反転する**（`app/globals.css:73` / `:115`）ので、`.dark` 祖先が付いた瞬間に `--tw-prose-headings` の**解決値**も自動で切り替わる。`dark:prose-invert` クラスも `--tw-prose-invert-*` の 18 項目も**一切定義・適用不要**。→ **実質の上書きコストは 18 項目（うち色トークンの参照先はわずか 5 種: `fg` / `fg-muted` / `accent` / `border` / `bg-subtle`）に減り、ダーク側の書き漏れという失敗モードが構造的に消える**（「1 項目でも上書き漏れがあれば」の指摘（`a11y_theme` R1 §1）自体が、invert セットを使わない設計では発生しなくなる）。
+`--color-fg` は `:root` で `oklch(0.145 0 0)`・`.dark` で `oklch(0.985 0 0)` と **すでに自己反転する**（`app/globals.css:73` / `:115`）ので、`.dark` 祖先が付いた瞬間に `--tw-prose-headings` の **解決値** も自動で切り替わる。`dark:prose-invert` クラスも `--tw-prose-invert-*` の 18 項目も **一切定義・適用不要**。→ **実質の上書きコストは 18 項目（うち色トークンの参照先はわずか 5 種: `fg` / `fg-muted` / `accent` / `border` / `bg-subtle`）に減り、ダーク側の書き漏れという失敗モードが構造的に消える**（「1 項目でも上書き漏れがあれば」の指摘（`a11y_theme` R1 §1）自体が、invert セットを使わない設計では発生しなくなる）。
 
-**「全項目上書きなら自前 CSS と手間が変わらないのでは」への回答**: 変わる。上記の 18 行はすべて**色のみ**。`prose` を使う場合、見出し・段落・リスト・コードブロック・表の **margin / padding / line-height / list-style / border-radius / フォントサイズの相対スケール**（`prose-sm` 等）はプラグインが提供したまま**無償で得られる**。②（自前スコープ CSS）ではこれらも全部手書きする必要があり、色だけの 18 行より明らかに実装量が多い。したがって「①でも色だけは全部書く」を実施しても、①の総実装量は②より少ないままである。
+**「全項目上書きなら自前 CSS と手間が変わらないのでは」への回答**: 変わる。上記の 18 行はすべて **色のみ**。`prose` を使う場合、見出し・段落・リスト・コードブロック・表の **margin / padding / line-height / list-style / border-radius / フォントサイズの相対スケール**（`prose-sm` 等）はプラグインが提供したまま **無償で得られる**。②（自前スコープ CSS）ではこれらも全部手書きする必要があり、色だけの 18 行より明らかに実装量が多い。したがって「①でも色だけは全部書く」を実施しても、①の総実装量は②より少ないままである。
 
 **v4 流儀の置き場所**: Context7 で確認した公式パターンは 2 通り。
 
@@ -503,11 +503,11 @@ Typography プラグインの invert 機構は「`--tw-prose-invert-*` という
      /* ...18項目... */
    }
    ```
-   `class="prose prose-gemhunter"` のように既定の `prose-slate` 等と同列の**選択可能なバリアント**として追加する方式。将来 README 以外にも `prose` を使う画面が増え、配色を選び分けたい場合はこちらが適切。
+   `class="prose prose-gemhunter"` のように既定の `prose-slate` 等と同列の **選択可能なバリアント** として追加する方式。将来 README 以外にも `prose` を使う画面が増え、配色を選び分けたい場合はこちらが適切。
 
 **推奨**: 現時点では 1（`.prose` 直接上書き）でよい。README 以外に prose の適用箇所がなく、選択式にする理由がない（YAGNI）。将来複数用途が出たら 2 へ移行すればよく、移行コストは低い（`@utility` 化は変数定義をコピーするだけ）。
 
-→ **結論として ① は撤回しない**が、`a11y_theme` の「未カスタマイズの `prose` には反対」という主張には**全面同意**する。上記の 18 項目上書きを ① 採用の**必須要件**として自分の推奨に組み込む（R1 の推奨に条件を追加: 「`--tw-prose-*` を §1 のセマンティックトークンへ全項目マッピングした上での ① 採用」）。この条件下であれば、`a11y_theme` が懸念する新規カラースケールの混入・`check_contrast.py` のゲート抜け（§3）は発生しない——README のコントラストは既存 10 トークンのコントラスト実測にただ乗りする（`a11y_theme` R1 §3 の結論と一致）。
+→ **結論として ① は撤回しない** が、`a11y_theme` の「未カスタマイズの `prose` には反対」という主張には **全面同意** する。上記の 18 項目上書きを ① 採用の **必須要件** として自分の推奨に組み込む（R1 の推奨に条件を追加: 「`--tw-prose-*` を §1 のセマンティックトークンへ全項目マッピングした上での ① 採用」）。この条件下であれば、`a11y_theme` が懸念する新規カラースケールの混入・`check_contrast.py` のゲート抜け（§3）は発生しない——README のコントラストは既存 10 トークンのコントラスト実測にただ乗りする（`a11y_theme` R1 §3 の結論と一致）。
 
 ## 対 `readme_fidelity`: 診断は完全に一致
 
@@ -515,9 +515,9 @@ Typography プラグインの invert 機構は「`--tw-prose-invert-*` という
 
 ## 対 `perf_bundle`: 矛盾なし・1 点補強
 
-CSS が Workers Static Assets 経由で 3MB ゲート対象外という判定、typography 導入増分を gzip 1〜3KB 程度と見積もる点はいずれも自分の理解と矛盾しない。むしろ **§1 の反論（`dark:prose-invert` を使わない設計）を採用すると、生成される CSS はさらに小さくなる**——JIT が拾う使用クラスから `prose-invert` 系のセレクタ・invert 用の宣言ブロックが丸ごと消えるため、`perf_bundle` の見積もり（1〜3KB）は**上限側の見積もりとして妥当、実際はそれよりやや小さくなる**と予想する（実測は npm install 後でないと確定しない点は同意）。
+CSS が Workers Static Assets 経由で 3MB ゲート対象外という判定、typography 導入増分を gzip 1〜3KB 程度と見積もる点はいずれも自分の理解と矛盾しない。むしろ **§1 の反論（`dark:prose-invert` を使わない設計）を採用すると、生成される CSS はさらに小さくなる**——JIT が拾う使用クラスから `prose-invert` 系のセレクタ・invert 用の宣言ブロックが丸ごと消えるため、`perf_bundle` の見積もり（1〜3KB）は **上限側の見積もりとして妥当、実際はそれよりやや小さくなる** と予想する（実測は npm install 後でないと確定しない点は同意）。
 
-`<table>` の横溢れについて: `perf_bundle` が `src/styles.js`（v0.5.20 のソース）を直接展開して確認したという一次情報は、自分が Context7 のドキュメント検索で `pre`/`table` の `overflow-x` 挙動を明示的に確認できなかった点より一次性が高い。**自分ではこの挙動を独立に確認できていない（未確認）**——Context7 のドキュメント検索では「`prose-table:border-collapse` のような列指定修飾子」は見つかったが、既定で `overflow-x: auto` が `table` に付くかどうかの明示的な記述は見当たらなかった。`perf_bundle` の実測（ソース直接確認）を採用し、**`table` は typography プラグイン採用の有無に関わらず、`.readme-content table` 相当のスコープで別途 `overflow-x: auto` を明示追加する必要がある**という結論に同意する。`pre` については典型的に `overflow-x: auto` が既定で付く（v3 以来の一般的な仕様と自分の記憶にはあるが、これも Context7 で明示確認できていないため**未確認**と明記し、実装時にビルド後の CSS を目視確認することを推奨する）。
+`<table>` の横溢れについて: `perf_bundle` が `src/styles.js`（v0.5.20 のソース）を直接展開して確認したという一次情報は、自分が Context7 のドキュメント検索で `pre`/`table` の `overflow-x` 挙動を明示的に確認できなかった点より一次性が高い。**自分ではこの挙動を独立に確認できていない（未確認）**——Context7 のドキュメント検索では「`prose-table:border-collapse` のような列指定修飾子」は見つかったが、既定で `overflow-x: auto` が `table` に付くかどうかの明示的な記述は見当たらなかった。`perf_bundle` の実測（ソース直接確認）を採用し、**`table` は typography プラグイン採用の有無に関わらず、`.readme-content table` 相当のスコープで別途 `overflow-x: auto` を明示追加する必要がある** という結論に同意する。`pre` については典型的に `overflow-x: auto` が既定で付く（v3 以来の一般的な仕様と自分の記憶にはあるが、これも Context7 で明示確認できていないため **未確認** と明記し、実装時にビルド後の CSS を目視確認することを推奨する）。
 
 ## まとめ（自分の立場のアップデート）
 
@@ -574,9 +574,9 @@ Q1 の結論により今回のスコープではないが、`class` 属性を許
 **衝突しない。`a11y_theme` §4 の 16px/14px + フォントウェイト案を support する。** 書式の再現度レンズで求めているのは「README 内の最上位見出しが巨大に見えること」ではなく round1 で定義した最低ライン——**「見出しの階層が視覚的に分かる（段階的にサイズ/太さが小さくなる）」**——であり、絶対サイズが 18px を超える必要は無い。根拠を 2 点補足する:
 
 1. **GitHub 自身も README の `h1` をページ全体のクロムに対して巨大には表示していない**（GitHub のリポジトリページでもファイルツリー・サイドバー等と同居する形で README 本文は相対的に控えめなスケール）。「大きく見えてほしい」という私の round1 の期待値自体を、`a11y_theme` の実測（`ThemeProvider` 未配線・§2.3 の 5 段階制約）を踏まえて **18px 以下の範囲に収める** ことに合意修正する。
-2. **視覚サイズとセマンティクスは分離してよい**。`+2` シフトはあくまで DOM 上のタグ名（アクセシビリティツリー上の見出しレベル）の話であり、スクリーンリーダー利用者にとっての「見出しジャンプ」機能は `h3`〜`h6` のタグ名がある時点で完全に再現されている（`readme-html.ts:27-34` の id 保持も含め）。晴眼者向けの視覚サイズを 14px/16px に抑えても、この構造的な書式再現は損なわれない——**「書式が反映されている」の実質は視覚サイズの絶対値ではなく、階層の知覚可能性**である。
+2. **視覚サイズとセマンティクスは分離してよい**。`+2` シフトはあくまで DOM 上のタグ名（アクセシビリティツリー上の見出しレベル）の話であり、スクリーンリーダー利用者にとっての「見出しジャンプ」機能は `h3`〜`h6` のタグ名がある時点で完全に再現されている（`readme-html.ts:27-34` の id 保持も含め）。晴眼者向けの視覚サイズを 14px/16px に抑えても、この構造的な書式再現は損なわれない——**「書式が反映されている」の実質は視覚サイズの絶対値ではなく、階層の知覚可能性** である。
 
-一点だけ `a11y_theme` §4 の具体案に補強を提案する: 14px/500(medium) の `h6` は本文（`text-sm`＝14px・既定 400/normal 想定）と **同じフォントサイズ**のため、weight 差（500 vs 400）だけで階層を伝える設計になっている。round1 で定義した最低ライン「段階的に小さくなる」を厳密に満たすには、**フォントサイズが同じ隣接段（h6 と本文）の間には `margin-top` による視覚的な区切り（余白）を必須にする**ことを追加で求めたい——これはテーブルの数値そのものへの反論ではなく、実装時に見出し前後の余白（`space-y-3` だけで足りるか）を実ブラウザで確認する項目として `impl_readme` 側に引き継ぐ。
+一点だけ `a11y_theme` §4 の具体案に補強を提案する: 14px/500(medium) の `h6` は本文（`text-sm`＝14px・既定 400/normal 想定）と **同じフォントサイズ** のため、weight 差（500 vs 400）だけで階層を伝える設計になっている。round1 で定義した最低ライン「段階的に小さくなる」を厳密に満たすには、**フォントサイズが同じ隣接段（h6 と本文）の間には `margin-top` による視覚的な区切り（余白）を必須にする** ことを追加で求めたい——これはテーブルの数値そのものへの反論ではなく、実装時に見出し前後の余白（`space-y-3` だけで足りるか）を実ブラウザで確認する項目として `impl_readme` 側に引き継ぐ。
 
 ## 譲歩（concession）まとめ
 
@@ -591,7 +591,7 @@ Q1 の結論により今回のスコープではないが、`class` 属性を許
 
 ## 結論（round1 からの改訂）
 
-**② への選好は維持するが、根拠を「CSS 量」から「安全側の失敗モード」へ差し替える。** round1 の「②の方が保守しやすい（CSS 量が少ない）」は自己検証の結果 **不正確だった**ので撤回する（§1 で自己批判）。また `img` の overflow 対策は **Preflight が既に処理済み**であることが判明したため、round1 §5 の該当記述も訂正する（§4）。それでも②を推す理由は残るが、①も「`--tw-prose-*` 全項目の var() エイリアス化」を PR 必須要件として明文化するなら **許容できる**、という条件付きの立場に後退する。
+**② への選好は維持するが、根拠を「CSS 量」から「安全側の失敗モード」へ差し替える。** round1 の「②の方が保守しやすい（CSS 量が少ない）」は自己検証の結果 **不正確だった** ので撤回する（§1 で自己批判）。また `img` の overflow 対策は **Preflight が既に処理済み** であることが判明したため、round1 §5 の該当記述も訂正する（§4）。それでも②を推す理由は残るが、①も「`--tw-prose-*` 全項目の var() エイリアス化」を PR 必須要件として明文化するなら **許容できる**、という条件付きの立場に後退する。
 
 ---
 
@@ -611,17 +611,17 @@ Q1 の結論により今回のスコープではないが、`class` 属性を許
 | 本文リンク色 | 1 | |
 | `img`（余白調整のみ。overflow は不要・§4 訂正） | 0〜1 | |
 
-**合計 16〜19 ルール**。一方 ①（`--tw-prose-*` の完全上書き）は `tailwind_v4` R1 の一次情報（Context7）に列挙された変数だけで body / headings / lead / links / bold / counters / bullets / hr / quotes / quote-borders / captions / kbd / kbd-shadows / code / pre-code / pre-bg / th-borders / td-borders の **約 18 変数**。**さらに `--tw-prose-invert-*` を素朴に全部書けば倍**になるが、この二重化は避けられる（§2 で後述）ため実質 **約 18**。
+**合計 16〜19 ルール**。一方 ①（`--tw-prose-*` の完全上書き）は `tailwind_v4` R1 の一次情報（Context7）に列挙された変数だけで body / headings / lead / links / bold / counters / bullets / hr / quotes / quote-borders / captions / kbd / kbd-shadows / code / pre-code / pre-bg / th-borders / td-borders の **約 18 変数**。**さらに `--tw-prose-invert-*` を素朴に全部書けば倍** になるが、この二重化は避けられる（§2 で後述）ため実質 **約 18**。
 
 → **round1 の「②の方が保守コストが低い」は数の上では正しくなかった。両案とも 16〜19 個規模で、ほぼ互角**。ここは明確に自己批判し撤回する。
 
 **それでも②を選ぶ理由（量ではなく失敗モードの安全性）**:
 
-- ②はプレーンな CSS セレクタなので、書き忘れた要素は Preflight のリセット（無地・無階層）に**目に見えて**フォールバックする。`readme_fidelity` の 6 項目チェックリストにそのまま引っかかるので、レビューで「未達」に気づきやすい。
-- ①は書き忘れた `--tw-prose-*` 変数が **プラグインの既定値（Tailwind の gray/slate スケールへのハードコード）** にフォールバックする。これは見た目としては「それらしく整って見える」ため、レビューで見逃されやすい——しかもこの既定値は §3 で述べる理由により **コントラストゲートの外側**にある。「壊れ方が地味で危険」な失敗モードを②は避けられる。
+- ②はプレーンな CSS セレクタなので、書き忘れた要素は Preflight のリセット（無地・無階層）に **目に見えて** フォールバックする。`readme_fidelity` の 6 項目チェックリストにそのまま引っかかるので、レビューで「未達」に気づきやすい。
+- ①は書き忘れた `--tw-prose-*` 変数が **プラグインの既定値（Tailwind の gray/slate スケールへのハードコード）** にフォールバックする。これは見た目としては「それらしく整って見える」ため、レビューで見逃されやすい——しかもこの既定値は §3 で述べる理由により **コントラストゲートの外側** にある。「壊れ方が地味で危険」な失敗モードを②は避けられる。
 - ②は `app/globals.css` 1 ファイル内で完結し、実際に効くセレクタの全体像がそのままそこに書いてある。①はプラグイン本体（`node_modules` 内・ビルド時生成）の内部セレクタ構造（`.prose :where(h3):not(:where([class~=not-prose] *))` 等の高詳細度チェーン）を前提に、その上に自分たちの上書きを重ねる形になり、「最終的に何が効いているか」を把握するのに一段階多く間接参照が要る。
 
-以上より、**量では互角、失敗モードの安全性では②がわずかに有利**という、より正確な結論に改める。
+以上より、**量では互角、失敗モードの安全性では②がわずかに有利** という、より正確な結論に改める。
 
 ---
 
@@ -629,13 +629,13 @@ Q1 の結論により今回のスコープではないが、`class` 属性を許
 
 再度実読して確認した事実（`tools/check_contrast.py` L138-169）:
 
-- `extract_block()` は `app/globals.css` から **厳密に `:root { ... }` と `.dark { ... }` という 2 ブロックだけ**を正規表現 `re.escape(selector) + r"\s*\{"` で抽出する。`@theme inline` ブロックも `.readme-content` のようなクラススコープも見ていない。
-- `parse_declarations()` はそのブロック内の `--([\w-]+)\s*:\s*([^;]+);` を **名前を問わず全部**辞書に入れる。つまり **変数名がハードコードされているわけではなく、`:root`/`.dark` ブロックに書かれてさえいれば、どんな `--xxx` も値として拾われる**。
-- ただし後段のペア判定（本ラウンドでは未提示だが L13-24 のコメントで確認済み）は **固定 9 名（background / muted / foreground / muted-foreground / border / accent / accent-foreground / destructive / destructive-foreground）に対する固定 11 ペア**をコードで直接書いている。新しい変数名（例 `--tw-prose-body`）を `:root` に置いても、**その変数自体を新しいペアとして検査する処理は無い**。
+- `extract_block()` は `app/globals.css` から **厳密に `:root { ... }` と `.dark { ... }` という 2 ブロックだけ** を正規表現 `re.escape(selector) + r"\s*\{"` で抽出する。`@theme inline` ブロックも `.readme-content` のようなクラススコープも見ていない。
+- `parse_declarations()` はそのブロック内の `--([\w-]+)\s*:\s*([^;]+);` を **名前を問わず全部** 辞書に入れる。つまり **変数名がハードコードされているわけではなく、`:root`/`.dark` ブロックに書かれてさえいれば、どんな `--xxx` も値として拾われる**。
+- ただし後段のペア判定（本ラウンドでは未提示だが L13-24 のコメントで確認済み）は **固定 9 名（background / muted / foreground / muted-foreground / border / accent / accent-foreground / destructive / destructive-foreground）に対する固定 11 ペア** をコードで直接書いている。新しい変数名（例 `--tw-prose-body`）を `:root` に置いても、**その変数自体を新しいペアとして検査する処理は無い**。
 
-**訂正**: round1 の私の主張「①を採ると新規色がゲートの外に出る」は**条件付きでしか正しくない**。もし `--tw-prose-body: var(--color-fg);` のように **常に既存トークンへの `var()` 参照だけ**で埋めるなら、`--tw-prose-body` という変数名自体は検査対象に追加されないが、**値の実体（`--foreground` の raw 値）は既に `check_contrast.py` の `fg vs bg` ペアで検査済み**なので、事実上「ゲートに間接的に乗っている」と言える。①でも②でも、**新規の literal 色（`oklch(...)` や `#hex` の直書き）さえ増やさなければ、check_contrast.py を拡張する必要は無い**——これは①②のどちらでも同じ規律（「既存 10 トークンの `var()` 参照のみ」）を守れるかどうかの問題であり、方式選択の差ではなかった。round1 §3・§6 の「①だと `check_contrast.py` の拡張が要る」という書き方は撤回し、正しくは「**①でも②でも、この規律を破ったときだけ**拡張が要る」に訂正する。
+**訂正**: round1 の私の主張「①を採ると新規色がゲートの外に出る」は **条件付きでしか正しくない**。もし `--tw-prose-body: var(--color-fg);` のように **常に既存トークンへの `var()` 参照だけ** で埋めるなら、`--tw-prose-body` という変数名自体は検査対象に追加されないが、**値の実体（`--foreground` の raw 値）は既に `check_contrast.py` の `fg vs bg` ペアで検査済み** なので、事実上「ゲートに間接的に乗っている」と言える。①でも②でも、**新規の literal 色（`oklch(...)` や `#hex` の直書き）さえ増やさなければ、check_contrast.py を拡張する必要は無い**——これは①②のどちらでも同じ規律（「既存 10 トークンの `var()` 参照のみ」）を守れるかどうかの問題であり、方式選択の差ではなかった。round1 §3・§6 の「①だと `check_contrast.py` の拡張が要る」という書き方は撤回し、正しくは「**①でも②でも、この規律を破ったときだけ** 拡張が要る」に訂正する。
 
-ただし §1 で述べた失敗モードの非対称性（①は規律違反が既定値へのサイレントフォールバックとして起きやすい）は残るため、①を採るなら **PR チェックリストに「`--tw-prose-*` / `--tw-prose-invert-*` の grep で literal 色（`#`/`oklch(`/`rgb(` を含み `var(` を含まない行）がゼロであること」を機械検査として追加する**ことを条件に付けたい（`check_contrast.py` 自体を拡張しなくても、別の軽量スクリプト・grep で足りる）。
+ただし §1 で述べた失敗モードの非対称性（①は規律違反が既定値へのサイレントフォールバックとして起きやすい）は残るため、①を採るなら **PR チェックリストに「`--tw-prose-*` / `--tw-prose-invert-*` の grep で literal 色（`#`/`oklch(`/`rgb(` を含み `var(` を含まない行）がゼロであること」を機械検査として追加する** ことを条件に付けたい（`check_contrast.py` 自体を拡張しなくても、別の軽量スクリプト・grep で足りる）。
 
 ---
 
@@ -654,11 +654,11 @@ Q1 の結論により今回のスコープではないが、`class` 属性を許
 
 ## 4. 方式非依存の必須対策（round1 の訂正込みで再整理）
 
-`tailwind_v4` の round1「未確認事項」（`layout.tsx` のテーマ切り替え実装）は、私が round1 で既に確認済み: **`next-themes` の `ThemeProvider` は未実装**（`app/[locale]/layout.tsx` に `ThemeProvider`/`attribute=` は grep 0 件）。`.dark` クラスの付け外し主体がまだ無い。これは①②どちらの方式にも影響する**共通の前提条件**として整理する。
+`tailwind_v4` の round1「未確認事項」（`layout.tsx` のテーマ切り替え実装）は、私が round1 で既に確認済み: **`next-themes` の `ThemeProvider` は未実装**（`app/[locale]/layout.tsx` に `ThemeProvider`/`attribute=` は grep 0 件）。`.dark` クラスの付け外し主体がまだ無い。これは①②どちらの方式にも影響する **共通の前提条件** として整理する。
 
 | 対策 | 方式に依存するか | 内容（訂正版） |
 |---|---|---|
-| `img` の溢れ防止 | **不要（訂正）** | `node_modules/tailwindcss/preflight.css` L230-234 に **`img, video { max-width: 100%; height: auto; }` が既に存在**することを実機ファイルで確認した。round1 の私の主張（「`max-width:100%` を追加で必須にする」）は誤り。①②③のどれを選んでも、Preflight が既に効いている限り追加対応は不要。バッジ画像の間隔調整（`margin` 程度）だけが任意の改善余地として残る |
+| `img` の溢れ防止 | **不要（訂正）** | `node_modules/tailwindcss/preflight.css` L230-234 に **`img, video { max-width: 100%; height: auto; }` が既に存在** することを実機ファイルで確認した。round1 の私の主張（「`max-width:100%` を追加で必須にする」）は誤り。①②③のどれを選んでも、Preflight が既に効いている限り追加対応は不要。バッジ画像の間隔調整（`margin` 程度）だけが任意の改善余地として残る |
 | `table` の横溢れ防止 | **必須（共通）** | `perf_bundle` R1 確認済み: typography プラグイン既定は `pre` には `overflow-x:auto` を持つが **`table` には持たない**。①②③のいずれでも `table`（または `<div class="overflow-x-auto">` ラッパー）に個別対応が要る |
 | `pre` の横溢れ防止 | ①は既定で対応済み／②③は要実装 | ①なら追加不要（プラグイン既定）。②③なら明示的に `overflow-x:auto` が要る |
 | README 見出しがセクション h2（18px）を超えない | **必須（共通）** | ①なら `prose-h3:` 等のユーティリティ修飾子、②なら直接セレクタ。実装場所が違うだけで、どちらも「4 段階を 16px/14px + weight で表現する」設計自体は同じ（round1 §4 のテーブルをそのまま両方式に適用可能） |
@@ -668,7 +668,7 @@ Q1 の結論により今回のスコープではないが、`class` 属性を許
 
 ## 5. `ui-ux-guidelines.md` §2.5 案: 方式非依存に書き直す
 
-round1 の草案は「新しい raw 色を追加しない」「`--tw-prose-*` を全項目エイリアスする」等、①寄りの文言が混在していたため、**方式が未確定でも成立する規定**に書き直す:
+round1 の草案は「新しい raw 色を追加しない」「`--tw-prose-*` を全項目エイリアスする」等、①寄りの文言が混在していたため、**方式が未確定でも成立する規定** に書き直す:
 
 ```markdown
 ### 2.5. README 本文のタイポグラフィと書式（Issue #334 拡張）
@@ -717,10 +717,10 @@ round1 の草案は「新しい raw 色を追加しない」「`--tw-prose-*` �
 ## 結論（先出し）
 
 - **Q1（3MB上限の対象外という判定）**: 再確認した。判定は変わらない。むしろ確度を上げる追加証拠が見つかった（`cloudflare-infrastructure.md` §5.3 の計測コマンド自体が実は不正確という副次的発見つき）。
-- **Q2（CSS増分 1〜3KB gzip の見積もり）**: `styles.js` の行数と、本プロジェクトの実測CSS圧縮率（4.96倍）から再計算し、**a11y_theme の提案（`--tw-prose-*` 全項目上書き必須）を織り込むと raw 6〜12KB / gzip 1.5〜3KB 程度に上方修正**する。結論（3MB上限に無関係）は変わらない。
-- **Q3（table/preのoverflow）**: **round1の記述を一部訂正する（concession）**。CSSの`overflow-x:auto`を`<table>`要素自体に直接当てても効かない——CSS2.1の仕様上の既知の欠陥で、table box では`auto`/`scroll`は`visible`と同じ扱いになる。**`<table>`は実DOMラッパー`<div>`が必須**（CSS単体では解けない）。一方`<pre>`は通常のブロックボックスなので`overflow-x:auto`を直接当てるだけで機能し、実際`@tailwindcss/typography`本体のソース（`styles.js`）にも`pre: { overflowX: 'auto' }`が入っていることをソースレベルで確認した。
+- **Q2（CSS増分 1〜3KB gzip の見積もり）**: `styles.js` の行数と、本プロジェクトの実測CSS圧縮率（4.96倍）から再計算し、**a11y_theme の提案（`--tw-prose-*` 全項目上書き必須）を織り込むと raw 6〜12KB / gzip 1.5〜3KB 程度に上方修正** する。結論（3MB上限に無関係）は変わらない。
+- **Q3（table/preのoverflow）**: **round1の記述を一部訂正する（concession）**。CSSの `overflow-x:auto` を `<table>` 要素自体に直接当てても効かない——CSS2.1の仕様上の既知の欠陥で、table box では `auto`/`scroll` は `visible` と同じ扱いになる。**`<table>`は実DOMラッパー`<div>`が必須**（CSS単体では解けない）。一方 `<pre>` は通常のブロックボックスなので `overflow-x:auto` を直接当てるだけで機能し、実際 `@tailwindcss/typography` 本体のソース（`styles.js`）にも `pre: { overflowX: 'auto' }` が入っていることをソースレベルで確認した。
 - **Q4（E2Eフィクスチャ）**: 具体案を提示する。既存の `octostub/octo-widgets` を拡張せず、`readme-missing` と同じ命名パターンで専用フィクスチャリポジトリを追加することを提案。
-- **Q5（30,000文字上限）**: **据え置きを推奨するが、無条件ではない**。Lighthouseの `dom-size` 監査のしきい値（警告 約800ノード／エラー 約1,400〜1,500ノード）に対し、実測シミュレーションで典型的な文章主体のREADMEは280〜550ノード程度で余裕があるが、**表（`<table>`）が密なREADMEは30,000文字ちょうどで最大1,748ノードに達し、Lighthouseのエラーしきい値を超えうる**ことを新たに定量化した。文字数一律の上限見直しよりも、Q4のフィクスチャ拡充で継続監視する方が筋が良いと判断する。
+- **Q5（30,000文字上限）**: **据え置きを推奨するが、無条件ではない**。Lighthouseの `dom-size` 監査のしきい値（警告 約800ノード／エラー 約1,400〜1,500ノード）に対し、実測シミュレーションで典型的な文章主体のREADMEは280〜550ノード程度で余裕があるが、**表（`<table>`）が密なREADMEは30,000文字ちょうどで最大1,748ノードに達し、Lighthouseのエラーしきい値を超えうる** ことを新たに定量化した。文字数一律の上限見直しよりも、Q4のフィクスチャ拡充で継続監視する方が筋が良いと判断する。
 
 ---
 
@@ -729,20 +729,20 @@ round1 の草案は「新しい raw 色を追加しない」「`--tw-prose-*` �
 再確認した根拠（round1と同じ実測値を再チェック、追加でファイルパスと行を明示）:
 
 1. **`wrangler.jsonc`**（プロジェクトルート）: `"main": ".open-next/worker.js"`、`"assets": { "directory": ".open-next/assets", "binding": "ASSETS" }`。Worker本体とアセットが別ディレクトリ・別バインディングであることが設定ファイルレベルで明示されている。
-2. **`.open-next/worker.js`**: 実ファイルを再読したが、`server-functions/default/handler.mjs` を `await import(...)` で動的取得する router のみで、CSSファイル名（`2zfgn5tn_e7wb.css`）はJS内の**文字列**として現れるだけで、CSS本体（セレクタ・宣言ブロック）は含まれない。
+2. **`.open-next/worker.js`**: 実ファイルを再読したが、`server-functions/default/handler.mjs` を `await import(...)` で動的取得する router のみで、CSSファイル名（`2zfgn5tn_e7wb.css`）はJS内の **文字列** として現れるだけで、CSS本体（セレクタ・宣言ブロック）は含まれない。
 3. **`.open-next/assets/_next/static/chunks/2zfgn5tn_e7wb.css`** が実CSS本体（raw 40,585B / gzip 8,178B）— これが Workers Static Assets 側。
 4. **`docs/03_design/infrastructure/cloudflare-infrastructure.md` L65**「Workers Static Assets（JS/CSS/フォント・**無料・無制限**）」、L286「Worker バンドル: 3MB（圧縮後）」— ドキュメント上も両者は明確に別カテゴリ。
-5. `npx wrangler deploy --dry-run --outdir` で実バンドルを吐き出し確認: **`Total Upload: 6631.44 KiB / gzip: 1372.29 KiB`**。dry-run が生成した実 `worker.js`（6.79MB raw）を直接 `gzip -c | wc -c` した値は **1,405,428 B（≈1.34MB）** で、wranglerの申告値と一致。3MB上限に対し**約45%消費、残headroom約1.66MB**。
+5. `npx wrangler deploy --dry-run --outdir` で実バンドルを吐き出し確認: **`Total Upload: 6631.44 KiB / gzip: 1372.29 KiB`**。dry-run が生成した実 `worker.js`（6.79MB raw）を直接 `gzip -c | wc -c` した値は **1,405,428 B（≈1.34MB）** で、wranglerの申告値と一致。3MB上限に対し **約45%消費、残headroom約1.66MB**。
 
 → **判定は変わらない。CSSはWorkers Static Assets側で配信され、Worker本体の3MB gzip上限の対象外**。①②③のどの方式でも、CSS増分自体がこの上限を圧迫することはない。
 
-**副次的発見の再掲（確度確認済み）**: `cloudflare-infrastructure.md` §5.3 が指定する計測コマンド `gzip -c .open-next/worker.js | wc -c` は router stub のみを測り（実測746B）、動的import経由でバンドルされる本体（1.34MB gzip）を捕捉できていない。これは他参加者が「3MB上限に対する余裕」を判断材料にする場合に誤った基準（746Bという実質ゼロの数字）を使ってしまうリスクがあるため、**方式選択の場では `npx wrangler deploy --dry-run` の `Total Upload ... gzip:` 行を正とする**よう申し送る。ドキュメント修正自体はスコープ外なので自分では変更しない。
+**副次的発見の再掲（確度確認済み）**: `cloudflare-infrastructure.md` §5.3 が指定する計測コマンド `gzip -c .open-next/worker.js | wc -c` は router stub のみを測り（実測746B）、動的import経由でバンドルされる本体（1.34MB gzip）を捕捉できていない。これは他参加者が「3MB上限に対する余裕」を判断材料にする場合に誤った基準（746Bという実質ゼロの数字）を使ってしまうリスクがあるため、**方式選択の場では `npx wrangler deploy --dry-run` の `Total Upload ... gzip:` 行を正とする** よう申し送る。ドキュメント修正自体はスコープ外なので自分では変更しない。
 
 ---
 
 ## Q2: CSS増分の実測に近づける再計算
 
-**方法**: (a) 現行プロジェクトCSSの実測圧縮率を基準にする、(b) `@tailwindcss/typography` パッケージソース（`npm view` でメタデータ取得 + tarball展開のみ、`npm install`はしていない）の行数からJIT後の出力規模を見積もる。
+**方法**: (a) 現行プロジェクトCSSの実測圧縮率を基準にする、(b) `@tailwindcss/typography` パッケージソース（`npm view` でメタデータ取得 + tarball展開のみ、`npm install` はしていない）の行数からJIT後の出力規模を見積もる。
 
 ### (a) 現行CSSの圧縮率（実測）
 
@@ -752,7 +752,7 @@ gzip:  8,178 B
 比率: 4.96倍
 ```
 
-Tailwind生成CSSは同じプロパティ・似た構造のセレクタが反復するため高圧縮率になる。typography系CSSも同様の性質（`font-size`/`margin`/`color: var(--tw-prose-*)`の反復）を持つため、この比率を流用する。
+Tailwind生成CSSは同じプロパティ・似た構造のセレクタが反復するため高圧縮率になる。typography系CSSも同様の性質（`font-size`/`margin`/`color: var(--tw-prose-*)` の反復）を持つため、この比率を流用する。
 
 ### (b) 出力規模の見積もり（`styles.js` 実測）
 
@@ -763,11 +763,11 @@ invert ブロック（ダーク配色の変数上書きのみ）: 1385〜1409行
 DEFAULT（色・overflow等・サイズ非依存の共通部）: 1410〜1641行（約231行）
 ```
 
-tailwind_v4 の提案（`prose prose-sm dark:prose-invert` + `prose-h3:`等の個別修飾子）を採用した場合、JITが実際に生成するのは概ね「DEFAULT（共通部）+ sm（1サイズ分）+ invertの変数上書き + 使用した`prose-h3:`等の個別セレクタ数個」で、234+205+24行程度がベース（合計約460行相当）。1 JSプロパティ→CSS宣言1行の対応と仮定し、1行あたり平均25〜35バイト（セレクタ再利用があるため実際はもう少し圧縮される）とすると **raw 6〜10KB**。さらに a11y_theme の提案（`--tw-prose-*` 全項目 + `--tw-prose-invert-*` 全項目を `app/globals.css` 側でトークンへエイリアス、計26個程度のカスタムプロパティ宣言）を追加で載せると **raw 合計 6〜12KB** 程度と見積もる（上方修正: round1の見積もりでは a11y_theme の上書き必須リストを未考慮だった）。
+tailwind_v4 の提案（`prose prose-sm dark:prose-invert` + `prose-h3:` 等の個別修飾子）を採用した場合、JITが実際に生成するのは概ね「DEFAULT（共通部）+ sm（1サイズ分）+ invertの変数上書き + 使用した `prose-h3:` 等の個別セレクタ数個」で、234+205+24行程度がベース（合計約460行相当）。1 JSプロパティ→CSS宣言1行の対応と仮定し、1行あたり平均25〜35バイト（セレクタ再利用があるため実際はもう少し圧縮される）とすると **raw 6〜10KB**。さらに a11y_theme の提案（`--tw-prose-*` 全項目 + `--tw-prose-invert-*` 全項目を `app/globals.css` 側でトークンへエイリアス、計26個程度のカスタムプロパティ宣言）を追加で載せると **raw 合計 6〜12KB** 程度と見積もる（上方修正: round1の見積もりでは a11y_theme の上書き必須リストを未考慮だった）。
 
 **gzip換算**: (a)の4.96倍圧縮率を適用すると **gzip 1.2〜2.5KB**。tailwind_v4提案の `prose-h3:`/`prose-h4:` 等の個別修飾子が増えるほど増分は上振れするが、それでも常識的な範囲では **gzip 1.5〜3KB** に収まると見積もる（round1の「1〜3KB」を「1.5〜3KB」に微修正、大枠は変わらず）。
 
-**結論は変わらない**: raw 12KB・gzip 3KB程度の増分は、現状の静的アセット総量（928KB）に対して無視できる水準であり、3MB gzip上限（Worker本体側）とはそもそも無関係（Q1参照）。**実測での確定にはnpm installとビルドが必要**な点は変わらないため、導入PRでの前後比較実測を引き続き必須とする。
+**結論は変わらない**: raw 12KB・gzip 3KB程度の増分は、現状の静的アセット総量（928KB）に対して無視できる水準であり、3MB gzip上限（Worker本体側）とはそもそも無関係（Q1参照）。**実測での確定にはnpm installとビルドが必要** な点は変わらないため、導入PRでの前後比較実測を引き続き必須とする。
 
 ---
 
@@ -777,7 +777,7 @@ tailwind_v4 の提案（`prose prose-sm dark:prose-invert` + `prose-h3:`等の�
 
 CSS2.1仕様のエラータ（`overflow: auto`/`scroll` on table elements）: **table box に対する `overflow` の `auto`/`scroll` 値は `visible` と同じ扱いになる**。つまり **`<table>` 要素自体に `overflow-x: auto` を直接当てても、横スクロールコンテナとして機能しない**。標準的な解決策は `<table>` を `overflow: auto` を持つ `<div>` でラップすること（cross-browser、Safari含めて確立した回避策）。
 
-これは round1 で私が「`table` にも `overflow-x:auto` を当てればよい」という含みで書いた記述に対する**訂正**である。`<table>` に限っては **CSSだけでは原理的に解けず、実DOMのラッパー `<div>` が必須**。
+これは round1 で私が「`table` にも `overflow-x:auto` を当てればよい」という含みで書いた記述に対する **訂正** である。`<table>` に限っては **CSSだけでは原理的に解けず、実DOMのラッパー `<div>` が必須**。
 
 ### `<pre>` は逆にCSSだけで解決できる（ソースで確認済み）
 
@@ -794,15 +794,15 @@ pre: {
 
 `pre` は通常のブロックボックス（table-layoutの特殊挙動を持たない）なので、`overflow-x: auto` を直接セレクタに当てるだけで機能する。**①`@tailwindcss/typography` を採用すればこれは自動的に付与される**（②自前CSSの場合も `pre { overflow-x: auto }` を1行書くだけで済む）。
 
-一方で同じ `styles.js` の `table` 定義（L1596付近、DEFAULT・sm両ブロックとも）には `width: '100%'` と `tableLayout: 'auto'` のみで **overflow関連のプロパティが一切無い**。これは実装漏れではなく、上記のCSS仕様上の制約により**入れても効かないため意図的に省いている**と解釈できる（tailwindlabs側もラッパー`div`を利用者側の責務としている）。
+一方で同じ `styles.js` の `table` 定義（L1596付近、DEFAULT・sm両ブロックとも）には `width: '100%'` と `tableLayout: 'auto'` のみで **overflow関連のプロパティが一切無い**。これは実装漏れではなく、上記のCSS仕様上の制約により **入れても効かないため意図的に省いている** と解釈できる（tailwindlabs側もラッパー `div` を利用者側の責務としている）。
 
-→ **①を採用しても table 対策は依然として別途必要**という round1 の結論は正しかったが、その理由付け（「typographyの既知の制限」という曖昧な表現）を「CSS仕様上table boxには効かないため原理的に不可能」という確定的な根拠に強化する。
+→ **①を採用しても table 対策は依然として別途必要** という round1 の結論は正しかったが、その理由付け（「typographyの既知の制限」という曖昧な表現）を「CSS仕様上table boxには効かないため原理的に不可能」という確定的な根拠に強化する。
 
 ### 実装方法: `readme-html.ts` の `transformTags` では足りない
 
 質問への直接回答: **`transformTags`（`sanitize-html`）だけでは`<table>`をラップできない**。`node_modules/sanitize-html/index.js` を確認したところ、`transformTags` のコールバックは `(tagName, attribs) => { tagName, attribs }` を返すだけで、**単一タグの改名・属性変更しかできず、新しい親要素を挿入する機能はない**（ラップ操作は非対応）。
 
-したがって table ラッパーを実現するには、`sanitizeReadmeHtml` が返した文字列に対する**追加の後処理ステップ**（正規表現での `<table ...>...</table>` 検出・ラップ、または軽量DOM処理ライブラリでの1回限りの変換）が必要になる。実装の置き場所（`readme-html.ts` 内に処理を1段追加するか、別関数に切り出すか）は `impl_readme` / `arch_domain` の判断に委ねるが、性能レンズからの制約は1点のみ: **追加するラッパー `<div>` の `class` はコード側が固定文字列で発行するものに限り、README由来の `class` 属性をそのまま透過させない**（tailwind_v4がround1で挙げた③の懸念——`ALLOWED_ATTRIBUTES` に任意の `class` 値を許可するとCSSインジェクション面のリスクが増える——とは別物であることを明確にしたい。今回提案しているのは「サニタイズ済みHTMLに、こちらのコードが自分で書いた固定クラス名の `div` を差し込む」だけであり、**README側の任意入力を新たに許可リストに加える話ではない**ため、③の懸念は生じない）。
+したがって table ラッパーを実現するには、`sanitizeReadmeHtml` が返した文字列に対する **追加の後処理ステップ**（正規表現での `<table ...>...</table>` 検出・ラップ、または軽量DOM処理ライブラリでの1回限りの変換）が必要になる。実装の置き場所（`readme-html.ts` 内に処理を1段追加するか、別関数に切り出すか）は `impl_readme` / `arch_domain` の判断に委ねるが、性能レンズからの制約は1点のみ: **追加するラッパー `<div>` の `class` はコード側が固定文字列で発行するものに限り、README由来の `class` 属性をそのまま透過させない**（tailwind_v4がround1で挙げた③の懸念——`ALLOWED_ATTRIBUTES` に任意の `class` 値を許可するとCSSインジェクション面のリスクが増える——とは別物であることを明確にしたい。今回提案しているのは「サニタイズ済みHTMLに、こちらのコードが自分で書いた固定クラス名の `div` を差し込む」だけであり、**README側の任意入力を新たに許可リストに加える話ではない** ため、③の懸念は生じない）。
 
 ---
 
@@ -884,7 +884,7 @@ Lighthouseの `dom-size` 監査のしきい値（WebSearchで確認: 警告 約8
 **30,000文字の上限は据え置きを推奨する。ただし無条件ではない**。
 
 - 典型的な文章・リスト中心のREADME（実務上の大多数）では、DOMノード数はLighthouseの警告しきい値にすら達しない。文字数上限を一律に下げると、この健全な大多数に対して不要な切り詰めを増やすだけで実利がない。
-- 一方で **表が密なREADME は実際にLighthouseの `dom-size` エラーしきい値を超えうる**ことを今回定量化した。ただし `tools/run_lighthouse.mjs` は現状 performance カテゴリを非ゲート（accessibilityのみブロッキング）としているため、これが実際に発生してもCIは失敗しない。
+- 一方で **表が密なREADME は実際にLighthouseの `dom-size` エラーしきい値を超えうる** ことを今回定量化した。ただし `tools/run_lighthouse.mjs` は現状 performance カテゴリを非ゲート（accessibilityのみブロッキング）としているため、これが実際に発生してもCIは失敗しない。
 - **文字数上限の引き下げでこの問題を解こうとするのは筋が悪い**（表10行のREADMEも表1000行のREADMEも同じ「1つの表」として扱われ、文字数だけでは密度の違いを区別できない。誤って文章主体の健全なREADMEまで一律に切り詰めてしまう副作用の方が大きい）。
 - **推奨する対処は Q4 のフィクスチャ拡充**: 表中心のフィクスチャをLighthouse対象（`/ja/repos/octostub/octo-widgets` 相当）に含めれば、`perf=NN` の記録値・`dom-size` の実際の監査結果が継続的に可視化され、将来 performance カテゴリがゲート化される際にも先回りできる。今回はここまでを性能レンズの結論とし、上限値そのものの変更は提案しない。
 
@@ -892,8 +892,8 @@ Lighthouseの `dom-size` 監査のしきい値（WebSearchで確認: 警告 約8
 
 ## 反対されうる点
 
-- Q2の見積もり（raw 6〜12KB / gzip 1.5〜3KB）は、`prose-h3:`等の個別修飾子をどこまで使うか（tailwind_v4の提案次第）で上下に振れる。実装が固まった段階での実測必須という結論は変わらないが、「上方修正した」こと自体が見積もりの不安定さを示しており、確度としては引き続き「見積もり」の域を出ない。
-- Q3のtable ラッパーの実装コスト（`readme-html.ts` への後処理ステップ追加）は、tailwind_v4がround1で示した「①の実装コストはCSS1行+package.json1行」という比較表を実質的に修正するもの——**①を選んでもtable対策の実装コストは②③と大差なくなる**可能性がある。この点は tailwind_v4 の推奨そのものを覆すものではないが、①の「低コスト」という評価軸には再考の余地があると考える。
+- Q2の見積もり（raw 6〜12KB / gzip 1.5〜3KB）は、`prose-h3:` 等の個別修飾子をどこまで使うか（tailwind_v4の提案次第）で上下に振れる。実装が固まった段階での実測必須という結論は変わらないが、「上方修正した」こと自体が見積もりの不安定さを示しており、確度としては引き続き「見積もり」の域を出ない。
+- Q3のtable ラッパーの実装コスト（`readme-html.ts` への後処理ステップ追加）は、tailwind_v4がround1で示した「①の実装コストはCSS1行+package.json1行」という比較表を実質的に修正するもの——**①を選んでもtable対策の実装コストは②③と大差なくなる** 可能性がある。この点は tailwind_v4 の推奨そのものを覆すものではないが、①の「低コスト」という評価軸には再考の余地があると考える。
 - Q5の合成シミュレーションはあくまで極端な合成データによる机上検証であり、実際のGitHub README（HTML構造・タグの入れ子度合い）とは乖離がありうる。`readme_fidelity` が実測した `bcaudan/jasmine-spec-reporter` のような実リポジトリで、大きな表を含むREADME（例: 多言語対応表・API仕様表を持つ大型OSS）を用いた実測が望ましいが、本ラウンドでは着手していない。
 
 ## ラウンド 3
@@ -919,15 +919,15 @@ Tailwind v4 の Preflight が見出し・リスト・引用・表の既定装飾
 3. リテラル色（`oklch(` / `#` / `rgb(`）が `--tw-prose-*` の値に混入していないことを機械検査する（`a11y_theme` が提示した条件・書き忘れがプラグイン既定色へ静かにフォールバックするのを検知するため）
 
 **② 自前スコープ CSS を採らない理由**: `a11y_theme` は round 2 で「②の方が CSS 量が少ない」という自身の根拠を **実測して撤回** した（量はほぼ互角）。
-`perf_bundle` の実測により「CSS は Workers Static Assets 配信で Worker の 3 MB gzip 上限の**対象外**」（増分は gzip 1.5〜3 KB 見積もり）と確定し、サイズも選択理由から外れた。
-残る差は「色 18 行だけ書けば、余白・行間・リストマーカー・ネスト・表・コードブロックの**寸法系はプラグインが提供する**」という実装量・保守量の差であり、①が優位。
+`perf_bundle` の実測により「CSS は Workers Static Assets 配信で Worker の 3 MB gzip 上限の **対象外**」（増分は gzip 1.5〜3 KB 見積もり）と確定し、サイズも選択理由から外れた。
+残る差は「色 18 行だけ書けば、余白・行間・リストマーカー・ネスト・表・コードブロックの **寸法系はプラグインが提供する**」という実装量・保守量の差であり、①が優位。
 飼い主の指示「最新の仕様・ノウハウ・ベストプラクティスをリサーチして対応」に照らしても、Tailwind で Markdown/README 由来 HTML を描画する標準解は typography プラグインである。
 
 **③ サニタイズ時のユーティリティクラス注入を採らない理由**: `class` 属性の許可が必要になり、第三者 HTML のサニタイズと装飾注入が混線する（`a11y_theme` / `tailwind_v4` 一致）。安全性を下げる方向の変更は採らない。
 
 ## 争点 B: 降格済み見出し（h3 起点）とスケール
 
-見出しの **+2 降格は現行のまま維持**する（`h1→h3`・`h6` cap）。セマンティック階層は変えない。
+見出しの **+2 降格は現行のまま維持** する（`h1→h3`・`h6` cap）。セマンティック階層は変えない。
 視覚スケールは `.prose` 側で調整し、**README 内の最上位見出し（h3）がページのセクション見出し（`<h2>`「README」・18px）を超えないようにする**
 （`a11y_theme` 案・`readme_fidelity` も round 2 で同意）。段階は `h3` = 16px / `h4` = 14px を基準に、太さ（`font-weight`）と余白で階層を作る。
 **理由**: 第三者コンテンツの見出しが自サイトのセクション見出しより目立つのは情報設計として倒錯している。書式の再現度（README の最上位見出しが「大きく見える」）は
