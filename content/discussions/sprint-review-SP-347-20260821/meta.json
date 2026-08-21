@@ -1,0 +1,11 @@
+{
+  "id": "sprint-review-SP-347-20260821",
+  "topic": "Issue #347（gpt-image-2 の UI ビジュアル導入とヘッダー共通化）のスプリントレビュー",
+  "brief": "PR #353 を squash マージ済み（main: 47d7818）。受け入れ判定とデプロイ可否、残課題の仕分けを行う。",
+  "participants": [
+    "acceptance",
+    "remaining"
+  ],
+  "created_at": "2026-08-21T19:58:36+09:00",
+  "updated_at": "2026-08-21T19:58:36+09:00"
+}
