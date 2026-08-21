@@ -360,27 +360,28 @@ export default async function LocaleHome({
       ) : null}
 
       {/*
-        🔴 キーワード未入力時は「検索結果」見出し・ライブリージョン・結果本体を丸ごと描画しない
-        （飼い主決定・初見フィードバック⑥）。以前の idle 表示（「キーワードを入力して検索して
-        ください。」）は撤去し、まだ検索していない状態では検索フォームと日次ダイジェストだけを見せる。
+        🔴 キーワード未入力時は「検索結果」見出しと結果本体を描画しない（飼い主決定・初見
+        フィードバック⑥）。以前の idle 表示（「キーワードを入力して検索してください。」）は撤去し、
+        まだ検索していない状態では検索フォームと日次ダイジェストだけを見せる。
 
-        a11y の整合（`ui-ux-guidelines.md` §7.2「ライブリージョンは初期 DOM に空で常設し、中身を
-        書き換える。要素ごと動的挿入しない」）: この要件は「検索を実行した状態の DOM」に対して
-        満たせばよい。`hasKeyword` は URL の `q` パラメータで決まりサーバー側でしか変わらない
-        （クライアント側の動的挿入ではない）ため、キーワード付きで再描画された時点の初期 DOM に
-        見出し・リージョンが常設されていれば §7.2 の意図（動的な要素ごと挿入で通知を取りこぼさない）
-        を満たす。同一ページ内でクライアント遷移（ページ送り・ソート変更等）している間は
-        `hasKeyword` は常に true のまま変わらないため、その間は従来どおり要素が差し替わらない。
+        🔴 ただし **ライブリージョン（`<section id="search-status">`）だけは条件描画にしない**
+        （`ui-ux-guidelines.md` §7.2 の必須要件「ライブリージョンは初期 DOM に空で常設し、中身を
+        書き換える。要素ごと動的挿入しない」）。要素ごと出し入れすると、キーワードなしの URL へ
+        クライアント遷移した後に再度検索したとき `aria-live` の変更通知が発火しない実装があり、
+        「読み込み中 → N 件中 M 件を表示」がスクリーンリーダーへ届かなくなる（`NFR-12` / `US-26`）。
+        見出しは `<h2>` であってライブリージョンではないため、条件描画してよい。
       */}
       {hasKeyword ? (
-        <>
-          <h2
-            id="results-heading"
-            tabIndex={-1}
-            className="mt-6 text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring rounded-sm"
-          >
-            {messages.home.resultsHeading}
-          </h2>
+        <h2
+          id="results-heading"
+          tabIndex={-1}
+          className="mt-6 text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring rounded-sm"
+        >
+          {messages.home.resultsHeading}
+        </h2>
+      ) : null}
+
+      <>
 
           {/*
             ライブリージョン（初期 DOM に常設し、中身だけを書き換える・ui-ux-guidelines.md §7.2）。
@@ -394,20 +395,24 @@ export default async function LocaleHome({
             （`RepositoryList` の `role="status"` は本 `section` の **外**・兄弟要素であり、
             入れ子ではないので問題ない・§7.2）。
           */}
-          <section
-            id="search-status"
-            role="status"
-            aria-live="polite"
-            className="text-muted-foreground mt-6 text-sm"
-          >
+        <section
+          id="search-status"
+          role="status"
+          aria-live="polite"
+          className="text-muted-foreground mt-6 text-sm"
+        >
+          {/* 未入力時は要素を残したまま中身だけ空にする（§7.2・上のコメント参照）。 */}
+          {hasKeyword ? (
             <Suspense
               key={suspenseKey}
               fallback={<LoadingIndicator label={messages.common.loading} />}
             >
               <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
             </Suspense>
-          </section>
+          ) : null}
+        </section>
 
+        {hasKeyword ? (
           <Suspense key={suspenseKey} fallback={null}>
             <SearchBody
               statePromise={statePromise}
@@ -420,8 +425,8 @@ export default async function LocaleHome({
               showAuthLink={isAuthConfigured()}
             />
           </Suspense>
-        </>
-      ) : null}
+        ) : null}
+      </>
 
       {/*
         `key={suspenseKey}` の Suspense 境界の外（= remount されない位置）に置く。
@@ -429,7 +434,9 @@ export default async function LocaleHome({
         このコンポーネント自身は remount されずに props だけが更新され、初回判定
         （`useRef`）が遷移を跨いで機能する（`focus-on-navigate.tsx` 参照）。
       */}
-      <FocusOnNavigate watch={currentPath} targetId="results-heading" />
+      {/* 🔴 未入力時は `results-heading` が存在しないため描画しない（無条件に置くと
+          `getElementById` が null を返し、フォーカスが body に残ったまま無言で失敗する）。 */}
+      {hasKeyword ? <FocusOnNavigate watch={currentPath} targetId="results-heading" /> : null}
     </main>
   )
 }

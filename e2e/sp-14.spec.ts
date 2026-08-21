@@ -107,6 +107,9 @@ test.describe('SP-14: キーワード非依存の発見面', () => {
     //    ライセンスリンク、改変の明示という D-29 の 3 要件は文言が変わっても満たし続ける。
     await expect(page.getByText(/このデータについて/)).toBeVisible()
     await expect(page.getByText(/Ecosyste\.ms/)).toBeVisible()
+    // 🔴 指標の表示名（`D-32`・初見フィードバック③）を実メッセージファイル経由で固定する。
+    //    コンポーネントテストは labels をテストローカルで注入するため、実文言の回帰はここでしか拾えない。
+    await expect(page.getByText(/利用パッケージ数/).first()).toBeVisible()
     const licenseLink = page.getByRole('link', { name: 'CC BY-SA 4.0' })
     await expect(licenseLink).toBeVisible()
     await expect(licenseLink).toHaveAttribute(

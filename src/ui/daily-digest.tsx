@@ -81,7 +81,9 @@ export function DailyDigest({
           Gem Index の生値は画面から撤去したため、この 1 行だけが「なぜ上から並んでいるか」を
           伝える唯一の場所になる（`AttributionNotice` は出典・鮮度の説明であり役割が異なる）。
         */}
-        <p className="text-muted-foreground mt-1 text-sm">{labels.lead}</p>
+        <p id="daily-digest-lead" className="text-muted-foreground mt-1 text-sm">
+          {labels.lead}
+        </p>
 
         {/* localStorage が空 / 消去 / 破損している場合の自然劣化（US-32・必須要件）。 */}
         <FirstVisitNote label={labels.firstVisitNote} />
@@ -92,7 +94,10 @@ export function DailyDigest({
             {labels.empty}
           </p>
         ) : (
-          <ol className="divide-border mt-3 divide-y">
+          // 🔴 `aria-describedby` で並び順の説明を一覧に紐づける（`ui-ux-guidelines.md` §7.1）。
+          // 見出しジャンプでリストへ入る支援技術利用者は `lead` の <p> を読み飛ばすため、
+          // これが無いと「なぜこの順序なのか」が伝わらない（Gem Index の生値を撤去した代替説明）。
+          <ol aria-describedby="daily-digest-lead" className="divide-border mt-3 divide-y">
             {digest.items.map((gem, index) => {
               // `owner/repo` の分割はドメインの関数へ寄せる（`split('/')[1] ?? ''` を UI に散らさない）。
               // 形式検証はインフラ層（`static-gem-digest.ts`）が済ませており、満たさない候補は

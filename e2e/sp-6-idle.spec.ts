@@ -10,8 +10,12 @@ import en from '../messages/en.json'
  * `messages.home.idle` の「キーワードを入力して検索してください。」という文言は撤去された
  * （キーごと削除済み・`messages/ja.json` / `messages/en.json`）。未検索の初期状態は
  * 検索フォーム + 日次ダイジェスト（`SP-14`）だけで「検索を促す」役割を果たす。
- * あわせて「検索結果」見出し（`#results-heading`）とライブリージョン（`#search-status`）は
- * キーワード未入力時には DOM に一切描画されない（`app/[locale]/page.tsx` の `hasKeyword` 分岐）。
+ * あわせて「検索結果」見出し（`#results-heading`）はキーワード未入力時に描画されない
+ * （`app/[locale]/page.tsx` の `hasKeyword` 分岐）。
+ * 🔴 ただしライブリージョン（`#search-status`）は **常設のまま中身だけを空にする**
+ * （`ui-ux-guidelines.md` §7.2 の必須要件「ライブリージョンは初期 DOM に空で常設し、中身を
+ * 書き換える。要素ごと動的挿入しない」）。要素ごと出し入れすると、キーワードなしの URL へ
+ * クライアント遷移した後の検索で `aria-live` の変更通知が発火しない実装があるため。
  */
 test.describe('SP-6: 未検索の初期状態で検索を促す表示が出る', () => {
   test('ja: idle 文言は表示されず、検索欄・検索ボタンが同時に操作可能な状態で存在する', async ({
@@ -22,9 +26,12 @@ test.describe('SP-6: 未検索の初期状態で検索を促す表示が出る',
       await expect(page).toHaveURL(/\/ja$/)
     })
 
-    await test.step('2. 検索結果見出し・ライブリージョンは描画されない（撤去済みの idle 表示の回帰防止）', async () => {
+    await test.step('2. 検索結果見出しは出ないが、ライブリージョンは空で常設されている（§7.2）', async () => {
       await expect(page.getByRole('heading', { name: ja.home.resultsHeading })).toHaveCount(0)
-      await expect(page.locator('#search-status')).toHaveCount(0)
+      const liveRegion = page.locator('#search-status')
+      await expect(liveRegion).toHaveCount(1)
+      await expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+      await expect(liveRegion).toHaveText('')
     })
 
     await test.step('3. 検索欄・検索ボタンが同時に操作可能な状態で存在する', async () => {
@@ -43,9 +50,12 @@ test.describe('SP-6: 未検索の初期状態で検索を促す表示が出る',
       await expect(page).toHaveURL(/\/en$/)
     })
 
-    await test.step('2. 検索結果見出し・ライブリージョンは描画されない（撤去済みの idle 表示の回帰防止）', async () => {
+    await test.step('2. 検索結果見出しは出ないが、ライブリージョンは空で常設されている（§7.2）', async () => {
       await expect(page.getByRole('heading', { name: en.home.resultsHeading })).toHaveCount(0)
-      await expect(page.locator('#search-status')).toHaveCount(0)
+      const liveRegion = page.locator('#search-status')
+      await expect(liveRegion).toHaveCount(1)
+      await expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+      await expect(liveRegion).toHaveText('')
     })
 
     await test.step('3. 検索欄・検索ボタンが同時に操作可能な状態で存在する', async () => {
