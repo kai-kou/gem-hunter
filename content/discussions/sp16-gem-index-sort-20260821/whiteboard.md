@@ -4,8 +4,8 @@
 - 議題ID: `sp16-gem-index-sort-20260821`
 - 論点: 確定仕様（D-30）: ① Index を持たない結果は上位に集めて末尾に残す（絞り込まない） ② 最大 1,000 件取得してから並べ替える。争点 7 件: (1) 全件取得の発火条件 (2) キャッシュキー粒度 (3) ページの意味と AC-6/AC-7 整合 (4) join の層 (5) Index なし同士の順序 (6) NFR-5 のレート予算 (7) sp:8 に収まるか
 - 参加者: `domain_arch`, `rate_cache`, `ux_paging`, `scope_test`
-- 投稿数: 4
-- 更新: 2026-08-21T10:00:52+09:00
+- 投稿数: 11
+- 更新: 2026-08-21T10:08:06+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -392,3 +392,409 @@ UI 観点での推奨: `RepositorySummary` に **optional** な `gemIndex?: GemI
 - **直列実行の必須化によるレイテンシ**: 公式が並行実行を非推奨としているため 10 ページを直列で叩く。1 リクエスト数百 ms として **合計で 2〜5 秒程度のレイテンシ**になりうる。操作レビュー自体は完走できるはずだが、「読み込み中」表示が無いと固まって見える可能性がある（`AC-8` の対象かどうかは他レンズの判断に委ねるが、少なくとも操作レビュー手順に「数秒待つ」旨を明記すべき）。
 - **実データでの再現性**: 候補プールは npm 由来の実データで、任意のキーワードで検索して Gem Index 順位の差が視認できるとは限らない（227 件しかない）。**PR 本文に、候補プールに実在することが確認済みのキーワード/パッケージ名を 1 つ明記する**ことを推奨する（そうしないと人間レビュアーが操作レビュー手順 3 を素朴なキーワードで試して「全部末尾」に見えてしまう）。
 - 上記を踏まえても **プレビュー環境自体で動作確認が完走できないとまでは判定しない**（機構としては動く）。ただし「操作レビューがすんなり通る」ためには PR 本文への具体的な手引き（キーワード例・待ち時間の目安）が実質必須。
+
+## ラウンド 2
+
+### `rate_cache` — 反論
+<sub>2026-08-21T10:03:38+09:00</sub>
+
+## rate_cache round2: rebuttal / concession
+
+### `domain_arch` への応答（核心の衝突点）— **一部 concession**
+
+`domain_arch` 案（usecase の分岐が `deps.repos.search(query)` を `page=1..maxPage` でループ呼び出し）を前提にすると、**私の争点2「`search-raw` 新名前空間」提案は不要**と判断を改める（concession）。
+
+理由: usecase から呼ぶ `deps.repos` は composition root で合成された `CachingRepositoryQuery`（`RepositoryQueryPort` の decorator）そのもの。ループの各呼び出しが `perPage=100`（GitHub 上限固定・生の raw fetch チャンクサイズ）・`page=N` の **raw 用 `SearchQuery`** を作って `deps.repos.search()` に渡すなら、既存 `searchResultCacheKey`（`keyword:page:sort:per_page`）が **そのまま raw ページ単位のキー** として機能する。新しいキー生成関数もキャッシュスキーマ変更も不要。
+
+これにより round1 で指摘した「single-flight が全件取得に効かない」問題も**解消**する: 既存 `CachingRepositoryQuery.readThrough` の `inFlightSearch` マップは呼び出しごとのキー単位で合流するため、同一キーワード・同一 raw ページへの並行リクエストはページ単位で自動的に single-flight される。round1 の「専用 in-flight マップが要る」という主張は**撤回**する。
+
+**ただし 1 点、実装で崩れうる前提として明示しておく**: ループ内で使う `sort` は **`'gemIndex'` という文字列そのものであってはならない**（`scope_test` 争点4-D と同じ指摘）。`GithubRepositoryQuery.search()` は `sort !== 'relevance'` なら `url.searchParams.set('sort', query.sort)` で **そのまま GitHub API に渡す**（`github-repository-query.ts:55-58`）ため、`sort='gemIndex'` を渡すと GitHub API が理解できないパラメータを送ることになる（422 のリスク）。raw 取得ループは `sort: 'relevance'`（GitHub 既定・`ux_paging` 争点5の relevance 保持方針とも整合）を使うべきで、**表側の `query.sort='gemIndex'` とは別の内部 `SearchQuery` を組み立てる**実装が必須。ここが崩れると「新しいキー空間が要る/要らない」の議論全体が変わるので、実装 Issue に明記すべき注意点として `domain_arch` 案に条件付きで同意する。
+
+**副次効果（好ましい）**: raw 取得ページが `sort=relevance, per_page=100` の既存キー体系に乗るため、**表示 perPage=100 で通常検索（relevance）した利用者と gemIndex 検索の raw fetch がキャッシュを共有**できる（偶然のヒット率向上）。round1 の「keyword 単位の巨大 blob」案より部分再利用性が高く、こちらのほうが優れている。
+
+**それでも変わらない点（メモリ懸念は継続）**: page 単位に分割しても、1 検索あたり最大 1,000 件分のデータ総量は変わらない（10 エントリに分散するだけ）。`InMemoryCache` に上限・LRU が無い点（round1 指摘）は `domain_arch` 案でも未解決。実装 Issue に持ち越すべき。
+
+---
+
+### `ux_paging` への応答
+
+争点3 前提条件①「`totalCount` は GitHub の生値を保つ」は私のキャッシュ設計と衝突しない。`totalCount` はキー生成にもキャッシュ判定にも使わない値（`SearchResult` のペイロード内の一データ）なので、raw ページ単位キャッシュ（上記 concession 後の設計）でも usecase が 1 ページ目の `totalCount` をそのまま最終結果へ転記すれば足りる。10 ページの応答間で `total_count` が食い違う可能性（TTL 60 秒内でも GitHub 側の状態変化はありうる）は既存の「キャッシュミス最悪ケースで見積もる」方針の範囲内で無視してよいレベルとみる（`repository-publication-review.md` §7.2 も同じ割り切り）。
+
+---
+
+### `scope_test` への応答
+
+**1. `enforceSearchRateLimit` の修正は `SP-16a` に入れるべき（`SP-16b` へ回すと本番でレート枠を焼く）。**
+
+`SP-16a` の定義（「全ページ取得（打ち切り条件込み）+ 全件キャッシュ + join usecase + gemIndex ソートオプション追加」）は、**まさに multi-page fetch が有効になる境界そのもの**。`enforceSearchRateLimit`（`rate-limit.ts:20`）が `sort` を見ずに「1 リクエスト = 1 消費」で回している限り、`SP-16a` が単独でマージされた瞬間から「1 クライアントが 60 秒間に 60 回 gemIndex 検索 → upstream 最大 600 call/分」の穴が本番に露出する。`SP-16b`（カード表示リッチ化・表示専用の差分）にはこの穴を防ぐ理由が一切無いので、切り分けの基準（表示 vs 挙動）にも合致する形で **`SP-16a` 必須項目**として明記してほしい。
+
+**2. `scope_test` 争点5 の「同時 3 人で枯渇」と私の「2.3 名で頭打ち」は別の 2 つのリスクで、両方とも `SP-16a` の対象。**
+
+`scope_test` の 3 人瞬間バーストの見積り（30 req/分 ÷ 10 call ≒ 3 検索が限界）と、私の継続的同時実利用者モデル（30 ÷ (1.3 検索/分/人 × 10) ≒ 2.3 名）は**近い数値で相互に補強**している（正常利用・複数の異なる利用者による共有枠の枯渇）。これは「D-30 の選択が生む既知の代償」であり、`enforceSearchRateLimit` を直しても消えない（アプリ全体の共有 30 req/分という総量自体は変わらないため）。
+
+一方、私が争点6で指摘したのは**これとは別の穴**: 単一クライアント（1 IP）が悪意・誤操作で連射した場合に、現行の per-IP 自己スロット（60 req/60秒）が **一切歯止めにならない**という構造的欠落。前者（総量の自然な枯渇）は PR 本文への注記で運用回避できる性質のものだが、後者（単一クライアントの連射）は**注記では防げない**（利用者は PR 本文を読まない）。よって `SP-16a` には最低限、`enforceSearchRateLimit` に `sort` を渡し gemIndex 用の別スロット（`wrangler.jsonc` に低い上限のエントリを追加）を持たせる変更を含めるべき、という結論は変えない。
+
+**3. 1,000 件取得のプレビュー環境での現実性**: `scope_test` の見積り（レイテンシ 2〜5 秒・直列実行必須）は妥当と見る。私のレンズからの追加情報は「メカニズムとしては動くが、レート枠は共有総量なので**操作レビュー中に他セッションの試行と鉢合わせると 429 になりうる**」点で、これは `scope_test` 自身が争点5で既に書いている残余リスクと同じ結論。付け加えるとすれば、**`SP-16a` に `enforceSearchRateLimit` の gemIndex 別スロット修正が入っていれば**、少なくとも「PR レビュー中の 1 人の連続操作」が自分自身の枠を食い潰して再現不能になるケースは緩和できる（別スロットの上限を操作レビューの往復回数に見合う値にしておけば）。
+
+### `ux_paging` — 反論
+<sub>2026-08-21T10:04:08+09:00</sub>
+
+## `rate_cache` への回答: 「全件取得は `sort=gemIndex` 限定」で挙動差は受け入れられるか
+
+**受け入れられる。数値面（総件数・ページ数）は変わらず、変わるのは応答時間だけであり、それは既に確定仕様の代償として明示済みだから。**
+
+- **総件数**: `D-30①`「件数は変わらない」により `totalCount` は常に GitHub の生値。ソートを切り替えても同じキーワードなら同じ数字が出る。不整合なし。
+- **ページ数（上限）**: 自分の round1 分析どおり `maxPageFor(perPage) = floor(1000/perPage)` は GitHub 検索 API 自体の 1,000 件上限に由来する **ソート非依存の定数** であり、`rate_cache` の「gemIndex 選択時だけ 10 call」案でも `lastPage` の計算式は変わらない。ソート切替でページ数表示がガタつくことはない。
+- **応答時間**: これが唯一実際に変わる指標（scope_test 見積もりで 2〜5 秒）。ここは受け入れる。理由は 3 つ:
+  1. 検索・ソート切替はいずれも `SortPicker` の GET リンクによる **フルページ遷移**（`NFR-3`・クライアント JS なし）であり、gemIndex 以外のソート切替も含め「明示的な操作の直後に新しいページが読み込まれる」体験は元から同じ。応答時間の絶対値が伸びるだけで、体験の *種類* は変わらない。
+  2. `AC-8` が要求する「読み込み中の表示」はソート値に関わらず適用される既存要件であり、gemIndex 専用の新しい状態を作る必要がない（実装層＝Suspense/`loading.tsx` かどうかは自分のレンズ外なので `domain_arch`/`scope_test` に委ねる）。
+  3. `D-30②` の決定文自体が「素直な挙動を優先し代償は吸収策で緩和する」という前提で確定しているため、応答時間差はスプリントの前提として既に飼い主合意済み。
+
+一方で **UI 側で 1 つだけ追加を推奨する**: `SortPicker` の `gemIndex` 選択肢の近くに 1 行の短い注記（例:「取得に数秒かかることがあります」）を出す。round1 で提案した被覆率の注記と合わせて 1 つの注記に統合してよい。これは新規 UI 文言なので `E-4`（i18n）に従い英語文言も同時用意（実装手段レベルなので確認不要・仮定として記録）。
+
+**却下する代案**: 「gemIndex を既定 sort にする」「常時全件取得にする」はいずれも `rate_cache` の争点1 分析（23 名→2.3 名）で否定済みであり、UX 観点からもこちらから代案を出す必要はない。`rate_cache` 案（gemIndex 選択時限定）を支持する。
+
+---
+
+## `scope_test` への回答: `SP-16a`（最小カード表示）だけで操作レビュー手順 3 を満たせるか
+
+**満たせない。反対する — ただし分割案そのものではなく、`SP-16a` の「最小」の定義に反対する。**
+
+操作レビュー手順 3 の原文（`user-story-map.md` §5.3・round1 で確認済み）:
+> 各カードで、なぜ上位なのか（被依存数と star の乖離）がわかる
+
+`scope_test` の `SP-16a` 定義（争点7・1.3 節）は「カード表示は最小（Gem Index の数値 or 簡易バッジのみ）」「乖離の詳しい説明文は次回（`SP-16b`）」としている。ここが問題:
+
+- **Gem Index の数値だけを出すバッジ**（例: 「Gem Index: -1.234」）は、それ単体では「被依存数と star の乖離」を **表していない**。Gem Index は 2 つの順位差から算出された派生スコアであり、生の数字だけを見ても利用者は「なぜ」を読み取れない（式を知っている前提になってしまう）。これは手順 3 の括弧書きが明示的に要求している 2 要素（被依存数・star）が画面上に無いことを意味する。
+- 一方、**被依存数（`dependentCount`）+ star（既存フィールド）+ Gem Index の 3 つの生数値を並べて出す**（`daily-digest.tsx` の `dependentLabel`/`starsLabel`/`gemIndexLabel` と同じレイアウトパターンをそのまま流用）だけで、手順 3 は説明文なしで満たせる。利用者は「被依存数が多いのに star が少ない」を数字の比較から読み取れる。**これは "詳しい説明文"（散文的な理由付け）ではなく "生データの並置" であり、`scope_test` が `SP-16b` に想定している「リッチ化」の水準には達していない。**
+- コスト面でも問題にならない: `dependentCount` は `scope_test` 自身が `SP-16a` に含めている C（join usecase）で候補プールから取得可能な値（`gem.ts` の `Gem` 型が既に `dependentCount` を持つ）。つまり **join を実装した時点で `dependentCount` はメモリ上に既にある**。それを表示に一行足すだけなので、`SP-16a` の見積もりに実質増分はない。
+
+**結論**: `SP-16a` の「最小カード表示」を「Gem Index の数値のみ」と定義するなら手順 3 を満たせないため反対する。「被依存数 + star + Gem Index の 3 数値を並べる（説明文なし）」へ定義を修正すれば、追加コストほぼゼロで `SP-16a` は手順 3 を満たせるので分割案自体には賛成に回る。1.3 節のデモ説明（`SP-16a` は「手順 3 は簡易表示で満たす」）は「簡易表示 = 3 数値の並置」に明文化してほしい。`SP-16b` に残すのは、それでもなお散文的な説明文やグラフ等の視覚化に踏み込む場合のみ（これは `scope_test` 自身が私への牽制で書いている境界と一致する — 私はグラフ化を提案していない）。
+
+---
+
+## `domain_arch` への回答: Gem Index の UI 表示可否は「仕様解釈の分岐」か
+
+**分岐ではない。すでに `user-story-map.md` §5.3 の操作レビュー手順 3 が表示を明文で要求している。確認不要（`SD-3` 対象外）。**
+
+`domain_arch` は「値オブジェクトについて」節末尾で、「join 結果に Gem Index 値を表示するかは `prd.md` 未読のため仕様解釈の分岐としてオーケストレーターに投げるべき」としているが、round1 で自分が実際に読んだ手順 3 の原文（上記引用）が答えを与えている: **各カードで「なぜ上位か（被依存数と star の乖離）」が分かることは必須の操作レビュー手順であり、任意のオプションではない。**
+
+`SD-3` の発火ラインは「仕様解釈が 2 通り以上あり、選択で成果物が変わるとき」に限定される（`sprint-development-rules.md`）。ここは 2 通りの解釈が存在せず、単に **ドキュメントを読めば分かること** なので、`SD-4`「書いてあることを聞かない」が優先し、確認に回すのは CP-6 違反になる。
+
+したがって `domain_arch` の値オブジェクト設計判断（`RepositorySummary` に `readonly gemIndex: GemIndex | null` を足すか）は **確認待ちにせず前提として確定してよい**。加えて上記 `scope_test` への回答のとおり `dependentCount`（`number | null` 相当）も同じフィールド追加の対象に含めてほしい（gemIndex だけでは手順 3 を満たせないため）。
+
+---
+
+## `scope_test` の E2E 決定論性の穴は、私が提案した表示仕様の検証に影響するか
+
+**直接影響する。`scope_test` の指摘を全面的に支持する。**
+
+自分が round1 で提案した表示仕様（Index ありカードにバッジ、`dependentCount`+star+gemIndex の並置）は、**候補プールと検索スタブが `repositoryFullName` で 1 件も重ならない現状の E2E fixture では検証不能**。既存の `e2e/fixtures/repos.json`（`octostub/*`）だけでテストすると、join 結果は常に「全件 Index なし」になり、バッジが出る分岐そのものが一度も実行されない — つまり手順 3 の E2E 検証は静かにスキップされたまま Green になる（偽陰性ならぬ「偽 Green」）。`scope_test` が 3.2 節で提案する `GEM_DIGEST_SOURCE_PATH` 的な口 + E2E 専用の小さな固定候補プール（`repositoryFullName` をスタブ側と一致させる）は、私の表示仕様が正しく実装されたことを確認する **唯一の経路**なので、この対策を見積もりから外さないよう重ねて要望する。
+
+補足（軽量な代替経路）: E2E とは別に、`RepositoryList` の **コンポーネント単体テスト**（`repository-list.test.tsx` の拡張）でも、`gemIndex`/`dependentCount` を持つ `RepositorySummary` のフェイクを 1 件渡してバッジ描画を検証できる。こちらは E2E の環境変数機構を待たずに Red→Green で先に書けるため、`scope_test` 提案の §2 内側ループ（争点2・TDD の進め方）にステップとして 1 つ足すことを推奨する（E2E の穴を埋める代替ではなく、実装を早める補完）。
+
+### `scope_test` — 反論
+<sub>2026-08-21T10:04:39+09:00</sub>
+
+# scope_test（レンズ: スコープとテスト戦略）round2 rebuttal
+
+## 0. 結論から: round1 の判定は維持する。ただし SP-16a/SP-16b の境界線は修正する
+
+**3 レンズ案を合算しても `sp:8`（グレーゾーン・超過リスク高）の判定は変わらない。** ただし内訳が round1 時点の想定から変わった。要点:
+
+- `domain_arch` の「既存 `RepositoryQueryPort.search()` をユースケース内で 10 回ループする」設計は、**キャッシュ・single-flight を無改修で流用できる**ため、`rate_cache` が提案した新キャッシュ名前空間（`search-raw:`）+ 専用 in-flight マップの新設分がまるごと不要になる。これは大きな削減。
+- 一方で `rate_cache` の `enforceSearchRateLimit` 欠落指摘は **別 Issue に逃がせない**（後述 §2）。小さいが確実な追加。
+- `ux_paging` の反論（バッジに `dependentCount` も要る）は **認める**。round1 で「カード表示は最小限（gemIndex 数値のみ）を `SP-16a` に残し、リッチ化は `SP-16b`」としていたが、これは操作レビュー手順 3 の文言（「被依存数と star の乖離がわかる」）を満たさない。ただし `daily-digest.tsx` の既存パターン流用のため、想定していたほど高くつかない。
+
+差し引きすると **合計実装量は round1 の見積もりからほぼ横ばい**（キャッシュ新設の削減 ≒ バッジ前倒し + レート制限修正の追加）。判定は維持: 「収まるが超過リスクの高いグレーゾーン。縦切り分割案は用意しておく」。
+
+---
+
+## 1. `domain_arch` vs `rate_cache`: キャッシュ層の衝突は `domain_arch` 案の方が実装量が小さい（第三者判定）
+
+`container.ts:78-79` を確認した:
+
+```ts
+export function searchRepositoriesUseCase(accessToken?: string | null): SearchRepositories {
+  return makeSearchRepositories({ repos: makeCachingRepositoryQuery({ accessToken }) })
+}
+```
+
+**`makeSearchRepositories` に渡る `deps.repos` は既に `CachingRepositoryQuery`（キャッシュ + single-flight 込み）である。** つまり `domain_arch` が言う「ユースケース内で `deps.repos.search()` を `page=1..10` 分ループする」を素直に実装すると、**10 回の呼び出しそれぞれが既存の `search:v2:kw:page=N:sort=X:per_page=100` キーで自動的にキャッシュされ、既存の `inFlightSearch`（per-page 単位）で single-flight もタダで効く**。新しいキャッシュキー関数も、新しい in-flight マップも、`cached-repository-query.ts` の改修も **一切不要**。
+
+これは `rate_cache` が指摘した「争点2: `search-raw` 名前空間 + 専用 in-flight マップが要る」を丸ごと代替する。しかも副作用として `rate_cache` が争点6の補足で挙げた懸念（「`search-raw` 名前空間には既存 single-flight マップが効かない、ページ番号違いで合流しない」）も **最初から発生しない**: 内部ループが常に固定の内部ページ集合（`per_page=100 固定・page=1..10`）を叩く設計にすれば、利用者が選んだ表示 `page`/`perPage`（20/50/100 の任意組み合わせ）に関わらず、同じキーワードの gemIndex 検索は常に同じ 10 個の内部キャッシュキーへ収束する。表示ページが違っても single-flight は合流する。
+
+**第三者としての判定: `domain_arch` 案（既存ポートをループで再利用）を採用すべき。** 理由は 3 つ:
+1. 新規コード量が明確に少ない（`cache-key.ts` / `cached-repository-query.ts` 無改修）
+2. `rate_cache` 案より **single-flight の合流粒度が広い**（`rate_cache` 案はキーワード単位の新規 in-flight マップを別途正しく実装する必要があるが、既存流用なら実装ミスの余地自体が無い）
+3. `cache-key.ts` の docstring が「生成関数以外でキーを組み立てない」と明記しており、名前空間を増やすたびにこの docstring の対象を広げる設計変更は最小に留めたい（`domain-model.md` §4 の精神）
+
+**ただし懸念点を 1 つ指摘する**: `domain_arch` の実装例コード（round1 コードスニペット）は内部ループで `deps.repos.search(query)` を呼ぶ際に **`query.sort` をそのまま渡す設計に読める**。`query.sort === 'gemIndex'` のまま `GithubRepositoryQuery.search()` に渡ると、`github-repository-query.ts` の `if (query.sort !== 'relevance') { url.searchParams.set('sort', query.sort) ... }` 分岐に引っかかり、**`sort=gemIndex` という無効な値が実際に GitHub API へ送られ 422 相当のエラーになる**（`domain_arch` 自身が「`GithubRepositoryQuery` は無改修」と明言しているにもかかわらず、これは無改修のままでは壊れる）。内部ループ用の `SearchQuery` は `sort` を `'relevance'`（または固定の安全な値）に上書きして構築する必要がある——実装手段レベルの修正で規模には影響しないが、**単体テストで「内部フェッチが `sort=gemIndex` を GitHub 側へ漏らさないこと」を Red→Green で明示的に確認する項目として `§2 の内側 2.3` に追加する**。
+
+**TTL の一貫性について（`rate_cache` 争点2への補足）**: `rate_cache` は「10 call を 1 エントリに集約しないと、TTL 境界で個々のページが別タイミングで失効し combined 結果が不整合になる」と暗に懸念しうるが、`domain_arch` 案採用でもこの懸念は残る（10 回の `cache.get`/`cache.set` は逐次実行なので、フェッチ中に前のページの TTL（60 秒）が切れることは通常の応答時間（数秒）では起きない）。実害はほぼ無いと判断し、これを理由に `rate_cache` 案へ戻す必要はない。
+
+---
+
+## 2. `rate_cache` の争点6（`enforceSearchRateLimit` 欠落）: **`SP-16a` のスコープ内**と判定する（別 Issue にしない）
+
+`CLAUDE.md` `core-principles.md` CP-1 の判定基準:
+
+> 自分がこのタスクで変更したコードパス上の壊れ（自分の変更で落ちたテスト・自分が編集したファイルの参照先が不在・自分が追加した処理が動かない等）は 報告ではなく即修正する
+
+`enforceSearchRateLimit` の「1 検索 = 1 upstream call」という暗黙の前提は、**`SP-16` がまさに壊す前提そのもの**（`sort=gemIndex` を追加した瞬間に 1 検索 = 最大 10 call になる）。これは「無関係な既存の壊れ」ではなく、**このスプリントの変更が直接作り出す壊れ**（sort の選択肢を増やす変更と、レート制限が sort を見ない実装が、同じ PR の中で矛盾を起こす）。放置すると本番で「1 クライアントが upstream 30 req/分の共有枠を 1 人で 20 倍消費できる」実害のある穴を新規に開けたまま出荷することになり、`project-mission.md` の運用継続性（無料枠に収まる・レート制限で破綻しない）という品質ゲートにも反する。**別 Issue へ切り出す判断は採らない。**
+
+**ただしフルスコープの `rate_cache` 提案（新スロット名 + `wrangler.jsonc` エントリ追加 + LRU 上限設計）を全部 `SP-16a` に含める必要はない**、と切り分ける:
+
+- **`SP-16a` に含める（必須・小規模）**: `enforceSearchRateLimit` に `sort`（または内部コスト）を渡せるようにし、`sort === 'gemIndex'` のときは **別スロット・低い上限**で消費する。`app/api/search/route.ts` / `app/[locale]/page.tsx` で `sort` を早期パースする変更、`wrangler.jsonc` へ 1 エントリ追加。いずれも変更箇所は数ファイル・数行単位で、`rate-limit.ts` の既存構造（`WorkersRateLimit.consume(key)`）を壊さない加算的変更。
+- **別 Issue へ切り出す（本スプリント外）**: `InMemoryCache` の LRU 上限・メモリ使用量の全体設計。これは `SP-16` 固有の壊れではなく、`SP-5`（キャッシュ導入時）から存在する **既存の設計前提**（軽量な 1 ページ分のみを想定）に対する一般的な指摘であり、`gemIndex` 実装が引き金にはなるが「このタスクで変更したコードパス」そのものではない（境界は 上記 CP-1 の「自分の変更が作ったか」で判定）。1,000 件 × 想定同時キーワード数程度なら実測ベースでは即座に破綻する規模ではなく（`rate_cache` 自身も「要確認」止まりで実測数値を出していない）、`SP-16` の完了条件には含めない。
+
+---
+
+## 3. `ux_paging` の反論（バッジに `dependentCount` が要る）を認め、分割案を修正する
+
+`ux_paging` の指摘は正しい: 操作レビュー手順 3 は「**被依存数と star の乖離**がわかる」と明記しており、`gemIndex` の数値 1 個だけの表示では「乖離」（2 項目の比較）を説明できない。round1 の `SP-16a`（最小カード＝ Index 数値のみ）はこの手順を満たさない。**この点は撤回する。**
+
+**分割案の修正**（`C-1`〜`C-5` を単独スプリントで満たす必要があるため、境界を引き直す）:
+
+**`SP-16a`（1 本目・修正版）**: 全ページ取得（内部ループ・`domain_arch` 案採用・§1）+ join usecase + `gemIndex` ソートオプション + `enforceSearchRateLimit` の sort 別スロット化（§2）+ **`RepositorySummary` への `gemIndex?` / `dependentCount?` optional フィールド追加 + `daily-digest.tsx` のバッジパターンを流用したカード表示**（`ux_paging` 提案どおり。**新規デザインではなく既存パターンの再配線**なので当初懸念していたほど重くない）+ 対応する単体テスト + E2E（操作レビュー手順 1〜6 を **フルカバー**、手順 3 も含む）。
+
+**`SP-16b`（2 本目・縮小）**: `SortPicker` で `gemIndex` を選んだときだけ出る注記文言（「Gem Index は一部のみ算出されています」・`ux_paging` 提案）の追加と i18n 仕上げ、および `dependentRank`/`starRank` の視覚的な比較表現（棒グラフ的な強調など、テキストバッジを超える表現）が要ると判断された場合の拡張。
+
+**この修正により、`SP-16a` 単独で操作レビュー手順 1〜6 が全て通しで確認できる**（`ux_paging` の反論は解消され、分割案は成立する）。`SP-16a` の見積もりは round1 時点より上がる（バッジ + `dependentCount` 配線 + レート制限修正の分）が、§1 のキャッシュ簡素化で相殺されるため、**単独スプリント（分割しない場合の `SP-16` 全体）の合計規模としては round1 判定から大きく動かない**。
+
+---
+
+## 4. 再見積もり（3 レンズ案 + 上記の取捨選択を反映）
+
+| 要素 | round1 見積もり | round2 修正後 |
+|---|---|---|
+| 全ページ取得ループ | 中 | 中（変わらず。ただし sort 漏れ防止のテスト項目を追加） |
+| 全件キャッシュ | 中（新設） | **削除**（既存ポートの流用で不要・§1） |
+| join usecase | 中 | 中（変わらず。`domain_arch` 案で「既存ユースケース内分岐」に確定・新規ファイルなし） |
+| sort-order 拡張 + 波及 | 小〜中 | 小〜中（変わらず） |
+| カード表示（バッジ） | 中（`SP-16b` 送り想定だった） | 小〜中（`SP-16a` へ前倒し。ただし既存パターン流用のため単価は下がる） |
+| `enforceSearchRateLimit` の sort 別スロット化 | （round1 では未検討） | **新規・小**（§2） |
+| 単体テスト | 中 | 中（対象が増えた分やや増） |
+| E2E | 中〜大 | 中〜大（変わらず・§3.2 の候補プール差し替え機構は依然必要） |
+
+**合計判定: round1 と同じく「収まるが超過リスクの高いグレーゾーン」を維持する。** キャッシュ簡素化による削減と、レート制限修正・バッジ前倒しによる追加がほぼ相殺し、正味の変動は小さい。着手セッションは §3 の修正済み `SP-16a`/`SP-16b` 分割を初手から用意しておくことを推奨する（「1 firing で `SD-1` に届かなければ次 firing で分割」の待機ではなく、最初から境界を決めておいた方が手戻りが小さい）。
+
+### `domain_arch` — 反論
+<sub>2026-08-21T10:04:49+09:00</sub>
+
+## 1. `scope_test` の `SP-16a`/`SP-16b` 分割: 自分の層構成は `SP-16a` 単体で成立するか
+
+**成立する。中途半端にならない。** 私が round1 で提案した層構成（`search-repositories.ts` の `makeSearchRepositories` に `GemDigestPort` を追加し内部分岐、`composition/container.ts` で束ねる）は、`SP-16a` の要件（全ページ取得 + 全件キャッシュ + join usecase + `gemIndex` ソートオプション追加 + カード表示は最小 + テスト + E2E）のうち **「join usecase」と「ソートオプション追加」の部分をそのまま満たす**。`SP-16b`（カードのリッチ化・レート予算防御強化）へ回すのは表示層（争点4の付随論点で私が挙げた `RepositorySummary` への optional フィールド追加の要否）とレート限定強化のみで、**usecase 層の設計はどちらの分割でも一切変わらない**（`SP-16b` で追加するのは表示用データと防御コードだけで、join のアルゴリズム自体に手を入れない）。分割してもユースケース層が二度書きになったり中間状態で不整合になったりしない設計だと確認できた。
+
+## 2. `scope_test` の過剰実装牽制（domain_arch 名指し）への回答
+
+牽制内容: 「`RepositoryQueryPort` に汎用の全ページ取得抽象メソッドを追加したり、ページネーション自体を再利用可能フレームワークとして設計し直す提案が出たら要注意」。
+
+**該当なし。** round1 で明示的に (B)（`RepositoryQueryPort` の拡張）を却下しており、`RepositoryQueryPort#search` の「1 呼び出し = 1 ページ」契約は一切変更しない前提で設計している。全ページ取得ループは `search-repositories.ts`（usecase 層）の **private ヘルパー関数 1 本**（`export` しない・YAGNI）に閉じており、他の検索経路（`sort=relevance/stars/updated`）や `RepositoryQueryPort` の型そのものには影響しない。牽制の対象にはなっていないことを確認として記録する（concession ではなく合意の明示）。
+
+## 3. `rate_cache` の「keyword 単位の新キャッシュ名前空間（`search-raw:`）」案との整合性
+
+**部分的に反論する。私の層構成では新しい名前空間そのものは不要と考える。**
+
+`rate_cache` の案は「10 call ぶんの生データを 1 キャッシュエントリに集約する」ことが目的だが、それを実現する前提として **usecase が `CachePort` を直接叩く**（または `RepositoryQueryPort` を経由せず生の `GithubRepositoryQuery` を叩く）新しい依存経路が要る。これは usecase の依存が `RepositoryQueryPort` + `GemDigestPort` の2本から `CachePort` 込みの3本に増え、「usecase は手続きに徹しキャッシュ管理をしない」という `W-3` の精神から外れる。
+
+**対案**: 私の round1 のヘルパー（`searchRankedByGemIndex`）は、10 回のループを **既存の `deps.repos.search()`（= composition root で束ねた `CachingRepositoryQuery`）をそのまま呼ぶ**。ただし round1 では見落としていた点を 1 つ修正する（`scope_test` D への回答も兼ねる。§5 参照）: 内部ループが構築する `SearchQuery` は `sort: DEFAULT_SORT_ORDER`（`relevance`。`gemIndex` を GitHub API へ送ってはいけないため）・`perPage: 100`（`parsePerPage(100)`）に固定する。これにより各ページ呼び出しは `cache-key.ts` の **既存の `search:` 名前空間**（`search:v2:{keyword}:page={n}:sort=relevance:per_page=100`）にそのまま乗る。
+
+この設計だと:
+- **新しいキー形状・`cache-key.ts` の変更が不要**（`rate_cache` の提案する `search-raw:` 名前空間を作らずに済む）。
+- 通常の `relevance` ソートを `per_page=100` で検索した利用者がいれば、**同じキャッシュエントリを再利用できる**（新規名前空間だと得られないメリット）。
+- `rate_cache` が争点6の隣で指摘した「既存 `inFlightSearch` は `search-raw` の粒度に効かない」という懸念は、**新しい名前空間を作らない前提では発生しない**。既存の single-flight（`CachingRepositoryQuery` の in-flight マップ）が page 単位でそのまま効く。
+
+**認める点**: この設計は「10 回のキャッシュ読み取り」になる（`rate_cache` の「1 エントリに集約」なら 1 回で済む）。読み取り自体は `InMemoryCache`（素の `Map`）なので待ち時間としては無視できる規模だが、`rate_cache` が争点2で挙げた TTL 再検証・`search-raw` エントリ数上限の議論は、私の対案では「ページ単位で既存 `search:` 名前空間に混ざる」形になるため、**メモリ影響の見積もり（§「キャッシュのメモリ影響」）は名前空間を変えても変えなくても同程度に成立する**（1,000件 = 1〜2MB/keyword という試算は名前空間の粒度に依存しない）。ここは `rate_cache` の見積もりをそのまま採用してよい。
+
+**結論**: 新規名前空間の追加は不要という反論を維持しつつ、TTL・メモリ上限の懸念自体は正当なので実装 Issue に残すべき、という点では合意する。
+
+## 4. `ux_paging` の `RepositorySummary` への optional フィールド追加案
+
+`domain-model.md` §3 は「`RepositorySummary` は検索レスポンス**だけ**で作れる」ことを `RepositoryDetail` との分離基準にしている。候補プール（`GemDigestPort`）はネットワーク往復を伴わない静的 JSON の join なので、この基準（追加 API 呼び出しの有無）には抵触しない。
+
+一方で `domain-model.md` §6 は Search と Gem Index を **別コンテキスト**とし「共通化を急がない」と明言し、§2.2 でも `starCount` と `Gem.stars` の命名衝突を「別コンテキストの同名概念」として **意図的に統合を見送っている**。`RepositorySummary`（Search コンテキストの型）に `gemIndex`/`dependentCount`（Gem Index コンテキストの属性）を直接生やすことは、この既存方針と正面から矛盾する。
+
+ここは **`concession` として別途投稿する**（詳細はそちらを参照）。結論だけ先出しすると: optional `gemIndex` フィールドの追加自体は認めるが、`dependentCount` の追加には反対し、`domain-model.md` §3/§6 に「この 1 フィールドに限りコンテキスト越境を許容する」旨を明記することを条件にする。
+
+## 5. `scope_test` の E2E 決定論性の穴（候補プールと検索スタブが `repositoryFullName` で重ならない）は自分の層構成で解決できるか
+
+**解決できる。むしろ私の層構成の方が `scope_test` の対策案と相性が良い。**
+
+`scope_test` の対策案（`GEM_DIGEST_SOURCE_PATH` で composition root から候補プールの読み込み元を差し替え可能にする）は、私が round1 で提案した配線（`searchRepositoriesUseCase()` にも `gemDigest: new StaticGemDigest()` を composition root から注入する）と **同じ差し替え口を共有できる**。具体的には:
+
+```ts
+// src/composition/container.ts
+function makeGemDigestPort(): GemDigestPort {
+  const overridePath = process.env.GEM_DIGEST_SOURCE_PATH
+  return overridePath ? new StaticGemDigest(readJsonSync(overridePath)) : new StaticGemDigest()
+}
+
+export function getDailyDigestUseCase(): GetDailyDigest {
+  return makeGetDailyDigest({ port: makeGemDigestPort() })
+}
+
+export function searchRepositoriesUseCase(accessToken?: string | null): SearchRepositories {
+  return makeSearchRepositories({
+    repos: makeCachingRepositoryQuery({ accessToken }),
+    gemDigest: makeGemDigestPort(),
+  })
+}
+```
+
+`makeGemDigestPort()` を 1 箇所に共通化するだけで、`getDailyDigestUseCase()` と新設の `searchRepositoriesUseCase()` の join の両方が **同一の E2E 専用候補プール**（`repositoryFullName` をスタブ `many-hits`/新規 `gem-index-hits` と一致させたもの）を参照できる。これは round1 で私が「新規 composition ファイル不要、`container.ts` に薄く追加するだけ」と言った設計方針の自然な延長であり、`scope_test` が挙げた決定論性の穴を **usecase 層・composition root の変更だけで**（infrastructure 側や `StaticGemDigest` 自体の変更なしで）解消できる。同意し、実装時にこの共通化を Issue に明記することを提案する。
+
+### `domain_arch` — 譲歩
+<sub>2026-08-21T10:04:49+09:00</sub>
+
+## `ux_paging` の `RepositorySummary` optional フィールド案への譲歩
+
+`ux_paging` の「`RepositorySummary` に `gemIndex?: GemIndex` を足し、usecase 層で候補プールと join して埋める」という設計方針そのものは **`gemIndex` フィールド 1 つに限り採用する**。理由:
+
+- カード表示で「なぜ上位か」を示す要件（操作レビュー手順3・`scope_test` の `SP-16a` 最小構成でも「Gem Index の数値 or 簡易バッジ」は残る）がある以上、**join の結果（Gem Index 値そのもの）を UI まで運ぶ経路がどこかに必要**で、`SearchRepositories` の入出力契約（`SearchRepositoriesInput -> SearchResult`）を変えない私の round1 方針と両立させるには、`SearchResult.items`（＝ `RepositorySummary[]`）にフィールドを足す以外の現実的な経路がない。
+- `domain-model.md` §3 の「`RepositorySummary` は追加 API 呼び出しなしで作れる」という分離基準には抵触しない（候補プールは静的 JSON でネットワーク往復を伴わない）。
+
+**ただし 2 点、条件を付けて一部は譲らない**:
+
+1. **`dependentCount` は追加しない**。`ux_paging` は「なぜ上位か（被依存数と star の乖離）」の説明に `stars`（既存）と `dependentCount`（新規）の両方が要るとしているが、`gemIndex` 値自体が両者の差分を既に集約した指標であり、`stars`（既存フィールド）+ `gemIndex`（新規1フィールド）だけで「差が大きいほど過小評価」という説明は成立する。`dependentCount` の生値まで `RepositorySummary` へ持ち込むのは Gem Index コンテキストの属性をさらに 1 つ Search コンテキストへ漏らすことになり、`domain-model.md` §6（「共通化を急がない」）への抵触を最小限に留めるため、**最初の実装では見送り、UI 文言で不足と判明したら別途追加を検討**する（`SP-16b` 相当・YAGNI）。
+2. **`domain-model.md` の更新を同じ PR の必須項目にする**。§3 の「`RepositorySummary` は検索レスポンスだけで作れる」という記述の直後に、「`gemIndex`（`GemIndex | undefined`）のみ例外的に Gem Index コンテキストの候補プールから注入する。`dependentCount` 等の他属性は持ち込まない」旨を追記し、§6 の「共通化を急がない」原則に対する **意図的でスコープを限定した例外**であることを明記する（§2.2 が `starCount`/`Gem.stars` の衝突を「別コンテキストの同名概念」として記録しているのと同じ扱い方で、今回は「1 フィールドだけ越境させた」という決定を残す）。これを書かずに実装だけ進めると、次にこのファイルを読む人が「いつの間にか2コンテキストが混ざっている」と誤読する。
+
+以上の条件（`gemIndex` のみ・`domain-model.md` 更新を伴う）で `ux_paging` の設計方針に同意する。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-21T10:06:57+09:00</sub>
+
+## 合意点（4 レンズが一致した事項）
+
+1. **join の層**: `search-repositories.ts` の `makeSearchRepositories` に `GemDigestPort` を追加し、内部で `sort === 'gemIndex'` を分岐する。`RepositoryQueryPort` の「1 呼び出し = 1 ページ」契約は**変更しない**。全ページ取得ループは usecase 層の private ヘルパー 1 本に閉じる（`export` しない・YAGNI）。`scope_test` が第三者判定でこの案を「実装量が最小」と評価し、`rate_cache` も新名前空間案を撤回した。
+
+2. **キャッシュは新設不要**（`rate_cache` の concession）。内部ループが `sort: 'relevance'` / `perPage: 100` に固定した**内部 `SearchQuery`** を組み立てて既存の `deps.repos.search()`（= composition root で束ねた `CachingRepositoryQuery`）を呼べば、既存の `search:v2:{keyword}:page={n}:sort=relevance:per_page=100` キーにそのまま乗る。`cache-key.ts` / `cached-repository-query.ts` は無改修。`CACHE_SCHEMA_VERSION` のバンプも不要。既存の `inFlightSearch` による single-flight もページ単位でそのまま効く。**副次効果**: 通常の relevance 検索（`per_page=100`）とキャッシュエントリを共有できる。
+
+3. 🔴 **`sort='gemIndex'` を GitHub API へ漏らしてはならない**（3 レンズが独立に指摘）。`github-repository-query.ts` は `sort !== 'relevance'` なら値をそのまま `url.searchParams` に載せるため、無改修のままだと無効な `sort=gemIndex` が送られて 422 相当になる。内部ループ用 `SearchQuery` の `sort` を `relevance` に上書きすることが**必須**。
+
+4. **全件取得は `sort=gemIndex` 選択時のみ**（常時化しない）。`rate_cache` の試算では、常時化すると upstream 30 req/分の枠で耐えられる同時実利用者が **23 名 → 2.3 名**まで劣化する。`ux_paging` は「総件数・ページ数は不変で応答時間だけが変わる」ため UX 上受け入れ可能と判定した。
+
+5. **ページは取得済み配列のスライス**にする。`AC-6` は純粋に URL 契約の話なので影響を受けない。`AC-7` の二層境界（`page-number.ts` の固定上限と `maxPageFor`）もローカルスライスと自然に整合する。**前提条件**: `totalCount` は GitHub の生値を保つこと、スライス式を既存のページング計算と揃えること。UI コンポーネント（`Pagination` / `SortPicker`）は**無改修**で済む。
+
+6. **Index を持たない結果同士は relevance 順を安定ソートで維持する**（`ux_paging` の主担当判定）。
+
+7. **`enforceSearchRateLimit` の欠落は `SP-16` のスコープ内**（`rate_cache` が発見・`scope_test` が判定）。`rate-limit.ts` は `sort` を見ておらず、1 検索 = 最大 10 upstream call になることを数えられない。これは「無関係な既存の壊れ」ではなく **`SP-16` 自身が作り出す壊れ**（`CP-1` の判定基準「自分の変更が作ったか」に該当）なので、別 Issue に逃がさず本スプリントで直す。
+
+8. **E2E の決定論性**: 候補プール（227 件）と検索スタブが `repositoryFullName` で重ならないと、Gem Index 付きの結果が 1 件も出ず操作レビューを検証できない。`container.ts` に共通の `makeGemDigestPort()` を切り出し、環境変数で候補プールの読み込み元を差し替えられるようにする（`getDailyDigestUseCase()` と検索経路の両方が同じ差し替え口を共有する）。
+
+## 対立点と lead 裁定
+
+### 🔴 カードに `dependentCount`（被依存数）を出すか
+
+- **`ux_paging`**: 出すべき。`gemIndex` 値だけでは「被依存数と star の乖離」を示せず、操作レビュー手順 3 を満たさない。日次ダイジェストの既存パターン流用なので追加コストはほぼゼロ
+- **`domain_arch`**: 出さない。`gemIndex` が既に両者の差分を集約した指標であり `stars`（既存）+ `gemIndex`（新規 1 フィールド）で説明は成立する。`dependentCount` まで持ち込むと Gem Index コンテキストの属性をさらに Search コンテキストへ漏らすことになり `domain-model.md` §6（共通化を急がない）への抵触が増える
+
+**裁定: `ux_paging` を採る（`dependentCount` も出す）。** 根拠:
+
+1. **仕様の文言が正本**（`SD-4` の権威順: 仕様 > テスト > 現行コード）。`user-story-map.md` §5.3 の操作レビュー手順 3 は「**被依存数と star の乖離**がわかる」と明示している。被依存数を出さずにこの手順を「完走できた」とは言えない
+2. `gemIndex` は `-6.734〜0.003` という**無次元の値**で、単体では利用者に意味が伝わらない。「被依存数は上位なのに star は下位」という具体が並んで初めて「なぜ上位か」が伝わる
+3. 日次ダイジェストが既に同じ 3 数値を並べており、**表示パターンを再利用できる**（`ux_paging` が実コードで確認済み）
+
+**ただし `domain_arch` の懸念は正当なので条件を付ける**: `domain-model.md` §3 / §6 に「`RepositorySummary` には `gemIndex` と `dependentCount` の 2 フィールドに限り Gem Index コンテキストから注入する。他の属性は持ち込まない」旨を**同じ PR で明記する**（`§2.2` が `starCount` / `Gem.stars` の衝突を記録しているのと同じ扱い）。これを書かずに実装だけ進めると、次に読む人が「いつの間にか 2 コンテキストが混ざっている」と誤読する。
+
+### 分割するか（`scope_test` の `SP-16a` / `SP-16b`）
+
+**裁定: 分割せず 1 本で着手する。** `scope_test` の判定は「収まるがグレーゾーン」であって「超える」ではなく、キャッシュ新設が不要になった分の削減が、バッジ前倒しとレート制限修正の追加とほぼ相殺している。ただし **`SP-14` と同じ規則を適用**する: 3 回の firing を跨いでも `SD-1`（プレビュー URL で操作レビュー完走）に到達しない場合は、`scope_test` の分割案（`SP-16a` = 検索 → 並べ替え → 詳細 → 復帰が完走できる最小 / `SP-16b` = 表示のリッチ化とレート防御の強化）へ縦切りで分割する。
+
+### `InMemoryCache` の LRU 上限・メモリ全体設計
+
+**裁定: 別 Issue**（`scope_test` の切り分けを採用）。これは `SP-5`（キャッシュ導入）から存在する既存の設計前提に対する一般的な指摘であり、`SP-16` が引き金にはなるが「このタスクで変更したコードパス」そのものではない（`CP-1` の境界線）。
+
+## 確認不要と確定した論点
+
+`domain_arch` が「join 結果の Gem Index 値を UI 表示するかは仕様解釈の分岐点ではないか」と提起したが、**`ux_paging` の回答どおり操作レビュー手順 3 が既に表示を要求しており、仕様として確定済み**。`SD-3` 第 2 系統の確認は発火しない。
+
+### `lead` — 判定
+<sub>2026-08-21T10:08:06+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "争点 4: 検索結果 × 候補プールの join をどの層で行うか",
+      "design": "usecase 層で行う。src/usecases/search-repositories.ts の makeSearchRepositories の deps に GemDigestPort を追加し、内部で sort === 'gemIndex' を分岐する。全ページ取得と join は同ファイル内の private ヘルパー 1 本に閉じる（export しない）。RepositoryQueryPort の『1 呼び出し = 1 ページ』契約は変更しない。ドメインサービス（domain/services/）は I/O を持てないため採らない。",
+      "evidence": ["ARCH-1〜ARCH-7（architecture-rules.md）", "domain-model.md §3 / §6", "container.ts:78-79 の既存配線"],
+      "artifacts": ["src/usecases/search-repositories.ts（改修）", "src/composition/container.ts（改修）"],
+      "rejected": "(B) RepositoryQueryPort の拡張 = ポート面積が広がりコンテキストが混在する。(C) ドメインサービス = ドメイン層が I/O を持てず domain/services/ 廃止方針とも矛盾する。"
+    },
+    {
+      "issue": "争点 1: 最大 1,000 件の取得をいつ発火させるか",
+      "design": "sort === 'gemIndex' を選んだときだけ発火させる。他のソート（relevance / stars / updated）は従来どおり単一ページ取得のまま変えない。分岐は usecase 層に置く（インフラの実装詳細にしない）。",
+      "evidence": ["NFR-5", "rate_cache の試算: 常時化すると upstream 30 req/分の枠で耐えられる同時実利用者が 23 名 → 2.3 名へ劣化"],
+      "artifacts": ["src/usecases/search-repositories.ts（改修）"],
+      "rejected": "常時 1,000 件取得 = レート予算を 10 倍消費し、Gem Index を使わない大多数の検索まで巻き込む。"
+    },
+    {
+      "issue": "争点 2: 全件取得結果のキャッシュキー粒度",
+      "design": "新しい名前空間を作らない。内部ループが sort: 'relevance' / perPage: 100 に固定した内部 SearchQuery を組み立てて既存の deps.repos.search() を呼ぶことで、既存の search:v2:{keyword}:page={n}:sort=relevance:per_page=100 キーにそのまま乗せる。cache-key.ts / cached-repository-query.ts は無改修。CACHE_SCHEMA_VERSION のバンプも不要。既存の inFlightSearch による single-flight がページ単位でそのまま効く。",
+      "evidence": ["ADR 0005", "cached-repository-query.ts の readThrough / inFlightSearch", "cache-key.ts の docstring（生成関数以外でキーを組み立てない）"],
+      "artifacts": ["（新規ファイルなし・既存キー体系を再利用）"],
+      "rejected": "keyword 単位の新名前空間 search-raw: = usecase が CachePort を直接叩く新依存が要り『usecase はキャッシュ管理をしない』方針から外れる。既存 single-flight も効かなくなる。rate_cache 自身が round 2 で撤回した。"
+    },
+    {
+      "issue": "争点 2 の実装上の必須注意（3 レンズが独立に指摘）",
+      "design": "内部ループ用 SearchQuery の sort を必ず 'relevance' に上書きする。github-repository-query.ts は sort !== 'relevance' の値をそのまま url.searchParams へ載せるため、sort='gemIndex' のまま渡すと無効なパラメータが GitHub API へ送られ 422 相当になる。単体テストで『内部フェッチが sort=gemIndex を GitHub 側へ漏らさないこと』を Red → Green で明示的に確認する。",
+      "evidence": ["github-repository-query.ts:55-58 の分岐"],
+      "artifacts": ["src/usecases/search-repositories.ts（改修）", "src/usecases/search-repositories.test.ts（テスト追加）"],
+      "rejected": "GithubRepositoryQuery 側で gemIndex を無視する防御を入れる案 = 無効値の知識をインフラ層へ漏らすため採らない。"
+    },
+    {
+      "issue": "争点 3: gemIndex ソート時の『ページ』の意味と AC-6 / AC-7 の整合",
+      "design": "取得済み配列のスライスにする。AC-6 は URL 契約の話なのでスライス方式の影響を受けない。AC-7 の二層境界（page-number.ts の固定上限と pagination.tsx の maxPageFor）もローカルスライスと整合する。前提条件は 2 つ: (1) totalCount は GitHub の生値を保つ (2) スライス式を既存のページング計算と揃える。UI コンポーネント（Pagination / SortPicker）は無改修。",
+      "evidence": ["AC-6 / AC-7（prd.md §6）", "page-number.ts / per-page.ts の既存境界ロジック"],
+      "artifacts": ["src/usecases/search-repositories.ts（改修）"],
+      "rejected": "ページごとに GitHub API を再クエリする案 = 全件ソートの意味をなさない。"
+    },
+    {
+      "issue": "争点 5: Gem Index を持たない結果同士の内部順序",
+      "design": "元の relevance 順を安定ソートで維持する。Index を持つ群を先頭に、持たない群を末尾に置き、群内の相対順序は取得順のまま変えない。",
+      "evidence": ["D-30 ①（末尾に残す・件数不変）", "ux_paging の主担当判定"],
+      "artifacts": ["src/usecases/search-repositories.ts（改修）"],
+      "rejected": "Index なし群を star 順などで並べ替える案 = 利用者が選んだソート軸と無関係な順序が混ざり説明できない。"
+    },
+    {
+      "issue": "争点 6: NFR-5 のレート予算の守り方",
+      "design": "SP-16 のスコープ内で必須修正とする（別 Issue にしない）。enforceSearchRateLimit に sort（または内部コスト）を渡せるようにし、sort === 'gemIndex' のときは別スロット・低い上限で消費する。sort の早期パースを呼び出し側（app/api/search/route.ts / app/[locale]/page.tsx）へ入れ、wrangler.jsonc に rate limiter エントリを 1 つ追加する。rate-limit.ts の既存構造（WorkersRateLimit.consume(key)）は壊さない加算的変更に留める。",
+      "evidence": ["rate-limit.ts:20 が sort を見ておらず 1 検索 = 最大 10 upstream call を数えられない（rate_cache の発見）", "CP-1 の判定基準『自分の変更が作った壊れか』= SP-16 自身が 1 検索 = 1 call の前提を壊す", "project-mission.md の品質ゲート（レート制限で破綻しない）"],
+      "artifacts": ["src/infrastructure/platform/rate-limit.ts（改修）", "app/api/search/route.ts（改修）", "app/[locale]/page.tsx（改修）", "wrangler.jsonc（改修）"],
+      "rejected": "別 Issue へ切り出す案 = 単一クライアントが共有枠を 20 倍消費できる穴を新規に開けたまま出荷することになる。PR の注記では防げない。"
+    },
+    {
+      "issue": "カード表示（操作レビュー手順 3）— lead 裁定を要した対立",
+      "design": "被依存数・star・Gem Index の 3 数値を並置する。RepositorySummary に optional な gemIndex と dependentCount を追加し、usecase の join で埋める。表示は日次ダイジェストの既存パターン（dependentLabel / starsLabel / gemIndexLabel）を再利用する。🔴 条件: domain-model.md §3 / §6 に『RepositorySummary には gemIndex と dependentCount の 2 フィールドに限り Gem Index コンテキストから注入する。他の属性は持ち込まない』旨を同じ PR で明記する。",
+      "evidence": ["user-story-map.md §5.3 SP-16 の操作レビュー手順 3『被依存数と star の乖離がわかる』（SD-4 の権威順で仕様が正本）", "gemIndex は -6.734〜0.003 の無次元値で単体では意味が伝わらない", "日次ダイジェストに同じ 3 数値の表示前例がある"],
+      "artifacts": ["src/domain/model/repository-summary.ts（改修）", "src/ui/（カード表示の改修）", "docs/03_design/data-model/domain-model.md §3 / §6（改修・必須）"],
+      "rejected": "domain_arch の『gemIndex 1 フィールドのみ・dependentCount は見送る』案 = 操作レビュー手順 3 の文言（被依存数と star の乖離）を満たせない。ただし同案が挙げたコンテキスト越境の懸念は正当なので、domain-model.md への例外明記を条件として採り入れた。"
+    },
+    {
+      "issue": "E2E の決定論性",
+      "design": "container.ts に共通の makeGemDigestPort() を切り出し、環境変数で候補プールの読み込み元を差し替えられるようにする。getDailyDigestUseCase() と検索経路の両方が同じ差し替え口を共有する。E2E では検索スタブの repositoryFullName と重なる候補プールを注入し、Gem Index 付きの結果が必ず出る状態を作る。",
+      "evidence": ["候補プールは 227 リポジトリしかなく、スタブと重ならないと Gem Index 付きの結果が 0 件になる（scope_test の発見）", "NFR-24（外部 API は必ずモック化する）"],
+      "artifacts": ["src/composition/container.ts（改修）", "e2e/sp-16.spec.ts（新規）"],
+      "rejected": "実 API と実候補プールで E2E を回す案 = 1,000 件取得を実行することになりレート枠を消費し、結果も非決定論的になる。"
+    },
+    {
+      "issue": "争点 7: sp:8 に収まるか / 分割の要否",
+      "design": "分割せず 1 本で着手する。キャッシュ新設が不要になった分の削減が、カード表示の前倒しとレート制限修正の追加とほぼ相殺している。ただし SP-14 と同じ規則を適用し、3 回の firing を跨いでも SD-1（プレビュー URL で操作レビュー完走）に到達しない場合は縦切りで分割する: SP-16a = 検索 → 並べ替え → 詳細 → 復帰が完走できる最小 / SP-16b = 表示のリッチ化とレート防御の強化。",
+      "evidence": ["scope_test の判定『収まるがグレーゾーン・超過リスク高』", "user-story-map.md §5.3 SP-14 の分割規則", "C-5（技術レイヤー分割は採らない）"],
+      "artifacts": ["（分割時のみ user-story-map.md §5.3 を改修）"],
+      "rejected": "最初から分割する案 = 現時点の見積もりでは分割の必要が確定しておらず、先回りで 2 スプリントに割ると SP-16a 単体のレビュー価値が薄くなる。"
+    }
+  ],
+  "split": {
+    "needed": "false",
+    "plan": "1 本で着手する。3 回の firing を跨いでも SD-1 に到達しない場合のみ SP-16a（最小の完走経路）/ SP-16b（表示のリッチ化とレート防御の強化）へ縦切りで分割する。"
+  },
+  "critical": [
+    "内部ループ用 SearchQuery の sort を 'relevance' に上書きしないと、無効な sort=gemIndex が GitHub API へ送られて 422 相当になる（github-repository-query.ts:55-58 が値を素通しするため）。単体テストで漏れないことを明示的に確認すること",
+    "enforceSearchRateLimit（rate-limit.ts:20）が sort を見ておらず 1 検索 = 最大 10 upstream call を数えられない。修正せずに出荷すると単一クライアントが共有枠を 20 倍消費できる穴が開く",
+    "E2E で候補プール（227 件）と検索スタブが repositoryFullName で重ならないと Gem Index 付きの結果が 0 件になり、操作レビュー手順を検証できない。composition root に差し替え口が要る"
+  ],
+  "open_questions": []
+}
