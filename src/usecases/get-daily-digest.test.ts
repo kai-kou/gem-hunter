@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { DateSeed } from '../domain/model/date-seed'
 import type { DigestMeta, Gem } from '../domain/model/gem'
 import { gemIndex, gemIndexValue } from '../domain/model/gem-index'
+import { GEM_INDEX_SHORTLIST_SIZE } from '../domain/model/gem-shortlist'
 import type { GemDigestPort } from '../domain/ports/gem-digest-port'
 import { makeGetDailyDigest } from './get-daily-digest'
 
@@ -161,5 +162,121 @@ describe('getDailyDigest', () => {
     const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 0 })
 
     expect(result.items).toEqual([])
+  })
+
+  describe('Gem Index shortlist（案 A・Issue #331）', () => {
+    // 200 件・gemIndex は昇順に厳密単調（i が小さいほど過小評価度が高い）。
+    // shortlist（上位 GEM_INDEX_SHORTLIST_SIZE 件）は必ず pkg-000..pkg-059 に一致する。
+    const largePool: Gem[] = Array.from({ length: 200 }, (_, i) =>
+      gem(`pkg-${String(i).padStart(3, '0')}`, i),
+    )
+    const shortlistNames = new Set(
+      largePool.slice(0, GEM_INDEX_SHORTLIST_SIZE).map((g) => g.packageName),
+    )
+
+    it('候補プールが shortlist サイズを大きく超えるとき、選ばれる items は必ず Gem Index 上位帯（shortlist）に含まれる', async () => {
+      const getDailyDigest = makeGetDailyDigest({ port: fakePort(largePool) })
+      const seeds = ['20260820', '20260821', '20260822', '20260901', '20261231'] as const
+
+      for (const seed of seeds) {
+        const result = await getDailyDigest({ seed: seed as DateSeed, limit: 5 })
+        for (const item of result.items) {
+          expect(shortlistNames.has(item.packageName)).toBe(true)
+        }
+      }
+    })
+
+    it('shortlist の境界（同値タイブレーク）は packageName 昇順で決定論的に決まる（入力順に依存しない）', async () => {
+      // 55 件は distinct な gemIndex（境界より確実に上位）。残り 15 件は境界をまたぐ同値グループで、
+      // shortlist に入れるかどうかは packageName 昇順タイブレークで決まる（60 - 55 = 5 件のみ採用）。
+      const distinctPart: Gem[] = Array.from({ length: 55 }, (_, i) =>
+        gem(`distinct-${String(i).padStart(3, '0')}`, -1000 + i),
+      )
+      const tiedNames = [
+        'zeta',
+        'yankee',
+        'xray',
+        'whiskey',
+        'victor',
+        'uniform',
+        'tango',
+        'sierra',
+        'romeo',
+        'quebec',
+        'papa',
+        'oscar',
+        'november',
+        'mike',
+        'lima',
+      ]
+      const tiedPart: Gem[] = tiedNames.map((name) => gem(`tied-${name}`, 0))
+      const expectedShortlistTiedNames = [...tiedNames]
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, GEM_INDEX_SHORTLIST_SIZE - distinctPart.length)
+        .map((name) => `tied-${name}`)
+
+      const poolOrderA = [...distinctPart, ...tiedPart]
+      const poolOrderB = [...distinctPart, ...[...tiedPart].reverse()]
+
+      // shortlist.length(60) <= limit(60) なので母集団基準では縮退ケースだが、本テストは同一 seed
+      // 内の入力順非依存性のみを検証しており分岐の選択には依存しない。
+      const digestA = makeGetDailyDigest({ port: fakePort(poolOrderA) })
+      const digestB = makeGetDailyDigest({ port: fakePort(poolOrderB) })
+      const seed = '20260820' as DateSeed
+
+      const resultA = await digestA({ seed, limit: GEM_INDEX_SHORTLIST_SIZE })
+      const resultB = await digestB({ seed, limit: GEM_INDEX_SHORTLIST_SIZE })
+
+      const namesA = resultA.items.map((x) => x.packageName)
+      const namesB = resultB.items.map((x) => x.packageName)
+
+      // 入力順を変えても結果は完全に同一（順序含む・タイブレークが入力順非依存の証拠）。
+      expect(namesA).toEqual(namesB)
+
+      const tiedNamesInResult = namesA.filter((n) => n.startsWith('tied-'))
+      expect(tiedNamesInResult.sort()).toEqual([...expectedShortlistTiedNames].sort())
+    })
+  })
+
+  describe('shortlist サイズと limit の相互作用（PR #333 Layer 1 指摘・回帰）', () => {
+    it('limit が GEM_INDEX_SHORTLIST_SIZE を超え、候補プールが limit 以下のとき全件返す（件数欠落の回帰）', async () => {
+      // 候補 80 件・limit 100。shortlist を固定 60 で切ると 20 件が無警告で欠落する
+      // （「プールが limit 以下なら全件返す」契約違反）。
+      const pool: Gem[] = Array.from({ length: 80 }, (_, i) =>
+        gem(`pkg-${String(i).padStart(3, '0')}`, i),
+      )
+      const getDailyDigest = makeGetDailyDigest({ port: fakePort(pool) })
+
+      const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 100 })
+
+      expect(result.items).toHaveLength(80)
+    })
+
+    it('limit === GEM_INDEX_SHORTLIST_SIZE で候補プールがそれを超えるとき、異なる seed で並びが変わる（並び固定化の回帰）', async () => {
+      // 候補 70 件・limit 60。shortlist が固定 60 だと全件が必ず選ばれる縮退ケースなのに
+      // candidates.length(70) > limit(60) で誤って Gem Index asc 再ソートされ、日替わりの並びが
+      // 凍結する。母集団（shortlist）基準で判定すれば shortlist.length(60) <= limit(60) となり
+      // 縮退ケースとして扱われ、シャッフル順（日替わり）が保たれる。
+      const pool: Gem[] = Array.from({ length: 70 }, (_, i) =>
+        gem(`pkg-${String(i).padStart(3, '0')}`, i),
+      )
+      const getDailyDigest = makeGetDailyDigest({ port: fakePort(pool) })
+
+      const seeds = ['20260820', '20260821', '20260822'] as const
+      const orderings = await Promise.all(
+        seeds.map(async (seed) => {
+          const result = await getDailyDigest({
+            seed: seed as DateSeed,
+            limit: GEM_INDEX_SHORTLIST_SIZE,
+          })
+          return result.items.map((x) => x.packageName).join(',')
+        }),
+      )
+
+      // 全件（70 件 pool のうち Gem Index 上位 60 件）が毎回選ばれるので顔ぶれは同じだが、
+      // 並び順（シャッフル順）は seed ごとに異なるはず。2 つ以上の seed が一致したら縮退分岐が
+      // 誤判定され、Gem Index asc に固定化されている。
+      expect(new Set(orderings).size).toBeGreaterThan(1)
+    })
   })
 })
