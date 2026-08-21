@@ -7,7 +7,7 @@ import type { RepositorySummary, SearchResult } from '../domain/model/repository
 import type { SearchQuery } from '../domain/model/search-query'
 import type { GemDigestPort } from '../domain/ports/gem-digest-port'
 import type { RepositoryQueryPort } from '../domain/ports/repository-query-port'
-import { makeSearchRepositories } from './search-repositories'
+import { GEM_INDEX_FETCH_MAX_PAGES, makeSearchRepositories } from './search-repositories'
 
 const summary: RepositorySummary = {
   id: 10270250,
@@ -285,6 +285,52 @@ describe('searchRepositories', () => {
         Array.from({ length: 5 }, (_, i) => `owner/repo-${20 + i}`),
       )
       expect(result.totalCount).toBe(25)
+    })
+
+    it('GEM_INDEX_FETCH_MAX_PAGES は API_RESULT_LIMIT から導出される（③・二重定義の解消）', async () => {
+      const { API_RESULT_LIMIT } = await import('../domain/model/page-number')
+      expect(GEM_INDEX_FETCH_MAX_PAGES).toBe(10)
+      expect(GEM_INDEX_FETCH_MAX_PAGES).toBe(Math.floor(API_RESULT_LIMIT / 100))
+    })
+
+    it('①CRITICAL: 重複排除で収集件数が totalCount を下回り、自然終了した場合は実件数へクランプする', async () => {
+      const received: SearchQuery[] = []
+      const repos = pagedPort(received, (p) => {
+        if (p === 1) {
+          const items = Array.from({ length: 100 }, (_, i) => summaryWithId(i, `owner/repo-${i}`))
+          return page(items, 150)
+        }
+        // 2ページ目は 60 件中 20 件が page1 と id 重複・40 件が新規。
+        // 応答件数 60 < per_page(100) なので最終ページとして自然終了する。
+        const overlap = Array.from({ length: 20 }, (_, i) => summaryWithId(i, `owner/dup-${i}`))
+        const fresh = Array.from({ length: 40 }, (_, i) =>
+          summaryWithId(100 + i, `owner/repo-${100 + i}`),
+        )
+        return page([...overlap, ...fresh], 150)
+      })
+      const searchRepositories = makeSearchRepositories({ repos, gems: emptyGemsPort() })
+
+      const result = await searchRepositories({ keyword: 'react', sort: 'gem-index', perPage: 100 })
+
+      // 収集: page1 の 100 件 + page2 の新規 40 件 = 140 件（totalCount=150 には届かない）。
+      expect(result.totalCount).toBe(140)
+    })
+
+    it('①: 10 ページ上限で打ち切った場合は、重複排除で件数が縮んでも totalCount をクランプしない', async () => {
+      const received: SearchQuery[] = []
+      const repos = pagedPort(received, () => {
+        // 毎ページ同じ id 0〜99 を返す（重複排除後の収集件数は 100 件のみに縮む）。
+        const items = Array.from({ length: 100 }, (_, i) => summaryWithId(i, `owner/repo-${i}`))
+        return page(items, 5000)
+      })
+      const searchRepositories = makeSearchRepositories({ repos, gems: emptyGemsPort() })
+
+      const result = await searchRepositories({ keyword: 'react', sort: 'gem-index', perPage: 100 })
+
+      expect(received).toHaveLength(GEM_INDEX_FETCH_MAX_PAGES)
+      // 10 ページ上限で打ち切っただけで、まだ取得していない結果が残っている可能性があるため
+      // 生の totalCount（5000）をそのまま返す（実収集件数 100 へクランプしない）。
+      expect(result.totalCount).toBe(5000)
     })
 
     it('重複した id はページ間で排除する（先に現れた方を残す）', async () => {

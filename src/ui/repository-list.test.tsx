@@ -278,6 +278,118 @@ describe('RepositoryList', () => {
       expect(screen.queryByText(labels.gemIndexUnavailableHeading)).not.toBeInTheDocument()
     })
 
+    /**
+     * ④WARNING 修正（PR #293 セルフレビュー指摘）: ranked / unranked の境界がページ境界と
+     * 一致すると（このページの先頭要素が unranked）、従来の `dividerIndex`（`idx > 0` 条件）
+     * では区切り見出しが 1 度も出ない。呼び出し側から「前のページに Gem Index を持つ結果が
+     * あった」ことを `unrankedContinuedFromPreviousPage` で渡せば idx===0 でも区切りを出せる。
+     */
+    describe('unrankedContinuedFromPreviousPage（④・ページ境界での区切り欠落対策）', () => {
+      const allUnranked: RepositorySummary[] = [
+        {
+          id: 3,
+          fullName: 'octostub/unranked-only-a',
+          name: 'unranked-only-a',
+          owner: { login: 'octostub', avatarUrl: 'https://avatars.githubusercontent.com/u/3?v=4' },
+          description: null,
+          primaryLanguage: null,
+          stars: 5,
+          lastPushedAt: new Date('2026-08-18T09:00:00Z'),
+          topics: [],
+          htmlUrl: 'https://github.com/octostub/unranked-only-a',
+        },
+        {
+          id: 4,
+          fullName: 'octostub/unranked-only-b',
+          name: 'unranked-only-b',
+          owner: { login: 'octostub', avatarUrl: 'https://avatars.githubusercontent.com/u/4?v=4' },
+          description: null,
+          primaryLanguage: null,
+          stars: 6,
+          lastPushedAt: new Date('2026-08-18T09:00:00Z'),
+          topics: [],
+          htmlUrl: 'https://github.com/octostub/unranked-only-b',
+        },
+      ]
+
+      it('true を渡すと、全件 unranked のページでも先頭に区切り見出しを 1 本だけ出す', () => {
+        render(
+          <RepositoryList
+            items={allUnranked}
+            labels={labels}
+            locale={locale('ja')}
+            gemFacets={new Map()}
+            unrankedContinuedFromPreviousPage
+          />,
+        )
+
+        expect(screen.getAllByText(labels.gemIndexUnavailableHeading)).toHaveLength(1)
+        // 区切りは先頭要素の直前（= 最初のカードより上）に出る。
+        const list = screen.getByRole('link', { name: /octostub\/unranked-only-a/ }).closest('ul')
+        const children = list ? Array.from(list.children) : []
+        expect(children[0]).toHaveTextContent(labels.gemIndexUnavailableHeading)
+      })
+
+      it('省略時（既定 undefined）は全件 unranked のページで区切りを出さない（回帰なし）', () => {
+        render(
+          <RepositoryList
+            items={allUnranked}
+            labels={labels}
+            locale={locale('ja')}
+            gemFacets={new Map()}
+          />,
+        )
+
+        expect(screen.queryByText(labels.gemIndexUnavailableHeading)).not.toBeInTheDocument()
+      })
+
+      it('false を渡した場合も区切りを出さない', () => {
+        render(
+          <RepositoryList
+            items={allUnranked}
+            labels={labels}
+            locale={locale('ja')}
+            gemFacets={new Map()}
+            unrankedContinuedFromPreviousPage={false}
+          />,
+        )
+
+        expect(screen.queryByText(labels.gemIndexUnavailableHeading)).not.toBeInTheDocument()
+      })
+
+      it('true でも先頭要素が facet を持つ（ranked）場合は区切りを出さない', () => {
+        const allRanked = new Map([
+          ['octostub/unranked-only-a', { gemIndex: gemIndex(-0.1), dependentCount: 1 }],
+          ['octostub/unranked-only-b', { gemIndex: gemIndex(-0.2), dependentCount: 2 }],
+        ])
+        render(
+          <RepositoryList
+            items={allUnranked}
+            labels={labels}
+            locale={locale('ja')}
+            gemFacets={allRanked}
+            unrankedContinuedFromPreviousPage
+          />,
+        )
+
+        expect(screen.queryByText(labels.gemIndexUnavailableHeading)).not.toBeInTheDocument()
+      })
+
+      it('idx>0 の既存の境界検出（前ページ非依存）と共存する', () => {
+        render(
+          <RepositoryList
+            items={twoItems}
+            labels={labels}
+            locale={locale('ja')}
+            gemFacets={facetMap()}
+            unrankedContinuedFromPreviousPage={false}
+          />,
+        )
+
+        expect(screen.getAllByText(labels.gemIndexUnavailableHeading)).toHaveLength(1)
+      })
+    })
+
     it('fullName の大文字小文字が違っても突合できる（gemFacetKey の小文字化）', () => {
       const mixedCaseItems: RepositorySummary[] = [
         { ...twoItems[0], fullName: 'Octostub/Ranked-One' },

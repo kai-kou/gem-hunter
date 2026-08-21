@@ -1,4 +1,5 @@
 import { toGemFacetMap, sortByGemIndex } from '../domain/model/gem-index'
+import { API_RESULT_LIMIT } from '../domain/model/page-number'
 import type { SearchResult } from '../domain/model/repository'
 import { searchQuery } from '../domain/model/search-query'
 import { GEM_INDEX_SORT_ORDER } from '../domain/model/sort-order'
@@ -16,13 +17,19 @@ export type SearchRepositories = (input: SearchRepositoriesInput) => Promise<Sea
 
 /**
  * gem-index 順ソートで内部的に取得する 1 ページあたりの件数。
- * GitHub 検索 API は 1 検索あたり最大 1,000 件（`per_page` × `page`）までしか返さないため、
- * 100 件 × 最大 10 ページで打ち切る（`SP-16` 飼い主決定②・`content/discussions/sp16-gem-index-sort-20260821/whiteboard.md` D-I）。
+ * GitHub 検索 API は 1 検索あたり最大 1,000 件（`API_RESULT_LIMIT`・`per_page` × `page`）までしか
+ * 返さないため、100 件 × 最大 10 ページで打ち切る（`SP-16` 飼い主決定②・
+ * `content/discussions/sp16-gem-index-sort-20260821/whiteboard.md` D-I）。
  */
 const GEM_INDEX_FETCH_PER_PAGE = 100
 
-/** 上記コメントのとおり `1,000 ÷ GEM_INDEX_FETCH_PER_PAGE` が取得ページ数の上限。 */
-const GEM_INDEX_FETCH_MAX_PAGES = 10
+/**
+ * `API_RESULT_LIMIT ÷ GEM_INDEX_FETCH_PER_PAGE` が取得ページ数の上限。
+ * 🔴 単一の定義元（SSOT）は `page-number.ts` の `API_RESULT_LIMIT`（PR #293 セルフレビュー
+ * 指摘・修正③）。ここで別の 1,000 を直書きしない。`enforceSearchRateLimit` のレート消費コスト
+ * （PR #293 セルフレビュー指摘・修正②）とも本定数を共有し、値をずらさない。
+ */
+export const GEM_INDEX_FETCH_MAX_PAGES = Math.floor(API_RESULT_LIMIT / GEM_INDEX_FETCH_PER_PAGE)
 
 /**
  * キーワードでリポジトリを検索する（US-6）。
@@ -61,6 +68,9 @@ async function searchByGemIndex(
   // 1 ページ目の totalCount から実際に必要なページ数へ差し替える（D-I の二重条件のうち片方）。
   // 初期値は仕様上限の 10。1 ページ目取得後に Math.min(10, ceil(totalCount / 100)) へ縮める。
   let maxPages = GEM_INDEX_FETCH_MAX_PAGES
+  // ①CRITICAL 修正（PR #293 セルフレビュー指摘）: ループが「結果を汲み尽くして」自然終了した
+  // (= per_page 未満の応答で break した) かどうかを覚えておく。
+  let brokeEarly = false
 
   for (let page = 1; page <= maxPages; page += 1) {
     // 🔴 逐次取得（`NFR-7` ③・並列にしない）。途中ページの失敗は握り潰さずそのまま伝播する
@@ -91,6 +101,7 @@ async function searchByGemIndex(
 
     // 応答件数が per_page 未満なら最終ページ（D-I の二重条件のもう片方）。
     if (result.items.length < GEM_INDEX_FETCH_PER_PAGE) {
+      brokeEarly = true
       break
     }
   }
@@ -102,5 +113,18 @@ async function searchByGemIndex(
   const start = (displayPage - 1) * displayPerPage
   const items = sorted.slice(start, start + displayPerPage)
 
-  return { totalCount, incompleteResults, items }
+  // ①CRITICAL 修正（PR #293 セルフレビュー指摘）: `totalCount` に GitHub の生の `total_count`
+  // をそのまま返すと、id 重複排除で収集件数が縮んだ場合に `Pagination` が空ページへのリンクを
+  // 出してしまう（totalCount=200 なのに実体 100 件 → 2 ページ目が「200 件中 0 件」で行き止まり）。
+  //
+  // 「結果を汲み尽くして終わった」= (a) per_page 未満の応答で自然終了した、または
+  // (b) 1 ページ目の totalCount から算出した必要ページ数が仕様上限 10 未満だった、のいずれか
+  // （= `maxPages` が仕様上限まで消費されていない）場合だけ、実際に提供できる件数へクランプする。
+  // 10 ページ上限に達して打ち切った場合（`maxPages === GEM_INDEX_FETCH_MAX_PAGES` かつ自然終了
+  // していない）は、まだ取得していない結果が残っている可能性があるため、他の並び順と同じく
+  // 生の値をそのまま返す（`maxPageFor` が到達範囲を抑えるため矛盾しない）。
+  const exhausted = brokeEarly || maxPages < GEM_INDEX_FETCH_MAX_PAGES
+  const resolvedTotalCount = exhausted ? Math.min(totalCount, collected.length) : totalCount
+
+  return { totalCount: resolvedTotalCount, incompleteResults, items }
 }

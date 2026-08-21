@@ -13,7 +13,20 @@ import {
   type GetRepositoryDetail,
 } from '../usecases/get-repository-detail'
 import { makeListGemFacets, type ListGemFacets } from '../usecases/list-gem-facets'
-import { makeSearchRepositories, type SearchRepositories } from '../usecases/search-repositories'
+import {
+  GEM_INDEX_FETCH_MAX_PAGES,
+  makeSearchRepositories,
+  type SearchRepositories,
+} from '../usecases/search-repositories'
+
+/**
+ * `sort=gem-index` 時に `enforceSearchRateLimit` へ渡すレート消費コスト（PR #293 セルフレビュー
+ * 指摘・修正②）。呼び出し側（`app/[locale]/page.tsx` / `app/api/search/route.ts`）が
+ * `src/usecases/` を直接 import せず composition root 経由で参照できるようにする
+ * （`application-architecture.md` §1.2: `app/` の許容依存に `src/usecases/` は含まれない）。
+ * 値そのものの単一の定義元は `search-repositories.ts` の `GEM_INDEX_FETCH_MAX_PAGES`。
+ */
+export const GEM_INDEX_SEARCH_RATE_LIMIT_COST = GEM_INDEX_FETCH_MAX_PAGES
 
 /**
  * composition root。実装をポートへ束ねてよい唯一の場所（architecture §2.1）。

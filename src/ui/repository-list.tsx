@@ -29,6 +29,7 @@ export function RepositoryList({
   locale,
   searchState,
   gemFacets,
+  unrankedContinuedFromPreviousPage,
 }: {
   items: readonly RepositorySummary[]
   labels: RepositoryListLabels
@@ -48,6 +49,14 @@ export function RepositoryList({
    * 本コンポーネントは再ソートしない（`items` の順序を信頼する）。
    */
   gemFacets?: ReadonlyMap<string, GemFacet>
+  /**
+   * 🔴 PR #293 セルフレビュー指摘・修正④（WARNING）: ranked / unranked の境界が
+   * ページ境界と一致する（このページの先頭要素が unranked）と、`idx > 0` 基準の
+   * `dividerIndex` では区切り見出しが 1 度も出ない。呼び出し側（`page.tsx`）が
+   * 「前のページに Gem Index を持つ結果があった」ことを渡すと、先頭要素（idx===0）が
+   * unranked のときも区切りを出す。省略時・`false` は従来どおり（回帰なし）。
+   */
+  unrankedContinuedFromPreviousPage?: boolean
 }) {
   if (items.length === 0) {
     // 0 件は「視覚表現だけ」にせず role="status" で支援技術にも伝える（US-23 / US-26 / NFR-12）。
@@ -75,9 +84,17 @@ export function RepositoryList({
     ? items.map((item) => gemFacets.get(gemFacetKey(item.fullName)))
     : undefined
   const dividerIndex =
-    facets?.findIndex(
-      (facet, idx) => idx > 0 && facet === undefined && facets[idx - 1] !== undefined,
-    ) ?? -1
+    facets?.findIndex((facet, idx) => {
+      if (facet !== undefined) {
+        return false
+      }
+      // ④: idx===0 は「前ページに ranked があった」と呼び出し側から明示されたときだけ区切る
+      // （このページ内には比較対象の前要素が無いため idx>0 の基準を使えない）。
+      if (idx === 0) {
+        return unrankedContinuedFromPreviousPage === true
+      }
+      return facets[idx - 1] !== undefined
+    }) ?? -1
 
   return (
     <ul className="divide-border divide-y">

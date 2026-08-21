@@ -3,6 +3,7 @@ import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import {
+  GEM_INDEX_SEARCH_RATE_LIMIT_COST,
   getDailyDigestUseCase,
   listGemFacetsUseCase,
   searchRepositoriesUseCase,
@@ -12,6 +13,7 @@ import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
 import type { GemFacet } from '@/src/domain/model/gem'
+import { gemFacetKey } from '@/src/domain/model/gem-index'
 import { GEM_INDEX_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { tryPageNumber } from '@/src/domain/model/page-number'
@@ -69,6 +71,7 @@ async function runSearch(
     //    下の catch で「検索キーワードを確認してください」相当として画面に出す。null へ倒すと
     //    未入力と同じ idle 表示になり、拒否された事実がユーザーに伝わらない。
     const keyword = searchKeyword(rawKeyword)
+    const sort = trySortOrder(rawSort)
 
     // Issue #122: 自リクエストの間引き（RateLimitPort）。未入力（idle・上の early return）
     // では枠を消費せず、値オブジェクトへの変換が通った（= 400 にならない）キーワードだけを
@@ -76,7 +79,13 @@ async function runSearch(
     // ローカライズ済み表示（`toErrorPresentation`）に繋げる（新しい分岐は足さない）。
     // `headers()` の呼び出しでこのページは動的レンダリングになるが、既に `searchParams`
     // を使っているため元から動的である（新たな制約ではない）。
-    await enforceSearchRateLimit(await headers())
+    //
+    // 🔴 PR #293 セルフレビュー指摘・修正②（レート増幅対策）: `sort=gem-index` は 1 リクエストで
+    // 最大 `GEM_INDEX_SEARCH_RATE_LIMIT_COST` 回の上流呼び出しに増幅するため、その回数ぶんを
+    // 消費コストとして渡す（既定 1 のままだと同一 IP から少数回叩くだけで共有枠を使い切れる）。
+    await enforceSearchRateLimit(await headers(), {
+      cost: sort === GEM_INDEX_SORT_ORDER ? GEM_INDEX_SEARCH_RATE_LIMIT_COST : undefined,
+    })
 
     // SP-8: ログイン中はユーザー自身のアクセストークンで叩く（レート枠の切替）。トークンの
     // 供給元が変わっても経路は `GithubRepositoryQuery`（ACL）のままなので、`is:public` 付与と
@@ -84,7 +93,7 @@ async function runSearch(
     const result = await searchRepositoriesUseCase(accessToken)({
       keyword,
       page: tryPageNumber(rawPage),
-      sort: trySortOrder(rawSort),
+      sort,
       perPage: tryPerPage(rawPerPage),
     })
     return { status: 'ok', result }
@@ -201,6 +210,19 @@ async function SearchBody({
   // 検索結果一覧の表示まで巻き添えにしない。失敗時は「Gem Index 情報なし」相当（`undefined`）へ倒す。
   const gemFacets = gemFacetsPromise ? await gemFacetsPromise.catch(() => undefined) : undefined
 
+  // 🔴 PR #293 セルフレビュー指摘・修正④（WARNING）: ranked/unranked の境界がページ境界と
+  // 一致すると（このページの先頭要素が unranked）区切り見出しが 1 度も出ない
+  // （`repository-list.tsx` の `dividerIndex` は `idx > 0` でしか境界を検出できないため）。
+  // `sortByGemIndex` は ranked を必ず先に並べる（`gem-index.ts`）ので、「gem-index 順 かつ
+  // 表示ページが 2 以上 かつ 先頭要素が facet を持たない」なら前ページに ranked があったと判定できる。
+  const firstItem = state.result.items[0]
+  const unrankedContinuedFromPreviousPage =
+    searchState.sort === GEM_INDEX_SORT_ORDER &&
+    searchState.page >= 2 &&
+    gemFacets !== undefined &&
+    firstItem !== undefined &&
+    gemFacets.get(gemFacetKey(firstItem.fullName)) === undefined
+
   return (
     <>
       <RepositoryList
@@ -216,6 +238,7 @@ async function SearchBody({
         locale={locale}
         searchState={searchState}
         gemFacets={gemFacets}
+        unrankedContinuedFromPreviousPage={unrankedContinuedFromPreviousPage}
       />
       {state.result.items.length > 0 ? (
         <Pagination

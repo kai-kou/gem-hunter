@@ -307,4 +307,29 @@ describe('GET /api/search — Issue #122: RateLimitPort の配線', () => {
     expect(res.status).toBe(400)
     expect(enforceSearchRateLimitMock).not.toHaveBeenCalled()
   })
+
+  /**
+   * ②CRITICAL 修正（PR #293 セルフレビュー指摘・レート増幅対策）: `sort=gem-index` は
+   * 1 リクエストで最大 10 回の上流呼び出しに増幅するため、`enforceSearchRateLimit` へ渡す
+   * 消費コストもそれに合わせる（`GEM_INDEX_SEARCH_RATE_LIMIT_COST`・単一の定義元）。
+   */
+  it('sort=gem-index のとき enforceSearchRateLimit へ cost=10（GEM_INDEX_SEARCH_RATE_LIMIT_COST）を渡す', async () => {
+    searchMock.mockResolvedValue(makeSearchResult())
+
+    await GET(new NextRequest('http://localhost/api/search?q=gem-index-cost-check&sort=gem-index'))
+
+    expect(enforceSearchRateLimitMock).toHaveBeenCalledTimes(1)
+    const [, options] = enforceSearchRateLimitMock.mock.calls[0] as [Headers, { cost?: number }]
+    expect(options.cost).toBe(10)
+  })
+
+  it('sort を指定しない（既定 relevance）ときは cost を渡さない（既定 1 のまま）', async () => {
+    searchMock.mockResolvedValue(makeSearchResult())
+
+    await GET(new NextRequest('http://localhost/api/search?q=gem-index-cost-default-check'))
+
+    expect(enforceSearchRateLimitMock).toHaveBeenCalledTimes(1)
+    const [, options] = enforceSearchRateLimitMock.mock.calls[0] as [Headers, { cost?: number }]
+    expect(options.cost).toBeUndefined()
+  })
 })
