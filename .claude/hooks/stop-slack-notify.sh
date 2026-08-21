@@ -75,7 +75,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
     if [ -f "$_wip_guard_lib" ]; then
       # shellcheck disable=SC1090
       source "$_wip_guard_lib"
-      if wip_guard_active "$REPO_ROOT" "stop-slack-notify"; then _mutation_guard=true; fi
+      if wip_guard_active_here "stop-slack-notify" "$REPO_ROOT"; then _mutation_guard=true; fi
     fi
     unset _wip_guard_lib
 

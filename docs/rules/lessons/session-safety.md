@@ -59,9 +59,18 @@ PR は存在せず（GitHub API 404）、ファイルにも未反映だった。
 全体を操作する破壊的 git コマンドを禁止する」規律は、他役の並列サブエージェントを対象にしたもので、
 Stop フックはこの規律の **外側** で動く）。
 
-**対策**:
-- マーカーファイル `.git/MUTATION_IN_PROGRESS` が存在する間、WIP 自動コミット（Stop フック
-  `stop-slack-notify.sh` / `pre-compact.sh` / `post-compact.sh`）が **抑止される**。
+**対策**（フックごとに役割が違うので分けて書く）:
+- **自動コミットの抑止（3 フック）**: マーカーファイル `MUTATION_IN_PROGRESS` が存在する間、
+  WIP 自動コミット（`stop-slack-notify.sh` / `pre-compact.sh` / `post-compact.sh`）が **抑止される**。
+- **コミット要求の抑止（1 フック）**: `stop-git-check.sh` はマーカー中、未コミット変更を理由に
+  `hook_block` せず警告に留める（壊れた状態のコミットを迫るとブロック解除のために事故が起きるため）。
+- **クリーンアップ時の退避（1 フック）**: `session-start.sh` はマーカーが残ったまま前セッションが
+  終わっていた場合、`git checkout -- .` の前に追跡ファイルの変更を
+  `.git/untracked-backup/<時刻>/tracked-changes.patch` へ退避し、マーカーを解除する
+  （抑止で未コミットのまま残った変更が無退避で消えるのを防ぐ。**変異が混ざっている可能性があるので
+  そのまま適用しない**）。
+- マーカーは **全 worktree 共通の git ディレクトリ**（`--git-common-dir`）配下に置く。linked worktree
+  専用の git-dir に置くと、worktree 側で `begin` したのにメイン側のフックからは見えない非対称が生まれる。
 - マーカーの置き忘れ対策として **TTL 2 時間**（既定）で自動失効し、失効後は通常どおり WIP 自動
   コミットが動く（警告を stderr に出す）。
 - マーカーの設置・解除は `tools/mutation_guard.sh begin` / `tools/mutation_guard.sh end`（`status` で

@@ -15,6 +15,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 pass=0
 fail=0
 
+# 一時リポジトリはすべてこのルート配下に作り、途中終了（run_checks の timeout 等）でも
+# 後始末されるよう trap を張る（PR #307 Layer 1 セルフレビュー指摘）
+TMP_ROOT="$(mktemp -d)"
+trap 'rm -rf "$TMP_ROOT" 2>/dev/null || true' EXIT
+new_tmp() { mktemp -d "$TMP_ROOT/case.XXXXXX"; }
+
 report() { # $1 = ok/ng, $2 = ケース名, $3 = 補足
   if [ "$1" = "ok" ]; then
     pass=$((pass + 1))
@@ -78,7 +84,7 @@ HOOKS="stop-slack-notify.sh pre-compact.sh post-compact.sh"
 
 echo "== ケース 1: マーカー無し → 従来どおり WIP 保全される（L-100 の防御を壊さない） =="
 for hook in $HOOKS; do
-  tmp=$(mktemp -d)
+  tmp=$(new_tmp)
   make_repo "$tmp"
   run_hook "$tmp/work" "$hook"
   if [ "$(wip_commit_count "$tmp/work")" -ge 1 ]; then
@@ -91,7 +97,7 @@ done
 
 echo "== ケース 2: マーカーあり（新鮮）→ 抑止され、作業ツリーはそのまま残る =="
 for hook in $HOOKS; do
-  tmp=$(mktemp -d)
+  tmp=$(new_tmp)
   make_repo "$tmp"
   touch "$tmp/work/.git/MUTATION_IN_PROGRESS"
   run_hook "$tmp/work" "$hook"
@@ -107,7 +113,7 @@ done
 
 echo "== ケース 3: マーカーが TTL 超過（置き忘れ）→ 失効し、従来どおり保全される =="
 for hook in $HOOKS; do
-  tmp=$(mktemp -d)
+  tmp=$(new_tmp)
   make_repo "$tmp"
   touch "$tmp/work/.git/MUTATION_IN_PROGRESS"
   age_marker "$tmp/work/.git/MUTATION_IN_PROGRESS"
@@ -121,7 +127,7 @@ for hook in $HOOKS; do
 done
 
 echo "== ケース 5: stop-git-check.sh がマーカー中はコミット要求でブロックしない =="
-tmp=$(mktemp -d)
+tmp=$(new_tmp)
 make_repo "$tmp"
 cp "$REPO_ROOT/.claude/hooks/stop-git-check.sh" "$tmp/work/.claude/hooks/"
 chmod +x "$tmp/work/.claude/hooks/stop-git-check.sh"
@@ -143,10 +149,18 @@ if [ "$blocked_with_marker" -eq 0 ]; then
 else
   report ng "マーカーあり: コミット要求でブロックしない" "exit=$blocked_with_marker"
 fi
+age_marker "$tmp/work/.git/MUTATION_IN_PROGRESS"
+(cd "$tmp/work" && ./.claude/hooks/stop-git-check.sh <<<'{"stop_hook_active": false}' >/dev/null 2>&1)
+blocked_with_stale_marker=$?
+if [ "$blocked_with_stale_marker" -ne 0 ]; then
+  report ok "TTL 超過マーカー: 従来どおりブロックへ戻る"
+else
+  report ng "TTL 超過マーカー: 従来どおりブロックへ戻る" "失効後もブロックが抑止されたまま"
+fi
 rm -rf "$tmp"
 
 echo "== ケース 4: tools/mutation_guard.sh の begin / status / end が往復する =="
-tmp=$(mktemp -d)
+tmp=$(new_tmp)
 make_repo "$tmp"
 guard="$REPO_ROOT/tools/mutation_guard.sh"
 if [ -x "$guard" ]; then
@@ -174,6 +188,34 @@ if [ -x "$guard" ]; then
   fi
 else
   report ng "tools/mutation_guard.sh が実行可能である" "ファイルが無い、または実行権限が無い"
+fi
+rm -rf "$tmp"
+
+echo "== ケース 6: linked worktree でもマーカーがリポジトリ全体で共有される =="
+tmp=$(new_tmp)
+make_repo "$tmp"
+if git -C "$tmp/work" worktree add --quiet "$tmp/wt" -b feat/wt-mutation 2>/dev/null; then
+  (cd "$tmp/wt" && "$REPO_ROOT/tools/mutation_guard.sh" begin >/dev/null 2>&1)
+  if [ -f "$tmp/work/.git/MUTATION_IN_PROGRESS" ]; then
+    report ok "worktree 側の begin がメインの .git にマーカーを置く"
+  else
+    report ng "worktree 側の begin がメインの .git にマーカーを置く" "worktree 専用 git-dir に隔離されている"
+  fi
+  echo "MUTATED" >"$tmp/work/impl.txt"
+  run_hook "$tmp/work" "stop-slack-notify.sh"
+  if [ "$(wip_commit_count "$tmp/work")" -eq 0 ]; then
+    report ok "worktree 側で begin してもメイン側のフックが抑止される"
+  else
+    report ng "worktree 側で begin してもメイン側のフックが抑止される" "メイン側が変異を WIP コミットした"
+  fi
+  (cd "$tmp/wt" && "$REPO_ROOT/tools/mutation_guard.sh" end >/dev/null 2>&1)
+  if [ ! -f "$tmp/work/.git/MUTATION_IN_PROGRESS" ]; then
+    report ok "worktree 側の end がメインのマーカーを外す"
+  else
+    report ng "worktree 側の end がメインのマーカーを外す" "マーカーが残っている"
+  fi
+else
+  report ng "linked worktree を作成できる" "git worktree add に失敗（環境要因）"
 fi
 rm -rf "$tmp"
 

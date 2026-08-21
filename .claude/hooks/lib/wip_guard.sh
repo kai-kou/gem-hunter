@@ -20,13 +20,23 @@ WIP_GUARD_MARKER_NAME="MUTATION_IN_PROGRESS"
 WIP_GUARD_TTL_SECONDS_DEFAULT=7200
 
 # マーカーの絶対パスを出力する（git リポジトリでなければ非 0 を返す）
+# マーカーは **全 worktree 共通の** git ディレクトリ（--git-common-dir）配下に置く。
+# linked worktree では --git-dir が `.git/worktrees/<name>` を指すため、そこに置くと
+# 「worktree 側で begin したのにメイン側のフックからは見えない」という非対称が生まれる
+# （PR #307 Layer 1 セルフレビュー指摘）。変異テストはリポジトリ単位で 1 つ動いていれば
+# 十分なので、共通ディレクトリを正本にする。
 wip_guard_marker_path() { # $1 = リポジトリルート
   local repo_root="${1:-.}" git_dir
-  git_dir=$(git -C "$repo_root" rev-parse --git-dir 2>/dev/null) || return 1
-  case "$git_dir" in
-    /*) ;;
-    *) git_dir="$repo_root/$git_dir" ;;
-  esac
+  git_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || git_dir=""
+  if [ -z "$git_dir" ]; then
+    # 古い git（--path-format 非対応）向けのフォールバック
+    git_dir=$(git -C "$repo_root" rev-parse --git-common-dir 2>/dev/null) \
+      || git_dir=$(git -C "$repo_root" rev-parse --git-dir 2>/dev/null) || return 1
+    case "$git_dir" in
+      /*) ;;
+      *) git_dir="$repo_root/$git_dir" ;;
+    esac
+  fi
   printf '%s/%s\n' "$git_dir" "$WIP_GUARD_MARKER_NAME"
 }
 
@@ -54,4 +64,15 @@ wip_guard_active() { # $1 = リポジトリルート, $2 = ログ用ラベル
 
   echo "[$label] 変異テスト等の一時改変中（マーカー: ${marker}・経過 ${age} 秒）のため WIP 自動コミットを抑止しました。作業ツリーはそのまま保持しています（Issue #304 / L-131）" >&2
   return 0
+}
+
+# フックからの定型呼び出し（存在確認・リポジトリルート解決を含む）。
+# 各フックが同じ 5 行をコピペすると、引数や解決方法の差異が静かに混入するため
+# （PR #307 Layer 1 セルフレビュー指摘）、呼び出し側は本関数だけを使う。
+wip_guard_active_here() { # $1 = ログ用ラベル, $2 = リポジトリルート（省略時は cwd から解決）
+  local repo_root="${2:-}"
+  if [ -z "$repo_root" ]; then
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  fi
+  wip_guard_active "$repo_root" "${1:-wip-guard}"
 }

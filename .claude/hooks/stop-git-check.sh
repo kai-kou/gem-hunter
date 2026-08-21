@@ -103,7 +103,7 @@ _mutation_guard=false
 if [[ -f "$_wip_guard_lib" ]]; then
   # shellcheck disable=SC1090
   source "$_wip_guard_lib"
-  if wip_guard_active "$(pwd)" "stop-git-check"; then _mutation_guard=true; fi
+  if wip_guard_active_here "stop-git-check"; then _mutation_guard=true; fi
 fi
 unset _wip_guard_lib
 
