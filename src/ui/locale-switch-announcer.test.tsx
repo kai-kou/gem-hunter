@@ -1,4 +1,5 @@
 import { render } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LocaleSwitchAnnouncer as LocaleSwitchAnnouncerType } from './locale-switch-announcer'
 
@@ -73,5 +74,33 @@ describe('LocaleSwitchAnnouncer', () => {
 
     const live = second.container.querySelector('[role="status"]')
     expect(live).toHaveTextContent('Switched to English.')
+  })
+
+  it('同一ロケールのまま unmount → 再 mount してもアナウンスしない（一覧→詳細等のロケールを跨がない遷移での誤発火防止）', () => {
+    // 一覧ページ → 詳細ページのような、ロケールを跨がない通常のクライアント遷移で
+    // <LocaleSwitchAnnouncer> 自体が remount されるケースを再現する。
+    const first = render(
+      <LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />,
+    )
+    first.unmount()
+
+    // 2 回目のマウントだが currentLocale は "ja" のまま変わっていない。
+    const second = render(
+      <LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />,
+    )
+
+    const live = second.container.querySelector('[role="status"]')
+    expect(live).toBeEmptyDOMElement()
+  })
+
+  it('StrictMode 下での初回 render（useEffect が2回走る）でもアナウンスしない', () => {
+    const { container } = render(
+      <StrictMode>
+        <LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />
+      </StrictMode>,
+    )
+
+    const live = container.querySelector('[role="status"]')
+    expect(live).toBeEmptyDOMElement()
   })
 })
