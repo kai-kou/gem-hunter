@@ -87,6 +87,35 @@ node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/og-background.png \
 | not-found | 1024×1024・透過 | medium | `public/images/not-found.webp` | 320px |
 | og-background | 1536×864・不透過 | medium | `public/images/og-background.png` | 1200×630（cover） |
 
+## OG 画像背景の埋め込み（`app/[locale]/opengraph-image.tsx` 用・追加タスク・Issue #347）
+
+`opengraph-image.tsx` は `next/og` の `ImageResponse` で背景に `og-background.png` を敷くが、
+**実行時の `readFile()` で `public/` を読む方式は Cloudflare Workers 上で 500 になる**（Workers に
+ファイルシステムは無く、`public/` の中身はディスク上に存在せず `ASSETS` バインディング経由でしか
+配信されないため。`npx opennextjs-cloudflare build` の成功はこれを検出できない——実デプロイへの
+`curl` で判明した）。そのため背景は **ビルド時に TS モジュール（base64 データ URI）へ変換して
+バンドルへ埋め込む**。`getCloudflareContext()` 等の Cloudflare 固有 API は使わない（`NFR-21`）。
+
+```bash
+# 1. 配信用 og-background.png（1200×630・約140KB）をさらに縮小・減色する
+#    （バンドルに埋め込むため、配信用よりずっと小さい版でよい。flat なベクター調の絵なので
+#    OG の 1200×630 へ拡大表示しても実用上問題ない）
+node tools/ui-assets/to_web_assets.mjs --in public/images/og-background.png \
+  --out /tmp/og-background-embed.png --width 600 --height 315 --format png \
+  --fit cover --colors 8 --dither 0
+# → 実測 4.5KB（600×315・8 色パレット）。目視で文字・記号の欠落やバンディングが無いことを確認する。
+
+# 2. base64 データ URI を export する TS モジュールへ変換する
+node tools/ui-assets/build_data_uri_module.mjs --in /tmp/og-background-embed.png \
+  --out "app/[locale]/og-background-data.ts" --export-name OG_BACKGROUND_DATA_URI --mime image/png
+# → app/[locale]/og-background-data.ts（自動生成・手で編集しない）を上書きする。
+#    opengraph-image.tsx は `import { OG_BACKGROUND_DATA_URI } from './og-background-data'` で使う。
+```
+
+`app/[locale]/og-background-data.ts` は自動生成ファイルだが、Cloudflare Workers に手動デプロイの
+たびに再生成する必要が無いよう **git 管理下に置く**（`public/images/og-background.png` を
+再生成したときだけ上記 2 手順を再実行する）。
+
 ## 位置づけ（重要）
 
 - **中間生成物（原寸 1024² などの PNG）はコミットしない。** 正本は配信ファイル（`public/images/*`・
