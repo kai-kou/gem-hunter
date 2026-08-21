@@ -1,0 +1,67 @@
+{
+  "topic": "gem-hunter のテキスト主体 UI を gpt-image-2 生成のビジュアルで補強し、ヘッダーを共通化して言語切替を右上へ移す",
+  "brief": "ユーザー指示（Issue #347）: (1) OpenAI gpt-image-2 でツールアイコン・タイトル・待ち受け（未検索）表示・検索結果 0 件など『いまテキストで伝えている箇所』を画像化してユーザビリティを上げたい。最新の UI/UX トレンド・ベストプラクティスを踏まえること。(2) 言語ごとに画像を使い分けることも検討する。(3) イメージだけで表現できるならそれでもよい。(4) 言語設定は頻繁に触れないので画面右上などへ移動を検討。(5) 一覧と詳細でヘッダーレイアウトを共通化。\n\n現状の実装事実: 共有ヘッダーは app/[locale]/layout.tsx にあり `h1 > Link(/{locale})` のツールタイトルと LoginLink だけを持つ（Issue #334 F-1/F-2 で新設）。LocaleSwitcher は各ページ本文（app/[locale]/page.tsx と repos/[owner]/[repo]/page.tsx のエラー分岐・成功パス）に個別に置かれており、`currentPath`（クエリ込みの現在 URL）を props で受けて ja/en のリンクを組み立てる（buildLocaleUrl）。詳細ページの not-found.tsx には LocaleSwitcher が無い。未検索状態はダイジェスト（DailyDigest）+ 検索フォームのみで、旧 idle 文言は Issue #337 で撤去済み。0 件は RepositoryList が `role=status` のテキスト 1 行。読み込み中は LoadingIndicator のテキスト 1 行（スケルトン化は #169 で未対応）。エラーは ErrorNotice（role=alert・枠線 + テキスト）。favicon は app/favicon.ico のみで OG 画像は無い。\n\n制約: docs/03_design/ui-ux/ui-ux-guidelines.md（§2 デザイントークン・§2.4 コントロールサイズ・§3 i18n 耐性で固定幅と nowrap 禁止・§4.4 4 状態の描き分けとレイアウトシフト禁止・§7.0 h1 は共有ヘッダー 1 箇所のみ・§7.4 画像の alt 方針）/ NFR-10 WCAG 2.2 AA・Lighthouse Accessibility 100 が品質ゲート / NFR-1 Lighthouse Performance 90 以上・LCP 2.5s / NFR-3 クライアント JS 最小（use client は入力欄とコントロールのトリガーだけ）/ INF-11 next/image の最適化は使わない（生 <img>）/ NFR-21 事業者固有機能をアプリコードへ持ち込まない / Cloudflare Workers 配信でバンドル・静的アセットのサイズが効く / 既存 E2E（e2e/sp-8-locale.spec.ts・sp-9-loading-empty.spec.ts・feedback-334.spec.ts・a11y.spec.ts 等）と tools/run_checks.sh（check_ui_dimensions.py / check_contrast.py / lighthouse）が回帰を検知する / 既存の画像生成基盤は tools/infographic/generate.py（gpt-image-2・PNG・サイズは 16 の倍数）と to_webp.mjs。\n\n争点は少なくとも次の 5 つ: A) 画像を入れる箇所と優先順位（アプリアイコン/ロゴマーク・favicon・OG 画像・未検索の待ち受け・0 件・エラー・読み込み中スケルトン・詳細の README 不在・404 のうち、どれをやり、どれをやらないか。『画像を足すと逆に遅く・うるさくなる』側の反論を必ず出すこと）B) 画像内に文字を焼き込むか（焼き込むなら言語別に 2 枚要る。WCAG 1.4.5 Images of Text・拡大時の劣化・文言変更の追随コスト・gpt-image-2 の日本語描画品質と、『言語ごとに使い分ける』というユーザー指示をどう満たすかを突き合わせる。文字なし 1 枚 + テキスト併記で指示を満たしたと言えるのか、それとも言語別に色/構図を変える別の満たし方があるのか）C) アセットの形式・生成・配信（gpt-image-2 の PNG をそのまま置くか WebP/AVIF 化するか・SVG へトレースするか・寸法と枚数の上限・ライト/ダークテーマ両対応をどう作るか・生成物をリポジトリにコミットするか・再現手順をどこに置くか・CLS を出さない実装）D) ヘッダー共通化と言語切替の右上移設の具体形（LocaleSwitcher を layout.tsx へ移すと currentPath をどう得るか＝サーバーコンポーネントで現在 URL を持たない問題、クエリ保持の要件をどう満たすか、ロゴ + タイトル + 言語 + ログインの並び、モバイルでの折返し、not-found.tsx への波及、既存 E2E の書き換え範囲）E) a11y と機械ゲート（装飾画像 alt=\"\" と意味を持つ画像の代替テキストの線引き・aria-live 領域の中に画像を置いてよいか・prefers-reduced-motion・Lighthouse 100 を割らない条件・追加すべき E2E と単体テスト）。",
+  "participants": [
+    {
+      "name": "ux_visual",
+      "model": "sonnet",
+      "lens": "UI/UX トレンドとビジュアル設計（2025-2026 の空状態・オンボーディング・ブランドイラストの実務ベストプラクティス。NN/g の empty state 三分類、Material 3 / Apple HIG / GOV.UK / Shopify Polaris / Atlassian Design System など一次情報を WebSearch/WebFetch で当たって出典付きで主張する。『どの状態に絵が効き、どの状態では絵がノイズになるか』を状態ごとに判定し、gem-hunter のミッション（star ではなく実利用で埋もれた OSS を見つける）を伝えるビジュアルの具体案＝構図・モチーフ・トーンまで落とす。装飾のための装飾を提案しないこと）"
+    },
+    {
+      "name": "a11y_i18n",
+      "model": "sonnet",
+      "lens": "アクセシビリティと国際化（WCAG 2.2 の 1.1.1 非テキストコンテンツ・1.4.5 Images of Text・1.4.11 非テキストコントラスト・2.3.3 / prefers-reduced-motion を実際の条文に当たって判定する。画像内テキストの焼き込みが AA 適合と Lighthouse Accessibility 100 ゲートに与える影響、装飾画像の alt=\"\" と意味画像の代替テキストの線引き、role=status / role=alert のライブリージョン内に画像を置いたときの読み上げ挙動、言語別画像を出し分ける場合の実装上の落とし穴（キャッシュ・SSR・lang 属性との整合）を具体的に指摘する。『言語ごとに画像を分ける』案の反対尋問役を担う）"
+    },
+    {
+      "name": "perf_asset",
+      "model": "sonnet",
+      "lens": "パフォーマンスとアセット配信（NFR-1 の Lighthouse Performance 90・LCP 2.5s・CLS 0.1 を守れるかを枚数と寸法から定量的に見積もる。INF-11 で next/image の最適化を使わない前提での width/height 指定・loading・decoding・fetchpriority の使い分け、PNG vs WebP vs AVIF vs インライン SVG の判断基準、ダークテーマ対応を picture/source で持つか CSS で持つか、Cloudflare Workers の静的アセット配信と OpenNext ビルドへの影響、リポジトリに画像をコミットすることの重さ、gpt-image-2 の生成コストと再現性を評価する。『生成画像は重い・トレースして SVG 化すべき』という対案を本気で検討して結論を出す）"
+    },
+    {
+      "name": "frontend_arch",
+      "model": "sonnet",
+      "lens": "フロントエンド実装設計（app/[locale]/layout.tsx を実際に読み、LocaleSwitcher をヘッダーへ移した場合にサーバーコンポーネントが現在 URL / クエリを取得できない問題をどう解くか（layout は searchParams を受け取れない・usePathname は use client 化を招く・NFR-3 と衝突）を具体コードの粒度で設計する。一覧・詳細・not-found・エラー分岐で同一ヘッダーになる構成、既存の h1 は共有ヘッダー 1 箇所という §7.0 制約の維持、ロゴ画像を h1 内に入れるときのマークアップ、既存 E2E（sp-8-locale / feedback-334 / sp-9-*）とテストの書き換え範囲、tools/check_ui_dimensions.py の登録済み呼び出しサイトへの影響を洗い出す。クエリ保持の要件を落とす提案には代償を明記する）"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合（docs/03_design/ui-ux/ui-ux-guidelines.md・docs/02_requirements/prd.md・user-story-map.md・docs/adr/ を突合し、本件で更新が必要な節・AC・NFR・ADR 起票の要否を列挙する。新しい事実を主張せず、既存記述との矛盾と更新箇所の洗い出しに徹する。SSOT を増やす提案が出ていないかを監視する）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて採用する設計を 1 つに決める。決定は『どのファイルに何を書くか（新規/改修）』『どの画像を何枚どの寸法で生成するか』『どのコマンドで生成するか』まで落とす。品質ゲート（NFR-10 Lighthouse Accessibility 100 > NFR-1 Performance 90 > ユーザー指示の充足 > 見た目の魅力）の順で衝突を解決する。議論で否定された案は採用しない。ユーザー指示（言語ごとの出し分け・ヘッダー共通化・言語切替の右上移設）を満たさない結論は認めない。仕様解釈が 2 通り以上あり成果物が変わるものは open_questions に列挙する（SD-3 第 2 系統）。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "assets": [
+      {
+        "id": "画像 ID",
+        "purpose": "使う画面・状態",
+        "size": "生成寸法",
+        "text_in_image": "yes|no",
+        "per_locale": "yes|no",
+        "motif": "構図・モチーフの指示"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T-n",
+        "title": "実行タスク",
+        "actor": "claude | user",
+        "depends_on": ["T-n"],
+        "sp": "sp:1|2|3|5|8"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）"]
+  }
+}
