@@ -42,7 +42,8 @@
     "sortOptions": {
       "relevance": "Relevance",
       "stars": "Stars",
-      "updated": "Updated"
+      "updated": "Updated",
+      "gemIndex": "Gem Index"
     },
     "perPageLabel": "Results per page",
     "perPageOptionLabel": "{count} per page",

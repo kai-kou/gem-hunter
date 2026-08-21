@@ -42,7 +42,8 @@
     "sortOptions": {
       "relevance": "関連度",
       "stars": "star 数",
-      "updated": "更新日時"
+      "updated": "更新日時",
+      "gemIndex": "Gem Index 順"
     },
     "perPageLabel": "表示件数",
     "perPageOptionLabel": "{count} 件",

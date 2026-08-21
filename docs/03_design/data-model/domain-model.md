@@ -88,6 +88,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 
 - エンティティは **プレーンな TypeScript のクラスまたは `readonly` オブジェクト** で表す。フレームワーク・ORM・デコレータを持ち込まない（アーキテクチャ §1.2 の import 禁止）。
 - `RepositorySummary` と `RepositoryDetail` は **別の型** にする（前者は検索レスポンスだけで作れ、後者は追加取得が要る）。
+- 🔴 **例外（`SP-16`）**: `RepositorySummary` には **`gemIndex` と `dependentCount` の 2 フィールドに限り** Gem Index コンテキスト（§6）から注入する。`sort=gemIndex` の検索結果を候補プールと usecase 層で join して埋め、埋まらない場合（候補プールに存在しない・join 自体を行わないソート順）は両方とも `undefined` にする。他の属性（`packageName` 等）はこの型へ持ち込まない。§2.2 が `starCount` / `Gem.stars` の名前衝突を「別コンテキストの同名概念」として記録しているのと同じ扱いで、こちらは「1 フィールドではなく 2 フィールドだけ意図的に越境させた」という決定を残す。
 
 ---
 
@@ -100,7 +101,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `SearchKeyword` | 空白のみ不可・前後トリム・長さ上限 | `DomainValidationError`（UI は「検索を促す表示」に倒す・`AC-3`） |
 | `PageNumber` | 1 以上の整数。上限は GitHub 検索の到達可能範囲 | `tryParse` は既定値 `1` に倒す（URL 改変で 500 にしない） |
 | `PerPage` | 🔴 **20 / 50 / 100 のみ**（`AR-3`。任意値はキャッシュ断片化を招く） | `tryParse` は既定値に倒す |
-| `SortOrder` | `relevance` / `stars` / `updated`（`AR-2`） | 同上 |
+| `SortOrder` | `relevance` / `stars` / `updated` / `gemIndex`（`AR-2`・`gemIndex` は `SP-16`・`D-30`） | 同上 |
 | `Locale` | `ja` / `en`（`AR-4`） | 既定ロケールに倒す |
 | `CacheKey` | 名前空間 + 正規化済みの構成要素（`NFR-18`） | 生成関数以外で組み立てない |
 | `DateSeed` | 🔴 **`YYYYMMDD` の 8 桁数字**（UTC）かつ **実在する日付**（`20260231` は不可・`Date.UTC` の往復一致で検証）。日次ダイジェストの唯一のシード（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2・`src/domain/model/date-seed.ts`） | `parse` は `DomainValidationError`。`tryParse(raw, now)` は **不正値・未指定を当日（UTC）へ倒す**（URL の `?date=` 改変で 500 にしない・ADR 0014 §2.2） |
@@ -162,7 +163,7 @@ repository:v2:vercel/next.js
 | コンテキスト | 位置づけ | 関係 |
 |---|---|---|
 | **Search**（MVP） | 本アプリの中核。検索・一覧・詳細 | — |
-| **Gem Index**（Phase 2） | 被依存数・健全性を扱う | Search とは **別コンテキスト**。同じ `Repository` でも持つ属性が違う。共通化を急がない |
+| **Gem Index**（Phase 2） | 被依存数・健全性を扱う | Search とは **別コンテキスト**。同じ `Repository` でも持つ属性が違う。共通化を急がない。🔴 **例外（`SP-16`）**: `sort=gemIndex` 検索では `RepositorySummary.gemIndex` / `.dependentCount` の 2 フィールドに限り Search コンテキストへ注入する（§3 参照）。それ以外の属性は越境させない |
 | **GitHub**（外部・上流） | データ源 | 🔴 **腐敗防止層（`src/infrastructure/github/`）を必ず挟む**。上流の変更に本体を追随させない |
 | **Ecosyste.ms / OpenSSF**（Phase 2・外部・上流） | 被依存数・健全性の供給元 | 同じく ACL を挟む。`RepositoryQueryPort` と別ポートにする → ✅ **`SP-14` で `GemDigestPort`（`src/domain/ports/gem-digest-port.ts`・`listCandidates()` 1 本）として分離済み**。候補プールはバッチ生成の静的 JSON 経由で読むため、Worker から Ecosyste.ms を直接叩かない（`D-28`） |
 

@@ -4,10 +4,11 @@ import { DomainValidationError } from '../errors'
 import { DEFAULT_SORT_ORDER, parse, tryParse } from './sort-order'
 
 describe('parse', () => {
-  it('relevance / stars / updated を受け入れる', () => {
+  it('relevance / stars / updated / gemIndex を受け入れる', () => {
     expect(parse('relevance')).toBe('relevance')
     expect(parse('stars')).toBe('stars')
     expect(parse('updated')).toBe('updated')
+    expect(parse('gemIndex')).toBe('gemIndex')
   })
 
   it('許可されていない値を拒否する', () => {

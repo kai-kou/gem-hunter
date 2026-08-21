@@ -1,12 +1,12 @@
 import { DomainValidationError } from '../errors'
 
-/** 並び順として許可する値（`AR-2`）。 */
-export const ALLOWED_SORT_ORDERS = ['relevance', 'stars', 'updated'] as const
+/** 並び順として許可する値（`AR-2`）。`gemIndex` は `SP-16`（Gem Index 順・`D-30`）。 */
+export const ALLOWED_SORT_ORDERS = ['relevance', 'stars', 'updated', 'gemIndex'] as const
 export const DEFAULT_SORT_ORDER: SortOrder = 'relevance' as SortOrder
 
 declare const brand: unique symbol
 
-/** 検索結果の並び順（関連度 / star 数 / 更新日時）。 */
+/** 検索結果の並び順（関連度 / star 数 / 更新日時 / Gem Index）。 */
 export type SortOrder = (typeof ALLOWED_SORT_ORDERS)[number] & { readonly [brand]: 'SortOrder' }
 
 function isAllowedSortOrder(value: string): value is (typeof ALLOWED_SORT_ORDERS)[number] {
