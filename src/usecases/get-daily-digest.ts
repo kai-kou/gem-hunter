@@ -1,6 +1,10 @@
 import type { DateSeed } from '../domain/model/date-seed'
 import type { DailyDigest, Gem } from '../domain/model/gem'
-import { gemIndexValue } from '../domain/model/gem-index'
+import {
+  GEM_INDEX_SHORTLIST_SIZE,
+  byGemIndexAsc,
+  selectGemIndexShortlist,
+} from '../domain/model/gem-shortlist'
 import type { GemDigestPort } from '../domain/ports/gem-digest-port'
 
 export type GetDailyDigestInput = {
@@ -9,16 +13,6 @@ export type GetDailyDigestInput = {
 }
 
 export type GetDailyDigest = (input: GetDailyDigestInput) => Promise<DailyDigest>
-
-/**
- * 日次シャッフルの母集団サイズ（Gem Index 上位帯・shortlist）。
- *
- * 実データ 294 件での分布検証（Issue #331）: shortlist を N=60 にすると star 中央値 706・
- * 70% が star<1000 に収まる。`limit=5` に対して 12 倍の母数があり日次ローテーション（`US-31`）を
- * 保てる。N=20〜30 は低 star に寄る代わりに顔ぶれの循環が短くなり、N=100 以上は star 中央値が
- * 1,169 まで上がって改善効果が薄れるため、両端の中間である 60 を採る。
- */
-export const GEM_INDEX_SHORTLIST_SIZE = 60
 
 /**
  * 日次ダイジェストを決定論的に生成する（`ADR 0014` §2.2）。
@@ -32,12 +26,16 @@ export const GEM_INDEX_SHORTLIST_SIZE = 60
  * 「選定」に一切関与せず star の多い有名リポジトリばかり並んでしまう。
  *
  * この 3 つを両立させるため **3 段階** で並べる。
- *   1. 候補プールを **Gem Index asc**（値が小さいほど過小評価度が高い・同値は packageName asc で
- *      タイブレーク）で並べ、先頭 `GEM_INDEX_SHORTLIST_SIZE` 件を shortlist とする
- *      （＝日次シャッフルの母集団を Gem Index 上位帯だけに絞る）
+ *   1. 候補プールから **Gem Index asc**（値が小さいほど過小評価度が高い・同値は packageName asc
+ *      でタイブレーク）で shortlist（`selectGemIndexShortlist`）を選ぶ
+ *      （＝日次シャッフルの母集団を Gem Index 上位帯だけに絞る）。母集団サイズは
+ *      `GEM_INDEX_SHORTLIST_SIZE` を基本としつつ、`limit` がそれを超えるときは `limit` に合わせて
+ *      広げる（さもないと「候補プールが limit 以下なら全件返す」契約が壊れ、件数が無警告で
+ *      欠落する）
  *   2. shortlist を **seed で決定論的シャッフル**（SHA-256(seed:packageName) をソートキー）し、
  *      先頭 `limit` 件を選ぶ
- *   3. 選ばれた `limit` 件を再び **Gem Index asc** で並べて返す（表示順の意味づけ）
+ *   3. 選ばれた `limit` 件を再び **Gem Index asc**（`byGemIndexAsc`）で並べて返す（表示順の意味
+ *      づけ）
  *
  * これにより「選ばれるのは常に Gem Index 上位帯」（1. の効果・本来の目的）と「その中で顔ぶれは
  * 日ごとに変わる」（2. の効果・`US-31`）と「その日の中の並び順は説明可能」（3. の効果・Gem Index
@@ -51,15 +49,10 @@ export function makeGetDailyDigest(deps: { port: GemDigestPort }): GetDailyDiges
       return { date: seed, items: [], meta }
     }
 
-    // 1. Gem Index asc（同値は packageName asc でタイブレーク・入力順に依存させない）で並べ、
-    //    先頭 GEM_INDEX_SHORTLIST_SIZE 件を shortlist（日次シャッフルの母集団）とする。
-    const shortlist = [...candidates]
-      .sort((a, b) => {
-        const diff = gemIndexValue(a.gemIndex) - gemIndexValue(b.gemIndex)
-        if (diff !== 0) return diff
-        return a.packageName < b.packageName ? -1 : a.packageName > b.packageName ? 1 : 0
-      })
-      .slice(0, GEM_INDEX_SHORTLIST_SIZE)
+    // 1. shortlist（日次シャッフルの母集団）を選ぶ。母集団サイズは GEM_INDEX_SHORTLIST_SIZE と
+    //    limit の大きい方にする（limit が母集団サイズを超えると、後段でシャッフル母集団自体が
+    //    limit 未満になり「候補プールが limit 以下なら全件返す」契約が壊れるため）。
+    const shortlist = selectGemIndexShortlist(candidates, Math.max(GEM_INDEX_SHORTLIST_SIZE, limit))
 
     // 2. shortlist に seed 由来のソートキーを付与し決定論的シャッフルする
     const withKeys = await Promise.all(
@@ -72,15 +65,14 @@ export function makeGetDailyDigest(deps: { port: GemDigestPort }): GetDailyDiges
 
     // 3. 先頭 limit 件を Gem Index asc（値が小さいほど過小評価度が高い）で並べる
     //
-    // 🔴 ただし候補プールが limit 以下のときは Gem Index の再ソートを **しない**。全件が必ず
-    //    選ばれるため、決定論的シャッフル（2.）の結果を Gem Index asc で上書きすると順序が
-    //    日付に依存しなくなり、`US-31`（毎日顔ぶれが変わる）が静かに壊れる（候補プールが
-    //    バッチ障害等で縮退したときに顕在化する）。この場合はシャッフル順をそのまま出す。
+    // 🔴 ただし shortlist（実際のシャッフル母集団）が limit 以下のときは Gem Index の再ソートを
+    //    **しない**。shortlist 全件が必ず選ばれるため、決定論的シャッフル（2.）の結果を
+    //    Gem Index asc で上書きすると順序が日付に依存しなくなり、`US-31`（毎日顔ぶれが変わる）が
+    //    静かに壊れる（候補プールがバッチ障害等で縮退した、または limit が母集団サイズ以上に
+    //    広がったときに顕在化する）。この場合はシャッフル順をそのまま出す。
     const picked = withKeys.slice(0, limit).map((x) => x.gem)
     const items: readonly Gem[] =
-      candidates.length <= limit
-        ? picked
-        : [...picked].sort((a, b) => gemIndexValue(a.gemIndex) - gemIndexValue(b.gemIndex))
+      shortlist.length <= limit ? picked : [...picked].sort(byGemIndexAsc)
 
     return { date: seed, items, meta }
   }
