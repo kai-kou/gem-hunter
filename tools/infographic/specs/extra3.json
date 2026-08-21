@@ -1,0 +1,64 @@
+{
+  "ops-rules": {
+    "title": "自律運用ルール体系",
+    "subtitle": "AI自律開発を支える大原則・確認境界・スプリント規律",
+    "sections": [
+      {
+        "heading": "大原則CP",
+        "items": [
+          "CP-1 自律判断・最適解探索",
+          "CP-2 最新情報を継続検証",
+          "CP-3 リポジトリ衛生管理",
+          "CP-4 並行セッション共存",
+          "CP-5 ミッション最大貢献",
+          "CP-6 ユーザー介入最小化"
+        ]
+      },
+      {
+        "heading": "確認境界A",
+        "items": [
+          "A-1 main直接push禁止",
+          "A-2 外部公開の即時実行",
+          "A-3 致命的NG時の続行判断",
+          "A-4 修正2回超後の続行",
+          "A-5 新規マイルストーン追加",
+          "A-6 アカウント課金設定変更"
+        ]
+      },
+      {
+        "heading": "開発規律SD",
+        "items": [
+          "SD-1 プレビューURL必須",
+          "SD-2 TDD先にテスト",
+          "SD-3 仕様分岐は確認",
+          "SD-4 文書を読み自律実行"
+        ]
+      },
+      {
+        "heading": "開発フロー",
+        "items": [
+          "Issue作成",
+          "作業ブランチ作成",
+          "PR作成",
+          "セルフレビュー",
+          "自動マージ"
+        ]
+      },
+      {
+        "heading": "PR自律化",
+        "items": [
+          "確認なしPR作成",
+          "AIレビュー自己完結",
+          "指摘対応→自動マージ"
+        ]
+      }
+    ],
+    "key_numbers": [
+      "CP-1〜6",
+      "A-1〜6",
+      "SD-1〜4",
+      "sp:1〜8"
+    ],
+    "layout_hint": "Central flowchart banner across the bottom showing Issue -> branch -> PR -> self-review -> auto-merge as connected arrow nodes. Above it, three parallel columns titled CP (principles), A (confirmation boundary), SD (sprint discipline), each as a stacked list of numbered pill-shaped labels in distinct accent colors. Small PR自律化 callout box tucked near the flowchart. Handdrawn graphic-recording style with icons (lock for A, checklist for SD, compass for CP)."
+  }
+}

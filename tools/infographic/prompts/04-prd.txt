@@ -1,0 +1,78 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+
+TITLE (top banner, largest text):
+「要件定義書」
+
+SUBTITLE (under the title, one line):
+「starに埋もれた良質OSSを発見するWebアプリ」
+
+LAYOUT INSTRUCTION:
+Draw a hand-drawn mind map:
+- At the center of the canvas, a large rounded box holding the 「目的」 block, drawn with a bolder border and a small target/bullseye doodle.
+- Radiating outward from the center in six directions, connected by curved hand-drawn branch lines, the remaining blocks: 「技術要件」, 「機能要件」, 「上乗せ要件」, 「非機能要件」, 「受け入れ基準」, 「スコープ外」.
+- Give each branch its own accent color and a small icon. Draw 「スコープ外」 with a dashed border and a light gray tone to signal exclusion.
+- Balance the branches so the map fills the 16:9 canvas evenly with no crowding.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「目的」
+Block 1 items (bulleted list, one line each):
+・star偏重検索の限界を補う
+・Hidden Gemを個人開発者へ
+
+Block 2 heading:「技術要件」
+Block 2 items (bulleted list, one line each):
+・TR-1 Next.js v16以降
+・TR-2 App Router必須
+・TR-3 TypeScript必須
+・TR-4 GitHub検索API利用
+
+Block 3 heading:「機能要件」
+Block 3 items (bulleted list, one line each):
+・FR-1 キーワード検索
+・FR-2 一覧表示
+・FR-3〜5 詳細は独立URL
+・FR-6 一覧へ復帰
+・FR-7 ページネーション
+
+Block 4 heading:「上乗せ要件」
+Block 4 items (bulleted list, one line each):
+・AR-4 多言語(i18n)
+・AR-5 任意OAuthログイン
+・AR-2 並び順切替
+・AR-3 表示件数切替
+
+Block 5 heading:「非機能要件」
+Block 5 items (bulleted list, one line each):
+・NFR-7 レート制限対策
+・NFR-10 WCAG2.2 AA目標
+・NFR-33 公開限定を強制
+・NFR-16 データ層を隔離
+
+Block 6 heading:「受け入れ基準」
+Block 6 items (bulleted list, one line each):
+・AC-1〜12で検証
+・Given/When/Then形式
+
+Block 7 heading:「スコープ外」
+Block 7 items (bulleted list, one line each):
+・認証の必須化
+・課金・通知機能
+・DBを持たない設計
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「FR-1〜7」
+「AC-1〜12」
+「NFR 33件」
+「TR-1〜5」

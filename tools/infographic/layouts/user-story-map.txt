@@ -1,0 +1,6 @@
+Draw ONE large story-map grid that fills the entire canvas below the title. Do NOT add any side panels.
+- 8 columns. Across the top of the grid, a row of colored header cards (the backbone), left to right in the given order.
+- 4 rows. Down the left margin, 4 release-stage labels as small tags, each with a thin horizontal divider line running right across the grid.
+- Inside each grid cell, place the small sticky-note cards listed below for that cell. Cells listed as EMPTY must be left blank (no dashed placeholder box, no filler text) — just quiet white space.
+- Cards marked [DONE] get a small hand-drawn check mark and a warm filled tone. Cards marked [TODO] get a dashed outline and a pale gray tone.
+- Keep the hand-lettering large enough to read: the grid is the whole picture, so use the full width.

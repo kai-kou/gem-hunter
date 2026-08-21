@@ -1,0 +1,138 @@
+{
+  "testing": {
+    "title": "テスト戦略",
+    "subtitle": "層×道具でどこまでテストするか",
+    "sections": [
+      {
+        "heading": "前提制約",
+        "items": [
+          "asyncRSCはE2Eのみ",
+          "外部APIは既定で遮断",
+          "コマンド1つでCI実行"
+        ]
+      },
+      {
+        "heading": "採用道具",
+        "items": [
+          "Vitest4:ユニット結合",
+          "RTL:振る舞い検証",
+          "MSW2:ACLのみモック",
+          "Playwright:E2E",
+          "axe:自動a11y検査"
+        ]
+      },
+      {
+        "heading": "テスト層",
+        "items": [
+          "domain:ユニット",
+          "usecases:フェイク注入",
+          "infra/github:結合+MSW",
+          "UI:RTLで役割取得",
+          "app同期:ユニット",
+          "app非同期RSC:E2E"
+        ]
+      },
+      {
+        "heading": "ダブル方針",
+        "items": [
+          "①フェイク優先",
+          "②MSWはACL限定",
+          "③vi.mockは最終手段"
+        ]
+      },
+      {
+        "heading": "二重ループ",
+        "items": [
+          "外側:操作レビュー→E2ERed",
+          "内側:Red→Green→Refactor",
+          "test→feat順にコミット"
+        ]
+      },
+      {
+        "heading": "禁止事項",
+        "items": [
+          "スキップして緑にしない",
+          "未実行なのに通過と報告",
+          "実装をテストに合わせない"
+        ]
+      }
+    ],
+    "key_numbers": [
+      { "number": "NFR-23", "label": "主要フローのテスト" },
+      { "number": "NFR-24", "label": "外部APIのモック化" },
+      { "number": "NFR-25", "label": "コマンド1つ・CI実行" },
+      { "number": "NFR-26", "label": "axeでa11y検査" }
+    ],
+    "layout_hint": "Draw a test pyramid with three layers: unit (domain, usecases, app sync components) at the base using Vitest, integration (infrastructure/github ACL) in the middle using Vitest+MSW, and E2E (async Server Components, accessibility) at the top using Playwright and axe. Beside the pyramid, add a small two-loop TDD diagram: an outer loop labelled 'E2E Red -> Green (SD-1/SD-2)' wrapping an inner loop labelled 'unit Red -> Green -> Refactor'. Use small tool icons or labels (Vitest, RTL, MSW, Playwright, axe) next to their layer."
+  },
+  "cloudflare": {
+    "title": "Cloudflare構成",
+    "subtitle": "リクエストの通り道とキャッシュ層",
+    "sections": [
+      {
+        "heading": "経路",
+        "items": [
+          "ブラウザ→静的アセット",
+          "Workersキャッシュ",
+          "MISS時→Worker実行",
+          "Worker→GitHub API"
+        ]
+      },
+      {
+        "heading": "ランタイム",
+        "items": [
+          "OpenNextアダプタ",
+          "Next16.2.11以上",
+          "Workers上で実行"
+        ]
+      },
+      {
+        "heading": "キャッシュ階層",
+        "items": [
+          "L1:リクエスト内メモ化",
+          "L2:InMemoryCacheが主役",
+          "L3:外部ストア未採用"
+        ]
+      },
+      {
+        "heading": "バインディング",
+        "items": [
+          "RateLimiting binding",
+          "keyはIPのHMAC化",
+          "検索エンドポイントに適用"
+        ]
+      },
+      {
+        "heading": "環境構成",
+        "items": [
+          "local:wrangler dev",
+          "preview:versions+alias",
+          "production:Worker本体"
+        ]
+      },
+      {
+        "heading": "デプロイ",
+        "items": [
+          "プレビューへversions upload",
+          "本番はwrangler deploy",
+          "現在セッション実行が暫定"
+        ]
+      },
+      {
+        "heading": "コスト境界",
+        "items": [
+          "Free:リクエスト無料枠",
+          "超過で課金でなく停止",
+          "Paidは実測してから判定"
+        ]
+      }
+    ],
+    "key_numbers": [
+      { "number": "100,000/日", "label": "Freeリクエスト上限" },
+      { "number": "10ms", "label": "CPU時間/invocation" },
+      { "number": "3MB", "label": "バンドルサイズ上限(圧縮後)" },
+      { "number": "$10/月", "label": "Paid撤退ライン" }
+    ],
+    "layout_hint": "a left-to-right request-flow diagram: browser -> Workers Static Assets / Workers Caching -> Worker (OpenNext adapter) -> GitHub API / GitHub OAuth, with a Rate Limiting binding attached to the Worker. Below the Worker box, stack three cache layers labelled L1 (in-request memoization), L2 (InMemoryCache, the main layer), and L3 (external store, not adopted). Add a small side lane showing three environment boxes: local, preview (versions + alias), production, with arrows indicating wrangler deploy paths."
+  }
+}

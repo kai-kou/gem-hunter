@@ -1,0 +1,84 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+
+TITLE (top banner, largest text):
+「インセプションデッキ」
+
+SUBTITLE (under the title, one line):
+「10の質問で見るgem-hunterの方向づけ」
+
+LAYOUT INSTRUCTION:
+Draw the classic 10-question inception deck as two rows of cards:
+- Top row, left to right, five cards: the blocks whose headings begin with Q1 through Q5, under a small hand-lettered band reading 「なぜここにいるのか」.
+- Bottom row, left to right, five cards: the blocks whose headings begin with Q6 through Q10, under a small hand-lettered band reading 「どうやって実現するのか」.
+- Each card is a rounded box with its heading text at the top (in an accent color) and its bullet items below, plus one small doodle icon in the top-right corner of the card.
+- CRITICAL: the question number appears ONLY once per card, inside the heading text itself (for example 「Q1:目的」). Do NOT draw an additional number badge, circle, or numeral anywhere else on the card.
+- Keep all ten cards the same size and neatly aligned in a 5-column grid.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「Q1:目的」
+Block 1 items (bulleted list, one line each):
+・主目的:選考課題/PF
+・衝突時は主目的が勝つ
+
+Block 2 heading:「Q2:ピッチ」
+Block 2 items (bulleted list, one line each):
+・star埋没の実利用OSSを発見
+・Phase1は差別化を含まない
+
+Block 3 heading:「Q3:製品箱」
+Block 3 items (bulleted list, one line each):
+・商品名:gem-hunter
+・starを分子でなく分母に
+・スコアはOpenSSFに委任
+
+Block 4 heading:「Q4:やらぬこと」
+Block 4 items (bulleted list, one line each):
+・DB非保持・認証必須化なし
+・課金・push通知はしない
+
+Block 5 heading:「Q5:関係者」
+Block 5 items (bulleted list, one line each):
+・評価者:与件が下限
+・将来ユーザー:未接触(n=0)
+
+Block 6 heading:「Q6:解決案」
+Block 6 items (bulleted list, one line each):
+・Next.js 16 App Router
+・データアクセス層を1箇所に隔離
+
+Block 7 heading:「Q7:リスク」
+Block 7 items (bulleted list, one line each):
+・ペルソナ未検証(n=0)
+・レート枠30req/分が律速
+
+Block 8 heading:「Q8:期間」
+Block 8 items (bulleted list, one line each):
+・期日は未確定
+・MVP→積み上げの順で到達
+
+Block 9 heading:「Q9:トレードオフ」
+Block 9 items (bulleted list, one line each):
+・与件充足を最優先
+・Gem IndexよりPhase1完成度
+
+Block 10 heading:「Q10:体制」
+Block 10 items (bulleted list, one line each):
+・開発者本人+Claude Code
+・セルフレビューで完結
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「レート枠30req/分」
+「与件基準11項目」
+「開発体制:実質1人+AI」

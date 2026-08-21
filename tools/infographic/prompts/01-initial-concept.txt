@@ -1,0 +1,70 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+
+TITLE (top banner, largest text):
+「初期コンセプト」
+
+SUBTITLE (under the title, one line):
+「有名すぎない名作OSSを発掘する検索エンジン」
+
+LAYOUT INSTRUCTION:
+Draw a top-to-bottom narrative flow of the product concept:
+- Upper band: the 「課題」 block on the left as a cloud-shaped thought bubble with a worried doodle, and 「ターゲット」 on the right as a persona box with two small character doodles.
+- Middle band (visually the largest): 「コア機能」 as four wide feature cards in a 2x2 grid, each with its own distinct doodle icon.
+- Lower band: three smaller boxes side by side for 「技術」, 「収益化」 and 「GTM」.
+- Bottom strip: 「ロードマップ」 as a horizontal 3-step arrow chain (Phase1 → Phase2 → Phase3), each phase in its own chevron arrow shape.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「課題」
+Block 1 items (bulleted list, one line each):
+・有名リポジトリ優遇の検索構造
+・真に役立つOSSが埋もれる
+
+Block 2 heading:「ターゲット」
+Block 2 items (bulleted list, one line each):
+・個人開発者/インディーハッカー
+・フリーランスエンジニア
+
+Block 3 heading:「コア機能」
+Block 3 items (bulleted list, one line each):
+・マイクロ・スイートスポット検索
+・Gem Score(健全性評価)
+・目的別タグ付け
+・セレンディピティ・レコメンド
+
+Block 4 heading:「技術」
+Block 4 items (bulleted list, one line each):
+・GraphQL APIでデータ収集
+・3種のスコアリング指標
+
+Block 5 heading:「収益化」
+Block 5 items (bulleted list, one line each):
+・Freemium
+・Proサブスク($5-9/月)
+
+Block 6 heading:「GTM」
+Block 6 items (bulleted list, one line each):
+・Build in Public
+・Product Huntローンチ
+・週刊OSSダイジェスト配信
+
+Block 7 heading:「ロードマップ」
+Block 7 items (bulleted list, one line each):
+・Phase1: MVP検索サイト
+・Phase2: コミュニティ機能
+・Phase3: 収益化・精度向上
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「star 10〜500件に限定」
+「Proサブスク $5-9/月」

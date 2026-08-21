@@ -1,0 +1,5 @@
+Draw a four-tier stacked architecture diagram:
+- Four wide horizontal layer bands stacked vertically, filling the canvas below the title, in this top-to-bottom order: 「アーキテクチャ」, 「ドメインモデル」, 「UI/UX」, 「インフラ」.
+- Each band is a long rounded box with its heading in an accent color on the left edge (with a small icon), and its bullet items laid out in two columns inside the band.
+- Give each band a different accent color and a slightly different hand-drawn texture.
+- Draw a thin downward hand-drawn arrow on the far right connecting the bands top to bottom.

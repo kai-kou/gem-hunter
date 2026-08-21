@@ -1,0 +1,70 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+
+TITLE (top banner, largest text):
+「テスト戦略」
+
+SUBTITLE (under the title, one line):
+「層×道具でどこまでテストするか」
+
+LAYOUT INSTRUCTION:
+Draw a test pyramid with three layers: unit (domain, usecases, app sync components) at the base using Vitest, integration (infrastructure/github ACL) in the middle using Vitest+MSW, and E2E (async Server Components, accessibility) at the top using Playwright and axe. Beside the pyramid, add a small two-loop TDD diagram: an outer loop labelled 'E2E Red -> Green (SD-1/SD-2)' wrapping an inner loop labelled 'unit Red -> Green -> Refactor'. Use small tool icons or labels (Vitest, RTL, MSW, Playwright, axe) next to their layer.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「前提制約」
+Block 1 items (bulleted list, one line each):
+・asyncRSCはE2Eのみ
+・外部APIは既定で遮断
+・コマンド1つでCI実行
+
+Block 2 heading:「採用道具」
+Block 2 items (bulleted list, one line each):
+・Vitest4:ユニット結合
+・RTL:振る舞い検証
+・MSW2:ACLのみモック
+・Playwright:E2E
+・axe:自動a11y検査
+
+Block 3 heading:「テスト層」
+Block 3 items (bulleted list, one line each):
+・domain:ユニット
+・usecases:フェイク注入
+・infra/github:結合+MSW
+・UI:RTLで役割取得
+・app同期:ユニット
+・app非同期RSC:E2E
+
+Block 4 heading:「ダブル方針」
+Block 4 items (bulleted list, one line each):
+・①フェイク優先
+・②MSWはACL限定
+・③vi.mockは最終手段
+
+Block 5 heading:「二重ループ」
+Block 5 items (bulleted list, one line each):
+・外側:操作レビュー→E2ERed
+・内側:Red→Green→Refactor
+・test→feat順にコミット
+
+Block 6 heading:「禁止事項」
+Block 6 items (bulleted list, one line each):
+・スキップして緑にしない
+・未実行なのに通過と報告
+・実装をテストに合わせない
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「{'number': 'NFR-23', 'label': '主要フローのテスト'}」
+「{'number': 'NFR-24', 'label': '外部APIのモック化'}」
+「{'number': 'NFR-25', 'label': 'コマンド1つ・CI実行'}」
+「{'number': 'NFR-26', 'label': 'axeでa11y検査'}」

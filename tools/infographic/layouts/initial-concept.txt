@@ -1,0 +1,5 @@
+Draw a top-to-bottom narrative flow of the product concept:
+- Upper band: the 「課題」 block on the left as a cloud-shaped thought bubble with a worried doodle, and 「ターゲット」 on the right as a persona box with two small character doodles.
+- Middle band (visually the largest): 「コア機能」 as four wide feature cards in a 2x2 grid, each with its own distinct doodle icon.
+- Lower band: three smaller boxes side by side for 「技術」, 「収益化」 and 「GTM」.
+- Bottom strip: 「ロードマップ」 as a horizontal 3-step arrow chain (Phase1 → Phase2 → Phase3), each phase in its own chevron arrow shape.

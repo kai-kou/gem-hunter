@@ -1,0 +1,6 @@
+Draw a left-to-right pipeline diagram:
+- Left side: the 「入力シグナル」 block as a column of small input cards, each with a tiny icon, feeding arrows to the right.
+- Center: the 「計算式」 block drawn as a prominent framed formula box (the heart of the picture), with hand-drawn arrows coming in from the left.
+- Right side: the 「出力」 block as the result of the pipeline, with a bold arrow arriving into it.
+- Below the pipeline, arranged as a row of three smaller supporting boxes: 「役割分担」, 「実装(0014)」 and 「Phase区分」, connected to the pipeline by thin lines.
+- CRITICAL: exactly six boxes exist on the canvas, one per listed block heading. Do NOT add any extra box, and do NOT repeat the 「出力」 items anywhere else.

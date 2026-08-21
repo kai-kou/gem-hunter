@@ -16,6 +16,7 @@
 | [`05_release/`](./05_release) | リリースノート・デプロイ手順 |
 | [`adr/`](./adr) | Architecture Decision Records（技術的意思決定の記録） |
 | [`meeting-notes/`](./meeting-notes) | 議事録・ミーティングメモ |
+| [`infographics/`](./infographics) | 主要ドキュメントのグラレコ風インフォグラフィック（16:9・要約であって正本ではない） |
 
 > **実装時に読む 3 つの正本**（クリーンアーキテクチャ / DDD / TDD）: [アプリケーションアーキテクチャ](./03_design/architecture/application-architecture.md)（層・依存規則）/ [ドメインモデル](./03_design/data-model/domain-model.md)（ユビキタス言語）/ [テスト戦略](./04_development/testing-strategy.md)（層分担・道具）。実装中の判断チェックリストは [`docs/rules/architecture-rules.md`](./rules/architecture-rules.md)。
 

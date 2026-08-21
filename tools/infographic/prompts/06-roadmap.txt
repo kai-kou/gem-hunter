@@ -1,0 +1,69 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+
+TITLE (top banner, largest text):
+「ロードマップ」
+
+SUBTITLE (under the title, one line):
+「M-1〜M-6マイルストーンの到達順序と現在地」
+
+LAYOUT INSTRUCTION:
+Draw a left-to-right roadmap timeline:
+- A bold hand-drawn horizontal road/arrow across the middle of the canvas with milestone flags along it, showing the order of the 「到達順序」.
+- The 「マイルストーン」 items are the milestone stations on that road, each as a labelled flag or pin, in order.
+- 「現在地」 is a "YOU ARE HERE" style marker box attached to the road with a small hand-drawn pointer.
+- 「削減ルール」 and 「残課題」 sit as two rounded boxes below the road, connected by short thin lines.
+- Use a check mark doodle on achieved milestones and a dashed outline on the not-yet-started ones.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「マイルストーン」
+Block 1 items (bulleted list, one line each):
+・M-1 歩く骨格(S-0)
+・M-2 MVP達成(S-1)
+・M-3 積み上げ(S-2)
+・M-4 公開判断ゲート
+・M-5 Phase2着手判断
+・M-6 Gem発見(S-3)
+
+Block 2 heading:「現在地」
+Block 2 items (bulleted list, one line each):
+・M-1〜M-2 達成済み
+・M-5 通過済み(D-27)
+・M-6 完了(SP-14〜16)
+・M-3 未着手
+・M-4 判断前
+
+Block 3 heading:「到達順序」
+Block 3 items (bulleted list, one line each):
+・M-1→M-2→M-5
+・→M-6→M-3
+・M-4は並行判断可
+
+Block 4 heading:「削減ルール」
+Block 4 items (bulleted list, one line each):
+・削るならM-3から
+・M-1/M-2は削らない
+・M-6も削減候補になる
+
+Block 5 heading:「残課題」
+Block 5 items (bulleted list, one line each):
+・R-5 レート枠の逆算
+・R-8 GitHub規約確認
+・R-6 運用コスト試算
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「M-1〜M-6」
+「6マイルストーン」
+「SP-16まで完了」
+「D-27でPhase2着手決定」

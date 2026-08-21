@@ -1,0 +1,1 @@
+a numbered timeline of decision cards grouped into 6 thematic clusters (infrastructure, UI, data, auth, policy, features); each card shows the ADR number badge, the chosen technology, and a short rationale tag; use a left-to-right or top-to-bottom flow with thin connecting lines linking related decisions (e.g. Cloudflare -> Next.js -> DB-less state).
