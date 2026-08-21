@@ -29,6 +29,10 @@ test.describe('SP-6: 存在しないリポジトリの URL を開くと Not Foun
       await expect(page).toHaveTitle(ja.detail.notFound)
     })
 
+    await test.step('2.6. 404 の装飾ビジュアル（Issue #347）が可視で存在する', async () => {
+      await expect(page.locator('main img[src="/images/not-found.webp"]')).toBeVisible()
+    })
+
     await test.step('3. 一覧への戻り導線があり、遷移すると一覧に戻る', async () => {
       await page.getByRole('link', { name: ja.detail.backLink }).click()
       await expect(page).toHaveURL(/\/ja$/)

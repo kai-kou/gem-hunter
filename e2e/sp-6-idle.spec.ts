@@ -40,6 +40,17 @@ test.describe('SP-6: 未検索の初期状態で検索を促す表示が出る',
       await expect(searchBox).toBeEditable()
       await expect(submitButton).toBeEnabled()
     })
+
+    await test.step('4. 未検索の装飾ビジュアル（Issue #347）が可視で、検索実行後は消える', async () => {
+      // 🔴 汎用の `img[alt=""]` では検索結果のオーナーアイコン（同じく alt=""）と
+      // 区別できないため、待ち受け専用アセットの src で狙い撃つ（lead round4 確定パス）。
+      const idleImage = page.locator('main img[src="/images/hero-idle.webp"]')
+      await expect(idleImage).toBeVisible()
+
+      await page.getByRole('searchbox', { name: ja.home.searchLabel }).fill('react')
+      await page.getByRole('button', { name: ja.home.searchSubmit }).click()
+      await expect(idleImage).toHaveCount(0)
+    })
   })
 
   test('en: idle 文言は表示されず、検索欄・検索ボタンが同時に操作可能な状態で存在する', async ({

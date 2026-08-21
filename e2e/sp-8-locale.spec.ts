@@ -28,6 +28,12 @@ test('SP-8: 言語を英語に切り替えると URL のロケールと UI 文�
     await expect(page.getByRole('button', { name: '検索' })).toBeVisible()
   })
 
+  await test.step('0. 言語切替 UI は header 要素の中にある（Issue #347: ヘッダー共通化）', async () => {
+    await expect(
+      page.locator('header').getByRole('navigation', { name: '言語切替' }),
+    ).toBeVisible()
+  })
+
   await test.step('1. 言語切替 UI で English を選ぶ → URL のロケールが /en に変わる', async () => {
     await page
       .getByRole('navigation', { name: '言語切替' })
@@ -35,6 +41,12 @@ test('SP-8: 言語を英語に切り替えると URL のロケールと UI 文�
       .click()
 
     await expect(page).toHaveURL(/\/en(\?.*)?$/)
+  })
+
+  await test.step('1.5. 切替直後に role="status" のアナウンス文言が更新される（Issue #347: ルートアナウンサーの沈黙是正）', async () => {
+    await expect(
+      page.getByRole('navigation', { name: 'Language' }).getByRole('status'),
+    ).toHaveText('Switched to English.')
   })
 
   await test.step('2. UI 文言が英語になる', async () => {

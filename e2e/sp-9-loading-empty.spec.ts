@@ -93,6 +93,11 @@ test.describe('SP-9: 読み込み中と 0 件が区別できる', () => {
       await expect(page.locator('main').getByText(ja.common.loading)).toHaveCount(0)
       // 0 件はエラーではない（role="alert" にしない・ui-ux-guidelines.md §7.2）
       await expect(page.locator('main').getByRole('alert')).toHaveCount(0)
+      // Issue #347 T-5: 0 件の装飾画像（alt=""）が main 内に可視で存在すること。
+      await expect(page.locator('main img[alt=""]')).toBeVisible()
+      // 🔴 構造契約: role="status" の要素の中に img が無いこと（a11y_i18n round3・
+      // repository-list.tsx の確定マークアップ「画像は status 要素の外＝兄弟」の回帰防止）。
+      await expect(status.locator('img')).toHaveCount(0)
     })
 
     await test.step('3. 検索欄は残り、別のキーワードへ直せる', async () => {
