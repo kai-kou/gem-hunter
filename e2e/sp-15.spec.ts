@@ -4,13 +4,14 @@ import { readDigestPackageNames } from './helpers'
 
 /**
  * SP-15: ダイジェストの鮮度と出典が保証され、再訪時に前回からの差分がわかる
- * （`user-story-map.md` §5.3 `SP-15` の操作レビュー手順 4 手順を E2E に写す・
- * `sprint-development-rules.md` `SD-2`）。対応 `AC`: なし（上乗せ要件 `AR-9` / `AR-10`）。
+ * （`user-story-map.md` §5.3 `SP-15` の操作レビュー手順 3 手順を E2E に写す・
+ * `sprint-development-rules.md` `SD-2`）。対応 `AC`: なし（上乗せ要件 `AR-9`）。
+ * 🔴 RSS 配信（旧手順 4）は `D-34`（2026-08-21）により撤去済み（`open-questions.md` 参照）。
  *
  * データ源: `public/data/daily-digest.json`。`?date=YYYYMMDD` で顔ぶれを再現できる。
  */
 
-test.describe('SP-15: 鮮度・出典・差分・RSS', () => {
+test.describe('SP-15: 鮮度・出典・差分', () => {
   test('手順1: 出典表示（Ecosyste.ms / CC BY-SA 4.0）とデータ生成日（JST）が出ている', async ({
     page,
   }) => {
@@ -91,31 +92,5 @@ test.describe('SP-15: 鮮度・出典・差分・RSS', () => {
     await expect(page.getByText('初回として全件を表示しています')).toBeVisible()
     // 新着バッジは初回扱いなので 0 個
     await expect(section.getByText('新着')).toHaveCount(0)
-  })
-
-  test('手順4: RSS の URL を購読すると同じ内容が取得できる', async ({ page, request }) => {
-    // トップの packageName 一覧を取得
-    await page.goto('/ja')
-    const topNames = await readDigestPackageNames(page)
-    expect(topNames.length).toBe(5)
-
-    // トップの「RSS で購読」リンクが `/api/digest/rss` を指す
-    const rssLink = page.getByRole('link', { name: 'RSS で購読' })
-    await expect(rssLink).toBeVisible()
-    await expect(rssLink).toHaveAttribute('href', '/api/digest/rss')
-
-    // RSS を取得し、200 / 正しい content-type / RSS 2.0 ルート / 同じ packageName が並ぶ
-    const response = await request.get('/api/digest/rss')
-    expect(response.status()).toBe(200)
-    expect(response.headers()['content-type']).toBe('application/rss+xml; charset=utf-8')
-    const body = await response.text()
-    expect(body).toContain('<rss version="2.0">')
-    // 出典（帰属）が RSS にも入っている（D-29）
-    expect(body).toMatch(/Data via Ecosyste\.ms/)
-    // トップの各 packageName が RSS の item にも現れる
-    for (const name of topNames) {
-      // XML エスケープの都合で <title>name</title> に一致（名前は英数記号中心）
-      expect(body).toContain(`<title>${name}</title>`)
-    }
   })
 })

@@ -1,7 +1,11 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import { getRepositoryDetailUseCase } from '@/src/composition/container'
+import {
+  getRepositoryDetailUseCase,
+  getRepositoryReadmeUseCase,
+} from '@/src/composition/container'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { getMessages } from '@/src/shared/i18n/messages'
@@ -11,6 +15,7 @@ import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-par
 import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { LocaleSwitcher } from '@/src/ui/locale-switcher'
+import { ReadmeSection } from '@/src/ui/readme-section'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
 import { SetDocumentTitle } from '@/src/ui/set-document-title'
 
@@ -26,11 +31,13 @@ import { SetDocumentTitle } from '@/src/ui/set-document-title'
  * 直接この URL を開いた場合（検索条件なし）は既定値へ倒れ、`buildSearchUrl` が
  * クエリなしの `/{locale}` を返す（`BackLink` の既定と同じ挙動）。
  *
- * 🔴 **本ページに `<Suspense>`（および `loading.tsx`）を置かない**（SP-9 で検討のうえ見送り）。
- * 取得結果が `null` のとき `notFound()` で **HTTP 404 を返す** のが `AC-5` の要件で、
- * Suspense fallback が描画された時点でレスポンスヘッダが送出済みになり 404 を返せなくなる
- * （Next.js `file-conventions/loading.md`「Place `notFound()` before those boundaries」）。
- * 読み込み中表示（US-22）は検索一覧側（`app/[locale]/page.tsx`）で担保する。
+ * 🔴 **`<Suspense>` は必ず `notFound()` の後にのみ置く**（SP-9 で検討のうえ見送っていたが、
+ * Issue #334 F-4 の README 遅延表示のために復活。取得結果が `null` のとき `notFound()` で
+ * **HTTP 404 を返す** のが `AC-5` の要件で、Suspense fallback が描画された時点でレスポンス
+ * ヘッダが送出済みになり 404 を返せなくなる（Next.js `file-conventions/loading.md`
+ * 「Place `notFound()` before those boundaries」）。本ページに `loading.tsx` は依然として
+ * 置かない（`notFound()` 判定より前に読み込み中表示が要る US-22 は検索一覧側
+ * `app/[locale]/page.tsx` で担保する）。
  */
 export default async function RepositoryDetailPage({
   params,
@@ -90,7 +97,9 @@ export default async function RepositoryDetailPage({
               localeNames: messages.common.localeSwitcher.localeNames,
             }}
           />
-          <h1 className="mb-4 text-2xl font-semibold">{`${owner}/${repo}`}</h1>
+          {/* 🔴 h1 は共有ヘッダー（layout.tsx）のツールタイトルが持つため h2 へ降格
+              （Issue #334 F-1/F-2・whiteboard round3 lead 裁定）。 */}
+          <h2 className="mb-4 text-2xl font-semibold">{`${owner}/${repo}`}</h2>
           <ErrorNotice
             presentation={toErrorPresentation(kind, messages, {
               locale,
@@ -122,6 +131,17 @@ export default async function RepositoryDetailPage({
     notFound()
   }
 
+  /**
+   * Issue #334 F-4: README は `notFound()` 確定後に Promise を **作るだけ**（await しない）。
+   * `findDetail` の await 完了後に作ることで、README 側の `findReadme` usecase が内部で経由する
+   * `findDetail` がキャッシュ HIT する（GitHub への往復は最大 2 回・whiteboard round3 lead 裁定）。
+   * README の遅延・失敗を統計表示のブロッキングパスに乗せないため、下の `<Suspense>` へ渡す。
+   * どちらの await より前に reject しても unhandled rejection にしないよう no-op を張る
+   * （トップページの `statePromise` と同じ作法）。
+   */
+  const readmePromise = getRepositoryReadmeUseCase(accessToken)({ owner, repo })
+  void readmePromise.catch(() => undefined)
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
       {/* `generateMetadata`（下記）は URL セグメントから SSR 時点の <title> を出すが、
@@ -146,11 +166,44 @@ export default async function RepositoryDetailPage({
           watcherCount: messages.detail.watcherCount,
           forkCount: messages.detail.forkCount,
           openIssueCount: messages.detail.openIssueCount,
+          updatedAt: messages.detail.updatedAt,
           opensInNewTab: messages.detail.opensInNewTab,
         }}
         locale={locale}
         backHref={backHref}
       />
+
+      {/*
+        Issue #334 F-4: README（`ui-ux-guidelines.md` §7.2 と同型のライブリージョン）。
+        🔴 `<Suspense>` は必ず `notFound()` の後にのみ置く（`AC-5` の同期 404 判定を壊さない）。
+        `<Suspense>` の fallback だけでは後追い挿入が支援技術へ伝わらないため、
+        `role="status" aria-live="polite"` の sr-only 常設要素で通知と視覚表示を分離する
+        （README 到着時にフォーカスは移動しない・ユーザー操作起因でない後追い描画のため）。
+      */}
+      <section id="readme-status" role="status" aria-live="polite" className="sr-only">
+        {messages.detail.readme.loading}
+      </section>
+      <Suspense
+        fallback={
+          <div aria-hidden="true" className="mt-8 animate-pulse space-y-2">
+            <div className="bg-muted h-5 w-24 rounded" />
+            <div className="bg-muted h-4 w-full rounded" />
+            <div className="bg-muted h-4 w-full rounded" />
+            <div className="bg-muted h-4 w-2/3 rounded" />
+          </div>
+        }
+      >
+        <ReadmeSection
+          readmePromise={readmePromise}
+          htmlUrl={repository.htmlUrl}
+          labels={{
+            heading: messages.detail.readme.heading,
+            unavailable: messages.detail.readme.unavailable,
+            viewOnGithub: messages.detail.readme.viewOnGithub,
+            opensInNewTab: messages.detail.opensInNewTab,
+          }}
+        />
+      </Suspense>
     </main>
   )
 }

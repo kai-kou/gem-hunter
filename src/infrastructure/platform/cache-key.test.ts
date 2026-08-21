@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { searchQuery } from '../../domain/model/search-query'
-import { CACHE_SCHEMA_VERSION, repositoryCacheKey, searchResultCacheKey } from './cache-key'
+import { CACHE_SCHEMA_VERSION, readmeCacheKey, repositoryCacheKey, searchResultCacheKey } from './cache-key'
 
 describe('searchResultCacheKey', () => {
   it('検索結果は search 名前空間になる', () => {
@@ -92,6 +92,31 @@ describe('repositoryCacheKey', () => {
   })
 })
 
+describe('readmeCacheKey', () => {
+  it('README は readme 名前空間になる（repository と衝突しない）', () => {
+    const key = readmeCacheKey('facebook', 'react')
+    expect(key.startsWith('readme:')).toBe(true)
+  })
+
+  it('owner/name の大文字小文字・前後空白は正規化される', () => {
+    const a = readmeCacheKey('  Facebook  ', 'React')
+    const b = readmeCacheKey('facebook', 'react')
+    expect(a).toBe(b)
+  })
+
+  it('owner が異なれば別キーになる', () => {
+    const a = readmeCacheKey('facebook', 'react')
+    const b = readmeCacheKey('vuejs', 'react')
+    expect(a).not.toBe(b)
+  })
+
+  it('単一リポジトリのキー（repository 名前空間）と衝突しない', () => {
+    const readmeKey = readmeCacheKey('facebook', 'react')
+    const repoKey = repositoryCacheKey('facebook', 'react')
+    expect(readmeKey).not.toBe(repoKey)
+  })
+})
+
 describe('CACHE_SCHEMA_VERSION', () => {
   /**
    * 🔴 期待値はすべて文字列リテラルで固定する（`CACHE_SCHEMA_VERSION` から組み立てない）。
@@ -113,6 +138,11 @@ describe('CACHE_SCHEMA_VERSION', () => {
   it('単一リポジトリのキーは名前空間の直後にスキーマバージョンを含む', () => {
     const key = repositoryCacheKey('facebook', 'react')
     expect(key).toBe('repository:v2:facebook/react')
+  })
+
+  it('README のキーは名前空間の直後にスキーマバージョンを含む', () => {
+    const key = readmeCacheKey('facebook', 'react')
+    expect(key).toBe('readme:v2:facebook/react')
   })
 
   it('スキーマバージョン導入後もキーワードの正規化（トリム・小文字化）は保たれる', () => {

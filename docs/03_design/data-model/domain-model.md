@@ -49,7 +49,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | 検索条件 | `SearchQuery` | キーワード・ページ・ソート・表示件数の 4 つ組。**URL と 1 対 1 で対応する**（`NFR-2`） | UI 状態ではなくドメインの値。バラバラの引数で持ち回らない |
 | 検索結果 | `SearchResult` | 検索条件に対する `RepositorySummary` の並びと総件数 | |
 | 一覧項目 | `RepositorySummary` | 一覧カードに出す範囲（`AR-1`）。**追加 API 呼び出し無しで得られるものだけ** | 詳細と同じ型にしない（取得コストが違う） |
-| 詳細 | `RepositoryDetail` | 詳細ページに出す 7 項目（`FR-4`。`src/domain/model/repository.ts`） | `watchers` は `subscribers_count` 由来（§2.2 の変換表）。`RepositoryQueryPort#findDetail` は存在しない場合 `null` を返す（404 を例外にしない） |
+| 詳細 | `RepositoryDetail` | 詳細ページに出す項目一式（`FR-4`。リポジトリ名・オーナーアイコン・言語・Star 数・Watcher 数・Fork 数・Issue 数・🔵 `description`・🔵 `lastPushedAt`・🔵 README。`src/domain/model/repository.ts`。README（`findReadme` の戻り値）はドメイン型のフィールドではなく `RepositoryQueryPort` の別メソッドで取得する別データ・Issue #334 F-3/F-4） | `watchers` は `subscribers_count` 由来（§2.2 の変換表）。`RepositoryQueryPort#findDetail` は存在しない場合 `null` を返す（404 を例外にしない） |
 | 閲覧者 | `Viewer` | 本アプリの利用者。未ログインが既定で、ログインしても **変わるのはレート枠だけ**（`D-6`） | 「ログインユーザー限定機能」という概念は存在しない |
 | レート枠 | `RateLimitBudget` | GitHub API の残り呼び出し可能回数と回復時刻 | 「クォータ」と混在させない |
 | キャッシュキー | `CacheKey` | 検索結果・単一リポジトリの名前空間つきキー（`NFR-18`） | 命名規約を先に固定する。後から変えると全無効化される |
@@ -69,7 +69,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `open_issues_count` | `openIssueCount` | **PR を含む**（GitHub の仕様）。UI 文言もこの事実に合わせる |
 | `full_name` | `RepositoryId`（分解して保持） | 文字列のまま持ち回らない |
 | `owner.avatar_url` | `Owner.avatarUrl` | |
-| `pushed_at` / `updated_at` | `lastPushedAt` / `lastUpdatedAt` | 「最終更新日」（`AR-1`）は **`pushed_at`** を使う（メタデータ更新で動く `updated_at` ではない） |
+| `pushed_at` / `updated_at` | `lastPushedAt` / `lastUpdatedAt` | 「最終更新日」（`AR-1`）は **`pushed_at`** を使う（メタデータ更新で動く `updated_at` ではない）。🔵 **この規則は `RepositoryDetail.lastPushedAt` にも同様に適用する**（`pushed_at ?? updated_at` のフォールバックも一覧側の `toSearchResult` と同一・Issue #334 F-3） |
 | `topics` | `topics` | |
 | `language` | `primaryLanguage` | 「言語」だけだと `Locale` と紛れる |
 | `total_count` | `SearchResult.totalCount` | GitHub 検索は上限があるため **概算**。UI で「約」と表現する余地を残す |

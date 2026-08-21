@@ -107,13 +107,15 @@ e2e/                                # Playwright（操作レビュー手順の�
 
 | ポート | 面積（これ以上広げない） | 実装 | 根拠 |
 |---|---|---|---|
-| `RepositoryQueryPort` | `search(query): Promise<SearchResult>` / `findDetail(name): Promise<RepositoryDetail \| null>` | `infrastructure/github/` | `NFR-16` / `TR-4` |
+| `RepositoryQueryPort` | `search(query): Promise<SearchResult>` / `findDetail(name): Promise<RepositoryDetail \| null>` / `findReadme(name): Promise<string \| null>` | `infrastructure/github/` | `NFR-16` / `TR-4`。`findReadme` は Issue #334（F-4）で追加（新規ポートは切らずに既存ポートへ足す・`W-n` の面積判断は[議論記録](../../../content/discussions/feedback334_detail_readme_20260821/whiteboard.md)争点 B 参照） |
 | `CachePort` | `get(key)` / `set(key, value, ttl)` / `invalidate(key)` | `infrastructure/platform/` | `NFR-17`（YAGNI の意図的な例外。面積を広げない） |
 | `RateLimitPort` | `consume(key): Promise<Decision>` | `infrastructure/platform/` | `INF-n` / `NFR-7` |
 | `ClockPort` | `now(): Date` | `infrastructure/` | テスト決定性（`SD-2`） |
 | `AuthPort` | `exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` | `infrastructure/github/`（`oauth.ts`） | `W-3`（フェイクでユニットテストできる）。`AR-5` / `SP-8`。GitHub `/user` プロフィール取得は AC 未記載のため面積に含めない（YAGNI・`whiteboard/sp8-auth-i18n-20260819` 争点 C round2 決定） |
 
 🔴 **ポートを増やすときの条件**: `W-1`〜`W-3` のどれを守るかを 1 行で書き、本表に行を足す。**表に無いポートを実装しない。**
+
+🔵 **README（`findReadme`）の private ゲートは usecase 層に置く**（Issue #334・F-4）: `src/usecases/get-repository-readme.ts` が内部で `findDetail` を再度呼び、`null`（private / 404）なら `findReadme` を呼ばない。README レスポンス自体に `private` フィールドが無いため、呼び出し元の順序に依存させずゲートを usecase に埋め込む（`NFR-33` / `AC-12`）。README の HTML サニタイズは **`src/ui/` の責務** とする（ACL である `src/infrastructure/github/` は GitHub から届いた生 HTML をそのまま返すだけで、許可タグ・見出し降格・切り詰め等の変換は持ち込まない）。
 
 ### 2.1. 依存性注入（DI コンテナは使わない）
 

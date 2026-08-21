@@ -175,7 +175,7 @@ GitHub の検索では有名なリポジトリが上位を占めやすい一方�
 | **TR-1** | Next.js v16 以降を使用する | `P1-MVP` | 与件 §2（必須） |
 | **TR-2** | App Router を使用する（Pages Router は使用しない） | `P1-MVP` | 与件 §2（必須） |
 | **TR-3** | TypeScript を使用する | `P1-MVP` | 与件 §2 では「推奨」だが、`NFR-19`（API レスポンスを型安全に扱う）が前提とするため **必須に格上げ** する |
-| **TR-4** | データソースは GitHub API のリポジトリ検索エンドポイント（`GET /search/repositories`）とする | `P1-MVP` | 与件 §2（必須）。詳細取得の `GET /repos/{owner}/{repo}` は §4.3 |
+| **TR-4** | データソースは GitHub API のリポジトリ検索エンドポイント（`GET /search/repositories`）とする | `P1-MVP` | 与件 §2（必須）。詳細取得の `GET /repos/{owner}/{repo}` および 🔵 README 取得の `GET /repos/{owner}/{repo}/readme`（Issue #334・F-4）は §4.3 |
 | **TR-5** | UI コンポーネントライブラリの採否は問わない | — | 与件 §2（任意）。🔵 **暫定決定**: Tailwind CSS v4 + shadcn/ui（基盤プリミティブは **Radix UI を明示指定**）。理由は [ADR 0001](../adr/0001-ui-stack.md)、実装指針は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md)。⚠️ **`SP-1` での Next.js 16 実機確認待ち**（shadcn/ui 公式は Next.js 15 が主対象で 16 固有の互換性表明が未確認）。不成立なら ADR 0001 を supersede する |
 
 ---
@@ -217,7 +217,7 @@ GitHub の検索では有名なリポジトリが上位を占めやすい一方�
 | **FR-1** | キーワード入力による検索 | `P1-MVP` | 入力のたびに API を呼ばない（`NFR-4`）。検索は明示実行（ボタン / Enter）。🔴 **検索対象は公開リポジトリに限定する**（`NFR-33`） |
 | **FR-2** | 検索結果の一覧表示（各項目にオーナーアイコンとリポジトリ名） | `P1-MVP` | アイコンと名前が **必達の下限**。追加表示項目は `AR-1` |
 | **FR-3** | 検索結果からの詳細遷移 | `P1-MVP` | カード全体を遷移対象とする。キーボードでも到達・実行できること（`NFR-11`） |
-| **FR-4** | 詳細情報の表示（リポジトリ名・オーナーアイコン・言語・Star 数・Watcher 数・Fork 数・Issue 数） | `P1-MVP` | 🔴 **「Watcher 数」には `subscribers_count` を用いる**（下記の注記参照）。🔴 **対象が公開リポジトリでない場合は「見つからない」として扱う**（`NFR-33` / §7 の 404） |
+| **FR-4** | 詳細情報の表示（リポジトリ名・オーナーアイコン・言語・Star 数・Watcher 数・Fork 数・Issue 数・🔵 概要（description）・🔵 最終更新日（`pushed_at`）・🔵 README） | `P1-MVP` | 🔴 **「Watcher 数」には `subscribers_count` を用いる**（下記の注記参照）。🔴 **対象が公開リポジトリでない場合は「見つからない」として扱う**（`NFR-33` / §7 の 404）。🔵 概要・最終更新日・README は Issue #334（F-3 / F-4）により追加（専門チームの議論は[議論記録](../../content/discussions/feedback334_detail_readme_20260821/whiteboard.md)を参照）。最終更新日は一覧の `AR-1` と同じ `pushed_at` 由来（欠落時は `updated_at`）。README は取得・表示に失敗しても詳細ページ全体を落とさず代替リンクへ縮退する（`NFR-9`） |
 | **FR-5** | 詳細をモーダルではなく独立ページとして実装し、固有 URL を持つ | `P1-MVP` | URL 直接アクセス・リロード・共有が可能であること |
 | **FR-6** | 詳細画面から一覧（トップページ）へ戻る導線 | `P1-MVP` | 戻り先で検索条件が保持されること（URL 状態・§2.4） |
 | **FR-7** | 大量結果への対応 | `P1-MVP` | 🔴 **ページネーションを採用する**（無限スクロールは採らない・下記の注記参照） |
@@ -253,7 +253,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 | **AR-7** | お気に入り（`localStorage`） | `P1-積み上げ` | `Q-5` / `D-5` 追補 | 与件では対象外だが、DB を持たずに実現できる。端末間で同期しないことを UI 上で明示する |
 | **AR-8** | 検索履歴（`localStorage`） | `P1-積み上げ` | `D-5` 追補 | 同上 |
 | **AR-9** | キーワードを入力せずに、その日の Gem 候補が一覧で見える発見面（日次ダイジェスト） | `P2` | `D-27` | 入口はトップページ（`/{locale}`）。検索窓は同じページ上部に残し MVP の検索動線を壊さない。日付を唯一のシードとする決定論的生成で、同じ日は全員同じ並び |
-| **AR-10** | ダイジェストの RSS 配信 | `P2` | `D-27` / `GR-7` | 購読者リストを永続化しない Pull 型のため `D-5`（DB を持たない）の撤回は不要 |
+| **AR-10** | ~~ダイジェストの RSS 配信~~ 🔴 **`D-34`（2026-08-21）により撤去** | `P2` | `D-27` / `GR-7` | 購読者リストを永続化しない Pull 型のため `D-5`（DB を持たない）の撤回は不要（撤去前の設計判断として記録を残す）。撤去の経緯は [`open-questions.md`](./open-questions.md) `D-34` を参照 |
 
 #### AR-4 の詳細（i18n）
 
@@ -273,10 +273,13 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 ### 4.3. データ取得方式
 
+呼び出してよい GitHub API エンドポイントは以下の一覧に **限定する**（`TR-4` / `NFR-16` の ACL 制約）。新規エンドポイントの追加は本表への追記を伴う。
+
 | 用途 | エンドポイント | 備考 |
 |---|---|---|
 | 検索 | `GET /search/repositories` | 律速（30 req/分）。`AR-2` のソート、`AR-3` の件数、ページをパラメータで渡す。🔴 **利用者キーワードに検索修飾子の構文が含まれていたら送信せずエラーにし、クエリに公開限定条件（`is:public`）を付与する**（`NFR-33`。付与だけでは公開に閉じない） |
 | 詳細 | `GET /repos/{owner}/{repo}` | 🔴 **常に単独で呼ぶ**（検索結果のデータを引き回さない）。🔴 **応答が `private: true` なら「見つからない」として扱う**（`NFR-33`） |
+| 🔵 README | `GET /repos/{owner}/{repo}/readme`（`Accept: application/vnd.github.html+json` で GitHub レンダリング済み HTML を取得） | Issue #334（F-4）により追加。詳細の `findDetail` が private / 404 と判定した場合は呼ばない（`NFR-33` / `AC-12` のゲートを usecase 層で先に通す）。取得した HTML はサニタイズしてから表示する（実装の正本は [application-architecture.md](../03_design/architecture/application-architecture.md)） |
 
 **詳細を単独取得する理由**（`Q-10`）:
 
@@ -411,7 +414,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 - **Given** 任意のリポジトリの詳細ページを開いている
 - **When** 表示内容を確認する
-- **Then** リポジトリ名・オーナーアイコン・プロジェクト言語・**Star 数**・**Watcher 数（`subscribers_count`）**・Fork 数・Issue 数が表示されている
+- **Then** リポジトリ名・オーナーアイコン・プロジェクト言語・**Star 数**・**Watcher 数（`subscribers_count`）**・Fork 数・Issue 数・🔵 概要（description・存在する場合のみ）・🔵 最終更新日（`pushed_at`）・🔵 README（存在する場合。取得失敗時は「GitHub で読む」への代替リンク）が表示されている
 - **And** Star 数と Watcher 数が同じ値になっていない（`watchers_count` を誤用していないことの検証）
 
 ### AC-6: 詳細ページからトップページへ戻れる
@@ -594,7 +597,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 ### Phase 2 のユーザーストーリー（`US-30`〜`US-34`）
 
-キーワード非依存の発見体験（日次ダイジェスト・`AR-9` / `AR-10`・§4.2）を実現するユーザーストーリー `US-30`〜`US-33`（実装単位は `SP-14` / `SP-15`）の **定義は [`user-story-map.md`](./user-story-map.md) §2 が正本**（`D-8`）。本書は要件 ID（`AR-2` / `AR-9` / `AR-10` / `GR-n`）のみを持ち、内容をここに再掲しない。🔴 **`US-34`（検索結果を Gem Index 順に並べ替える・実装単位は `SP-16`）は `D-33` により撤去済み**。定義・撤去の経緯は同じく `user-story-map.md` §5.3 `SP-16` を参照（履歴として節ごと残す）。
+キーワード非依存の発見体験（日次ダイジェスト・`AR-9` / `AR-10`・§4.2）を実現するユーザーストーリー `US-30`〜`US-33`（実装単位は `SP-14` / `SP-15`）の **定義は [`user-story-map.md`](./user-story-map.md) §2 が正本**（`D-8`）。本書は要件 ID（`AR-2` / `AR-9` / `AR-10` / `GR-n`）のみを持ち、内容をここに再掲しない。🔴 **`US-34`（検索結果を Gem Index 順に並べ替える・実装単位は `SP-16`）は `D-33` により撤去済み**。定義・撤去の経緯は同じく `user-story-map.md` §5.3 `SP-16` を参照（履歴として節ごと残す）。🔴 **`US-33`（ダイジェストの RSS 配信・実装単位は `SP-15` の一部）は `D-34` により撤去済み**。経緯は [`open-questions.md`](./open-questions.md) `D-34` を参照。
 
 ### Phase 2 の中核課題（先に認識しておくもの）
 

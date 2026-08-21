@@ -34,6 +34,7 @@ export type TokenProvider = () => Promise<string | null>
 /**
  * 🔴 GitHub API に触れてよい唯一の場所（ACL・NFR-16 / TR-4）。
  * データソースは GET /search/repositories と GET /repos/{owner}/{repo} に限定する（E-2）。
+ * 🔵 GET /repos/{owner}/{repo}/readme を追加（Issue #334 F-4・whiteboard round3 裁定）。
  */
 export class GithubRepositoryQuery implements RepositoryQueryPort {
   constructor(private readonly deps: { token: TokenProvider }) {}
@@ -77,15 +78,47 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     return toPublicRepositoryDetail(await response.json())
   }
 
-  private async request(url: URL, options: { notFoundAsNull: true }): Promise<Response | null>
-  private async request(url: URL, options?: { notFoundAsNull?: false }): Promise<Response>
+  /**
+   * README を GitHub がレンダリング済みの HTML として取得する（Issue #334 F-4）。
+   * `Accept: application/vnd.github.html+json` を指定すると、GitHub 側が Markdown を HTML へ
+   * 変換したものをそのまま返す（自前で Markdown レンダラを持ち込まない・whiteboard round3 裁定）。
+   *
+   * 🔴 戻り値は未サニタイズの第三者由来 HTML。サニタイズは呼び出し側（`src/ui/`）の責務。
+   * 🔴 レスポンスに `private` フィールドが無いため、非公開判定はこのメソッドではできない
+   *    （呼び出しは `src/usecases/get-repository-readme.ts` の private ゲート経由に限る）。
+   */
+  async findReadme(name: RepositoryFullName): Promise<string | null> {
+    const url = new URL(
+      `/repos/${encodeURIComponent(ownerOf(name))}/${encodeURIComponent(repoOf(name))}/readme`,
+      apiOrigin(),
+    )
+
+    const response = await this.request(url, {
+      notFoundAsNull: true,
+      accept: 'application/vnd.github.html+json',
+    })
+    if (response === null) {
+      return null
+    }
+
+    return response.text()
+  }
+
   private async request(
     url: URL,
-    options?: { notFoundAsNull?: boolean },
+    options: { notFoundAsNull: true; accept?: string },
+  ): Promise<Response | null>
+  private async request(
+    url: URL,
+    options?: { notFoundAsNull?: false; accept?: string },
+  ): Promise<Response>
+  private async request(
+    url: URL,
+    options?: { notFoundAsNull?: boolean; accept?: string },
   ): Promise<Response | null> {
     const token = await this.deps.token()
     const headers: Record<string, string> = {
-      accept: 'application/vnd.github+json',
+      accept: options?.accept ?? 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
       'user-agent': 'gem-hunter',
     }

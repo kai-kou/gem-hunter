@@ -5,6 +5,7 @@
 // ルーティング:
 //   GET /search/repositories?q=&page=&per_page=
 //   GET /repos/{owner}/{repo}
+//   GET /repos/{owner}/{repo}/readme   （Issue #334 F-4・Accept: application/vnd.github.html+json でレンダリング済み HTML を返す）
 //   GET  /__stats        （SP-5 E2E 検証専用・実 GitHub API には存在しない裏口）
 //   POST /__stats/reset   同上
 //   GET  /login/oauth/authorize?client_id=&redirect_uri=&state=   （SP-8 OAuth モック）
@@ -20,6 +21,7 @@
 //   sp9-secondary-rate-limit を含む → HTTP 403 + retry-after（二次レート制限）
 //   sp9-slow を含む                → 1.5 秒待ってから通常の結果（読み込み中表示の観測用）
 //   sp9-forbidden を含む           → HTTP 403 + x-ratelimit-remaining: 42（レート制限でない 403 = auth）
+//   readme-missing を含む（repo 名）→ README エンドポイントのみ HTTP 404（README 不在の再現。詳細本体は 200 のまま）
 //   private-mixed を含む  → AC-12 E2E 専用。上流が is:public を無視して private を混ぜて返す状況を
 //                             再現する（public 1 件 + private 1 件・total_count は 2）。
 //                             `octostub/octo-secret` の詳細も 200 + `private: true` で返す
@@ -132,6 +134,35 @@ function privateMixedRepo({ id, name, isPrivate, description }) {
     owner: { login: 'octostub', avatar_url: PRIVATE_MIXED_AVATAR },
   }
 }
+
+// Issue #334 F-4 E2E 専用: README の有無を再現するための追加リポジトリ（既存 repos.json は変更しない・
+// `e2e/feedback-334.spec.ts` からのみ使う）。詳細本体（/repos/{owner}/{repo}）は 200 を返しつつ、
+// README エンドポイントだけを 404 にすることで「README 不在」の代替表示を検証できるようにする。
+const README_MISSING_MARKER = 'readme-missing'
+const readmeExtraRepos = [
+  {
+    id: 960001,
+    name: 'octo-readme-missing',
+    full_name: 'octostub/octo-readme-missing',
+    html_url: 'https://github.com/octostub/octo-readme-missing',
+    description: 'Repository without a README (Issue #334 F-4 E2E).',
+    language: 'TypeScript',
+    stargazers_count: 5,
+    watchers_count: 5,
+    subscribers_count: 2,
+    forks_count: 1,
+    open_issues_count: 0,
+    updated_at: '2026-08-01T00:00:00Z',
+    pushed_at: '2026-08-01T00:00:00Z',
+    private: false,
+    topics: [],
+    owner: {
+      login: 'octostub',
+      avatar_url:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    },
+  },
+]
 
 const privateMixedRepos = [
   privateMixedRepo({
@@ -386,6 +417,29 @@ const server = http.createServer((req, res) => {
     return sendJson(res, 200, searchResponse(items))
   }
 
+  // Issue #334 F-4: README（GitHub がレンダリング済み HTML を返すエンドポイントを模す）。
+  // `detailMatch` より前に置く（3 セグメントの path は 2 セグメント用の正規表現に一致しないため
+  // 実害はないが、専用ルートであることを明示するため先に評価する）。
+  const readmeMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)\/readme$/)
+  if (readmeMatch) {
+    const [, owner, repoName] = readmeMatch
+    if (
+      repoName.includes(README_MISSING_MARKER) ||
+      repoName.includes('not-found') ||
+      owner.includes('not-found')
+    ) {
+      return sendJson(res, 404, { message: 'stub: Not Found' })
+    }
+    if (repoName.includes('upstream-error')) {
+      return sendJson(res, 500, { message: 'stub: upstream error' })
+    }
+    // 実 GitHub と同様に `Accept: application/vnd.github.html+json` で
+    // 「そのまま埋め込める HTML 断片」を返す（`readme_render` 側でサニタイズ・見出し降格する）。
+    const html = `<article><h1>${repoName}</h1><p>README-STUB-CONTENT for ${owner}/${repoName}.</p><ul><li>feature one</li><li>feature two</li></ul></article>`
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(html)
+  }
+
   const detailMatch = url.pathname.match(/^\/repos\/([^/]+)\/([^/]+)$/)
   if (detailMatch) {
     stats.detailCount += 1
@@ -409,7 +463,9 @@ const server = http.createServer((req, res) => {
       repos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       manyRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       // AC-12: private リポジトリも上流は 200 で返す（「見つからない」に倒すのはアプリ側の責務）
-      privateMixedRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
+      privateMixedRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
+      // Issue #334 F-4: README 不在の再現用（詳細本体は 200・README エンドポイントのみ 404）
+      readmeExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
     if (!found) {
       return sendJson(res, 404, { message: 'stub: Not Found (no fixture for this owner/repo)' })
     }

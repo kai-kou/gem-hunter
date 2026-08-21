@@ -4,7 +4,7 @@ import type { SearchQuery } from '../../domain/model/search-query'
 import type { CachePort } from '../../domain/ports/cache-port'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
 import { ownerOf, repoOf } from '../../domain/model/repository-full-name'
-import { type CacheKey, repositoryCacheKey, searchResultCacheKey } from './cache-key'
+import { type CacheKey, readmeCacheKey, repositoryCacheKey, searchResultCacheKey } from './cache-key'
 
 /**
  * `RepositoryQueryPort` をキャッシュ付きで包むデコレータ（SP-5・NFR-5 / NFR-17 / NFR-18）。
@@ -25,6 +25,7 @@ import { type CacheKey, repositoryCacheKey, searchResultCacheKey } from './cache
 export class CachingRepositoryQuery implements RepositoryQueryPort {
   private readonly inFlightSearch = new Map<CacheKey, Promise<SearchResult>>()
   private readonly inFlightDetail = new Map<CacheKey, Promise<RepositoryDetail | null>>()
+  private readonly inFlightReadme = new Map<CacheKey, Promise<string | null>>()
 
   constructor(
     private readonly deps: {
@@ -58,6 +59,27 @@ export class CachingRepositoryQuery implements RepositoryQueryPort {
       cacheable: (result) => result !== null,
       // 404 のときは onCacheStatus を呼ばない（「キャッシュ未使用のフォールスルー」であり
       // HIT/MISS のどちらでもないため）。single-flight に相乗りした側も同じ規約に従う。
+      reportStatus: (result) => result !== null,
+    })
+  }
+
+  /**
+   * README を GitHub がレンダリング済みの **未サニタイズ生 HTML** のままキャッシュする
+   * （Issue #334 F-4・whiteboard round3 lead 裁定）。サニタイズ済み HTML をキャッシュしない
+   * （表示都合の加工をキャッシュ層の ACL に持ち込まない）。
+   *
+   * TTL は詳細取得（`ttlSeconds.detail`）を流用する。README 専用の TTL は追加しない
+   * （whiteboard 裁定: サニタイズ済み HTML の Tier 2 キャッシュ導入は別 Issue で判断する）。
+   * 404（README 不在）は `findDetail` と同じくキャッシュしない。
+   */
+  async findReadme(name: RepositoryFullName): Promise<string | null> {
+    const key = readmeCacheKey(ownerOf(name), repoOf(name))
+    return this.readThrough({
+      key,
+      inFlight: this.inFlightReadme,
+      fetch: () => this.deps.inner.findReadme(name),
+      ttlSeconds: this.deps.ttlSeconds.detail,
+      cacheable: (result) => result !== null,
       reportStatus: (result) => result !== null,
     })
   }

@@ -18,6 +18,7 @@ import fixture from './__fixtures__/search-repositories.json'
 import { GithubRepositoryQuery } from './github-repository-query'
 
 const requests: URL[] = []
+const requestHeaders: Headers[] = []
 const server = setupServer(
   http.get('https://api.github.com/search/repositories', ({ request }) => {
     requests.push(new URL(request.url))
@@ -27,12 +28,18 @@ const server = setupServer(
     requests.push(new URL(request.url))
     return HttpResponse.json(detailFixture)
   }),
+  http.get('https://api.github.com/repos/:owner/:repo/readme', ({ request }) => {
+    requests.push(new URL(request.url))
+    requestHeaders.push(request.headers)
+    return HttpResponse.text('<h1 id="user-content-react">React</h1>')
+  }),
 )
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => {
   server.resetHandlers()
   requests.length = 0
+  requestHeaders.length = 0
 })
 afterAll(() => server.close())
 
@@ -210,6 +217,49 @@ describe('GithubRepositoryQuery#findDetail', () => {
     await makeQuery().findDetail(repositoryFullName('example', 'user.github.io'))
 
     expect(requests[0].pathname).toBe('/repos/example/user.github.io')
+  })
+})
+
+describe('GithubRepositoryQuery#findReadme', () => {
+  it('README API を Accept: application/vnd.github.html+json で呼び出し、HTML 文字列を返す', async () => {
+    const result = await makeQuery().findReadme(repositoryFullName('facebook', 'react'))
+
+    expect(result).toBe('<h1 id="user-content-react">React</h1>')
+    expect(requests[0].pathname).toBe('/repos/facebook/react/readme')
+    expect(requestHeaders[0].get('accept')).toBe('application/vnd.github.html+json')
+  })
+
+  it('404（README が存在しない）は例外にせず null を返す', async () => {
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo/readme', () =>
+        HttpResponse.json({ message: 'Not Found' }, { status: 404 }),
+      ),
+    )
+
+    const result = await makeQuery().findReadme(repositoryFullName('facebook', 'no-readme'))
+
+    expect(result).toBeNull()
+  })
+
+  it('ドット入りのリポジトリ名を正しくエスケープして URL を組み立てる', async () => {
+    await makeQuery().findReadme(repositoryFullName('example', 'user.github.io'))
+
+    expect(requests[0].pathname).toBe('/repos/example/user.github.io/readme')
+  })
+
+  it('検索・詳細と同じくレート制限は RateLimitExceededError として投げる', async () => {
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo/readme', () =>
+        HttpResponse.json(
+          { message: 'rate limit' },
+          { status: 403, headers: { 'x-ratelimit-remaining': '0' } },
+        ),
+      ),
+    )
+
+    await expect(
+      makeQuery().findReadme(repositoryFullName('facebook', 'react')),
+    ).rejects.toThrow(RateLimitExceededError)
   })
 })
 

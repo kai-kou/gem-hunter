@@ -7,6 +7,7 @@ import { AttributionNotice } from './attribution-notice'
 
 const meta: DigestMeta = {
   source: 'Ecosyste.ms',
+  sourceUrl: 'https://ecosyste.ms/',
   license: 'CC BY-SA 4.0',
   sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
   generatedAt: '2026-08-20T00:00:00Z',
@@ -21,7 +22,8 @@ describe('AttributionNotice', () => {
   it('出典（source / license / generatedAt）を全て表示する（D-29）', () => {
     render(<AttributionNotice meta={meta} labels={labels} locale={locale('ja')} />)
 
-    expect(screen.getByText(/Data via Ecosyste\.ms/)).toBeInTheDocument()
+    // source は F-6 でリンク化された（`{source}` プレースホルダはリンクテキストになる）。
+    expect(screen.getByRole('link', { name: 'Ecosyste.ms' })).toBeInTheDocument()
     // 生成時刻は JST 表示（datetime-rules.md §0）。UTC 00:00 は JST 09:00。
     expect(screen.getByText(/2026\/08\/20 09:00 JST/)).toBeInTheDocument()
   })
@@ -80,6 +82,16 @@ describe('AttributionNotice', () => {
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
   })
 
+  it('出典元は sourceUrl を指すリンクになっている（Ecosyste.ms 本体へ辿れる・F-6）', () => {
+    render(<AttributionNotice meta={meta} labels={labels} locale={locale('ja')} />)
+
+    const link = screen.getByRole('link', { name: 'Ecosyste.ms' })
+    expect(link).toHaveAttribute('href', 'https://ecosyste.ms/')
+    // ライセンスリンクと同じ作法（外部リンクなので target=_blank + noopener）。
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+  })
+
   it('改変の明示（日付シードで再算出）を含む（D-29 の改変明示要件）', () => {
     render(<AttributionNotice meta={meta} labels={labels} locale={locale('ja')} />)
 
@@ -98,7 +110,7 @@ describe('AttributionNotice', () => {
       />,
     )
 
-    expect(screen.getByText(/Data via Ecosyste\.ms/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ecosyste.ms' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
       'href',
       'https://creativecommons.org/licenses/by-sa/4.0/',
@@ -106,7 +118,7 @@ describe('AttributionNotice', () => {
     expect(screen.getByText(/Order is recomputed/)).toBeInTheDocument()
   })
 
-  it('特殊置換パターン（$&, $1）が値に含まれても壊さない（formatMessage の安全性を共有する）', () => {
+  it('特殊置換パターン（$&, $1）が値に含まれても壊さない（JSX の直接描画なので置換処理を経由しない）', () => {
     render(
       <AttributionNotice
         meta={{ ...meta, source: 'A $& B' }}
@@ -115,6 +127,8 @@ describe('AttributionNotice', () => {
       />,
     )
 
-    expect(screen.getByText(/src=A \$& B lic=/)).toBeInTheDocument()
+    // {source} は文字列置換ではなく React の子要素としてそのまま描画されるため、
+    // `$&` 等の特殊置換パターンが解釈されることはない。
+    expect(screen.getByRole('link', { name: 'A $& B' })).toBeInTheDocument()
   })
 })

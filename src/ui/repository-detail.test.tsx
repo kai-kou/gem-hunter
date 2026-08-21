@@ -13,6 +13,7 @@ const labels = {
   watcherCount: 'watcher 数',
   forkCount: 'fork 数',
   openIssueCount: 'issue 数',
+  updatedAt: '最終更新',
   opensInNewTab: '（新しいタブで開きます）',
 }
 
@@ -23,6 +24,7 @@ const enLabels = {
   watcherCount: 'watchers',
   forkCount: 'forks',
   openIssueCount: 'open issues',
+  updatedAt: 'Last updated',
   opensInNewTab: '(opens in a new tab)',
 }
 
@@ -37,6 +39,7 @@ const repository: RepositoryDetailModel = {
   watcherCount: 6800,
   forkCount: 48000,
   openIssueCount: 1100,
+  lastPushedAt: new Date('2026-08-09T09:00:00Z'),
   topics: ['javascript'],
   htmlUrl: 'https://github.com/facebook/react',
 }
@@ -47,10 +50,12 @@ describe('RepositoryDetail', () => {
       <RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />,
     )
 
-    // 見出し内は GitHub への外部リンクになっており、sr-only の「新しいタブで開きます」も
-    // アクセシブルネームに含まれるため、見出し名はリンクテキスト + sr-only 文言の結合になる（Issue #148）。
+    // 🔴 h1 は共有ヘッダー（layout.tsx）のツールタイトルが持つため、詳細画面のリポジトリ名は
+    //    h2 へ降格する（Issue #334 F-1/F-2・whiteboard round3 lead 裁定）。
+    //    見出し内は GitHub への外部リンクになっており、sr-only の「新しいタブで開きます」も
+    //    アクセシブルネームに含まれるため、見出し名はリンクテキスト + sr-only 文言の結合になる（Issue #148）。
     expect(
-      screen.getByRole('heading', { level: 1, name: `facebook/react${labels.opensInNewTab}` }),
+      screen.getByRole('heading', { level: 2, name: `facebook/react${labels.opensInNewTab}` }),
     ).toBeInTheDocument()
     // オーナー名が fullName としてテキスト隣接表示されるため alt="" にしており、
     // 装飾画像扱い（role=presentation）になる（ui-ux-guidelines §7.4）→ getByRole('img') は使えない
@@ -162,5 +167,42 @@ describe('RepositoryDetail', () => {
     )
 
     expect(screen.queryByText(labels.language, { exact: false })).not.toBeInTheDocument()
+  })
+
+  it('概要（description）を表示する（Issue #334 F-3・一覧にあるのに詳細に無い状態の解消）', () => {
+    render(<RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByText(repository.description as string)).toBeInTheDocument()
+  })
+
+  it('description が null の場合は概要表示を出さない', () => {
+    render(
+      <RepositoryDetail
+        repository={{ ...repository, description: null }}
+        labels={labels}
+        locale={locale('ja')}
+      />,
+    )
+
+    expect(
+      screen.queryByText('The library for web and native user interfaces.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('最終更新日を統計の 5 項目目として表示する（Issue #334 F-3・一覧と同じ算出規則）', () => {
+    render(<RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />)
+
+    const updatedTerm = screen.getByText(labels.updatedAt).closest('dt')
+    const updatedValue = updatedTerm?.nextElementSibling
+
+    // lastPushedAt: 2026-08-09T09:00:00Z → Asia/Tokyo で 2026-08-09（一覧と同じ書式・timeZone）
+    expect(updatedValue).toHaveTextContent('2026/08/09')
+  })
+
+  it('en ロケールでも最終更新日がラベルどおりに表示される', () => {
+    render(<RepositoryDetail repository={repository} labels={enLabels} locale={locale('en')} />)
+
+    const updatedTerm = screen.getByText(enLabels.updatedAt).closest('dt')
+    expect(updatedTerm?.nextElementSibling).toHaveTextContent('08/09/2026')
   })
 })

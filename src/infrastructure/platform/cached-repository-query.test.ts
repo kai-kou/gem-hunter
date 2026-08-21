@@ -50,10 +50,12 @@ function makeRepositoryDetail(overrides: Partial<RepositoryDetail> = {}): Reposi
 function fakeRepositoryQueryPort(): RepositoryQueryPort & {
   searchCallCount: number
   findDetailCallCount: number
+  findReadmeCallCount: number
 } {
   return {
     searchCallCount: 0,
     findDetailCallCount: 0,
+    findReadmeCallCount: 0,
     async search() {
       this.searchCallCount += 1
       return makeSearchResult({ totalCount: 1 })
@@ -64,6 +66,13 @@ function fakeRepositoryQueryPort(): RepositoryQueryPort & {
         return null
       }
       return makeRepositoryDetail({ fullName: name })
+    },
+    async findReadme(name) {
+      this.findReadmeCallCount += 1
+      if (name === repositoryFullName('missing', 'repo')) {
+        return null
+      }
+      return '<h1>README</h1>'
     },
   }
 }
@@ -165,6 +174,9 @@ describe('CachingRepositoryQuery#search', () => {
       findDetail: async () => {
         throw new Error('このテストでは使わない')
       },
+      findReadme: async () => {
+        throw new Error('このテストでは使わない')
+      },
     }
     const cache = new InMemoryCache()
     const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
@@ -191,6 +203,9 @@ describe('CachingRepositoryQuery#search', () => {
         return makeSearchResult({ totalCount: 9 })
       },
       findDetail: async () => {
+        throw new Error('このテストでは使わない')
+      },
+      findReadme: async () => {
         throw new Error('このテストでは使わない')
       },
     }
@@ -248,6 +263,9 @@ describe('CachingRepositoryQuery#findDetail', () => {
         callCount += 1
         return gate
       },
+      findReadme: async () => {
+        throw new Error('このテストでは使わない')
+      },
     }
     const cache = new InMemoryCache()
     const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
@@ -277,6 +295,9 @@ describe('CachingRepositoryQuery#findDetail', () => {
         }
         return makeRepositoryDetail({ fullName: name })
       },
+      findReadme: async () => {
+        throw new Error('このテストでは使わない')
+      },
     }
     const cache = new InMemoryCache()
     const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
@@ -285,6 +306,105 @@ describe('CachingRepositoryQuery#findDetail', () => {
     const result = await decorated.findDetail(name)
 
     expect(result?.fullName).toBe(name)
+    expect(callCount).toBe(2)
+  })
+})
+
+describe('CachingRepositoryQuery#findReadme', () => {
+  it('同じ owner/repo で 2 回目は inner.findReadme を呼ばない', async () => {
+    const inner = fakeRepositoryQueryPort()
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+    const name = repositoryFullName('facebook', 'react')
+
+    await decorated.findReadme(name)
+    await decorated.findReadme(name)
+
+    expect(inner.findReadmeCallCount).toBe(1)
+  })
+
+  it('404（null）はキャッシュしない（毎回 inner.findReadme を呼ぶ）', async () => {
+    const inner = fakeRepositoryQueryPort()
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+    const name = repositoryFullName('missing', 'repo')
+
+    const first = await decorated.findReadme(name)
+    const second = await decorated.findReadme(name)
+
+    expect(first).toBeNull()
+    expect(second).toBeNull()
+    expect(inner.findReadmeCallCount).toBe(2)
+  })
+
+  it('findDetail とは別の名前空間でキャッシュされる（inner.findDetail を巻き込まない）', async () => {
+    const inner = fakeRepositoryQueryPort()
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+    const name = repositoryFullName('facebook', 'react')
+
+    await decorated.findReadme(name)
+
+    expect(inner.findDetailCallCount).toBe(0)
+  })
+
+  it('同一 owner/repo への並行リクエストは inner.findReadme を 1 回しか呼ばない（single-flight）', async () => {
+    let resolveFetch!: (value: string | null) => void
+    const gate = new Promise<string | null>((resolve) => {
+      resolveFetch = resolve
+    })
+    let callCount = 0
+    const inner: RepositoryQueryPort = {
+      search: async () => {
+        throw new Error('このテストでは使わない')
+      },
+      findDetail: async () => {
+        throw new Error('このテストでは使わない')
+      },
+      findReadme: async () => {
+        callCount += 1
+        return gate
+      },
+    }
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+    const name = repositoryFullName('facebook', 'react')
+
+    const p1 = decorated.findReadme(name)
+    const p2 = decorated.findReadme(name)
+    resolveFetch('<h1>README</h1>')
+    const [r1, r2] = await Promise.all([p1, p2])
+
+    expect(callCount).toBe(1)
+    expect(r1).toBe('<h1>README</h1>')
+    expect(r2).toBe('<h1>README</h1>')
+  })
+
+  it('inner.findReadme が失敗すると in-flight エントリが残らず、次の呼び出しで再試行できる', async () => {
+    let callCount = 0
+    const name = repositoryFullName('facebook', 'react')
+    const inner: RepositoryQueryPort = {
+      search: async () => {
+        throw new Error('このテストでは使わない')
+      },
+      findDetail: async () => {
+        throw new Error('このテストでは使わない')
+      },
+      findReadme: async () => {
+        callCount += 1
+        if (callCount === 1) {
+          throw new Error('boom')
+        }
+        return '<h1>README</h1>'
+      },
+    }
+    const cache = new InMemoryCache()
+    const decorated = new CachingRepositoryQuery({ inner, cache, ttlSeconds: TTL })
+
+    await expect(decorated.findReadme(name)).rejects.toThrow('boom')
+    const result = await decorated.findReadme(name)
+
+    expect(result).toBe('<h1>README</h1>')
     expect(callCount).toBe(2)
   })
 })

@@ -11,6 +11,7 @@ import type { SearchQuery } from '../../domain/model/search-query'
  */
 const NAMESPACE_SEARCH = 'search'
 const NAMESPACE_REPOSITORY = 'repository'
+const NAMESPACE_README = 'readme'
 
 /**
  * キャッシュスキーマバージョン（全キャッシュキーの共通セグメント）。
@@ -56,4 +57,13 @@ export function searchResultCacheKey(query: SearchQuery): CacheKey {
 /** 単一リポジトリのキャッシュキー（スキーマバージョン + owner/name）。 */
 export function repositoryCacheKey(owner: string, name: string): CacheKey {
   return `${NAMESPACE_REPOSITORY}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}` as CacheKey
+}
+
+/**
+ * README のキャッシュキー（スキーマバージョン + owner/name）。単一リポジトリ（`repository:`）とは
+ * 別の名前空間にする（Issue #334 F-4・whiteboard round3 裁定）。**未サニタイズの生 HTML** を
+ * キャッシュする値として使う（表示都合のサニタイズはキャッシュ層の外・`src/ui/` 側の責務）。
+ */
+export function readmeCacheKey(owner: string, name: string): CacheKey {
+  return `${NAMESPACE_README}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}` as CacheKey
 }

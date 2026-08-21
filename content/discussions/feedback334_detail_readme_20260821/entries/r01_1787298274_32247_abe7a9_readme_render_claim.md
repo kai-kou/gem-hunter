@@ -50,7 +50,7 @@ GitHub の Contents API `GET /repos/{owner}/{repo}/readme` は `Accept` ヘッ�
 
 ### GitHub 側の出力を無条件に信頼しない
 
-GitHub は github.com 上での表示のために既に一定のサニタイズ（`<script>`/`<style>`/`<iframe>`/`on*` 属性の除去等）を行っているとみられるが、**これは github.com というホスト・CSP・出所の文脈で安全なだけ**であり、①この API 出力に対する将来のサニタイズ仕様変更を我々が保証できない、②任意の第三者（リポジトリオーナー）が完全に自由に書ける文字列を `dangerouslySetInnerHTML` で自ドメインの DOM に注入する以上、多層防御としてこちら側でも独立にサニタイズすべき。実測で取得した本リポジトリ自身の README HTML には `<script>` `<style>` `<iframe>` `onerror=` `onclick=` `javascript:` は含まれていなかったが（悪意ある内容でないため当然）、これは「安全である証拠」ではなく単に「テストケースが無害だった」だけなので判断根拠にしない。
+GitHub は github.com 上での表示のために既に一定のサニタイズ（`<script>`/`<style>`/`<iframe>`/`on*` 属性の除去等）を行っているとみられるが、**これは github.com というホスト・CSP・出所の文脈で安全なだけ** であり、①この API 出力に対する将来のサニタイズ仕様変更を我々が保証できない、②任意の第三者（リポジトリオーナー）が完全に自由に書ける文字列を `dangerouslySetInnerHTML` で自ドメインの DOM に注入する以上、多層防御としてこちら側でも独立にサニタイズすべき。実測で取得した本リポジトリ自身の README HTML には `<script>` `<style>` `<iframe>` `onerror=` `onclick=` `javascript:` は含まれていなかったが（悪意ある内容でないため当然）、これは「安全である証拠」ではなく単に「テストケースが無害だった」だけなので判断根拠にしない。
 
 ### 採用: `sanitize-html`（htmlparser2 ベース）
 
@@ -82,9 +82,9 @@ GitHub は github.com 上での表示のために既に一定のサニタイズ�
 href="./docs" href="./LICENSE" href="./docs/adr/0001-ui-stack.md" ...
 ```
 
-これらは書き換えられずそのまま返る。ドキュメント上も明記されておらず（WebFetch で GitHub 公式ページを確認したが記載なし）、**実測でしか分からない仕様**だった。github.com 本体のリポジトリ表示ページは相対パスを解決して表示しているが、それは github.com のページレンダリングパイプライン固有の処理であり、Contents API の HTML 出力には適用されていない。
+これらは書き換えられずそのまま返る。ドキュメント上も明記されておらず（WebFetch で GitHub 公式ページを確認したが記載なし）、**実測でしか分からない仕様** だった。github.com 本体のリポジトリ表示ページは相対パスを解決して表示しているが、それは github.com のページレンダリングパイプライン固有の処理であり、Contents API の HTML 出力には適用されていない。
 
-さらに**アンカー ID にも罠がある**: GitHub は見出しに `id="user-content-{slug}"`（`user-content-` プレフィックス付き）を振るが、見出し横のパーマリンクアイコンや README 内目次のリンクは `href="#{slug}"`（プレフィックスなし）を指す。github.com 本体ではこの不一致を吸収する仕組みがあるとみられるが、我々の埋め込み先ページにはそれが無いため、**このまま埋め込むと README 内のアンカーリンク（目次等）が一切機能しない**。
+さらに **アンカー ID にも罠がある**: GitHub は見出しに `id="user-content-{slug}"`（`user-content-` プレフィックス付き）を振るが、見出し横のパーマリンクアイコンや README 内目次のリンクは `href="#{slug}"`（プレフィックスなし）を指す。github.com 本体ではこの不一致を吸収する仕組みがあるとみられるが、我々の埋め込み先ページにはそれが無いため、**このまま埋め込むと README 内のアンカーリンク（目次等）が一切機能しない**。
 
 ### 解決方針
 
@@ -112,8 +112,8 @@ href="./docs" href="./LICENSE" href="./docs/adr/0001-ui-stack.md" ...
 
 **この制約はページ本体（`repository` 取得＝404 の判定材料）にのみ適用される。** README 取得は 404 の判定に関与しない（README が無くても「リポジトリは存在する」という 200 の結論は変わらない）。したがって:
 
-- `repository === null` の `notFound()` 判定は**従来どおり同期 `await` で行い、ストリーミングを一切開始させない**（変更なし）
-- 404 でないと確定した**後**（＝ `main` の JSX ツリーの中、既存の統計表示より下）に **README 専用の新しい `<Suspense>` 境界を 1 つだけ追加**し、その内側で README を取得・レンダリングする非同期 Server Component を描画する。この境界に入るのは 404 判定が既に確定した後なので、AC-5 を一切壊さない
+- `repository === null` の `notFound()` 判定は **従来どおり同期 `await` で行い、ストリーミングを一切開始させない**（変更なし）
+- 404 でないと確定した **後**（＝ `main` の JSX ツリーの中、既存の統計表示より下）に **README 専用の新しい `<Suspense>` 境界を 1 つだけ追加** し、その内側で README を取得・レンダリングする非同期 Server Component を描画する。この境界に入るのは 404 判定が既に確定した後なので、AC-5 を一切壊さない
 - 境界の `fallback` は軽量なスケルトン（テキスト 1〜数行程度。クライアント JS 不要）
 - README 取得自体が失敗（レート制限・upstream エラー・パース失敗等）した場合は、**例外を投げて最寄りの `error.tsx` に落とさない**。README コンポーネント内部で `try/catch` し、失敗時は「README を読み込めませんでした。GitHub で見る」の 1 行 + `repository.htmlUrl` へのリンクを表示するだけに留める（詳細ページ全体を巻き込まない）
 - README 不在（404）は `findDetail` と同じ `notFoundAsNull` パターンを再利用し `null` を返す契約にする（エラーではなく「README セクションを描画しない」という正常系の分岐として扱う）
@@ -127,7 +127,7 @@ href="./docs" href="./LICENSE" href="./docs/adr/0001-ui-stack.md" ...
 
 ## 6. NFR-3（クライアント JS を増やさない）との両立
 
-README の取得・パース・サニタイズ・URL 書き換えは**すべてサーバー側**（README 専用の async Server Component、`use client` なし）で完結し、完成した安全な HTML 文字列を `dangerouslySetInnerHTML` で埋め込むだけになる。したがって **1〜2 節でどのライブラリ（`sanitize-html` / `marked` / `react-markdown` 等）を選んでも、クライアントバンドルへの影響はゼロ**（これらはすべて Worker 側のサーバーバンドルにのみ計上される）。NFR-3 は取得形式・サニタイザ選定の判断材料にはならない（争点 C の期待に反して、この観点は他の 5 点ほど決定力を持たない、という結論自体が申し送り事項）。唯一の注意点は `<Suspense>` 境界そのものは React の標準機能でありクライアント JS 追加を意味しない（RSC のストリーミングはサーバー側の仕組み）。
+README の取得・パース・サニタイズ・URL 書き換えは **すべてサーバー側**（README 専用の async Server Component、`use client` なし）で完結し、完成した安全な HTML 文字列を `dangerouslySetInnerHTML` で埋め込むだけになる。したがって **1〜2 節でどのライブラリ（`sanitize-html` / `marked` / `react-markdown` 等）を選んでも、クライアントバンドルへの影響はゼロ**（これらはすべて Worker 側のサーバーバンドルにのみ計上される）。NFR-3 は取得形式・サニタイザ選定の判断材料にはならない（争点 C の期待に反して、この観点は他の 5 点ほど決定力を持たない、という結論自体が申し送り事項）。唯一の注意点は `<Suspense>` 境界そのものは React の標準機能でありクライアント JS 追加を意味しない（RSC のストリーミングはサーバー側の仕組み）。
 
 **根拠**: React Server Components の基本仕様（`dangerouslySetInnerHTML` を使う純粋な Server Component はクライアントへ JS を送らない）、`wrangler.jsonc`/`open-next.config.ts` にクライアント最適化に関する特別な追加設定なし。
 

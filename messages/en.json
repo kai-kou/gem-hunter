@@ -58,8 +58,7 @@
       "starsLabel": "stars",
       "attribution": "About this data: \"Used by\" and star counts come from {source} ({license}) open data captured around {generatedAt}, so they can differ from the latest values on GitHub and from the detail page. The order is recomputed daily from the date.",
       "newBadge": "New",
-      "firstVisitNote": "Showing all items as your first visit",
-      "rssLink": "Subscribe via RSS"
+      "firstVisitNote": "Showing all items as your first visit"
     }
   },
   "detail": {
@@ -69,7 +68,14 @@
     "watcherCount": "watchers",
     "forkCount": "forks",
     "openIssueCount": "open issues",
+    "updatedAt": "Last updated",
     "opensInNewTab": "(opens in a new tab)",
-    "notFound": "Repository not found."
+    "notFound": "Repository not found.",
+    "readme": {
+      "heading": "README",
+      "unavailable": "The README could not be displayed.",
+      "viewOnGithub": "View the README on GitHub",
+      "loading": "Loading the README"
+    }
   }
 }

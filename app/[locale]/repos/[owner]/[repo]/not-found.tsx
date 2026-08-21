@@ -26,7 +26,9 @@ export default async function NotFound() {
       {/* `generateMetadata` だけではハイドレーション後に title が巻き戻る（下記コメント参照）ため、
           クライアント側で確実に上書きする */}
       <SetDocumentTitle title={messages.detail.notFound} />
-      <h1 className="text-2xl font-semibold">{messages.detail.notFound}</h1>
+      {/* 🔴 h1 は共有ヘッダー（layout.tsx）のツールタイトルが持つため h2 へ降格
+          （Issue #334 F-1/F-2・whiteboard round3 lead 裁定）。 */}
+      <h2 className="text-2xl font-semibold">{messages.detail.notFound}</h2>
       <p className="mt-4">
         <BackLink locale={locale} labels={messages.detail} />
       </p>

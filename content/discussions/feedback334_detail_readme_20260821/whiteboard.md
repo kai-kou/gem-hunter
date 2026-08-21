@@ -166,10 +166,10 @@
 
 ## 結論サマリー（争点 A 中心・情報設計 / a11y レンズ）
 
-1. ツールタイトルは **`layout.tsx` の共有 `<header>` に 1 箇所だけ**置き、`page.tsx` 自前の `<h1>` は撤去する。
-2. `repository.fullName` は **`<h2>` へ降格**して問題ない（既存 E2E の大半は level 未指定）。ただし **`app/[locale]/repos/[owner]/[repo]/page.tsx` のエラー分岐と `not-found.tsx` にもそれぞれ独自の `<h1>` があり、両方とも `<h2>` に揃えないと 1 ページに h1 が 2 つ並ぶ**。エラー分岐側は `e2e/sp-9-errors.spec.ts:216` が `level: 1` を明示しているため、**このテストの修正が必須**（見落としやすい）。
+1. ツールタイトルは **`layout.tsx` の共有 `<header>` に 1 箇所だけ** 置き、`page.tsx` 自前の `<h1>` は撤去する。
+2. `repository.fullName` は **`<h2>` へ降格** して問題ない（既存 E2E の大半は level 未指定）。ただし **`app/[locale]/repos/[owner]/[repo]/page.tsx` のエラー分岐と `not-found.tsx` にもそれぞれ独自の `<h1>` があり、両方とも `<h2>` に揃えないと 1 ページに h1 が 2 つ並ぶ**。エラー分岐側は `e2e/sp-9-errors.spec.ts:216` が `level: 1` を明示しているため、**このテストの修正が必須**（見落としやすい）。
 3. `LocaleSwitcher` は **layout.tsx へ移せない**（`searchParams` が layout に渡らない Next.js の制約）。タイトルだけを layout 側へ、`LocaleSwitcher` は現状どおり各 page.tsx に残す。
-4. タイトルのリンク先 `/{locale}`（クエリなし）は `BackLink` の「検索状態を保持して戻る」とは **役割が違う**ため矛盾ではない（サイトホームへのリセット導線）。ただし実装は `buildSearchUrl` を経由せず、**素の固定 href** にすべき。
+4. タイトルのリンク先 `/{locale}`（クエリなし）は `BackLink` の「検索状態を保持して戻る」とは **役割が違う** ため矛盾ではない（サイトホームへのリセット導線）。ただし実装は `buildSearchUrl` を経由せず、**素の固定 href** にすべき。
 5. F-3（description・最終更新）は一覧の視覚配置は流用しつつ、**sr-only の付け方は詳細画面の既存流儀（可視ラベル + `aria-hidden` アイコン）に合わせる**。「最終更新」は `RepositoryDetail` 型に該当フィールド（`lastPushedAt` 相当）が無く、型・mapper 側の追加が要る（`arch_domain` 領域だが表示設計に影響するため明記）。
 
 ---
@@ -182,8 +182,8 @@
 - `<header>` / `role="banner"` はプロジェクト内に **1 箇所も存在しない**（`grep -rn "<header" app/ src/ui/` はヒットなし）
 
 ### 判断: 共有ヘッダー component（`layout.tsx` 経由）に一本化する
-- `app/[locale]/layout.tsx` はロケール配下の**全ページ**（トップ・詳細成功時・詳細エラー時・`not-found.tsx`）を包む唯一の共通点。ここに `<header>` ランドマークを新設し、中に `<h1><Link href={`/${locale}`}>{messages.home.title}</Link></h1>` を置けば、F-2「詳細画面もトップと同じくツールタイトルを含めて同じ挙動」を**実装を複製せず**満たせる。
-- `page.tsx:292` の `<h1>{messages.home.title}</h1>` は**撤去**する（残すと home ページだけ h1 が 2 つになる）。`p.text-muted-foreground`（`messages.home.description`、page.tsx:293）は残し、header 直後・検索フォームの前に来る位置関係は変わらない。
+- `app/[locale]/layout.tsx` はロケール配下の **全ページ**（トップ・詳細成功時・詳細エラー時・`not-found.tsx`）を包む唯一の共通点。ここに `<header>` ランドマークを新設し、中に `<h1><Link href={`/${locale}`}>{messages.home.title}</Link></h1>` を置けば、F-2「詳細画面もトップと同じくツールタイトルを含めて同じ挙動」を **実装を複製せず** 満たせる。
+- `page.tsx:292` の `<h1>{messages.home.title}</h1>` は **撤去** する（残すと home ページだけ h1 が 2 つになる）。`p.text-muted-foreground`（`messages.home.description`、page.tsx:293）は残し、header 直後・検索フォームの前に来る位置関係は変わらない。
 - リンクは内部遷移なので `next/link`（`Link`）を使う（`back-link.tsx:1`・`repository-list.tsx:76`・`locale-switcher.tsx:1` と同じ内部遷移の慣行。外部リンクにのみ素の `<a>` を使っているのは `repository-detail.tsx:72`・`attribution-notice.tsx` のみ）。
 - フォーカスリング・下線は既存パターンを流用: `text-primary rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring`（`back-link.tsx:35`, `repository-list.tsx:81`, `repository-detail.tsx:76` と同一クラス構成）。
 
@@ -195,7 +195,7 @@
 ## 2. 詳細ページの見出し階層と h1 二重化問題
 
 ### 波及範囲（見落とされがちな箇所を含め全て特定）
-`repository.fullName` に相当する `<h1>` は実は **3 箇所**に存在する（1 箇所だけ直せば済むわけではない）:
+`repository.fullName` に相当する `<h1>` は実は **3 箇所** に存在する（1 箇所だけ直せば済むわけではない）:
 
 | 箇所 | 現状 | 対応 |
 |---|---|---|
@@ -205,28 +205,28 @@
 
 ### E2E への実波及（実際に読んで確認済み）
 
-- **`e2e/sp-3.spec.ts:37,42,45`**: `page.getByRole('heading', { name: 'octostub/octo-widgets' })` — **level 未指定**。`getByRole('heading', {name})` はレベルを問わず role="heading"（h1〜h6 すべて）にマッチするため、h2 化しても**壊れない**。
+- **`e2e/sp-3.spec.ts:37,42,45`**: `page.getByRole('heading', { name: 'octostub/octo-widgets' })` — **level 未指定**。`getByRole('heading', {name})` はレベルを問わず role="heading"（h1〜h6 すべて）にマッチするため、h2 化しても **壊れない**。
 - **`e2e/a11y.spec.ts:28`**: 同じく level 未指定の `getByRole('heading', {name: 'octostub/octo-widgets'})` → 壊れない。
-- **`e2e/sp-9-errors.spec.ts:216`**: `await expect(page.getByRole('heading', { level: 1 })).toContainText(\`octostub/${repo}\`)` — **`level: 1` を明示している**。これは上表 2 行目（エラー分岐の `<h1>`）を指しており、そこを `<h2>` に変えると `getByRole('heading', {level:1})` が一致するのは header 側の「gem-hunter」だけになり、`toContainText('octostub/...')` は**失敗する**。このテストコード自体を「見出し全体（level 問わず）に `octostub/${repo}` を含む」形へ書き換える必要がある（例: `getByRole('heading', { name: new RegExp(\`octostub/${repo}\`) })` へ変更、または `level: 2` に変更）。**これがこの変更で最も見落としやすいポイント**。
-- **`e2e/sp-6-notfound.spec.ts`**: `getByText(ja.detail.notFound, {exact:true})` と `toHaveTitle(...)` のみを検証しており、heading の level は見ていない → `not-found.tsx` の h1→h2 変更でも**壊れない**（が、上表の理由で変更自体は必要）。
+- **`e2e/sp-9-errors.spec.ts:216`**: `await expect(page.getByRole('heading', { level: 1 })).toContainText(\`octostub/${repo}\`)` — **`level: 1` を明示している**。これは上表 2 行目（エラー分岐の `<h1>`）を指しており、そこを `<h2>` に変えると `getByRole('heading', {level:1})` が一致するのは header 側の「gem-hunter」だけになり、`toContainText('octostub/...')` は **失敗する**。このテストコード自体を「見出し全体（level 問わず）に `octostub/${repo}` を含む」形へ書き換える必要がある（例: `getByRole('heading', { name: new RegExp(\`octostub/${repo}\`) })` へ変更、または `level: 2` に変更）。**これがこの変更で最も見落としやすいポイント**。
+- **`e2e/sp-6-notfound.spec.ts`**: `getByText(ja.detail.notFound, {exact:true})` と `toHaveTitle(...)` のみを検証しており、heading の level は見ていない → `not-found.tsx` の h1→h2 変更でも **壊れない**（が、上表の理由で変更自体は必要）。
 - **`e2e/sp-6-idle.spec.ts:30,54`**・**`e2e/sp-7.spec.ts:134`**・**`e2e/sp-10.spec.ts`**・**`e2e/sp-14.spec.ts`**: いずれも `level: 2`（`検索結果` / `今日の Gem`）または level 未指定の別名の見出しを検証しており、詳細ページの h1/h2 変更とは無関係（影響なし）。
-- **`e2e/sp-9-loading-empty.spec.ts:41`**: `getByRole('heading', { name: ja.home.title })` — level 未指定。home の `<h1>` を撤去して layout の header 内 `<h1>` に一本化しても、`heading` role・`name` は変わらず**壊れない**（ただし重複マッチしないよう `page.tsx:292` の自前 `<h1>` は必ず削除すること。残すと `getByRole` が 2 件ヒットして strict mode violation で別テストが落ちる）。
+- **`e2e/sp-9-loading-empty.spec.ts:41`**: `getByRole('heading', { name: ja.home.title })` — level 未指定。home の `<h1>` を撤去して layout の header 内 `<h1>` に一本化しても、`heading` role・`name` は変わらず **壊れない**（ただし重複マッチしないよう `page.tsx:292` の自前 `<h1>` は必ず削除すること。残すと `getByRole` が 2 件ヒットして strict mode violation で別テストが落ちる）。
 
 ### `SetDocumentTitle` / ルートアナウンサーへの影響
 - `src/ui/set-document-title.tsx` は `document.title` の設定だけを行い、見出しレベルとは無関係。`ui-ux-guidelines.md:328-341`（§7.1）の「route announcer は document title の変化だけを見る」仕組みも同様に **h1→h2 変更の影響を受けない**。トップ↔詳細のようなフルページ遷移では `generateMetadata`（`page.tsx` 末尾）と `SetDocumentTitle` が引き続きタイトルを制御するため、この観点の変更は不要。
 - 一方 `ui-ux-guidelines.md:328-341` の §7.1 パターン（`next/link` クライアント遷移時に `<h2 tabIndex={-1}>` へ focus を移す）は home の `#results-heading` 専用の仕組みであり、詳細ページの h1→h2 化はこの仕組みを流用も破壊もしない（別物）。
 
 ### axe（`e2e/a11y.spec.ts` 等）への影響
-- `e2e/axe.ts:15` の `withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa'])` は **`heading-order` / `page-has-heading-one` を含まない**（両ルールは axe-core 上 `best-practice` タグのみで WCAG タグを持たない）。したがって h1 が 2 つ並んでしまう実装ミスをしても、この e2e の axe 検査では **検出されない**。`ui-ux-guidelines.md` §7 の「機械ゲート三層防御」表にも `heading-order` 系は明記されておらず、**手動チェックリスト（§7.7）への追加を検討すべき見落としリスク**として指摘する。
+- `e2e/axe.ts:15` の `withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa'])` は **`heading-order` / `page-has-heading-one` を含まない**（両ルールは axe-core 上 `best-practice` タグのみで WCAG タグを持たない）。したがって h1 が 2 つ並んでしまう実装ミスをしても、この e2e の axe 検査では **検出されない**。`ui-ux-guidelines.md` §7 の「機械ゲート三層防御」表にも `heading-order` 系は明記されておらず、**手動チェックリスト（§7.7）への追加を検討すべき見落としリスク** として指摘する。
 
 ---
 
 ## 3. タイトルリンクの行き先と SP-7 の関係
 
-- `src/ui/url/build-search-url.ts:26-42` の `buildSearchUrl` は検索条件を**保持して**クエリを組み立てる関数であり、`BackLink`（`src/ui/back-link.tsx:16-24` の `href?` props）はこれを使って「検索条件を保持したまま戻る」ことが目的（コメント: `back-link.tsx:19-23`「検索条件…を保持したまま一覧へ戻りたい呼び出し元が…組み立てて渡す」）。
-- ツールタイトルの `href` は **`buildSearchUrl` を経由しない固定値 `/${locale}`** にする。これは「検索条件を破棄してホームへ戻る」という F-1 の意図どおりであり、`BackLink` の「条件保持」とは**役割が異なるだけで矛盾ではない**（一般的な「サイトタイトル＝ホームへのリセット導線」という UX 慣行と一致）。
+- `src/ui/url/build-search-url.ts:26-42` の `buildSearchUrl` は検索条件を **保持して** クエリを組み立てる関数であり、`BackLink`（`src/ui/back-link.tsx:16-24` の `href?` props）はこれを使って「検索条件を保持したまま戻る」ことが目的（コメント: `back-link.tsx:19-23`「検索条件…を保持したまま一覧へ戻りたい呼び出し元が…組み立てて渡す」）。
+- ツールタイトルの `href` は **`buildSearchUrl` を経由しない固定値 `/${locale}`** にする。これは「検索条件を破棄してホームへ戻る」という F-1 の意図どおりであり、`BackLink` の「条件保持」とは **役割が異なるだけで矛盾ではない**（一般的な「サイトタイトル＝ホームへのリセット導線」という UX 慣行と一致）。
 - トップページで検索中（`?q=...` 等）にタイトルをクリックした場合の挙動: `/{locale}` へ遷移しクエリが消える → `hasKeyword` が false になり `page.tsx:207-216` の分岐で idle 表示（検索フォーム＋日次ダイジェストのみ）に戻る。これは F-1 の要求そのもの。
-- 注意点: `e2e/sp-7.spec.ts` は「詳細往復で検索条件が保たれる」ことを検証するテストであり、そこで **BackLink**（「一覧へ戻る」リンク、`labels.backLink` 文言）をクリックする前提になっている（`e2e/sp-3.spec.ts:47` 相当のパターン）。ツールタイトルと `BackLink` は文言もリンク先ロジックも別物なので、既存の SP-7 系 E2E は**そのまま壊れない**——ただし実装時に「タイトルリンクが誤って `buildSearchUrl(basePath, searchState)` を使ってしまう」実装ミスをすると、検索中にタイトルをクリックしても検索状態が残り F-1 の意図と食い違う。ここは仕様解釈の分岐ではなく実装レベルのミスなので、レビュー観点として明記するに留める。
+- 注意点: `e2e/sp-7.spec.ts` は「詳細往復で検索条件が保たれる」ことを検証するテストであり、そこで **BackLink**（「一覧へ戻る」リンク、`labels.backLink` 文言）をクリックする前提になっている（`e2e/sp-3.spec.ts:47` 相当のパターン）。ツールタイトルと `BackLink` は文言もリンク先ロジックも別物なので、既存の SP-7 系 E2E は **そのまま壊れない**——ただし実装時に「タイトルリンクが誤って `buildSearchUrl(basePath, searchState)` を使ってしまう」実装ミスをすると、検索中にタイトルをクリックしても検索状態が残り F-1 の意図と食い違う。ここは仕様解釈の分岐ではなく実装レベルのミスなので、レビュー観点として明記するに留める。
 
 ---
 
@@ -239,7 +239,7 @@
 
 ### ランドマーク構造の提案
 - 新設: `layout.tsx` の `<body>` 直下に `<header>`（`role="banner"` 相当・暗黙ロール）を 1 つ置き、中身は `<h1><Link href={/${locale}}>...</Link></h1>` のみ（ログインリンクの `div`（`layout.tsx:69-76`）は header の外、`children` の前に残すか、header 内に統合するかは意匠判断——**header 内に統合する場合は banner ランドマーク内にログイン導線が同居しても仕様上問題ない**（banner は 1 ページに 1 つが原則だが、中に複数の子要素を持てる）。
-- 既存の懸念点（本 PR のスコープではないが構造確認として記録）: **`LocaleSwitcher` の `<nav>` は現在 `<main>` の内側**（`page.tsx:284`, `repos/.../page.tsx` の `<LocaleSwitcher>` 呼び出し）に置かれている。ランドマーク設計としては `nav` は `main` の外（兄弟）に置くのが望ましいが、これは既存実装からの逸脱であり、今回のタイトル追加とは別軸の指摘なので**別 Issue 化を推奨**（CP-1 のスコープ境界に従う）。今回 header を新設するタイミングで一緒に「nav を header 内または header 直後・main の外」へ動かすなら一石二鳥だが、それは `arch_domain` / lead の判断に委ねる。
+- 既存の懸念点（本 PR のスコープではないが構造確認として記録）: **`LocaleSwitcher` の `<nav>` は現在 `<main>` の内側**（`page.tsx:284`, `repos/.../page.tsx` の `<LocaleSwitcher>` 呼び出し）に置かれている。ランドマーク設計としては `nav` は `main` の外（兄弟）に置くのが望ましいが、これは既存実装からの逸脱であり、今回のタイトル追加とは別軸の指摘なので **別 Issue 化を推奨**（CP-1 のスコープ境界に従う）。今回 header を新設するタイミングで一緒に「nav を header 内または header 直後・main の外」へ動かすなら一石二鳥だが、それは `arch_domain` / lead の判断に委ねる。
 - 順序案（推奨）: `header`（tool title h1）→ `main` 内で `LocaleSwitcher`（nav）→ 各ページ固有の見出し（h2 fullName 等）→ 本文。detail 成功時は `BackLink` が `RepositoryDetail` 冒頭にあるので、`main` 内の順序は「LocaleSwitcher → BackLink → h2 fullName → 統計」のまま変わらない。
 
 ---
@@ -248,24 +248,24 @@
 
 ### 一覧側の既存作法（`src/ui/repository-list.tsx`）
 - **description**: `item.description` が truthy のときだけ `<p className="text-muted-foreground mt-1 text-sm">{item.description}</p>`（`repository-list.tsx:85-87`）。ラベルなし、可視テキストのみ。sr-only 処理は一切していない（説明文はそれ自体が読み上げ可能なテキストのため不要）。
-- **最終更新**: `<span>{labels.updatedAt} {dateFormat.format(item.lastPushedAt)}</span>`（`repository-list.tsx:95-97`）。**可視ラベル（`labels.updatedAt` = "最終更新"）を明示**しており sr-only ではない（star 数だけ `<span aria-hidden="true">★ </span><span className="sr-only">{labels.starCount} </span>` という視覚記号置換パターン（`repository-list.tsx:90-93`）を使っているのとは異なる）。
+- **最終更新**: `<span>{labels.updatedAt} {dateFormat.format(item.lastPushedAt)}</span>`（`repository-list.tsx:95-97`）。**可視ラベル（`labels.updatedAt` = "最終更新"）を明示** しており sr-only ではない（star 数だけ `<span aria-hidden="true">★ </span><span className="sr-only">{labels.starCount} </span>` という視覚記号置換パターン（`repository-list.tsx:90-93`）を使っているのとは異なる）。
 - 日付フォーマット: `new Intl.DateTimeFormat(localeTag, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' })`（`repository-list.tsx:45-50`）。`ui-ux-guidelines.md:216`（§4.2）が明記する「絶対表記（YYYY-MM-DD）、相対表記は使わない」の実装そのもの。
 
 ### 詳細側の既存作法（`src/ui/repository-detail.tsx`）
 - 統計（star/watcher/fork/openIssue）は `dl > dt(icon aria-hidden + 可視ラベル) + dd(数値)` の構造（`repository-detail.tsx:94-106`）。**sr-only は使っていない**（`language` だけ `<span className="sr-only">{labels.language}: </span>` を使うが、これはラベルとアイコンを両方持たない唯一の項目だからで、アイコン付き stats とは別パターン）。
 
 ### 配置提案
-1. **description**: `repository.fullName`（h2 化）＋ `primaryLanguage` のブロック（`repository-detail.tsx:65-91` の `<div className="min-w-0">`）の直後、`dl` 統計の前に、一覧と同じ `<p className="text-muted-foreground mt-1 text-sm">{repository.description}</p>` を `repository.description` が truthy のときだけ描画する。ラベルなし・sr-only なし、一覧の作法をそのまま踏襲すれば整合が取れる。ドメイン型 `RepositoryDetail`（`src/domain/model/repository.ts:34`）には**既に `description: string | null` フィールドがあるため、型追加は不要**——これは表示漏れだけの問題（`arch_domain` 領域の確認: mapper がこの値を落としていないか要確認）。
-2. **最終更新**: `RepositoryDetail` 型には `lastPushedAt`（または `pushedAt`）に相当するフィールドが**存在しない**（`src/domain/model/repository.ts:29-45` を確認済み。`RepositorySummary` にはあるが `RepositoryDetail` にはない）。表示するにはドメイン型・mapper・use case への追加が先に必要（`arch_domain`/`docs_trace` 領域）。表示位置としては、詳細側の `dl` 統計と揃えて **5 個目の `dt/dd`**（Calendar アイコン + `labels.updatedAt` + 日付）として追加するのが、詳細ページ内の一貫性（アイコン+ラベル+値のセット・`ui-ux-guidelines.md:290`「統計はアイコン+ラベル+数値のセットで横並び」）に最も合う。日付フォーマットは一覧と**同一コード**（`Intl.DateTimeFormat` + `timeZone: 'Asia/Tokyo'` + `y/m/d 2-digit`）を再利用し、同じ値（例えば同じ `pushed_at`）を一覧と詳細で異なる書式・異なる粒度で出さないようにする。
+1. **description**: `repository.fullName`（h2 化）＋ `primaryLanguage` のブロック（`repository-detail.tsx:65-91` の `<div className="min-w-0">`）の直後、`dl` 統計の前に、一覧と同じ `<p className="text-muted-foreground mt-1 text-sm">{repository.description}</p>` を `repository.description` が truthy のときだけ描画する。ラベルなし・sr-only なし、一覧の作法をそのまま踏襲すれば整合が取れる。ドメイン型 `RepositoryDetail`（`src/domain/model/repository.ts:34`）には **既に `description: string | null` フィールドがあるため、型追加は不要**——これは表示漏れだけの問題（`arch_domain` 領域の確認: mapper がこの値を落としていないか要確認）。
+2. **最終更新**: `RepositoryDetail` 型には `lastPushedAt`（または `pushedAt`）に相当するフィールドが **存在しない**（`src/domain/model/repository.ts:29-45` を確認済み。`RepositorySummary` にはあるが `RepositoryDetail` にはない）。表示するにはドメイン型・mapper・use case への追加が先に必要（`arch_domain`/`docs_trace` 領域）。表示位置としては、詳細側の `dl` 統計と揃えて **5 個目の `dt/dd`**（Calendar アイコン + `labels.updatedAt` + 日付）として追加するのが、詳細ページ内の一貫性（アイコン+ラベル+値のセット・`ui-ux-guidelines.md:290`「統計はアイコン+ラベル+数値のセットで横並び」）に最も合う。日付フォーマットは一覧と **同一コード**（`Intl.DateTimeFormat` + `timeZone: 'Asia/Tokyo'` + `y/m/d 2-digit`）を再利用し、同じ値（例えば同じ `pushed_at`）を一覧と詳細で異なる書式・異なる粒度で出さないようにする。
 3. メッセージキー: `messages.home.updatedAt`（"最終更新"）を詳細側でも再利用するか、`messages.detail.updatedAt` を新設するかは実装レベルの判断（値は同じ文言になる想定）。`description` はラベル自体を持たないため新規キー不要。
 
 ---
 
 ## 6. フォーカスリング・タップ領域・opensInNewTab との整合
 
-- 新設するタイトルリンク（内部遷移）は `target="_blank"` を使わないため `opensInNewTab` sr-only 文言は**不要**（この文言は `repository-detail.tsx:79-82` の GitHub 外部リンクと `attribution-notice.tsx` 専用）。
+- 新設するタイトルリンク（内部遷移）は `target="_blank"` を使わないため `opensInNewTab` sr-only 文言は **不要**（この文言は `repository-detail.tsx:79-82` の GitHub 外部リンクと `attribution-notice.tsx` 専用）。
 - フォーカスリングは既存の内部リンク共通クラス（`focus-visible:ring-3 focus-visible:ring-ring` + `outline-none` 対）をそのまま流用すればよく、新規パターンの発明は不要（`ui-ux-guidelines.md:353-355` §7.3 の必須要件に整合）。
-- タップ領域: タイトルはテキストリンク（`h1` 内のインラインテキスト）であり、`ui-ux-guidelines.md` §7.5 の **Inline 例外**（「文または文のブロック内にあるターゲットは対象外」）に該当するため `--size-control-xs` の実測は不要と判断できる。ただし見出し全体をクリック領域にする場合（`repository-list.tsx` の `::after` パターンのような拡張）は例外の適用外になるため、**単純なテキストリンクのまま**にすることを推奨（過剰実装を避ける・YAGNI）。
+- タップ領域: タイトルはテキストリンク（`h1` 内のインラインテキスト）であり、`ui-ux-guidelines.md` §7.5 の **Inline 例外**（「文または文のブロック内にあるターゲットは対象外」）に該当するため `--size-control-xs` の実測は不要と判断できる。ただし見出し全体をクリック領域にする場合（`repository-list.tsx` の `::after` パターンのような拡張）は例外の適用外になるため、**単純なテキストリンクのまま** にすることを推奨（過剰実装を避ける・YAGNI）。
 
 ### `removal_impact` — 主張
 <sub>2026-08-21T16:41:54+09:00</sub>
@@ -311,7 +311,7 @@
 
 ただし `static-gem-digest.ts` 51 行目のコメント
 「🔴 RSS 配信側（`src/composition/digest-feed.ts`）からも同じ値を使う（定義を二重化すると…）」
-は RSS 撤去後に **嘘のコメントとして残ってしまう**ため、同時に書き換える（例:
+は RSS 撤去後に **嘘のコメントとして残ってしまう** ため、同時に書き換える（例:
 「候補プールが読めない/壊れているときに使う帰属メタデータ。`D-29` の帰属表示は省略できないため、
 フォールバック時も出典・ライセンスは保持し `generatedAt` だけを空にする。」に単純化し、RSS への
 言及を削る）。
@@ -321,7 +321,7 @@
 `src/composition/auth.ts` 55 行目で定義。`app/api/auth/logout/route.ts`・
 `app/api/auth/callback/route.ts` が OAuth のオープンリダイレクト対策として使っており、
 `app/api/digest/rss/route.ts` の消費（1 行目 import・28 行目使用）は 3 消費者のうちの 1 つに
-過ぎない。**RSS 側の import 文が消えるだけ**で `auth.ts` 本体・他 2 消費者に影響なし。
+過ぎない。**RSS 側の import 文が消えるだけ** で `auth.ts` 本体・他 2 消費者に影響なし。
 
 ### `src/ui/daily-digest.tsx` の書き換え箇所
 
@@ -335,7 +335,7 @@
 
 - 17 行目 `rssLink: 'RSS で購読',`（ja fixture）を削除
 - 195 行目 `rssLink: 'Subscribe via RSS',`（en fixture、**JSX インラインリテラル**）を削除
-  — こちらは `labels={{ ... }}` という **オブジェクトリテラルを直接 props に渡している**ため、
+  — こちらは `labels={{ ... }}` という **オブジェクトリテラルを直接 props に渡している** ため、
   `DailyDigestLabels` 型から `rssLink` を外すと TypeScript の excess property check に
   引っかかり `tsc --noEmit` が **red になる**（`run_checks.sh` の型チェック工程が落ちる）。
   17 行目側は `const labels = {...}` を変数経由で渡しているため型エラーにはならないが、
@@ -461,9 +461,9 @@ source production and use」）、`AttributionNotice` が表示する `{source}`
 
 一方、実データの取得元は `tools/generate_gem_digest.mjs` 23 行目
 `const API_BASE = 'https://packages.ecosyste.ms/api/v1/registries/npmjs.org/packages'`（npm
-registry の packages API）であり、これは **JSON を返す API エンドポイント**でユーザーが
+registry の packages API）であり、これは **JSON を返す API エンドポイント** でユーザーが
 ブラウザで開いても読める説明ページではない。ユーザー向けの「出典について知りたい」導線としては
-**`https://ecosyste.ms/`（トップページ）の方が適切**と判断する。`sourceLicenseUrl` が
+**`https://ecosyste.ms/`（トップページ）の方が適切** と判断する。`sourceLicenseUrl` が
 `https://creativecommons.org/licenses/by-sa/4.0/`（ライセンス条文の deed ページ、人間が読める
 説明ページ）であるのと同じ粒度に揃うため一貫性もある。
 
@@ -509,7 +509,7 @@ target="_blank">{meta.source}</a>` として埋め込む。
 `rel="noopener noreferrer"` / `target="_blank"` は付いているが、`sr-only` の「新しいタブで開き
 ます」相当の文言は **付いていない**（`repository-detail.tsx` の `opensInNewTab`
 パターンとは異なる）。よって `{source}` リンクも `{license}` リンクと同じ作法（`target="_blank"`
-+ rel のみ、a11y sr-only 文言なし）に揃えるのが**既存パターンとの一貫性は高い**。ただし
++ rel のみ、a11y sr-only 文言なし）に揃えるのが **既存パターンとの一貫性は高い**。ただし
 `repository-detail.tsx` はそのすぐ横のコメント（67〜70 行目）で「新しいタブで開くことが
 伝わらないと a11y 上の問題になる」（`ui-ux-guidelines.md` §7.4a）と明記しており、`{license}`
 リンクが既にこの規律から外れている可能性がある（本レンズの担当外・別レンズ or 別 Issue の
@@ -541,7 +541,7 @@ const link = screen.getByRole('link', { name: 'CC BY-SA 4.0' }); … })` とい�
 ## 結論サマリー
 
 - **F-3**: `description` は実は **既にドメイン/ACL 層で完成済み**（`mapper.ts` の `toPublicRepositoryDetail` が `dto.description` を返却済み・`mapper.test.ts:151` が検証済み）。未着手なのは `lastPushedAt` の追加と UI 表示のみ。「最終更新」は **一覧と同じ `pushed_at`（`updated_at` フォールバック）を使うべき**（根拠は既存の `domain-model.md` §2.2 の記述・下記）。
-- **F-4**: README 取得は `RepositoryQueryPort` に **`findReadme` を追加**（新ポートは切らない）。取得は「詳細と並行」ではなく **「詳細確定後」の逐次**にする。理由は速度ではなく **セキュリティ**（README エンドポイントには `private` フィールドが無く、詳細取得の private ガードを再利用する以外に安全に絞る手段がない）。
+- **F-4**: README 取得は `RepositoryQueryPort` に **`findReadme` を追加**（新ポートは切らない）。取得は「詳細と並行」ではなく **「詳細確定後」の逐次** にする。理由は速度ではなく **セキュリティ**（README エンドポイントには `private` フィールドが無く、詳細取得の private ガードを再利用する以外に安全に絞る手段がない）。
 
 ---
 
@@ -570,11 +570,11 @@ const link = screen.getByRole('link', { name: 'CC BY-SA 4.0' }); … })` とい�
 1. `docs/03_design/data-model/domain-model.md:72` に既に明記されている: `pushed_at` / `updated_at` → `lastPushedAt` / `lastUpdatedAt` であり「『最終更新日』（`AR-1`）は **`pushed_at`** を使う（メタデータ更新で動く `updated_at` ではない）」。これは `RepositoryDetail` 限定ではなく ACL 変換表全体の規則として書かれている。
 2. `mapper.ts` の `toSearchResult` は既にこのルールを実装済み（コメント: 「pushed_at が null（コミット履歴のない空リポジトリ）の場合のみ updated_at にフォールバック」）。
 3. **一覧と詳細で値が食い違うと利用者が混乱する**: 一覧カードで見た「最終更新: 3日前」が詳細ページで別の日付（`updated_at` はメタデータ変更でも動くため、ほぼ常に `pushed_at` 以降の直近日時になる）に変わると、同じ「最終更新」ラベルが指す意味が画面遷移で変わったように見える。`AR-1`（一覧の追加表示項目）と `FR-4` 拡張（詳細の追加表示項目）は同じ「最終更新日」という利用者向け概念を指しており、**同一概念には同一の算出規則を適用するのがドメインモデルの一貫性**（`domain-model.md` §1 のユビキタス言語の目的そのもの）。
-4. 反対されうる点: GitHub の詳細 API レスポンスは `pushed_at` を検索結果と別のタイミングで返す（キャッシュ TTL が違う・`TTL_DETAIL_SECONDS=300` vs `TTL_SEARCH_SECONDS=60`）ため、一覧カードで見た日付と詳細ページの日付が **同じフィールドでも値がわずかにズレる**ことがある（キャッシュ鮮度の違いによる）。これは「どのフィールドを使うか」の問題ではなく別レイヤ（キャッシュ TTL 設計）の帰結であり、`updated_at` に切り替えても解決しない。実用上許容範囲と判断する。
+4. 反対されうる点: GitHub の詳細 API レスポンスは `pushed_at` を検索結果と別のタイミングで返す（キャッシュ TTL が違う・`TTL_DETAIL_SECONDS=300` vs `TTL_SEARCH_SECONDS=60`）ため、一覧カードで見た日付と詳細ページの日付が **同じフィールドでも値がわずかにズレる** ことがある（キャッシュ鮮度の違いによる）。これは「どのフィールドを使うか」の問題ではなく別レイヤ（キャッシュ TTL 設計）の帰結であり、`updated_at` に切り替えても解決しない。実用上許容範囲と判断する。
 
 ### 実装形（YAGNI 自己批判）
 
-`RepositoryDetail` に新規プロパティを 1 つ足すだけであり、新しい値オブジェクト・新しい型・新しいポートは不要。`RepositorySummary.lastPushedAt` と同じ `Date` 型を再利用する（`domain-model.md` の「一覧項目」と「詳細」を別型にする方針とは矛盾しない — 型そのものは同じ `Date` を共有してよく、別型にすべきなのは `RepositorySummary` と `RepositoryDetail` という**エンティティの粒度**であって、フィールドの型ではない）。
+`RepositoryDetail` に新規プロパティを 1 つ足すだけであり、新しい値オブジェクト・新しい型・新しいポートは不要。`RepositorySummary.lastPushedAt` と同じ `Date` 型を再利用する（`domain-model.md` の「一覧項目」と「詳細」を別型にする方針とは矛盾しない — 型そのものは同じ `Date` を共有してよく、別型にすべきなのは `RepositorySummary` と `RepositoryDetail` という **エンティティの粒度** であって、フィールドの型ではない）。
 
 ---
 
@@ -601,9 +601,9 @@ export interface RepositoryQueryPort {
 
 ### 2. 取得順序: 「同時（並行）」ではなく「詳細確定後の逐次」にする（速度ではなくセキュリティが理由）
 
-**決定的な技術的事実**: `GET /repos/{owner}/{repo}/readme` のレスポンス（ファイルメタデータ: `name`/`path`/`sha`/`content`/`encoding` 等）には **`private` フィールドが存在しない**。つまり README エンドポイント単体のレスポンスからは「このリポジトリが非公開かどうか」を判定できない。`toPublicRepositoryDetail` が持つ「`private: true` なら `null`」という自己防御パターン（mapper.ts）は README には**そのままでは適用できない**。
+**決定的な技術的事実**: `GET /repos/{owner}/{repo}/readme` のレスポンス（ファイルメタデータ: `name`/`path`/`sha`/`content`/`encoding` 等）には **`private` フィールドが存在しない**。つまり README エンドポイント単体のレスポンスからは「このリポジトリが非公開かどうか」を判定できない。`toPublicRepositoryDetail` が持つ「`private: true` なら `null`」という自己防御パターン（mapper.ts）は README には **そのままでは適用できない**。
 
-したがって README の非公開リポジトリからの漏洩を防ぐ唯一の方法は、**`findDetail` の private 判定結果に依存すること**である。設計:
+したがって README の非公開リポジトリからの漏洩を防ぐ唯一の方法は、**`findDetail` の private 判定結果に依存すること** である。設計:
 
 ```ts
 // src/usecases/get-repository-readme.ts（新規）
@@ -618,12 +618,12 @@ export function makeGetRepositoryReadme(deps: { repos: RepositoryQueryPort }): G
 }
 ```
 
-- ゲートは **usecase 層**（`src/usecases/get-repository-readme.ts`）に置く。`GithubRepositoryQuery.findReadme` 自身の中に置かない。理由: `GithubRepositoryQuery`（キャッシュを持たない生の ACL 実装）の中でゲートすると、その内部呼び出しは `CachingRepositoryQuery` を経由しないため**キャッシュに乗らず、詳細表示のたびに私有判定用の GET が無条件で 1 回余分に増える**。usecase 層でゲートすれば、`deps.repos`（= `CachingRepositoryQuery` でラップ済み）を経由するため、後述のキャッシュ再利用が効く。
+- ゲートは **usecase 層**（`src/usecases/get-repository-readme.ts`）に置く。`GithubRepositoryQuery.findReadme` 自身の中に置かない。理由: `GithubRepositoryQuery`（キャッシュを持たない生の ACL 実装）の中でゲートすると、その内部呼び出しは `CachingRepositoryQuery` を経由しないため **キャッシュに乗らず、詳細表示のたびに私有判定用の GET が無条件で 1 回余分に増える**。usecase 層でゲートすれば、`deps.repos`（= `CachingRepositoryQuery` でラップ済み）を経由するため、後述のキャッシュ再利用が効く。
 - **これは「呼び出し側の順序を信頼する」設計ではない**（NFR-33 の「構造で強制する」原則に反しない）: `getRepositoryReadmeUseCase` を単独で（`getRepositoryDetailUseCase` を呼ばずに）叩いても、内部で必ず `findDetail` を経由するため非公開データは漏れない。ゲートはこの usecase 関数自体に埋め込まれており、呼び出し元（`app/`）の律儀さに依存しない。
 
 ### 3. ページ側の呼び出し順序とキャッシュ再利用
 
-`page.tsx` は元々 `AC-5` のため `notFound()` を **`<Suspense>` の前に**実行する制約があり、`getRepositoryDetailUseCase` の結果を待ってから描画を始める設計になっている（既存コメント参照）。この制約により、README の取得を「詳細と完全並行（`Promise.all`）」にする動機（レイテンシ短縮）はそもそも弱い——detail の解決は notFound 判定のためどのみち待たねばならない。
+`page.tsx` は元々 `AC-5` のため `notFound()` を **`<Suspense>` の前に** 実行する制約があり、`getRepositoryDetailUseCase` の結果を待ってから描画を始める設計になっている（既存コメント参照）。この制約により、README の取得を「詳細と完全並行（`Promise.all`）」にする動機（レイテンシ短縮）はそもそも弱い——detail の解決は notFound 判定のためどのみち待たねばならない。
 
 ```ts
 const detail = await getRepositoryDetailUseCase(token)({ owner, repo })
@@ -637,9 +637,9 @@ try {
 }
 ```
 
-`getRepositoryReadmeUseCase` の内部 `findDetail` 呼び出しは、`container.ts` の `sharedCache`（モジュールスコープの単一インスタンス）を経由するため、**逐次実行すれば 1 回目の `findDetail`（ページ本体用）が書き込んだキャッシュエントリに 2 回目（README ゲート用）がヒットする**。したがって実際に GitHub へ飛ぶリクエストは「詳細 1 回 + README 1 回」の **2 リクエスト**に収まる（3 回にはならない）。
+`getRepositoryReadmeUseCase` の内部 `findDetail` 呼び出しは、`container.ts` の `sharedCache`（モジュールスコープの単一インスタンス）を経由するため、**逐次実行すれば 1 回目の `findDetail`（ページ本体用）が書き込んだキャッシュエントリに 2 回目（README ゲート用）がヒットする**。したがって実際に GitHub へ飛ぶリクエストは「詳細 1 回 + README 1 回」の **2 リクエスト** に収まる（3 回にはならない）。
 
-⚠️ **`Promise.all` で並行実行すると、この前提が崩れる**: 2 つの `CachingRepositoryQuery` インスタンス（`makeCachingRepositoryQuery()` は呼び出しごとに新規生成・`container.ts`）は `inFlightDetail`（single-flight マップ）を共有しないため、両方が同時に `cache.get()` して両方 MISS になり、`findDetail` が 2 回上流へ飛ぶ可能性がある（3 リクエストに劣化）。**逐次実行を推奨する**理由はこのキャッシュ構造上の帰結であり、恣意的な設計ではない。
+⚠️ **`Promise.all` で並行実行すると、この前提が崩れる**: 2 つの `CachingRepositoryQuery` インスタンス（`makeCachingRepositoryQuery()` は呼び出しごとに新規生成・`container.ts`）は `inFlightDetail`（single-flight マップ）を共有しないため、両方が同時に `cache.get()` して両方 MISS になり、`findDetail` が 2 回上流へ飛ぶ可能性がある（3 リクエストに劣化）。**逐次実行を推奨する** 理由はこのキャッシュ構造上の帰結であり、恣意的な設計ではない。
 
 ### 4. AC-12 / NFR-33 との整合（セキュリティ契約）
 
@@ -659,7 +659,7 @@ export function repositoryReadmeCacheKey(owner: string, name: string): CacheKey 
 ```
 
 - `CACHE_SCHEMA_VERSION`（既存の `v2`）を **README にもそのまま流用する**（既に `search` と `repository` の 2 namespace が 1 つのバージョンを共有しており、3 つ目の namespace を増やしても既存の結合を悪化させない。専用バージョン変数を新設するのはこの時点では過剰）。
-- TTL は **新しい定数を作らず `TTL_DETAIL_SECONDS`（300秒）を再利用する**ことを推奨する（`container.ts` の TTL 決定はどちらも「`R-5` のレート枠逆算待ちの暫定値」という同じ根拠を持っており、README だけ別の値にする実質的な理由が今は無い・YAGNI）。
+- TTL は **新しい定数を作らず `TTL_DETAIL_SECONDS`（300秒）を再利用する** ことを推奨する（`container.ts` の TTL 決定はどちらも「`R-5` のレート枠逆算待ちの暫定値」という同じ根拠を持っており、README だけ別の値にする実質的な理由が今は無い・YAGNI）。
 - `CachingRepositoryQuery` に `findReadme` の read-through 実装を追加（`findDetail` と同じ `readThrough` ヘルパーを再利用。`cacheable: (r) => r !== null` で 404/非公開を キャッシュしない、という既存の `findDetail` と同じ規約を踏襲する）。
 
 ### 6. レート枠消費への影響
@@ -685,13 +685,13 @@ export function repositoryReadmeCacheKey(owner: string, name: string): CacheKey 
 | `docs/02_requirements/prd.md:178`（`TR-4`）/ `prd.md:278-279`（§4.3 の表） | 検索・詳細の 2 行のみ | 要更新（`docs_trace` 担当）。README の行を追加（`GET /repos/{owner}/{repo}/readme`・404 は「README なし」として `null`、非公開は詳細と同じ「見つからない」扱いである旨） |
 | `docs/02_requirements/minimum-requirements.md:26` | 「データソース: GitHub API のリポジトリ検索エンドポイント」 | **変更しない**。これは与件（原文の要件定義書）であり、`prd.md` が「与件への実装上の解釈・補足」を持つ構造（`prd.md` 冒頭の `AC-n`/`TR-n` の説明）。上乗せ機能である README を与件側に書き足すのは筋が違う |
 
-自分（`arch_domain`）はドキュメントを編集しないため、上記は **`docs_trace` への申し送り**として明記する。
+自分（`arch_domain`）はドキュメントを編集しないため、上記は **`docs_trace` への申し送り** として明記する。
 
 ### 404 契約（AC-5）との両立
 
 `app/[locale]/repos/[owner]/[repo]/page.tsx` は `<Suspense>` を意図的に置いていない（`notFound()` を送出前にレスポンスヘッダを確定させる必要があるため）。README 取得を「詳細取得後・逐次・try/catch で個別に握る」設計（§3 参照）は、この制約と自然に両立する:
 
-- `notFound()` の判定は `getRepositoryDetailUseCase` の結果だけで完結し、README の成否とは無関係（README 取得コードは `notFound()` 判定の**後**にしか実行されない）。
+- `notFound()` の判定は `getRepositoryDetailUseCase` の結果だけで完結し、README の成否とは無関係（README 取得コードは `notFound()` 判定の **後** にしか実行されない）。
 - README 取得の失敗（`NetworkError` / `RateLimitExceededError` / `UpstreamError` 等のドメインエラー）は **`app/` 層で catch し `null`（＝「README 未取得」の表示状態）へ写す**。これは `application-architecture.md` §4「`app/` はドメインエラーを UI の状態へ写す」という既定パターンと一致し、新しいエラーハンドリング様式を持ち込まない。
 - ドメイン/インフラ層では **握り潰さない**（`catch` して `console.error` だけで終わらせない、という既存規律を維持）。`findReadme` / `getRepositoryReadmeUseCase` はエラーをそのまま送出し、`app/` だけが最終的に握って表示状態に変換する。
 
@@ -751,7 +751,7 @@ GitHub の Contents API `GET /repos/{owner}/{repo}/readme` は `Accept` ヘッ�
 
 ### GitHub 側の出力を無条件に信頼しない
 
-GitHub は github.com 上での表示のために既に一定のサニタイズ（`<script>`/`<style>`/`<iframe>`/`on*` 属性の除去等）を行っているとみられるが、**これは github.com というホスト・CSP・出所の文脈で安全なだけ**であり、①この API 出力に対する将来のサニタイズ仕様変更を我々が保証できない、②任意の第三者（リポジトリオーナー）が完全に自由に書ける文字列を `dangerouslySetInnerHTML` で自ドメインの DOM に注入する以上、多層防御としてこちら側でも独立にサニタイズすべき。実測で取得した本リポジトリ自身の README HTML には `<script>` `<style>` `<iframe>` `onerror=` `onclick=` `javascript:` は含まれていなかったが（悪意ある内容でないため当然）、これは「安全である証拠」ではなく単に「テストケースが無害だった」だけなので判断根拠にしない。
+GitHub は github.com 上での表示のために既に一定のサニタイズ（`<script>`/`<style>`/`<iframe>`/`on*` 属性の除去等）を行っているとみられるが、**これは github.com というホスト・CSP・出所の文脈で安全なだけ** であり、①この API 出力に対する将来のサニタイズ仕様変更を我々が保証できない、②任意の第三者（リポジトリオーナー）が完全に自由に書ける文字列を `dangerouslySetInnerHTML` で自ドメインの DOM に注入する以上、多層防御としてこちら側でも独立にサニタイズすべき。実測で取得した本リポジトリ自身の README HTML には `<script>` `<style>` `<iframe>` `onerror=` `onclick=` `javascript:` は含まれていなかったが（悪意ある内容でないため当然）、これは「安全である証拠」ではなく単に「テストケースが無害だった」だけなので判断根拠にしない。
 
 ### 採用: `sanitize-html`（htmlparser2 ベース）
 
@@ -783,9 +783,9 @@ GitHub は github.com 上での表示のために既に一定のサニタイズ�
 href="./docs" href="./LICENSE" href="./docs/adr/0001-ui-stack.md" ...
 ```
 
-これらは書き換えられずそのまま返る。ドキュメント上も明記されておらず（WebFetch で GitHub 公式ページを確認したが記載なし）、**実測でしか分からない仕様**だった。github.com 本体のリポジトリ表示ページは相対パスを解決して表示しているが、それは github.com のページレンダリングパイプライン固有の処理であり、Contents API の HTML 出力には適用されていない。
+これらは書き換えられずそのまま返る。ドキュメント上も明記されておらず（WebFetch で GitHub 公式ページを確認したが記載なし）、**実測でしか分からない仕様** だった。github.com 本体のリポジトリ表示ページは相対パスを解決して表示しているが、それは github.com のページレンダリングパイプライン固有の処理であり、Contents API の HTML 出力には適用されていない。
 
-さらに**アンカー ID にも罠がある**: GitHub は見出しに `id="user-content-{slug}"`（`user-content-` プレフィックス付き）を振るが、見出し横のパーマリンクアイコンや README 内目次のリンクは `href="#{slug}"`（プレフィックスなし）を指す。github.com 本体ではこの不一致を吸収する仕組みがあるとみられるが、我々の埋め込み先ページにはそれが無いため、**このまま埋め込むと README 内のアンカーリンク（目次等）が一切機能しない**。
+さらに **アンカー ID にも罠がある**: GitHub は見出しに `id="user-content-{slug}"`（`user-content-` プレフィックス付き）を振るが、見出し横のパーマリンクアイコンや README 内目次のリンクは `href="#{slug}"`（プレフィックスなし）を指す。github.com 本体ではこの不一致を吸収する仕組みがあるとみられるが、我々の埋め込み先ページにはそれが無いため、**このまま埋め込むと README 内のアンカーリンク（目次等）が一切機能しない**。
 
 ### 解決方針
 
@@ -813,8 +813,8 @@ href="./docs" href="./LICENSE" href="./docs/adr/0001-ui-stack.md" ...
 
 **この制約はページ本体（`repository` 取得＝404 の判定材料）にのみ適用される。** README 取得は 404 の判定に関与しない（README が無くても「リポジトリは存在する」という 200 の結論は変わらない）。したがって:
 
-- `repository === null` の `notFound()` 判定は**従来どおり同期 `await` で行い、ストリーミングを一切開始させない**（変更なし）
-- 404 でないと確定した**後**（＝ `main` の JSX ツリーの中、既存の統計表示より下）に **README 専用の新しい `<Suspense>` 境界を 1 つだけ追加**し、その内側で README を取得・レンダリングする非同期 Server Component を描画する。この境界に入るのは 404 判定が既に確定した後なので、AC-5 を一切壊さない
+- `repository === null` の `notFound()` 判定は **従来どおり同期 `await` で行い、ストリーミングを一切開始させない**（変更なし）
+- 404 でないと確定した **後**（＝ `main` の JSX ツリーの中、既存の統計表示より下）に **README 専用の新しい `<Suspense>` 境界を 1 つだけ追加** し、その内側で README を取得・レンダリングする非同期 Server Component を描画する。この境界に入るのは 404 判定が既に確定した後なので、AC-5 を一切壊さない
 - 境界の `fallback` は軽量なスケルトン（テキスト 1〜数行程度。クライアント JS 不要）
 - README 取得自体が失敗（レート制限・upstream エラー・パース失敗等）した場合は、**例外を投げて最寄りの `error.tsx` に落とさない**。README コンポーネント内部で `try/catch` し、失敗時は「README を読み込めませんでした。GitHub で見る」の 1 行 + `repository.htmlUrl` へのリンクを表示するだけに留める（詳細ページ全体を巻き込まない）
 - README 不在（404）は `findDetail` と同じ `notFoundAsNull` パターンを再利用し `null` を返す契約にする（エラーではなく「README セクションを描画しない」という正常系の分岐として扱う）
@@ -828,7 +828,7 @@ href="./docs" href="./LICENSE" href="./docs/adr/0001-ui-stack.md" ...
 
 ## 6. NFR-3（クライアント JS を増やさない）との両立
 
-README の取得・パース・サニタイズ・URL 書き換えは**すべてサーバー側**（README 専用の async Server Component、`use client` なし）で完結し、完成した安全な HTML 文字列を `dangerouslySetInnerHTML` で埋め込むだけになる。したがって **1〜2 節でどのライブラリ（`sanitize-html` / `marked` / `react-markdown` 等）を選んでも、クライアントバンドルへの影響はゼロ**（これらはすべて Worker 側のサーバーバンドルにのみ計上される）。NFR-3 は取得形式・サニタイザ選定の判断材料にはならない（争点 C の期待に反して、この観点は他の 5 点ほど決定力を持たない、という結論自体が申し送り事項）。唯一の注意点は `<Suspense>` 境界そのものは React の標準機能でありクライアント JS 追加を意味しない（RSC のストリーミングはサーバー側の仕組み）。
+README の取得・パース・サニタイズ・URL 書き換えは **すべてサーバー側**（README 専用の async Server Component、`use client` なし）で完結し、完成した安全な HTML 文字列を `dangerouslySetInnerHTML` で埋め込むだけになる。したがって **1〜2 節でどのライブラリ（`sanitize-html` / `marked` / `react-markdown` 等）を選んでも、クライアントバンドルへの影響はゼロ**（これらはすべて Worker 側のサーバーバンドルにのみ計上される）。NFR-3 は取得形式・サニタイザ選定の判断材料にはならない（争点 C の期待に反して、この観点は他の 5 点ほど決定力を持たない、という結論自体が申し送り事項）。唯一の注意点は `<Suspense>` 境界そのものは React の標準機能でありクライアント JS 追加を意味しない（RSC のストリーミングはサーバー側の仕組み）。
 
 **根拠**: React Server Components の基本仕様（`dangerouslySetInnerHTML` を使う純粋な Server Component はクライアントへ JS を送らない）、`wrangler.jsonc`/`open-next.config.ts` にクライアント最適化に関する特別な追加設定なし。
 
@@ -847,9 +847,9 @@ README の取得・パース・サニタイズ・URL 書き換えは**すべて�
 
 ## 結論サマリー（round1 への反論・譲歩）
 
-1. **readme_render の「README だけ独立 `<Suspense>`」提案**: 構造自体（詳細確定後・404 判定と分離）には **同意**。ただし提案には **ライブリージョンの記述が一切ない**点を反論する。`role="status"` で包まないと、README のストリーミング後追い挿入は support technology に伝わらない。逆に、home ページの `#results-heading` フォーカス移動パターンをここへ流用するのは **不要（むしろ有害）**、という非対称な結論を出す。
-2. **自己点検の結果、round1 の自分の分析には不備があったことを認める（concession）**: E2E テスト（`e2e/sp-9-errors.spec.ts:216`）の書き換えは指摘したが、**`docs/03_design/ui-ux/ui-ux-guidelines.md` §6 自体が「タイトル（`h1`）は GitHub 本体の外部リンクにする」と明記している**ことを見落としていた。これは権威順（ユーザー明示 > **仕様** > テスト > 現行コード）上、テストより上位の「仕様」に当たる。テストだけ直して仕様を放置すると intent-gate 違反になる。§6 の改訂も同一 PR の必須項目として追加する。
-3. **README 内見出しの扱い**: readme_render の「+1 レベルシフト」案は **README セクション自体を h2 にする設計と組み合わせると衝突する**ため、+2 シフト（cap は h6）を対案として出す。加えてこれは CSS の見た目ではなく **タグ名そのものの書き換え**（サニタイズ工程での DOM 変換）が必要であることを明確化する。
+1. **readme_render の「README だけ独立 `<Suspense>`」提案**: 構造自体（詳細確定後・404 判定と分離）には **同意**。ただし提案には **ライブリージョンの記述が一切ない** 点を反論する。`role="status"` で包まないと、README のストリーミング後追い挿入は support technology に伝わらない。逆に、home ページの `#results-heading` フォーカス移動パターンをここへ流用するのは **不要（むしろ有害）**、という非対称な結論を出す。
+2. **自己点検の結果、round1 の自分の分析には不備があったことを認める（concession）**: E2E テスト（`e2e/sp-9-errors.spec.ts:216`）の書き換えは指摘したが、**`docs/03_design/ui-ux/ui-ux-guidelines.md` §6 自体が「タイトル（`h1`）は GitHub 本体の外部リンクにする」と明記している** ことを見落としていた。これは権威順（ユーザー明示 > **仕様** > テスト > 現行コード）上、テストより上位の「仕様」に当たる。テストだけ直して仕様を放置すると intent-gate 違反になる。§6 の改訂も同一 PR の必須項目として追加する。
+3. **README 内見出しの扱い**: readme_render の「+1 レベルシフト」案は **README セクション自体を h2 にする設計と組み合わせると衝突する** ため、+2 シフト（cap は h6）を対案として出す。加えてこれは CSS の見た目ではなく **タグ名そのものの書き換え**（サニタイズ工程での DOM 変換）が必要であることを明確化する。
 
 ---
 
@@ -857,7 +857,7 @@ README の取得・パース・サニタイズ・URL 書き換えは**すべて�
 
 ### 同意する点
 readme_render の round1（r01…readme_render_claim.md §5）:
-> 「404 でないと確定した**後**（＝ `main` の JSX ツリーの中、既存の統計表示より下）に **README 専用の新しい `<Suspense>` 境界を 1 つだけ追加**」
+> 「404 でないと確定した **後**（＝ `main` の JSX ツリーの中、既存の統計表示より下）に **README 専用の新しい `<Suspense>` 境界を 1 つだけ追加**」
 
 この「AC-5 の 404 判定を汚さない・詳細確定後にのみストリーミング開始する」という構造は、`app/[locale]/repos/[owner]/[repo]/page.tsx` の既存コメント（`<Suspense>`/`loading.tsx` を意図的に置かない理由）と矛盾せず、自分の round1 で確認した AC-5 の制約とも整合する。ここに異論はない。
 
@@ -867,9 +867,9 @@ readme_render の提案には「境界の `fallback` は軽量なスケルトン
 
 > 「🔴 ライブリージョンは **初期 DOM に空で常設** し、中身を書き換える（要素ごと動的挿入しない）」
 
-および、`app/[locale]/page.tsx` の `#search-status` セクション（自分が round1 で確認済み: `runSearch()` の Promise を `<Suspense>` の**内側**、`role="status" aria-live="polite"` の要素の**内側**に置くパターン）と**同型の問題**を抱えている。
+および、`app/[locale]/page.tsx` の `#search-status` セクション（自分が round1 で確認済み: `runSearch()` の Promise を `<Suspense>` の **内側**、`role="status" aria-live="polite"` の要素の **内側** に置くパターン）と **同型の問題** を抱えている。
 
-README の Suspense fallback → 解決後コンテンツへの差し替えは、README 専用の非同期 Server Component の**要素ごと動的挿入**（fallback ツリー → 解決済みツリーへの丸ごとスワップ）そのものであり、これを `role="status"` で包まずに素の `<Suspense>` だけで実装すると、home ページの `#search-status` が守っている規律（要素ごと出し入れしない・空の常設要素の中身だけ書き換える）を README ブロックだけ破ることになる。
+README の Suspense fallback → 解決後コンテンツへの差し替えは、README 専用の非同期 Server Component の **要素ごと動的挿入**（fallback ツリー → 解決済みツリーへの丸ごとスワップ）そのものであり、これを `role="status"` で包まずに素の `<Suspense>` だけで実装すると、home ページの `#search-status` が守っている規律（要素ごと出し入れしない・空の常設要素の中身だけ書き換える）を README ブロックだけ破ることになる。
 
 **提案**: README ブロックも `#search-status` と同じパターンに揃える。具体的には
 
@@ -885,9 +885,9 @@ README の Suspense fallback → 解決後コンテンツへの差し替えは�
 
 ### 反論しない・むしろ明確に否定する点: フォーカス移動は不要
 
-`ui-ux-guidelines.md` §7.1 の「結果一覧の見出し（`<h2>`）に `tabIndex={-1}` を付けてフォーカスを移す」パターンは、**`next/link` によるクライアント遷移で `searchParams` だけが変わり、route announcer が沈黙する**ケースへの代償措置（同節冒頭「本節の対象は `next/link` によるクライアント遷移」と明記）。
+`ui-ux-guidelines.md` §7.1 の「結果一覧の見出し（`<h2>`）に `tabIndex={-1}` を付けてフォーカスを移す」パターンは、**`next/link` によるクライアント遷移で `searchParams` だけが変わり、route announcer が沈黙する** ケースへの代償措置（同節冒頭「本節の対象は `next/link` によるクライアント遷移」と明記）。
 
-README のストリーミングは **一覧→詳細という新規ナビゲーション 1 回の中で発生する後続の部分描画**であり、ユーザーが「操作した」結果ではなく「まだ読み込み中の残りが後から届く」だけ。ここへ `tabIndex={-1}` + `focus()` を適用してユーザーの読んでいる位置（例えば統計行や BackLink）を強制的に README 見出しへ飛ばすのは、WCAG 3.2.1/3.2.2（Unexpected Context Change の考え方）に照らして**むしろ有害**。README ブロックは「届いたら polite に通知するだけ・フォーカスは奪わない」のが正しい設計である、と結論づける。
+README のストリーミングは **一覧→詳細という新規ナビゲーション 1 回の中で発生する後続の部分描画** であり、ユーザーが「操作した」結果ではなく「まだ読み込み中の残りが後から届く」だけ。ここへ `tabIndex={-1}` + `focus()` を適用してユーザーの読んでいる位置（例えば統計行や BackLink）を強制的に README 見出しへ飛ばすのは、WCAG 3.2.1/3.2.2（Unexpected Context Change の考え方）に照らして **むしろ有害**。README ブロックは「届いたら polite に通知するだけ・フォーカスは奪わない」のが正しい設計である、と結論づける。
 
 ### CLS への申し送り
 readme_render の「軽量なスケルトン」は README の実サイズが数行〜数百行まで暴れるため、`ui-ux-guidelines.md` §4.4「4 状態でレイアウトシフトを起こさない」の理想（実データと同一寸法のスケルトン）を満たせない。これは a11y 直接の要件ではなく `NFR-1`/CLS の話だが、フォーカス非移動の設計と合わせて「スケルトンに `min-height` だけ与えて完全一致は狙わない」という妥協ラインを申し送る。
@@ -898,17 +898,17 @@ readme_render の「軽量なスケルトン」は README の実サイズが数�
 
 ### 結論: round1 の自分の分析は不完全だった（concession）
 
-round1 で自分は `e2e/sp-9-errors.spec.ts:216`（`getByRole('heading', { level: 1 })`）の**テストコード修正**は指摘したが、権威順（ユーザー明示 > **仕様** > テスト > 現行コード）でテストより上位に立つ**仕様側の明文規定**を見落としていた。
+round1 で自分は `e2e/sp-9-errors.spec.ts:216`（`getByRole('heading', { level: 1 })`）の **テストコード修正** は指摘したが、権威順（ユーザー明示 > **仕様** > テスト > 現行コード）でテストより上位に立つ **仕様側の明文規定** を見落としていた。
 
 具体的には `docs/03_design/ui-ux/ui-ux-guidelines.md` §6「詳細ページ」に、自分が round1 冒頭で読んで引用した以下の一文がある:
 
 > 「タイトル（`h1`）は GitHub 本体の該当リポジトリページへの外部リンク（新しいタブ）にする（Issue #148）。実装規約は §7.4a」
 
-これは `repository.fullName` を **`h1` にすることを明示的に指定した設計仕様**である。自分の round1 提案（`fullName` を `h2` へ降格）は、この一文と正面から矛盾する。もし「テスト（`sp-9-errors.spec.ts`）だけ `level: 2` に書き換えてコードも変える」という形で進めると、**仕様（§6 の明文）を放置したままテストとコードだけ変えることになり**、`intent-gate-rules.md` が禁じる「仕様と矛盾する挙動をテストだけ直して緑にする」パターンに酷似する（今回はテストを緑にする対象がバグ修正ではなく新機能追加である点は違うが、「仕様の記述を追随させずにテスト・コードだけ変える」という構造は同じ問題を孕む）。
+これは `repository.fullName` を **`h1` にすることを明示的に指定した設計仕様** である。自分の round1 提案（`fullName` を `h2` へ降格）は、この一文と正面から矛盾する。もし「テスト（`sp-9-errors.spec.ts`）だけ `level: 2` に書き換えてコードも変える」という形で進めると、**仕様（§6 の明文）を放置したままテストとコードだけ変えることになり**、`intent-gate-rules.md` が禁じる「仕様と矛盾する挙動をテストだけ直して緑にする」パターンに酷似する（今回はテストを緑にする対象がバグ修正ではなく新機能追加である点は違うが、「仕様の記述を追随させずにテスト・コードだけ変える」という構造は同じ問題を孕む）。
 
 ### 対応方針（修正した結論）
-- `ui-ux-guidelines.md` §6 の当該一文を、本フィードバック対応の一部として**明示的に改訂**する（例:「タイトル（`h2`）は GitHub 本体の該当リポジトリページへの外部リンクにする。ページ全体の `h1` はツールタイトル（共有ヘッダー）が担う（Issue #334 F-1/F-2）」のような書き換え）。これは `docs_trace` の担当領域と重なるため、**round1 で `docs_trace` が指摘した「矛盾する記述」リストに §6 が漏れていたことも合わせて申し送る**（`docs_trace` の round1 は `prd.md`/`user-story-map.md` の矛盾は広く洗い出しているが、`ui-ux-guidelines.md` §6 の h1 規定との矛盾は挙げていなかった）。
-- 順序としては「§6 改訂 → コード変更（`repository-detail.tsx` の `h1→h2`、`repos/.../page.tsx` エラー分岐の `h1→h2`、`not-found.tsx` の `h1→h2`）→ 3 つの E2E（`sp-9-errors.spec.ts:216` の level 修正、必要なら `sp-6-notfound.spec.ts` は level 未検証なので変更不要と round1 で確認済み）→ header 新設」という**仕様が先、テスト・コードが追随**という順で PR を組む必要がある、と修正する。
+- `ui-ux-guidelines.md` §6 の当該一文を、本フィードバック対応の一部として **明示的に改訂** する（例:「タイトル（`h2`）は GitHub 本体の該当リポジトリページへの外部リンクにする。ページ全体の `h1` はツールタイトル（共有ヘッダー）が担う（Issue #334 F-1/F-2）」のような書き換え）。これは `docs_trace` の担当領域と重なるため、**round1 で `docs_trace` が指摘した「矛盾する記述」リストに §6 が漏れていたことも合わせて申し送る**（`docs_trace` の round1 は `prd.md`/`user-story-map.md` の矛盾は広く洗い出しているが、`ui-ux-guidelines.md` §6 の h1 規定との矛盾は挙げていなかった）。
+- 順序としては「§6 改訂 → コード変更（`repository-detail.tsx` の `h1→h2`、`repos/.../page.tsx` エラー分岐の `h1→h2`、`not-found.tsx` の `h1→h2`）→ 3 つの E2E（`sp-9-errors.spec.ts:216` の level 修正、必要なら `sp-6-notfound.spec.ts` は level 未検証なので変更不要と round1 で確認済み）→ header 新設」という **仕様が先、テスト・コードが追随** という順で PR を組む必要がある、と修正する。
 
 ### それでも破綻しないという結論自体は維持
 - §6 の改訂を伴う前提であれば、round1 で洗い出した 3 箇所の `h1`（`repository-detail.tsx`・`repos/.../page.tsx` エラー分岐・`not-found.tsx`）を揃えて `h2` にするという実装方針そのものは変わらない。`SetDocumentTitle` / route announcer への非影響、`e2e/sp-3.spec.ts` 等 level 未指定テストが無傷、という round1 の他の結論も再確認して撤回の必要はない。
@@ -937,10 +937,10 @@ readme_render の round1「他ロールへの申し送り」（§末尾）:
 ## 対 `arch_domain`: 「独立 Suspense」は逐次ゲートと矛盾しない（表現は譲歩・設計は維持）
 
 ### 譲歩する点
-round1 の「独立した `<Suspense>` で並行ストリーミング」という書き方は誤読を招く表現だった。「並行」が指していたのは **レスポンスのストリーミング**（クライアントへ先に統計を流し、README を後から差し込む）であって、**GitHub への fetch リクエストの発火タイミング**ではない。`Promise.all` で `findDetail` と `findReadme` を同時に飛ばす設計は一度も意図しておらず、そう読めた点は撤回する。
+round1 の「独立した `<Suspense>` で並行ストリーミング」という書き方は誤読を招く表現だった。「並行」が指していたのは **レスポンスのストリーミング**（クライアントへ先に統計を流し、README を後から差し込む）であって、**GitHub への fetch リクエストの発火タイミング** ではない。`Promise.all` で `findDetail` と `findReadme` を同時に飛ばす設計は一度も意図しておらず、そう読めた点は撤回する。
 
 ### 反論（本質は非対立）
-RSC の非同期コンポーネントは、親の同期コード（`const detail = await getRepositoryDetailUseCase(...)`; `if (detail === null) notFound()`）が完了して初めて描画が進み、その後にツリーを下って `<Suspense>` 配下の非同期子コンポーネント（README セクション）が**呼び出される**。つまり:
+RSC の非同期コンポーネントは、親の同期コード（`const detail = await getRepositoryDetailUseCase(...)`; `if (detail === null) notFound()`）が完了して初めて描画が進み、その後にツリーを下って `<Suspense>` 配下の非同期子コンポーネント（README セクション）が **呼び出される**。つまり:
 
 ```
 findDetail() 完了 → notFound() 判定 → (ここまでは従来どおり同期)
@@ -948,9 +948,9 @@ findDetail() 完了 → notFound() 判定 → (ここまでは従来どおり同
     → 内部で getRepositoryReadmeUseCase()（= arch_domain 案の findDetail→findReadme ゲート）が実行される
 ```
 
-`findReadme` の発火は **`findDetail` の解決より論理的に後**であり、`arch_domain` が §2/§3 で示した「detail 確定後の逐次」「usecase 層でのゲート（`getRepositoryReadmeUseCase` が内部で `findDetail` を再度呼びキャッシュ HIT する）」設計を **そのまま呼び出す側**として使う。private 露出のリスクは増えない。
+`findReadme` の発火は **`findDetail` の解決より論理的に後** であり、`arch_domain` が §2/§3 で示した「detail 確定後の逐次」「usecase 層でのゲート（`getRepositoryReadmeUseCase` が内部で `findDetail` を再度呼びキャッシュ HIT する）」設計を **そのまま呼び出す側** として使う。private 露出のリスクは増えない。
 
-Suspense を使う実利は「CPU/レイテンシの主張」を変えない。むしろ逐次だからこそ効く: 詳細取得 + README 取得の 2 回のネットワーク往復（`arch_domain` §6 が確認済みの「最大 2 リクエスト」）を**両方とも初回描画のブロッキングパスに乗せない**ことが目的。README 取得（キャッシュ MISS 時は GitHub までの RTT + サニタイズ時間）が仮に遅延・失敗しても、Star/Watcher/Fork/Issue 等の統計は先に確定して届く。これは 1 節の CPU 予算論（cpu_ms:50 の中でサニタイズを軽くする）とは別軸（レイテンシ論）であり、両立する。
+Suspense を使う実利は「CPU/レイテンシの主張」を変えない。むしろ逐次だからこそ効く: 詳細取得 + README 取得の 2 回のネットワーク往復（`arch_domain` §6 が確認済みの「最大 2 リクエスト」）を **両方とも初回描画のブロッキングパスに乗せない** ことが目的。README 取得（キャッシュ MISS 時は GitHub までの RTT + サニタイズ時間）が仮に遅延・失敗しても、Star/Watcher/Fork/Issue 等の統計は先に確定して届く。これは 1 節の CPU 予算論（cpu_ms:50 の中でサニタイズを軽くする）とは別軸（レイテンシ論）であり、両立する。
 
 ### 結論（採用する実装形）
 ```tsx
@@ -977,9 +977,9 @@ return (
 **ただし round1 の断定は言い過ぎだった点を認める**: 「収まる根拠」を bundlephobia の静的パッケージサイズだけで語るのは、実際の Worker バンドル（tree-shaking・重複排除・OpenNext のバンドラ挙動を経た後の値）を測っていない以上、**推定であって実測ではない**。本タスクの制約（依存パッケージをインストールしない）上、このラウンドで実測はできない。`cloudflare-infrastructure.md` §「計測 2」が既に手順を規定している（`npx opennextjs-cloudflare build && gzip -c .open-next/worker.js | wc -c`）ので、**実装 PR ではこのコマンドを `sanitize-html` 追加前後で実行し差分を PR に貼ることを完了条件に含めるべき**、と申し送る（自分では実行しない＝今ラウンドの制約順守）。
 
 ### htmlparser2 の Node API 依存
-`htmlparser2`（`sanitize-html` の内部パーサ）はゼロから書かれた純 JS のストリーミングパーサで、`fs`/`http` 等の Node 組み込みモジュールに依存しない設計が公知（ブラウザ向けバンドルにも広く採用されている実績が根拠）。Workers（DOM 非搭載・`nodejs_compat` フラグのみ）でも動作する可能性が高い。**一方 `sanitize-html` 本体は `postcss` にも依存する**（`style` 属性のパース用）。`postcss` のコア自体は `fs` 非依存だが、**未検証**である点は正直に認める。
+`htmlparser2`（`sanitize-html` の内部パーサ）はゼロから書かれた純 JS のストリーミングパーサで、`fs`/`http` 等の Node 組み込みモジュールに依存しない設計が公知（ブラウザ向けバンドルにも広く採用されている実績が根拠）。Workers（DOM 非搭載・`nodejs_compat` フラグのみ）でも動作する可能性が高い。**一方 `sanitize-html` 本体は `postcss` にも依存する**（`style` 属性のパース用）。`postcss` のコア自体は `fs` 非依存だが、**未検証** である点は正直に認める。
 
-対策としてラウンド1で既に提案した `parseStyleAttributes: false` を再確認: これは**実行時の CPU コスト**（postcss によるパース＋フィルタ処理）を確実にスキップする（Context7 で確認済みのコード分岐: `parseStyleAttributes` が false なら `style` 属性はパースされず即除去される）。ただし CJS の `require('postcss')` 自体がモジュールとしてバンドルに含まれるかどうか（tree-shaking で削れるか）は bundlephobia の数値には反映されておらず未確認。**バンドルサイズは実装時の実測が必要、CPU コストは `parseStyleAttributes: false` で理論的に担保できる**、と切り分けて結論づける。
+対策としてラウンド1で既に提案した `parseStyleAttributes: false` を再確認: これは **実行時の CPU コスト**（postcss によるパース＋フィルタ処理）を確実にスキップする（Context7 で確認済みのコード分岐: `parseStyleAttributes` が false なら `style` 属性はパースされず即除去される）。ただし CJS の `require('postcss')` 自体がモジュールとしてバンドルに含まれるかどうか（tree-shaking で削れるか）は bundlephobia の数値には反映されておらず未確認。**バンドルサイズは実装時の実測が必要、CPU コストは `parseStyleAttributes: false` で理論的に担保できる**、と切り分けて結論づける。
 
 ### 切り詰めの位置（round1 の「安全な境界で切る」を具体化）
 **サニタイズ処理と同一パスの中で行う。サニタイズ前の生 HTML 文字列への単純な文字数カット、サニタイズ後の文字列への再カット、どちらも採用しない。**
@@ -992,12 +992,12 @@ return (
 ## 対 `ui_nav`（Q3・先回り回答）: README 内見出しの降格と `id` の扱い
 
 ### 結論
-1. **README 内の全見出し（h1〜h6）を固定オフセットで降格する。** 具体的な段数は「ページ上でこの README セクションに割り当てられる見出しレベル + 1」から始まる**相対ルール**として実装する（絶対値をハードコードしない）。理由: `ui_nav` の round1 案（header 側 h1 = ツールタイトル、詳細ページ h2 = `repository.fullName`）はラウンド1時点でまだ確定していない（争点 A は他ロールとの合意形成中）。仮に header h1 / 詳細 h2 が確定するなら、README セクション自体に見出しラベル（例: `<h3>{labels.readme}</h3>`）を新設し、README 内部の最上位見出し（通常 h1）が **h4** から始まるよう +3 オフセットで変換する。h4 を超えて h5/h6 に達したものは HTML の下限である **h6 でクランプ**する（WAI の見出しガイドで許容される「深いネストは最下層で丸める」対応であり、飛び番号（skip）ではなく「詰まる」方向なので `heading-order` の一般的な検査観点には抵触しない）。
+1. **README 内の全見出し（h1〜h6）を固定オフセットで降格する。** 具体的な段数は「ページ上でこの README セクションに割り当てられる見出しレベル + 1」から始まる **相対ルール** として実装する（絶対値をハードコードしない）。理由: `ui_nav` の round1 案（header 側 h1 = ツールタイトル、詳細ページ h2 = `repository.fullName`）はラウンド1時点でまだ確定していない（争点 A は他ロールとの合意形成中）。仮に header h1 / 詳細 h2 が確定するなら、README セクション自体に見出しラベル（例: `<h3>{labels.readme}</h3>`）を新設し、README 内部の最上位見出し（通常 h1）が **h4** から始まるよう +3 オフセットで変換する。h4 を超えて h5/h6 に達したものは HTML の下限である **h6 でクランプ** する（WAI の見出しガイドで許容される「深いネストは最下層で丸める」対応であり、飛び番号（skip）ではなく「詰まる」方向なので `heading-order` の一般的な検査観点には抵触しない）。
 2. **`id="user-content-{slug}"` はそのまま保持する。** タグ名（`h1`→`h4` 等）だけを書き換え、`id` 属性の値は変更しない。round1 で結論づけた「`#{slug}` → `#user-content-{slug}` へのアンカー書き換え」ロジックは見出しの `id` を参照するだけなので、タグ名変換と完全に独立して成立する（互いに変更を要求しない）。
 3. **実装は 1 パスで**: 4 節（サニタイズ+URL書き換え）・上記の切り詰め・見出し降格は、いずれも同じ HTML パース結果を 1 回だけ走査する変換の中に同居させる（`sanitize-html` の `transformTags` に `h1`〜`h6` それぞれのリネーム関数を登録し、見出し以外の `href`/`src` 書き換え・切り詰めカウントと同じコールバック群でまとめて処理する）。パースを複数回走らせない設計は cpu_ms:50 予算の観点でも重要（1節・round1 で既に述べた通り）。
 
 ### 反対されうる点
-「README 独自の h1 を意味的に h4 まで下げると、原著者が意図した『最重要見出し』という重みが視覚的にも失われるのでは」という指摘はありうる。これは見出し**レベル**（アクセシビリティツリー上の意味）と見た目のフォントサイズを分離すれば解決できる（`.readme-content h4 { font-size: ... }` のようにセマンティクスとビジュアルを独立させる）。CSS 側の具体は表示担当（`ui_nav`）の裁量に委ねる。
+「README 独自の h1 を意味的に h4 まで下げると、原著者が意図した『最重要見出し』という重みが視覚的にも失われるのでは」という指摘はありうる。これは見出し **レベル**（アクセシビリティツリー上の意味）と見た目のフォントサイズを分離すれば解決できる（`.readme-content h4 { font-size: ... }` のようにセマンティクスとビジュアルを独立させる）。CSS 側の具体は表示担当（`ui_nav`）の裁量に委ねる。
 
 ### `removal_impact` — 反論
 <sub>2026-08-21T16:48:49+09:00</sub>
@@ -1014,7 +1014,7 @@ return (
 > `Composition`（`src/composition/`）は「**唯一、実装をポートへ束ねてよい場所**」
 
 `DAILY_DIGEST_LIMIT` はマジックナンバーではなく `ADR 0014` §2.1 が定めた「既定 5 件」という
-**ドメイン上の決定値**であり、これを `app/page.tsx` に直書きすると「薄く保つ」規律に反する
+**ドメイン上の決定値** であり、これを `app/page.tsx` に直書きすると「薄く保つ」規律に反する
 （数値がロジックか否かの線引きは別として、`app/` に散らばった定数は次に値を変えるとき `app/`
 まで見に行かないと気づけなくなる＝ composition root に集約する意義そのものを損なう）。
 
@@ -1024,7 +1024,7 @@ return (
 （`getDailyDigestUseCase` の定義元）へ `DAILY_DIGEST_LIMIT` を統合してもよい（`arch_domain` の
 判断に委ねる。ARCH 面の最終決定権は `arch_domain` にあると認識している）。
 
-いずれにせよ **`app/[locale]/page.tsx` へのインライン化は撤回**する。`app/[locale]/page.tsx`
+いずれにせよ **`app/[locale]/page.tsx` へのインライン化は撤回** する。`app/[locale]/page.tsx`
 6 行目の import 文はファイル名変更（`digest-feed` → `digest`、または `container` へ統合）に
 合わせて import 元パスだけを書き換える。
 
@@ -1060,7 +1060,7 @@ RSS 側の 2 ファイル ─ `digest-rss.test.ts` / `route.test.ts` ─ は F-5
 
 **「UI 側に定数として持つ」対案との優劣**: `source` / `license` / `sourceLicenseUrl` が既に
 `DigestMeta`（JSON 駆動）として流れており、`sourceUrl` だけを UI 定数（ハードコード）にすると
-**帰属表示 4 項目のうち 1 つだけ経路が異質**になり非対称になる。`static-gem-digest.ts` 51 行目の
+**帰属表示 4 項目のうち 1 つだけ経路が異質** になり非対称になる。`static-gem-digest.ts` 51 行目の
 既存コメント「バッチが書き込む出典は常に Ecosyste.ms / CC BY-SA 4.0 で固定」は「値が今は固定」
 という運用上の事実を述べているだけで、**「だから型から外してよい」という設計判断ではない**
 （`D-29` の帰属表示義務は「値が変わりうる」ことを前提に JSON 駆動にしている）。よって
@@ -1089,25 +1089,25 @@ generate_gem_digest.mjs`）は `FALLBACK_META` が完全に代替するため本
 ### 別 Issue へ切り出す（本 PR のスコープ外・CP-1「起票して前に進める」対象）
 
 - **紛らわしい箇所3（`SP-14` の `D-33` 記述が長く、撤去の永続性が不明）**: これは **F-5（RSS
-  撤去の今回の議題）とは無関係**。`D-33` は `SP-16`（Gem Index 順ソート）という**別の過去の撤去**
+  撤去の今回の議題）とは無関係 **。`D-33` は `SP-16`（Gem Index 順ソート）という** 別の過去の撤去**
   についての記述であり、F-1〜F-6 のどれにも属さない。しかも `open-questions.md` の `D-33` 本文
   末尾には既に 🔵 **「再導入の条件」**（候補プールが npm 以外を含み一般語 30% 以上で Gem Index が
   付くこと、という客観基準）が明記されている ─ **永続性は既に文書化済みで、`docs_trace` が
   「不明」と感じたのは `user-story-map.md` `SP-14` 側の長い注記だけを読み `open-questions.md`
   `D-33` 本文（再導入条件を含む全文）まで遡らなかったためと推測する**。対応としては
   `user-story-map.md` `SP-14` の当該注記の末尾に「詳細・再導入条件は `open-questions.md` `D-33`
-  参照」の 1 行ポインタを足す程度で解決するが、**F-5/F-6 のどの変更ファイルとも重ならない**ため、
+  参照」の 1 行ポインタを足す程度で解決するが、**F-5/F-6 のどの変更ファイルとも重ならない** ため、
   本 PR に混ぜず別 Issue（`type:docs`・`sp:1`）として起票することを推奨する（CLAUDE.md「スコープ
   外の改善は別 Issue を立ててから」）。
 - **紛らわしい箇所1・矛盾2/3（`FR-4`/`SP-6` の項目数「7 項目」・最終更新日の出典）**: F-3 起因
   であり自分のレンズ外。`arch_domain` が `pushed_at` を最終更新日の答えとして既に確定させて
-  いるので、`docs_trace` はその決定を反映するだけでよく、これは F-3 の一部として **本 PR 内**で
+  いるので、`docs_trace` はその決定を反映するだけでよく、これは F-3 の一部として **本 PR 内** で
   直すのが妥当（新規 Issue にする理由がない ─ F-3 の変更が直接その数字を古くする）。ただし
   これは `arch_domain` / `ui_nav` のレンズの判断が優先されるべきで、自分から強く主張はしない。
 
 ## 論点4（`prd.md` §4.3 データソース限定記述の書き換え方 ─ F-4 との整合）
 
-F-4（README 追加）は **撤去ではなく追加**なので、round1・論点1 で示した `D-34` の「打ち消し線
+F-4（README 追加）は **撤去ではなく追加** なので、round1・論点1 で示した `D-34` の「打ち消し線
 ＋ 🔴 撤去注記」パターンをそのまま使うのは誤り（あれは削除専用の記法）。`prd.md` を通読すると、
 **追加の場合は既に別の記法が採用されている**: 103 行目「`D-27` により `M-5`（Phase 2 着手判断
 ゲート）を通過し、実装対象へ格上げ」・205 行目「🔵 静的な日次ダイジェストと RSS（`AR-9`/`AR-10`・
@@ -1125,7 +1125,7 @@ F-4（README 追加）は **撤去ではなく追加**なので、round1・論�
 
 のように **列挙を横に増やし、追加分だけ 🔵 マークを付ける**（「限定する」という文自体は残る
 ＝ 制約は変わらず対象範囲だけが広がったことが一目でわかる）。これは自分が提案した `D-34` の
-打ち消し線パターンと**視覚的に対をなす**（🔴＝消えた・🔵＝増えた、を読者が色だけで区別できる）
+打ち消し線パターンと **視覚的に対をなす**（🔴＝消えた・🔵＝増えた、を読者が色だけで区別できる）
 ため、両方のパターンが同じ PR 内に混在しても迷わない。最終的な文言確定は `README` 取得の設計を
 持つ `arch_domain` / `readme_render` に委ねる。
 
@@ -1134,11 +1134,11 @@ F-4（README 追加）は **撤去ではなく追加**なので、round1・論�
 
 ## 1. `readme_render` の Suspense 案 vs 自分の「逐次待機」案 — 一部譲歩し、折衷案を提示する
 
-**譲歩する点**: 「本ページには `<Suspense>` を一切置けない」という round1 の前提は**言い過ぎだった**。既存コメントが禁じているのは「`notFound()` の判定材料（`findDetail`）を `Suspense` で包むこと」であり、**404 判定が同期 `await` で確定した後に、その下流へ新しい `<Suspense>` 境界を足すこと自体は禁止対象ではない**（`readme_render` が引用した Next.js 公式 docs の該当文言 "Place `notFound()` before those boundaries" も「境界より前に置け」であって「境界を作るな」ではない）。よって README を Suspense でストリーミングするという方向性には同意する。
+**譲歩する点**: 「本ページには `<Suspense>` を一切置けない」という round1 の前提は **言い過ぎだった**。既存コメントが禁じているのは「`notFound()` の判定材料（`findDetail`）を `Suspense` で包むこと」であり、**404 判定が同期 `await` で確定した後に、その下流へ新しい `<Suspense>` 境界を足すこと自体は禁止対象ではない**（`readme_render` が引用した Next.js 公式 docs の該当文言 "Place `notFound()` before those boundaries" も「境界より前に置け」であって「境界を作るな」ではない）。よって README を Suspense でストリーミングするという方向性には同意する。
 
-**譲歩しない点（真の対立点）**: `readme_render` 案（README コンポーネント内部で `getRepositoryReadmeUseCase` を呼ぶ）をそのまま採ると、**そのフェッチ開始タイミングが `findDetail` のキャッシュ書き込み完了と無関係になる**。`getRepositoryReadmeUseCase` は round1 で設計した通り内部で `repos.findDetail(name)`（private ゲート）を再度呼ぶが、これはページ本体の `findDetail` 呼び出しとは**別インスタンスの `CachingRepositoryQuery`**（`container.ts` の `makeCachingRepositoryQuery()` は呼び出しごとに new）であり、`inFlightSearch`/`inFlightDetail` の single-flight マップは共有されない（`sharedCache` という Map の中身は共有されるが、書き込みタイミングに依存する）。README 側の `findDetail` 呼び出しが**ページ本体の `await` より先か同時に**走ると、`sharedCache.get()` が両方 MISS になり得ることは round1 で指摘済みで、Suspense 化してもこのレースは消えない（むしろ Suspense はレンダリングの遅延評価を許すため、いつ子コンポーネントの関数本体が実行されるかは実装依存で、「ページ本体の `await` より後」を保証しない）。
+**譲歩しない点（真の対立点）**: `readme_render` 案（README コンポーネント内部で `getRepositoryReadmeUseCase` を呼ぶ）をそのまま採ると、**そのフェッチ開始タイミングが `findDetail` のキャッシュ書き込み完了と無関係になる**。`getRepositoryReadmeUseCase` は round1 で設計した通り内部で `repos.findDetail(name)`（private ゲート）を再度呼ぶが、これはページ本体の `findDetail` 呼び出しとは **別インスタンスの `CachingRepositoryQuery`**（`container.ts` の `makeCachingRepositoryQuery()` は呼び出しごとに new）であり、`inFlightSearch`/`inFlightDetail` の single-flight マップは共有されない（`sharedCache` という Map の中身は共有されるが、書き込みタイミングに依存する）。README 側の `findDetail` 呼び出しが **ページ本体の `await` より先か同時に** 走ると、`sharedCache.get()` が両方 MISS になり得ることは round1 で指摘済みで、Suspense 化してもこのレースは消えない（むしろ Suspense はレンダリングの遅延評価を許すため、いつ子コンポーネントの関数本体が実行されるかは実装依存で、「ページ本体の `await` より後」を保証しない）。
 
-**折衷案（提案）**: 「README の *fetch 開始* はページ本体の `findDetail` が確定した**直後**（キャッシュ書き込み後）」「README の *await* は Suspense 境界の子コンポーネントに委ねてストリーミング」を両立させる。
+**折衷案（提案）**: 「README の *fetch 開始* はページ本体の `findDetail` が確定した **直後**（キャッシュ書き込み後）」「README の *await* は Suspense 境界の子コンポーネントに委ねてストリーミング」を両立させる。
 
 ```ts
 // page.tsx（Server Component）
@@ -1170,27 +1170,27 @@ async function ReadmeSection({ readmePromise }: { readmePromise: Promise<string 
 }
 ```
 
-これは `readme_render` 案（Suspense・try/catch でページ全体を落とさない・README 不在は正常系）を**そのまま維持**しつつ、自分の懸念（キャッシュ競合・private ゲートの再検証を無駄打ちしない）を解消する。両者の対立点は「Suspense を使うか」ではなく「fetch を*いつ*開始するか」だったと整理できる。`readme_render` 側でこの `readmePromise` の受け渡しパターンを `ReadmeSection` の実装に採用してもらえるか確認したい。
+これは `readme_render` 案（Suspense・try/catch でページ全体を落とさない・README 不在は正常系）を **そのまま維持** しつつ、自分の懸念（キャッシュ競合・private ゲートの再検証を無駄打ちしない）を解消する。両者の対立点は「Suspense を使うか」ではなく「fetch を*いつ*開始するか」だったと整理できる。`readme_render` 側でこの `readmePromise` の受け渡しパターンを `ReadmeSection` の実装に採用してもらえるか確認したい。
 
 ---
 
 ## 2. README の HTML キャッシュ設計（`readme_render` の HTML 方式決定を受けて）
 
-`readme_render` が「GitHub 側レンダリング済み HTML を採用し、サニタイズ・相対リンク解決・`target=_blank` 付与・切り詰めは全てサーバー側で行う」と決定したことを前提に、round1 の「`findReadme` の戻り値をキャッシュする」という設計を**2 層に分割する形へ修正する**（round1 は「素の文字列をキャッシュする」としか書いておらず、どの段階の文字列かを詰めていなかった不備を認める）。
+`readme_render` が「GitHub 側レンダリング済み HTML を採用し、サニタイズ・相対リンク解決・`target=_blank` 付与・切り詰めは全てサーバー側で行う」と決定したことを前提に、round1 の「`findReadme` の戻り値をキャッシュする」という設計を **2 層に分割する形へ修正する**（round1 は「素の文字列をキャッシュする」としか書いておらず、どの段階の文字列かを詰めていなかった不備を認める）。
 
 ### 何をキャッシュすべきか: 生 HTML（GitHub 由来）か、加工済み HTML（サニタイズ後）か
 
-**加工済み（サニタイズ・相対リンク解決・`target=_blank` 付与・切り詰め済み）HTML を丸ごとキャッシュすべき**であり、GitHub から取得した生 HTML だけをキャッシュして毎回サニタイズし直すのは不十分——`readme_render` 自身が HTML 方式を選んだ決め手は「Workers の `cpu_ms: 50` 予算」であり、キャッシュ HIT 時にも毎回サニタイズ・URL 書き換え・切り詰めの CPU を払い続けるのでは、この判断根拠（CPU 予算の節約）がキャッシュ HIT 時には効かないままになる。ネットワーク往復だけでなく **CPU コストもキャッシュで吸収すべき**。
+**加工済み（サニタイズ・相対リンク解決・`target=_blank` 付与・切り詰め済み）HTML を丸ごとキャッシュすべき** であり、GitHub から取得した生 HTML だけをキャッシュして毎回サニタイズし直すのは不十分——`readme_render` 自身が HTML 方式を選んだ決め手は「Workers の `cpu_ms: 50` 予算」であり、キャッシュ HIT 時にも毎回サニタイズ・URL 書き換え・切り詰めの CPU を払い続けるのでは、この判断根拠（CPU 予算の節約）がキャッシュ HIT 時には効かないままになる。ネットワーク往復だけでなく **CPU コストもキャッシュで吸収すべき**。
 
 ### しかしこれは `RepositoryQueryPort`/`CachingRepositoryQuery` の中に置いてはいけない（層の逸脱）
 
-サニタイズ後の HTML は `target="_blank" rel="noopener noreferrer"` や `id="user-content-..."` の書き換え済みアンカーなど、**表示（プレゼンテーション）の都合そのもの**を含む文字列である。これを `src/infrastructure/github/`（GitHub 語彙をドメインへ持ち込まない ACL・`application-architecture.md` §3）の戻り値としてキャッシュに乗せると、ACL が「ドメインの生データ」ではなく「UI 都合の加工物」を保持することになり、`W-1`（データ源を差し替えられる）が崩れる（README のレンダリング方針を変える＝ HTML 方式から raw Markdown 方式へ乗り換える、といった将来の変更が ACL のキャッシュ形式ごと巻き添えになる）。
+サニタイズ後の HTML は `target="_blank" rel="noopener noreferrer"` や `id="user-content-..."` の書き換え済みアンカーなど、**表示（プレゼンテーション）の都合そのもの** を含む文字列である。これを `src/infrastructure/github/`（GitHub 語彙をドメインへ持ち込まない ACL・`application-architecture.md` §3）の戻り値としてキャッシュに乗せると、ACL が「ドメインの生データ」ではなく「UI 都合の加工物」を保持することになり、`W-1`（データ源を差し替えられる）が崩れる（README のレンダリング方針を変える＝ HTML 方式から raw Markdown 方式へ乗り換える、といった将来の変更が ACL のキャッシュ形式ごと巻き添えになる）。
 
 **結論（2 層キャッシュ）**:
 
 | 層 | キャッシュ対象 | 置き場所 | 名前空間・キー | TTL |
 |---|---|---|---|---|
-| Tier 1（ACL/ドメイン） | GitHub から取得した**生 HTML**（サニタイズ前・GitHub 由来のまま） | `CachingRepositoryQuery.findReadme`（round1 の設計のまま） | `readme:v2:{owner}/{name}`（`cache-key.ts` に追加） | `TTL_DETAIL_SECONDS` を再利用（round1 の主張を維持） |
+| Tier 1（ACL/ドメイン） | GitHub から取得した **生 HTML**（サニタイズ前・GitHub 由来のまま） | `CachingRepositoryQuery.findReadme`（round1 の設計のまま） | `readme:v2:{owner}/{name}`（`cache-key.ts` に追加） | `TTL_DETAIL_SECONDS` を再利用（round1 の主張を維持） |
 | Tier 2（表示） | **サニタイズ・URL 書き換え・切り詰め済みの最終 HTML** | `src/composition/` 側に新規の薄いラッパー関数（例 `getRenderedReadmeUseCase` 相当。`CachingRepositoryQuery` とは別クラス）が `CachePort`（`sharedCache`）を直接使う | 別名前空間 `readme-html:v1:{owner}/{name}`（レンダリング方式が変われば独立してバージョンを上げられるよう、Tier 1 とは別のバージョン変数にする） | 同じく `TTL_DETAIL_SECONDS` を暫定値として流用してよい（積極的に変える理由が今は無い） |
 
 Tier 2 は `application-architecture.md` §5「`use cache` はユースケース・ドメインから直接触らない。キャッシュは `CachePort` 越しに扱う」の原則を守りつつ、**`CachePort` の再利用先を `RepositoryQueryPort` の外に置く**（`RateLimitPort` が `src/composition/rate-limit.ts` の `enforceSearchRateLimit()` として独立配線されている前例と同じパターン）。これは Tier 2 の実装詳細（具体的な関数名・呼び出し位置）そのものは `readme_render`／実装セッションの判断に委ねるが、**「サニタイズ後の文字列を `RepositoryQueryPort` の戻り値としてキャッシュしない」という層の境界だけは譲れない**。
@@ -1205,9 +1205,9 @@ Tier 1 のキャッシュだけで GitHub API 呼び出し（＝レート枠消�
 
 `removal_impact` は `digest-feed.ts` 削除に伴い `DAILY_DIGEST_LIMIT` を `app/[locale]/page.tsx` 内のローカル定数へ移すと提案しているが、**層の観点でこれは適切でない**。
 
-`page.tsx:280` での実際の使われ方を確認すると、`DAILY_DIGEST_LIMIT` は `getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT })` という**ユースケース呼び出しの引数**である。`get-daily-digest.ts` の usecase 自体は `limit` を汎用パラメータとして受け取る設計（テストでは 5 以外の値も使われている想定）であり、「5」という具体値は **`ADR 0014` §2.1 が定めた製品判断**（「既定 5 件」）であって、ページのレンダリング詳細ではない。
+`page.tsx:280` での実際の使われ方を確認すると、`DAILY_DIGEST_LIMIT` は `getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT })` という **ユースケース呼び出しの引数** である。`get-daily-digest.ts` の usecase 自体は `limit` を汎用パラメータとして受け取る設計（テストでは 5 以外の値も使われている想定）であり、「5」という具体値は **`ADR 0014` §2.1 が定めた製品判断**（「既定 5 件」）であって、ページのレンダリング詳細ではない。
 
-`application-architecture.md` §1.2 は `app/` の責務を「ルーティング・Server Component・Route Handler・Server Action。**薄く保つ**」とし、§7 の完了条件に「`app/` にビジネスロジックが無い（ユースケース呼び出しと表示の受け渡しのみ）」を明記している。ユースケースへ渡す製品判断値（ADR に紐づく既定件数）を `app/` にベタ書きするのは、この「薄く保つ」に反する——**ちょうど `TTL_SEARCH_SECONDS` / `TTL_DETAIL_SECONDS` を `app/` ではなく `src/composition/container.ts` に置いている既存の前例と対称**である。あの 2 つも「暫定値」というコメント付きの製品チューニング定数であり、`page.tsx` ではなく composition root に置かれている。`DAILY_DIGEST_LIMIT` も同じ性質の値であり、同じ置き場所にすべき。
+`application-architecture.md` §1.2 は `app/` の責務を「ルーティング・Server Component・Route Handler・Server Action。**薄く保つ**」とし、§7 の完了条件に「`app/` にビジネスロジックが無い（ユースケース呼び出しと表示の受け渡しのみ）」を明記している。ユースケースへ渡す製品判断値（ADR に紐づく既定件数）を `app/` にベタ書きするのは、この「薄く保つ」に反する——**ちょうど `TTL_SEARCH_SECONDS` / `TTL_DETAIL_SECONDS` を `app/` ではなく `src/composition/container.ts` に置いている既存の前例と対称** である。あの 2 つも「暫定値」というコメント付きの製品チューニング定数であり、`page.tsx` ではなく composition root に置かれている。`DAILY_DIGEST_LIMIT` も同じ性質の値であり、同じ置き場所にすべき。
 
 **推奨**: `DAILY_DIGEST_LIMIT` は `src/composition/container.ts`（`getDailyDigestUseCase` のすぐ近く）へ移す。`page.tsx` は `@/src/composition/digest-feed` の代わりに `@/src/composition/container` から import するだけで済み、`removal_impact` が懸念する「1 箇所しか使わないファイルを残す YAGNI 違反」も同時に解消する（`digest-feed.ts` はファイルごと削除してよい、という結論自体には同意する）。`app/` へ落とす必然性は無い。
 
@@ -1219,9 +1219,9 @@ Tier 1 のキャッシュだけで GitHub API 呼び出し（＝レート枠消�
 
 round1 の決定を維持するが、検討過程を明記する。
 
-- **`readme_render` の申し送りとの整合**: `readme_render` も「`RepositoryQueryPort` に `findReadme(name)` のような別ポート**メソッド**を足す設計を推奨（`findDetail` に合成しない）」と述べており、文言は「別ポート」だが実体は「既存ポートへの追加メソッド」で round1 の自分の結論と一致する（新規インターフェースを切れとは言っていない）。両者が独立に同じ結論へ収束したのは、判断の妥当性を補強する材料と見る。
+- **`readme_render` の申し送りとの整合**: `readme_render` も「`RepositoryQueryPort` に `findReadme(name)` のような別ポート **メソッド** を足す設計を推奨（`findDetail` に合成しない）」と述べており、文言は「別ポート」だが実体は「既存ポートへの追加メソッド」で round1 の自分の結論と一致する（新規インターフェースを切れとは言っていない）。両者が独立に同じ結論へ収束したのは、判断の妥当性を補強する材料と見る。
 - **検討して却下した対案**: ①「README はドメインモデル化されたデータではなく生テキストに近いので、別インターフェース（例 `ReadmeQueryPort`）に分離すべき」という案を再検討したが、`RepositoryQueryPort` は「GitHub 上の 1 リポジトリという同一エンティティに対する問い合わせ」という境界で切られており、戻り値の型がリッチかどうか（zod で厳密検証された `RepositoryDetail` か、素の `string` か）は境界を分ける基準として採用されていない（既存の `search`/`findDetail` も内部実装の厚みは違うが同一ポートに同居している）。②「ポート名の `Query` が README のような副資産取得にそぐわない」という命名上の違和感も検討したが、1 メソッド追加のためだけに全消費箇所（`container.ts`・テスト群）に波及するリネームを行うコストは、得られる意味論的な精度向上に見合わない（YAGNI はリネームにも適用される）。
-- **round1 になかった補強根拠**: `application-architecture.md` §2 の「ポートを増やす条件」は `W-1`〜`W-3` のどれかを満たすことだが、既存ポートへメソッドを足す場合により直接的に効くのは **`W-3`（速く確実にテストできる）**である。README 取得をユースケース内で `fetch` 直叩きにせず `RepositoryQueryPort` 越しにすることで、`get-repository-readme.test.ts` はフェイク実装（`{ findReadme: async () => 'markdown...' }`）を注入するだけでネットワークなしにテストできる——これは `findDetail` が既に享受している利点そのものであり、round1 では明記していなかったが最も具体的な正当化理由として追記する。
+- **round1 になかった補強根拠**: `application-architecture.md` §2 の「ポートを増やす条件」は `W-1`〜`W-3` のどれかを満たすことだが、既存ポートへメソッドを足す場合により直接的に効くのは **`W-3`（速く確実にテストできる）** である。README 取得をユースケース内で `fetch` 直叩きにせず `RepositoryQueryPort` 越しにすることで、`get-repository-readme.test.ts` はフェイク実装（`{ findReadme: async () => 'markdown...' }`）を注入するだけでネットワークなしにテストできる——これは `findDetail` が既に享受している利点そのものであり、round1 では明記していなかったが最も具体的な正当化理由として追記する。
 
 結論: 設計判断は変更しない。ただし「表に無いポートを実装しない」（`application-architecture.md` §2）に従い、`RepositoryQueryPort` の面積表の行を **`search(query)` / `findDetail(name)` / `findReadme(name)`** の 3 メソッドへ更新する PR を本体実装と同一 PR に含めることを改めて明記する。
 
@@ -1319,43 +1319,43 @@ round1 の決定を維持するが、検討過程を明記する。
 
 **付随して必須**: `e2e/sp-9-errors.spec.ts:216` の `getByRole('heading', { level: 1 })` は `level: 2` 相当へ修正する
 （`ui_nav` が唯一の要修正 E2E として特定。`sp-3` / `a11y` / `sp-6-notfound` は level 未指定のため無傷）。
-`e2e/sp-9-loading-empty.spec.ts:41` は `page.tsx` の自前 `h1` を**必ず削除**すれば strict mode violation にならない。
+`e2e/sp-9-loading-empty.spec.ts:41` は `page.tsx` の自前 `h1` を **必ず削除** すれば strict mode violation にならない。
 
 **採らなかった案**: `LocaleSwitcher` の layout 移設（`searchParams` が layout に渡らず、`useSearchParams` 化は `NFR-3` に反する）。
 タイトルリンクに `buildSearchUrl` を使う案（F-1 の「未検索状態へ」と矛盾する）。
-`LocaleSwitcher` の `<nav>` が `<main>` 内にある構造の是正は**別 Issue**（スコープ外）。
+`LocaleSwitcher` の `<nav>` が `<main>` 内にある構造の是正は **別 Issue**（スコープ外）。
 
 ## 争点 B / C: README の取得・描画（F-4）
 
 **取得**: `GET /repos/{owner}/{repo}/readme` を `Accept: application/vnd.github.html+json`（GitHub レンダリング済み HTML）で取得する。
-`RepositoryQueryPort` に `findReadme(name): Promise<string | null>` を**追加**する（新ポートは切らない）。
+`RepositoryQueryPort` に `findReadme(name): Promise<string | null>` を **追加** する（新ポートは切らない）。
 `readme_render` / `arch_domain` が独立に同じ結論へ収束した。`application-architecture.md` §2 のポート面積表も同 PR で 3 メソッドへ更新する。
 
 **private ゲート**: README レスポンスに `private` フィールドが無いため、`src/usecases/get-repository-readme.ts` が内部で
 `findDetail` を経由し、`null`（private / 404）なら README を取りに行かない。ゲートは usecase に埋め込み、呼び出し元の順序に依存させない（`NFR-33` / `AC-12`）。
 
 **取得タイミング（真の対立点の裁定）**: `arch_domain` の折衷案を採用する。
-`page.tsx` は ① `findDetail` を `await` して `notFound()` を確定 → ② README の Promise を**作るだけ**（`await` しない）→
+`page.tsx` は ① `findDetail` を `await` して `notFound()` を確定 → ② README の Promise を **作るだけ**（`await` しない）→
 ③ `<Suspense>` 配下の `ReadmeSection` へ Promise を渡す。
 これで `AC-5`（404 の同期判定）を壊さず、キャッシュ書き込み後に README 側の `findDetail` が HIT し（GitHub への往復は最大 2 回）、
-README の遅延・失敗が統計表示のブロッキングパスに乗らない。`Promise.all` による同時発火は**採らない**（`makeCachingRepositoryQuery()` が
+README の遅延・失敗が統計表示のブロッキングパスに乗らない。`Promise.all` による同時発火は **採らない**（`makeCachingRepositoryQuery()` が
 呼び出しごとに新インスタンスで single-flight を共有せず、3 リクエストへ劣化しうる）。
 
 **サニタイズ**: `sanitize-html`（`parseStyleAttributes: false` で postcss 経路を切る）で、
-許可リスト適用・相対 URL 解決・`target="_blank" rel="noopener noreferrer"` 付与・見出し降格・切り詰めを**1 パス**（`transformTags`）で行う。
+許可リスト適用・相対 URL 解決・`target="_blank" rel="noopener noreferrer"` 付与・見出し降格・切り詰めを **1 パス**（`transformTags`）で行う。
 切り詰めは「サニタイズ前の文字数カット」「サニタイズ後の再カット」のいずれも採らない（タグ途中で切れて構造が壊れる）。
 パーサが終端で開いたタグを閉じるため、変換パス内でテキスト長を累積して打ち切れば常に整形式になる。
 
 **見出し降格**: README セクション見出しを `h2`（既存の「セクション見出しは h2」パターン）とし、README 本文は **+2 シフト**（`h1→h3` … `h6` で cap）。
 `readme_render` の +3 案はセクション見出しを `h3` と仮定した前提であり、争点 A で `h2` に確定したため +2 に統一する。
-CSS のフォントサイズ変更ではなく**タグ名そのもの**を書き換える（`aria` 上の見出しレベルはタグ名で決まる）。`id="user-content-..."` は保持する。
+CSS のフォントサイズ変更ではなく **タグ名そのもの** を書き換える（`aria` 上の見出しレベルはタグ名で決まる）。`id="user-content-..."` は保持する。
 
 **ライブリージョン**（`ui_nav` の指摘を採用）: `<Suspense>` の fallback だけでは後追い挿入が支援技術へ伝わらない。
 `role="status" aria-live="polite"` の `sr-only` 常設要素を README ブロックの前に置き、通知と視覚表示を分離する（トップの `#search-status` と同型）。
 **フォーカス移動はしない**（`ui_nav` の非対称な結論を採用。ユーザー操作起因でない後追い描画でフォーカスを奪うのは WCAG 3.2.x の観点で有害）。
 
 **キャッシュ（lead 裁定・`arch_domain` の 2 層案を 1 層へ縮退）**: Tier 1（`findReadme` が返す **GitHub 由来の生 HTML** を
-`readme:v1:{owner}/{name}` で `TTL_DETAIL_SECONDS` キャッシュ）**のみ**を今回実装する。
+`readme:v1:{owner}/{name}` で `TTL_DETAIL_SECONDS` キャッシュ）**のみ** を今回実装する。
 Tier 2（サニタイズ済み HTML の composition 層キャッシュ）は、`readme_render` 自身が「バンドル・CPU は未実測」と認めており、
 実測前に層を 1 つ増やすのは先回り最適化（YAGNI）。`npx opennextjs-cloudflare build` 後のバンドル差分と描画時間を PR で実測し、
 CPU 予算を圧迫すると分かった時点で別 Issue として追加する。レート枠の吸収は Tier 1 だけで完結する（`arch_domain` も同意）。
@@ -1391,7 +1391,7 @@ CPU 予算を圧迫すると分かった時点で別 Issue として追加する
 
 ## 争点 F: Ecosyste.ms のリンク化（F-6）
 
-`DigestMeta` に `sourceUrl` を**必須フィールドとして**追加し、`FALLBACK_META.sourceUrl = 'https://ecosyste.ms/'`（一次情報を WebFetch で確認済み）、
+`DigestMeta` に `sourceUrl` を **必須フィールドとして** 追加し、`FALLBACK_META.sourceUrl = 'https://ecosyste.ms/'`（一次情報を WebFetch で確認済み）、
 `parseMeta` は既存の `httpUrlOr` でフィールド単位フォールバックする。既存の本番 JSON に `sourceUrl` が無くてもランタイムは壊れない
 （`removal_impact` が `static-gem-digest.ts` の入力型と出力型の分離設計で反証）。型エラーになるのは `DigestMeta` リテラルを直接組む
 テスト 4 ファイルのみで、1 行ずつ追記すればよい。
