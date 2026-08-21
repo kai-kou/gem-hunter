@@ -297,7 +297,7 @@ OAuth のコールバック URL は **事前登録が必要** だが、プレビ
 
 | ID | 契約項目 |
 |---|---|
-| **INF-20** | デプロイのトリガーは **git push / マージのみ**。手作業のコマンド実行を運用手順に含めない。⚠️ **暫定運用**: GitHub Actions が制限中の間はセッション（Claude）による `wrangler` 直接実行を許容する（`D-23`）。制限解除後に原則へ復帰する（復帰手順は [`cloudflare-infrastructure.md`](../../03_design/infrastructure/cloudflare-infrastructure.md) §8） |
+| **INF-20** | デプロイのトリガーは **git push / マージのみ**。手作業のコマンド実行を運用手順に含めない。⚠️ **暫定運用**: GitHub Actions が制限中の間はセッション（Claude）による `wrangler` 直接実行を許容する（`D-23`）。🔴 **復帰先は GitHub Actions ではない**（`D-31`・2026-08-21）: Workers Builds（Cloudflare native の Git 連携）へ移行することで原則（push / マージのみがトリガー）へ復帰する。**制限が解除されても GitHub Actions へは戻さない**（移行手順は [`cloudflare-infrastructure.md`](../../03_design/infrastructure/cloudflare-infrastructure.md) §8.2.3） |
 | **INF-21** | 直前の正常ビルドへ **数手でロールバック** できる（事業者選定の評価軸・§11） |
 | **INF-22** | ビルド失敗・デプロイ失敗が **通知される**（事業者標準の通知か CI の失敗通知で足りる。専用の監視基盤を建てない） |
 

@@ -38,6 +38,8 @@
 
 > ⚠️ **追記（2026-08-19・`D-23`）**: 決定 #6（CI は GitHub Actions + `cloudflare/wrangler-action`）は、GitHub Actions がプラットフォーム側の制限で起動できない状態（Issue #65）を受けて **暫定的にセッション（Claude）実行へ切り替えている**。`.github/workflows/deploy-preview.yml` / `deploy-production.yml` は撤去済み。本 ADR の決定 #6 自体は取り消さず、制限解除後に GitHub Actions へ復帰する（現状の運用・復帰手順は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §8 が正本）。
 
+> 🔴 **追記（2026-08-21・`D-31`）: 決定 #6 を取り消す。** 上の `D-23` 追記が想定していた「制限解除後に GitHub Actions へ復帰する」は **もう起こらない**。復帰ではなく **Workers Builds（Cloudflare native の Git 連携）への置き換え** を選択した。理由は `D-16` 当時に想定した 2 経路が **どちらも塞がった** こと: ① GitHub Actions がプラットフォーム側の制限で起動できない（`D-23`）② クラウドセッションからの `wrangler deploy` が Claude Code の auto mode classifier の組み込み保護対象で実行できない（Issue #288・[`L-130`](../rules/lessons/cloud-environment.md)）。**決定 #5（運用の一次経路は wrangler CLI）は変更しない**（Workers Builds が実行するのも wrangler である）。移行手順・設定値は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §8.2.3 が正本。
+
 ---
 
 ## 3. 理由
