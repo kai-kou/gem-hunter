@@ -605,7 +605,8 @@ Deploy command をゲート込みの `npm run deploy:ci` にすることで、Wo
    追加する
 2. Organization の managed settings 側で `autoMode` を調整する（組織管理者権限が必要）
 3. 分類器がブロックした都度、Claude Code の `/permissions` 画面「Recently denied」からユーザー自身が
-   手動で承認・リトライする
+   手動で承認・リトライする（🔴 **無人ルーティンでは `/permissions` 画面が存在せず機能しない**。
+   有人セッション限定の手段）
 4. 本番デプロイの実行自体を、飼い主自身（または GitHub Actions の制限が解除された場合は CI/CD）が担う
    運用に切り替える
 5. ✅ **採用（`D-31`）: [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)（Cloudflare native の Git 連携）へ発火点を移す**
@@ -691,7 +692,7 @@ Cloudflare の GitHub App の接続は **ダッシュボードでの対話的認
 | Build command | **空にする** | `npm run deploy` が `opennextjs-cloudflare build` を内包しているため、build と deploy を二重に走らせない |
 | Deploy command | `npm run deploy:ci` | = `bash tools/workers_build_deploy.sh`。`D-26` のゲート判定を通してから `npm run deploy` を実行する（P-1 の決定）。既定の `npx wrangler deploy` のままだと ① OpenNext のビルド成果物が更新されない ② ゲートが素通りする、の 2 つの罠を踏む。SHA タグ付与も `npm run deploy` 側に入っている |
 | Non-production branch builds | 🔴 **有効化しない**（本番ブランチのトリガーだけを接続する） | 既定の `npx wrangler versions upload` は **alias を付けない**。PR ごとのプレビューは既存の `--preview-alias pr-<N>` 運用（§6.1）が担っており、両方走ると ① レビュアーがどちらの URL が最新か誤認する ② alias なし version は `retire_preview_aliases.py`（`pr-<N>` 形式のみ判定）の **退役対象外** になり orphan として蓄積する ③ push のたびに Cloudflare API のレート制限（#117 で 248 秒待機を実測）を追加消費する。**一本化するなら退役スクリプトを alias なし version に対応させてから**（別 Issue） |
-| Build variables and secrets | 🔴 **`GH_TOKEN` を Secret 種別で登録する**（+ Next.js のビルドに必要な変数があればここへ） | `npm run deploy:ci` が呼ぶ `check_deploy_gate.py` は GitHub API で Issue を読む。ビルド環境に `gh` は無いので `GH_TOKEN` / `GITHUB_TOKEN` のフォールバック経路を使う。**必要な権限は読み取りのみ**（Issues: Read / Metadata: Read）。[公式の Next.js ガイド](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)のとおり **ビルド変数はランタイムには渡らない**（ランタイム値は Settings → Variables & Secrets 側） |
+| Build variables and secrets | 🔴 **`GH_TOKEN` を Secret 種別で登録する**（+ Next.js のビルドに必要な変数があればここへ） | `npm run deploy:ci` が呼ぶ `check_deploy_gate.py` は GitHub API で Issue を読む。ビルド環境に `gh` は無いので `GH_TOKEN` / `GITHUB_TOKEN` のフォールバック経路を使う。🔴 **専用の fine-grained PAT を新規発行し、対象リポジトリを `gem-hunter` のみ・権限を `Issues: Read-only` + `Metadata: Read-only` に限定する**（他用途のトークンを流用しない。classic PAT の `repo` スコープは過剰権限）。有効期限を設定しておくと、切れたときにビルドが赤くなって気づける。⚠️ ビルド変数は `npm run deploy` を含む同一ビルド環境の全プロセス（npm 依存パッケージのライフサイクルスクリプトを含む）から参照できるため、**権限を絞ることが唯一の緩和策**。[公式の Next.js ガイド](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)のとおり **ビルド変数はランタイムには渡らない**（ランタイム値は Settings → Variables & Secrets 側） |
 
 #### 🔴 移行前に検証する 3 点
 
