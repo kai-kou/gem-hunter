@@ -1,0 +1,72 @@
+{
+  "topic": "本番デプロイが本番へ届かない問題（Issue #288 完了条件 4）を、L-130 の記述是正・D-31 の再評価・D-26 ゲートの維持方式まで含めて決着させる",
+  "brief": "飼い主の指示（原文）: 『添付画像はルーティン実行の結果です。この問題について解決済みだったか、まだIssueのままか、事実確認して教えてください』→（事実確認の報告後）『本セッションで専門チームを組成して適切に対応してください。ユーザー作業があれば、詳細に案内してください』\n\n【オーケストレーターが実測で確定させた事実（推測ではない・すべて本セッションでツール出力を確認済み）】\n\n1. Issue #288 は open（status:in-progress へ本セッションが変更）。完了条件 4 項目のうち 1〜3 は達成済み（L-130 記録 / §8.2.2・§8.2.3 追記 / tools/check_prod_drift.py）、**4「起点となった 64d2aa3 が本番へ反映されている」だけが未達**。\n\n2. `npm run deploy` の実体（package.json）: `opennextjs-cloudflare build && SHA=$(git rev-parse --short=12 HEAD) && test -n \"$SHA\" && wrangler deploy --tag \"$SHA\"`。\n\n3. 🔴 **auto mode classifier のブロックは決定論的ではない**。実測の内訳:\n   - **ブロック 5 回**: 2026-08-20 07:45 JST 無人ルーティン 3 回（複合 background / 単独 background / 単独 foreground）、2026-08-21 09:17 JST 頃 有人 1 回、2026-08-21 11:40 JST 無人 1 回（#307 マージ後）。いずれも `Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier.`\n   - **成功 2 回**: 2026-08-21 10:32 JST 無人ルーティンセッションで `npm run deploy` 成功（Version ID `df728490-1f28-4911-a329-d08d2517bc7c` / tag `200743832fe6` = commit 2007438・Issue #263 のコメントに実行記録あり・本番疎通 200・`check_prod_drift.py` が `drifted:false confidence:exact`）。さらに本番の現在の最終デプロイは tag `d9ab80106e59`（= commit d9ab801 / 2026-08-21 10:45 JST・本セッションで `check_prod_drift.py` の出力から確認）であり、**2 回目のデプロイも成功している**。\n   - 初回試行のエラー文言は `Stage 2 classifier error - blocking based on stage 1 assessment` で、**transient と明示されていた**。\n   → つまり `docs/rules/lessons/cloud-environment.md` の `L-130`「無人・有人を問わず 4 回すべて再現」「クラウドセッションは wrangler deploy に到達できない」という断定は **実態と食い違っている**（Issue #300 が起票済み・本セッションで status:in-progress へ）。\n\n4. 本セッション時点の乖離（`python3 tools/check_prod_drift.py` の実出力）:\n```\n乖離あり（exact）: 本番の最終デプロイの SHA タグが main HEAD と一致しません（exact）\n  main HEAD: e4b07581bc3b53a17209eda18851055ba60e4277（2026-08-21T11:36:56+09:00）\n  本番デプロイ: version=48f19b10-b713-41f4-81af-2894af4b0ce3（2026-08-21T01:45:56.020418Z） tag=d9ab80106e59\n```\n未反映の差分は PR #307 のみで、`.claude/hooks/` `tools/` `docs/rules/` だけを変更しており **アプリのランタイムコードを 1 行も含まない**（利用者影響なし）。\n\n5. `D-31`（2026-08-21 飼い主決定・PR #291 マージ済み）: 本番デプロイの発火点を **Workers Builds**（Cloudflare native の Git 連携）へ移す。`D-16`（Workers Builds は採用しない）の該当部分を上書きする決定。\n\n6. 🔴 `D-31` はまだ実行できない。Issue #290（`[user-work]` Workers Builds の接続手順）は **status:waiting-claude のまま**で、飼い主にはまだ依頼していない。理由は P-1 が未決だから:\n   - **P-1**: `D-26`（`tools/check_deploy_gate.py`）は「スプリント PR は Sprint Review 判定が accepted になるまでデプロイしない・rejected の間はデプロイしない・判定コメントが無い場合も塞ぐ・exit 2（判定不能）でもデプロイしない fail-closed」と定めている。Workers Builds は **push をトリガー**にするため、このゲートが呼ばれず判定を飛ばして本番へ出る。現行フローの Sprint Review は **マージ後**（`pr-review-watcher` Step 7）に実施される。\n   - 候補案 (a): Deploy command をゲート込みにする（`check_deploy_gate.py` を実行し can_deploy=false ならデプロイせず正常終了する npm script を Deploy command に指定）。**ビルド環境に Python と GitHub API アクセス（トークンをビルド変数へ）が必要で未検証**。\n   - 候補案 (b): Sprint Review 判定が出るまで main にマージしない（判定をマージ前へ動かす）。`pr-review-watcher` Step 7 の運用組み替えが要る。\n   - **P-2**: シークレット引き継ぎの確認（`wrangler versions secret put` で入れた値が Workers Builds の `wrangler deploy` で解決されるか）。🔴 `RATE_LIMIT_SALT` が未解決だとレート制限がフェイルオープンし、**エラーにならないので気づけない**。\n\n7. `check_deploy_gate.py` の仕様（実ファイルを読んで確認）: open かつ `status:in-progress` の Issue を GitHub API で列挙 → タイトルに `SP-\\d+` を含むか本文コメントに `## 🏃 Session Sprint Planning` があるものをスプリント対象と判定 → `## 🔍 Sprint Review 判定` の `**結果**:` 行の最新値で判定。exit 0=可 / 1=待機 / 2=判定不能（fail-closed）。API チャネルは gh → urllib + GH_TOKEN/GITHUB_TOKEN のフォールバック。\n\n8. GitHub Actions はプラットフォーム側の制限で使えない（`D-23`）。CI という機構が存在せず、品質担保は `bash tools/run_checks.sh` をセッションが実行することで代替している。\n\n9. `docs/03_design/infrastructure/cloudflare-infrastructure.md` §8.2.2 / §8.2.3 に、L-130 と同じ「クラウドセッションは wrangler deploy に到達できない」という断定と、Workers Builds 移行手順（設定値の表・検証 3 点・停止 runbook）が既に書かれている。§8.2.3 の設定値表は Deploy command = `npm run deploy` としているが、これは P-1 の (a) を採るなら書き換えが要る。\n\n【この議論で決めること（争点）】\n\nA. 🔴 **`L-130` を実態に合う記述へどう直すか**（Issue #300）。ブロック 5 回・成功 2 回の分かれ目は何か。auto mode classifier の公式ドキュメント（WebFetch で code.claude.com/docs を直接読む）に照らして、**分類器がステートレスな LLM 判定で非決定的なのか / セッション属性（有人・無人、permission mode、モデル）で決まるのか / 時期による分類器側の変更なのか** を、確認できた事実と確認できなかったことを分けて書く。「必ずブロックされる」という断定を消したうえで、**セッションが取るべき行動指針**（ブロックされたら何回まで再試行してよいか / 迂回は依然禁止か）まで落とす。\n\nB. 🔴 **`D-31`（Workers Builds への移行）を維持するか、見直すか**。「成功例が出た＝移行不要」ではないか、という反論に正面から答える。判断材料: 非決定的なブロックに依存した運用の信頼性、無人ルーティンが止まる頻度、移行コスト（飼い主のダッシュボード操作 1 回 + P-1/P-2 の実装）、移行で失うもの（`D-26` ゲート・プレビュー運用との二重化）。**維持するなら「なぜ成功例があっても移行するのか」を 1 段落で言えること**、見直すなら代替の到達手段を具体的に示すこと。\n\nC. 🔴 **P-1 の結論を出す**（(a) / (b) / 議論で出た第 3 案）。(a) を採るなら Workers Builds のビルド環境で `check_deploy_gate.py` が動くのかを **公式ドキュメントの一次情報で確定**させる（ビルドイメージに Python はあるか / `git` は使えるか / `WORKERS_CI_COMMIT_SHA` 等の既定環境変数 / ビルド変数とシークレットの扱い / Node バージョン指定）。GitHub トークンをビルド変数に置くことのセキュリティ評価も含める。動かないなら (b) か第 3 案へ倒し、**運用の組み替え内容を具体的に書く**。\n\nD. 🔴 **本セッションで完遂すべき作業範囲と、飼い主に依頼する作業の確定**。(1) 現在の乖離（main e4b0758 が未反映）を本セッションでどう扱うか — `npm run deploy` を再試行してよいか、その根拠は何か（争点 A の結論に従う）。(2) このセッションでコードとして実装すべきもの（npm script・ドキュメント修正・L-130 書き換え）は何か。(3) Issue #290 を `status:waiting-user` にして飼い主へ出せる状態にできるか、まだ出せないなら何が残るか。**飼い主に渡す手順は「ダッシュボードのどの画面で何を押し、何を入力するか」まで具体化されていること**（画面遷移・入力値・確認方法・失敗時に何を Claude へ伝えればよいか）。",
+  "participants": [
+    {
+      "name": "classifier_facts",
+      "model": "sonnet",
+      "lens": "auto mode classifier の事実確認レンズ（争点 A 担当）。**推測を書かない**のが役割。(1) `docs/rules/lessons/cloud-environment.md` の L-130 全文を実際に読む。(2) Claude Code の公式ドキュメントを WebFetch で直接読む（https://code.claude.com/docs/en/auto-mode-config と https://code.claude.com/docs/en/permission-modes は L-130 が出典として挙げている。他に分類器の非決定性・stage 1 / stage 2 の二段構成・再試行時の挙動・`soft_deny` の意味を述べた記述があれば拾う）。(3) その一次情報と、brief の項目 3 に列挙した実測（ブロック 5 回・成功 2 回・`Stage 2 classifier error ... transient` の文言）を突き合わせ、**分かれ目として説明可能な仮説と、一次情報では説明できない部分を明確に分けて**書く。(4) L-130 の **書き換え案を本文レベルで提示する**（症状・切り分け結果・対策の各節をどう直すか。特に『必ずブロックされる』『到達できない』という断定の置き換え表現）。(5) セッションの行動指針を決める: ブロックされたときに再試行してよいか、してよいなら何回までか、迂回（コマンド分解・別名スクリプト経由）は依然禁止か。🔴 **`npm run deploy` を自分で実行しない**（本番へ出る。実行はオーケストレーターが判断する）。"
+    },
+    {
+      "name": "cf_builds",
+      "model": "sonnet",
+      "lens": "Cloudflare Workers Builds のビルド環境の事実確認レンズ（争点 C 担当・争点 B の材料提供）。**『できるはず』で書かない**のが役割。公式ドキュメントを WebFetch で直接読み（https://developers.cloudflare.com/workers/ci-cd/builds/ とその配下の build-image / configuration / build-watch-paths / advanced-setups / troubleshoot、および https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/ と https://developers.cloudflare.com/changelog/post/2025-06-10-default-env-vars/）、次を一次情報で確定させる: (1) ビルドイメージに **Python がプリインストールされているか**（バージョンは何か。無いならビルド中に入れられるか、その所要時間） (2) `git` コマンドが使えるか・リポジトリ履歴は取得されるか（shallow clone か） (3) Workers Builds が注入する既定環境変数（`WORKERS_CI_COMMIT_SHA` 等）の正確な名前と値の形式 (4) Build variables と secrets の設定方法・**ビルド時とランタイムの値の分離**・`wrangler versions secret put` で入れた既存のシークレットが Workers Builds 実行の `wrangler deploy` から解決されるか (5) Node バージョンの指定方法（`package.json` の `engines.node` が `>=22`） (6) Deploy command の終了コードの扱い（**0 で終わればデプロイをスキップしてもビルドは成功扱いになるか**＝ P-1 案 (a) の前提） (7) 接続・切断・設定変更のうち API で可能な操作と、ダッシュボード必須の操作の境界。🔴 **破壊的な API を実行しない**（GET と公式ドキュメントだけで判断する）。確認できなかった項目は『未確認』と明記し、推測で埋めない。"
+    },
+    {
+      "name": "release_ops",
+      "model": "sonnet",
+      "lens": "リリース運用レンズ（争点 B / C / D 担当）。`docs/03_design/infrastructure/cloudflare-infrastructure.md` §8.2〜§8.2.3、`tools/check_deploy_gate.py`、`tools/check_prod_drift.py`、`.claude/skills/pr-review-watcher/SKILL.md` の Step 6 / Step 7 を実際に読んだうえで判断する。(1) 争点 B に正面から答える: **『成功例が 2 回出たのだから D-31 は不要では』という反論を敵対的に検討し**、維持か見直しかを決める。判断は「無人ルーティンが止まる確率 × 止まったときの回復コスト」対「移行コスト + 移行で失うもの」で行い、感覚ではなく brief の実測（5 ブロック / 2 成功）を数に使う。(2) 争点 C: P-1 の (a) / (b) を比較し、**第 3 案があれば出す**（例: Workers Builds を接続しつつ Deploy command 側でゲートを判定する / ゲートをマージ前へ動かす / 両者のハイブリッド）。fail-closed（判定不能でデプロイしない）を保てるか、`check_deploy_gate.py` が GitHub API に到達できないときビルドがどう振る舞うかまで具体化する。(3) 争点 D: **本セッションで完遂できる範囲**を決める。特に「いま `npm run deploy` を再試行して乖離を解消してよいか」を `D-26` ゲート（現在 `status:in-progress` の Issue が複数ある点に注意 — 本セッションが #288 / #300 を in-progress にしたことがゲート判定に影響しないか実際に `python3 tools/check_deploy_gate.py --json` を実行して確かめる）と照らして判断する。🔴 **`npm run deploy` 自体は実行しない**（判断材料の収集まで。実行はオーケストレーター）。"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "ドキュメント整合レンズ（争点 A / D 担当）。新しい設計を主張せず、既存記述との突合に徹する。今回の是正（L-130 の断定を外す / D-31 の前提が変わりうる / P-1 の結論を反映する）に関係する記述を機械的に洗い出し、『どのファイルのどの節を変える必要があるか』『どこが既に矛盾しているか』を **パスと節番号と「現在の記述 → 必要な変更の要旨」の表形式** で列挙する。最低限確認する対象: `docs/rules/lessons/cloud-environment.md`（L-130 本体 + 冒頭の Warm 層索引の行）、`docs/rules/lessons-core.md`（Warm 層索引に L-130 への導線があるか）、`docs/03_design/infrastructure/cloudflare-infrastructure.md`（§8.2 / §8.2.1 / §8.2.2 / §8.2.3 / §11 人間に残る作業 / §12 未確認事項）、`docs/02_requirements/open-questions.md`（`D-16` / `D-23` / `D-26` / `D-31` の記述）、`.claude/skills/pr-review-watcher/SKILL.md`（Step 6 / Step 7 のデプロイ手順）、`.claude/skills/sprint-cycle-router/SKILL.md`、`docs/rules/pr-review-flow-summary.md`（デプロイゲート経由の記述）。🔴 ファイルを実際に Read してから書く（存在しない節番号・存在しない文言を書かない・L-113）。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜D それぞれについて採用する結論を 1 つに決める。決定は必ず『どのファイルに何を書くか（新規 / 改修）』『どのコマンド・スクリプトを作るか』『飼い主に何を依頼するか』まで落とす。とくに: (1) 争点 B は「維持」「見直し」のどちらでも、選ばなかった側の最強の論拠に対する反駁を 1 段落で書く。(2) 争点 C で (a) を採る場合、Workers Builds のビルド環境に Python が無い等で成立しないことが一次情報で判明したら (b) か第 3 案へ倒す（『動くはず』で通さない）。(3) 争点 D の飼い主向け手順は、画面遷移・入力値・確認方法・失敗時に Claude へ伝える内容まで具体化する。SSOT を増やさない（同じ規則の実体を 2 箇所に書かない）。議論で否定された案は採用しない。未確認事項は unknowns に落とし、実装時に実機で確かめる手順を書く。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜D のいずれか",
+        "decision": "採用する結論",
+        "rationale": "根拠（一次情報のポインタ）",
+        "files": [
+          "変更するファイルと変更内容"
+        ],
+        "tools": [
+          "新規・改修するスクリプトとコマンド仕様"
+        ]
+      }
+    ],
+    "user_actions": [
+      {
+        "step": "飼い主が行う操作",
+        "where": "画面・場所",
+        "input": "入力値",
+        "verify": "成功の確認方法",
+        "on_failure": "失敗時に Claude へ伝えること"
+      }
+    ],
+    "rejected": [
+      "議論で否定された案と理由"
+    ],
+    "unknowns": [
+      "確定できず、実装時に実機で確かめる必要がある事項"
+    ],
+    "follow_up_issues": [
+      {
+        "title": "Issue タイトル",
+        "labels": [
+          "type:*",
+          "sp:*",
+          "priority:*"
+        ],
+        "done_criteria": "完了条件"
+      }
+    ]
+  }
+}
