@@ -213,13 +213,32 @@ export function sanitizeReadmeHtml(
       consumedLength += text.length
       if (text.length > remaining) {
         truncated = true
-        return text.slice(0, remaining)
+        return sliceWithoutSplittingSurrogatePair(text, remaining)
       }
       return text
     },
   })
 
   return { html, truncated }
+}
+
+/**
+ * `text` を先頭から `length` コード単位で切る。ただし切断位置がサロゲートペアの **中間** に
+ * 来る場合は 1 コード単位手前で切る（Issue #334 Layer 1 レビュー指摘）。
+ *
+ * JS の文字列は UTF-16 コード単位の列なので、素の `slice` は絵文字（U+10000 以上）を割って
+ * 孤立サロゲートを残す。孤立サロゲートは UTF-8 エンコード時に例外ではなく `U+FFFD`（`\uFFFD`）へ
+ * 静かに置換されるため、切れ目の 1 文字が文字化けした状態で表示される。
+ */
+function sliceWithoutSplittingSurrogatePair(text: string, length: number): string {
+  if (length <= 0) {
+    return ''
+  }
+  const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff
+  const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff
+  const splitsPair =
+    isHighSurrogate(text.charCodeAt(length - 1)) && isLowSurrogate(text.charCodeAt(length))
+  return text.slice(0, splitsPair ? length - 1 : length)
 }
 
 function headingTag(

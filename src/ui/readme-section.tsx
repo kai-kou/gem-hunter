@@ -1,6 +1,36 @@
 import type { ReactElement } from 'react'
 import { sanitizeReadmeHtml, type SanitizeReadmeHtmlOptions } from './readme-html'
 
+export type ReadmeStatusLabels = {
+  /** README の取得・描画が完了したことを伝える文言（`aria-live` の遷移通知）。 */
+  loaded: string
+  /** README が無い・取得に失敗したときの案内文（`ReadmeSectionLabels.unavailable` と同じ文言でよい）。 */
+  unavailable: string
+}
+
+/**
+ * README ライブリージョン（`<section role="status" aria-live="polite">`）の **中身**（Issue #334）。
+ *
+ * 🔴 呼び出し元はこのコンポーネントを **ライブリージョン要素の内側** の `<Suspense>` に置く
+ * （`ui-ux-guidelines.md` §7.2「ライブリージョンは初期 DOM に空で常設し、**中身を書き換える**。
+ * 要素ごと動的挿入しない」）。fallback（読み込み中の文言）→ 本コンポーネント（完了文言）と
+ * 同じリージョンの中身が入れ替わることで、遷移が支援技術へ通知される。トップページの
+ * `#search-status`（`app/[locale]/page.tsx`）と同型。
+ *
+ * 視覚表示は別の `<Suspense>`（`ReadmeSection`）が担い、こちらは sr-only の通知だけを担当する。
+ * README 到着時にフォーカスは移動しない（ユーザー操作起因でない後追い描画のため）。
+ */
+export async function ReadmeStatusText({
+  readmePromise,
+  labels,
+}: {
+  readmePromise: Promise<string | null>
+  labels: ReadmeStatusLabels
+}): Promise<ReactElement> {
+  const rawHtml = await awaitReadmeOrNull(readmePromise)
+  return <>{rawHtml === null ? labels.unavailable : labels.loaded}</>
+}
+
 export type ReadmeSectionLabels = {
   /** セクション見出し（例: 「README」）。 */
   heading: string

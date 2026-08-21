@@ -75,7 +75,8 @@
       "heading": "README",
       "unavailable": "README を表示できませんでした。",
       "viewOnGithub": "GitHub で README を読む",
-      "loading": "README を読み込んでいます"
+      "loading": "README を読み込んでいます",
+      "loaded": "README を読み込みました"
     }
   }
 }

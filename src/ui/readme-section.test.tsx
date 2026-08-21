@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { ReadmeSection, type ReadmeSectionLabels } from './readme-section'
+import {
+  ReadmeSection,
+  ReadmeStatusText,
+  type ReadmeSectionLabels,
+  type ReadmeStatusLabels,
+} from './readme-section'
 
 const labels: ReadmeSectionLabels = {
   heading: 'README',
@@ -123,5 +128,43 @@ describe('ReadmeSection', () => {
     expect(docLink.getAttribute('href')).toBe(
       'https://github.com/facebook/react/blob/HEAD/docs/a.md',
     )
+  })
+})
+
+describe('ReadmeStatusText', () => {
+  const statusLabels: ReadmeStatusLabels = {
+    loaded: 'README を読み込みました',
+    unavailable: 'README を表示できませんでした。',
+  }
+
+  it('README を取得できたら完了文言へ書き換わる（ライブリージョンの遷移通知・§7.2）', async () => {
+    const element = await ReadmeStatusText({
+      readmePromise: Promise.resolve('<p>hello</p>'),
+      labels: statusLabels,
+    })
+    render(element)
+
+    expect(screen.getByText('README を読み込みました')).toBeInTheDocument()
+  })
+
+  it('README が無いときは案内文言へ書き換わる', async () => {
+    const element = await ReadmeStatusText({
+      readmePromise: Promise.resolve(null),
+      labels: statusLabels,
+    })
+    render(element)
+
+    expect(screen.getByText('README を表示できませんでした。')).toBeInTheDocument()
+  })
+
+  it('取得が失敗（例外）しても内部エラー文言を出さず案内文言に倒す（NFR-9）', async () => {
+    const element = await ReadmeStatusText({
+      readmePromise: Promise.reject(new Error('boom: internal detail')),
+      labels: statusLabels,
+    })
+    render(element)
+
+    expect(screen.getByText('README を表示できませんでした。')).toBeInTheDocument()
+    expect(screen.queryByText(/boom/)).not.toBeInTheDocument()
   })
 })

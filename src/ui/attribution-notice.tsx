@@ -13,6 +13,14 @@ type AttributionNoticeLabels = {
 }
 
 /**
+ * 本文中インラインリンク（出典元・ライセンス）の共通クラス。
+ * 同じ段落に 2 本のリンクがあるため、片方だけ意匠を変えて食い違うことを構造的に防ぐ
+ * （Issue #334 Layer 1 レビュー指摘）。
+ */
+const INLINE_LINK_CLASS_NAME =
+  'text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring'
+
+/**
  * データ出典と改変の明示（`ADR 0014` §2.6 の `D-29` 帰属表示）。
  * Ecosyste.ms（CC BY-SA 4.0）のパーセンタイル順位を入力に、こちらで日付から
  * 再算出した並び順を表示している旨を伝える。あわせて、表示している数値が取得時点の
@@ -68,7 +76,7 @@ export function AttributionNotice({
         href={meta.sourceUrl}
         rel="noopener noreferrer"
         target="_blank"
-        className="text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring"
+        className={INLINE_LINK_CLASS_NAME}
       >
         {meta.source}
       </a>
@@ -77,7 +85,7 @@ export function AttributionNotice({
         href={meta.sourceLicenseUrl}
         rel="noopener noreferrer"
         target="_blank"
-        className="text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring"
+        className={INLINE_LINK_CLASS_NAME}
       >
         {meta.license}
       </a>

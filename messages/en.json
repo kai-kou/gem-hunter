@@ -75,7 +75,8 @@
       "heading": "README",
       "unavailable": "The README could not be displayed.",
       "viewOnGithub": "View the README on GitHub",
-      "loading": "Loading the README"
+      "loading": "Loading the README",
+      "loaded": "README loaded"
     }
   }
 }

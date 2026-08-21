@@ -15,7 +15,7 @@ import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-par
 import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { LocaleSwitcher } from '@/src/ui/locale-switcher'
-import { ReadmeSection } from '@/src/ui/readme-section'
+import { ReadmeSection, ReadmeStatusText } from '@/src/ui/readme-section'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
 import { SetDocumentTitle } from '@/src/ui/set-document-title'
 
@@ -177,11 +177,26 @@ export default async function RepositoryDetailPage({
         Issue #334 F-4: README（`ui-ux-guidelines.md` §7.2 と同型のライブリージョン）。
         🔴 `<Suspense>` は必ず `notFound()` の後にのみ置く（`AC-5` の同期 404 判定を壊さない）。
         `<Suspense>` の fallback だけでは後追い挿入が支援技術へ伝わらないため、
-        `role="status" aria-live="polite"` の sr-only 常設要素で通知と視覚表示を分離する
+        `role="status" aria-live="polite"` の sr-only 常設要素（内側に `<Suspense>`）で
+        通知と視覚表示を分離する
         （README 到着時にフォーカスは移動しない・ユーザー操作起因でない後追い描画のため）。
       */}
       <section id="readme-status" role="status" aria-live="polite" className="sr-only">
-        {messages.detail.readme.loading}
+        {/*
+          🔴 ライブリージョンは **要素として常設** し、`<Suspense>` は **その内側** に置く
+          （`ui-ux-guidelines.md` §7.2「初期 DOM に常設し中身を書き換える。要素ごと動的挿入しない」）。
+          fallback（読み込み中）→ `ReadmeStatusText`（完了 / 取得できず）と同じリージョンの中身が
+          入れ替わることで遷移が支援技術へ通知される。トップページの `#search-status` と同型。
+        */}
+        <Suspense fallback={messages.detail.readme.loading}>
+          <ReadmeStatusText
+            readmePromise={readmePromise}
+            labels={{
+              loaded: messages.detail.readme.loaded,
+              unavailable: messages.detail.readme.unavailable,
+            }}
+          />
+        </Suspense>
       </section>
       <Suspense
         fallback={

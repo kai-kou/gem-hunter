@@ -228,6 +228,21 @@ describe('sanitizeReadmeHtml — 通常の README コンテンツはそのまま
     expect(html).toContain('<table>')
   })
 
+  it('切り詰め位置がサロゲートペアの中間でも孤立サロゲートを残さない', () => {
+    // 30,000 文字目に絵文字（サロゲートペア）がちょうど掛かる入力。素の slice で切ると
+    // 上位サロゲートだけが残り、UTF-8 エンコード時に U+FFFD へ化ける（Layer 1 レビュー指摘）。
+    const raw = `<p>${'a'.repeat(README_TRUNCATE_LENGTH - 1)}\u{1F600}tail</p>`
+    const { html, truncated } = sanitizeReadmeHtml(raw, BASE)
+
+    expect(truncated).toBe(true)
+    // 孤立サロゲート（下位を伴わない上位サロゲート）が残っていないこと
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(html)).toBe(false)
+    expect(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(html)).toBe(false)
+    // 絵文字ごと落とし、直前までのテキストは保持する
+    expect(html).not.toContain('\u{1F600}')
+    expect(html).toContain('a'.repeat(100))
+  })
+
   it('parseStyleAttributes を有効にしない（postcss 経路を切る）', () => {
     // 壊れた style 属性値でも例外を投げずに処理できること（postcss を通していれば
     // パースエラーが起きうる入力）。
