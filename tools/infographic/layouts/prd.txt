@@ -1,0 +1,5 @@
+Draw a hand-drawn mind map:
+- At the center of the canvas, a large rounded box holding the 「目的」 block, drawn with a bolder border and a small target/bullseye doodle.
+- Radiating outward from the center in six directions, connected by curved hand-drawn branch lines, the remaining blocks: 「技術要件」, 「機能要件」, 「上乗せ要件」, 「非機能要件」, 「受け入れ基準」, 「スコープ外」.
+- Give each branch its own accent color and a small icon. Draw 「スコープ外」 with a dashed border and a light gray tone to signal exclusion.
+- Balance the branches so the map fills the 16:9 canvas evenly with no crowding.

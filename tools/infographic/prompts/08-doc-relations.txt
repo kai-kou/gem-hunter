@@ -1,0 +1,90 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+=== ABSOLUTE TEXT RULE ===
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+=========================
+
+
+TITLE (top banner, largest text):
+「ドキュメント相関図」
+
+SUBTITLE (under the title, one line):
+「コンセプトから実装までの入力関係」
+
+LAYOUT INSTRUCTION:
+Draw a left-to-right flow diagram of documents:
+- The horizontal spine of stage columns across the middle contains ONLY these six stages, in this order: 「コンセプト」, 「リサーチ」, 「要件定義」, 「設計」, 「開発」, 「リリース」. Each stage is a labelled column; the items inside it are small stacked document cards (rounded rectangles with a folded corner).
+- CRITICAL: do NOT place 「ADR」 or 「運用ルール」 anywhere in that horizontal spine. They must each appear exactly ONCE on the whole canvas, in the bottom area only.
+- Draw bold hand-drawn arrows between the six stage columns showing that each stage feeds the next.
+- Along the bottom of the canvas, draw exactly two separate boxes: one labelled 「ADR」 and one labelled 「運用ルール」, each with its bullet items, and dashed hand-drawn arrows pointing up from them into the stages they support.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「コンセプト」
+Block 1 items (bulleted list, one line each):
+・初期コンセプト
+・リーンキャンバス
+・インセプションデッキ
+
+Block 2 heading:「リサーチ」
+Block 2 items (bulleted list, one line each):
+・市場調査
+・競合調査
+・ユーザー調査
+
+Block 3 heading:「要件定義」
+Block 3 items (bulleted list, one line each):
+・PRD(要件正本)
+・ユーザーストーリーマップ
+・ロードマップ(M-n)
+
+Block 4 heading:「設計」
+Block 4 items (bulleted list, one line each):
+・アーキテクチャ
+・ドメインモデル
+・UI/UXガイドライン
+・インフラ設計
+
+Block 5 heading:「開発」
+Block 5 items (bulleted list, one line each):
+・テスト戦略
+・API仕様
+
+Block 6 heading:「リリース」
+Block 6 items (bulleted list, one line each):
+・リリースノート
+
+Block 7 heading:「ADR」
+Block 7 items (bulleted list, one line each):
+・技術意思決定14件
+
+Block 8 heading:「運用ルール」
+Block 8 items (bulleted list, one line each):
+・CP-1〜6等57ファイル
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「6フェーズ」
+「ADR14件」
+「ルール57件」
+「3正本(設計)」
+
+ARROWS (draw a hand-drawn arrow from the first label to the second; do NOT write the arrow list as text):
+初期コンセプト → リーンキャンバス
+リーンキャンバス → インセプションデッキ
+インセプションデッキ → PRD
+市場調査 → PRD
+ユーザー調査 → PRD
+PRD → ユーザーストーリーマップ
+ユーザーストーリーマップ → ロードマップ
+PRD → アーキテクチャ
+PRD → ドメインモデル
+ユーザーストーリーマップ → UI/UXガイドライン
+ドメインモデル → アーキテクチャ
+アーキテクチャ → テスト戦略
+インフラ設計 → ADR
+アーキテクチャ → 実装コード

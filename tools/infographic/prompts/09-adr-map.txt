@@ -1,0 +1,55 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+=== ABSOLUTE TEXT RULE ===
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+=========================
+
+
+TITLE (top banner, largest text):
+「ADR意思決定マップ」
+
+SUBTITLE (under the title, one line):
+「技術選定14件、決め手を一望」
+
+LAYOUT INSTRUCTION:
+a numbered timeline of decision cards grouped into 6 thematic clusters (infrastructure, UI, data, auth, policy, features); each card shows the ADR number badge, the chosen technology, and a short rationale tag; use a left-to-right or top-to-bottom flow with thin connecting lines linking related decisions (e.g. Cloudflare -> Next.js -> DB-less state).
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「基盤技術」
+Block 1 items (bulleted list, one line each):
+・ADR-0002 CFWorkers
+・ADR-0006 RSC採用
+
+Block 2 heading:「UI/UX」
+Block 2 items (bulleted list, one line each):
+・ADR-0001 Radix UI採用
+・ADR-0008 ページネーション
+
+Block 3 heading:「データ設計」
+Block 3 items (bulleted list, one line each):
+・ADR-0007 DBレス+URL状態
+・ADR-0009 Gem Index新設
+
+Block 4 heading:「認証」
+Block 4 items (bulleted list, one line each):
+・ADR-0003 GitHub App
+
+Block 5 heading:「運用ポリシー」
+Block 5 items (bulleted list, one line each):
+・ADR-0013 API限定順守
+
+Block 6 heading:「新機能」
+Block 6 items (bulleted list, one line each):
+・ADR-0014 日次ダイジェスト
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「ADR総数 14件」
+「抜粋掲載 9件」
+「策定期間 2026-08-17〜21」
+「全件 承認/採用」

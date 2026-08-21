@@ -1,0 +1,65 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+=== ABSOLUTE TEXT RULE ===
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+=========================
+
+
+TITLE (top banner, largest text):
+「Gem Score算出ロジック」
+
+SUBTITLE (under the title, one line):
+「被依存数とstarの残差で過小評価度を測る」
+
+LAYOUT INSTRUCTION:
+Draw a left-to-right pipeline diagram:
+- Left side: the 「入力シグナル」 block as a column of small input cards, each with a tiny icon, feeding arrows to the right.
+- Center: the 「計算式」 block drawn as a prominent framed formula box (the heart of the picture), with hand-drawn arrows coming in from the left.
+- Right side: the 「出力」 block as the result of the pipeline, with a bold arrow arriving into it.
+- Below the pipeline, arranged as a row of three smaller supporting boxes: 「役割分担」, 「算出主体」 and 「Phase区分」, connected to the pipeline by thin lines.
+- CRITICAL: exactly six boxes exist on the canvas, one per listed block heading. Do NOT add any extra box, and do NOT repeat the 「出力」 items anywhere else.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「入力シグナル」
+Block 1 items (bulleted list, one line each):
+・被依存数(Ecosyste.ms)
+・star数(GitHub)
+・健全性(OpenSSF)
+
+Block 2 heading:「計算式」
+Block 2 items (bulleted list, one line each):
+・被依存数%ile−star%ile
+・=Gem Index(過小評価度)
+
+Block 3 heading:「役割分担」
+Block 3 items (bulleted list, one line each):
+・Gem Index→並び順
+・健全性score→足切り
+
+Block 4 heading:「算出主体」
+Block 4 items (bulleted list, one line each):
+・候補データ:静的JSON
+・並べ替え:サーバー(RSC)
+
+Block 5 heading:「出力」
+Block 5 items (bulleted list, one line each):
+・Gem Index順ランキング
+・健全性フィルタで足切り済み
+
+Block 6 heading:「Phase区分」
+Block 6 items (bulleted list, one line each):
+・Phase1:定義のみ確定
+・Phase2:実データで確定
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「2軸設計:過小評価度+健全性」
+「健全性 = OpenSSF criticality_score」
+「被依存数取得元 = Ecosyste.ms」
+「2軸は合算せず分離」

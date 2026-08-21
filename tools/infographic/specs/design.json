@@ -1,0 +1,142 @@
+{
+  "design": {
+    "title": "設計サマリー",
+    "subtitle": "アーキテクチャ×ドメイン×UI/UX×インフラの統合設計",
+    "sections": [
+      {
+        "heading": "アーキテクチャ",
+        "items": [
+          "app→usecases→domain",
+          "依存は常に内向きのみ",
+          "domainは依存ゼロの中心",
+          "Adapters: infrastructure",
+          "Presentation: ui",
+          "Composition: DI合成"
+        ]
+      },
+      {
+        "heading": "ドメインモデル",
+        "items": [
+          "Gem=被依存数×star乖離",
+          "RepositoryId=owner/repo",
+          "値オブジェクト+ブランド型",
+          "GemIndex=順位差で算出",
+          "DailyDigest=日次固定",
+          "ACLでGitHub語彙を遮断"
+        ]
+      },
+      {
+        "heading": "UI/UX",
+        "items": [
+          "Tailwind v4+shadcn/ui",
+          "next-themes+next/font",
+          "10トークン×ライト/ダーク",
+          "WCAG AA準拠が目標",
+          "カード全体クリック工夫",
+          "4状態を排他的に表示"
+        ]
+      },
+      {
+        "heading": "インフラ",
+        "items": [
+          "Cloudflare Workers採用",
+          "サーバーレス関数前提",
+          "DBなし・個人情報非保持",
+          "L1/L2/L3の3層キャッシュ",
+          "OpenNext Cloudflare",
+          "push/マージで自動デプロイ"
+        ]
+      }
+    ],
+    "key_numbers": ["7層構成", "10色トークン", "5原則(INF)", "L1〜L3キャッシュ"],
+    "layout_hint": "4層の積み上げ図（アーキテクチャ/ドメイン/UI/インフラを縦に重ねる）"
+  },
+  "doc-relations": {
+    "title": "ドキュメント相関図",
+    "subtitle": "コンセプトから実装までの入力関係",
+    "sections": [
+      {
+        "heading": "コンセプト",
+        "items": ["初期コンセプト", "リーンキャンバス", "インセプションデッキ"]
+      },
+      {
+        "heading": "リサーチ",
+        "items": ["市場調査", "競合調査", "ユーザー調査"]
+      },
+      {
+        "heading": "要件定義",
+        "items": ["PRD(要件正本)", "ユーザーストーリーマップ", "ロードマップ(M-n)"]
+      },
+      {
+        "heading": "設計",
+        "items": ["アーキテクチャ", "ドメインモデル", "UI/UXガイドライン", "インフラ設計"]
+      },
+      {
+        "heading": "開発",
+        "items": ["テスト戦略", "API仕様"]
+      },
+      {
+        "heading": "リリース",
+        "items": ["リリースノート"]
+      },
+      {
+        "heading": "ADR",
+        "items": ["技術意思決定14件"]
+      },
+      {
+        "heading": "運用ルール",
+        "items": ["CP-1〜6等57ファイル"]
+      }
+    ],
+    "key_numbers": ["6フェーズ", "ADR14件", "ルール57件", "3正本(設計)"],
+    "layout_hint": "左→右のフロー図＋分岐矢印（コンセプト→リサーチ→要件→設計→開発→リリースを主軸に、ADR/運用ルールを横から接続）",
+    "edges": [
+      ["初期コンセプト", "リーンキャンバス"],
+      ["リーンキャンバス", "インセプションデッキ"],
+      ["インセプションデッキ", "PRD"],
+      ["市場調査", "PRD"],
+      ["ユーザー調査", "PRD"],
+      ["PRD", "ユーザーストーリーマップ"],
+      ["ユーザーストーリーマップ", "ロードマップ"],
+      ["PRD", "アーキテクチャ"],
+      ["PRD", "ドメインモデル"],
+      ["ユーザーストーリーマップ", "UI/UXガイドライン"],
+      ["ドメインモデル", "アーキテクチャ"],
+      ["アーキテクチャ", "テスト戦略"],
+      ["インフラ設計", "ADR"],
+      ["アーキテクチャ", "実装コード"]
+    ]
+  },
+  "extra_candidates": [
+    {
+      "doc": "docs/adr/",
+      "title": "ADR意思決定マップ",
+      "why": "14件の技術選定の理由と経緯を時系列で俯瞰できる"
+    },
+    {
+      "doc": "docs/adr/0009-hidden-gem-score-definition.md",
+      "title": "Gemスコアの定義",
+      "why": "被依存数とstarの乖離という核心ロジックを可視化できる"
+    },
+    {
+      "doc": "docs/04_development/testing-strategy.md",
+      "title": "テスト戦略マップ",
+      "why": "層×道具の対応が一目でわかり実装時に迷わない"
+    },
+    {
+      "doc": "docs/03_design/infrastructure/cloudflare-infrastructure.md",
+      "title": "Cloudflare構成図",
+      "why": "バインディング配線とキャッシュ実体を図解できる"
+    },
+    {
+      "doc": "CLAUDE.md / docs/rules/core-principles.md / docs/rules/user-confirmation-minimization.md",
+      "title": "自律運用ルール体系",
+      "why": "CP-1〜6とA-1〜6の関係が一目で整理できる"
+    },
+    {
+      "doc": "docs/adr/0004-release-cycle-trunk-based.md",
+      "title": "リリースサイクル図",
+      "why": "trunk-basedのブランチ→PR→マージ→デプロイの流れが分かる"
+    }
+  ]
+}

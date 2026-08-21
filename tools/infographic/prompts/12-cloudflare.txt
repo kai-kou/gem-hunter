@@ -1,0 +1,71 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+=== ABSOLUTE TEXT RULE ===
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+=========================
+
+
+TITLE (top banner, largest text):
+「Cloudflare構成」
+
+SUBTITLE (under the title, one line):
+「リクエストの通り道とキャッシュ層」
+
+LAYOUT INSTRUCTION:
+a left-to-right request-flow diagram: browser -> Workers Static Assets / Workers Caching -> Worker (OpenNext adapter) -> GitHub API / GitHub OAuth, with a Rate Limiting binding attached to the Worker. Below the Worker box, stack three cache layers labelled L1 (in-request memoization), L2 (InMemoryCache, the main layer), and L3 (external store, not adopted). Add a small side lane showing three environment boxes: local, preview (versions + alias), production, with arrows indicating wrangler deploy paths.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「経路」
+Block 1 items (bulleted list, one line each):
+・ブラウザ→静的アセット
+・Workersキャッシュ
+・MISS時→Worker実行
+・Worker→GitHub API
+
+Block 2 heading:「ランタイム」
+Block 2 items (bulleted list, one line each):
+・OpenNextアダプタ
+・Next16.2.11以上
+・Workers上で実行
+
+Block 3 heading:「キャッシュ階層」
+Block 3 items (bulleted list, one line each):
+・L1:リクエスト内メモ化
+・L2:InMemoryCacheが主役
+・L3:外部ストア未採用
+
+Block 4 heading:「バインディング」
+Block 4 items (bulleted list, one line each):
+・RateLimiting binding
+・keyはIPのHMAC化
+・検索エンドポイントに適用
+
+Block 5 heading:「環境構成」
+Block 5 items (bulleted list, one line each):
+・local:wrangler dev
+・preview:versions+alias
+・production:Worker本体
+
+Block 6 heading:「デプロイ」
+Block 6 items (bulleted list, one line each):
+・プレビューへversions upload
+・本番はwrangler deploy
+・現在セッション実行が暫定
+
+Block 7 heading:「コスト境界」
+Block 7 items (bulleted list, one line each):
+・Free:リクエスト無料枠
+・超過で課金でなく停止
+・Paidは実測してから判定
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「{'number': '100,000/日', 'label': 'Freeリクエスト上限'}」
+「{'number': '10ms', 'label': 'CPU時間/invocation'}」
+「{'number': '3MB', 'label': 'バンドルサイズ上限(圧縮後)'}」
+「{'number': '$10/月', 'label': 'Paid撤退ライン'}」

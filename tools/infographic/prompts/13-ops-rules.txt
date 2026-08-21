@@ -1,0 +1,67 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+=== ABSOLUTE TEXT RULE ===
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+=========================
+
+
+TITLE (top banner, largest text):
+「自律運用ルール体系」
+
+SUBTITLE (under the title, one line):
+「AI自律開発を支える大原則・確認境界・スプリント規律」
+
+LAYOUT INSTRUCTION:
+Central flowchart banner across the bottom showing Issue -> branch -> PR -> self-review -> auto-merge as connected arrow nodes. Above it, three parallel columns titled CP (principles), A (confirmation boundary), SD (sprint discipline), each as a stacked list of numbered pill-shaped labels in distinct accent colors. Small PR自律化 callout box tucked near the flowchart. Handdrawn graphic-recording style with icons (lock for A, checklist for SD, compass for CP).
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「大原則CP」
+Block 1 items (bulleted list, one line each):
+・CP-1 自律判断・最適解探索
+・CP-2 最新情報を継続検証
+・CP-3 リポジトリ衛生管理
+・CP-4 並行セッション共存
+・CP-5 ミッション最大貢献
+・CP-6 ユーザー介入最小化
+
+Block 2 heading:「確認境界A」
+Block 2 items (bulleted list, one line each):
+・A-1 main直接push禁止
+・A-2 外部公開の即時実行
+・A-3 致命的NG時の続行判断
+・A-4 修正2回超後の続行
+・A-5 新規マイルストーン追加
+・A-6 アカウント課金設定変更
+
+Block 3 heading:「開発規律SD」
+Block 3 items (bulleted list, one line each):
+・SD-1 プレビューURL必須
+・SD-2 TDD先にテスト
+・SD-3 仕様分岐は確認
+・SD-4 文書を読み自律実行
+
+Block 4 heading:「開発フロー」
+Block 4 items (bulleted list, one line each):
+・Issue作成
+・作業ブランチ作成
+・PR作成
+・セルフレビュー
+・自動マージ
+
+Block 5 heading:「PR自律化」
+Block 5 items (bulleted list, one line each):
+・確認なしPR作成
+・AIレビュー自己完結
+・指摘対応→自動マージ
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「CP-1〜6」
+「A-1〜6」
+「SD-1〜4」
+「sp:1〜8」

@@ -1,0 +1,5 @@
+Draw a story-map grid:
+- Across the top, a horizontal row of sticky-note style cards forming the backbone: the items of 「バックボーン」 laid left to right in order, each on its own small card, connected by a thin horizontal line.
+- Down the left edge, a vertical axis of horizontal swimlane labels: the items of 「リリース段階」 stacked top to bottom, each as a small tag on the left margin with a thin dividing line running right across the canvas.
+- To the right side, three compact side panels stacked vertically for 「進捗状況」, 「主要ストーリー」 and 「横断基盤」, each as a rounded box with its bullet items.
+- In the 「進捗状況」 panel, put a hand-drawn check mark next to completed items and a gray tone next to the unstarted one.

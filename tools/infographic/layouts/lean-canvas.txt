@@ -1,0 +1,5 @@
+Draw the canonical 9-block Lean Canvas grid (Ash Maurya layout) filling the whole width below the title:
+- Top row, left to right, 5 columns of boxes: 「課題」/「ソリューション」/「価値提案」(center, tallest and visually emphasized)/「優位性」/「顧客層」
+- Second row: 「主要指標」sits directly under 「課題」; 「チャネル」sits directly under 「優位性」
+- Bottom row spanning the full width, split into two halves: left half 「コスト構造」, right half 「収益の流れ」
+Each box has a thin hand-drawn border, its heading in an accent color at the top-left of the box with a tiny doodle icon, and its bullet items below in navy. Keep the grid tidy and aligned like a real Lean Canvas worksheet.

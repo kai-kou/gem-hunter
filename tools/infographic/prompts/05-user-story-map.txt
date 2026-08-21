@@ -1,0 +1,81 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+=== ABSOLUTE TEXT RULE ===
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+=========================
+
+
+TITLE (top banner, largest text):
+「ユーザーストーリーマップ」
+
+SUBTITLE (under the title, one line):
+「ユーザー活動 × リリース段階で実装単位を分解」
+
+LAYOUT INSTRUCTION:
+Draw ONE large story-map grid that fills the entire canvas below the title. Do NOT add any side panels.
+- 8 columns. Across the top of the grid, a row of colored header cards (the backbone), left to right in the given order.
+- 4 rows. Down the left margin, 4 release-stage labels as small tags, each with a thin horizontal divider line running right across the grid.
+- Inside each grid cell, place the small sticky-note cards listed below for that cell. Cells listed as EMPTY must be left blank (no dashed placeholder box, no filler text) — just quiet white space.
+- Cards marked [DONE] get a small hand-drawn check mark and a warm filled tone. Cards marked [TODO] get a dashed outline and a pale gray tone.
+- Keep the hand-lettering large enough to read: the grid is the whole picture, so use the full width.
+
+COLUMN HEADERS (left to right):
+1. 「A-1 到達する」
+2. 「A-2 条件を組む」
+3. 「A-3 見渡す・絞る」
+4. 「A-4 見極める」
+5. 「A-5 戻って比べる」
+6. 「A-6 復帰する」
+7. 「A-7 残す」
+8. 「A-8 出会う」
+
+ROW LABELS (top to bottom):
+1. 「S-0 歩く骨格」
+2. 「S-1 MVP完成」
+3. 「S-2 積み上げ」
+4. 「S-3 Gem発見(P2)」
+
+CELL CONTENTS (row × column). Every card label must be rendered exactly as written:
+Row S-0 × Column A-1 到達する: 「US-1 ロケール到達」[DONE]
+Row S-0 × Column A-2 条件を組む: 「US-6 検索実行」[DONE] / 「US-9 URL反映」[DONE]
+Row S-0 × Column A-3 見渡す・絞る: 「US-11 一覧表示」[DONE]
+Row S-0 × Column A-4 見極める: 「US-16 詳細へ遷移」[DONE] / 「US-17 直接表示」[DONE]
+Row S-0 × Column A-5 戻って比べる: 「US-20 一覧へ戻る」[DONE]
+Row S-0 × Column A-6 復帰する: EMPTY
+Row S-0 × Column A-7 残す: EMPTY
+Row S-0 × Column A-8 出会う: EMPTY
+Row S-1 × Column A-1 到達する: 「US-2 言語切替」[DONE] / 「US-4 ログイン」[DONE]
+Row S-1 × Column A-2 条件を組む: 「US-7 並び順切替」[DONE] / 「US-8 件数切替」[DONE]
+Row S-1 × Column A-3 見渡す・絞る: 「US-12 カード概要」[DONE] / 「US-13 ページ送り」[DONE]
+Row S-1 × Column A-4 見極める: 「US-18 詳細情報表示」[DONE] / 「US-19 404表示」[DONE]
+Row S-1 × Column A-5 戻って比べる: 「US-21 条件保持」[DONE]
+Row S-1 × Column A-6 復帰する: 「US-24 エラー区別」[DONE] / 「US-25 制限復帰案内」[DONE]
+Row S-1 × Column A-7 残す: EMPTY
+Row S-1 × Column A-8 出会う: EMPTY
+Row S-2 × Column A-1 到達する: EMPTY
+Row S-2 × Column A-2 条件を組む: 「US-10 タグ絞込」[TODO]
+Row S-2 × Column A-3 見渡す・絞る: EMPTY
+Row S-2 × Column A-4 見極める: EMPTY
+Row S-2 × Column A-5 戻って比べる: EMPTY
+Row S-2 × Column A-6 復帰する: 「US-27 縮退表示」[TODO]
+Row S-2 × Column A-7 残す: 「US-28 お気に入り」[TODO] / 「US-29 履歴呼出」[TODO]
+Row S-2 × Column A-8 出会う: EMPTY
+Row S-3 × Column A-1 到達する: EMPTY
+Row S-3 × Column A-2 条件を組む: EMPTY
+Row S-3 × Column A-3 見渡す・絞る: EMPTY
+Row S-3 × Column A-4 見極める: EMPTY
+Row S-3 × Column A-5 戻って比べる: EMPTY
+Row S-3 × Column A-6 復帰する: EMPTY
+Row S-3 × Column A-7 残す: EMPTY
+Row S-3 × Column A-8 出会う: 「US-30 今日のGem」[DONE] / 「US-34 Gem順並替」[DONE]
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the very bottom, in accent colors):
+「US-1〜34」
+「E-1〜25」
+「SP-16まで完了」
+「残るはS-2積み上げ」

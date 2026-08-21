@@ -1,0 +1,6 @@
+Draw the classic 10-question inception deck as two rows of cards:
+- Top row, left to right, five cards: the blocks whose headings begin with Q1 through Q5, under a small hand-lettered band reading 「なぜここにいるのか」.
+- Bottom row, left to right, five cards: the blocks whose headings begin with Q6 through Q10, under a small hand-lettered band reading 「どうやって実現するのか」.
+- Each card is a rounded box with its heading text at the top (in an accent color) and its bullet items below, plus one small doodle icon in the top-right corner of the card.
+- CRITICAL: the question number appears ONLY once per card, inside the heading text itself (for example 「Q1:目的」). Do NOT draw an additional number badge, circle, or numeral anywhere else on the card.
+- Keep all ten cards the same size and neatly aligned in a 5-column grid.

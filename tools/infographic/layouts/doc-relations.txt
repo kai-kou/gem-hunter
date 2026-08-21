@@ -1,0 +1,5 @@
+Draw a left-to-right flow diagram of documents:
+- The horizontal spine of stage columns across the middle contains ONLY these six stages, in this order: 「コンセプト」, 「リサーチ」, 「要件定義」, 「設計」, 「開発」, 「リリース」. Each stage is a labelled column; the items inside it are small stacked document cards (rounded rectangles with a folded corner).
+- CRITICAL: do NOT place 「ADR」 or 「運用ルール」 anywhere in that horizontal spine. They must each appear exactly ONCE on the whole canvas, in the bottom area only.
+- Draw bold hand-drawn arrows between the six stage columns showing that each stage feeds the next.
+- Along the bottom of the canvas, draw exactly two separate boxes: one labelled 「ADR」 and one labelled 「運用ルール」, each with its bullet items, and dashed hand-drawn arrows pointing up from them into the stages they support.

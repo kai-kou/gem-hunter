@@ -1,0 +1,81 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+=== ABSOLUTE TEXT RULE ===
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+=========================
+
+
+TITLE (top banner, largest text):
+「リーンキャンバス」
+
+SUBTITLE (under the title, one line):
+「starではなく実利用度でOSSを見つける」
+
+LAYOUT INSTRUCTION:
+Draw the canonical 9-block Lean Canvas grid (Ash Maurya layout) filling the whole width below the title:
+- Top row, left to right, 5 columns of boxes: 「課題」/「ソリューション」/「価値提案」(center, tallest and visually emphasized)/「優位性」/「顧客層」
+- Second row: 「主要指標」sits directly under 「課題」; 「チャネル」sits directly under 「優位性」
+- Bottom row spanning the full width, split into two halves: left half 「コスト構造」, right half 「収益の流れ」
+Each box has a thin hand-drawn border, its heading in an accent color at the top-left of the box with a tiny doodle icon, and its bullet items below in navy. Keep the grid tidy and aligned like a real Lean Canvas worksheet.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「課題」
+Block 1 items (bulleted list, one line each):
+・star=注目度で利用実績でない
+・偽star 約600万個
+・有用な過小評価OSSが埋没
+
+Block 2 heading:「ソリューション」
+Block 2 items (bulleted list, one line each):
+・Phase1: 検索Webアプリ
+・Phase2: Gem Indexで並替
+・健全性はOpenSSFに依存
+
+Block 3 heading:「価値提案」
+Block 3 items (bulleted list, one line each):
+・starの多さで埋もれぬOSSを発見
+・被依存数−star順位の残差指標
+
+Block 4 heading:「優位性」
+Block 4 items (bulleted list, one line each):
+・現時点では持たない
+・壁:被依存数がAPI非公開
+・名前解決の泥臭さが参入障壁
+
+Block 5 heading:「顧客層」
+Block 5 items (bulleted list, one line each):
+・個人開発者
+・インディーハッカー
+・フリーランスエンジニア
+・未検証(n=0)
+
+Block 6 heading:「主要指標」
+Block 6 items (bulleted list, one line each):
+・与件11項目の充足
+・Lighthouse/CWVの完成度
+
+Block 7 heading:「チャネル」
+Block 7 items (bulleted list, one line each):
+・選考課題・ポートフォリオ提示
+・運用継続時のGTMは未定
+
+Block 8 heading:「コスト構造」
+Block 8 items (bulleted list, one line each):
+・無料枠内が制約
+・実質制約はAPIレート枠
+
+Block 9 heading:「収益の流れ」
+Block 9 items (bulleted list, one line each):
+・なし(収益化目的としない)
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「star 10〜500件」
+「偽star 約600万個」
+「被依存数111,000+の実例」
+「レート枠30req/分」
