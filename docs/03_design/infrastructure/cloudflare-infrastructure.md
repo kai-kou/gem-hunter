@@ -593,8 +593,9 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 **乖離検知**: `main` の内容と本番稼働中のコードが乖離していないかは `tools/check_prod_drift.py`
 で検知する（実装は別レーンが担当。オプション・終了コードの詳細は同スクリプト自身を参照する）。
 
-**分類器を解除するための選択肢（いずれも飼い主の判断・実行が必要。Claude が自律的に設定変更を行って
-解除する経路ではない）**:
+**🟢 解決経路は決定済み（2026-08-21・飼い主決定 = `D-31`）: 下記 5（Workers Builds）を採用する。**
+移行手順は §8.2.3。以下は検討した選択肢の全体（いずれも飼い主の判断・実行が必要で、Claude が
+自律的に設定変更を行って解除する経路ではない）:
 
 1. `~/.claude/settings.json`（ユーザー設定）の `autoMode.allow` に本番デプロイを許可する例外ルールを
    追加する
@@ -603,7 +604,7 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
    手動で承認・リトライする
 4. 本番デプロイの実行自体を、飼い主自身（または GitHub Actions の制限が解除された場合は CI/CD）が担う
    運用に切り替える
-5. 🟢 **[Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)（Cloudflare native の Git 連携）へ発火点を移す**
+5. ✅ **採用（`D-31`）: [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)（Cloudflare native の Git 連携）へ発火点を移す**
    — Cloudflare ダッシュボードで Worker に GitHub リポジトリを接続すると、**`main` への push ごとに
    Cloudflare 側がビルドしてデプロイする**。Claude は `wrangler deploy` を打つ必要がなくなり、分類器と
    構造的に衝突しなくなる（マージ = 本番反映に戻る）
@@ -620,6 +621,53 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 > ⚠️ **5 を採るときに検証が要る点**: 本プロジェクトは OpenNext（`opennextjs-cloudflare build`）を挟むため、
 > Workers Builds のビルドコマンドをその形に設定できるか・シークレット（`wrangler secret`）が
 > ビルド環境から参照できるかを、切り替え前に確認する。
+
+### 8.2.3. Workers Builds への移行手順（`D-31`・Issue #288 完了条件 4）
+
+🔴 **`D-16` は「CI は GitHub Actions + `cloudflare/wrangler-action` とし Workers Builds は採用しない」と
+決めていた。`D-31` はこの部分だけを上書きする**（Cloudflare を使う選択・wrangler を一次経路とする点は不変）。
+上書きの理由は ① GitHub Actions がプラットフォーム側の制限で起動できない（`D-23`）② セッションからの
+`wrangler deploy` が auto mode classifier に阻まれる（§8.2.2）— つまり `D-16` 当時に想定した 2 経路が
+**どちらも塞がった** ため。
+
+#### 飼い主の操作（API では実行できない・1 回だけ）
+
+Cloudflare の GitHub App の接続は **ダッシュボードでの対話的認可が必須** で、API 経路が存在しない
+（[API リファレンス](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/) が明記）。
+手順は `[user-work]` Issue に切り出す。
+
+#### 設定値（接続後にダッシュボードで入れる）
+
+| 項目 | 値 | 根拠 |
+|---|---|---|
+| Worker 名 | `gem-hunter` | 🔴 **ダッシュボード上の Worker 名と `wrangler.jsonc` の `name` が一致していないとビルドが失敗する**（[公式](https://developers.cloudflare.com/workers/ci-cd/builds/troubleshoot/)）。本プロジェクトは一致済み |
+| 本番ブランチ | `main` | trunk-based（`D-21`） |
+| Build command | **空にする** | `npm run deploy` が `opennextjs-cloudflare build` を内包しているため、build と deploy を二重に走らせない |
+| Deploy command | `npm run deploy` | 既定は `npx wrangler deploy` だが、それだと OpenNext のビルド成果物が更新されない（§8.2 の注意書きと同じ罠）。SHA タグ付与も `npm run deploy` 側に入っている |
+| Non-production branch deploy command | `npx wrangler versions upload` | 既定のまま。PR ごとのプレビューは既存の `--preview-alias` 運用（§6.1）と役割が重なるため、**移行後に一本化するか併存させるかを別途決める** |
+| Build variables and secrets | 🔴 **Next.js のビルドに必要な変数をここへ入れる** | [公式の Next.js ガイド](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)が明記。**ビルド変数はランタイムには渡らない**（ランタイム値は Settings → Variables & Secrets 側） |
+
+#### 🔴 移行前に検証する 3 点
+
+1. **シークレットの引き継ぎ**: 本プロジェクトは version + preview alias 運用のため `wrangler versions secret put`
+   でシークレットを入れている（§7.2.1）。Workers Builds が実行する `wrangler deploy` で、これらが
+   引き続き解決されるかを実機で確認する（未確認のまま切り替えると本番が認証なしで動く）
+2. **SHA タグの付与**: Workers Builds のビルド環境で `git rev-parse` が使えるか。使えない場合は
+   `npm run deploy` を、Workers Builds が注入する `WORKERS_CI_COMMIT_SHA`
+   （[2025-06-10 changelog](https://developers.cloudflare.com/changelog/post/2025-06-10-default-env-vars/)）を
+   優先して読む形に変える。**タグが落ちると `tools/check_prod_drift.py` が heuristic 判定へ後退する**
+3. **Node バージョン**: `package.json` の `engines.node` は `>=22`。ビルド環境の既定が下回る場合は
+   ビルド変数で指定する
+
+#### 移行後に変わること
+
+- ✅ **「マージ = 本番反映」が回復する**（`INF-20` の原則へ復帰。`D-23` で暫定緩和した部分が不要になる）
+- ✅ Claude は `wrangler deploy` を打たなくなるため、分類器と構造的に衝突しない（`L-130` の制約が
+  デプロイ経路に影響しなくなる。**ただし制約自体は残るので `L-130` は削除しない**）
+- ⚠️ `tools/check_deploy_gate.py` によるゲート判定（`D-26`: スプリント PR は Sprint Review 判定まで
+  デプロイしない）は、**push をトリガーにする Workers Builds では効かなくなる**。ゲートを維持するなら
+  「判定が出るまで main にマージしない」へ運用を移すか、Workers Builds 側のビルド無効化トグルを使う。
+  🔴 **この点は移行時に決める必要がある**（本節は選択肢の提示に留める）
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
 
