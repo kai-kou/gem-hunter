@@ -157,4 +157,23 @@ describe('RepositoryList', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent(labels.empty)
   })
+
+  it('0 件のときの装飾画像は alt="" かつ role="status" の要素の外（兄弟）にある（Issue #347）', () => {
+    const { container } = render(
+      <RepositoryList items={[]} labels={labels} locale={locale('ja')} />,
+    )
+
+    // alt="" の img はアクセシビリティツリーから除外され role="img" にならないため、
+    // DOM から直接 querySelector で拾う（a11y_i18n round3 確定マークアップの検証手段）。
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img).toHaveAttribute('alt', '')
+    expect(img).toHaveAttribute('src', '/images/empty-result.webp')
+
+    // 🔴 構造契約: img は role="status" の要素の内側に無いこと（外＝兄弟であること）。
+    // 内側にあると再検索のたびに aria-atomic で画像ごと再構成される恐れがある。
+    const status = screen.getByRole('status')
+    expect(status.contains(img)).toBe(false)
+    expect(img?.parentElement).toBe(status.parentElement)
+  })
 })

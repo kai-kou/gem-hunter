@@ -1,11 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import { isLocale, locale as toLocale, LOCALES } from '@/src/domain/model/locale'
-import { getMessages } from '@/src/shared/i18n/messages'
-import { LoginLink } from '@/src/ui/login-link'
 import '../globals.css'
 
 const geistSans = Geist({
@@ -57,42 +53,10 @@ export default async function LocaleLayout({
     notFound()
   }
   const locale = toLocale(rawLocale)
-  const messages = getMessages(locale)
-
-  // ログイン導線は OAuth 3 変数 + セッション暗号鍵が揃っているときだけ表示する
-  // （`infrastructure-design.md` §8.1: 環境変数未設定でプレビュー環境から静かに消える）。
-  const showAuthLink = isAuthConfigured()
-  const isLoggedIn = showAuthLink && (await getSessionAccessToken()) !== null
 
   return (
     <html lang={locale} className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">
-        {/*
-          Issue #334 F-1/F-2: ツールタイトルを共有ヘッダーに 1 箇所だけ置き、全ページから
-          同じ挙動（クリックで /{locale} へ遷移し未検索状態へ戻る）を提供する
-          （whiteboard `feedback334_detail_readme_20260821` round3 lead 裁定）。
-          🔴 リンク先は `buildSearchUrl` を経由しない固定 `/{locale}`（検索条件を捨てて
-          未検索状態へ戻るのが F-1 の要件であり、条件を引き継ぐ挙動と矛盾する）。
-          h1 はこのタイトルだけが持つ（各ページの自前 h1 は撤去・h2 へ降格済み）。
-        */}
-        <header className="flex items-center justify-between px-4 py-2">
-          <h1 className="text-base font-semibold">
-            <Link
-              href={`/${locale}`}
-              className="text-primary rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
-            >
-              {messages.home.title}
-            </Link>
-          </h1>
-          {showAuthLink ? (
-            <LoginLink
-              isLoggedIn={isLoggedIn}
-              labels={{ login: messages.common.auth.login, logout: messages.common.auth.logout }}
-            />
-          ) : null}
-        </header>
-        {children}
-      </body>
+      <body className="min-h-full flex flex-col">{children}</body>
     </html>
   )
 }

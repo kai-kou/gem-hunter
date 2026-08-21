@@ -33,10 +33,28 @@ export function RepositoryList({
   if (items.length === 0) {
     // 0 件は「視覚表現だけ」にせず role="status" で支援技術にも伝える（US-23 / US-26 / NFR-12）。
     // role="alert" は使わない（0 件は緊急の割り込みではない・ui-ux-guidelines.md §7.2）。
+    //
+    // 🔴 装飾画像は role="status" の要素の外（兄弟）に置く（Issue #347・a11y_i18n round3
+    // 確定マークアップ）。再検索のたびに role="status" の暗黙 aria-atomic でこの要素の
+    // 中身が丸ごと再構成されるため、内側に画像（有意味 alt 付き）を置くと毎回読み上げ直される
+    // 恐れがある。alt="" 固定の現状は実害ゼロだが、将来の改変からこの不変条件を構造で守る。
     return (
-      <p role="status" className="text-muted-foreground py-8 text-sm">
-        {labels.empty}
-      </p>
+      <div className="flex flex-col items-center gap-3 py-8 text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image 最適化は使わない */}
+        <img
+          src="/images/empty-result.webp"
+          // 装飾。labels.empty が既に同じ意味を文章で伝えているため代替テキスト不要（1.1.1）。
+          alt=""
+          width={256}
+          height={256}
+          loading="lazy"
+          decoding="async"
+          className="h-auto w-24"
+        />
+        <p role="status" className="text-muted-foreground text-sm">
+          {labels.empty}
+        </p>
+      </div>
     )
   }
 
