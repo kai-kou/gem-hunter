@@ -112,7 +112,10 @@ export async function ReadmeSection({
   const sanitized = rawHtml === null ? null : sanitizeOrNull(rawHtml, htmlUrl)
 
   return (
-    <section aria-labelledby="readme-heading" className="mt-6">
+    // 🔴 aria-labelledby はここでは付けない。同じ id を指す region が下の readme-content
+    //    コンテナ側にも付くため、外側にも付けると同名リージョンが入れ子で 2 つできてしまう
+    //    （h2#readme-heading 自体はそのまま残し、見出しとしての参照先は維持する・#348 指摘対応）。
+    <section className="mt-6">
       <h2 id="readme-heading" className="text-lg font-semibold">
         {labels.heading}
       </h2>
@@ -127,9 +130,19 @@ export async function ReadmeSection({
         //    「見出し・段落・リストは既定のブラウザスタイルに委ねる」はそもそも成立していなかった
         //    （Preflight が見出しの font-size/font-weight・リストのマーカーを打ち消す）。
         //    `.prose` の色トークンは app/globals.css で本プロジェクトのセマンティックトークンへ
-        //    マッピング済み。`readme-content` は E2E がコンテナを掴むためのスコープクラス。
+        //    マッピング済み（`ui-ux-guidelines.md` §2.5 の禁止事項: セマンティックトークン以外の
+        //    新規 raw 色を足さない・`prose-invert` は使わない）。`readme-content` は E2E が
+        //    コンテナを掴むためのスコープクラス。
+        // 🔴 `overflow-x-auto` を当てた横スクロール領域は CSS Overflow Level 3 の規則で
+        //    `overflow-y` の used value も `auto` になり、コンテナ端の要素のフォーカスリングが
+        //    クリップされる（Chromium 実測確認済み）。`tabIndex` / `role="region"` /
+        //    `aria-labelledby` でキーボード到達可能にした上で、`px-1 py-1` でリングの描画余地を
+        //    確保し、コンテナ自身にもフォーカスリングを出す（WCAG 2.1.1 / 2.4.7 / 2.4.11・#348 指摘対応）。
         <div
-          className="readme-content prose prose-sm mt-2 max-w-none overflow-x-auto break-words"
+          className="readme-content prose prose-sm mt-2 max-w-none overflow-x-auto rounded-sm px-1 py-1 break-words outline-none focus-visible:ring-3 focus-visible:ring-ring"
+          tabIndex={0}
+          role="region"
+          aria-labelledby="readme-heading"
           dangerouslySetInnerHTML={{ __html: sanitized.html }}
         />
       )}

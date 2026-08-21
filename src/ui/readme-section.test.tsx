@@ -130,6 +130,26 @@ describe('ReadmeSection', () => {
     expect(link).toHaveTextContent(labels.opensInNewTab)
   })
 
+  it('README 本文のスクロールコンテナはキーボードで到達できるリージョンである（WCAG 2.1.1 / 2.4.7・#348 指摘対応）', async () => {
+    const element = await ReadmeSection({
+      readmePromise: Promise.resolve('<p>hello</p>'),
+      htmlUrl: HTML_URL,
+      labels,
+    })
+    const { container } = render(element)
+
+    const scrollContainer = container.querySelector('.readme-content')
+    expect(scrollContainer).not.toBeNull()
+    expect(scrollContainer).toHaveAttribute('tabindex', '0')
+    expect(scrollContainer).toHaveAttribute('role', 'region')
+    expect(scrollContainer).toHaveAttribute('aria-labelledby', 'readme-heading')
+
+    // 外側の <section> からは aria-labelledby を外す（同じ名前のリージョンが入れ子で
+    // 2 つできるのを避ける・h2#readme-heading 自体は残す）
+    const section = container.querySelector('section')
+    expect(section).not.toHaveAttribute('aria-labelledby')
+  })
+
   it('README 内の相対リンクは htmlUrl を基準に絶対 URL へ解決される', async () => {
     const element = await ReadmeSection({
       readmePromise: Promise.resolve('<a href="docs/a.md">doc</a>'),
