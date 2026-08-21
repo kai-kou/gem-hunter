@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 import en from '../messages/en.json'
 import ja from '../messages/ja.json'
@@ -43,14 +44,16 @@ test.describe('Issue #347: 全ルートで header/h1 がちょうど1つ・404 �
     await expect(page.getByRole('heading', { level: 1, name: ja.home.title })).toBeVisible()
   })
 
-  test('詳細（エラー: 存在しない owner/repo は not-found 経路。ここは検証済みの別ルートとして404で確認する）', async ({
-    page,
-  }) => {
-    // 詳細ページのエラー分岐（レート制限・ネットワーク等）はスタブで恣意的に再現しにくいため、
-    // 本テストでは既存 E2E（sp-9-errors.spec.ts）がカバーする範囲を前提に、
-    // ここでは 404（DomainError の一種で最も再現が容易なエラー系）で header/h1 の単一性を確認する。
-    const response = await page.goto('/ja/repos/does-not-exist-owner/does-not-exist-repo')
-    expect(response?.status()).toBe(404)
+  test('詳細（エラー: DomainError catch 分岐）: header が1つ・h1 が1つ', async ({ page }) => {
+    // 🔴 セルフレビュー指摘2対応: 「スタブで恣意的に再現しにくい」という当初コメントは事実誤認
+    // だった。`e2e/stub/server.mjs` は owner/repo 名に `rate-limit` を含めるとレート制限応答を
+    // 返す（`e2e/sp-9-errors.spec.ts`「詳細ページのエラーも種別ベースの文言…」と同じ手口）ので、
+    // これで `app/[locale]/repos/[owner]/[repo]/page.tsx` の catch 分岐（`{header}` を使う経路）
+    // へ確実に到達できる。404（`notFound()` 分岐）とは別の経路であり、本テストで初めて
+    // catch 分岐側のヘッダー単一性を検証する。
+    const repo = `rate-limit-${randomBytes(4).toString('hex')}`
+    await page.goto(`/ja/repos/octostub/${repo}`)
+    await expect(page.locator('main').getByRole('alert')).toBeVisible()
 
     await expect(page.locator('header')).toHaveCount(1)
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
@@ -91,5 +94,20 @@ test.describe('Issue #347: 全ルートで header/h1 がちょうど1つ・404 �
       header.getByRole('navigation', { name: en.common.localeSwitcher.navLabel }),
     ).toBeVisible()
     await expect(header.getByRole('link', { name: en.common.auth.login })).toBeVisible()
+  })
+
+  /**
+   * セルフレビュー指摘3対応: `toBeVisible()` はレイアウト上の存在しか見ず、画像バイト列が
+   * 壊れていても `width`/`height` 固定でボックスが確保されるため緑のままになる（`alt=""` で
+   * axe の `image-alt` も無関係）。ヘッダーロゴが実際にデコードできたこと（`naturalWidth > 0`）
+   * を最低 1 箇所で検証する。
+   */
+  test('ヘッダーロゴ画像が実際にデコードできている', async ({ page }) => {
+    await page.goto('/ja')
+    const logo = page.locator('header img[src="/images/logo.webp"]')
+    await expect(logo).toBeVisible()
+    await expect
+      .poll(() => logo.evaluate((el: HTMLImageElement) => el.naturalWidth))
+      .toBeGreaterThan(0)
   })
 })

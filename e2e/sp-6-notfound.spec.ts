@@ -29,8 +29,13 @@ test.describe('SP-6: 存在しないリポジトリの URL を開くと Not Foun
       await expect(page).toHaveTitle(ja.detail.notFound)
     })
 
-    await test.step('2.6. 404 の装飾ビジュアル（Issue #347）が可視で存在する', async () => {
-      await expect(page.locator('main img[src="/images/not-found.webp"]')).toBeVisible()
+    await test.step('2.6. 404 の装飾ビジュアル（Issue #347）が可視で存在し、実際にデコードできている', async () => {
+      const notFoundImage = page.locator('main img[src="/images/not-found.webp"]')
+      await expect(notFoundImage).toBeVisible()
+      // セルフレビュー指摘3対応: `toBeVisible()` だけでは画像バイト列の破損を検出できない。
+      await expect
+        .poll(() => notFoundImage.evaluate((el: HTMLImageElement) => el.naturalWidth))
+        .toBeGreaterThan(0)
     })
 
     await test.step('3. 一覧への戻り導線があり、遷移すると一覧に戻る', async () => {

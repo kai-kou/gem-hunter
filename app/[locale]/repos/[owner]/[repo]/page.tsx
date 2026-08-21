@@ -79,18 +79,10 @@ export default async function RepositoryDetailPage({
       locale={locale}
       currentPath={currentPath}
       title={messages.home.title}
-      localeSwitcherLabels={{
-        navLabel: messages.common.localeSwitcher.navLabel,
-        localeNames: messages.common.localeSwitcher.localeNames,
-        switchedAnnouncement: messages.common.localeSwitcher.switchedAnnouncement,
-      }}
+      localeSwitcherLabels={messages.common.localeSwitcher}
       isLoggedIn={accessToken !== null}
       showAuthLink={showAuthLink}
-      authLabels={
-        showAuthLink
-          ? { login: messages.common.auth.login, logout: messages.common.auth.logout }
-          : undefined
-      }
+      authLabels={showAuthLink ? messages.common.auth : undefined}
     />
   )
 

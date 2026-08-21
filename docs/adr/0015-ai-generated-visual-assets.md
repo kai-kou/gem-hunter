@@ -64,7 +64,7 @@ OG 画像（`app/[locale]/opengraph-image.tsx`）は、`og-background.png`（文
 ### 良い方向
 
 - gpt-image-2 の実際の生成品質がそのままユーザーに届く（未検証の中間工程を挟まない）
-- 実測（`tools/infographic/generate.py` + `sharp`）で 256px の透過 WebP は約 10.6KB。表示寸法（24〜320px）に対して十分な余裕があり、`ui-ux-guidelines.md` §8.6 の予算（1 ページ合計 100KB・個別 30KB）を大きく下回る。**予算は制約になっていない**
+- 実測（`ls -l public/images/`・`ui-ux-guidelines.md` §8.6 の表）では、256px アセット（`empty-result.webp` 約 10.2KB）や 96px アセット（`logo.webp` 約 2.8KB）は個別予算 30KB に大きな余裕がある。ただし全アセットが同水準ではなく、640px の `hero-idle.webp` は約 27.2KB（個別予算の約 91%）と予算に近い。いずれも **予算超過（30KB 超）は発生していない** が、「予算は制約になっていない」と一律には言えず、アセットごとに実測して確認する必要がある
 - OG 画像のロケール追従が `messages/*.json` の更新だけで完結し、画像側の手作業を要しない
 
 ### 受け入れる代償
@@ -74,11 +74,13 @@ OG 画像（`app/[locale]/opengraph-image.tsx`）は、`og-background.png`（文
 
 ---
 
-## 5. この決定に付随する未確認事項（実装着手時に潰す）
+## 5. この決定に付随した未確認事項（本 PR 内で解決済み）
 
-`content/discussions/ui_image_assets_20260821/entries/r04_*_lead_verdict.md` の `critical` を転記する。
+`content/discussions/ui_image_assets_20260821/entries/r04_*_lead_verdict.md` の `critical` として挙げられていた 2 点は、verdict 時点（実装着手前）では未検証だったが、**本 PR の実装作業の中で両方とも解決済み**。
 
-| # | 未確認事項 | 影響 |
+| # | 未確認事項だった内容 | 解決結果 |
 |---|---|---|
-| 1 | `opengraph-image.tsx` が `readFile(process.cwd() + 'public/...')` で背景画像を読む方式が、OpenNext + Cloudflare Workers のビルドで成立するか | 成立しなければ背景埋め込みを諦め、`ImageResponse` 内で図形とテキストだけを組む形に落とす（ロケール別テキスト合成という要件自体は維持できる） |
-| 2 | ロケール切替時に共有ヘッダー配下が remount されるか（`LocaleSwitchAnnouncer` の初回ガードに影響） | E2E で実機確認する。本 ADR の対象範囲外（`ui-ux-guidelines.md` §7.4 / ADR ではなく実装 Issue 側で扱う） |
+| 1 | `opengraph-image.tsx` が `readFile(process.cwd() + 'public/...')` で背景画像を読む方式が、OpenNext + Cloudflare Workers のビルドで成立するか | 🔴 **不成立と判明**（実デプロイで 500 になることを確認）。背景埋め込みは `readFile` 方式をやめ、ビルド時に画像を base64 データ URI 化してモジュールへ埋め込む方式に変更して解決した |
+| 2 | ロケール切替時に共有ヘッダー配下が remount されるか（`LocaleSwitchAnnouncer` の初回ガードに影響） | 🔴 **再現を確認**（remount によりアナウンスが抜けるケースが実機 E2E で見つかった）。`LocaleSwitchAnnouncer` 側の実装で対処し、テストで検証済み |
+
+⚠️ item 2 は検出された別の細部の欠陥（同一ロケールへの遷移でも誤ってアナウンスしてしまうケース）についてなお改善作業が続いている。ADR は決定の記録であり実装の逐次状態を追わないため、本表は「解決済みであること」と大まかな解決の方向性のみを記録し、実装の細部は追跡しない（細部は実装側のコード・コメント・テストが正本）。

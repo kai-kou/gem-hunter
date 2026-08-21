@@ -94,7 +94,12 @@ test.describe('SP-9: 読み込み中と 0 件が区別できる', () => {
       // 0 件はエラーではない（role="alert" にしない・ui-ux-guidelines.md §7.2）
       await expect(page.locator('main').getByRole('alert')).toHaveCount(0)
       // Issue #347 T-5: 0 件の装飾画像（alt=""）が main 内に可視で存在すること。
-      await expect(page.locator('main img[alt=""]')).toBeVisible()
+      const emptyImage = page.locator('main img[alt=""]')
+      await expect(emptyImage).toBeVisible()
+      // セルフレビュー指摘3対応: `toBeVisible()` だけでは画像バイト列の破損を検出できない。
+      await expect
+        .poll(() => emptyImage.evaluate((el: HTMLImageElement) => el.naturalWidth))
+        .toBeGreaterThan(0)
       // 🔴 構造契約: role="status" の要素の中に img が無いこと（a11y_i18n round3・
       // repository-list.tsx の確定マークアップ「画像は status 要素の外＝兄弟」の回帰防止）。
       await expect(status.locator('img')).toHaveCount(0)

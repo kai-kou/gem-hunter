@@ -46,6 +46,11 @@ test.describe('SP-6: 未検索の初期状態で検索を促す表示が出る',
       // 区別できないため、待ち受け専用アセットの src で狙い撃つ（lead round4 確定パス）。
       const idleImage = page.locator('main img[src="/images/hero-idle.webp"]')
       await expect(idleImage).toBeVisible()
+      // セルフレビュー指摘3対応: `toBeVisible()` はレイアウト上の存在しか見ないため、
+      // 画像バイト列が壊れていても検出できない。実際にデコードできたことを確認する。
+      await expect
+        .poll(() => idleImage.evaluate((el: HTMLImageElement) => el.naturalWidth))
+        .toBeGreaterThan(0)
 
       await page.getByRole('searchbox', { name: ja.home.searchLabel }).fill('react')
       await page.getByRole('button', { name: ja.home.searchSubmit }).click()

@@ -21,7 +21,7 @@ export type SiteHeaderProps = {
  * （`justify-between`）を置く。「言語設定は頻繁に触れないので画面右上へ」というユーザー指示
  * （Issue #347）を満たす配置（`content/discussions/ui_image_assets_20260821` lead 裁定）。
  *
- * ロゴ画像はまだ生成されていない前提でパスのみ確定させる（`asset_builder` が並行生成中）。
+ * ロゴ画像は `public/images/logo.webp` として生成・配置済み（Issue #347・`tools/ui-assets/`）。
  * `alt=""` 単独（`aria-hidden` は重ねない・隣接するタイトルテキストで意味を伝えるため装飾扱い）。
  * `next/image` は使わない（INF-11）。
  *

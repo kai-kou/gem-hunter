@@ -41,18 +41,10 @@ export default async function NotFound() {
         locale={locale}
         currentPath={currentPath}
         title={messages.home.title}
-        localeSwitcherLabels={{
-          navLabel: messages.common.localeSwitcher.navLabel,
-          localeNames: messages.common.localeSwitcher.localeNames,
-          switchedAnnouncement: messages.common.localeSwitcher.switchedAnnouncement,
-        }}
+        localeSwitcherLabels={messages.common.localeSwitcher}
         isLoggedIn={isLoggedIn}
         showAuthLink={showAuthLink}
-        authLabels={
-          showAuthLink
-            ? { login: messages.common.auth.login, logout: messages.common.auth.logout }
-            : undefined
-        }
+        authLabels={showAuthLink ? messages.common.auth : undefined}
       />
       <main className="mx-auto w-full max-w-3xl px-4 py-10">
         {/* `generateMetadata` だけではハイドレーション後に title が巻き戻る（下記コメント参照）ため、
