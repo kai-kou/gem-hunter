@@ -5,7 +5,8 @@
       "localeNames": {
         "ja": "日本語",
         "en": "English"
-      }
+      },
+      "switchedAnnouncement": "言語を日本語に切り替えました"
     },
     "auth": {
       "login": "GitHubでログイン",

@@ -7,6 +7,7 @@ import { LocaleSwitcher } from './locale-switcher'
 const labels = {
   navLabel: '言語切替',
   localeNames: { ja: '日本語', en: 'English' },
+  switchedAnnouncement: '言語を日本語に切り替えました',
 }
 
 describe('LocaleSwitcher', () => {
@@ -49,11 +50,24 @@ describe('LocaleSwitcher', () => {
       <LocaleSwitcher
         currentLocale={locale('en')}
         currentPath="/en"
-        labels={{ navLabel: 'Language', localeNames: { ja: '日本語', en: 'English' } }}
+        labels={{
+          navLabel: 'Language',
+          localeNames: { ja: '日本語', en: 'English' },
+          switchedAnnouncement: 'Switched to English.',
+        }}
       />,
     )
 
     expect(screen.getByRole('link', { name: '日本語' })).toBeVisible()
     expect(screen.getByRole('link', { name: 'English' })).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('<nav> の末尾に LocaleSwitchAnnouncer（role="status"）を 1 つ持つ', () => {
+    render(
+      <LocaleSwitcher currentLocale={locale('ja')} currentPath="/ja" labels={labels} />,
+    )
+
+    const nav = screen.getByRole('navigation', { name: '言語切替' })
+    expect(nav.querySelectorAll('[role="status"]')).toHaveLength(1)
   })
 })
