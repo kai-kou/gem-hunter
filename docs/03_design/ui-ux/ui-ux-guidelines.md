@@ -514,6 +514,7 @@ next.config: images.remotePatterns に
 |---|---|
 | [UI/UX リサーチ](./20260817-ui-ux-research.md) | 本書の根拠・出典・**未確認項目の一覧** |
 | [ADR 0001: UI スタック](../../adr/0001-ui-stack.md) | `TR-5` の決定と Radix を選んだ理由 |
+| [ADR 0015: AI 生成ビジュアルアセット](../../adr/0015-ai-generated-visual-assets.md) | §7.4 の装飾イラスト方針（文字非焼き込み・ロケール非依存 1 枚・透過 WebP 配信）を決めた理由 |
 | [`prd.md`](../../02_requirements/prd.md) | 要件・受け入れ条件の正本 |
 | [`user-story-map.md`](../../02_requirements/user-story-map.md) | `E-9`（配色）/ `E-13`（a11y）/ `E-15`（キーボード）/ `E-17`（alt）の実装単位 |
 | `docs/rules/sprint-development-rules.md` | `SD-4` の読解対象。本書はスプリント着手時に読む |
