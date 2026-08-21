@@ -14,10 +14,10 @@ import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
 import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
-import { LocaleSwitcher } from '@/src/ui/locale-switcher'
 import { ReadmeSection, ReadmeStatusText } from '@/src/ui/readme-section'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
 import { SetDocumentTitle } from '@/src/ui/set-document-title'
+import { SiteHeader } from '@/src/ui/site-header'
 
 /**
  * 独立 URL の詳細ページ（AC-4 / US-16 / US-17 / FR-5 / FR-6）。
@@ -68,6 +68,24 @@ export default async function RepositoryDetailPage({
   const currentPath = buildSearchUrl(detailPath, searchState)
 
   const accessToken = await getSessionAccessToken()
+  const showAuthLink = isAuthConfigured()
+  /**
+   * 一覧・詳細・404 共通のヘッダー（`src/ui/site-header.tsx`・Issue #347）。
+   * 成功パス・エラー分岐の 2 つの `return` から参照するため、ここで 1 回だけ組み立てる
+   * （重複コード最小化・whiteboard round3 frontend_arch 決定）。
+   */
+  const header = (
+    <SiteHeader
+      locale={locale}
+      currentPath={currentPath}
+      title={messages.home.title}
+      localeSwitcherLabels={messages.common.localeSwitcher}
+      isLoggedIn={accessToken !== null}
+      showAuthLink={showAuthLink}
+      authLabels={showAuthLink ? messages.common.auth : undefined}
+    />
+  )
+
   let repository
   try {
     repository = await getRepositoryDetailUseCase(accessToken)({ owner, repo })
@@ -77,51 +95,43 @@ export default async function RepositoryDetailPage({
       //    （NFR-9 / prd.md §7 / Issue #107）。
       const kind: ErrorKind = error.kind
       const rateLimit = error instanceof RateLimitExceededError ? error : undefined
-      const showAuthLink = isAuthConfigured()
       return (
-        <main className="mx-auto w-full max-w-3xl px-4 py-10">
-          {/*
-            🔴 エラー時も見出し・言語切替を失わない（`NFR-12` / `US-26`）。これらを落とすと
-            見出しが 1 つも無い文書になり、スクリーンリーダーの見出しナビゲーションで到達できない。
-            また `role="alert"` は「動的な挿入・変化」で発火する仕様のため、初期 HTML に最初から
-            存在するこのケースでは読み上げられない。通常の見出し + 本文として構成し、
-            `role="alert"` に依存せずに内容が伝わるようにする。
-            見出しは対象リポジトリ名（成功パスの `RepositoryDetail` と同じ粒度）で、
-            `messages/*.json` へキーを増やさずに構成できる。
-          */}
-          <LocaleSwitcher
-            currentLocale={locale}
-            currentPath={currentPath}
-            labels={{
-              navLabel: messages.common.localeSwitcher.navLabel,
-              localeNames: messages.common.localeSwitcher.localeNames,
-            }}
-          />
-          {/* 🔴 h1 は共有ヘッダー（layout.tsx）のツールタイトルが持つため h2 へ降格
-              （Issue #334 F-1/F-2・whiteboard round3 lead 裁定）。 */}
-          <h2 className="mb-4 text-2xl font-semibold">{`${owner}/${repo}`}</h2>
-          <ErrorNotice
-            presentation={toErrorPresentation(kind, messages, {
-              locale,
-              retryAfter: rateLimit?.retryAfter,
-              retryAfterSeconds: rateLimit?.retryAfterSeconds,
-              isLoggedIn: accessToken !== null,
-            })}
-            // 再試行手段（US-24）: いま失敗した詳細 URL をそのまま開き直す。
-            retryHref={currentPath}
-            retryLabel={messages.common.retry}
-            loginHref={showAuthLink ? '/api/auth/login' : undefined}
-            loginLabel={showAuthLink ? messages.common.auth.login : undefined}
-          />
-          {/* 失敗しても行き止まりにしない（一覧へ戻れる・not-found.tsx と同じ導線）。 */}
-          <div className="mt-6">
-            <BackLink
-              locale={locale}
-              labels={{ backLink: messages.detail.backLink }}
-              href={backHref}
+        <>
+          {header}
+          <main className="mx-auto w-full max-w-3xl px-4 py-10">
+            {/*
+              🔴 エラー時も見出しを失わない（`NFR-12` / `US-26`）。見出しが 1 つも無い文書になると
+              スクリーンリーダーの見出しナビゲーションで到達できない。また `role="alert"` は
+              「動的な挿入・変化」で発火する仕様のため、初期 HTML に最初から存在するこのケースでは
+              読み上げられない。通常の見出し + 本文として構成し、`role="alert"` に依存せずに
+              内容が伝わるようにする。見出しは対象リポジトリ名（成功パスの `RepositoryDetail` と
+              同じ粒度）で、`messages/*.json` へキーを増やさずに構成できる。
+              言語切替・ログイン導線は `header`（`SiteHeader`・上で共通組み立て）が担う。
+            */}
+            <h2 className="mb-4 text-2xl font-semibold">{`${owner}/${repo}`}</h2>
+            <ErrorNotice
+              presentation={toErrorPresentation(kind, messages, {
+                locale,
+                retryAfter: rateLimit?.retryAfter,
+                retryAfterSeconds: rateLimit?.retryAfterSeconds,
+                isLoggedIn: accessToken !== null,
+              })}
+              // 再試行手段（US-24）: いま失敗した詳細 URL をそのまま開き直す。
+              retryHref={currentPath}
+              retryLabel={messages.common.retry}
+              loginHref={showAuthLink ? '/api/auth/login' : undefined}
+              loginLabel={showAuthLink ? messages.common.auth.login : undefined}
             />
-          </div>
-        </main>
+            {/* 失敗しても行き止まりにしない（一覧へ戻れる・not-found.tsx と同じ導線）。 */}
+            <div className="mt-6">
+              <BackLink
+                locale={locale}
+                labels={{ backLink: messages.detail.backLink }}
+                href={backHref}
+              />
+            </div>
+          </main>
+        </>
       )
     }
     throw error
@@ -143,83 +153,78 @@ export default async function RepositoryDetailPage({
   void readmePromise.catch(() => undefined)
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-10">
-      {/* `generateMetadata`（下記）は URL セグメントから SSR 時点の <title> を出すが、
-          ハイドレーション後に document.title が親レイアウトの既定値へ巻き戻らないことまでは
-          保証しないため、クライアント側でも確実に設定する（not-found.tsx / PR #127 と同じパターン）。
-          fullName は API 由来の正規表記（owner の大文字小文字を含む）で generateMetadata より正確。 */}
-      <SetDocumentTitle title={repository.fullName} />
-      <LocaleSwitcher
-        currentLocale={locale}
-        currentPath={currentPath}
-        labels={{
-          navLabel: messages.common.localeSwitcher.navLabel,
-          localeNames: messages.common.localeSwitcher.localeNames,
-        }}
-      />
-      <RepositoryDetail
-        repository={repository}
-        labels={{
-          backLink: messages.detail.backLink,
-          language: messages.detail.language,
-          starCount: messages.detail.starCount,
-          watcherCount: messages.detail.watcherCount,
-          forkCount: messages.detail.forkCount,
-          openIssueCount: messages.detail.openIssueCount,
-          updatedAt: messages.detail.updatedAt,
-          opensInNewTab: messages.detail.opensInNewTab,
-        }}
-        locale={locale}
-        backHref={backHref}
-      />
+    <>
+      {header}
+      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+        {/* `generateMetadata`（下記）は URL セグメントから SSR 時点の <title> を出すが、
+            ハイドレーション後に document.title が親レイアウトの既定値へ巻き戻らないことまでは
+            保証しないため、クライアント側でも確実に設定する（not-found.tsx / PR #127 と同じパターン）。
+            fullName は API 由来の正規表記（owner の大文字小文字を含む）で generateMetadata より正確。 */}
+        <SetDocumentTitle title={repository.fullName} />
+        <RepositoryDetail
+          repository={repository}
+          labels={{
+            backLink: messages.detail.backLink,
+            language: messages.detail.language,
+            starCount: messages.detail.starCount,
+            watcherCount: messages.detail.watcherCount,
+            forkCount: messages.detail.forkCount,
+            openIssueCount: messages.detail.openIssueCount,
+            updatedAt: messages.detail.updatedAt,
+            opensInNewTab: messages.detail.opensInNewTab,
+          }}
+          locale={locale}
+          backHref={backHref}
+        />
 
-      {/*
-        Issue #334 F-4: README（`ui-ux-guidelines.md` §7.2 と同型のライブリージョン）。
-        🔴 `<Suspense>` は必ず `notFound()` の後にのみ置く（`AC-5` の同期 404 判定を壊さない）。
-        `<Suspense>` の fallback だけでは後追い挿入が支援技術へ伝わらないため、
-        `role="status" aria-live="polite"` の sr-only 常設要素（内側に `<Suspense>`）で
-        通知と視覚表示を分離する
-        （README 到着時にフォーカスは移動しない・ユーザー操作起因でない後追い描画のため）。
-      */}
-      <section id="readme-status" role="status" aria-live="polite" className="sr-only">
         {/*
-          🔴 ライブリージョンは **要素として常設** し、`<Suspense>` は **その内側** に置く
-          （`ui-ux-guidelines.md` §7.2「初期 DOM に常設し中身を書き換える。要素ごと動的挿入しない」）。
-          fallback（読み込み中）→ `ReadmeStatusText`（完了 / 取得できず）と同じリージョンの中身が
-          入れ替わることで遷移が支援技術へ通知される。トップページの `#search-status` と同型。
+          Issue #334 F-4: README（`ui-ux-guidelines.md` §7.2 と同型のライブリージョン）。
+          🔴 `<Suspense>` は必ず `notFound()` の後にのみ置く（`AC-5` の同期 404 判定を壊さない）。
+          `<Suspense>` の fallback だけでは後追い挿入が支援技術へ伝わらないため、
+          `role="status" aria-live="polite"` の sr-only 常設要素（内側に `<Suspense>`）で
+          通知と視覚表示を分離する
+          （README 到着時にフォーカスは移動しない・ユーザー操作起因でない後追い描画のため）。
         */}
-        <Suspense fallback={messages.detail.readme.loading}>
-          <ReadmeStatusText
+        <section id="readme-status" role="status" aria-live="polite" className="sr-only">
+          {/*
+            🔴 ライブリージョンは **要素として常設** し、`<Suspense>` は **その内側** に置く
+            （`ui-ux-guidelines.md` §7.2「初期 DOM に常設し中身を書き換える。要素ごと動的挿入しない」）。
+            fallback（読み込み中）→ `ReadmeStatusText`（完了 / 取得できず）と同じリージョンの中身が
+            入れ替わることで遷移が支援技術へ通知される。トップページの `#search-status` と同型。
+          */}
+          <Suspense fallback={messages.detail.readme.loading}>
+            <ReadmeStatusText
+              readmePromise={readmePromise}
+              labels={{
+                loaded: messages.detail.readme.loaded,
+                unavailable: messages.detail.readme.unavailable,
+              }}
+            />
+          </Suspense>
+        </section>
+        <Suspense
+          fallback={
+            <div aria-hidden="true" className="mt-8 animate-pulse space-y-2">
+              <div className="bg-muted h-5 w-24 rounded" />
+              <div className="bg-muted h-4 w-full rounded" />
+              <div className="bg-muted h-4 w-full rounded" />
+              <div className="bg-muted h-4 w-2/3 rounded" />
+            </div>
+          }
+        >
+          <ReadmeSection
             readmePromise={readmePromise}
+            htmlUrl={repository.htmlUrl}
             labels={{
-              loaded: messages.detail.readme.loaded,
+              heading: messages.detail.readme.heading,
               unavailable: messages.detail.readme.unavailable,
+              viewOnGithub: messages.detail.readme.viewOnGithub,
+              opensInNewTab: messages.detail.opensInNewTab,
             }}
           />
         </Suspense>
-      </section>
-      <Suspense
-        fallback={
-          <div aria-hidden="true" className="mt-8 animate-pulse space-y-2">
-            <div className="bg-muted h-5 w-24 rounded" />
-            <div className="bg-muted h-4 w-full rounded" />
-            <div className="bg-muted h-4 w-full rounded" />
-            <div className="bg-muted h-4 w-2/3 rounded" />
-          </div>
-        }
-      >
-        <ReadmeSection
-          readmePromise={readmePromise}
-          htmlUrl={repository.htmlUrl}
-          labels={{
-            heading: messages.detail.readme.heading,
-            unavailable: messages.detail.readme.unavailable,
-            viewOnGithub: messages.detail.readme.viewOnGithub,
-            opensInNewTab: messages.detail.opensInNewTab,
-          }}
-        />
-      </Suspense>
-    </main>
+      </main>
+    </>
   )
 }
 

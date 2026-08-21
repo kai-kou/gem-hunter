@@ -27,11 +27,11 @@ import { DailyDigest } from '@/src/ui/daily-digest'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { LoadingIndicator } from '@/src/ui/loading-indicator'
-import { LocaleSwitcher } from '@/src/ui/locale-switcher'
 import { Pagination } from '@/src/ui/pagination'
 import { PerPagePicker } from '@/src/ui/per-page-picker'
 import { RepositoryList } from '@/src/ui/repository-list'
 import { SearchForm } from '@/src/ui/search-form'
+import { SiteHeader } from '@/src/ui/site-header'
 import { SortPicker } from '@/src/ui/sort-picker'
 
 /**
@@ -282,18 +282,32 @@ export default async function LocaleHome({
     ? null
     : await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT }).catch(() => null)
 
+  const showAuthLink = isAuthConfigured()
+
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-10">
-      <LocaleSwitcher
-        currentLocale={locale}
+    <>
+      <SiteHeader
+        locale={locale}
         currentPath={currentPath}
-        labels={{
-          navLabel: messages.common.localeSwitcher.navLabel,
-          localeNames: messages.common.localeSwitcher.localeNames,
-        }}
+        title={messages.home.title}
+        localeSwitcherLabels={messages.common.localeSwitcher}
+        isLoggedIn={accessToken !== null}
+        showAuthLink={showAuthLink}
+        authLabels={showAuthLink ? messages.common.auth : undefined}
       />
-      {/* 🔴 h1（ツールタイトル）は共有ヘッダー（layout.tsx）へ移設済み（Issue #334 F-1/F-2）。
-          このページに残すと h1 が 2 つになる（`e2e/sp-9-loading-empty.spec.ts` が検知）。 */}
+      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      {hasKeyword ? null : (
+        // eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image の最適化は使わない
+        <img
+          src="/images/hero-idle.webp"
+          alt=""
+          width={640}
+          height={640}
+          loading="eager"
+          decoding="async"
+          className="mx-auto mb-4 h-auto w-full max-w-xs"
+        />
+      )}
       <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
 
       <SearchForm
@@ -425,7 +439,7 @@ export default async function LocaleHome({
               locale={locale}
               messages={messages}
               isLoggedIn={accessToken !== null}
-              showAuthLink={isAuthConfigured()}
+              showAuthLink={showAuthLink}
             />
           </Suspense>
         ) : null}
@@ -440,6 +454,7 @@ export default async function LocaleHome({
       {/* 🔴 未入力時は `results-heading` が存在しないため描画しない（無条件に置くと
           `getElementById` が null を返し、フォーカスが body に残ったまま無言で失敗する）。 */}
       {hasKeyword ? <FocusOnNavigate watch={currentPath} targetId="results-heading" /> : null}
-    </main>
+      </main>
+    </>
   )
 }

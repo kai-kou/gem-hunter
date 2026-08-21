@@ -113,6 +113,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 | [0012](./docs/adr/0012-optional-github-oauth.md) | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする |
 | [0013](./docs/adr/0013-public-operation-under-github-terms.md) | 第三者へ公開して運用する際の GitHub 利用規約上の立場を確定する |
 | [0014](./docs/adr/0014-zero-query-daily-digest.md) | キーワード非依存の発見面を日次の有限ダイジェストとして実装する |
+| [0015](./docs/adr/0015-ai-generated-visual-assets.md) | AI 生成ビジュアルアセットを透過 WebP のまま配信する |
 
 ## ライセンスと権利表示
 

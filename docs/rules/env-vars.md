@@ -180,6 +180,7 @@ gh variable delete SLACK_BOT_TOKEN -R kai-kou/gem-hunter
 | `SLACK_CODE_CHANNEL_ID` | コード関連通知専用チャンネルID（将来予約。現時点では `slack_notify.py` に実装なし。未設定でも動作に影響なし） | 任意 | `C0WWWWWWWWW` |
 | `SLACK_MENTION_USER_ID` | `approval` / `waiting` / `publish` 通知でメンションするユーザーID（未設定時はメンションなし） | △ | `U0XXXXXXXXX` |
 | `RATE_LIMIT_SALT` | Cloudflare Rate Limiting の key を HMAC-SHA256 化する salt（`src/infrastructure/platform/rate-limit-key.ts`）。`wrangler versions secret put RATE_LIMIT_SALT` で Worker へ投入（[`cloudflare-infrastructure.md`](../03_design/infrastructure/cloudflare-infrastructure.md) §7.2.1）。**未設定時はレート制限判定そのものをスキップする（フェイルオープン）** — 生 IP へのフォールバックはしない | 推奨 | `<32文字以上のランダム値>` |
+| `SITE_URL` | サイトの正準オリジン（`src/composition/site-url.ts`）。`app/[locale]/layout.tsx` の `metadataBase` に使い、`opengraph-image` 等の相対 URL を絶対 URL へ解決する。🔴 **ビルド時変数**（`next build`/`opennextjs-cloudflare build` を実行するシェルの `process.env` を読む）。`export const metadata` は静的オブジェクトのためビルド時に値が焼き込まれ、`wrangler versions upload --var` や Cloudflare の Worker 環境変数（ランタイムバインディング）を後から変えても反映されない（実測で確認済み）。**未設定時は本番 URL（`https://gem-hunter.kinamocchi-tech.workers.dev`）へフォールバックする** ため通常は設定不要。プレビュー環境（`pr-N` エイリアス）で og:image を自分のプレビュー URL に向けたい場合は、ビルドコマンドの前に `SITE_URL=https://pr-N-gem-hunter.kinamocchi-tech.workers.dev` を export してからビルドする（既定では本番ドメインを指す・Issue #347 lead 裁定） | 任意 | `https://gem-hunter.kinamocchi-tech.workers.dev` |
 
 本ベースが標準で使うのは上記の `SLACK_*` だけ。**外部 API のトークン等、プロジェクト固有の変数は
 各プロジェクトが本表に追記する**（ベース側には一切ハードコードしない）。`setup_github_variables.py` も

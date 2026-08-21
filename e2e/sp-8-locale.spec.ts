@@ -28,6 +28,12 @@ test('SP-8: 言語を英語に切り替えると URL のロケールと UI 文�
     await expect(page.getByRole('button', { name: '検索' })).toBeVisible()
   })
 
+  await test.step('0. 言語切替 UI は header 要素の中にある（Issue #347: ヘッダー共通化）', async () => {
+    await expect(
+      page.locator('header').getByRole('navigation', { name: '言語切替' }),
+    ).toBeVisible()
+  })
+
   await test.step('1. 言語切替 UI で English を選ぶ → URL のロケールが /en に変わる', async () => {
     await page
       .getByRole('navigation', { name: '言語切替' })
@@ -35,6 +41,12 @@ test('SP-8: 言語を英語に切り替えると URL のロケールと UI 文�
       .click()
 
     await expect(page).toHaveURL(/\/en(\?.*)?$/)
+  })
+
+  await test.step('1.5. 切替直後に role="status" のアナウンス文言が更新される（Issue #347: ルートアナウンサーの沈黙是正）', async () => {
+    await expect(
+      page.getByRole('navigation', { name: 'Language' }).getByRole('status'),
+    ).toHaveText('Switched to English.')
   })
 
   await test.step('2. UI 文言が英語になる', async () => {
@@ -62,3 +74,35 @@ test('SP-8: 言語を英語に切り替えると URL のロケールと UI 文�
     await expect(page.getByRole('button', { name: '検索' })).toBeVisible()
   })
 })
+
+/**
+ * 回帰防止（#347 追加タスク・セルフレビュー CRITICAL 指摘）: ヘッダーが `layout.tsx` ではなく
+ * 各 `page.tsx` / `not-found.tsx` の配下にあるため、`LocaleSwitchAnnouncer` はロケールを跨がない
+ * 通常のクライアント遷移（一覧→詳細等・このアプリの最頻出操作）でも remount される。
+ * 「マウント回数」だけで判定する実装だと、ロケールが変わっていないのに毎回
+ * 「言語を切り替えました」を読み上げてしまう誤発火が起きる（`src/ui/locale-switch-announcer.tsx`
+ * の判定基準を「直前の currentLocale と異なるか」に修正した理由）。
+ */
+test('SP-8 回帰: ロケールを変えずに一覧→詳細へ遷移してもロケール切替のアナウンスは発火しない', async ({
+  page,
+}) => {
+  await test.step('前提: 日本語 UI で検索し、結果一覧が出ている', async () => {
+    await page.goto('/ja')
+    await searchFor(page, 'react')
+
+    await expect(page.getByRole('link', { name: 'octostub/octo-widgets' })).toBeVisible()
+  })
+
+  await test.step('一覧 → 詳細へロケールを変えずにクライアント遷移する', async () => {
+    await page.getByRole('link', { name: 'octostub/octo-widgets' }).click()
+
+    await expect(page).toHaveURL(/\/ja\/repos\/octostub\/octo-widgets(\?.*)?$/)
+  })
+
+  await test.step('言語切替のアナウンス領域（role="status"）は空のまま（誤発火しない）', async () => {
+    await expect(
+      page.locator('header').getByRole('navigation', { name: '言語切替' }).getByRole('status'),
+    ).toHaveText('')
+  })
+})
+

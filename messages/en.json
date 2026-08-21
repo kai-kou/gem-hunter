@@ -5,7 +5,8 @@
       "localeNames": {
         "ja": "日本語",
         "en": "English"
-      }
+      },
+      "switchedAnnouncement": "Switched to English."
     },
     "auth": {
       "login": "Log in with GitHub",

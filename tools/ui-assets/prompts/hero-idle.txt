@@ -1,0 +1,32 @@
+Flat vector illustration, digital spot-illustration / icon style, isolated on a fully
+transparent background (PNG with alpha channel). Bold, perfectly uniform-width outlines in a
+neutral medium gray (a soft warm-neutral mid-gray, never pure black). Fill palette strictly
+limited to three flat colors only: the same neutral medium gray (used for outlines and for
+secondary environmental shapes such as pebbles, dust, or props), a single flat pale
+off-white/cream for minor secondary highlight shapes, and one accent color reserved
+exclusively for the rough gem motif itself — a bright, clean, saturated cobalt/sapphire blue
+(cooler than violet, vivid but not neon). Absolutely no gradients, no drop shadows, no
+photorealistic shading, no glossy specular highlights, no texture, no grain, no bevels, no
+soft blur. Any sense of depth on the gem comes only from splitting it into a few large flat
+facet regions using two flat tones of the same blue (one slightly darker flat blue, one
+slightly lighter flat blue — both perfectly flat solid fills, never blended into each other).
+The rough/uncut gem must always be drawn as an asymmetric, irregular, jagged-edged polygon
+with unevenly sized facets — deliberately NOT a symmetric, regularly-faceted "perfect
+diamond" shape — so its silhouette alone reads as "raw and uncut" rather than "polished and
+famous." No text, no letters, no numbers, no watermark, no logo anywhere in the image. No
+human figures, no faces, no mascots, no hands unless explicitly described below. Clean
+geometric reduction, generous negative space, simple bold silhouettes that stay legible even
+at very small sizes. Linework weight, palette, and level of reduction must be identical to
+the rest of this illustration set, as if made by the same illustrator for the same product.
+
+Subject: a hand-held magnifying glass, tilted at a gentle angle, hovering above a loose
+cluster of six to eight small round plain pebbles rendered as simple flat gray circles and
+ovals of varying sizes, scattered casually together. Nestled among the plain gray pebbles,
+partially under the magnifying glass's lens, is one small rough-cut gem (the same asymmetric
+polygon and two-tone flat blue described above) that clearly stands out from its plain gray
+neighbors. A few short, thin, flat-colored straight lines radiate outward from the gem (no
+glow, no gradient halo — just simple flat short line strokes) to suggest it is quietly
+catching attention despite its small size among the crowd of plain pebbles. Composition:
+gem-and-pebbles cluster occupies the upper two-thirds of the frame, roughly centered, with
+the lower third of the canvas left empty and undecorated so a search input field can be
+placed below it.

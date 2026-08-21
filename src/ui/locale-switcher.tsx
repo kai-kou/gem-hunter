@@ -1,11 +1,14 @@
 import Link from 'next/link'
 import { locale as toLocale, LOCALES, type Locale } from '../domain/model/locale'
 import { buttonVariants } from './components/button'
+import { LocaleSwitchAnnouncer } from './locale-switch-announcer'
 import { buildLocaleUrl } from './url/build-locale-url'
 
-type LocaleSwitcherLabels = {
+export type LocaleSwitcherLabels = {
   navLabel: string
   localeNames: Record<(typeof LOCALES)[number], string>
+  /** 切替完了を支援技術へ伝える文言（切替後の言語自身での固定文・`LocaleSwitchAnnouncer` 用）。 */
+  switchedAnnouncement: string
 }
 
 type LocaleSwitcherProps = {
@@ -51,6 +54,10 @@ export function LocaleSwitcher({ currentLocale, currentPath, labels }: LocaleSwi
           </Link>
         )
       })}
+      <LocaleSwitchAnnouncer
+        currentLocale={currentLocale}
+        announcedLabel={labels.switchedAnnouncement}
+      />
     </nav>
   )
 }

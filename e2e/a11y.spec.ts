@@ -72,4 +72,25 @@ test.describe('NFR-26: axe 自動アクセシビリティ検査', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
     await expect(page.getByRole('heading', { level: 1, name: 'gem-hunter' })).toBeVisible()
   })
+
+  /**
+   * Issue #347 T-5: 未検索状態と 404 は axe 未カバーだった（a11y_i18n round3 §5「新規 axe スキャン
+   * 2 本」）。新規の装飾画像（`alt=""`）が axe の `image-alt` 等に抵触しないことをここで担保する。
+   */
+  test('未検索状態（/ja）に serious/critical の違反がない', async ({ page }) => {
+    await page.goto('/ja')
+
+    const results = await createAxeBuilder(page).analyze()
+    const violations = seriousOrCritical(results.violations)
+    expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
+  })
+
+  test('404 画面に serious/critical の違反がない', async ({ page }) => {
+    const response = await page.goto('/ja/repos/does-not-exist-owner/does-not-exist-repo')
+    expect(response?.status()).toBe(404)
+
+    const results = await createAxeBuilder(page).analyze()
+    const violations = seriousOrCritical(results.violations)
+    expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
+  })
 })

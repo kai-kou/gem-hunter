@@ -24,14 +24,17 @@ def estimate_cost(usage: dict) -> float:
 
 
 def generate(prompt: str, out_path: str, size: str, quality: str, api_key: str,
-             timeout: int = 900) -> dict:
-    body = json.dumps({
+             timeout: int = 900, background: str | None = None) -> dict:
+    payload_body = {
         "model": "gpt-image-2",
         "prompt": prompt,
         "size": size,
         "quality": quality,
         "n": 1,
-    }).encode("utf-8")
+    }
+    if background:
+        payload_body["background"] = background
+    body = json.dumps(payload_body).encode("utf-8")
     req = urllib.request.Request(
         API, data=body,
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -57,6 +60,9 @@ def main() -> int:
     ap.add_argument("--quality", default="medium", choices=["low", "medium", "high"])
     ap.add_argument("--timeout", type=int, default=900,
                     help="1 枚あたりの応答待ち上限（秒）。既定 900")
+    ap.add_argument("--background", default=None, choices=["transparent", "opaque"],
+                    help="未指定なら background パラメータを送らない（既定挙動を維持）。"
+                         "透過 PNG が必要なときのみ transparent を指定する")
     args = ap.parse_args()
 
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -68,7 +74,8 @@ def main() -> int:
         with open(args.prompt_file, encoding="utf-8") as fh:
             prompt = fh.read()
         print(json.dumps(
-            generate(prompt, args.out, args.size, args.quality, api_key, args.timeout),
+            generate(prompt, args.out, args.size, args.quality, api_key, args.timeout,
+                     args.background),
             ensure_ascii=False))
     except urllib.error.HTTPError as exc:
         print(f"HTTPError {exc.code}: {exc.read().decode('utf-8')[:500]}", file=sys.stderr)
