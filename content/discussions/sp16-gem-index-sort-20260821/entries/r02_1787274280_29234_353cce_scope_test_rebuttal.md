@@ -11,7 +11,7 @@ ts: 2026-08-21T10:04:39+09:00
 
 **3 レンズ案を合算しても `sp:8`（グレーゾーン・超過リスク高）の判定は変わらない。** ただし内訳が round1 時点の想定から変わった。要点:
 
-- `domain_arch` の「既存 `RepositoryQueryPort.search()` をユースケース内で 10 回ループする」設計は、**キャッシュ・single-flight を無改修で流用できる**ため、`rate_cache` が提案した新キャッシュ名前空間（`search-raw:`）+ 専用 in-flight マップの新設分がまるごと不要になる。これは大きな削減。
+- `domain_arch` の「既存 `RepositoryQueryPort.search()` をユースケース内で 10 回ループする」設計は、**キャッシュ・single-flight を無改修で流用できる** ため、`rate_cache` が提案した新キャッシュ名前空間（`search-raw:`）+ 専用 in-flight マップの新設分がまるごと不要になる。これは大きな削減。
 - 一方で `rate_cache` の `enforceSearchRateLimit` 欠落指摘は **別 Issue に逃がせない**（後述 §2）。小さいが確実な追加。
 - `ux_paging` の反論（バッジに `dependentCount` も要る）は **認める**。round1 で「カード表示は最小限（gemIndex 数値のみ）を `SP-16a` に残し、リッチ化は `SP-16b`」としていたが、これは操作レビュー手順 3 の文言（「被依存数と star の乖離がわかる」）を満たさない。ただし `daily-digest.tsx` の既存パターン流用のため、想定していたほど高くつかない。
 
@@ -44,7 +44,7 @@ export function searchRepositoriesUseCase(accessToken?: string | null): SearchRe
 
 ---
 
-## 2. `rate_cache` の争点6（`enforceSearchRateLimit` 欠落）: **`SP-16a` のスコープ内**と判定する（別 Issue にしない）
+## 2. `rate_cache` の争点6（`enforceSearchRateLimit` 欠落）: **`SP-16a` のスコープ内** と判定する（別 Issue にしない）
 
 `CLAUDE.md` `core-principles.md` CP-1 の判定基準:
 
@@ -54,18 +54,18 @@ export function searchRepositoriesUseCase(accessToken?: string | null): SearchRe
 
 **ただしフルスコープの `rate_cache` 提案（新スロット名 + `wrangler.jsonc` エントリ追加 + LRU 上限設計）を全部 `SP-16a` に含める必要はない**、と切り分ける:
 
-- **`SP-16a` に含める（必須・小規模）**: `enforceSearchRateLimit` に `sort`（または内部コスト）を渡せるようにし、`sort === 'gemIndex'` のときは **別スロット・低い上限**で消費する。`app/api/search/route.ts` / `app/[locale]/page.tsx` で `sort` を早期パースする変更、`wrangler.jsonc` へ 1 エントリ追加。いずれも変更箇所は数ファイル・数行単位で、`rate-limit.ts` の既存構造（`WorkersRateLimit.consume(key)`）を壊さない加算的変更。
+- **`SP-16a` に含める（必須・小規模）**: `enforceSearchRateLimit` に `sort`（または内部コスト）を渡せるようにし、`sort === 'gemIndex'` のときは **別スロット・低い上限** で消費する。`app/api/search/route.ts` / `app/[locale]/page.tsx` で `sort` を早期パースする変更、`wrangler.jsonc` へ 1 エントリ追加。いずれも変更箇所は数ファイル・数行単位で、`rate-limit.ts` の既存構造（`WorkersRateLimit.consume(key)`）を壊さない加算的変更。
 - **別 Issue へ切り出す（本スプリント外）**: `InMemoryCache` の LRU 上限・メモリ使用量の全体設計。これは `SP-16` 固有の壊れではなく、`SP-5`（キャッシュ導入時）から存在する **既存の設計前提**（軽量な 1 ページ分のみを想定）に対する一般的な指摘であり、`gemIndex` 実装が引き金にはなるが「このタスクで変更したコードパス」そのものではない（境界は 上記 CP-1 の「自分の変更が作ったか」で判定）。1,000 件 × 想定同時キーワード数程度なら実測ベースでは即座に破綻する規模ではなく（`rate_cache` 自身も「要確認」止まりで実測数値を出していない）、`SP-16` の完了条件には含めない。
 
 ---
 
 ## 3. `ux_paging` の反論（バッジに `dependentCount` が要る）を認め、分割案を修正する
 
-`ux_paging` の指摘は正しい: 操作レビュー手順 3 は「**被依存数と star の乖離**がわかる」と明記しており、`gemIndex` の数値 1 個だけの表示では「乖離」（2 項目の比較）を説明できない。round1 の `SP-16a`（最小カード＝ Index 数値のみ）はこの手順を満たさない。**この点は撤回する。**
+`ux_paging` の指摘は正しい: 操作レビュー手順 3 は「**被依存数と star の乖離** がわかる」と明記しており、`gemIndex` の数値 1 個だけの表示では「乖離」（2 項目の比較）を説明できない。round1 の `SP-16a`（最小カード＝ Index 数値のみ）はこの手順を満たさない。**この点は撤回する。**
 
 **分割案の修正**（`C-1`〜`C-5` を単独スプリントで満たす必要があるため、境界を引き直す）:
 
-**`SP-16a`（1 本目・修正版）**: 全ページ取得（内部ループ・`domain_arch` 案採用・§1）+ join usecase + `gemIndex` ソートオプション + `enforceSearchRateLimit` の sort 別スロット化（§2）+ **`RepositorySummary` への `gemIndex?` / `dependentCount?` optional フィールド追加 + `daily-digest.tsx` のバッジパターンを流用したカード表示**（`ux_paging` 提案どおり。**新規デザインではなく既存パターンの再配線**なので当初懸念していたほど重くない）+ 対応する単体テスト + E2E（操作レビュー手順 1〜6 を **フルカバー**、手順 3 も含む）。
+**`SP-16a`（1 本目・修正版）**: 全ページ取得（内部ループ・`domain_arch` 案採用・§1）+ join usecase + `gemIndex` ソートオプション + `enforceSearchRateLimit` の sort 別スロット化（§2）+ **`RepositorySummary` への `gemIndex?` / `dependentCount?` optional フィールド追加 + `daily-digest.tsx` のバッジパターンを流用したカード表示**（`ux_paging` 提案どおり。**新規デザインではなく既存パターンの再配線** なので当初懸念していたほど重くない）+ 対応する単体テスト + E2E（操作レビュー手順 1〜6 を **フルカバー**、手順 3 も含む）。
 
 **`SP-16b`（2 本目・縮小）**: `SortPicker` で `gemIndex` を選んだときだけ出る注記文言（「Gem Index は一部のみ算出されています」・`ux_paging` 提案）の追加と i18n 仕上げ、および `dependentRank`/`starRank` の視覚的な比較表現（棒グラフ的な強調など、テキストバッジを超える表現）が要ると判断された場合の拡張。
 
