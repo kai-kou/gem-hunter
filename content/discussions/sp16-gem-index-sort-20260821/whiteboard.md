@@ -4,8 +4,8 @@
 - 議題ID: `sp16-gem-index-sort-20260821`
 - 論点: 飼い主決定（Issue #285）: ① Gem Index を持たない結果は末尾に残す（絞り込まない） ② 最大1,000件を取得してから並べ替える。この決定を前提に、クリーンアーキテクチャの層配置・レート予算の吸収方法・AC-6/AC-7 との整合をどう設計するかを議論する。
 - 参加者: `arch`, `rate`, `ux`
-- 投稿数: 5
-- 更新: 2026-08-21T09:17:16+09:00
+- 投稿数: 6
+- 更新: 2026-08-21T09:31:13+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -225,3 +225,39 @@
     "docs/02_requirements/user-story-map.md §5.3 SP-16（オープン中の PR #289 が既に確定反映済み・二重更新しない）"
   ]
 }
+
+### `ux` — 主張
+<sub>2026-08-21T09:30:48+09:00</sub>
+
+# ux レンズ: round1 の訂正 + `listGemFacetsUseCase()` を踏まえた更新
+
+## 訂正 A（重要・round1 の誤り）: Gem Index の並び順と符号の意味
+
+`src/domain/model/gem-index.ts` の実装・コメント（正本）を読み直したところ、round1 の記述に **2 箇所誤り**があった。
+
+1. **並び順は昇順（値が小さいほど上位）**。round1 §5 の e2e テスト名で「Gem Index の**降順**で並んでいる」と書いたのは誤り。正しくは「Gem Index の**昇順**（小さい値が先頭）で並んでいる」。`sortByGemIndex` の実装・コメントが明記（`D-28` 訂正注記と同じ向き）。
+2. **符号の意味も round1 と逆**。round1 §2 で「プラスなら過小評価、マイナスなら知名度先行」と書いたのは誤り。正しくは **マイナス（負値）が過小評価度が高い（= "Gem"）**、プラスは知名度（star）が実利用（被依存数）より先行していることを意味する（`computeGemIndex` のコメント: 「被依存数が上位（小さい）かつ star が下位（大きい）ほど差が強い負値になり、過小評価度が高いことを意味する」）。
+
+**影響**: e2e スペック案・カード表示の符号説明文言は、この訂正後の向きで書くこと（round1 の該当箇所をそのまま実装に持ち込まない）。
+
+## 更新 B: `impl_usecase` の共有を受けて §2 の推奨を確定
+
+`listGemFacetsUseCase()`（`src/composition/container.ts`）が `ReadonlyMap<gemFacetKey, GemFacet>`（`GemFacet = { gemIndex, dependentCount }`）を返す。`SearchResult` / `route.ts` の契約は無変更。これにより round1 §2 で「親セッションへの確認候補」として保留していた論点が解消した。
+
+- **確定推奨**: カードのメタ行に **Gem Index の生値**（`gemIndexValueLabel`）に加えて、**被依存数**（`daily-digest.tsx` の `dependentLabel`「被依存数」と同一語彙を再利用）も表示する。両方を並べることで操作レビュー手順 3「なぜ上位なのか（被依存数と star の乖離）がわかる」を数値で直接裏付けられる（star 数は既存の `starCount` 表示が既にカードにあるため、被依存数だけ追加すれば「被依存数 vs star」の対比が完成する）。
+- 表示条件: `sort=gem-index` のときのみ（他のソートでは `GemFacet` を取得する意味が薄く、`listGemFacetsUseCase()` の追加呼び出しコストも避けられる）。Gem Index を持たない結果（`facets` に無い項目）はこの追加表示自体を出さない（区切り見出し側で「情報なし」を伝えるため、カード側で欠落を繰り返し示さない）。
+- 表示順は「被依存数 → Gem Index」（`daily-digest.tsx` の並び: `dependentLabel` → `starsLabel` → `gemIndexLabel` を踏襲し、star は round1 通り既存の `starCount` 表示のまま据え置く）。
+
+## 更新 C: i18n キーへの追記（round1 §4 に追加）
+
+```jsonc
+"dependentLabel": "被依存数" /* ja、en: "Used by" — daily-digest.dependentLabel と同一文言を home 側にも複製せず、共有できるなら共通化を検討（実装側の判断）*/
+```
+既存 `daily-digest.dependentLabel` と全く同じ意味・同じ文言なので、新規キーを増やすより **既存キーの再利用（`messages.home.digest.dependentLabel` を home 直下からも参照 or `home.gemIndexDependentLabel` として複製）** を実装側で選んでよい（SD-3 対象外の実装判断）。
+
+## 更新 D: e2e（round1 §5 の訂正版）
+
+- `test.step('2. Gem Index を持つ結果が Gem Index の**昇順**（小さい値が先頭）で並んでいる')`（round1 の「降順」を訂正）
+- 追加: `test.step('カードに被依存数と Gem Index の数値が表示され、Gem Index を持たない結果には表示されない')`
+
+`impl_usecase` へ確認事項なし・追加依頼なし（返答のみ）。
