@@ -632,6 +632,34 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 `wrangler deploy` が auto mode classifier に阻まれる（§8.2.2）— つまり `D-16` 当時に想定した 2 経路が
 **どちらも塞がった** ため。
 
+#### 🔴 接続の前に決める・確認すること（前提条件・省略不可）
+
+⚠️ **ダッシュボードでの接続は「決めてから」行う。** 接続した瞬間から `main` への push が本番へ流れ始めるため、
+下記が未解決のまま接続すると **`D-26` のデプロイゲートが無効化される**（`rejected` 判定のスプリントも本番で
+稼働し続ける）。
+
+**P-1. `D-26` のデプロイゲートをどう維持するか（🔴 未決・接続前に決める）**
+
+`D-26` は「`Sprint Goal:` 行のあるスプリント PR は、マージ直後ではなく **Sprint Review 判定が `accepted`
+になった時点** でデプロイする（`rejected` の間はデプロイしない・fail-closed）」と定めている。現行フローでは
+Sprint Review は **マージ後** に実施される（`pr-review-watcher` Step 7）。一方 Workers Builds は
+**push をトリガーにする** ため、`tools/check_deploy_gate.py` が呼ばれず判定を飛ばして本番へ出る。
+
+| 案 | 内容 | トレードオフ |
+|---|---|---|
+| **(a)** | Deploy command をゲート込みにする（`check_deploy_gate.py` を実行し `can_deploy=false` なら **デプロイせず正常終了** する npm script を用意し、それを Deploy command に指定する） | `D-26` をそのまま維持できる。ビルド環境に Python と GitHub API アクセス（トークンをビルド変数へ）が要る。**未検証** |
+| **(b)** | Sprint Review 判定が出るまで `main` にマージしない（判定をマージ前へ動かす） | 追加の実装が不要。ただし `pr-review-watcher` Step 7 の運用（マージ後にレビューとレトロ）を組み替える必要がある |
+
+🔵 **(a) が本命**（運用を変えずに済む）だが、ビルド環境の制約が未検証。**接続作業の前に (a) の実現性を
+実機で確認し、駄目なら (b) を採る**。
+
+**P-2. シークレットの引き継ぎを、本番へ流す前に確認する**
+
+接続直後にいきなり本番デプロイを走らせない。**Deploy command を一時的に無害なコマンド（例: `echo skip`）に
+しておいてビルドを 1 回走らせ**、ビルド環境とシークレット解決を確認してから本来の Deploy command に差し替える。
+🔴 `RATE_LIMIT_SALT` が未解決だとレート制限判定ごとスキップされる（**フェイルオープンでエラーにならない**）ため、
+気づかないまま本番が無防備になる。
+
 #### 飼い主の操作（API では実行できない・1 回だけ）
 
 Cloudflare の GitHub App の接続は **ダッシュボードでの対話的認可が必須** で、API 経路が存在しない
@@ -646,7 +674,7 @@ Cloudflare の GitHub App の接続は **ダッシュボードでの対話的認
 | 本番ブランチ | `main` | trunk-based（`D-21`） |
 | Build command | **空にする** | `npm run deploy` が `opennextjs-cloudflare build` を内包しているため、build と deploy を二重に走らせない |
 | Deploy command | `npm run deploy` | 既定は `npx wrangler deploy` だが、それだと OpenNext のビルド成果物が更新されない（§8.2 の注意書きと同じ罠）。SHA タグ付与も `npm run deploy` 側に入っている |
-| Non-production branch deploy command | `npx wrangler versions upload` | 既定のまま。PR ごとのプレビューは既存の `--preview-alias` 運用（§6.1）と役割が重なるため、**移行後に一本化するか併存させるかを別途決める** |
+| Non-production branch builds | 🔴 **有効化しない**（本番ブランチのトリガーだけを接続する） | 既定の `npx wrangler versions upload` は **alias を付けない**。PR ごとのプレビューは既存の `--preview-alias pr-<N>` 運用（§6.1）が担っており、両方走ると ① レビュアーがどちらの URL が最新か誤認する ② alias なし version は `retire_preview_aliases.py`（`pr-<N>` 形式のみ判定）の **退役対象外** になり orphan として蓄積する ③ push のたびに Cloudflare API のレート制限（#117 で 248 秒待機を実測）を追加消費する。**一本化するなら退役スクリプトを alias なし version に対応させてから**（別 Issue） |
 | Build variables and secrets | 🔴 **Next.js のビルドに必要な変数をここへ入れる** | [公式の Next.js ガイド](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)が明記。**ビルド変数はランタイムには渡らない**（ランタイム値は Settings → Variables & Secrets 側） |
 
 #### 🔴 移行前に検証する 3 点
@@ -660,6 +688,21 @@ Cloudflare の GitHub App の接続は **ダッシュボードでの対話的認
    優先して読む形に変える。**タグが落ちると `tools/check_prod_drift.py` が heuristic 判定へ後退する**
 3. **Node バージョン**: `package.json` の `engines.node` は `>=22`。ビルド環境の既定が下回る場合は
    ビルド変数で指定する
+
+#### 🔴 壊れたデプロイが流れ続けるときの停止手順（runbook）
+
+GitHub App の **切断** は接続と同様にダッシュボード操作が必須で、Claude は自律的に止められない。
+一次対応として次を試す（**未検証**。移行時に実機で確認して本節を更新する）:
+
+1. Builds API の `PATCH /accounts/{account_id}/builds/triggers/{trigger_uuid}` で **Deploy command を
+   無害なコマンド（`echo halted`）へ書き換える** → 以降の push はビルドされてもデプロイされない
+   - 🔴 使用中の `CLOUDFLARE_API_TOKEN` に **Workers Builds Configuration の Edit 権限があるかを事前確認する**
+     （無ければこの経路は使えないので、その場合は 2 のみが手段になる）
+2. 飼い主へ切断を依頼する（`A-6`）
+3. 直前の正常な version へ戻す（`INF-21` のロールバック手順・§8 の既存記述）
+
+⚠️ **`previews_enabled` の全体トグルは使わない**（`D-26` のとおり、並行中の他 PR のプレビューまで
+一括無効化して `SD-1` と両立しない）。
 
 #### 移行後に変わること
 
