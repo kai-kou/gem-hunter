@@ -1,9 +1,19 @@
 import { render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { LocaleSwitchAnnouncer as LocaleSwitchAnnouncerType } from './locale-switch-announcer'
 
-import { LocaleSwitchAnnouncer } from './locale-switch-announcer'
-
+// `hasMountedInThisDocument` はモジュールスコープで保持される（フルドキュメントロードに
+// 紐づく実装のため・#347 追加タスク）。1 テストファイル内では import キャッシュが共有され
+// テスト間で値が持ち越されてしまうので、各テストの前に `vi.resetModules()` して
+// モジュールを新規評価し直し、動的 import で「フルロード直後」の状態から始める。
 describe('LocaleSwitchAnnouncer', () => {
+  let LocaleSwitchAnnouncer: typeof LocaleSwitchAnnouncerType
+
+  beforeEach(async () => {
+    vi.resetModules()
+    ;({ LocaleSwitchAnnouncer } = await import('./locale-switch-announcer'))
+  })
+
   it('初回描画では何もアナウンスしない（ページを開いた瞬間に読み上げない）', () => {
     const { container } = render(
       <LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />,
@@ -11,7 +21,7 @@ describe('LocaleSwitchAnnouncer', () => {
 
     const live = container.querySelector('[role="status"]')
     expect(live).not.toBeNull()
-    expect(live).toHaveTextContent('')
+    expect(live).toBeEmptyDOMElement()
   })
 
   it('currentLocale が変わったら role="status" の内容を announcedLabel に更新する', () => {
@@ -33,7 +43,7 @@ describe('LocaleSwitchAnnouncer', () => {
     rerender(<LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />)
 
     const live = container.querySelector('[role="status"]')
-    expect(live).toHaveTextContent('')
+    expect(live).toBeEmptyDOMElement()
   })
 
   it('sr-only かつ aria-live="polite" である', () => {
@@ -44,5 +54,24 @@ describe('LocaleSwitchAnnouncer', () => {
     const live = container.querySelector('[role="status"]')
     expect(live).toHaveAttribute('aria-live', 'polite')
     expect(live).toHaveClass('sr-only')
+  })
+
+  it('同一ドキュメント内で remount されても（[locale] セグメント遷移相当）2 回目のマウント直後にアナウンスする', () => {
+    // 1 回目のマウント（フルロード相当）→ unmount（ソフトナビゲーションによる remount を模擬）。
+    const first = render(
+      <LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />,
+    )
+    first.unmount()
+
+    // 2 回目のマウント（[locale] セグメント遷移で SiteHeader 配下が remount された想定）。
+    // useRef 版ではここでも「初回」と誤判定されアナウンスが握り潰される（#347 で実測確認済みの
+    // バグ）。モジュールスコープ版では hasMountedInThisDocument が生きているため、
+    // この 2 回目のマウント自体が「切替の結果」としてアナウンスされる。
+    const second = render(
+      <LocaleSwitchAnnouncer currentLocale="en" announcedLabel="Switched to English." />,
+    )
+
+    const live = second.container.querySelector('[role="status"]')
+    expect(live).toHaveTextContent('Switched to English.')
   })
 })

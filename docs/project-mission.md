@@ -21,7 +21,7 @@ star は注目度の指標であって利用実績ではない。約 600 万個�
 |------|------|---------|
 | 与件受け入れ基準の充足 | 11 / 11 項目 | [`minimum-requirements.md`](./02_requirements/minimum-requirements.md) §7 のチェックリスト |
 | Lighthouse Accessibility | 100 | CI ゲート（決定論的に判定されるため満点を要求） |
-| Lighthouse Performance | 90 以上 | CI ゲート（複数回実行の中央値・スロットリング固定） |
+| Lighthouse Performance | 90 以上 | 目安値として計測・記録する（blocking ゲートではない。複数回実行の中央値・スロットリング固定で偽陽性を抑える。blocking なのは Accessibility=100 のみ・`NFR-27`） |
 | Core Web Vitals | LCP 2.5s 以下 / INP 200ms 以下 / CLS 0.1 以下 | ローカル計測（Google の "good" 境界を引用） |
 | 主要フローのテスト | 全て存在し CI で成功 | CI |
 | 技術的意思決定の ADR 化 | 決定ログの主要決定に漏れがない | `docs/adr/` と `open-questions.md` 決定ログの突合 |
