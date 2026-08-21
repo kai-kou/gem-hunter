@@ -9,9 +9,11 @@ OpenAI の `gpt-image-2` を使い、ドキュメントから抽出した構造�
 |---|---|
 | `specs/*.json` | 各ドキュメントから抽出した **画像に描くテキストの正本**（`title` / `subtitle` / `sections` / `key_numbers`） |
 | `layouts/*.txt` | 図としてどう並べるかの指示（英語。画像モデルへそのまま渡る） |
-| `build_prompt.py` | spec + layout → 生成プロンプトを組み立てる |
+| `build_prompt.py` | spec + layout → 生成プロンプトを組み立てる（「見出し + 箇条書き」型の 12 枚） |
+| `build_grid_prompt.py` | `specs/usm_grid.json` → 格子型プロンプトを組み立てる（ユーザーストーリーマップ専用） |
 | `prompts/*.txt` | 組み立て済みプロンプト（実際に投げた内容の記録） |
 | `generate.py` | プロンプトを `gpt-image-2` に投げて PNG を保存する CLI |
+| `to_webp.mjs` | 生成した PNG をまとめて WebP へ変換し `docs/infographics/` へ置く |
 
 ## 使い方
 
@@ -30,11 +32,47 @@ python3 tools/infographic/generate.py \
   --out /tmp/02-lean-canvas.png \
   --size 1536x864 --quality medium
 
-# 3. WebP に変換して docs/infographics/ へ置く
-node -e "require('sharp')('/tmp/02-lean-canvas.png').webp({quality:90}).toFile('docs/infographics/02-lean-canvas.webp')"
+# 3. WebP に変換して docs/infographics/ へ置く（ディレクトリ内の .png をまとめて処理する）
+node tools/infographic/to_webp.mjs /tmp/infographics
 ```
 
 `generate.py` は生成のたびに実測トークン数と概算コストを JSON で出力する。
+出力ファイル名がそのまま WebP のファイル名になるので、`--out` は `docs/infographics/` の命名（`01-initial-concept.png` 等）に合わせておく。
+
+ユーザーストーリーマップだけは格子構造のため専用ビルダーを使う。
+
+```bash
+python3 tools/infographic/build_grid_prompt.py --out tools/infographic/prompts/05-user-story-map.txt
+```
+
+> `to_webp.mjs` が使う `sharp` は **`package.json` の直接依存ではなく `miniflare` の推移的依存** として
+> `node_modules/` に入っている。依存更新で解決できなくなったら、`sharp` を `devDependencies` に明示追加する。
+
+## 13 枚の対応表
+
+`build_prompt.py` の引数（spec ファイル / キー / レイアウト）は画像ごとに違うので、ここを正本にする。
+
+| 出力プロンプト | spec ファイル | キー | レイアウト |
+|---|---|---|---|
+| `01-initial-concept.txt` | `specs/concept.json` | `initial-concept` | `layouts/initial-concept.txt` |
+| `02-lean-canvas.txt` | `specs/concept.json` | `lean-canvas` | `layouts/lean-canvas.txt` |
+| `03-inception-deck.txt` | `specs/concept.json` | `inception-deck` | `layouts/inception-deck.txt` |
+| `04-prd.txt` | `specs/requirements.json` | `prd` | `layouts/prd.txt` |
+| `05-user-story-map.txt` | `specs/usm_grid.json` | （格子・`build_grid_prompt.py` を使う） | `layouts/user-story-map.txt` |
+| `06-roadmap.txt` | `specs/requirements.json` | `roadmap` | `layouts/roadmap.txt` |
+| `07-design.txt` | `specs/design.json` | `design` | `layouts/design.txt` |
+| `08-doc-relations.txt` | `specs/design.json` | `doc-relations` | `layouts/doc-relations.txt` |
+| `09-adr-map.txt` | `specs/extra1.json` | `adr-map` | `layouts/adr-map.txt` |
+| `10-gem-score.txt` | `specs/extra1.json` | `gem-score` | `layouts/gem-score.txt` |
+| `11-testing-strategy.txt` | `specs/extra2.json` | `testing` | `layouts/testing.txt` |
+| `12-cloudflare.txt` | `specs/extra2.json` | `cloudflare` | `layouts/cloudflare.txt` |
+| `13-ops-rules.txt` | `specs/extra3.json` | `ops-rules` | `layouts/ops-rules.txt` |
+
+全 13 枚のプロンプトをまとめて組み立て直すには `build_all_prompts.sh` を使う。
+
+```bash
+bash tools/infographic/build_all_prompts.sh
+```
 
 ## サイズと品質の制約
 
@@ -56,3 +94,6 @@ node -e "require('sharp')('/tmp/02-lean-canvas.png').webp({quality:90}).toFile('
 
 元ドキュメントを更新したら、対応する `specs/*.json` を直してから再生成する。
 spec を直さずにプロンプトだけ手で書き換えると、次回の再生成で戻ってしまう。
+
+`prompts/*.txt` は **現在のビルダーが出力する内容と一致した状態を保つ**（記録と再現手順がずれないようにするため）。
+ただし画像生成そのものは非決定的なので、同じプロンプトでもピクセル単位で同一の画像にはならない。

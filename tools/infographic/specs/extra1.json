@@ -1,110 +1,110 @@
 {
-  "adr-map": {
-    "title": "ADR意思決定マップ",
-    "subtitle": "技術選定14件、決め手を一望",
-    "sections": [
-      {
-        "heading": "基盤技術",
-        "items": [
-          "ADR-0002 CFWorkers",
-          "ADR-0006 RSC採用"
-        ]
-      },
-      {
-        "heading": "UI/UX",
-        "items": [
-          "ADR-0001 Radix UI採用",
-          "ADR-0008 ページネーション"
-        ]
-      },
-      {
-        "heading": "データ設計",
-        "items": [
-          "ADR-0007 DBレス+URL状態",
-          "ADR-0009 Gem Index新設"
-        ]
-      },
-      {
-        "heading": "認証",
-        "items": [
-          "ADR-0003 GitHub App"
-        ]
-      },
-      {
-        "heading": "運用ポリシー",
-        "items": [
-          "ADR-0013 API限定順守"
-        ]
-      },
-      {
-        "heading": "新機能",
-        "items": [
-          "ADR-0014 日次ダイジェスト"
-        ]
-      }
-    ],
-    "key_numbers": [
-      "ADR総数 14件",
-      "抜粋掲載 9件",
-      "策定期間 2026-08-17〜21",
-      "全件 承認/採用"
-    ],
-    "layout_hint": "a numbered timeline of decision cards grouped into 6 thematic clusters (infrastructure, UI, data, auth, policy, features); each card shows the ADR number badge, the chosen technology, and a short rationale tag; use a left-to-right or top-to-bottom flow with thin connecting lines linking related decisions (e.g. Cloudflare -> Next.js -> DB-less state)."
-  },
-  "gem-score": {
-    "title": "Gem Score算出ロジック",
-    "subtitle": "被依存数とstarの残差で過小評価度を測る",
-    "sections": [
-      {
-        "heading": "入力シグナル",
-        "items": [
-          "被依存数(Ecosyste.ms)",
-          "star数(GitHub)",
-          "健全性(OpenSSF)"
-        ]
-      },
-      {
-        "heading": "計算式",
-        "items": [
-          "被依存数%ile−star%ile",
-          "=Gem Index(過小評価度)"
-        ]
-      },
-      {
-        "heading": "役割分担",
-        "items": [
-          "Gem Index→並び順",
-          "健全性score→足切り"
-        ]
-      },
-      {
-        "heading": "算出主体",
-        "items": [
-          "候補データ:静的JSON",
-          "並べ替え:サーバー(RSC)"
-        ]
-      },
-      {
-        "heading": "出力",
-        "items": [
-          "Gem Index順ランキング",
-          "健全性フィルタで足切り済み"
-        ]
-      },
-      {
-        "heading": "Phase区分",
-        "items": [
-          "Phase1:定義のみ確定",
-          "Phase2:実データで確定"
-        ]
-      }
-    ],
-    "key_numbers": [
-      "2軸設計:過小評価度+健全性",
-      "健全性 = OpenSSF criticality_score",
-      "被依存数取得元 = Ecosyste.ms",
-      "2軸は合算せず分離"
-    ],
-    "layout_hint": "a left-to-right pipeline: input signal boxes (star count from GitHub, dependent count from Ecosyste.ms, criticality_score from OpenSSF) feed into a formula box computing Gem Index = dependents percentile minus star percentile; the pipeline forks into two parallel outputs — Gem Index drives ranking order, criticality_score drives a health filter/cutoff — merging into a final ranked & filtered gem list."
-  }
+ "adr-map": {
+  "title": "ADR意思決定マップ",
+  "subtitle": "技術選定14件、決め手を一望",
+  "sections": [
+   {
+    "heading": "基盤技術",
+    "items": [
+     "ADR-0002 CFWorkers",
+     "ADR-0006 RSC採用"
+    ]
+   },
+   {
+    "heading": "UI/UX",
+    "items": [
+     "ADR-0001 Radix UI採用",
+     "ADR-0008 ページネーション"
+    ]
+   },
+   {
+    "heading": "データ設計",
+    "items": [
+     "ADR-0007 DBレス+URL状態",
+     "ADR-0009 Gem Index新設"
+    ]
+   },
+   {
+    "heading": "認証",
+    "items": [
+     "ADR-0003 GitHub App"
+    ]
+   },
+   {
+    "heading": "運用ポリシー",
+    "items": [
+     "ADR-0013 API限定順守"
+    ]
+   },
+   {
+    "heading": "新機能",
+    "items": [
+     "ADR-0014 日次ダイジェスト"
+    ]
+   }
+  ],
+  "key_numbers": [
+   "ADR総数 14件",
+   "抜粋掲載 9件",
+   "策定期間 2026-08-17〜21",
+   "全件 承認/採用"
+  ],
+  "layout_hint": "a numbered timeline of decision cards grouped into 6 thematic clusters (infrastructure, UI, data, auth, policy, features); each card shows the ADR number badge, the chosen technology, and a short rationale tag; use a left-to-right or top-to-bottom flow with thin connecting lines linking related decisions (e.g. Cloudflare -> Next.js -> DB-less state)."
+ },
+ "gem-score": {
+  "title": "Gem Score算出ロジック",
+  "subtitle": "被依存数とstarの残差で過小評価度を測る",
+  "sections": [
+   {
+    "heading": "入力シグナル",
+    "items": [
+     "被依存数(Ecosyste.ms)",
+     "star数(GitHub)",
+     "健全性(OpenSSF)"
+    ]
+   },
+   {
+    "heading": "計算式",
+    "items": [
+     "被依存数%ile−star%ile",
+     "=Gem Index(過小評価度)"
+    ]
+   },
+   {
+    "heading": "役割分担",
+    "items": [
+     "Gem Index→並び順",
+     "健全性score→足切り"
+    ]
+   },
+   {
+    "heading": "実装(0014)",
+    "items": [
+     "候補データ:静的JSON",
+     "並べ替え:サーバー(RSC)"
+    ]
+   },
+   {
+    "heading": "出力",
+    "items": [
+     "Gem Index順ランキング",
+     "健全性フィルタで足切り済み"
+    ]
+   },
+   {
+    "heading": "Phase区分",
+    "items": [
+     "Phase1:定義のみ確定",
+     "Phase2:実データで確定"
+    ]
+   }
+  ],
+  "key_numbers": [
+   "2軸設計:過小評価度+健全性",
+   "健全性 = OpenSSF criticality_score",
+   "被依存数取得元 = Ecosyste.ms",
+   "2軸は合算せず分離"
+  ],
+  "layout_hint": "a left-to-right pipeline: input signal boxes (star count from GitHub, dependent count from Ecosyste.ms, criticality_score from OpenSSF) feed into a formula box computing Gem Index = dependents percentile minus star percentile; the pipeline forks into two parallel outputs — Gem Index drives ranking order, criticality_score drives a health filter/cutoff — merging into a final ranked & filtered gem list."
+ }
 }

@@ -5,9 +5,10 @@ Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray.
 --- ABSOLUTE TEXT RULE ---
 Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
 Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
 All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
 Hand-lettering must stay highly legible at a glance.
--------------------------
+--------------------------
 
 
 TITLE (top banner, largest text):
@@ -33,12 +34,13 @@ Block 1 items (bulleted list, one line each):
 
 Block 2 heading:「Q2:ピッチ」
 Block 2 items (bulleted list, one line each):
-・starを分子でなく分母に
-・Phase1は差別化なし
+・star埋没の実利用OSSを発見
+・Phase1は差別化を含まない
 
 Block 3 heading:「Q3:製品箱」
 Block 3 items (bulleted list, one line each):
 ・商品名:gem-hunter
+・starを分子でなく分母に
 ・スコアはOpenSSFに委任
 
 Block 4 heading:「Q4:やらぬこと」
