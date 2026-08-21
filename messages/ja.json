@@ -28,11 +28,10 @@
   },
   "home": {
     "title": "gem-hunter",
-    "description": "キーワードで GitHub のリポジトリを検索します。",
+    "description": "star は少ないのに、実はたくさんのパッケージから使われている GitHub リポジトリを見つけます。",
     "searchLabel": "検索キーワード",
     "searchPlaceholder": "キーワードで GitHub を検索(例: react)",
     "searchSubmit": "検索",
-    "idle": "キーワードを入力して検索してください。",
     "resultsHeading": "検索結果",
     "resultCount": "{total} 件中 {shown} 件を表示",
     "empty": "条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。",
@@ -42,12 +41,8 @@
     "sortOptions": {
       "relevance": "関連度",
       "stars": "star 数",
-      "updated": "更新日時",
-      "gem-index": "Gem Index 順"
+      "updated": "更新日時"
     },
-    "gemIndexValueLabel": "Gem Index",
-    "gemIndexDependentLabel": "被依存数",
-    "gemIndexUnavailableHeading": "Gem Index 情報なし",
     "perPageLabel": "表示件数",
     "perPageOptionLabel": "{count} 件",
     "paginationLabel": "検索結果のページ",
@@ -57,11 +52,11 @@
     "pageLimitReached": "表示できる最終ページです。キーワードを絞り込むと他の結果を確認できます。",
     "digest": {
       "heading": "今日の Gem",
+      "lead": "star の数のわりに、多くのパッケージから使われているリポジトリです。上にあるものほど「使われ方に対して star が少ない」ものになります。毎日入れ替わります。",
       "empty": "今日は表示できる Gem がありません",
-      "dependentLabel": "被依存数",
+      "dependentLabel": "利用パッケージ数",
       "starsLabel": "star",
-      "gemIndexLabel": "Gem Index",
-      "attribution": "Data via {source}({license})· 生成: {generatedAt} · 並び順は日付シードで再算出しています",
+      "attribution": "このデータについて: 利用パッケージ数と star 数は {source}（{license}）のオープンデータをもとにした、{generatedAt} 頃の参考値です。GitHub の最新値や詳細画面の表示とは差があります。並び順は日付をもとに毎日算出しています。",
       "newBadge": "新着",
       "firstVisitNote": "初回として全件を表示しています",
       "rssLink": "RSS で購読"
