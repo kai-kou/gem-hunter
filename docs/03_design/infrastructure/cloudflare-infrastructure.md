@@ -694,6 +694,56 @@ Cloudflare の GitHub App の接続は **ダッシュボードでの対話的認
 | Non-production branch builds | 🔴 **有効化しない**（本番ブランチのトリガーだけを接続する） | 既定の `npx wrangler versions upload` は **alias を付けない**。PR ごとのプレビューは既存の `--preview-alias pr-<N>` 運用（§6.1）が担っており、両方走ると ① レビュアーがどちらの URL が最新か誤認する ② alias なし version は `retire_preview_aliases.py`（`pr-<N>` 形式のみ判定）の **退役対象外** になり orphan として蓄積する ③ push のたびに Cloudflare API のレート制限（#117 で 248 秒待機を実測）を追加消費する。**一本化するなら退役スクリプトを alias なし version に対応させてから**（別 Issue） |
 | Build variables and secrets | 🔴 **`GH_TOKEN` を Secret 種別で登録する**（+ Next.js のビルドに必要な変数があればここへ） | `npm run deploy:ci` が呼ぶ `check_deploy_gate.py` は GitHub API で Issue を読む。ビルド環境に `gh` は無いので `GH_TOKEN` / `GITHUB_TOKEN` のフォールバック経路を使う。🔴 **専用の fine-grained PAT を新規発行し、対象リポジトリを `gem-hunter` のみ・権限を `Issues: Read-only` + `Metadata: Read-only` に限定する**（他用途のトークンを流用しない。classic PAT の `repo` スコープは過剰権限）。有効期限を設定しておくと、切れたときにビルドが赤くなって気づける。⚠️ ビルド変数は `npm run deploy` を含む同一ビルド環境の全プロセス（npm 依存パッケージのライフサイクルスクリプトを含む）から参照できるため、**権限を絞ることが唯一の緩和策**。[公式の Next.js ガイド](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)のとおり **ビルド変数はランタイムには渡らない**（ランタイム値は Settings → Variables & Secrets 側） |
 
+#### 🔴 接続作業で実際に踏んだ罠（2026-08-21 実測・#290）
+
+飼い主の接続作業に立ち会って観測した事実を残す。**次に同じ作業をする人が同じ穴に落ちないための節** にゃ。
+
+**罠 1: 既定値のまま接続すると 3 つ同時に踏む**
+
+接続ダイアログの初期値は次のようになっており、そのまま「接続」を押すと 3 つの罠を同時に踏む。
+
+| 項目 | 既定値 | 何が起きるか |
+|---|---|---|
+| ビルド コマンド | `pnpm run build` | 本プロジェクトは npm 運用。仮に通っても **OpenNext のビルドが走らない** ので `.open-next/worker.js` が更新されない |
+| デプロイ コマンド | `npx wrangler deploy` | **`D-26` のデプロイゲートが素通りする**（`npm run deploy:ci` を経由しない） |
+| プレビュービルドを有効化 | ✅ **チェック済み** | 非本番 trigger が作られ、既存の `--preview-alias pr-<N>` 運用と二重になる（alias なし version が orphan として蓄積する） |
+
+→ **接続ダイアログの時点で 3 つとも直してから「接続」を押す**（後から直すこともできるが、接続直後に `main` へ push が入ると誤った設定でデプロイが走る）。
+
+**罠 2: `GH_TOKEN` を入れる「変数とシークレット」が 2 か所ある**
+
+Worker の設定ページには **同名のセクションが 2 つ** ある。
+
+| 場所 | 何のためのものか | `GH_TOKEN` を入れる場所か |
+|---|---|---|
+| 設定 → **変数とシークレット**（`GITHUB_APP_CLIENT_ID` / `RATE_LIMIT_SALT` が並ぶ側） | **アプリのランタイム** 変数 | ❌ **違う**。ここに入れてもビルド環境からは読めず、しかも **アプリの実行環境にトークンが露出する** |
+| 設定 → **ビルド** セクション内の **変数とシークレット**（`API トークン` / `デプロイ フック` / `ビルド キャッシュ` と並ぶ側） | **ビルド環境** の変数 | ✅ **こちら** |
+
+→ 見分け方は **同じカード内に「API トークン」「デプロイ フック」「ビルド キャッシュ」があるか**。あればビルド側にゃ。
+
+**罠 3: 接続直後に「Git アカウントから切断されています」警告が出ることがある**
+
+接続レコード自体は作られている（API の `repo_connection` に `deleted_on: null` で存在する）のに、ダッシュボードに
+「このプロジェクトは Git アカウントから切断されています。これによりデプロイが失敗する可能性があります」という警告が出た。
+**GitHub 側（`https://github.com/settings/installations`）で Cloudflare のアプリにリポジトリを追加すると警告は消えた**。
+
+⚠️ API の `repo_connection.grant_id` は警告が消えたあとも `null` のままだった。**`grant_id` を接続の健全性判定に使わない**
+（この API では常に `null` の可能性がある。判定はダッシュボードの警告表示か実ビルドの成否で行う）。
+
+**罠 4: 初回は手動ビルドボタンが無い**
+
+ビルド履歴が 1 件も無いうちは「再試行」系のボタンが出ず、ダッシュボードには
+「Git リポジトリにコミットをプッシュして最初のビルドを開始できるようになりました」と表示される。
+→ **初回ビルドは `main` への push で起こす**（`A-1` により直接 push は禁止なので、PR をマージして起こす）。
+
+**🟢 接続後の設定変更は API で完結する（実測）**
+
+`GET /accounts/{account_id}/builds/workers/{worker_tag}/triggers` で trigger 一覧（`trigger_uuid` を含む）が取れ、
+`PATCH /accounts/{account_id}/builds/triggers/{trigger_uuid}` で `build_command` / `deploy_command` を更新できることを実機で確認した
+（`worker_tag` は `GET /accounts/{account_id}/workers/scripts` の `tag` フィールド）。
+⚠️ `branch_includes` に空配列を渡すと `12002 Invalid request body` で拒否される（trigger の無効化には使えない）。
+プレビュー trigger を無くしたいときは **ダッシュボードで「プレビュービルドを有効化」のチェックを外す**（＝ 非本番 trigger を作らない）。
+
 #### 🔴 移行前に検証する 3 点
 
 1. **シークレットの引き継ぎ**: 本プロジェクトは version + preview alias 運用のため `wrangler versions secret put`
