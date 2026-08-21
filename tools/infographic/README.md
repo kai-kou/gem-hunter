@@ -20,9 +20,9 @@ OpenAI の `gpt-image-2` を使い、ドキュメントから抽出した構造�
 `OPENAI_API_KEY` を環境変数に設定した状態で実行する。
 
 > クラウド実行環境では GitHub Variables の自動ロードが 403 でブロックされているため、`OPENAI_API_KEY` は
-> **Claude.ai の環境変数設定** か **secrets-broker**（`infra/secrets-broker/`）で供給する
-> （SSOT: [`docs/rules/env-vars.md`](../../docs/rules/env-vars.md) 冒頭）。未設定のまま実行すると
-> `generate.py` は理由を stderr に出して終了コード 1 を返す。
+> **Claude.ai の環境変数設定** で供給する（SSOT: [`docs/rules/env-vars.md`](../../docs/rules/env-vars.md) 冒頭）。
+> もう 1 つの経路である secrets-broker は opt-in で、**本リポジトリには未導入**（`infra/` が存在しない）。
+> 未設定のまま実行すると `generate.py` は理由を stderr に出して終了コード 1 を返す。
 
 ```bash
 # 1. プロンプトを組み立てる
