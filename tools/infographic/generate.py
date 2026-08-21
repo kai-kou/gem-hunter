@@ -55,6 +55,8 @@ def main() -> int:
     ap.add_argument("--size", default="1536x864",
                     help="幅・高さとも 16 の倍数であること（16:9 なら 1536x864 / 1792x1008 / 2048x1152）")
     ap.add_argument("--quality", default="medium", choices=["low", "medium", "high"])
+    ap.add_argument("--timeout", type=int, default=900,
+                    help="1 枚あたりの応答待ち上限（秒）。既定 900")
     args = ap.parse_args()
 
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -65,8 +67,9 @@ def main() -> int:
     try:
         with open(args.prompt_file, encoding="utf-8") as fh:
             prompt = fh.read()
-        print(json.dumps(generate(prompt, args.out, args.size, args.quality, api_key),
-                         ensure_ascii=False))
+        print(json.dumps(
+            generate(prompt, args.out, args.size, args.quality, api_key, args.timeout),
+            ensure_ascii=False))
     except urllib.error.HTTPError as exc:
         print(f"HTTPError {exc.code}: {exc.read().decode('utf-8')[:500]}", file=sys.stderr)
         return 1
@@ -74,7 +77,7 @@ def main() -> int:
         print(f"接続に失敗した: {exc.reason}", file=sys.stderr)
         return 1
     except TimeoutError:
-        print(f"応答が {args.timeout if hasattr(args, 'timeout') else 900} 秒以内に返らなかった", file=sys.stderr)
+        print(f"応答が {args.timeout} 秒以内に返らなかった", file=sys.stderr)
         return 1
     except json.JSONDecodeError as exc:
         print(f"API のレスポンスが JSON として読めない: {exc}", file=sys.stderr)
