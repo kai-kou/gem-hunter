@@ -220,3 +220,11 @@
   font-size: 0.875rem; /* 14px。本文と同サイズになるため weight 差 + 余白で階層を伝える */
   font-weight: 500;
 }
+/* コードブロックのフォーカスリング（Issue #339・Layer 1 レビュー指摘）。
+   `readme-html.ts` が `pre` へ `tabindex="0"` を注入し、横に長いコード行のスクロール領域へ
+   キーボードで到達できるようにしている（WCAG 2.1.1）。到達したことが見えないと意味がないため、
+   サイト共通のフォーカスリング（`--color-ring`）を当てる（§7.3 の太さ 2px 相当以上）。 */
+.readme-content pre:focus-visible {
+  outline: 3px solid var(--color-ring);
+  outline-offset: 2px;
+}

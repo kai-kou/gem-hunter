@@ -200,15 +200,20 @@ const readmeRichExtraRepos = [
 /**
  * Issue #339 E2E 専用: 書式要素を網羅した README HTML を返す（GitHub の README エンドポイント
  * が返す「レンダリング済み HTML 断片」を模す）。`readme-html.ts` が許可しているタグのみを使う
- * （`h1`/`h2` は見出し降格変換で `h3`/`h4` になる・`ALLOWED_TAGS` を超えるタグは使わない）。
+ * （`h1`〜`h4` は見出し降格変換で `h3`〜`h6` になる・`ALLOWED_TAGS` を超えるタグは使わない）。
  *
  * 意図的に含めた要素:
  *   - h1 / h2（+2 降格後の h3 が本文 p より大きく、ページの h2「README」を超えないことの検証用）
+ *   - h3 / h4（+2 降格後の h5 / h6・見出しレベル間の単調減少を検証するため。Layer 1 指摘対応で
+ *     追加。これが無いと raw README は h1/h2 しか持たず、レンダリング後も h3/h4 しか出現しないため
+ *     h5/h6 のスケール退行を検知できなかった）
  *   - インラインコード（`<code>`）と段落
  *   - ネストした箇条書き（`<ul>` の入れ子・リストマーカーとインデントの検証用）
  *   - 番号付きリスト（`<ol>`）
  *   - 引用（`<blockquote>`）
- *   - 列数が多く横に長い `<table>`（コンテナの overflow-x:auto 検証用）
+ *   - 列数が多く横に長い `<table>`（コンテナの overflow-x:auto 検証用）。セルにリンクと
+ *     `<strong>` を含める（Layer 1 指摘対応。--tw-prose-links / --tw-prose-th-borders /
+ *     --tw-prose-td-borders が実際の表の文脈で描画されることを検証するため）
  *   - 長い 1 行を含む `<pre><code>`（コードブロックの背景色・横スクロール検証用）
  *   - 折り返されない長い URL（body に横スクロールが出ないことの検証用）
  *   - バッジ画像（`<img>` 複数・`max-width: 100%` で崩れないことの検証用）
@@ -222,6 +227,13 @@ function readmeRichHtml(owner, repoName) {
     '<h2>Getting started</h2>' +
     '<p>Install the package and read the <code>CHANGELOG.md</code> before upgrading. ' +
     'Inline <code>code spans</code> should render monospace without a block background.</p>' +
+    // Layer 1 指摘対応（CRITICAL）: raw h3/h4（+2 シフト後は h5/h6）を持つ見出しがフィクスチャに
+    // 無かったため、見出しレベル間の単調減少を E2E で検証できなかった。raw h1〜h4 の 4 段を
+    // 揃えることで、レンダリング後の h3/h4/h5/h6 が隣接して現れるようにする。
+    '<h3>Advanced configuration</h3>' +
+    '<p>Optional settings for advanced users who need finer control over the client.</p>' +
+    '<h4>Debug flags</h4>' +
+    '<p>Set <code>DEBUG=1</code> to enable verbose logging output.</p>' +
     '<h2>Nested feature list</h2>' +
     '<ul>' +
     '<li>Top-level feature' +
@@ -249,10 +261,14 @@ function readmeRichHtml(owner, repoName) {
     '<th>Bundle size (KB)</th><th>Gzip size (KB)</th><th>Lighthouse score</th><th>Notes</th>' +
     '</tr></thead>' +
     '<tbody>' +
+    // Layer 1 指摘対応（WARNING）: 表のセルが plain text のみだったため、リンク（--tw-prose-links）
+    // や強調（<strong>）が README 内の表という現実的な文脈で描画されることを検証できなかった。
     '<tr><td>Cloudflare Workers</td><td>linux</td><td>20.x</td><td>842</td>' +
-    '<td>1372</td><td>412</td><td>100</td><td>baseline configuration</td></tr>' +
+    '<td>1372</td><td>412</td><td>100</td><td><strong>baseline</strong> configuration</td></tr>' +
     '<tr><td>Node.js server</td><td>linux</td><td>22.x</td><td>910</td>' +
-    '<td>1420</td><td>430</td><td>98</td><td>with source maps enabled</td></tr>' +
+    '<td>1420</td><td>430</td><td>98</td>' +
+    '<td>with source maps enabled (see <a href="https://github.com/octostub/octo-readme-rich/' +
+    'blob/main/docs/build.md">build docs</a>)</td></tr>' +
     '</tbody>' +
     '</table>' +
     '<h2>Example usage</h2>' +

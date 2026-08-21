@@ -12,7 +12,9 @@ SSOT: `content/discussions/readme_typography_20260821/whiteboard.md` round3 `lea
     - 無彩な keyword（`transparent` / `none` / `inherit` / `unset` / `revert` / `initial` /
       `currentcolor`）
   上記のどちらでもない値（`oklch(...)` / `#RRGGBB` / `rgb(...)` / `rgba(...)` / `hsl(...)` /
-  `hsla(...)` などのリテラル色、Tailwind の gray スケール直書き等）は違反として報告する。
+  `hsla(...)` などのリテラル色、Tailwind の gray スケール直書き、`red` 等の CSS 名前付きカラー
+  直書き）は違反として報告する。`var(--color-fg, red)` のように **フォールバック値へ名前付き
+  カラーを紛れ込ませた場合も同様に違反とする**（Layer 1 セルフレビュー指摘対応・2026-08-21）。
 
 🔴 **`--tw-prose-*` が 1 つも無い状態でも異常終了しない**（PASS を返す）。typography プラグイン
 導入前（本チェック追加時点）でも `run_checks.sh` を壊さないための必須要件。
@@ -54,6 +56,15 @@ ALLOWED_KEYWORDS = {"transparent", "none", "inherit", "unset", "revert", "initia
 # 許可するトークン参照（セマンティックトークンへの `var()` 参照）。
 ALLOWED_VAR_RE = re.compile(r"var\(\s*--color-[a-zA-Z0-9-]+")
 
+# Layer 1 セルフレビュー指摘対応（WARNING）: `var(--color-accent, red)` のように、フォールバック値
+# へ CSS 名前付きカラー（裸の識別子）を紛れ込ませる抜け道を塞ぐための検出。
+# 147 色の名前付きカラー一覧を維持する代わりに「拒否リスト方式」を採る: カスタムプロパティ参照
+# （`--color-fg` 等）と `var` という関数名そのものを取り除いた残りに、無彩 keyword 以外の
+# 裸のアルファベット識別子が 1 つでも残っていれば違反とみなす。
+CUSTOM_PROP_TOKEN_RE = re.compile(r"--[a-zA-Z0-9-]+")
+BARE_WORD_RE = re.compile(r"[a-zA-Z]{2,}")
+BARE_WORD_ALLOWLIST = {"var"}
+
 
 def _strip_important(value: str) -> str:
     """末尾の `!important` を除いた値を返す（判定対象を実質値だけに揃える）。"""
@@ -63,6 +74,25 @@ def _strip_important(value: str) -> str:
 def contains_forbidden_color(value: str) -> bool:
     """値の中にリテラル色（関数記法 / 16進）が混入していれば True。"""
     return any(pattern.search(value) for pattern in FORBIDDEN_COLOR_PATTERNS)
+
+
+def contains_bare_named_color(value: str) -> bool:
+    """`var(--color-fg, red)` のように、フォールバックへ CSS 名前付きカラー（裸の識別子）が
+    紛れ込んでいれば True。
+
+    カスタムプロパティ参照（`--color-fg` 等）と `var` という関数名自体を取り除いた残りに、
+    無彩 keyword（`ALLOWED_KEYWORDS`）以外の裸のアルファベット識別子が 1 つでも残っていれば
+    違反とみなす。147 色の CSS 名前付きカラー一覧を維持しなくても、この対象（`--tw-prose-*`
+    はすべて色専用のカスタムプロパティ）では「裸の識別子は許可キーワード以外あり得ない」ため
+    拒否リスト方式で十分に検出できる。
+    """
+    without_custom_props = CUSTOM_PROP_TOKEN_RE.sub("", value)
+    for word in BARE_WORD_RE.findall(without_custom_props):
+        lowered = word.lower()
+        if lowered in BARE_WORD_ALLOWLIST or lowered in ALLOWED_KEYWORDS:
+            continue
+        return True
+    return False
 
 
 def is_allowed_value(raw_value: str) -> bool:
@@ -75,8 +105,11 @@ def is_allowed_value(raw_value: str) -> bool:
     if value.lower() in ALLOWED_KEYWORDS:
         return True
     if ALLOWED_VAR_RE.search(value):
-        # var(--color-fg, #000) のようにフォールバックへリテラル色を紛れ込ませていないか確認する。
-        return not contains_forbidden_color(value)
+        # var(--color-fg, #000) / var(--color-fg, red) のように、フォールバックへリテラル色
+        # （関数記法・16進・名前付きカラー）を紛れ込ませていないか確認する。
+        if contains_forbidden_color(value):
+            return False
+        return not contains_bare_named_color(value)
     return False
 
 
@@ -171,6 +204,29 @@ def self_test() -> int:
     check(
         "var() フォールバックへのリテラル色混入は不許可",
         is_allowed_value("var(--color-fg, #000000)") is False,
+    )
+
+    # 6.5. Layer 1 セルフレビュー指摘対応: var() フォールバックへの CSS 名前付きカラー混入も不許可
+    #      （修正前は is_allowed_value("var(--color-accent, red)") が True を返す抜け道だった）。
+    check(
+        "var() フォールバックへの名前付きカラー(red)混入は不許可",
+        is_allowed_value("var(--color-accent, red)") is False,
+    )
+    check(
+        "var() フォールバックへの名前付きカラー(blue)混入は不許可（別トークン名でも検出）",
+        is_allowed_value("var(--color-fg, blue)") is False,
+    )
+    check(
+        "contains_bare_named_color: var(--color-fg, red) は True",
+        contains_bare_named_color("var(--color-fg, red)") is True,
+    )
+    check(
+        "contains_bare_named_color: var(--color-fg) 単体は False（誤検知しない）",
+        contains_bare_named_color("var(--color-fg)") is False,
+    )
+    check(
+        "contains_bare_named_color: var(--color-fg, transparent) は無彩 keyword なので False",
+        contains_bare_named_color("var(--color-fg, transparent)") is False,
     )
 
     # 7. !important が付いていても判定できる。

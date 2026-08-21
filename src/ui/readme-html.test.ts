@@ -243,6 +243,27 @@ describe('sanitizeReadmeHtml — 通常の README コンテンツはそのまま
     expect(html).toContain('a'.repeat(100))
   })
 
+  it('コードブロック（pre）に tabindex を付けてキーボードで到達できるようにする', () => {
+    // typography が `pre` へ `overflow-x: auto` を付けるため、横に長いコード行があると
+    // スクロール領域になる。フォーカス可能な子を持たないスクロール領域はキーボードで
+    // 中身へ到達できない（WCAG 2.1.1 / axe `scrollable-region-focusable`）。
+    const { html } = sanitizeReadmeHtml('<pre><code>very long line</code></pre>', BASE)
+
+    expect(html).toContain('<pre tabindex="0">')
+  })
+
+  it('README 側が書いた pre の属性は残さない（注入するのは tabindex だけ）', () => {
+    const { html } = sanitizeReadmeHtml(
+      '<pre id="evil" tabindex="5" onclick="alert(1)"><code>x</code></pre>',
+      BASE,
+    )
+
+    expect(html).toContain('<pre tabindex="0">')
+    expect(html).not.toContain('evil')
+    expect(html).not.toContain('onclick')
+    expect(html).not.toContain('tabindex="5"')
+  })
+
   it('parseStyleAttributes を有効にしない（postcss 経路を切る）', () => {
     // 壊れた style 属性値でも例外を投げずに処理できること（postcss を通していれば
     // パースエラーが起きうる入力）。
