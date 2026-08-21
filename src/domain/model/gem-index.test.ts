@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import { DomainValidationError } from '../errors'
-import { computeGemIndex, gemIndex, gemIndexValue } from './gem-index'
+import type { Gem } from './gem'
+import {
+  computeGemIndex,
+  gemFacetKey,
+  gemIndex,
+  gemIndexValue,
+  sortByGemIndex,
+  toGemFacetMap,
+} from './gem-index'
 
 describe('gemIndex', () => {
   it('有限数を包める（負値・ゼロ・正値）', () => {
@@ -61,5 +69,179 @@ describe('computeGemIndex', () => {
     expect(gemIndexValue(computeGemIndex(100, 0))).toBe(100)
     expect(gemIndexValue(computeGemIndex(0, 0))).toBe(0)
     expect(gemIndexValue(computeGemIndex(100, 100))).toBe(0)
+  })
+})
+
+function makeGem(overrides: Partial<Gem> & { repositoryFullName: string; gemIndex: number }): Gem {
+  return {
+    packageName: overrides.packageName ?? `pkg-${overrides.repositoryFullName}`,
+    repositoryFullName: overrides.repositoryFullName,
+    dependentCount: overrides.dependentCount ?? 0,
+    stars: overrides.stars ?? 0,
+    gemIndex: gemIndex(overrides.gemIndex),
+  }
+}
+
+describe('gemFacetKey', () => {
+  it('大文字小文字差を吸収する', () => {
+    expect(gemFacetKey('Facebook/React')).toBe(gemFacetKey('facebook/react'))
+  })
+
+  it('同じ入力に対して決定論的である', () => {
+    expect(gemFacetKey('acme/widget')).toBe(gemFacetKey('acme/widget'))
+  })
+})
+
+describe('toGemFacetMap', () => {
+  it('候補プールからキー → GemFacet のマップを作る', () => {
+    const candidates: readonly Gem[] = [
+      makeGem({ repositoryFullName: 'facebook/react', gemIndex: -10, dependentCount: 500 }),
+      makeGem({ repositoryFullName: 'acme/widget', gemIndex: 5, dependentCount: 3 }),
+    ]
+
+    const map = toGemFacetMap(candidates)
+
+    expect(map.get(gemFacetKey('facebook/react'))).toEqual({
+      gemIndex: gemIndex(-10),
+      dependentCount: 500,
+    })
+    expect(map.get(gemFacetKey('acme/widget'))).toEqual({
+      gemIndex: gemIndex(5),
+      dependentCount: 3,
+    })
+  })
+
+  it('突合キーは大文字小文字差を吸収する', () => {
+    const candidates: readonly Gem[] = [
+      makeGem({ repositoryFullName: 'Facebook/React', gemIndex: -10, dependentCount: 500 }),
+    ]
+
+    const map = toGemFacetMap(candidates)
+
+    expect(map.get(gemFacetKey('facebook/react'))).toEqual({
+      gemIndex: gemIndex(-10),
+      dependentCount: 500,
+    })
+  })
+
+  it('同一リポジトリが複数パッケージで重複する場合、Gem Index が小さい方（より過小評価な方）を残す', () => {
+    const candidates: readonly Gem[] = [
+      makeGem({
+        repositoryFullName: 'acme/widget',
+        packageName: 'widget-a',
+        gemIndex: 5,
+        dependentCount: 1,
+      }),
+      makeGem({
+        repositoryFullName: 'acme/widget',
+        packageName: 'widget-b',
+        gemIndex: -20,
+        dependentCount: 2,
+      }),
+      makeGem({
+        repositoryFullName: 'acme/widget',
+        packageName: 'widget-c',
+        gemIndex: 3,
+        dependentCount: 3,
+      }),
+    ]
+
+    const map = toGemFacetMap(candidates)
+
+    expect(map.get(gemFacetKey('acme/widget'))).toEqual({
+      gemIndex: gemIndex(-20),
+      dependentCount: 2,
+    })
+  })
+
+  it('空配列に対しては空のマップを返す', () => {
+    expect(toGemFacetMap([]).size).toBe(0)
+  })
+})
+
+describe('sortByGemIndex', () => {
+  type Item = { readonly fullName: string; readonly label: string }
+
+  it('facets を持つ項目を Gem Index 昇順（値が小さいほど上位）で並べる', () => {
+    const items: readonly Item[] = [
+      { fullName: 'a/a', label: 'a' },
+      { fullName: 'b/b', label: 'b' },
+      { fullName: 'c/c', label: 'c' },
+    ]
+    const facets = new Map([
+      [gemFacetKey('a/a'), { gemIndex: gemIndex(5), dependentCount: 0 }],
+      [gemFacetKey('b/b'), { gemIndex: gemIndex(-5), dependentCount: 0 }],
+      [gemFacetKey('c/c'), { gemIndex: gemIndex(0), dependentCount: 0 }],
+    ])
+
+    const sorted = sortByGemIndex(items, facets)
+
+    expect(sorted.map((x) => x.label)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('facets に無い項目は元の相対順を保ったまま末尾へ回す（安定ソート）', () => {
+    const items: readonly Item[] = [
+      { fullName: 'no-facet-1', label: 'nf1' },
+      { fullName: 'has-facet', label: 'hf' },
+      { fullName: 'no-facet-2', label: 'nf2' },
+    ]
+    const facets = new Map([[gemFacetKey('has-facet'), { gemIndex: gemIndex(1), dependentCount: 0 }]])
+
+    const sorted = sortByGemIndex(items, facets)
+
+    expect(sorted.map((x) => x.label)).toEqual(['hf', 'nf1', 'nf2'])
+  })
+
+  it('facets が空なら元の相対順のまま全件が末尾（＝先頭から）に残る', () => {
+    const items: readonly Item[] = [
+      { fullName: 'x/x', label: 'x' },
+      { fullName: 'y/y', label: 'y' },
+    ]
+
+    const sorted = sortByGemIndex(items, new Map())
+
+    expect(sorted.map((x) => x.label)).toEqual(['x', 'y'])
+  })
+
+  it('大文字小文字が異なる fullName でも facets と突合できる', () => {
+    const items: readonly Item[] = [{ fullName: 'Facebook/React', label: 'react' }]
+    const facets = new Map([
+      [gemFacetKey('facebook/react'), { gemIndex: gemIndex(-1), dependentCount: 0 }],
+    ])
+
+    const sorted = sortByGemIndex(items, facets)
+
+    expect(sorted.map((x) => x.label)).toEqual(['react'])
+  })
+
+  it('同じ Gem Index を持つ項目同士は元の相対順を保つ（安定ソート）', () => {
+    const items: readonly Item[] = [
+      { fullName: 'a/a', label: 'a' },
+      { fullName: 'b/b', label: 'b' },
+    ]
+    const facets = new Map([
+      [gemFacetKey('a/a'), { gemIndex: gemIndex(1), dependentCount: 0 }],
+      [gemFacetKey('b/b'), { gemIndex: gemIndex(1), dependentCount: 0 }],
+    ])
+
+    const sorted = sortByGemIndex(items, facets)
+
+    expect(sorted.map((x) => x.label)).toEqual(['a', 'b'])
+  })
+
+  it('入力配列を変更しない（イミュータブル）', () => {
+    const items: readonly Item[] = [
+      { fullName: 'a/a', label: 'a' },
+      { fullName: 'b/b', label: 'b' },
+    ]
+    const original = [...items]
+    const facets = new Map([
+      [gemFacetKey('a/a'), { gemIndex: gemIndex(5), dependentCount: 0 }],
+      [gemFacetKey('b/b'), { gemIndex: gemIndex(-5), dependentCount: 0 }],
+    ])
+
+    sortByGemIndex(items, facets)
+
+    expect(items).toEqual(original)
   })
 })

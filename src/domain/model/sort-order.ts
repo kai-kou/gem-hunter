@@ -1,12 +1,17 @@
 import { DomainValidationError } from '../errors'
 
-/** 並び順として許可する値（`AR-2`）。 */
-export const ALLOWED_SORT_ORDERS = ['relevance', 'stars', 'updated'] as const
+/**
+ * 並び順として許可する値（`AR-2`）。
+ * 🔴 `gem-index`（`SP-16`）は GitHub 検索 API に存在しない自前指標のためアプリ内でのみ並べ替える
+ *    （API へは送出しない・`github-repository-query.ts` を参照）。
+ */
+export const ALLOWED_SORT_ORDERS = ['relevance', 'stars', 'updated', 'gem-index'] as const
 export const DEFAULT_SORT_ORDER: SortOrder = 'relevance' as SortOrder
+export const GEM_INDEX_SORT_ORDER: SortOrder = 'gem-index' as SortOrder
 
 declare const brand: unique symbol
 
-/** 検索結果の並び順（関連度 / star 数 / 更新日時）。 */
+/** 検索結果の並び順（関連度 / star 数 / 更新日時 / Gem Index 順）。 */
 export type SortOrder = (typeof ALLOWED_SORT_ORDERS)[number] & { readonly [brand]: 'SortOrder' }
 
 function isAllowedSortOrder(value: string): value is (typeof ALLOWED_SORT_ORDERS)[number] {
