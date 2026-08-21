@@ -8,10 +8,10 @@ import { DailyDigest } from './daily-digest'
 
 const labels = {
   heading: '今日の Gem',
+  lead: 'star の数のわりに、多くのパッケージから使われているリポジトリです。上にあるものほど「使われ方に対して star が少ない」ものになります。毎日入れ替わります。',
   empty: '今日は表示できる Gem がありません',
   dependentLabel: '被依存数',
   starsLabel: 'star',
-  gemIndexLabel: 'Gem Index',
   newBadge: '新着',
   firstVisitNote: '初回として全件を表示しています',
   rssLink: 'RSS で購読',
@@ -96,7 +96,7 @@ describe('DailyDigest', () => {
     )
   })
 
-  it('被依存数・star 数・Gem Index を数値付きで表示する（AR-9）', () => {
+  it('被依存数・star 数を数値付きで表示する（AR-9・Gem Index の生値表示は撤去済み）', () => {
     const digest = makeDigest([
       {
         packageName: 'chalk',
@@ -112,11 +112,27 @@ describe('DailyDigest', () => {
     // ja ロケールなので `Intl.NumberFormat('ja-JP')` の書式（3 桁カンマ区切り）。
     expect(screen.getByText(/130,085/)).toBeInTheDocument()
     expect(screen.getByText(/22,000/)).toBeInTheDocument()
-    // Gem Index は有理数（負値）そのまま表示する。
-    expect(screen.getByText(/-63\.9/)).toBeInTheDocument()
     // 視覚ラベルも並んでいる（sr-only / 通常表示のいずれか）
     expect(screen.getByText(/被依存数/)).toBeInTheDocument()
-    expect(screen.getByText(/Gem Index/)).toBeInTheDocument()
+    // Gem Index の生値・ラベルはもう画面に出さない（初見フィードバック①対応）。
+    expect(screen.queryByText(/-63\.9/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Gem Index/)).not.toBeInTheDocument()
+  })
+
+  it('見出し直下に並び順の意味を説明する lead を表示する（初見フィードバック①④対応）', () => {
+    const digest = makeDigest([
+      {
+        packageName: 'chalk',
+        repositoryFullName: 'chalk/chalk',
+        dependentCount: 130085,
+        stars: 22000,
+        gemIndex: gemIndex(-63.9),
+      },
+    ])
+
+    render(<DailyDigest digest={digest} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByText(labels.lead)).toBeInTheDocument()
   })
 
   it('空 items のときは role="status" で「今日は表示できる Gem がありません」を伝える（US-23 / ui-ux-guidelines §7.2）', () => {
@@ -170,10 +186,10 @@ describe('DailyDigest', () => {
         digest={digest}
         labels={{
           heading: "Today's Gems",
+          lead: 'Repositories that many packages depend on but few people have starred.',
           empty: 'No gems to show today.',
           dependentLabel: 'Used by',
           starsLabel: 'stars',
-          gemIndexLabel: 'Gem Index',
           newBadge: 'New',
           firstVisitNote: 'Showing all items as your first visit',
           rssLink: 'Subscribe via RSS',

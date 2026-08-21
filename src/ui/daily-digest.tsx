@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import type { Locale } from '../domain/model/locale'
 import type { DailyDigest } from '../domain/model/gem'
-import { gemIndexValue } from '../domain/model/gem-index'
 import { ownerOf, repoOf, type RepositoryFullName } from '../domain/model/repository-full-name'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 import { FirstVisitNote } from './seen-digest/first-visit-note'
@@ -11,14 +10,18 @@ import { SeenDigestProvider } from './seen-digest/seen-digest-provider'
 type DailyDigestLabels = {
   /** セクション見出し（例: 「今日の Gem」）。 */
   heading: string
+  /**
+   * 見出し直下に置く 1 行説明（初見フィードバック①④対応）。並び順が「過小評価度の順」
+   * （star の数のわりに利用パッケージ数が多いものが上位）であることを伝え、Gem Index の
+   * 生値を画面から消しても「なぜこの並びか」が伝わるようにする。
+   */
+  lead: string
   /** 候補が 0 件のときの案内文（role="status" に載る）。 */
   empty: string
   /** 被依存数の視覚ラベル（数値の隣に添える短い語）。 */
   dependentLabel: string
   /** star 数の視覚ラベル。 */
   starsLabel: string
-  /** Gem Index の視覚ラベル。 */
-  gemIndexLabel: string
   /** 再訪時、前回は無かった packageName に付ける新着バッジの文言（`US-32`）。 */
   newBadge: string
   /** localStorage が空 / 消去 / 破損しているとき「初回として全件表示」を伝える注記（`US-32`）。 */
@@ -73,6 +76,14 @@ export function DailyDigest({
         <h2 id="daily-digest-heading" className="text-lg font-semibold">
           {labels.heading}
         </h2>
+        {/*
+          初見フィードバック①④対応: 並び順の意味（過小評価度の順）を 1 行で説明する。
+          Gem Index の生値は画面から撤去したため、この 1 行だけが「なぜ上から並んでいるか」を
+          伝える唯一の場所になる（`AttributionNotice` は出典・鮮度の説明であり役割が異なる）。
+        */}
+        <p id="daily-digest-lead" className="text-muted-foreground mt-1 text-sm">
+          {labels.lead}
+        </p>
 
         {/* localStorage が空 / 消去 / 破損している場合の自然劣化（US-32・必須要件）。 */}
         <FirstVisitNote label={labels.firstVisitNote} />
@@ -83,7 +94,10 @@ export function DailyDigest({
             {labels.empty}
           </p>
         ) : (
-          <ol className="divide-border mt-3 divide-y">
+          // 🔴 `aria-describedby` で並び順の説明を一覧に紐づける（`ui-ux-guidelines.md` §7.1）。
+          // 見出しジャンプでリストへ入る支援技術利用者は `lead` の <p> を読み飛ばすため、
+          // これが無いと「なぜこの順序なのか」が伝わらない（Gem Index の生値を撤去した代替説明）。
+          <ol aria-describedby="daily-digest-lead" className="divide-border mt-3 divide-y">
             {digest.items.map((gem, index) => {
               // `owner/repo` の分割はドメインの関数へ寄せる（`split('/')[1] ?? ''` を UI に散らさない）。
               // 形式検証はインフラ層（`static-gem-digest.ts`）が済ませており、満たさない候補は
@@ -122,9 +136,6 @@ export function DailyDigest({
                         <span aria-hidden="true">★ </span>
                         <span className="sr-only">{labels.starsLabel} </span>
                         {numberFormat.format(gem.stars)}
-                      </span>
-                      <span>
-                        {labels.gemIndexLabel} {numberFormat.format(gemIndexValue(gem.gemIndex))}
                       </span>
                     </p>
                   </div>

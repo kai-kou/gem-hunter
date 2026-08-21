@@ -37,7 +37,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 
 | 用語（日本語） | コード上の識別子 | 定義 | 注意 |
 |---|---|---|---|
-| Gem（原石） | `Gem` | **被依存数（実利用）に対して star（注目度）が不釣り合いに小さい OSS**（[ミッション](../../project-mission.md)）。`SP-14` で型として実体化した（`src/domain/model/gem.ts`）。候補プール JSON の 1 エントリに対応し、`packageName` / `repositoryFullName` / `dependentCount` / `stars` / `gemIndex` を持つ | 🔴 **MVP では算出しなかったが、`D-27`（`M-5` を「着手する」で通過）により Phase 2 が実装対象へ格上げされ、`SP-14` で実装済み**。「良いリポジトリ」一般を指す語として使わない。生テキスト（`description` 等）は持たない（`D-29`・再配信しない） |
+| Gem（原石） | `Gem` | **被依存数（実利用）に対して star（注目度）が不釣り合いに小さい OSS**（[ミッション](../../project-mission.md)）。`SP-14` で型として実体化した（`src/domain/model/gem.ts`）。候補プール JSON の 1 エントリに対応し、`packageName` / `repositoryFullName` / `dependentCount` / `stars` / `gemIndex` を持つ | 🔴 **MVP では算出しなかったが、`D-27`（`M-5` を「着手する」で通過）により Phase 2 が実装対象へ格上げされ、`SP-14` で実装済み**。「良いリポジトリ」一般を指す語として使わない。生テキスト（`description` 等）は持たない（`D-29`・再配信しない）。🔴 **`Gem.stars` / `Gem.dependentCount` は Ecosyste.ms のバッチ取得時点のスナップショット** であり、`RepositoryDetail.starCount` のようなライブ値ではない（銘柄ごとにクロール時点が異なり実測で最大 2.7 年ばらつく。表示上は参考値として扱う・[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §5 項番 8）。UI 表示ラベルは `dependentCount` = 「利用パッケージ数」/ "Used by" に対応する（コード識別子は変更しない） |
 | 日次ダイジェスト | `DailyDigest` | ある日付シード（`DateSeed`）に対して確定した「今日の Gem」の並び（`src/domain/model/gem.ts`）。`date` / `items`（表示順）/ `meta` を持つ（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2） | 同じ `date` は全ユーザーで同じ `items`。「フィード」「タイムライン」と呼ばない（有限件数であることが設計の核・ADR 0014 §2.1） |
 | 出典メタデータ | `DigestMeta` | 候補プールの提供元・ライセンス・生成時刻（`source` / `license` / `sourceLicenseUrl` / `generatedAt`）。`D-29` の帰属表示に使う | 🔴 **表示は任意ではなく義務**（CC BY-SA 4.0）。`DailyDigest` から切り離して持ち回らない |
 | 既視ダイジェスト | `SeenDigest` | **前回訪問時にそのブラウザが見たダイジェストのスナップショット**（`date` + `packageNames`・`src/domain/model/digest-diff.ts`）。`SP-15` の差分表示（`US-32`）の入力 | 🔴 **1 世代だけ保持する**（履歴を蓄積しない）。保存先はクライアントの `localStorage` のみで **サーバーに永続化しない**（`D-14` / `D-18`）。Safari ITP により消えうる前提の値であり、無い＝初回として扱う（`ADR 0014` §2.4） |
@@ -77,6 +77,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 🔴 **`starCount` と `Gem.stars` の名前の衝突について（`SP-14`）**: 上表の `starCount` は **GitHub API → `RepositorySummary` / `RepositoryDetail`** の変換規則であり、`src/infrastructure/github/mapper.ts` の 1 箇所だけに適用される。一方 `Gem.stars`（`src/domain/model/gem.ts`）は **Gem Index の候補プール（Ecosyste.ms 由来の静的 JSON）** から来る別コンテキストの値で（§6 の **Gem Index コンテキスト**）、変換箇所も供給元も異なる。したがって現状は「同じ概念に 2 つの名前がある」のではなく「**別コンテキストの同名概念が別の識別子を持っている**」状態である。
 
 - ⚠️ ただし将来 2 コンテキストが同じ画面で混ざると読み手が取り違える。**`Gem.stars` を `starCount` へ寄せて統一するかどうかは別 Issue として扱う**（本ファイルは衝突の存在を明示するに留め、`gem.ts` の識別子は `SP-14` の PR では変更しない）。
+- 🔴 **鮮度も異なる**（初見ユーザーのフィードバック⑦・Issue #308）: `RepositorySummary.starCount` / `RepositoryDetail.starCount` は GitHub API のライブ値（`ADR 0005` の TTL でキャッシュ）だが、`Gem.stars` / `Gem.dependentCount` は Ecosyste.ms がクロールした時点のスナップショットで、銘柄ごとにクロール時点が異なり実測で最大 2.7 年ばらつく。一覧（`Gem`）と詳細（`Repository`）で star 数が食い違って見えるのはこのため（バグではなく設計上の必然）。詳細は [ADR 0014](../../adr/0014-zero-query-daily-digest.md) §5 項番 8。
 
 ---
 
@@ -100,12 +101,12 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `SearchKeyword` | 空白のみ不可・前後トリム・長さ上限 | `DomainValidationError`（UI は「検索を促す表示」に倒す・`AC-3`） |
 | `PageNumber` | 1 以上の整数。上限は GitHub 検索の到達可能範囲 | `tryParse` は既定値 `1` に倒す（URL 改変で 500 にしない） |
 | `PerPage` | 🔴 **20 / 50 / 100 のみ**（`AR-3`。任意値はキャッシュ断片化を招く） | `tryParse` は既定値に倒す |
-| `SortOrder` | `relevance` / `stars` / `updated` / `gem-index`（`AR-2`・`gem-index` は `SP-16`。GitHub 検索 API に無い自前指標のため API へは送出せずアプリ内で並べ替える・`src/infrastructure/github/github-repository-query.ts`） | 同上 |
+| `SortOrder` | `relevance` / `stars` / `updated`（`AR-2`）。🔴 **`gem-index`（`SP-16`）は `D-33`（2026-08-21）により撤去済み**。候補プールの被覆率不足で機能として成立しなかったため（[`open-questions.md`](../../02_requirements/open-questions.md) `D-33`）。旧 URL の `sort=gem-index` は不正値として既定値へ丸める | 同上 |
 | `Locale` | `ja` / `en`（`AR-4`） | 既定ロケールに倒す |
 | `CacheKey` | 名前空間 + 正規化済みの構成要素（`NFR-18`） | 生成関数以外で組み立てない |
 | `DateSeed` | 🔴 **`YYYYMMDD` の 8 桁数字**（UTC）かつ **実在する日付**（`20260231` は不可・`Date.UTC` の往復一致で検証）。日次ダイジェストの唯一のシード（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2・`src/domain/model/date-seed.ts`） | `parse` は `DomainValidationError`。`tryParse(raw, now)` は **不正値・未指定を当日（UTC）へ倒す**（URL の `?date=` 改変で 500 にしない・ADR 0014 §2.2） |
 | `GemIndex` | **被依存数のパーセンタイル順位 − star のパーセンタイル順位**（`ADR 0009` §2.1・`src/domain/model/gem-index.ts`）。`gemIndex(value)` は有限数のみ、`computeGemIndex(dependentRank, starRank)` は入力を **0〜100** に制限する（Ecosyste.ms の `rankings` の値域） | `DomainValidationError`。🔴 **値が小さいほど上位**（`rankings` は 0 が最上位。並べ替えは昇順）。健全性（`criticality_score` / Scorecard）と 1 つのスコアに合算しない（`ADR 0009` §2.2） |
-| `GemFacet` | 🔴 **`SP-16`・値オブジェクトではなく突合用の型**（`{ gemIndex: GemIndex; dependentCount: number }`・`src/domain/model/gem.ts`）。候補プール（`Gem`）から検索結果（`RepositorySummary`）の Gem Index 順ソートへ渡す最小限のファセット。`gemFacetKey(repositoryFullName)` が突合キー（大文字小文字を吸収）を作り、`toGemFacetMap(candidates)` がキー → `GemFacet` のマップを作る（同一リポジトリが複数パッケージで重複する場合は Gem Index が小さい方を残す）。`sortByGemIndex(items, facets)` が Gem Index 昇順に並べ替え、`facets` に無い項目は元の相対順を保ったまま末尾に残す（いずれも `src/domain/model/gem-index.ts`） | 不変条件なし（検証は既に済んだ `Gem` / `GemIndex` から作るため） |
+| ~~`GemFacet`~~ | 🔴 **`D-33`（2026-08-21）により撤去**（`{ gemIndex: GemIndex; dependentCount: number }`・旧 `src/domain/model/gem.ts`）。`SP-16` が検索結果（`RepositorySummary`）を候補プール（`Gem`）と突合し Gem Index 順に並べ替えるために持っていた型で、`gemFacetKey` / `toGemFacetMap` / `sortByGemIndex`（旧 `src/domain/model/gem-index.ts`）とともに削除済み。並べ替え適用先（検索結果一覧）が撤去されたため、突合専用のこの型に存在理由がなくなった。**`GemIndex` 型・`computeGemIndex` は撤去しない**（「今日の Gem」＝日次ダイジェストが使い続ける） | （撤去済み） |
 
 **実装の型（決定）**: **ブランド型 + スマートコンストラクタ** を使う。クラスで包むのは振る舞いを持つものだけにし、単純な識別子・数値はブランド型で軽量に保つ。
 
@@ -163,7 +164,7 @@ repository:v2:vercel/next.js
 | コンテキスト | 位置づけ | 関係 |
 |---|---|---|
 | **Search**（MVP） | 本アプリの中核。検索・一覧・詳細 | — |
-| **Gem Index**（Phase 2） | 被依存数・健全性を扱う | Search とは **別コンテキスト**。同じ `Repository` でも持つ属性が違う。共通化を急がない |
+| **Gem Index**（Phase 2） | 被依存数・健全性を扱う | Search とは **別コンテキスト**。同じ `Repository` でも持つ属性が違う。共通化を急がない。🔴 **両コンテキストの突合（`SP-16`・`GemFacet` 経由で検索結果へ Gem Index を適用する経路）は `D-33` により撤去済み**。現在は「今日の Gem」（日次ダイジェスト）に閉じたコンテキストとして存在する |
 | **GitHub**（外部・上流） | データ源 | 🔴 **腐敗防止層（`src/infrastructure/github/`）を必ず挟む**。上流の変更に本体を追随させない |
 | **Ecosyste.ms / OpenSSF**（Phase 2・外部・上流） | 被依存数・健全性の供給元 | 同じく ACL を挟む。`RepositoryQueryPort` と別ポートにする → ✅ **`SP-14` で `GemDigestPort`（`src/domain/ports/gem-digest-port.ts`・`listCandidates()` 1 本）として分離済み**。候補プールはバッチ生成の静的 JSON 経由で読むため、Worker から Ecosyste.ms を直接叩かない（`D-28`） |
 

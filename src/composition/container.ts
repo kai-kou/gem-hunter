@@ -12,21 +12,7 @@ import {
   makeGetRepositoryDetail,
   type GetRepositoryDetail,
 } from '../usecases/get-repository-detail'
-import { makeListGemFacets, type ListGemFacets } from '../usecases/list-gem-facets'
-import {
-  GEM_INDEX_FETCH_MAX_PAGES,
-  makeSearchRepositories,
-  type SearchRepositories,
-} from '../usecases/search-repositories'
-
-/**
- * `sort=gem-index` 時に `enforceSearchRateLimit` へ渡すレート消費コスト（PR #293 セルフレビュー
- * 指摘・修正②）。呼び出し側（`app/[locale]/page.tsx` / `app/api/search/route.ts`）が
- * `src/usecases/` を直接 import せず composition root 経由で参照できるようにする
- * （`application-architecture.md` §1.2: `app/` の許容依存に `src/usecases/` は含まれない）。
- * 値そのものの単一の定義元は `search-repositories.ts` の `GEM_INDEX_FETCH_MAX_PAGES`。
- */
-export const GEM_INDEX_SEARCH_RATE_LIMIT_COST = GEM_INDEX_FETCH_MAX_PAGES
+import { makeSearchRepositories, type SearchRepositories } from '../usecases/search-repositories'
 
 /**
  * composition root。実装をポートへ束ねてよい唯一の場所（architecture §2.1）。
@@ -56,9 +42,9 @@ const TTL_DETAIL_SECONDS = 300
 const sharedCache: CachePort = new InMemoryCache(new SystemClock())
 
 /**
- * `SP-16`: gem-index 順ソート・カードの Gem Index 表示（`listGemFacetsUseCase`）の両方が読む
- * 候補プールの単一インスタンス（モジュールスコープ）。`StaticGemDigest` は読み取り専用・状態を
- * 持たない実装（`static-gem-digest.ts`）なので `sharedCache` のような可変状態の共有ではなく、
+ * 日次ダイジェスト（`getDailyDigestUseCase`）が読む候補プールの単一インスタンス
+ * （モジュールスコープ）。`StaticGemDigest` は読み取り専用・状態を持たない実装
+ * （`static-gem-digest.ts`）なので `sharedCache` のような可変状態の共有ではなく、
  * バンドル済み JSON の再パースを毎リクエスト避けるための使い回しに過ぎない。
  */
 const sharedGemDigestPort = new StaticGemDigest()
@@ -98,10 +84,7 @@ function makeCachingRepositoryQuery(
  * SP-8: `accessToken` を渡すとユーザー自身のレート枠で検索する（省略時は installation token）。
  */
 export function searchRepositoriesUseCase(accessToken?: string | null): SearchRepositories {
-  return makeSearchRepositories({
-    repos: makeCachingRepositoryQuery({ accessToken }),
-    gems: sharedGemDigestPort,
-  })
+  return makeSearchRepositories({ repos: makeCachingRepositoryQuery({ accessToken }) })
 }
 
 /**
@@ -129,7 +112,7 @@ export function searchRepositoriesWithCacheStatus(accessToken?: string | null): 
     },
   })
   return {
-    search: makeSearchRepositories({ repos, gems: sharedGemDigestPort }),
+    search: makeSearchRepositories({ repos }),
     getCacheStatus: () => status,
   }
 }
@@ -141,13 +124,4 @@ export function searchRepositoriesWithCacheStatus(accessToken?: string | null): 
  */
 export function getDailyDigestUseCase(): GetDailyDigest {
   return makeGetDailyDigest({ port: sharedGemDigestPort })
-}
-
-/**
- * `SP-16`: 検索結果カードへ Gem Index 値・被依存数を追記する UI 用のファセット取得
- * （`sort=gem-index` のときだけ UI 側が呼ぶ・`whiteboard` D-L）。候補プールは静的 JSON
- * （状態を持たない）なので、日次ダイジェストと同じ `sharedGemDigestPort` を束ねるだけでよい。
- */
-export function listGemFacetsUseCase(): ListGemFacets {
-  return makeListGemFacets({ gems: sharedGemDigestPort })
 }

@@ -1,12 +1,8 @@
 import type { NextRequest } from 'next/server'
 import { decodeSessionCookie, SESSION_COOKIE_NAME } from '@/src/composition/auth'
-import {
-  GEM_INDEX_SEARCH_RATE_LIMIT_COST,
-  searchRepositoriesWithCacheStatus,
-} from '@/src/composition/container'
+import { searchRepositoriesWithCacheStatus } from '@/src/composition/container'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, type ErrorKind, RateLimitExceededError } from '@/src/domain/errors'
-import { GEM_INDEX_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { searchKeyword } from '@/src/domain/model/search-keyword'
 import { parseSearchParams, SEARCH_PARAM_KEYS } from '@/src/ui/url/search-params'
 
@@ -40,7 +36,7 @@ export async function GET(request: NextRequest) {
       rawParams[key] = value
     }
   }
-  const { page, sort } = parseSearchParams(rawParams)
+  const { page } = parseSearchParams(rawParams)
 
   try {
     // 値オブジェクトへの変換は境界（ここ）で行う（domain-model.md §4 / ARCH-R2）。
@@ -65,13 +61,7 @@ export async function GET(request: NextRequest) {
     // 枠を消費しないよう `searchKeyword` の検証（値オブジェクト変換）の後に置き、
     // GitHub API を実際に叩く（`search()`）前に間引く。超過時は `RateLimitExceededError`
     // を投げ、下の catch → `errorResponse()` が 429 + `Retry-After` を返す（新しい分岐は足さない）。
-    //
-    // 🔴 PR #293 セルフレビュー指摘・修正②（レート増幅対策）: `sort=gem-index` は 1 リクエストで
-    // 最大 `GEM_INDEX_SEARCH_RATE_LIMIT_COST` 回の上流呼び出しに増幅しうるため、その回数ぶんを
-    // 消費コストとして渡す（`page.tsx` と同じ判定・単一の定義元）。
-    await enforceSearchRateLimit(request.headers, {
-      cost: sort === GEM_INDEX_SORT_ORDER ? GEM_INDEX_SEARCH_RATE_LIMIT_COST : undefined,
-    })
+    await enforceSearchRateLimit(request.headers)
 
     // SP-8: セッション Cookie があればユーザー自身のレート枠で検索する（AR-5）。
     // このエンドポイントは元々 X-Cache-Status 観測・検証専用（用途はファイル冒頭コメント参照）

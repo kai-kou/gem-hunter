@@ -26,8 +26,7 @@ describe('tryPageNumber', () => {
 })
 
 describe('API_RESULT_LIMIT', () => {
-  // WARNING 修正: GitHub 検索 API の「1,000 件上限」を単一の定義元にする
-  // （`search-repositories.ts` の `GEM_INDEX_FETCH_MAX_PAGES` はここから導出する）。
+  // GitHub 検索 API の「1,000 件上限」を単一の定義元にする。
   it('1,000 件として export されている（MAX_PAGE の算出元と一致する）', () => {
     expect(API_RESULT_LIMIT).toBe(1000)
     expect(MAX_PAGE).toBe(Math.floor(API_RESULT_LIMIT / 20))

@@ -2,19 +2,11 @@ import { Suspense } from 'react'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import {
-  GEM_INDEX_SEARCH_RATE_LIMIT_COST,
-  getDailyDigestUseCase,
-  listGemFacetsUseCase,
-  searchRepositoriesUseCase,
-} from '@/src/composition/container'
+import { getDailyDigestUseCase, searchRepositoriesUseCase } from '@/src/composition/container'
 import { DAILY_DIGEST_LIMIT } from '@/src/composition/digest-feed'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
-import type { GemFacet } from '@/src/domain/model/gem'
-import { gemFacetKey } from '@/src/domain/model/gem-index'
-import { GEM_INDEX_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { tryPageNumber } from '@/src/domain/model/page-number'
 import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
@@ -79,13 +71,7 @@ async function runSearch(
     // ローカライズ済み表示（`toErrorPresentation`）に繋げる（新しい分岐は足さない）。
     // `headers()` の呼び出しでこのページは動的レンダリングになるが、既に `searchParams`
     // を使っているため元から動的である（新たな制約ではない）。
-    //
-    // 🔴 PR #293 セルフレビュー指摘・修正②（レート増幅対策）: `sort=gem-index` は 1 リクエストで
-    // 最大 `GEM_INDEX_SEARCH_RATE_LIMIT_COST` 回の上流呼び出しに増幅するため、その回数ぶんを
-    // 消費コストとして渡す（既定 1 のままだと同一 IP から少数回叩くだけで共有枠を使い切れる）。
-    await enforceSearchRateLimit(await headers(), {
-      cost: sort === GEM_INDEX_SORT_ORDER ? GEM_INDEX_SEARCH_RATE_LIMIT_COST : undefined,
-    })
+    await enforceSearchRateLimit(await headers())
 
     // SP-8: ログイン中はユーザー自身のアクセストークンで叩く（レート枠の切替）。トークンの
     // 供給元が変わっても経路は `GithubRepositoryQuery`（ACL）のままなので、`is:public` 付与と
@@ -137,8 +123,10 @@ async function SearchStatusText({
 }) {
   const state = await statePromise
 
+  // 🔴 `idle`（キーワード未入力）はこのコンポーネントごと描画されない（呼び出し側が
+  // `hasKeyword` で囲む）。到達しても表示すべき文言がないため何も出さない。
   if (state.status === 'idle') {
-    return <>{messages.home.idle}</>
+    return null
   }
   if (state.status === 'error') {
     // エラー文言は `ErrorNotice`（role="alert"）が担当する。ここへ重ねると二重読み上げになる。
@@ -163,7 +151,6 @@ async function SearchBody({
   messages,
   isLoggedIn,
   showAuthLink,
-  gemFacetsPromise,
 }: {
   statePromise: Promise<SearchState>
   basePath: string
@@ -173,11 +160,6 @@ async function SearchBody({
   messages: Messages
   isLoggedIn: boolean
   showAuthLink: boolean
-  /**
-   * `sort=gem-index` のときだけ渡す（`SP-16`）。それ以外は `undefined`
-   * のままにし `RepositoryList` へ渡さない（無駄な取得をしない・`D-L`）。
-   */
-  gemFacetsPromise?: Promise<ReadonlyMap<string, GemFacet>>
 }) {
   const state = await statePromise
 
@@ -206,23 +188,6 @@ async function SearchBody({
     return null
   }
 
-  // 🔴 二重防御（`static-gem-digest.ts` と同じ方針）: 候補プールの読み込み失敗が
-  // 検索結果一覧の表示まで巻き添えにしない。失敗時は「Gem Index 情報なし」相当（`undefined`）へ倒す。
-  const gemFacets = gemFacetsPromise ? await gemFacetsPromise.catch(() => undefined) : undefined
-
-  // 🔴 PR #293 セルフレビュー指摘・修正④（WARNING）: ranked/unranked の境界がページ境界と
-  // 一致すると（このページの先頭要素が unranked）区切り見出しが 1 度も出ない
-  // （`repository-list.tsx` の `dividerIndex` は `idx > 0` でしか境界を検出できないため）。
-  // `sortByGemIndex` は ranked を必ず先に並べる（`gem-index.ts`）ので、「gem-index 順 かつ
-  // 表示ページが 2 以上 かつ 先頭要素が facet を持たない」なら前ページに ranked があったと判定できる。
-  const firstItem = state.result.items[0]
-  const unrankedContinuedFromPreviousPage =
-    searchState.sort === GEM_INDEX_SORT_ORDER &&
-    searchState.page >= 2 &&
-    gemFacets !== undefined &&
-    firstItem !== undefined &&
-    gemFacets.get(gemFacetKey(firstItem.fullName)) === undefined
-
   return (
     <>
       <RepositoryList
@@ -231,14 +196,9 @@ async function SearchBody({
           empty: messages.home.empty,
           starCount: messages.home.starCount,
           updatedAt: messages.home.updatedAt,
-          gemIndexValueLabel: messages.home.gemIndexValueLabel,
-          gemIndexDependentLabel: messages.home.gemIndexDependentLabel,
-          gemIndexUnavailableHeading: messages.home.gemIndexUnavailableHeading,
         }}
         locale={locale}
         searchState={searchState}
-        gemFacets={gemFacets}
-        unrankedContinuedFromPreviousPage={unrankedContinuedFromPreviousPage}
       />
       {state.result.items.length > 0 ? (
         <Pagination
@@ -298,13 +258,6 @@ export default async function LocaleHome({
   const statePromise = runSearch(rawKeyword, page, sort, perPage, accessToken)
   void statePromise.catch(() => undefined)
 
-  // SP-16: `sort=gem-index` のときだけ Gem Index の候補プールを取得する（無駄な取得をしない）。
-  const gemFacetsPromise =
-    hasKeyword && sort === GEM_INDEX_SORT_ORDER ? listGemFacetsUseCase()() : undefined
-  if (gemFacetsPromise) {
-    void gemFacetsPromise.catch(() => undefined)
-  }
-
   // SP-14: 日次ダイジェスト（キーワード非依存の発見面・`ADR 0014` §2.2）。
   // `?date=YYYYMMDD` は不正値・未指定を当日（UTC）へフォールバックする（`tryParse` 契約）。
   //
@@ -361,10 +314,10 @@ export default async function LocaleHome({
             locale={locale}
             labels={{
               heading: messages.home.digest.heading,
+              lead: messages.home.digest.lead,
               empty: messages.home.digest.empty,
               dependentLabel: messages.home.digest.dependentLabel,
               starsLabel: messages.home.digest.starsLabel,
-              gemIndexLabel: messages.home.digest.gemIndexLabel,
               newBadge: messages.home.digest.newBadge,
               firstVisitNote: messages.home.digest.firstVisitNote,
               rssLink: messages.home.digest.rssLink,
@@ -407,56 +360,73 @@ export default async function LocaleHome({
       ) : null}
 
       {/*
-        結果一覧の見出し（`E-15` / `ui-ux-guidelines.md` §7.1）。`tabIndex={-1}` を付け、
-        ページ送り・ソート・件数切替（next/link のクライアント遷移）の完了後に
-        `FocusOnNavigate` からここへ focus() を移す。検索フォームのネイティブ GET 送信
-        （フルリロード）は対象外（本コンポーネントごと初回マウントからやり直しになるため、
-        `FocusOnNavigate` 側の「初回描画では focus しない」設計がそのまま対象外を実現する）。
-      */}
-      <h2
-        id="results-heading"
-        tabIndex={-1}
-        className="mt-6 text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring rounded-sm"
-      >
-        {messages.home.resultsHeading}
-      </h2>
+        🔴 キーワード未入力時は「検索結果」見出しと結果本体を描画しない（飼い主決定・初見
+        フィードバック⑥）。以前の idle 表示（「キーワードを入力して検索してください。」）は撤去し、
+        まだ検索していない状態では検索フォームと日次ダイジェストだけを見せる。
 
-      {/*
-        ライブリージョン（初期 DOM に常設し、中身だけを書き換える・ui-ux-guidelines.md §7.2）。
-        読み込み中（US-22）は fallback がストリーミングで先に届き、解決後は件数表示へ
-        書き換わる。0 件表示（`RepositoryList` の role="status"）とは別要素・別文言なので
-        区別できる（AC-8）。
-        🔴 訂正（PR #183 実測・0 件時は下記の `RepositoryList` 側 `role="status"` と 2 つ同時に
-        存在するため「唯一」は事実ではない）: この `section` が守るのは **入れ子にしない** こと。
-        `LoadingIndicator` は自身の role/aria-live を持たない表示専用コンポーネントへ変更済みで、
-        この `section`（`aria-live="polite"`）の **内側** に別のライブリージョンを重ねない
-        （`RepositoryList` の `role="status"` は本 `section` の **外**・兄弟要素であり、
-        入れ子ではないので問題ない・§7.2）。
+        🔴 ただし **ライブリージョン（`<section id="search-status">`）だけは条件描画にしない**
+        （`ui-ux-guidelines.md` §7.2 の必須要件「ライブリージョンは初期 DOM に空で常設し、中身を
+        書き換える。要素ごと動的挿入しない」）。要素ごと出し入れすると、キーワードなしの URL へ
+        クライアント遷移した後に再度検索したとき `aria-live` の変更通知が発火しない実装があり、
+        「読み込み中 → N 件中 M 件を表示」がスクリーンリーダーへ届かなくなる（`NFR-12` / `US-26`）。
+        見出しは `<h2>` であってライブリージョンではないため、条件描画してよい。
       */}
-      <section
-        id="search-status"
-        role="status"
-        aria-live="polite"
-        className="text-muted-foreground mt-6 text-sm"
-      >
-        <Suspense key={suspenseKey} fallback={<LoadingIndicator label={messages.common.loading} />}>
-          <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
-        </Suspense>
-      </section>
+      {hasKeyword ? (
+        <h2
+          id="results-heading"
+          tabIndex={-1}
+          className="mt-6 text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring rounded-sm"
+        >
+          {messages.home.resultsHeading}
+        </h2>
+      ) : null}
 
-      <Suspense key={suspenseKey} fallback={null}>
-        <SearchBody
-          statePromise={statePromise}
-          basePath={basePath}
-          currentPath={currentPath}
-          searchState={searchState}
-          locale={locale}
-          messages={messages}
-          isLoggedIn={accessToken !== null}
-          showAuthLink={isAuthConfigured()}
-          gemFacetsPromise={gemFacetsPromise}
-        />
-      </Suspense>
+      <>
+
+          {/*
+            ライブリージョン（初期 DOM に常設し、中身だけを書き換える・ui-ux-guidelines.md §7.2）。
+            読み込み中（US-22）は fallback がストリーミングで先に届き、解決後は件数表示へ
+            書き換わる。0 件表示（`RepositoryList` の role="status"）とは別要素・別文言なので
+            区別できる（AC-8）。
+            🔴 訂正（PR #183 実測・0 件時は下記の `RepositoryList` 側 `role="status"` と 2 つ同時に
+            存在するため「唯一」は事実ではない）: この `section` が守るのは **入れ子にしない** こと。
+            `LoadingIndicator` は自身の role/aria-live を持たない表示専用コンポーネントへ変更済みで、
+            この `section`（`aria-live="polite"`）の **内側** に別のライブリージョンを重ねない
+            （`RepositoryList` の `role="status"` は本 `section` の **外**・兄弟要素であり、
+            入れ子ではないので問題ない・§7.2）。
+          */}
+        <section
+          id="search-status"
+          role="status"
+          aria-live="polite"
+          className="text-muted-foreground mt-6 text-sm"
+        >
+          {/* 未入力時は要素を残したまま中身だけ空にする（§7.2・上のコメント参照）。 */}
+          {hasKeyword ? (
+            <Suspense
+              key={suspenseKey}
+              fallback={<LoadingIndicator label={messages.common.loading} />}
+            >
+              <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
+            </Suspense>
+          ) : null}
+        </section>
+
+        {hasKeyword ? (
+          <Suspense key={suspenseKey} fallback={null}>
+            <SearchBody
+              statePromise={statePromise}
+              basePath={basePath}
+              currentPath={currentPath}
+              searchState={searchState}
+              locale={locale}
+              messages={messages}
+              isLoggedIn={accessToken !== null}
+              showAuthLink={isAuthConfigured()}
+            />
+          </Suspense>
+        ) : null}
+      </>
 
       {/*
         `key={suspenseKey}` の Suspense 境界の外（= remount されない位置）に置く。
@@ -464,7 +434,9 @@ export default async function LocaleHome({
         このコンポーネント自身は remount されずに props だけが更新され、初回判定
         （`useRef`）が遷移を跨いで機能する（`focus-on-navigate.tsx` 参照）。
       */}
-      <FocusOnNavigate watch={currentPath} targetId="results-heading" />
+      {/* 🔴 未入力時は `results-heading` が存在しないため描画しない（無条件に置くと
+          `getElementById` が null を返し、フォーカスが body に残ったまま無言で失敗する）。 */}
+      {hasKeyword ? <FocusOnNavigate watch={currentPath} targetId="results-heading" /> : null}
     </main>
   )
 }

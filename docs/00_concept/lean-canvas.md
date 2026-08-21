@@ -141,7 +141,7 @@
 |---|---|---|---|
 | `P-1` / `P-2` | **Gem Index**（被依存数のパーセンタイル順位 − star のパーセンタイル順位）による並べ替え | Phase 2 | `GR-1` |
 | `P-1` / `P-2` | **健全性による足切り**（OpenSSF `criticality_score` / Scorecard に依存し、自作しない） | Phase 2 | `GR-2` |
-| `P-3` | **topics 絞り込み × Gem Index 並べ替え** の組み合わせ | Phase 2 | `GR-4` |
+| `P-3` | **topics 絞り込み × Gem Index 並べ替え** の組み合わせ | Phase 2 | `GR-4`（🔴 検索結果への適用は `D-33`・2026-08-21 により撤去済み。詳細は [`open-questions.md`](../02_requirements/open-questions.md) `D-33`） |
 | （基盤） | **キーワードによる GitHub リポジトリ検索 Web アプリケーション** | Phase 1 | `FR-1`〜`FR-7` / `AR-1`〜`AR-8` |
 
 🔴 **2 軸を 1 つのスコアに合算しない**（`Q-1` / `Q-2`）。合算すると「健全だが有名」なリポジトリが上位に戻り、否定したはずの star 追随ランキングに退化する。

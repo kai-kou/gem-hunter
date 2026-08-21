@@ -27,10 +27,6 @@
 //                             データセット。実 API と同様に `page` / `per_page` / `sort` を
 //                             実際に反映して切り出す（他キーワードは PAGE_1_REPOS/PAGE_2_REPOS
 //                             固定・既存 E2E への影響を避けるため分離）。
-//   gem-sort-hits を含む   → SP-16（Gem Index 順ソート）E2E 専用のデータセット。
-//                             `repositoryFullName` の一部を `public/data/daily-digest.json`
-//                             （本番と同一の候補プール）から拝借し、残りは合成名にすることで
-//                             「facet あり / なし」が混在した結果を作る（`e2e/sp-16.spec.ts`）。
 //
 // `/__stats`: スタブへ実際に届いたリクエスト数（`searchCount` / `detailCount`）を返す。
 // SP-5（キャッシュ）の E2E は「2 回目の検索でスタブへのリクエストが増えないこと」をこの値で
@@ -150,89 +146,6 @@ const privateMixedRepos = [
     isPrivate: true,
     description: 'PRIVATE-SECRET-DESCRIPTION',
   }),
-]
-
-// SP-16 E2E 専用: `q` に `gem-sort-hits` を含む検索でのみ使うデータセット
-// （`e2e/sp-16.spec.ts`）。`listGemFacetsUseCase` の候補プールは
-// `public/data/daily-digest.json`（本番と同一の静的ファイル）を直接読むため
-// （`src/composition/container.ts` の `sharedGemDigestPort`）、検索結果側にも
-// **その JSON に実在する `repositoryFullName`** を混ぜないと Gem Index が一切付かない。
-// そのため実行時に同ファイルを読み、先頭から重複なしで一定数を拝借して
-// 「facet を持つ（ランクあり）」グループを作り、残りは実在しない合成名で
-// 「facet を持たない（ランクなし）」グループにする（本番データが再生成されても壊れない）。
-const GEM_SORT_MARKER = 'gem-sort-hits'
-const GEM_SORT_RANKED_TARGET = 24
-const GEM_SORT_UNRANKED_COUNT = 12
-
-function loadGemSortRankedFullNames() {
-  try {
-    const raw = readFileSync(
-      path.join(__dirname, '..', '..', 'public', 'data', 'daily-digest.json'),
-      'utf8',
-    )
-    const parsed = JSON.parse(raw)
-    const seen = new Set()
-    const names = []
-    for (const candidate of Array.isArray(parsed.candidates) ? parsed.candidates : []) {
-      const fullName = candidate?.repositoryFullName
-      if (typeof fullName !== 'string' || seen.has(fullName)) {
-        continue
-      }
-      // owner/repo の厳格判定（`static-gem-digest.ts` と同じ形）。崩れた値は突合に使わない。
-      if (!/^[^/\s]+\/[^/\s]+$/.test(fullName)) {
-        continue
-      }
-      seen.add(fullName)
-      names.push(fullName)
-      if (names.length >= GEM_SORT_RANKED_TARGET) {
-        break
-      }
-    }
-    return names
-  } catch {
-    // 候補プールが読めなくてもスタブ全体を落とさない（このマーカーの E2E だけ facet 0 件になる）。
-    return []
-  }
-}
-
-function gemSortRepo({ id, fullName, index }) {
-  const [owner, name] = fullName.split('/')
-  return {
-    id,
-    name,
-    full_name: fullName,
-    html_url: `https://github.com/${fullName}`,
-    description: null,
-    language: null,
-    stargazers_count: (index + 1) * 3,
-    watchers_count: (index + 1) * 3,
-    subscribers_count: index + 1,
-    forks_count: Math.max(1, Math.floor((index + 1) / 2)),
-    open_issues_count: index % 5,
-    updated_at: '2026-08-01T00:00:00Z',
-    pushed_at: '2026-08-01T00:00:00Z',
-    private: false,
-    topics: [],
-    owner: {
-      login: owner,
-      avatar_url:
-        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-    },
-  }
-}
-
-const gemSortRankedFullNames = loadGemSortRankedFullNames()
-const gemSortRepos = [
-  ...gemSortRankedFullNames.map((fullName, index) =>
-    gemSortRepo({ id: 902000 + index, fullName, index }),
-  ),
-  ...Array.from({ length: GEM_SORT_UNRANKED_COUNT }, (_, index) =>
-    gemSortRepo({
-      id: 903000 + index,
-      fullName: `octostub/gsort-unranked-${String(index + 1).padStart(2, '0')}`,
-      index: gemSortRankedFullNames.length + index,
-    }),
-  ),
 ]
 
 /** `sort`（relevance/stars/updated）に従って並べ替える（実 API の挙動を模す）。 */
@@ -469,23 +382,6 @@ const server = http.createServer((req, res) => {
       })
     }
 
-    if (q.includes(GEM_SORT_MARKER)) {
-      const pageNum = Math.max(1, Number.parseInt(page, 10) || 1)
-      const perPage = Math.max(
-        1,
-        Number.parseInt(url.searchParams.get('per_page') ?? '20', 10) || 20,
-      )
-      // 🔴 usecase 側は `sort=gem-index` を GitHub API へは送らない（`sort` パラメータ無し・D-D）。
-      //    挿入順（relevance 相当）のまま返せばよく、`sortManyRepos` は使わない。
-      const start = (pageNum - 1) * perPage
-      const items = gemSortRepos.slice(start, start + perPage)
-      return sendJson(res, 200, {
-        total_count: gemSortRepos.length,
-        incomplete_results: false,
-        items: items.map(toSearchItem),
-      })
-    }
-
     const items = page === '2' ? PAGE_2_REPOS : PAGE_1_REPOS
     return sendJson(res, 200, searchResponse(items))
   }
@@ -512,7 +408,6 @@ const server = http.createServer((req, res) => {
     const found =
       repos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       manyRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
-      gemSortRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       // AC-12: private リポジトリも上流は 200 で返す（「見つからない」に倒すのはアプリ側の責務）
       privateMixedRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
     if (!found) {

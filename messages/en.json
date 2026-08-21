@@ -28,11 +28,10 @@
   },
   "home": {
     "title": "gem-hunter",
-    "description": "Search GitHub repositories by keyword.",
+    "description": "Find GitHub repositories that plenty of packages depend on, yet few people have starred.",
     "searchLabel": "Search keyword",
     "searchPlaceholder": "Search GitHub by keyword (e.g. react)",
     "searchSubmit": "Search",
-    "idle": "Enter a keyword to search.",
     "resultsHeading": "Search results",
     "resultCount": "Showing {shown} of {total} results",
     "empty": "No repositories matched. Try a different keyword.",
@@ -42,12 +41,8 @@
     "sortOptions": {
       "relevance": "Relevance",
       "stars": "Stars",
-      "updated": "Updated",
-      "gem-index": "Gem Index"
+      "updated": "Updated"
     },
-    "gemIndexValueLabel": "Gem Index",
-    "gemIndexDependentLabel": "Used by",
-    "gemIndexUnavailableHeading": "No Gem Index data",
     "perPageLabel": "Results per page",
     "perPageOptionLabel": "{count} per page",
     "paginationLabel": "Search results pages",
@@ -57,11 +52,11 @@
     "pageLimitReached": "This is the last page available. Refine your keyword to see more results.",
     "digest": {
       "heading": "Today's Gems",
+      "lead": "Repositories that many packages depend on but few people have starred. The higher an entry sits, the more underrated it is. The list changes daily.",
       "empty": "No gems to show today.",
       "dependentLabel": "Used by",
       "starsLabel": "stars",
-      "gemIndexLabel": "Gem Index",
-      "attribution": "Data via {source} ({license}) · Generated: {generatedAt} · Order is recomputed from the day's seed.",
+      "attribution": "About this data: \"Used by\" and star counts come from {source} ({license}) open data captured around {generatedAt}, so they can differ from the latest values on GitHub and from the detail page. The order is recomputed daily from the date.",
       "newBadge": "New",
       "firstVisitNote": "Showing all items as your first visit",
       "rssLink": "Subscribe via RSS"
