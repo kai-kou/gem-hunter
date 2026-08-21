@@ -168,6 +168,16 @@ else
   skip_check "配色コントラスト検査 (check_contrast.py)" "スクリプトが見つかりません"
 fi
 
+# 4.65. --tw-prose-* リテラル色混入検査（Issue #339・書式トークンの gray スケールへの
+#       静かなフォールバックを検知する）。まだ --tw-prose-* が 1 つも無くても PASS を返す設計
+#       （typography プラグイン導入前でも run_checks.sh を壊さない）。
+if [ -f "$REPO_ROOT/tools/check_prose_tokens.py" ]; then
+  run_check "Prose トークン検査 (check_prose_tokens.py)" python3 tools/check_prose_tokens.py
+  run_check "Prose トークン検査 self-test (check_prose_tokens.py --self-test)" python3 tools/check_prose_tokens.py --self-test
+else
+  skip_check "Prose トークン検査 (check_prose_tokens.py)" "スクリプトが見つかりません"
+fi
+
 # 4.7. ADR 記録と README 必須記載のゲート（E-18 / E-19 / NFR-29〜NFR-32 / AC-11）
 if [ -f "$REPO_ROOT/tools/check_adr_coverage.py" ]; then
   run_check "ADR / README 記載検査 (check_adr_coverage.py)" python3 tools/check_adr_coverage.py

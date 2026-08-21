@@ -42,6 +42,20 @@ describe('ReadmeSection', () => {
     expect(screen.getByRole('heading', { name: 'Title', level: 3 })).toBeInTheDocument()
   })
 
+  it('README 本文コンテナは readme-content と prose を持つ（Issue #339・E2E がこのクラスで要素を掴む契約）', async () => {
+    const element = await ReadmeSection({
+      readmePromise: Promise.resolve('<p>hello</p>'),
+      htmlUrl: HTML_URL,
+      labels,
+    })
+    const { container } = render(element)
+
+    const readmeContent = container.querySelector('.readme-content')
+    expect(readmeContent).not.toBeNull()
+    expect(readmeContent).toHaveClass('prose')
+    expect(readmeContent).toHaveClass('max-w-none')
+  })
+
   it('README 本文の XSS ベクタはサニタイズされて描画に混ざらない', async () => {
     const element = await ReadmeSection({
       readmePromise: Promise.resolve('<p>hello</p><script>window.__hacked = true</script>'),

@@ -122,10 +122,14 @@ export async function ReadmeSection({
       ) : (
         // 🔴 dangerouslySetInnerHTML に渡すのは sanitizeReadmeHtml を経由した文字列のみ
         //    （readme-html.ts の 1 パス変換で script / on* 属性 / javascript: 等を除去済み）。
-        // 🟡 `@tailwindcss/typography` は未導入（新規依存の追加禁止・タスクスコープ外）のため
-        //    `prose` は使わない。見出し・段落・リストは既定のブラウザスタイルに委ねる。
+        // 🟢 `@tailwindcss/typography`（`prose`）で書式を当てる（Issue #339）。
+        //    Tailwind v4 は Preflight（ブラウザ既定スタイルのリセット）を全体適用するため、
+        //    「見出し・段落・リストは既定のブラウザスタイルに委ねる」はそもそも成立していなかった
+        //    （Preflight が見出しの font-size/font-weight・リストのマーカーを打ち消す）。
+        //    `.prose` の色トークンは app/globals.css で本プロジェクトのセマンティックトークンへ
+        //    マッピング済み。`readme-content` は E2E がコンテナを掴むためのスコープクラス。
         <div
-          className="mt-2 max-w-none space-y-3 text-sm leading-relaxed break-words"
+          className="readme-content prose prose-sm mt-2 max-w-none overflow-x-auto break-words"
           dangerouslySetInnerHTML={{ __html: sanitized.html }}
         />
       )}

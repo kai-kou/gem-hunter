@@ -22,6 +22,10 @@
 //   sp9-slow を含む                → 1.5 秒待ってから通常の結果（読み込み中表示の観測用）
 //   sp9-forbidden を含む           → HTTP 403 + x-ratelimit-remaining: 42（レート制限でない 403 = auth）
 //   readme-missing を含む（repo 名）→ README エンドポイントのみ HTTP 404（README 不在の再現。詳細本体は 200 のまま）
+//   readme-rich を含む（repo 名）    → Issue #339（README の書式反映）E2E 専用。書式要素
+//                             （見出し・段落・ネストした箇条書き・番号付きリスト・引用・列が多く
+//                             横に長い表・長い行を含むコードブロック・インラインコード・長い URL・
+//                             バッジ画像）を網羅した README HTML を返す（`octostub/octo-readme-rich`）
 //   private-mixed を含む  → AC-12 E2E 専用。上流が is:public を無視して private を混ぜて返す状況を
 //                             再現する（public 1 件 + private 1 件・total_count は 2）。
 //                             `octostub/octo-secret` の詳細も 200 + `private: true` で返す
@@ -163,6 +167,112 @@ const readmeExtraRepos = [
     },
   },
 ]
+
+// Issue #339 E2E 専用: 書式要素を網羅したリッチな README を返すための追加リポジトリ
+// （`e2e/readme-typography.spec.ts` からのみ使う）。詳細本体は他の追加リポジトリと同じ最小限の
+// フィールドを持ち、README エンドポイントだけが `readmeRichHtml()` の生成物を返す。
+const README_RICH_MARKER = 'readme-rich'
+const readmeRichExtraRepos = [
+  {
+    id: 960002,
+    name: 'octo-readme-rich',
+    full_name: 'octostub/octo-readme-rich',
+    html_url: 'https://github.com/octostub/octo-readme-rich',
+    description: 'Repository with a formatting-rich README (Issue #339 E2E).',
+    language: 'TypeScript',
+    stargazers_count: 8,
+    watchers_count: 8,
+    subscribers_count: 3,
+    forks_count: 2,
+    open_issues_count: 0,
+    updated_at: '2026-08-20T00:00:00Z',
+    pushed_at: '2026-08-20T00:00:00Z',
+    private: false,
+    topics: [],
+    owner: {
+      login: 'octostub',
+      avatar_url:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    },
+  },
+]
+
+/**
+ * Issue #339 E2E 専用: 書式要素を網羅した README HTML を返す（GitHub の README エンドポイント
+ * が返す「レンダリング済み HTML 断片」を模す）。`readme-html.ts` が許可しているタグのみを使う
+ * （`h1`/`h2` は見出し降格変換で `h3`/`h4` になる・`ALLOWED_TAGS` を超えるタグは使わない）。
+ *
+ * 意図的に含めた要素:
+ *   - h1 / h2（+2 降格後の h3 が本文 p より大きく、ページの h2「README」を超えないことの検証用）
+ *   - インラインコード（`<code>`）と段落
+ *   - ネストした箇条書き（`<ul>` の入れ子・リストマーカーとインデントの検証用）
+ *   - 番号付きリスト（`<ol>`）
+ *   - 引用（`<blockquote>`）
+ *   - 列数が多く横に長い `<table>`（コンテナの overflow-x:auto 検証用）
+ *   - 長い 1 行を含む `<pre><code>`（コードブロックの背景色・横スクロール検証用）
+ *   - 折り返されない長い URL（body に横スクロールが出ないことの検証用）
+ *   - バッジ画像（`<img>` 複数・`max-width: 100%` で崩れないことの検証用）
+ */
+function readmeRichHtml(owner, repoName) {
+  return (
+    '<article>' +
+    `<h1>${repoName} book format demo</h1>` +
+    '<p>This README exercises every prose element the sanitizer allows, ' +
+    'so the readme-typography E2E can assert computed styles instead of class names alone.</p>' +
+    '<h2>Getting started</h2>' +
+    '<p>Install the package and read the <code>CHANGELOG.md</code> before upgrading. ' +
+    'Inline <code>code spans</code> should render monospace without a block background.</p>' +
+    '<h2>Nested feature list</h2>' +
+    '<ul>' +
+    '<li>Top-level feature' +
+    '<ul>' +
+    '<li>Nested detail one</li>' +
+    '<li>Nested detail two' +
+    '<ul><li>Deeply nested detail</li></ul>' +
+    '</li>' +
+    '</ul>' +
+    '</li>' +
+    '<li>Second top-level feature</li>' +
+    '</ul>' +
+    '<h2>Install steps</h2>' +
+    '<ol>' +
+    '<li>Clone the repository</li>' +
+    '<li>Run <code>npm install</code></li>' +
+    '<li>Run <code>npm run build</code></li>' +
+    '</ol>' +
+    '<blockquote><p>Note: this project targets Node 20 or later and is tested ' +
+    'against the latest two LTS releases.</p></blockquote>' +
+    '<h2>Benchmark matrix</h2>' +
+    '<table>' +
+    '<thead><tr>' +
+    '<th>Runtime</th><th>OS</th><th>Node</th><th>Build time (ms)</th>' +
+    '<th>Bundle size (KB)</th><th>Gzip size (KB)</th><th>Lighthouse score</th><th>Notes</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    '<tr><td>Cloudflare Workers</td><td>linux</td><td>20.x</td><td>842</td>' +
+    '<td>1372</td><td>412</td><td>100</td><td>baseline configuration</td></tr>' +
+    '<tr><td>Node.js server</td><td>linux</td><td>22.x</td><td>910</td>' +
+    '<td>1420</td><td>430</td><td>98</td><td>with source maps enabled</td></tr>' +
+    '</tbody>' +
+    '</table>' +
+    '<h2>Example usage</h2>' +
+    '<pre><code>import { createClient } from \'octo-readme-rich\'\n\n' +
+    'const client = createClient({ token: process.env.OCTO_TOKEN, ' +
+    "baseUrl: 'https://api.example.com/v1/octo-readme-rich/really/long/endpoint/path/" +
+    "that/keeps/going/and/going/without/ever/wrapping/to/the/next/line' })\n" +
+    "const result = await client.search({ query: 'gem-hunter', perPage: 50, sort: 'stars' })\n" +
+    'console.log(result.items.map((item) =&gt; item.fullName).join(\', \'))</code></pre>' +
+    '<p>Full docs: <a href="https://github.com/octostub/octo-readme-rich/blob/main/docs/' +
+    'very/long/nested/path/that/should/not/force/horizontal/scroll/on/the/page/README.md">' +
+    'https://github.com/octostub/octo-readme-rich/blob/main/docs/very/long/nested/path/' +
+    'that/should/not/force/horizontal/scroll/on/the/page/README.md</a></p>' +
+    '<p>' +
+    '<img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build status badge" width="120" height="20" /> ' +
+    '<img src="https://img.shields.io/badge/license-MIT-blue" alt="License badge" width="98" height="20" />' +
+    '</p>' +
+    '</article>'
+  )
+}
 
 const privateMixedRepos = [
   privateMixedRepo({
@@ -433,6 +543,13 @@ const server = http.createServer((req, res) => {
     if (repoName.includes('upstream-error')) {
       return sendJson(res, 500, { message: 'stub: upstream error' })
     }
+    // Issue #339: 書式要素を網羅したリッチな README（readme-typography E2E 専用）。
+    // README_MISSING_MARKER 等より後・通常テンプレートより前に置く（部分一致で早取りされないため）。
+    if (repoName.includes(README_RICH_MARKER)) {
+      const richHtml = readmeRichHtml(owner, repoName)
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      return res.end(richHtml)
+    }
     // 実 GitHub と同様に `Accept: application/vnd.github.html+json` で
     // 「そのまま埋め込める HTML 断片」を返す（`readme_render` 側でサニタイズ・見出し降格する）。
     const html = `<article><h1>${repoName}</h1><p>README-STUB-CONTENT for ${owner}/${repoName}.</p><ul><li>feature one</li><li>feature two</li></ul></article>`
@@ -465,7 +582,9 @@ const server = http.createServer((req, res) => {
       // AC-12: private リポジトリも上流は 200 で返す（「見つからない」に倒すのはアプリ側の責務）
       privateMixedRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       // Issue #334 F-4: README 不在の再現用（詳細本体は 200・README エンドポイントのみ 404）
-      readmeExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
+      readmeExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
+      // Issue #339: 書式要素を網羅したリッチな README の再現用
+      readmeRichExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
     if (!found) {
       return sendJson(res, 404, { message: 'stub: Not Found (no fixture for this owner/repo)' })
     }
