@@ -1,0 +1,116 @@
+{
+  "date": "20260821",
+  "meta": {
+    "source": "Ecosyste.ms",
+    "license": "CC BY-SA 4.0",
+    "sourceLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "generatedAt": "2026-08-21T00:00:00.000Z"
+  },
+  "candidates": [
+    {
+      "packageName": "octostub-many-30",
+      "repositoryFullName": "octostub/many-30",
+      "dependentCount": 900,
+      "stars": 10,
+      "gemIndex": -50
+    },
+    {
+      "packageName": "octostub-many-20",
+      "repositoryFullName": "octostub/many-20",
+      "dependentCount": 700,
+      "stars": 20,
+      "gemIndex": -30
+    },
+    {
+      "packageName": "octostub-many-10",
+      "repositoryFullName": "octostub/many-10",
+      "dependentCount": 500,
+      "stars": 30,
+      "gemIndex": -10
+    },
+    {
+      "packageName": "octostub-many-05",
+      "repositoryFullName": "octostub/many-05",
+      "dependentCount": 300,
+      "stars": 40,
+      "gemIndex": 0
+    },
+    {
+      "packageName": "octostub-many-01",
+      "repositoryFullName": "octostub/many-01",
+      "dependentCount": 100,
+      "stars": 50,
+      "gemIndex": 10
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-01",
+      "repositoryFullName": "gemhunter-fixture/filler-01",
+      "dependentCount": 120,
+      "stars": 60,
+      "gemIndex": 5
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-02",
+      "repositoryFullName": "gemhunter-fixture/filler-02",
+      "dependentCount": 140,
+      "stars": 55,
+      "gemIndex": 8
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-03",
+      "repositoryFullName": "gemhunter-fixture/filler-03",
+      "dependentCount": 160,
+      "stars": 50,
+      "gemIndex": -5
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-04",
+      "repositoryFullName": "gemhunter-fixture/filler-04",
+      "dependentCount": 180,
+      "stars": 45,
+      "gemIndex": -8
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-05",
+      "repositoryFullName": "gemhunter-fixture/filler-05",
+      "dependentCount": 200,
+      "stars": 40,
+      "gemIndex": 12
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-06",
+      "repositoryFullName": "gemhunter-fixture/filler-06",
+      "dependentCount": 220,
+      "stars": 35,
+      "gemIndex": -12
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-07",
+      "repositoryFullName": "gemhunter-fixture/filler-07",
+      "dependentCount": 240,
+      "stars": 30,
+      "gemIndex": 15
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-08",
+      "repositoryFullName": "gemhunter-fixture/filler-08",
+      "dependentCount": 260,
+      "stars": 25,
+      "gemIndex": -15
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-09",
+      "repositoryFullName": "gemhunter-fixture/filler-09",
+      "dependentCount": 280,
+      "stars": 22,
+      "gemIndex": 18
+    },
+    {
+      "packageName": "gemhunter-fixture-filler-10",
+      "repositoryFullName": "gemhunter-fixture/filler-10",
+      "dependentCount": 310,
+      "stars": 18,
+      "gemIndex": -18
+    }
+  ]
+}

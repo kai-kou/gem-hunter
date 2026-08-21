@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
 
@@ -12,6 +13,9 @@ import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
  */
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3100'
 const stubPort = process.env.E2E_STUB_PORT ?? '8788'
+// SP-16: `sort=gemIndex` を検索スタブ（`many-hits` 60 件データセット）と決定論的に突合させるための
+// 固定候補プール（`GemDigestPort` の差し替え口・`e2e/sp-16.spec.ts` 冒頭コメント参照）。
+const gemDigestFixturePath = path.join(__dirname, 'e2e/fixtures/gem-digest-pool.json')
 
 export default defineConfig({
   testDir: 'e2e',
@@ -53,6 +57,7 @@ export default defineConfig({
             // tools/run_lighthouse.mjs（Lighthouse 計測: stub 8799 / app 3101）と同じ値セットを
             // 個別に複製しない（SP-10・GitGuardian 誤検知の再発防止）。
             ...buildDummyGitHubEnv({ stubPort, appUrl: baseURL }),
+            GEM_DIGEST_SOURCE_PATH: gemDigestFixturePath,
             PORT: '3100',
           },
           url: baseURL,
