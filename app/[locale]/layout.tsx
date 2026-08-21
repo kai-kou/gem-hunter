@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { notFound } from 'next/navigation'
+import { getSiteUrl } from '@/src/composition/site-url'
 import { isLocale, locale as toLocale, LOCALES } from '@/src/domain/model/locale'
 import '../globals.css'
 
@@ -15,6 +16,11 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
+  // 🔴 `metadataBase` 未設定だと `opengraph-image` 等の相対 URL 解決が既定の
+  // `http://localhost:3000` にフォールバックし、SNS クローラーが OG 画像を取得できなくなる
+  // （実デプロイの curl で確認済み・Issue #347 追加タスク）。`getSiteUrl()` は `headers()` を
+  // 使わない（`src/composition/site-url.ts` のコメント参照・lead 裁定）。
+  metadataBase: new URL(getSiteUrl()),
   title: 'gem-hunter',
   description: 'GitHub から埋もれた良質なリポジトリを見つける',
 }
