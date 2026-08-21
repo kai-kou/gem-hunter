@@ -102,10 +102,17 @@ test.describe('SP-16: 検索結果の Gem Index 順並べ替え', () => {
       for (const candidate of EXPECTED_CANDIDATE_POOL) {
         const card = items.nth(candidate.rank - 1)
         await expect(card.getByRole('link')).toHaveText(candidate.fullName)
-        await expect(card.getByText('被依存数', { exact: false })).toBeVisible()
-        await expect(card.getByText(new RegExp(String(candidate.dependentCount)))).toBeVisible()
-        await expect(card.getByText('Gem Index', { exact: false })).toBeVisible()
-        await expect(card.getByText(new RegExp(String(candidate.gemIndex)))).toBeVisible()
+        // 🔴 ラベルと数値を素の正規表現で別々に検証すると、`many-10`/`many-30`（リポジトリ名）の
+        // 末尾の数字がバッジの gemIndex 値と部分一致し strict mode violation になる
+        // （例: `/-10/` が `octostub/many-10` のリンク文字列にもマッチする）。ラベルと数値を
+        // 1 つの正規表現に連結し、「ラベル直後にその値が続くテキスト」だけを対象にすることで
+        // リポジトリ名側の偶然の部分一致を排除する（検証内容自体は変えていない）。
+        await expect(
+          card.getByText(new RegExp(`被依存数\\s*${candidate.dependentCount}`)),
+        ).toBeVisible()
+        await expect(
+          card.getByText(new RegExp(`Gem Index\\s*${candidate.gemIndex}`)),
+        ).toBeVisible()
       }
 
       // 候補プールに存在しない項目（Index なし群・1 ページ目の 6 件目以降）にはバッジが出ない。

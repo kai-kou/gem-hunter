@@ -195,6 +195,8 @@ async function SearchBody({
           empty: messages.home.empty,
           starCount: messages.home.starCount,
           updatedAt: messages.home.updatedAt,
+          dependentLabel: messages.home.digest.dependentLabel,
+          gemIndexLabel: messages.home.digest.gemIndexLabel,
         }}
         locale={locale}
         searchState={searchState}
