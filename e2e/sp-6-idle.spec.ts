@@ -52,6 +52,14 @@ test.describe('SP-6: 未検索の初期状態で検索を促す表示が出る',
         .poll(() => idleImage.evaluate((el: HTMLImageElement) => el.naturalWidth))
         .toBeGreaterThan(0)
 
+      // Issue #359: 1:1 → 16:9（縦幅を詰める）。誤差 5% まで許容し、
+      // 1:1（比率 1.0）に戻ったら確実に赤くなる閾値にする。
+      const aspectRatio = await idleImage.evaluate(
+        (el: HTMLImageElement) => el.naturalWidth / el.naturalHeight,
+      )
+      expect(aspectRatio).toBeGreaterThan((16 / 9) * 0.95)
+      expect(aspectRatio).toBeLessThan((16 / 9) * 1.05)
+
       await page.getByRole('searchbox', { name: ja.home.searchLabel }).fill('react')
       await page.getByRole('button', { name: ja.home.searchSubmit }).click()
       await expect(idleImage).toHaveCount(0)
