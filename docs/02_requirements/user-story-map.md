@@ -357,7 +357,7 @@
 
 > 🔵 **`SP-1` に加わる Cloudflare 固有の作業**（`D-16`〜`D-18`・手順の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md)）:
 > ① `@opennextjs/cloudflare` の導入と `wrangler.jsonc` / `open-next.config.ts` の作成 ② プレビュー版のアップロードと URL の PR 反映 ③ GitHub Actions（preview / production）④ 🔴 **Workers Free の実測ゲート**（p95 CPU・gzip バンドル）。
-> ⚠️ **CI 整備前のブートストラップ期間に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**（`INF-20` の例外。`SP-4` 以降は GitHub Actions 経由に一本化する）。
+> ⚠️ **CI 整備前のブートストラップ期間に限り、Claude がセッションから直接 `wrangler versions upload` を叩いてよい**（`INF-20` の例外。⚠️ **一本化先は GitHub Actions ではなく Workers Builds に変わった**・`D-31`）。
 > 🔴 **前提となる人間の作業**（一度きり・`A-6`）: Cloudflare API トークンの発行と、その値を GitHub Actions Secrets / Claude.ai 環境変数へ登録すること。これが済むまで ② 以降は実行できない。
 
 #### SP-2: URL とロケールの形が決まる（`S-0`）
