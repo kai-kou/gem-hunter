@@ -70,6 +70,12 @@ export const repositoryDetailDto = z.object({
   subscribers_count: z.number(),
   forks_count: z.number(),
   open_issues_count: z.number(),
+  // 🔴 「最終更新日」は pushed_at を使う（一覧・repositoryDto と同じ算出規則・domain-model.md §2.2）。
+  //    コミット履歴のない空リポジトリでは null になる（GitHub API 仕様）。
+  //    mapper.ts の toPublicRepositoryDetail で updated_at へのフォールバック元として使う。
+  updated_at: z.string(),
+  // 🔴 nullable（コミットが一度もない空リポジトリでは null になりうる）。
+  pushed_at: z.string().nullable(),
   // 🔴 非公開リポジトリの判別に使う（installation token で認証すると、トークンから見える
   //    private リポジトリまで API の可視範囲に入るため・prd.md L171「公開リポジトリの検索」）。
   //    🔴 **必須**（fail-closed）: 欠落は「公開」と推定せず、上流異常（UpstreamError）として倒す。

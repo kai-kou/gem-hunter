@@ -1,4 +1,4 @@
-import { CircleDot, Eye, GitFork, Star } from 'lucide-react'
+import { CalendarClock, CircleDot, Eye, GitFork, Star } from 'lucide-react'
 import type { Locale } from '../domain/model/locale'
 import type { RepositoryDetail as RepositoryDetailModel } from '../domain/model/repository'
 import { BackLink } from './back-link'
@@ -11,6 +11,8 @@ type RepositoryDetailLabels = {
   watcherCount: string
   forkCount: string
   openIssueCount: string
+  /** 最終更新の可視ラベル（Issue #334 F-3・`detail` 名前空間。`home.updatedAt` は横断参照しない）。 */
+  updatedAt: string
   opensInNewTab: string
 }
 
@@ -38,8 +40,15 @@ export function RepositoryDetail({
 }) {
   const localeTag = toIntlLocaleTag(locale)
   const numberFormat = new Intl.NumberFormat(localeTag)
+  // 一覧（repository-list.tsx）と同じ書式・タイムゾーンで揃える（Issue #334 F-3）。
+  const dateFormat = new Intl.DateTimeFormat(localeTag, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Tokyo',
+  })
 
-  const stats = [
+  const numericStats = [
     { key: 'stars', label: labels.starCount, value: repository.stars, Icon: Star },
     { key: 'watchers', label: labels.watcherCount, value: repository.watcherCount, Icon: Eye },
     { key: 'forks', label: labels.forkCount, value: repository.forkCount, Icon: GitFork },
@@ -63,7 +72,9 @@ export function RepositoryDetail({
           className="size-16 shrink-0 rounded-full"
         />
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold break-words">
+          {/* 🔴 h1 は共有ヘッダー（layout.tsx）のツールタイトルが持つため h2 へ降格する
+              （Issue #334 F-1/F-2・whiteboard round3 lead 裁定。1 ページ 1 h1 を保つ）。 */}
+          <h2 className="text-2xl font-semibold break-words">
             {/* GitHub の該当リポジトリページへの外部リンク（Issue #148）。新しいタブで開くことを
                 sr-only 文言で支援技術にも伝える。🔴 sr-only は `<a>` の **内側** に置く
                 （外に出すとリンク自体のアクセシブルネームに入らず、リンク一覧で読み上げたときに
@@ -81,7 +92,7 @@ export function RepositoryDetail({
                   半角スペースに頼ると「fullName新しいタブで開きます」と連結される。 */}
               <span className="sr-only">{labels.opensInNewTab}</span>
             </a>
-          </h1>
+          </h2>
           {repository.primaryLanguage ? (
             <p className="text-muted-foreground mt-1 text-sm">
               <span className="sr-only">{labels.language}: </span>
@@ -91,8 +102,14 @@ export function RepositoryDetail({
         </div>
       </div>
 
+      {/* Issue #334 F-3: 一覧（repository-list.tsx）にあるのに詳細に無かった概要を補う。
+          一覧と同じ作法でラベルなしの <p>（description が null の場合は出さない）。 */}
+      {repository.description ? (
+        <p className="text-muted-foreground mt-1 text-sm">{repository.description}</p>
+      ) : null}
+
       <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {stats.map((stat) => (
+        {numericStats.map((stat) => (
           <div key={stat.key} className="bg-muted/50 rounded-md p-3">
             <dt className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
               <stat.Icon aria-hidden="true" className="size-4 shrink-0" />
@@ -103,6 +120,16 @@ export function RepositoryDetail({
             </dd>
           </div>
         ))}
+        {/* 5 項目目: 最終更新（Issue #334 F-3）。他の統計と同じ「アイコン + 可視ラベル + 値」の形。 */}
+        <div className="bg-muted/50 rounded-md p-3">
+          <dt className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
+            <CalendarClock aria-hidden="true" className="size-4 shrink-0" />
+            {labels.updatedAt}
+          </dt>
+          <dd className="text-foreground mt-1 text-lg font-semibold">
+            {dateFormat.format(repository.lastPushedAt)}
+          </dd>
+        </div>
       </dl>
     </div>
   )

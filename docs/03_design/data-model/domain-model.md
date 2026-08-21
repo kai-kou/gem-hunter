@@ -40,7 +40,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | Gem（原石） | `Gem` | **被依存数（実利用）に対して star（注目度）が不釣り合いに小さい OSS**（[ミッション](../../project-mission.md)）。`SP-14` で型として実体化した（`src/domain/model/gem.ts`）。候補プール JSON の 1 エントリに対応し、`packageName` / `repositoryFullName` / `dependentCount` / `stars` / `gemIndex` を持つ | 🔴 **MVP では算出しなかったが、`D-27`（`M-5` を「着手する」で通過）により Phase 2 が実装対象へ格上げされ、`SP-14` で実装済み**。「良いリポジトリ」一般を指す語として使わない。生テキスト（`description` 等）は持たない（`D-29`・再配信しない）。🔴 **`Gem.stars` / `Gem.dependentCount` は Ecosyste.ms のバッチ取得時点のスナップショット** であり、`RepositoryDetail.starCount` のようなライブ値ではない（銘柄ごとにクロール時点が異なり実測で最大 2.7 年ばらつく。表示上は参考値として扱う・[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §5 項番 8）。UI 表示ラベルは `dependentCount` = 「利用パッケージ数」/ "Used by" に対応する（コード識別子は変更しない） |
 | 日次ダイジェスト | `DailyDigest` | ある日付シード（`DateSeed`）に対して確定した「今日の Gem」の並び（`src/domain/model/gem.ts`）。`date` / `items`（表示順）/ `meta` を持つ（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2） | 同じ `date` は全ユーザーで同じ `items`。「フィード」「タイムライン」と呼ばない（有限件数であることが設計の核・ADR 0014 §2.1） |
 | shortlist（Gem Index 上位帯） | `GEM_INDEX_SHORTLIST_SIZE` ほか（`src/domain/model/gem-shortlist.ts`・ドメイン層へ移設予定） | 候補プールを `Gem Index` 昇順（同値は `packageName` 昇順でタイブレーク）に並べた上位帯。日次ダイジェストのシャッフル母集団になる | 既定値は 60 件。根拠（star 分布のスナップショット統計）は [ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2.3 が正本（本表では重複記載しない） |
-| 出典メタデータ | `DigestMeta` | 候補プールの提供元・ライセンス・生成時刻（`source` / `license` / `sourceLicenseUrl` / `generatedAt`）。`D-29` の帰属表示に使う | 🔴 **表示は任意ではなく義務**（CC BY-SA 4.0）。`DailyDigest` から切り離して持ち回らない |
+| 出典メタデータ | `DigestMeta` | 候補プールの提供元・ライセンス・生成時刻（`source` / `sourceUrl` / `license` / `sourceLicenseUrl` / `generatedAt`）。`D-29` の帰属表示に使う | 🔴 **表示は任意ではなく義務**（CC BY-SA 4.0）。`DailyDigest` から切り離して持ち回らない |
 | 既視ダイジェスト | `SeenDigest` | **前回訪問時にそのブラウザが見たダイジェストのスナップショット**（`date` + `packageNames`・`src/domain/model/digest-diff.ts`）。`SP-15` の差分表示（`US-32`）の入力 | 🔴 **1 世代だけ保持する**（履歴を蓄積しない）。保存先はクライアントの `localStorage` のみで **サーバーに永続化しない**（`D-14` / `D-18`）。Safari ITP により消えうる前提の値であり、無い＝初回として扱う（`ADR 0014` §2.4） |
 | ダイジェスト差分 | `DigestDiff` | `SeenDigest` と当日の `DailyDigest` を突き合わせた結果（`newNames`＝前回に無かった `packageName` 集合 / `isFirstVisit`・`src/domain/model/digest-diff.ts`） | 🔵 **`isFirstVisit` のとき `newNames` は空**（初回に「全件が新着」と示さない・`ADR 0014` §2.4 のフォールバック要件）。「未読」「既読」とは呼ばない（読んだかではなく前回表示に含まれたかで判定するため） |
 | リポジトリ | `Repository` | GitHub 上の 1 リポジトリ。同一性は `owner/repo` | 「プロジェクト」「レポ」と混在させない |
@@ -50,7 +50,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | 検索条件 | `SearchQuery` | キーワード・ページ・ソート・表示件数の 4 つ組。**URL と 1 対 1 で対応する**（`NFR-2`） | UI 状態ではなくドメインの値。バラバラの引数で持ち回らない |
 | 検索結果 | `SearchResult` | 検索条件に対する `RepositorySummary` の並びと総件数 | |
 | 一覧項目 | `RepositorySummary` | 一覧カードに出す範囲（`AR-1`）。**追加 API 呼び出し無しで得られるものだけ** | 詳細と同じ型にしない（取得コストが違う） |
-| 詳細 | `RepositoryDetail` | 詳細ページに出す 7 項目（`FR-4`。`src/domain/model/repository.ts`） | `watchers` は `subscribers_count` 由来（§2.2 の変換表）。`RepositoryQueryPort#findDetail` は存在しない場合 `null` を返す（404 を例外にしない） |
+| 詳細 | `RepositoryDetail` | 詳細ページに出す項目一式（`FR-4`。リポジトリ名・オーナーアイコン・言語・Star 数・Watcher 数・Fork 数・Issue 数・🔵 `description`・🔵 `lastPushedAt`・🔵 README。`src/domain/model/repository.ts`。README（`findReadme` の戻り値）はドメイン型のフィールドではなく `RepositoryQueryPort` の別メソッドで取得する別データ・Issue #334 F-3/F-4） | `watchers` は `subscribers_count` 由来（§2.2 の変換表）。`RepositoryQueryPort#findDetail` は存在しない場合 `null` を返す（404 を例外にしない） |
 | 閲覧者 | `Viewer` | 本アプリの利用者。未ログインが既定で、ログインしても **変わるのはレート枠だけ**（`D-6`） | 「ログインユーザー限定機能」という概念は存在しない |
 | レート枠 | `RateLimitBudget` | GitHub API の残り呼び出し可能回数と回復時刻 | 「クォータ」と混在させない |
 | キャッシュキー | `CacheKey` | 検索結果・単一リポジトリの名前空間つきキー（`NFR-18`） | 命名規約を先に固定する。後から変えると全無効化される |
@@ -70,7 +70,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `open_issues_count` | `openIssueCount` | **PR を含む**（GitHub の仕様）。UI 文言もこの事実に合わせる |
 | `full_name` | `RepositoryId`（分解して保持） | 文字列のまま持ち回らない |
 | `owner.avatar_url` | `Owner.avatarUrl` | |
-| `pushed_at` / `updated_at` | `lastPushedAt` / `lastUpdatedAt` | 「最終更新日」（`AR-1`）は **`pushed_at`** を使う（メタデータ更新で動く `updated_at` ではない） |
+| `pushed_at` / `updated_at` | `lastPushedAt` / `lastUpdatedAt` | 「最終更新日」（`AR-1`）は **`pushed_at`** を使う（メタデータ更新で動く `updated_at` ではない）。🔵 **この規則は `RepositoryDetail.lastPushedAt` にも同様に適用する**（`pushed_at ?? updated_at` のフォールバックも一覧側の `toSearchResult` と同一・Issue #334 F-3） |
 | `topics` | `topics` | |
 | `language` | `primaryLanguage` | 「言語」だけだと `Locale` と紛れる |
 | `total_count` | `SearchResult.totalCount` | GitHub 検索は上限があるため **概算**。UI で「約」と表現する余地を残す |

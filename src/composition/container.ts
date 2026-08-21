@@ -12,6 +12,10 @@ import {
   makeGetRepositoryDetail,
   type GetRepositoryDetail,
 } from '../usecases/get-repository-detail'
+import {
+  makeGetRepositoryReadme,
+  type GetRepositoryReadme,
+} from '../usecases/get-repository-readme'
 import { makeSearchRepositories, type SearchRepositories } from '../usecases/search-repositories'
 
 /**
@@ -32,6 +36,15 @@ const TTL_SEARCH_SECONDS = 60
  * （`R-5` 確定待ち）。
  */
 const TTL_DETAIL_SECONDS = 300
+
+/**
+ * トップページの日次ダイジェスト表示件数（`ADR 0014` §2.1 の既定 5 件）。
+ *
+ * 🔴 元は `src/composition/digest-feed.ts`（RSS 配信専用の composition）に置かれていたが、
+ * RSS 撤去（Issue #334 F-5・`D-34`）に伴い消費者がトップページ 1 箇所だけになったため、
+ * 製品判断値として `TTL_*_SECONDS` と同じ composition root（本ファイル）へ移設した。
+ */
+export const DAILY_DIGEST_LIMIT = 5
 
 /**
  * isolate 内で使い回すキャッシュの単一インスタンス（モジュールスコープ・SP-5）。
@@ -93,6 +106,15 @@ export function searchRepositoriesUseCase(accessToken?: string | null): SearchRe
  */
 export function getRepositoryDetailUseCase(accessToken?: string | null): GetRepositoryDetail {
   return makeGetRepositoryDetail({ repos: makeCachingRepositoryQuery({ accessToken }) })
+}
+
+/**
+ * Issue #334 F-4: 詳細画面の README 取得ユースケースの組み立て。
+ * private ゲート（`findDetail` 経由）は usecase 内に埋め込み済み（`get-repository-readme.ts`）。
+ * SP-8: `accessToken` を渡すとユーザー自身のレート枠で取得する（省略時は installation token）。
+ */
+export function getRepositoryReadmeUseCase(accessToken?: string | null): GetRepositoryReadme {
+  return makeGetRepositoryReadme({ repos: makeCachingRepositoryQuery({ accessToken }) })
 }
 
 /**

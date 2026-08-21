@@ -31,4 +31,22 @@ test.describe('NFR-26: axe 自動アクセシビリティ検査', () => {
     const violations = seriousOrCritical(results.violations)
     expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
   })
+
+  /**
+   * Issue #334 F-1/F-2: 共有ヘッダーの導入で h1 が重複しないことを確認する（whiteboard
+   * `feedback334_detail_readme_20260821` round3 lead 裁定「1 ページ 1 h1 を保つ」）。
+   * トップページの自前 h1 撤去・詳細画面の 3 箇所（RepositoryDetail / DomainError 分岐 /
+   * not-found.tsx）の h2 降格が漏れると、ここで h1 が 2 つ検出されて落ちる。
+   */
+  test('一覧画面の h1 は 1 つだけ（共有ヘッダーのツールタイトル）', async ({ page }) => {
+    await page.goto('/ja')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await expect(page.getByRole('heading', { level: 1, name: 'gem-hunter' })).toBeVisible()
+  })
+
+  test('詳細画面の h1 は 1 つだけ（リポジトリ名は h2 へ降格）', async ({ page }) => {
+    await page.goto('/ja/repos/octostub/octo-widgets')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await expect(page.getByRole('heading', { level: 1, name: 'gem-hunter' })).toBeVisible()
+  })
 })

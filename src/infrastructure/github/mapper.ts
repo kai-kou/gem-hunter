@@ -35,13 +35,23 @@ export function toSearchResult(raw: unknown): SearchResult {
         description: item.description,
         primaryLanguage: item.language,
         stars: item.stargazers_count,
-        // 🔴 「最終更新日」は pushed_at を使う（メタデータ更新で動く updated_at ではない・domain-model.md §2.2）。
-        //    pushed_at が null（コミット履歴のない空リポジトリ）の場合のみ updated_at にフォールバックする。
-        lastPushedAt: new Date(item.pushed_at ?? item.updated_at),
+        lastPushedAt: lastPushedAtOf(item.pushed_at, item.updated_at),
         topics: item.topics ?? [],
         htmlUrl: item.html_url,
       })),
   }
+}
+
+/**
+ * 「最終更新日」の算出規則（`domain-model.md` §2.2）。
+ *
+ * 🔴 メタデータ更新でも動く `updated_at` ではなく `pushed_at` を使う。`pushed_at` が null
+ * （コミット履歴のない空リポジトリ）の場合のみ `updated_at` へフォールバックする。
+ * 🔴 一覧（`toSearchResult`）と詳細（`toPublicRepositoryDetail`）で **同じ関数を使う**
+ * （同一概念に別の算出規則が混ざると、画面遷移で「最終更新」の意味が変わって見える・Issue #334）。
+ */
+function lastPushedAtOf(pushedAt: string | null, updatedAt: string): Date {
+  return new Date(pushedAt ?? updatedAt)
 }
 
 /**
@@ -75,6 +85,7 @@ export function toPublicRepositoryDetail(raw: unknown): RepositoryDetail | null 
     watcherCount: dto.subscribers_count,
     forkCount: dto.forks_count,
     openIssueCount: dto.open_issues_count,
+    lastPushedAt: lastPushedAtOf(dto.pushed_at, dto.updated_at),
     topics: dto.topics ?? [],
     htmlUrl: dto.html_url,
   }

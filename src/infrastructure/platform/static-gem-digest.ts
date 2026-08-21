@@ -48,11 +48,10 @@ type RawCandidate = {
 /**
  * 候補プールが読めない / 壊れているときに使う帰属メタデータ。`D-29` の帰属表示は省略できないため、
  * フォールバック時も出典・ライセンスは保持し `generatedAt` だけを空にする。
- * 🔴 RSS 配信側（`src/composition/digest-feed.ts`）からも同じ値を使う（定義を二重化すると
- *    ライセンス変更時に片方だけ古くなる・Layer 1 セルフレビュー指摘）。
  */
 export const FALLBACK_META: DigestMeta = {
   source: 'Ecosyste.ms',
+  sourceUrl: 'https://ecosyste.ms/',
   license: 'CC BY-SA 4.0',
   sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
   generatedAt: '',
@@ -108,10 +107,15 @@ function parseMeta(raw: unknown): DigestMeta {
 
   return {
     source: nonEmptyStringOr(source.source, FALLBACK_META.source, 'meta.source'),
-    license: nonEmptyStringOr(source.license, FALLBACK_META.license, 'meta.license'),
     // 🔴 `javascript:` / `data:` スキームは `<a href>` へ流さない（React 19 は
     //    `javascript:` href でレンダリング例外を投げ、ホーム画面全体が 500 になる）。
-    sourceLicenseUrl: httpUrlOr(source.sourceLicenseUrl, FALLBACK_META.sourceLicenseUrl),
+    sourceUrl: httpUrlOr(source.sourceUrl, FALLBACK_META.sourceUrl, 'meta.sourceUrl'),
+    license: nonEmptyStringOr(source.license, FALLBACK_META.license, 'meta.license'),
+    sourceLicenseUrl: httpUrlOr(
+      source.sourceLicenseUrl,
+      FALLBACK_META.sourceLicenseUrl,
+      'meta.sourceLicenseUrl',
+    ),
     generatedAt: nonEmptyStringOr(
       source.generatedAt,
       FALLBACK_META.generatedAt,
@@ -173,7 +177,7 @@ function nonEmptyStringOr(value: unknown, fallback: string, field: string): stri
 }
 
 /** `http:` / `https:` のみ許可する（スキーム経由の XSS・レンダリング例外を入口で止める）。 */
-function httpUrlOr(value: unknown, fallback: string): string {
+function httpUrlOr(value: unknown, fallback: string, field: string): string {
   if (typeof value === 'string') {
     try {
       const url = new URL(value)
@@ -184,9 +188,7 @@ function httpUrlOr(value: unknown, fallback: string): string {
       // URL としてパースできない → 下のフォールバックへ落とす。
     }
   }
-  warn(
-    '候補プール JSON の meta.sourceLicenseUrl が http(s) URL ではありません。既定値へフォールバックします。',
-  )
+  warn(`候補プール JSON の ${field} が http(s) URL ではありません。既定値へフォールバックします。`)
   return fallback
 }
 

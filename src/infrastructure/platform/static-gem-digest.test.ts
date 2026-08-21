@@ -5,6 +5,7 @@ import { StaticGemDigest } from './static-gem-digest'
 
 const validMeta = {
   source: 'Ecosyste.ms',
+  sourceUrl: 'https://ecosyste.ms/',
   license: 'CC BY-SA 4.0',
   sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
   generatedAt: '2026-08-20T00:00:00Z',
@@ -29,18 +30,25 @@ describe('StaticGemDigest', () => {
 
     expect(candidates.length).toBeGreaterThan(0)
     expect(meta.source).toBeTruthy()
+    expect(meta.sourceUrl).toMatch(/^https?:\/\//)
     expect(meta.license).toBeTruthy()
     expect(meta.sourceLicenseUrl).toMatch(/^https?:\/\//)
     expect(meta.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-    // 本物のデータは 1 件もスキップされない（バッチ出力が契約を満たしている）。
-    expect(console.warn).not.toHaveBeenCalled()
+    // 候補は 1 件もスキップされない（バッチ出力が候補の契約を満たしている）。
+    // 🔴 最重要の回帰ポイント（F-6）: 本番 JSON は `sourceUrl` フィールドをまだ持たない
+    // （`tools/generate_gem_digest.mjs` が次回バッチ実行時に書き込む）。それでも
+    // ランタイムは落ちず、meta.sourceUrl だけがフィールド単位で既定値へフォールバックする
+    // （上の `meta.sourceUrl` アサーションが既定値でも http(s) URL として通ることで担保済み）。
+    expect(console.warn).toHaveBeenCalledTimes(1)
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('meta.sourceUrl'))
   })
 
-  it('meta の 4 フィールド（source / license / sourceLicenseUrl / generatedAt）が全て string で揃う（D-29）', async () => {
+  it('meta の 5 フィールド（source / sourceUrl / license / sourceLicenseUrl / generatedAt）が全て string で揃う（D-29 / F-6）', async () => {
     const port = new StaticGemDigest()
     const { meta } = await port.listCandidates()
 
     expect(typeof meta.source).toBe('string')
+    expect(typeof meta.sourceUrl).toBe('string')
     expect(typeof meta.license).toBe('string')
     expect(typeof meta.sourceLicenseUrl).toBe('string')
     expect(typeof meta.generatedAt).toBe('string')
@@ -76,11 +84,28 @@ describe('StaticGemDigest', () => {
         candidates: [],
         meta: {
           source: 'Ecosyste.ms',
+          sourceUrl: 'https://ecosyste.ms/',
           license: 'CC BY-SA 4.0',
           sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
           generatedAt: '',
         },
       })
+    })
+
+    it('meta.sourceUrl だけが欠けていても、他のフィールドは壊さずフォールバックする（F-6・フィールド単位フォールバック）', async () => {
+      const { sourceUrl: _sourceUrl, ...metaWithoutSourceUrl } = validMeta
+      const port = new StaticGemDigest({
+        date: '20260820',
+        meta: metaWithoutSourceUrl,
+        candidates: [],
+      })
+      const { meta } = await port.listCandidates()
+
+      expect(meta.sourceUrl).toBe('https://ecosyste.ms/')
+      // 他のフィールドは validMeta の値のまま（sourceUrl 単体のフォールバックが波及しない）。
+      expect(meta.source).toBe(validMeta.source)
+      expect(meta.sourceLicenseUrl).toBe(validMeta.sourceLicenseUrl)
+      expect(meta.generatedAt).toBe(validMeta.generatedAt)
     })
 
     it('candidates が配列でなくても空配列へ倒す', async () => {
@@ -195,6 +220,36 @@ describe('StaticGemDigest', () => {
       const { meta } = await port.listCandidates()
 
       expect(meta.sourceLicenseUrl).toBe('http://example.com/license')
+    })
+
+    it.each([
+      ['javascript:alert(1)'],
+      ['data:text/html,<script>alert(1)</script>'],
+      ['not a url'],
+      [42],
+    ])(
+      'meta.sourceUrl が %s のときは http(s) の既定 URL へ倒す（javascript: を <a href> に流さない・F-6）',
+      async (sourceUrl) => {
+        const port = new StaticGemDigest({
+          date: '20260820',
+          meta: { ...validMeta, sourceUrl },
+          candidates: [],
+        })
+        const { meta } = await port.listCandidates()
+
+        expect(meta.sourceUrl).toBe('https://ecosyste.ms/')
+      },
+    )
+
+    it('meta.sourceUrl が http URL ならそのまま通す（F-6）', async () => {
+      const port = new StaticGemDigest({
+        date: '20260820',
+        meta: { ...validMeta, sourceUrl: 'http://example.com/about' },
+        candidates: [],
+      })
+      const { meta } = await port.listCandidates()
+
+      expect(meta.sourceUrl).toBe('http://example.com/about')
     })
   })
 })

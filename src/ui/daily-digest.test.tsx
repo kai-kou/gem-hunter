@@ -14,7 +14,6 @@ const labels = {
   starsLabel: 'star',
   newBadge: '新着',
   firstVisitNote: '初回として全件を表示しています',
-  rssLink: 'RSS で購読',
 }
 
 function makeDigest(items: DailyDigestModel['items']): DailyDigestModel {
@@ -23,6 +22,7 @@ function makeDigest(items: DailyDigestModel['items']): DailyDigestModel {
     items,
     meta: {
       source: 'Ecosyste.ms',
+      sourceUrl: 'https://ecosyste.ms/',
       license: 'CC BY-SA 4.0',
       sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
       generatedAt: '2026-08-20T00:00:00Z',
@@ -192,7 +192,6 @@ describe('DailyDigest', () => {
           starsLabel: 'stars',
           newBadge: 'New',
           firstVisitNote: 'Showing all items as your first visit',
-          rssLink: 'Subscribe via RSS',
         }}
         locale={locale('en')}
       />,

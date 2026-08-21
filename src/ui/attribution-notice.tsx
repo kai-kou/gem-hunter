@@ -1,6 +1,5 @@
 import type { DigestMeta } from '../domain/model/gem'
 import type { Locale } from '../domain/model/locale'
-import { formatMessage } from '../shared/i18n/format-message'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 
 type AttributionNoticeLabels = {
@@ -12,6 +11,14 @@ type AttributionNoticeLabels = {
    */
   attribution: string
 }
+
+/**
+ * 本文中インラインリンク（出典元・ライセンス）の共通クラス。
+ * 同じ段落に 2 本のリンクがあるため、片方だけ意匠を変えて食い違うことを構造的に防ぐ
+ * （Issue #334 Layer 1 レビュー指摘）。
+ */
+const INLINE_LINK_CLASS_NAME =
+  'text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring'
 
 /**
  * データ出典と改変の明示（`ADR 0014` §2.6 の `D-29` 帰属表示）。
@@ -54,29 +61,37 @@ export function AttributionNotice({
     <>{meta.generatedAt}</>
   )
 
-  // ライセンス URL は `sourceLicenseUrl`（例: CC BY-SA 4.0 の deed 頁）。ラベル文字列の中の
-  // `{license}` / `{generatedAt}` プレースホルダ位置を要素へ置き換えるため、事前分割する。
-  const [beforeLicense, afterLicense] = splitOn(labels.attribution, '{license}')
-  const [beforeHead, beforeTail] = splitOn(beforeLicense, '{generatedAt}')
-  const [afterHead, afterTail] = splitOn(afterLicense, '{generatedAt}')
-  const fill = (template: string) => formatMessage(template, { source: meta.source })
+  // 出典元 URL は `sourceUrl`（例: Ecosyste.ms トップページ）、ライセンス URL は
+  // `sourceLicenseUrl`（例: CC BY-SA 4.0 の deed 頁）。ラベル文字列の中の `{source}` /
+  // `{license}` / `{generatedAt}` プレースホルダ位置を要素へ置き換えるため、この順で
+  // 逐次分割する（実際の辞書文言はこの順で並ぶ・`messages/ja.json` `home.digest.attribution`）。
+  const [beforeSource, afterSource] = splitOn(labels.attribution, '{source}')
+  const [beforeLicense, afterLicense] = splitOn(afterSource, '{license}')
+  const [beforeGeneratedAt, afterGeneratedAt] = splitOn(afterLicense, '{generatedAt}')
 
   return (
     <p className="text-muted-foreground mt-6 text-xs">
-      {fill(beforeHead)}
-      {beforeLicense.includes('{generatedAt}') ? generatedAtNode : null}
-      {fill(beforeTail)}
+      {beforeSource}
+      <a
+        href={meta.sourceUrl}
+        rel="noopener noreferrer"
+        target="_blank"
+        className={INLINE_LINK_CLASS_NAME}
+      >
+        {meta.source}
+      </a>
+      {beforeLicense}
       <a
         href={meta.sourceLicenseUrl}
         rel="noopener noreferrer"
         target="_blank"
-        className="text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring"
+        className={INLINE_LINK_CLASS_NAME}
       >
         {meta.license}
       </a>
-      {fill(afterHead)}
-      {afterLicense.includes('{generatedAt}') ? generatedAtNode : null}
-      {fill(afterTail)}
+      {beforeGeneratedAt}
+      {generatedAtNode}
+      {afterGeneratedAt}
     </p>
   )
 }

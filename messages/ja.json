@@ -58,8 +58,7 @@
       "starsLabel": "star",
       "attribution": "このデータについて: 利用パッケージ数と star 数は {source}（{license}）のオープンデータをもとにした、{generatedAt} 頃の参考値です。GitHub の最新値や詳細画面の表示とは差があります。並び順は日付をもとに毎日算出しています。",
       "newBadge": "新着",
-      "firstVisitNote": "初回として全件を表示しています",
-      "rssLink": "RSS で購読"
+      "firstVisitNote": "初回として全件を表示しています"
     }
   },
   "detail": {
@@ -69,7 +68,15 @@
     "watcherCount": "watcher 数",
     "forkCount": "fork 数",
     "openIssueCount": "issue 数",
+    "updatedAt": "最終更新",
     "opensInNewTab": "（新しいタブで開きます）",
-    "notFound": "リポジトリが見つかりませんでした。"
+    "notFound": "リポジトリが見つかりませんでした。",
+    "readme": {
+      "heading": "README",
+      "unavailable": "README を表示できませんでした。",
+      "viewOnGithub": "GitHub で README を読む",
+      "loading": "README を読み込んでいます",
+      "loaded": "README を読み込みました"
+    }
   }
 }

@@ -19,6 +19,7 @@ function gem(packageName: string, gi: number): Gem {
 
 const meta: DigestMeta = {
   source: 'Ecosyste.ms',
+  sourceUrl: 'https://ecosyste.ms/',
   license: 'CC BY-SA 4.0',
   sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
   generatedAt: '2026-08-20T00:00:00Z',

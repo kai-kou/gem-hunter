@@ -51,6 +51,8 @@ export type Gem = {
 export type DigestMeta = {
   /** データ提供元（例 `Ecosyste.ms`）。 */
   readonly source: string
+  /** データ提供元のトップページ URL（例 `https://ecosyste.ms/`）。出典表示のリンク先（`F-6`）。 */
+  readonly sourceUrl: string
   /** ライセンス識別子（例 `CC BY-SA 4.0`）。 */
   readonly license: string
   /** ライセンス原文への URL。 */

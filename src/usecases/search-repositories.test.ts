@@ -28,6 +28,9 @@ function fakePort(received: SearchQuery[]): RepositoryQueryPort {
     async findDetail() {
       return null
     },
+    async findReadme() {
+      return null
+    },
   }
 }
 

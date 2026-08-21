@@ -1,0 +1,48 @@
+{
+  "topic": "初見フィードバック 6 件（タイトル導線 / 詳細画面の情報量 + README / RSS 撤去 / 出典リンク化）の設計を確定する",
+  "brief": "飼い主フィードバック（Issue #334）: (F-1) ツールタイトルをクリックしたら未検索状態の画面へ遷移してほしい (F-2) 詳細画面もトップと同じくツールタイトルを含めて同じ挙動にしてほしい (F-3) 詳細画面にも一覧にある概要（description）と最終更新日を追加してほしい（一覧にあるのに詳細にない状態を解消する） (F-4) 詳細画面で README が読めるようにしてほしい (F-5) トップ末尾の RSS 機能は廃止 (F-6) 出典表示の Ecosyste.ms もリンク化してほしい。現行実装: トップ app/[locale]/page.tsx（h1 = messages.home.title 'gem-hunter' のプレーンテキスト・検索フォーム・キーワード未入力時のみ日次ダイジェスト表示）、詳細 app/[locale]/repos/[owner]/[repo]/page.tsx（h1 = repository.fullName の GitHub 外部リンク・LocaleSwitcher・BackLink・4 つの統計 dl のみ。Suspense/loading.tsx は notFound() の 404 を守るため意図的に置いていない）、出典 src/ui/attribution-notice.tsx（{source} は現在プレーンテキスト・{license} だけリンク）、RSS は src/ui/daily-digest.tsx の購読リンク + app/api/digest/rss/route.ts + src/composition/digest-feed.ts + src/infrastructure/feed/digest-rss.ts + e2e/sp-15.spec.ts + docs（prd.md US-33 / user-story-map.md SP-15 / open-questions.md）。制約: クリーンアーキテクチャ依存規則（app は infrastructure を直接 import しない・ARCH-3、GitHub API に触れてよいのは src/infrastructure/github/ の ACL だけ・NFR-16/TR-4、データソースは GET /search/repositories と GET /repos/{owner}/{repo} に限定という E-2 の既存宣言）、NFR-3（クライアント JS を増やさない方針）、Cloudflare Workers（CPU/バンドル制約・INF-2 の低コスト）、NFR-9（内部エラー文言を画面に出さない）、NFR-12/13（a11y・見出し階層・WCAG）、AC-5（詳細が無ければ HTTP 404）、AC-12/NFR-33（private リポジトリを露出しない）、キャッシュは CachePort（ADR 0005）。争点は少なくとも次の 6 つ: A) F-1/F-2 の実装形（ツールタイトルをどこに置くか＝共有ヘッダー component か各ページか / 詳細ページの見出し階層をどうするか＝h1 が 2 つにならないか・repository.fullName の h1 を h2 に落とすと SetDocumentTitle や route announcer や既存 E2E/a11y テストにどう影響するか / リンク先は /{locale} 固定でよいか・検索条件クエリを落とす挙動が SP-7 の『戻る』と矛盾しないか / LocaleSwitcher・BackLink との配置順） B) F-4 README の取得経路（GET /repos/{o}/{r}/readme を ACL に足す＝E-2 のデータソース限定宣言の更新が要る / RepositoryQueryPort に findReadme を足すか別ポートにするか / findDetail に含めて 1 回で返すか別 fetch にするか・404（README 無し）を null にする契約 / private 露出防止と mapper の扱い / キャッシュ TTL / レート枠の消費が増える影響） C) F-4 README のレンダリング方式（Accept: application/vnd.github.html でサーバー側 HTML を貰って sanitize するか / raw Markdown を貰って Markdown レンダラで描画するか / どのライブラリが Workers ランタイムとバンドルサイズに耐えるか / XSS 対策の具体（dangerouslySetInnerHTML を使うなら sanitizer は何か・許可タグ / 相対リンク・相対画像の解決 / iframe・script・onclick 属性の除去） / 表示量の上限（巨大 README の切り詰め）と『GitHub で全文を読む』導線 / 読み込み失敗時に詳細画面全体を壊さない設計 / Suspense を置けない制約（notFound の 404 保護）との両立） D) F-3 の型・表示（RepositoryDetail に description は既にあるが未表示・lastPushedAt が無い→ドメイン型と mapper と既存テストの更新範囲 / 『最終更新』は pushed_at か updated_at か（一覧は lastPushedAt = pushed_at を『最終更新』として出しているので一致させるべきか） / 日付書式は一覧と同じ Intl + Asia/Tokyo でよいか / messages/*.json のキー追加 detail.description / detail.updatedAt の要否） E) F-5 RSS 撤去の範囲（UI リンクだけ消すのか /api/digest/rss ごと消すのか・digest-rss.ts / digest-feed.ts / DAILY_DIGEST_LIMIT の行き先 / e2e/sp-15.spec.ts の該当ケース / prd.md US-33・user-story-map.md SP-15・open-questions.md の記述をどう書き換えるか＝削除ではなく『撤去した事実と理由』を残す規律 / SeenDigest 等の残存機能を壊さないか） F) F-6 出典リンクの行き先（Ecosyste.ms のリンク URL は何が正しいか・https://ecosyste.ms か API ドメインか / attribution-notice.tsx の {source} プレースホルダ分割の実装 / rel・target と a11y 文言（新しいタブで開く旨）を既存の opensInNewTab 文言と揃えるか）。",
+  "participants": [
+    {
+      "name": "ui_nav",
+      "model": "sonnet",
+      "lens": "情報設計とアクセシビリティ（F-1/F-2/F-3 の画面構造。ツールタイトルをどこに置き、どのマークアップにするか / 詳細ページで h1 が 2 つにならない見出し階層と、それが SetDocumentTitle・Next.js route announcer・既存 e2e（sp-3/sp-6/sp-7/sp-9-a11y/a11y.spec.ts）へ与える影響 / リンク先とクエリの落とし方が SP-7『検索条件を保持して戻る』と衝突しないか / フォーカスリング・sr-only 文言・タップ領域の既存作法との整合 / 概要と最終更新の配置と書式）"
+    },
+    {
+      "name": "readme_render",
+      "model": "sonnet",
+      "lens": "README のレンダリングと安全性（F-4。GitHub HTML レンダリング取得 vs raw Markdown + レンダラの比較を具体ライブラリ名・バンドルサイズ・Workers 互換で / XSS 対策の具体手順とサニタイズ許可リスト / 相対リンク・相対画像・アンカーの解決 / 巨大 README の切り詰めと全文導線 / 取得失敗・README 不在・非 UTF-8・バイナリ混入の各フォールバック / NFR-3 クライアント JS 増やさない方針との両立 / 表示だけで新たな脆弱性を作らないこと)"
+    },
+    {
+      "name": "arch_domain",
+      "model": "sonnet",
+      "lens": "アーキテクチャとドメイン境界（F-3/F-4 の型と層。RepositoryDetail の拡張範囲と mapper・既存テストへの波及 / README を RepositoryQueryPort に足すか新ポートにするか、findDetail と同時取得か遅延取得か / ARCH-3・NFR-16・TR-4・E-2 のデータソース限定宣言をどう更新するか / CachePort の TTL とキャッシュキー設計 / private 露出防止（AC-12/NFR-33）が README 経路でも成立するか / AC-5 の 404 契約と Suspense 不使用制約の中で README 取得の遅延をどう扱うか / YAGNI に照らして面積を広げすぎていないか）"
+    },
+    {
+      "name": "removal_impact",
+      "model": "sonnet",
+      "lens": "撤去とドキュメント整合（F-5/F-6。RSS 撤去の物理範囲を列挙し、消し残し・消しすぎの両方を潰す / US-33・SP-15・AC・NFR・open-questions の記述をどう書き換えるか（削除ではなく撤去理由を残す規律・D-33 の SP-16 事後撤去の前例に倣う） / e2e と単体テストの削除・改修範囲 / DAILY_DIGEST_LIMIT や FALLBACK_META など RSS 側からしか参照されていない資産の行き先 / Ecosyste.ms リンク URL の一次情報としての妥当性 / 撤去後に check_* 系ツールや機械検査が落ちないか）"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント突合（prd.md の FR/NFR/AC/US、user-story-map.md の SP-n と操作レビュー手順、open-questions.md の D-n、ui-ux-guidelines.md、application-architecture.md、domain-model.md、testing-strategy.md のうち、本変更で更新が必要な行を機械的に列挙する。新しい設計を主張せず、既存記述との矛盾箇所とファイルパス・見出し単位の更新先の洗い出しに徹する）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜F それぞれについて採用する設計を 1 つに決める。決定は『どのファイルに何を書くか（新規/改修/削除）』『どのテストを先に書くか（TDD）』まで落とす。権威順は ユーザー明示 > 仕様（prd.md）> テスト > 現行コード。議論で否定された案は採用しない。飼い主の 6 件の要望はすべて満たす（要望自体を縮小する結論は採らない）。仕様解釈が 2 通り以上あり選択で成果物が変わるものだけ open_questions に挙げる（実装手段・ライブラリ選定・命名は挙げない）。"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜F のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修/削除の別）"],
+        "tests": ["先に書くテスト（パスと観点）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統）"]
+  }
+}

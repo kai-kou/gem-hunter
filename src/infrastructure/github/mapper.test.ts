@@ -153,6 +153,14 @@ describe('toPublicRepositoryDetail', () => {
     expect(detail?.forkCount).toBe(48000)
     expect(detail?.openIssueCount).toBe(1200)
     expect(detail?.topics).toEqual(['javascript', 'react'])
+    // 🔴 lastPushedAt は pushed_at 由来（フィクスチャの updated_at とは異なる値で区別する・Issue #334 F-3）
+    expect(detail?.lastPushedAt.toISOString()).toBe('2026-08-15T03:00:00.000Z')
+  })
+
+  it('pushed_at が null（コミット履歴のない空リポジトリ）でも例外を投げず updated_at にフォールバックする', () => {
+    const detail = toPublicRepositoryDetail({ ...detailFixture, pushed_at: null })
+
+    expect(detail?.lastPushedAt.toISOString()).toBe('2026-08-18T09:00:00.000Z')
   })
 
   it('watchers は subscribers_count を使い、star のミラーである watchers_count は使わない', () => {

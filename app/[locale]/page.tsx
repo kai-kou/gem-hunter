@@ -2,8 +2,11 @@ import { Suspense } from 'react'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import { getDailyDigestUseCase, searchRepositoriesUseCase } from '@/src/composition/container'
-import { DAILY_DIGEST_LIMIT } from '@/src/composition/digest-feed'
+import {
+  DAILY_DIGEST_LIMIT,
+  getDailyDigestUseCase,
+  searchRepositoriesUseCase,
+} from '@/src/composition/container'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
@@ -289,7 +292,8 @@ export default async function LocaleHome({
           localeNames: messages.common.localeSwitcher.localeNames,
         }}
       />
-      <h1 className="text-2xl font-semibold">{messages.home.title}</h1>
+      {/* 🔴 h1（ツールタイトル）は共有ヘッダー（layout.tsx）へ移設済み（Issue #334 F-1/F-2）。
+          このページに残すと h1 が 2 つになる（`e2e/sp-9-loading-empty.spec.ts` が検知）。 */}
       <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
 
       <SearchForm
@@ -320,7 +324,6 @@ export default async function LocaleHome({
               starsLabel: messages.home.digest.starsLabel,
               newBadge: messages.home.digest.newBadge,
               firstVisitNote: messages.home.digest.firstVisitNote,
-              rssLink: messages.home.digest.rssLink,
             }}
           />
           <AttributionNotice

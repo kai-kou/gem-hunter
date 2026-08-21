@@ -213,7 +213,9 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
     await page.goto(`/ja/repos/octostub/${repo}`)
 
     await expect(errorNotice(page)).toBeVisible()
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(`octostub/${repo}`)
+    // 🔴 h1 は共有ヘッダー（layout.tsx）のツールタイトルが持つため h2 へ降格
+    //    （Issue #334 F-1/F-2・whiteboard round3 lead 裁定）。
+    await expect(page.getByRole('heading', { level: 2 })).toContainText(`octostub/${repo}`)
     await expect(
       page.getByRole('navigation', { name: ja.common.localeSwitcher.navLabel }),
     ).toBeVisible()

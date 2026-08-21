@@ -39,6 +39,13 @@ export type RepositoryDetail = {
   readonly forkCount: number
   /** GitHub の open_issues_count は Pull Request を含む（domain-model.md §2.2）。 */
   readonly openIssueCount: number
+  /**
+   * 最終更新日時。一覧（`RepositorySummary.lastPushedAt`）と **同じ算出規則**（`pushed_at`。
+   * null の場合のみ `updated_at` へフォールバック）を使う（`domain-model.md` §2.2）。
+   * 一覧と詳細で「最終更新」という同一概念に別のフィールドを当てると、画面遷移で値の意味が
+   * 変わったように見えるため（Issue #334 F-3）。
+   */
+  readonly lastPushedAt: Date
   readonly topics: readonly string[]
   readonly htmlUrl: string
 }
