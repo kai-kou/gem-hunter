@@ -37,10 +37,34 @@ import { REGISTRIES } from './gem-pool/registries.mjs'
 /** レジストリごとの取得枠（`D-37` (1) の固定枠。母数比例枠は採らない）。 */
 const DEFAULT_QUOTA = 15000
 const DEFAULT_PER_PAGE = 1000
-/** 汚染フィルタ: star 数がこれ未満のものは Gem 候補に載せない（`D-37` (2)）。 */
-const DEFAULT_MIN_STARS = 1
-/** 汚染フィルタ: 被依存数の「上位帯」をパーセンタイルで定義する（真の star=0 × 高被依存は repo 誤紐付けの疑い）。 */
-const DEFAULT_HIGH_DEPENDENT_RANK = 10
+/**
+ * 汚染フィルタ: star 数がこれ未満のものは Gem 候補に載せない（`D-37` (2)）。
+ *
+ * 🔴 **既定 5 は実測で決めた**（2026-08-22・12 レジストリ × 15,000 件 = 180,000 パッケージ）。
+ * `D-37` の文言は「真の 0（`stars=0`）× 高被依存」を除外対象にしているが、**本プールは
+ * 各レジストリの被依存数上位 15,000 件だけを集めた集合なので、全件が構造的に高被依存帯にある**。
+ * 閾値をスイープして生成物の上位 20 件を目視した結果は次のとおり（`D-36` の失敗判定条件は
+ * 「上位 20 件に `stars=0` の自動生成ミラー・repo 誤紐付けが 3 件以上混ざっていない」）:
+ *
+ * | 設定 | プール件数 | 上位 20 件の汚染 |
+ * |---|---|---|
+ * | `minStars=1` / 上位帯 10% | 88,981 | ❌ 5 件（`mdickysnara/aryacil` `Aylaistiani22/anakayam` `exoego/scalajs-test-helper` の star=0 spam と、`juven/git-demo` `rizkychi/discorudo` の repo 誤紐付け） |
+ * | `minStars=1` / 全帯 | 76,454 | ❌ 3 件（`juven/git-demo` `rizkychi/discorudo` ほか） |
+ * | `minStars=2` / 全帯 | 70,951 | ❌ 1 件（`rizkychi/discorudo`・被依存 1,817 で star 2） |
+ * | `minStars=3` / 全帯 | 67,280 | ✅ 0 件（ただし観測されたノイズ帯（star ≤ 2）との余裕がない） |
+ * | **`minStars=5` / 全帯（採用）** | **62,565** | ✅ 0 件 |
+ *
+ * `3` でも条件は満たすが、ノイズ帯の上端（star=2）との差が 1 しかなく日次再生成のぶれを吸収できない。
+ * プール件数の差は 7% にとどまるため、余裕のある `5` を既定にする。閾値を変えるときは
+ * `python3 tools/measure_gem_coverage.py` で被覆率を測り直して決定ログへ追記する（`D-37`）。
+ */
+const DEFAULT_MIN_STARS = 5
+/**
+ * 汚染フィルタ: 被依存数の「上位帯」をパーセンタイルで定義する。
+ * 既定 `100`（= 全帯）。上記のとおり本プールは全件が高被依存帯にあたるため、帯で絞ると
+ * 低被依存側に残った spam（star=0 で被依存 2,000 級の npm パッケージ）を取りこぼす。
+ */
+const DEFAULT_HIGH_DEPENDENT_RANK = 100
 const DEFAULT_DIGEST_LIMIT = 300
 const DEFAULT_OUT_DIR = 'public/data/gem-index'
 const DEFAULT_DIGEST_OUT = 'public/data/daily-digest.json'
