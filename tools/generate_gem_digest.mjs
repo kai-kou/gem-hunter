@@ -1,48 +1,88 @@
 #!/usr/bin/env node
 /**
- * generate_gem_digest.mjs — Ecosyste.ms REST API から Gem 候補プールを生成する CLI。
+ * generate_gem_digest.mjs — Gem 候補プール（`public/data/daily-digest.json` +
+ * レジストリ別シャード `public/data/gem-index/*.json`）を生成する CLI（`SP-17`）。
  *
- * ADR 0014 §2.2 / open-questions.md D-28 訂正注記に従い、Ecosyste.ms REST API の
- * `rankings` フィールド（各指標のパーセンタイル順位を Ecosyste.ms 側で日次計算済み・
- * 値域 0〜100・0 が最上位）を Gem Index の入力として信頼する。
+ * 収集（Ecosyste.ms REST API・`tools/gem-pool/collect.mjs`）・変換（正規化・汚染フィルタ・
+ * 順位再計算・`tools/gem-pool/pipeline.mjs`）・出力（`tools/gem-pool/output.mjs`）を束ねる
+ * 薄いオーケストレーションのみをここに置く（実装本体は各モジュールが持つ・`D-37`）。
  *
  * 使い方:
- *   node tools/generate_gem_digest.mjs                 # 既定: 50 件・public/data/daily-digest.json
- *   node tools/generate_gem_digest.mjs --limit 100
- *   node tools/generate_gem_digest.mjs --out /tmp/out.json
+ *   node tools/generate_gem_digest.mjs                         # 既定: 全 12 レジストリ・quota 15000
+ *   node tools/generate_gem_digest.mjs --registries npm,pypi   # 一部レジストリだけ
+ *   node tools/generate_gem_digest.mjs --cache-dir .gem-cache  # 収集結果をレジストリ別 JSON に保存し再利用
+ *   node tools/generate_gem_digest.mjs --digest-limit 500 --quota 20000
  *
  * 実行環境: Node 21+（ESM・fetch はグローバル）。
  * ⚠️ CI での自動実行はしない（cron は別レーン）。ここでは実行手段だけ用意する。
+ * ⚠️ 12 レジストリ × quota 15000 件のフル収集は 10 分近くかかる（`--cache-dir` で再実行コストを下げる）。
  */
 
-import { writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-const API_BASE = 'https://packages.ecosyste.ms/api/v1/registries/npmjs.org/packages'
-const DEFAULT_LIMIT = 50
-const DEFAULT_OUT = 'public/data/daily-digest.json'
-const PER_PAGE = 100
-const USER_AGENT = 'gem-hunter/0.1 (+https://github.com/kai-kou/gem-hunter)'
+import { collectRegistry } from './gem-pool/collect.mjs'
+import { buildDailyDigest, buildShards, writeOutputs } from './gem-pool/output.mjs'
+import { DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD, buildPool, poolStats } from './gem-pool/pipeline.mjs'
+import { DEFAULT_PER_PAGE, DEFAULT_QUOTA, REGISTRIES, findRegistry } from './gem-pool/registries.mjs'
+
+const DEFAULT_DIGEST_LIMIT = 300
+const DEFAULT_OUT_DIR = 'public/data'
+
+const HELP = `Usage: node tools/generate_gem_digest.mjs [options]
+
+  --quota N                          レジストリあたりの取得件数（既定 ${DEFAULT_QUOTA}）
+  --registries id,id,...             対象レジストリ（既定: 全 ${REGISTRIES.length} 件・${REGISTRIES.map((r) => r.id).join(',')}）
+  --digest-limit N                   daily-digest.json に載せる件数（既定 ${DEFAULT_DIGEST_LIMIT}）
+  --zero-star-dependent-threshold N  star=0 汚染判定の被依存数閾値（既定 ${DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD}）
+  --out-dir path                     出力先ディレクトリ（既定 ${DEFAULT_OUT_DIR}）
+  --no-shards                        レジストリ別シャード JSON を書かない（digest のみ）
+  --cache-dir path                   収集結果をレジストリ別 JSON でキャッシュし、次回はそこから読む
+  --help, -h                         このヘルプを表示
+`
+
+function parsePositiveInt(raw, flag) {
+  const v = Number(raw)
+  if (!Number.isFinite(v) || v <= 0) {
+    throw new Error(`${flag} には正の整数を指定してください（受け取った値: ${raw}）`)
+  }
+  return Math.floor(v)
+}
 
 function parseArgs(argv) {
-  const out = { limit: DEFAULT_LIMIT, out: DEFAULT_OUT }
+  const out = {
+    quota: DEFAULT_QUOTA,
+    registries: REGISTRIES,
+    digestLimit: DEFAULT_DIGEST_LIMIT,
+    zeroStarDependentThreshold: DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD,
+    outDir: DEFAULT_OUT_DIR,
+    writeShards: true,
+    cacheDir: null,
+  }
+
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
-    if (a === '--limit') {
-      const v = Number(argv[++i])
-      if (!Number.isFinite(v) || v <= 0) {
-        throw new Error(`--limit には正の整数を指定してください（受け取った値: ${argv[i]}）`)
-      }
-      out.limit = Math.floor(v)
-    } else if (a === '--out') {
-      out.out = argv[++i]
-      if (!out.out) throw new Error('--out にパスを指定してください')
+    if (a === '--quota') {
+      out.quota = parsePositiveInt(argv[++i], '--quota')
+    } else if (a === '--registries') {
+      const ids = (argv[++i] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+      if (ids.length === 0) throw new Error('--registries には 1 件以上のレジストリ id を指定してください')
+      out.registries = ids.map(findRegistry)
+    } else if (a === '--digest-limit') {
+      out.digestLimit = parsePositiveInt(argv[++i], '--digest-limit')
+    } else if (a === '--zero-star-dependent-threshold') {
+      out.zeroStarDependentThreshold = parsePositiveInt(argv[++i], '--zero-star-dependent-threshold')
+    } else if (a === '--out-dir') {
+      out.outDir = argv[++i]
+      if (!out.outDir) throw new Error('--out-dir にパスを指定してください')
+    } else if (a === '--no-shards') {
+      out.writeShards = false
+    } else if (a === '--cache-dir') {
+      out.cacheDir = argv[++i]
+      if (!out.cacheDir) throw new Error('--cache-dir にパスを指定してください')
     } else if (a === '--help' || a === '-h') {
-      console.log(
-        'Usage: node tools/generate_gem_digest.mjs [--limit N] [--out path/to/daily-digest.json]',
-      )
+      console.log(HELP)
       process.exit(0)
     } else {
       throw new Error(`未知の引数: ${a}`)
@@ -51,118 +91,96 @@ function parseArgs(argv) {
   return out
 }
 
-/**
- * Ecosyste.ms から被依存数の多い順に候補を取得する。
- * 100 件ページングで limit を満たすまでめくる。
- */
-async function fetchCandidates(limit) {
-  const results = []
-  let page = 1
-  while (results.length < limit) {
-    const url = new URL(API_BASE)
-    url.searchParams.set('sort', 'dependent_packages_count')
-    url.searchParams.set('order', 'desc')
-    url.searchParams.set('per_page', String(PER_PAGE))
-    url.searchParams.set('page', String(page))
+async function readCache(cachePath) {
+  try {
+    return JSON.parse(await readFile(cachePath, 'utf8'))
+  } catch (err) {
+    if (err.code === 'ENOENT') return null
+    throw err
+  }
+}
 
-    const res = await fetch(url, {
-      headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
-    })
-    if (!res.ok) {
-      throw new Error(`Ecosyste.ms ${res.status} ${res.statusText} @ page=${page}`)
+/**
+ * `--cache-dir` があればレジストリ別にキャッシュを読み書きしながら収集する。
+ * 10 分近くかかる収集を試行錯誤のたびに走らせないための退避経路（契約 §5）。
+ */
+async function collectWithCache({ registries, quota, perPage, cacheDir, requestTally }) {
+  const collected = []
+  for (const registry of registries) {
+    const cachePath = cacheDir ? resolve(cacheDir, `${registry.id}.json`) : null
+    const cached = cachePath ? await readCache(cachePath) : null
+
+    if (cached !== null) {
+      console.error(`[generate_gem_digest] cache hit: ${registry.id}（${cached.length} 件・収集スキップ）`)
+      collected.push({ registry: registry.id, packages: cached })
+      continue
     }
-    const body = await res.json()
-    if (!Array.isArray(body) || body.length === 0) break
-    results.push(...body)
-    if (body.length < PER_PAGE) break
-    page += 1
+
+    const packages = await collectRegistry({
+      registry,
+      quota,
+      perPage,
+      onProgress: () => {
+        requestTally.count += 1
+      },
+    })
+
+    if (cachePath) {
+      await mkdir(dirname(cachePath), { recursive: true })
+      await writeFile(cachePath, JSON.stringify(packages), 'utf8')
+    }
+    collected.push({ registry: registry.id, packages })
   }
-  return results.slice(0, limit)
+  return collected
 }
 
-/**
- * 1 件のパッケージ生 JSON から Gem shape へ変換する。
- * repositoryFullName が解決できない（rankings が欠落・GitHub URL でない）ものは null で捨てる。
- */
-function toGem(pkg) {
-  const repo = extractGithubFullName(pkg?.repository_url)
-  if (!repo) return null
-
-  const rankings = pkg?.rankings
-  if (!rankings || typeof rankings !== 'object') return null
-  const depRank = numberOrNull(rankings.dependent_packages_count)
-  const starRank = numberOrNull(rankings.stargazers_count)
-  if (depRank === null || starRank === null) return null
-  // 🔴 値域を検証してから採用する（`src/domain/model/gem-index.ts` の `assertRank` と同じ不変条件）。
-  //    Ecosyste.ms が rankings の値域・向きを変えた場合、無検証だと壊れたスコアが静かに配信され続ける。
-  //    .mjs から TS の `computeGemIndex` を import できないため同じ規則をここに写している
-  //    （算出の一本化は別 Issue。ここでは「壊れた値を配信しない」ことを優先する）。
-  if (depRank < 0 || depRank > 100 || starRank < 0 || starRank > 100) return null
-
-  const dependentCount = numberOrNull(pkg.dependent_packages_count) ?? 0
-  // 🔴 star 数はトップレベルではなく `repo_metadata.stargazers_count` にある（実測確認）。
-  //    `pkg.stargazers_count` は存在しないため、参照すると全件 0 になり「star が少ない Gem」
-  //    という表示自体が嘘になる（生成物を実データで検証して初めて分かる類の欠陥）。
-  const stars = numberOrNull(pkg?.repo_metadata?.stargazers_count) ?? 0
-  // ADR 0009 §2.1: Gem Index = 被依存数の順位 − star の順位（0 が最上位・値が小さいほど上位）
-  const gemIndex = depRank - starRank
-
-  return {
-    packageName: String(pkg.name),
-    repositoryFullName: repo,
-    dependentCount,
-    stars,
-    gemIndex,
-  }
-}
-
-function numberOrNull(v) {
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-}
-
-/** GitHub URL（https / git+https / git@github.com:）から owner/repo を抜き出す。 */
-function extractGithubFullName(url) {
-  if (typeof url !== 'string') return null
-  const cleaned = url.replace(/^git\+/, '').replace(/\.git$/, '')
-  const m =
-    /^https?:\/\/github\.com\/([^/]+)\/([^/#?]+)/i.exec(cleaned) ||
-    /^git@github\.com:([^/]+)\/([^/#?]+)/i.exec(cleaned)
-  if (!m) return null
-  return `${m[1]}/${m[2]}`
-}
-
-function yyyymmddUtc(now) {
-  const y = now.getUTCFullYear()
-  const mo = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(now.getUTCDate()).padStart(2, '0')
-  return `${y}${mo}${d}`
+function resolveOutDir(outDir) {
+  const here = dirname(fileURLToPath(import.meta.url))
+  return resolve(here, '..', outDir)
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  const startedAt = Date.now()
+  const requestTally = { count: 0 }
+
+  const collected = await collectWithCache({
+    registries: args.registries,
+    quota: args.quota,
+    perPage: DEFAULT_PER_PAGE,
+    cacheDir: args.cacheDir,
+    requestTally,
+  })
+
+  const candidates = buildPool(collected, {
+    zeroStarDependentThreshold: args.zeroStarDependentThreshold,
+  })
+  const stats = poolStats(candidates)
+
   const now = new Date()
-  const raw = await fetchCandidates(args.limit)
-  const candidates = raw.map(toGem).filter((g) => g !== null)
+  const shards = buildShards(candidates, { generatedAt: now.toISOString() })
+  const digest = buildDailyDigest(candidates, { limit: args.digestLimit, now })
 
-  const doc = {
-    date: yyyymmddUtc(now),
-    meta: {
-      source: 'Ecosyste.ms',
-      sourceUrl: 'https://ecosyste.ms/',
-      license: 'CC BY-SA 4.0',
-      sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
-      generatedAt: now.toISOString(),
-    },
-    candidates,
-  }
+  const { written } = await writeOutputs({
+    shards,
+    digest,
+    outDir: resolveOutDir(args.outDir),
+    writeShards: args.writeShards,
+  })
 
-  const here = dirname(fileURLToPath(import.meta.url))
-  const outPath = resolve(here, '..', args.out)
-  await mkdir(dirname(outPath), { recursive: true })
-  await writeFile(outPath, JSON.stringify(doc, null, 2) + '\n', 'utf8')
+  const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)
+  const byRegistryLine = Object.entries(stats.byRegistry)
+    .map(([id, n]) => `${id}=${n}`)
+    .join(' ')
 
   process.stdout.write(
-    `[generate_gem_digest] wrote ${candidates.length} candidates → ${outPath}\n`,
+    [
+      `[generate_gem_digest] 実行時間: ${elapsedSec}s / リクエスト数: ${requestTally.count}`,
+      `[generate_gem_digest] レジストリ別件数（プール採用後）: ${byRegistryLine}`,
+      `[generate_gem_digest] 最終件数: ${stats.total}（star=0 の比率: ${(stats.starZeroRatio * 100).toFixed(1)}%）`,
+      `[generate_gem_digest] wrote ${written.length} files: ${written.join(', ')}`,
+      '',
+    ].join('\n'),
   )
 }
 
