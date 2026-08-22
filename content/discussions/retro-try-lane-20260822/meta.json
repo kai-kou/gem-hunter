@@ -1,0 +1,14 @@
+{
+  "id": "retro-try-lane-20260822",
+  "topic": "type:retro-try の Issue が自走ルーティンから到達不能な構造を、レーン責務を壊さずに解消する（#377）",
+  "brief": "並行調査 3 役の実測をもとに、決定木への挿入位置・レーン責務・処理能力・再発検知の機械検査を確定する。spec: tools/discussion_specs/retro_try_lane_spec.json",
+  "participants": [
+    "router_designer",
+    "lane_boundary",
+    "throughput_realist",
+    "check_designer",
+    "docs_trace"
+  ],
+  "created_at": "2026-08-22T14:20:55+09:00",
+  "updated_at": "2026-08-22T14:20:55+09:00"
+}

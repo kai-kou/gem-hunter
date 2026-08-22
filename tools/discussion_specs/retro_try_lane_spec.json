@@ -1,0 +1,51 @@
+{
+  "topic": "type:retro-try の Issue が自走ルーティンから到達不能な構造を、レーン責務を壊さずに解消する（#377）",
+  "brief": "飼い主指示: 『#377 を優先してスプリントで実施してください』。#377 は『type:retro-try の Issue が自走ルーティンのどのブランチからも拾われず滞留する』という構造的欠陥。並行調査 3 役の実測（すべて file:line で裏取り済み）: (A) sprint-cycle-router/SKILL.md の決定木は Step 1〜9（+0.0/0.1/3.5）で構成され、L103-114 の判定表のどこにも retro-try-handler への委譲が無い。type:retro-try への言及は L146 と L151 の 2 箇所だけで、L151 は『type:retro-try は振り返りレーン（retro-try-handler）の担当なので従来どおり除外する』という Step 5 の除外規定。(B) retro-try-handler/SKILL.md L20-24 の起動条件は『日次の消化スロット（プロジェクト定義）+ 週次の{親ワークフロー}（プロジェクト定義）内からの呼び出し』で、{親ワークフロー} が未置換のプレースホルダのまま残っており、その起動元を実際にスケジュールするルーティンは存在しない（docs/routines/sprint-cycle-routine.md は cron 0 0/2 * * * の単一ルーティンのみで『別 cron・別ルーティンを追加で作らない』と明記）。(C) improvement-lane-map.md L14 は振り返りレーンの起動を『pr-review-watcher 内の最終ステップ / 日次消化スロット / 「レトロスペクティブして」』と定義し、L21-24 で自ら『振り返りレーンの起動元は現時点で pr-review-watcher（SP-n スコープ）のみ実装済み』と認めている。L52 は『対象が type:retro-try → 振り返りレーン（改善 Issue レーンは扱わない・#160）』という一意判定ルール。(D) Step 番号は他ファイルから固定ピンとして名指し参照されている: self-improvement-loop/SKILL.md:317 が Step 5、pr-review-watcher/SKILL.md:188,220 が Step 3、session-concurrency-rules-detail.md:82,87 が Step 4-1.5、sprint-development-rules-detail.md:96 が Step 4-0、user-story-map.md:658 が Step 3.5。したがって新ブランチを Step 5 より前に挿入すると 7 箇所の修正が要る。(E) バックログ実測: type:retro-try は open 113 件・合計 244 SP・全件 status:waiting-claude・priority high 34 / medium 73 / low 6・type:improvement との二重ラベルが 66 件・直近 3 日で 113 件すべてが起票（1 日平均 37.7 件）。retro-try-handler のバッチ上限は残件 30 件以上で 5 件/起動。2 時間おきの単一 cron で 1 firing 1 ブランチしか実行しないため、仮に毎回この分岐を引いても消化に数日〜数週かかる。(F) 既存 107 件の棚卸しは #385 / PR #399 で完了済み（109→100 件へ圧縮）。争点は 5 つ: A) 決定木のどこに何を足すか（Step 5.5 として retro-try-handler へ委譲する案 1 か、Step 5 の除外を撤廃して self-improvement-loop 消化モードへ合流させる案 2 か、あるいは第 3 の案か）。案 2 は improvement-lane-map.md L52 の #160 決定（レーン間の奪い合い防止）を覆すことになる B) 単一 cron・1 firing 1 ブランチという制約下で、113 件・244 SP をどう捌くか。決定木の分岐は上から順に評価されるため、retro-try ブランチを下位に置くと上位ブランチが恒常的に真になっている間は永久に到達しない（飢餓）。優先順位と飢餓回避をどう設計するか C) type:retro-try と type:improvement の二重ラベル 66 件（58%）をどう扱うか。レーンの一意判定（L52）は type:retro-try を優先するが、二重ラベルが多数派である事実はレーン分割そのものの妥当性を疑わせる D) 再発検知の機械検査の設計（レーン定義の起動スキルが決定木から実際に到達可能かを照合する。improvement-lane-map.md の表と sprint-cycle-router の決定木表をパースして突き合わせる。両表は標準的な Markdown パイプテーブルだが → 連結・日本語補足・Step サフィックス・tools/*.py 委譲の除外という前処理が要る）。何を PASS/FAIL の基準にするか、偽陽性をどう避けるか E) retro-try-handler/SKILL.md の未置換プレースホルダ {親ワークフロー} をどう埋めるか（起動契約の明文化）。制約: docs/routines/sprint-cycle-routine.md の『別 cron・別ルーティンを追加で作らない』は動かせない。improvement-lane-map.md は 3 レーン責務境界の SSOT で、#160 の決定を覆すには相応の根拠が要る。Step 番号の固定ピン参照 7 箇所を壊さない。CP-3（Issue/PR ゼロ放置）・CP-6（ユーザー確認最小化）。",
+  "participants": [
+    {
+      "name": "router_designer",
+      "model": "sonnet",
+      "lens": "決定木の設計（争点 A / B）。`.claude/skills/sprint-cycle-router/SKILL.md` の決定木を実際に読み、新ブランチをどこに・どういう判定条件で挿入するかを具体的に設計する。**飢餓（starvation）を最重要の検証項目とする**: 1 firing 1 ブランチ・上から順に評価という制約下で、上位ブランチ（Step 1〜5）が恒常的に真になっている間、下位に置いた retro-try ブランチが永久に到達しないのではないか。実際に上位ブランチの発火条件を読み、どれくらいの頻度で真になるかを見積もれ。飢餓を避ける具体案（ラウンドロビン・n 回に 1 回の強制・上位ブランチ側での件数上限・スロット制）を最低 2 つ出し、それぞれが Step 番号の固定ピン参照 7 箇所を壊さないかを確認する。Step 番号を振り直さずに済む挿入位置も検証する。"
+    },
+    {
+      "name": "lane_boundary",
+      "model": "sonnet",
+      "lens": "レーン責務境界（争点 A の案 2 / 争点 C）。`docs/rules/improvement-lane-map.md` を全文読み、#160 の決定（type:retro-try は振り返りレーン専管・改善 Issue レーンは扱わない）が **今も妥当か** を検証する。**二重ラベル 66 件（type:retro-try かつ type:improvement・全体の 58%）という実測を正面から扱え**: 多数派が両方のラベルを持つなら、レーン分割は現実を反映していないのではないか。案 2（レーン統合）を採った場合に実際に壊れるものを具体的に挙げ（どのスキルのどの手順が矛盾するか）、案 1（責務維持）を採った場合に残る歪みも挙げる。どちらを推すかを明確にし、推す側の移行手順（どのファイルの何行目をどう書き換えるか）まで示す。"
+    },
+    {
+      "name": "throughput_realist",
+      "model": "sonnet",
+      "lens": "処理能力の現実性（争点 B）。実測（open 113 件・合計 244 SP・直近 3 日で 113 件起票 = 1 日 37.7 件・retro-try-handler のバッチ上限は残件 30 件以上で 5 件/起動・cron は 2 時間おき = 1 日 12 firing・1 firing 1 ブランチ）から、**経路を開通させても滞留は解消しないのではないか** を数値で検証する。流入（1 日 37.7 件）と流出（retro-try ブランチを引く確率 × 5 件）の収支を計算し、定常状態でバックログが増えるか減るかを示せ。減らないなら、経路開通だけでは #377 の完了条件を実質的に満たさないことになる。**流入側を絞る案**（レトロの Try 起票基準の厳格化・#393 と関連）と **流出側を増やす案** の両方を検討し、このスプリントで実施すべきものと別 Issue に送るべきものを切り分ける。数値は必ず自分で計算して示すこと。"
+    },
+    {
+      "name": "check_designer",
+      "model": "sonnet",
+      "lens": "再発検知の機械検査（争点 D）。`tools/check_skill_references.py` を実際に読んで骨格を把握し、「レーン定義の起動スキルが決定木から到達可能か」を照合する検査の **具体的な設計** を出す。`docs/rules/improvement-lane-map.md` の表と `.claude/skills/sprint-cycle-router/SKILL.md` の決定木表を実際に読み、パース対象の行を特定せよ。**偽陽性を最重要の検証項目とする**: レーンの起動元は決定木だけでなく『ユーザーの自然文指示』『他スキルの最終ステップ』もありうる（例: `retrospective` は `pr-review-watcher` の Step 7 から起動される）。決定木に無い = 断絶、と単純判定すると誤検出になる。何を『到達可能』と定義するか、除外マーカーをどう使うかを設計し、**現状（修正前）で本当に FAIL し、修正後に PASS すること** を確認できる self-test ケースを具体的に列挙する。"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存記述との整合（新しい事実を主張せず突合に徹する）。提案される変更が次と矛盾しないかを **行番号付きで** 洗い出す: `docs/routines/sprint-cycle-routine.md`（単一 cron 制約）/ `docs/rules/improvement-lane-map.md`（3 レーン責務・#160 決定）/ `.claude/skills/retro-try-handler/SKILL.md`（未置換プレースホルダ `{親ワークフロー}` の位置）/ Step 番号を名指し参照している 7 箇所（`self-improvement-loop/SKILL.md:317`・`pr-review-watcher/SKILL.md:188,220`・`session-concurrency-rules-detail.md:82,87`・`sprint-development-rules-detail.md:96`・`user-story-map.md:355,658`）。**変更が必要なファイルと行番号の一覧**を作れ。矛盾を新たに作る提案があれば名指しする。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて『実装する設計』を 1 つに決める。決定は必ず『どのファイルの何行目をどう書き換えるか』『どのスクリプトを新規作成するか』まで落とす。飢餓（starvation）と流入超過（流入 > 流出）の 2 点は、解決策を示せないなら critical に残して別 Issue へ送る（『経路を開けたので解決』と言わない）。Step 番号の固定ピン参照 7 箇所を壊す提案は採用しない。#160 の決定を覆す提案は、覆すに足る実測の根拠が示された場合のみ採用する。ユーザー確認が要る仕様分岐（SD-3 第 2 系統）があれば open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "decision": "確定した設計",
+        "artifacts": ["書き換えるファイル:行番号（新規作成なら new: パス）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "tasks": [
+      {"id": "T-n", "title": "実行タスク", "files": ["対象ファイル"], "depends_on": ["T-n"]}
+    ],
+    "critical": ["議論を経ても残った真の問題（別 Issue へ送るものを含む）"],
+    "open_questions": ["ユーザー確認が要る仕様分岐"]
+  }
+}

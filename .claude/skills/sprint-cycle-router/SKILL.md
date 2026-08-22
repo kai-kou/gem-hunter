@@ -1,6 +1,6 @@
 ---
 name: sprint-cycle-router
-description: 単一ルーティン（N 時間ごとの cron 起動）でスプリント開発を自走させる決定木ルーター。破壊的変更対応・自 PR 回収・進行中スプリント再開・SP→Issue 同期・新規スプリント着手（TDD・縦切り・専門チーム編成）・改善Issue消化・衛生・週次リファインメント・spec-sync 検証の 9 ブランチから、1 firing につき該当する最初の 1 つだけを実行する。「スプリント自走ルーティン」「N 時間ごとの開発を進めて」「スプリントサイクルを回して」「/sprint-cycle-router」と依頼された時、またはルーティン設定（`docs/routines/sprint-cycle-routine.md`）から自動起動する時に使用する。各ブランチの実処理は既存パイプラインスキル（`claude-code-spec-sync` / `pr-review-watcher` / `self-improvement-loop` / `workflow-health-check` / `project-sync`）に委譲し、本スキル自身は「今どのブランチを実行すべきか」の判定と Step4（新規スプリント着手）の内部手順だけを持つ。改善Issueの発見・棚卸し自体は `self-improvement-loop`、リポジトリ衛生の監査自体は `workflow-health-check` の担当（本スキルはそれらの呼び出し元）。
+description: 単一ルーティン（N 時間ごとの cron 起動）でスプリント開発を自走させる決定木ルーター。破壊的変更対応・自 PR 回収・進行中スプリント再開・SP→Issue 同期・新規スプリント着手（TDD・縦切り・専門チーム編成）・改善Issue消化・振り返り Issue 消化・衛生・週次リファインメント・spec-sync 検証の 10 ブランチから、1 firing につき該当する最初の 1 つだけを実行する。「スプリント自走ルーティン」「N 時間ごとの開発を進めて」「スプリントサイクルを回して」「/sprint-cycle-router」と依頼された時、またはルーティン設定（`docs/routines/sprint-cycle-routine.md`）から自動起動する時に使用する。各ブランチの実処理は既存パイプラインスキル（`claude-code-spec-sync` / `pr-review-watcher` / `self-improvement-loop` / `retro-try-handler` / `workflow-health-check` / `project-sync`）に委譲し、本スキル自身は「今どのブランチを実行すべきか」の判定と Step4（新規スプリント着手）の内部手順だけを持つ。改善Issueの発見・棚卸し自体は `self-improvement-loop`、リポジトリ衛生の監査自体は `workflow-health-check` の担当（本スキルはそれらの呼び出し元）。
 effort: medium
 ---
 
@@ -69,7 +69,7 @@ effort: medium
    curl モードで Step 2（自分の PR 回収）を判定する場合、`check_pending_pr_reviews.py` に
    curl 経由の第 3 層は無いため、`GET /repos/{owner}/{repo}/pulls?state=open` を直叩きし、
    PR 本文の `Session-Id:` トレーラーをクライアント側で grep して `--mine` 相当を素朴に再実装する。
-4. 全滅 → GitHub API 完全不通。Issue/PR 依存の Step 1〜8 は実行不能と判定し、
+4. 全滅 → GitHub API 完全不通。Issue/PR に依存する全 Step（整数・小数点を問わず。Step 1〜8 と 3.5 / 5.5）は実行不能と判定し、
    git 単独で判定できる範囲（ローカルに push 漏れのコミットが無いか等）だけ確認して **安全側 no-op**。
    ログを残さず何もしない（永続化先が無い。次回 firing が独立に再判定するのが ephemeral 前提と一致する。
    中途半端なローカル state ファイルを新設しない）。
@@ -108,6 +108,7 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
 | **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
+| **5.5** | `status:waiting-claude` かつ `type:retro-try` の Issue が存在し、**直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5） | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
 | **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
 | **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
 | **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
@@ -148,8 +149,10 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 - **着手できないものは `status:blocked`**: 前提が未成立の Issue（例: `SP-4` 完了が前提の CI 作業）は
   `status:waiting-claude` ではなく `status:blocked` を付け、解除条件を本文に書く。`status:blocked` は
   Step 5 の対象外である（§10 の完了定義）
-- `type:retro-try` は振り返りレーン（`retro-try-handler`）の担当なので従来どおり除外する
-  （`improvement-lane-map.md`）
+- `type:retro-try` は振り返りレーン（`retro-try-handler`）の担当なので Step 5 の対象からは外す
+  （`improvement-lane-map.md`）。**外した先は Step 5.5 が拾う**（#377）。かつては外すだけで
+  受け皿が無く、`type:retro-try` が決定木のどのブランチからも起動されずに滞留していた
+  （open の 6 割が到達不能だった）。Step 5.5 を消すなら同時に本行の除外も撤回すること
 
 ### エージング（Step 4 の飢餓防止・§5 で詳述）
 
@@ -275,7 +278,25 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
    この firing に限り Step 2 の判定を 1 回後回しにして Step 4 を実行する
    （Step 2 の対象 PR は次回 firing 以降に持ち越しても CP-4 上問題ない
    ＝ pr-review-watcher の active_session 判定・stale 判定がそのまま安全弁になる）
+
+4. Step 5.5（retro-try）の飢餓防止（#377）:
+   `status:waiting-claude` かつ `type:retro-try` の Issue が存在し、**直近の retro-try 対応から
+   8 時間以上経過**していれば、この firing に限り Step 5 の判定を後回しにして Step 5.5 を実行する。
+   直近の対応時刻は直近 closed の `type:retro-try` Issue の `closed_at` から逆算する
+   （`mcp__github__list_issues(state="CLOSED", labels=["type:retro-try"],
+   orderBy="UPDATED_AT", direction="DESC", perPage=1)`）。専用ログもラベルも新設しない。
 ```
+
+### なぜ Step 5.5 にエージングが要るか（#377・実測）
+
+Step 5 の対象プール（`SP-n` 規約に一致しない `status:waiting-claude` Issue）は実測で常時 2 桁の
+在庫を抱えており、**ほぼ常に真** になる。「1 firing = 上から該当する最初の 1 ブランチだけ」という
+設計上、エージングが無ければ Step 5 より下は永久に評価されない。Step 5.5 を単に足すだけでは
+`type:retro-try` の滞留は解消しない。
+
+閾値を 8 時間にした理由: 2 時間おきの cron に対し 1 日 3 回（`floor(24/8)`）Step 5.5 を通せる。
+これより短くする（例: 4 時間 = 1 日 6 回）と Step 5 自身が実質停止し、retro-try の飢餓を
+Step 5 側の飢餓にすり替えるだけになる（CP-3 違反の移動）。
 
 ---
 
@@ -370,6 +391,8 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 - [ ] 無人 firing で `AskUserQuestion` を使っていない（§6 の 3 条件判定で代替している）
 - [ ] `status:blocked` の Issue/PR が Step 3 / Step 4 / Step 5 の対象から除外されている
 - [ ] Step 5 で `SP-n` 以外の `status:waiting-claude` Issue を `type` で取りこぼしていない
+- [ ] `type:retro-try` の Issue が Step 5.5 から到達可能で、エージング（§5-4）により飢餓していない
+      （`python3 tools/check_lane_reachability.py` が PASS する・#377）
 - [ ] 健全な中断の 4 条件（§7）を満たさずに firing を終えていない
 - [ ] `[Milestone] M-3 到達` Issue が重複起票されていない（既存 open Issue の有無で判定済み）
 
@@ -391,6 +414,8 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 | `.claude/skills/claude-code-spec-sync/SKILL.md` | Step 1 / Step 8 の委譲先 |
 | `.claude/skills/pr-review-watcher/SKILL.md` | Step 2 / Step 3（PR 済み）/ Step 4-6 の委譲先 |
 | `.claude/skills/self-improvement-loop/SKILL.md` | Step 5（消化モード）/ Step 7（整理モード）の委譲先 |
+| `.claude/skills/retro-try-handler/SKILL.md` | Step 5.5（`type:retro-try` の消化）の委譲先（#377） |
+| `tools/check_lane_reachability.py` | レーン定義のスキルが決定木・他スキル・hooks から到達可能かの機械検査（#377 の再発検知） |
 | `.claude/skills/workflow-health-check/SKILL.md` / `.claude/skills/project-sync/SKILL.md` | Step 6（衛生）の委譲先 |
 | `tools/sprint_backlog_sync.py` | Step 3.5 の SP→Issue 同期スクリプト（本スキルは呼び出し方のみ持ち、パース・判定ロジックは持たない） |
 | `tools/check_parallel_safety.py` | Step 4-1.5 の並行安全性判定スクリプト（CLI 契約・判定思想の詳細は `docs/rules/session-concurrency-rules-detail.md`「レイヤー 1 補強」） |
