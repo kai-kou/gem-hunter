@@ -237,6 +237,8 @@ export class StaticGemIndex implements GemIndexPort {
    * 🔵 **全語 AND → 0 件なら最も選択的な 1 語へ緩和**（`D-37`）。`image processing` のような
    * 概念語は AND では 1 件しかヒットしない実測があるため、0 件で終わらせない。
    * 🔵 初回呼び出しでだけ検索インデックス（第 2 段）を作る。2 回目以降は参照するだけ。
+   * 🔵 **母集団は一覧用の列が揃ったレコードだけ**（欠損を既定値で埋めたものは出さない・`F-17`）。
+   * 🔵 **範囲外のページは最終ページへクランプ** し、返したページを `effectivePage` で報告する（`F-02`）。
    *
    * ⚠️ **絞り込みは 62,483 件の線形走査**（warm で実測 8〜12ms）。トークン → レコードの
    * 転置索引にすれば sub-ms にできるが、その索引の構築コストとメモリが cold start 側へ
@@ -255,7 +257,8 @@ export class StaticGemIndex implements GemIndexPort {
 
     const { records } = await searchIndex(pool)
     if (records.length === 0) {
-      // 検索インデックスの構築に失敗した場合（`lookup` は上のとおり生きている）。
+      // 検索インデックスの構築に失敗した場合、または **一覧に出せるレコードが 1 件も無い**
+      // 場合（全シャードで一覧用の列が欠けている・`F-17`）。`lookup` は上のとおり生きている。
       return emptyResult(pool.meta)
     }
 
