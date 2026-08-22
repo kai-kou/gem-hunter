@@ -15,6 +15,9 @@
  *   node tools/generate_gem_digest.mjs                      # 既定（12 レジストリ・約 10 分）
  *   node tools/generate_gem_digest.mjs --dry-run            # 書き込まず統計だけ見る
  *   node tools/generate_gem_digest.mjs --registries npmjs.org,rubygems.org --quota 2000
+ *                                                           # 部分実行（既定では配信データを書き換えない）
+ *   node tools/generate_gem_digest.mjs --registries npmjs.org --allow-partial-write
+ *                                                           # 部分実行で書き換える（孤児シャードは削除される）
  *
  * 実行環境: Node 22+（ESM・fetch はグローバル）。
  * ⚠️ CI での自動実行はしない（更新は `D-28` どおり Cloudflare の外で回して git commit → デプロイ）。

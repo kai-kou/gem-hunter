@@ -116,7 +116,7 @@ node tools/generate_gem_digest.mjs --report content/analytics/gem-pool-report.js
 | 同上 + `--allow-partial-write` | 書き換える（+ 孤児シャードを削除） | `0` |
 | `--dry-run` | 書かない（サイズだけ算出） | `0` |
 
-- **なぜ拒否するか**: 部分実行の結果で上書きすると `index.json` の `shards` が今回集めた分だけに置き換わり、**索引から消えたシャードが孤児としてディスクに残る**。[#388](../src/infrastructure/) の読み手は索引経由で読むためレジストリが丸ごと消え、`tools/measure_gem_coverage.py` はディレクトリ内の全 JSON を読むため被覆率だけが水増しされる
+- **なぜ拒否するか**: 部分実行の結果で上書きすると `index.json` の `shards` が今回集めた分だけに置き換わり、**索引から消えたシャードが孤児としてディスクに残る**。配信側（#388）は索引経由で読むためレジストリが丸ごと消え、`tools/measure_gem_coverage.py` はディレクトリ内の全 JSON を読むため被覆率だけが水増しされる
 - **`--report` は常に書く**（実測の記録用途を潰さないため。拒否した実行でもサイズ・統計は算出される）
 - **孤児シャードの削除**: 書き込む実行では、今回の `index.json` に載らない `*.json` を `--out-dir` から削除して索引とディスクを一致させる。削除したファイル名は stdout のサマリーと stderr に出す（黙って消さない）
 
