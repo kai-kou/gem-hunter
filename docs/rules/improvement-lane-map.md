@@ -11,17 +11,22 @@
 | レーン | スキル | 担当フェーズ | 主な起動 |
 |--------|--------|------------|---------|
 | **改善 Issue レーン** | `self-improvement-loop`（発見 / 整理 / 消化の 3 モード） | 横断レビューでの課題発見・起票 → 棚卸し（集計・重複統合・Epic 化・priority/sp 補完）→ **リファインメント**（後回しにされた低優先・滞留 Issue を 4 出口へ遷移。この工程のみ **全 type 対象・`type:retro-try` は除外**）→ 実装・マージ | 発見スロット / 消化スロット / R-1 ルーティン（リファインメントは手順 9-3 の週次ゲート）/ 「セルフ改善して」「改善バックログを棚卸しして」「リファインメントして」「改善Issue消化して」 |
-| **振り返りレーン** | `retrospective` → `retro-try-handler` | ワークフロー完了・失敗時の KPT 生成と Try 起票 → Try Issue の実装・PR 化 | `pr-review-watcher` 内の最終ステップ（マージ + 公開反映の直後・`Sprint Goal:` 付き PR のみ）/ 日次消化スロット / 「レトロスペクティブして」 |
+| **振り返りレーン** | `retrospective` → `retro-try-handler` | ワークフロー完了・失敗時の KPT 生成と Try 起票 → Try Issue の実装・PR 化 | KPT 生成（`retrospective`）は `pr-review-watcher` 内の最終ステップ（マージ + 公開反映の直後・`Sprint Goal:` 付き PR のみ）/ Try の実装（`retro-try-handler`）は `sprint-cycle-router` の決定木 **Step 5.5**（エージング 8 時間・#377）/ 「レトロスペクティブして」 |
 | **監査・衛生レーン** | `workflow-health-check`（監査ロジック本体）→ `project-sync`（衛生実行・軽量版の呼び出し側） | PR 健全性・Issue 状態の監査、Stale / Orphan / ラベル不整合の解消 | 週次ゲート（定期ルーティンに組み込む）/ 日次の衛生スロット / 「ヘルスチェックして」「project-sync して」 |
 
 `project-manager`（Issue / Milestone の個別 CRUD）・`waiting-user-handler`（`status:waiting-user` のトリアージ）・
 `skill-audit`（Agent Skills 資産の構造監査）・`audit-runner`（外部監査プロトコルによるセットアップ構成監査）は
-上記 3 レーンのいずれにも属さない **単発オペレーション** で、本マップの対象外。
+上記 3 レーンのいずれにも属さない **単発オペレーション** で、本マップの対象外。<!-- lanecheck:natural-trigger-only -->
 
 > **振り返りレーンの起動元は現時点で `pr-review-watcher`（`SP-n` スコープ）のみ実装済み**。他パイプライン
 > （`self-improvement-loop` / `workflow-health-check` / `retro-try-handler`）の最終ステップからの
 > `retrospective` 起動は未実装であり、別 Issue で対応する（事実を隠さない・`sp1-review-retro-20260819`
 > 議論・争点 C）。
+>
+> ⚠️ **混同注意**: この note が指すのは上流の `retrospective`（KPT 生成）の呼び出し元であって、
+> 下流の `retro-try-handler`（Try の実装）の起動経路ではない。後者は #377 で
+> `sprint-cycle-router` の決定木 **Step 5.5** として実装済み。両者は振り返りレーンの中の
+> 別スキルなので、Step 5.5 の追加はこの note のギャップを解消しない。
 
 ### 1.1. 第 4 レーン（スプリント開発レーン）
 

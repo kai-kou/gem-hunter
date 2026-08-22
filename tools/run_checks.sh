@@ -250,6 +250,16 @@ else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# レーン定義のスキルが実装（決定木・他スキルの手順・hooks）から到達可能かの検査（Issue #377）。
+# 本判定（引数なし実行）も文書だけで完結しネットワークに出ないため、self-test と両方を配線する。
+# これが赤いときは「レーンマップに書いてあるのに誰も呼ばない」断絶が生まれている。
+if [ -f "$REPO_ROOT/tools/check_lane_reachability.py" ]; then
+  run_check "レーン到達可能性 (check_lane_reachability.py)" python3 tools/check_lane_reachability.py
+  run_check "レーン到達可能性 self-test (check_lane_reachability.py --self-test)" python3 tools/check_lane_reachability.py --self-test
+else
+  skip_check "レーン到達可能性 (check_lane_reachability.py)" "スクリプトが見つかりません"
+fi
+
 # 棚卸しの判定規則（priority 補完の if-then・重複統合の keep 選択・high 比率の上限）の
 # self-test だけを配線する（Issue #385）。本判定（引数なし実行）は GitHub API に依存するので
 # 配線しない。規則の SSOT はコード側であり、議論記録はその由来を残すだけにする。

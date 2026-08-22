@@ -21,7 +21,9 @@ model: haiku
 
 - 「retro-try 対応して」「Try Issue を処理して」「レトロスペクティブ結果を反映して」
 - `/retro-try-handler`
-- 日次の消化スロット（プロジェクト定義）+ 週次の{親ワークフロー}（プロジェクト定義）内からの呼び出し
+- `sprint-cycle-router` の決定木 **Step 5.5**（`status:waiting-claude` かつ `type:retro-try` の
+  Issue が存在し、直近の retro-try 対応から 8 時間以上経過している時）。cron は
+  `docs/routines/sprint-cycle-routine.md` の 2 時間おき単一ルーティン（#377）
 
 ## 前提条件
 
