@@ -78,18 +78,16 @@ export function buildRegistryShards(records, meta) {
     else byRegistry.set(registry, [record])
   }
 
-  return [...byRegistry.keys()]
-    .sort(compareString)
-    .map((registry) => ({
-      fileName: `${registryFileSlug(registry)}.json`,
-      doc: {
-        registry,
-        ecosystem: ECOSYSTEM_BY_REGISTRY.get(registry) ?? null,
-        meta,
-        columns: [...SHARD_COLUMNS],
-        entries: sortRecords(byRegistry.get(registry)).map(toTuple),
-      },
-    }))
+  return [...byRegistry.keys()].sort(compareString).map((registry) => ({
+    fileName: `${registryFileSlug(registry)}.json`,
+    doc: {
+      registry,
+      ecosystem: ECOSYSTEM_BY_REGISTRY.get(registry) ?? null,
+      meta,
+      columns: [...SHARD_COLUMNS],
+      entries: sortRecords(byRegistry.get(registry)).map(toTuple),
+    },
+  }))
 }
 
 /**

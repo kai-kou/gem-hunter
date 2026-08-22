@@ -577,8 +577,8 @@
 - **操作レビュー**（UI を持たないスプリントなので **コマンドの実行結果** で確認する）:
   1. `node tools/generate_gem_digest.mjs --report <path>` を実行する
   2. 標準出力の実測サマリー（リクエスト数・取得件数・ユニーク repo 数・実行時間・レジストリ別構成比）が出る
-  3. 出力される **Gem Index 上位 20 件の表** を目視し、`stars=0` の自動生成ミラー・repo 誤紐付けが 3 件以上混ざっていない（`D-36` の失敗判定条件）
-  4. `python3 tools/measure_gem_coverage.py` で一般語 20〜30 件の被覆率を測り直せる（`D-37` の「枠の値を見直すときは被覆率を測り直す」条件）
+  3. 出力される **Gem Index 上位 20 件の表** を目視し、`stars=0` の自動生成ミラー・repo 誤紐付けが 3 件以上混ざっていない（出典: Issue #387 の完了条件 / [議論記録](../../content/discussions/gem-index-feasibility-20260822/whiteboard.md) の lead 裁定 `fail_criteria`）。🔵 `--min-stars` の既定（`D-37`）により `stars=0` の行は構造的にプールへ残らないため、**目視の主対象は repo 誤紐付け**（star が閾値以上のもの）である
+  4. `python3 tools/measure_gem_coverage.py` で一般語 20〜30 件の被覆率を測り直せる（`D-37` の「枠の値を見直すときは被覆率を測り直す」条件）。🔵 クラウドでは GitHub 検索 API の直叩きが 403 になるため、`mcp__github__search_repositories` の結果を JSON 化して `--search-results` に渡す（`L-114`）。ローカル / `GITHUB_TOKEN` ありなら無引数で実行できる
   5. プレビュー URL のトップページで「今日の Gem」が従来どおり 5 件出る（回帰していない）
 - **対応 `AC`**: なし（上乗せ要件 `GR-4` のデータ基盤）
 - **見積もり**: `sp:8`（ベース `sp:5`（新ツール追加 + 複数ファイル改修）+ Dynamic 補正（12 レジストリのうち 8 つは `stars` 欠損パターンが未実測）。PO 判定・2026-08-22）

@@ -498,7 +498,10 @@ describe('collectRegistry のページング上限まわり', () => {
       'content-length': String(MAX_RESPONSE_BYTES + 1),
     })
     const json = vi.fn(async () => makeRawPage('p1', 1))
-    const { fetchImpl, calls } = makeFetchImpl([{ ...huge, json }, { ...huge, json }])
+    const { fetchImpl, calls } = makeFetchImpl([
+      { ...huge, json },
+      { ...huge, json },
+    ])
     const { sleepImpl } = makeSleepImpl()
 
     await expect(
