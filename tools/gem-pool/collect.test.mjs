@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PER_PAGE, DEFAULT_QUOTA, REGISTRIES, findRegistry } from './registries.mjs'
-import { collectAll, collectRegistry } from './collect.mjs'
+import { API_BASE, collectAll, collectRegistry } from './collect.mjs'
 
 const NPM = findRegistry('npm')
 const PYPI = findRegistry('pypi')
@@ -216,9 +216,62 @@ describe('collectRegistry: 恒久失敗時の扱い', () => {
     warnSpy.mockRestore()
   })
 
+  it('途中ページで恒久失敗しても、それ以前に取得済みの分は捨てずに返す', async () => {
+    // 1 ページ目は成功（3 件）、2 ページ目が 429 を出し続けてリトライも尽きるケース。
+    // 「1 ページの一時障害でレジストリ丸ごと 0 件」を防ぐのが目的（指摘 2）。
+    const fetchImpl = vi.fn(async (url) => {
+      const page = Number(new URL(url).searchParams.get('page'))
+      if (page === 1) return jsonResponse(makePackages(3))
+      return jsonResponse(null, 429)
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await collectRegistry({
+      registry: NPM,
+      quota: 100,
+      perPage: 3,
+      fetchImpl,
+      sleep: noopSleep,
+    })
+
+    expect(result).toEqual(makePackages(3))
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+    errorSpy.mockRestore()
+  })
+
+  it('quota に届く前に恒久失敗しても、取得済み件数が quota 未満のまま返る（slice で水増ししない）', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      const page = Number(new URL(url).searchParams.get('page'))
+      if (page === 1) return jsonResponse(makePackages(2))
+      return jsonResponse(null, 500)
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await collectRegistry({
+      registry: NPM,
+      quota: 50,
+      perPage: 2,
+      fetchImpl,
+      sleep: noopSleep,
+    })
+
+    expect(result).toHaveLength(2)
+    warnSpy.mockRestore()
+    errorSpy.mockRestore()
+  })
+
   it('collectAll: 1 レジストリが恒久失敗しても他レジストリの収集は続行する', async () => {
     const fetchImpl = vi.fn(async (url) => {
-      const isNpm = new URL(url).pathname.includes('npmjs.org')
+      const requested = new URL(url)
+      // 🔴 部分一致（`pathname.includes('npmjs.org')`）は「前後に任意のホストが来てもよい」
+      //   判定になり CodeQL の Incomplete URL substring sanitization に引っかかる。
+      //   パスをセグメントに割ってから完全一致で見る。
+      expect(requested.href.startsWith(API_BASE)).toBe(true)
+      const segments = requested.pathname.split('/').filter(Boolean)
+      const isNpm = segments.includes('npmjs.org')
       if (isNpm) return jsonResponse(null, 500)
       return jsonResponse(makePackages(2))
     })
@@ -284,5 +337,57 @@ describe('collectRegistry: onProgress とレート制御', () => {
 
     expect(sleep).toHaveBeenCalledWith(250)
     errorSpy.mockRestore()
+  })
+})
+
+describe('collectRegistry: fetchImpl 自体が reject するケース', () => {
+  // 実 fetch は ECONNRESET 等で Promise を reject することがあり、
+  // 疑似 Response（jsonResponse）を返すだけのテストではこの経路が一切通らない
+  // （try/catch を丸ごと消しても既存テストは全部緑のままになる・指摘 3）。
+  it('reject を 5xx と同様にリトライし、成功すれば結果を返す', async () => {
+    let calls = 0
+    const fetchImpl = vi.fn(async () => {
+      calls += 1
+      if (calls <= 1) throw new Error('ECONNRESET')
+      return jsonResponse(makePackages(2))
+    })
+    const sleep = vi.fn(noopSleep)
+
+    const result = await collectRegistry({
+      registry: NPM,
+      quota: 10,
+      perPage: 10,
+      fetchImpl,
+      sleep,
+    })
+
+    expect(result).toEqual(makePackages(2))
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenNthCalledWith(1, 1000)
+  })
+
+  it('reject し続けたら指数バックオフで 3 回リトライし、最終的に例外を投げず空配列を返す', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('ECONNRESET')
+    })
+    const sleep = vi.fn(noopSleep)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const result = await collectRegistry({
+      registry: NPM,
+      quota: 10,
+      perPage: 10,
+      fetchImpl,
+      sleep,
+    })
+
+    expect(result).toEqual([])
+    // 初回 + 3 リトライ = 4 回
+    expect(fetchImpl).toHaveBeenCalledTimes(4)
+    expect(sleep).toHaveBeenNthCalledWith(1, 1000)
+    expect(sleep).toHaveBeenNthCalledWith(2, 2000)
+    expect(sleep).toHaveBeenNthCalledWith(3, 4000)
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 })

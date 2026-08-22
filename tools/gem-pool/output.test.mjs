@@ -12,7 +12,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { SHARD_COLUMNS, buildDailyDigest, buildMeta, buildShards, writeOutputs } from './output.mjs'
 
-/** テスト用 GemCandidate を最小差分で作るヘルパー。 */
+/**
+ * テスト用 GemCandidate を最小差分で作るヘルパー。
+ * `downloads` は pipeline.mjs（`recomputeRanks`）が内部診断用に持ち回るフィールドで、
+ * 配信スキーマ（契約 §2.5 の GemCandidate）には含まれない。ダミー値を常に持たせることで、
+ * 「配信 JSON には固定 5 列しか出さない」契約を各テストが暗黙に検証する形にする。
+ */
 function candidate(overrides) {
   return {
     registry: 'npm',
@@ -21,6 +26,7 @@ function candidate(overrides) {
     dependentCount: 100,
     stars: 10,
     gemIndex: 0,
+    downloads: 999,
     ...overrides,
   }
 }
@@ -79,6 +85,17 @@ describe('buildShards', () => {
   it('候補が空でも空配列を返す（例外にしない）', () => {
     expect(buildShards([], { generatedAt: '2026-08-22T00:00:00.000Z' })).toEqual([])
   })
+
+  it('downloads（pipeline.mjs 由来の内部診断フィールド）が rows に漏れない', () => {
+    const candidates = [candidate({ downloads: 123456 })]
+    const shards = buildShards(candidates, { generatedAt: '2026-08-22T00:00:00.000Z' })
+
+    expect(shards[0].doc.columns).not.toContain('downloads')
+    // 各 row は SHARD_COLUMNS と同じ 5 要素のみ（downloads がどこかに混入していない）。
+    for (const row of shards[0].doc.rows) {
+      expect(row).toHaveLength(SHARD_COLUMNS.length)
+    }
+  })
 })
 
 describe('buildDailyDigest', () => {
@@ -120,6 +137,17 @@ describe('buildDailyDigest', () => {
     )
     const digest = buildDailyDigest(candidates, { now: new Date('2026-08-22T00:00:00.000Z') })
     expect(digest.candidates).toHaveLength(5)
+  })
+
+  it('downloads（pipeline.mjs 由来の内部診断フィールド）が candidates に漏れない', () => {
+    const candidates = [candidate({ downloads: 123456 })]
+    const digest = buildDailyDigest(candidates, { now: new Date('2026-08-22T00:00:00.000Z') })
+
+    expect(digest.candidates).toHaveLength(1)
+    expect(digest.candidates[0]).not.toHaveProperty('downloads')
+    expect(Object.keys(digest.candidates[0]).sort()).toEqual(
+      ['dependentCount', 'gemIndex', 'packageName', 'registry', 'repositoryFullName', 'stars'].sort(),
+    )
   })
 
   it('date 境界: UTC 日跨ぎのタイムゾーンでも UTC 日付になる', () => {

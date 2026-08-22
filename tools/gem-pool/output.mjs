@@ -28,14 +28,11 @@ export const SHARD_COLUMNS = [
   'gemIndex',
 ]
 
+// 🔴 SHARD_COLUMNS から機械的に導出する（単一の情報源）。配信契約の列順（SHARD_COLUMNS）と
+//    値を積む順を別々のベタ書きにすると、列を足し忘れても構文エラーにならず、
+//    #388 が columns[i] と rows[i] のずれたデータを黙って受け取ることになる。
 function toRow(candidate) {
-  return [
-    candidate.repositoryFullName,
-    candidate.packageName,
-    candidate.dependentCount,
-    candidate.stars,
-    candidate.gemIndex,
-  ]
+  return SHARD_COLUMNS.map((column) => candidate[column])
 }
 
 /**

@@ -20,7 +20,7 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { collectRegistry } from './gem-pool/collect.mjs'
 import { buildDailyDigest, buildShards, writeOutputs } from './gem-pool/output.mjs'
@@ -53,24 +53,20 @@ const HELP = `Usage: node tools/generate_gem_digest.mjs [options]
   --help, -h                         このヘルプを表示
 `
 
-function parsePositiveInt(raw, flag) {
+/**
+ * `{flag}` には `{min}` 以上の整数を指定させる共通パーサー。
+ * `min: 1` で正の整数（`--quota` 等）、`min: 0` で非負整数（`--min-downloads-per-dependent 0` の
+ * ような「0 で判定を無効化する」フラグ）を同じ実装で扱う（指摘 4: 二重実装の統合）。
+ */
+export function parseIntOption(raw, flag, { min }) {
   const v = Number(raw)
-  if (!Number.isFinite(v) || v <= 0) {
-    throw new Error(`${flag} には正の整数を指定してください（受け取った値: ${raw}）`)
+  if (!Number.isFinite(v) || v < min) {
+    throw new Error(`${flag} には ${min} 以上の整数を指定してください（受け取った値: ${raw}）`)
   }
   return Math.floor(v)
 }
 
-/** 0 を許す非負整数（`--min-downloads-per-dependent 0` で判定を無効化できるようにするため）。 */
-function parseNonNegativeInt(raw, flag) {
-  const v = Number(raw)
-  if (!Number.isFinite(v) || v < 0) {
-    throw new Error(`${flag} には 0 以上の整数を指定してください（受け取った値: ${raw}）`)
-  }
-  return Math.floor(v)
-}
-
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const out = {
     quota: DEFAULT_QUOTA,
     registries: REGISTRIES,
@@ -85,7 +81,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--quota') {
-      out.quota = parsePositiveInt(argv[++i], '--quota')
+      out.quota = parseIntOption(argv[++i], '--quota', { min: 1 })
     } else if (a === '--registries') {
       const ids = (argv[++i] ?? '')
         .split(',')
@@ -95,15 +91,16 @@ function parseArgs(argv) {
         throw new Error('--registries には 1 件以上のレジストリ id を指定してください')
       out.registries = ids.map(findRegistry)
     } else if (a === '--digest-limit') {
-      out.digestLimit = parsePositiveInt(argv[++i], '--digest-limit')
+      out.digestLimit = parseIntOption(argv[++i], '--digest-limit', { min: 1 })
     } else if (a === '--zero-star-dependent-threshold') {
-      out.zeroStarDependentThreshold = parsePositiveInt(
-        argv[++i],
-        '--zero-star-dependent-threshold',
-      )
+      out.zeroStarDependentThreshold = parseIntOption(argv[++i], '--zero-star-dependent-threshold', {
+        min: 1,
+      })
     } else if (a === '--min-downloads-per-dependent') {
-      // 0（無効化）を許すため parsePositiveInt は使わない。
-      out.minDownloadsPerDependent = parseNonNegativeInt(argv[++i], '--min-downloads-per-dependent')
+      // min: 0（0 で判定を無効化できる・parseIntOption を min 違いで再利用）。
+      out.minDownloadsPerDependent = parseIntOption(argv[++i], '--min-downloads-per-dependent', {
+        min: 0,
+      })
     } else if (a === '--out-dir') {
       out.outDir = argv[++i]
       if (!out.outDir) throw new Error('--out-dir にパスを指定してください')
@@ -134,14 +131,25 @@ async function readCache(cachePath) {
 /**
  * `--cache-dir` があればレジストリ別にキャッシュを読み書きしながら収集する。
  * 10 分近くかかる収集を試行錯誤のたびに走らせないための退避経路（契約 §5）。
+ *
+ * `collect` はテスト注入用（既定は実ネットワークを叩く `collectRegistry`）。
+ * これを差し替えられないと「キャッシュヒット時は収集を呼ばない」「キャッシュミス時は
+ * 収集結果を書き込む」という分岐が実ネットワークなしでは検証できない（指摘 1）。
  */
-async function collectWithCache({ registries, quota, perPage, cacheDir, requestTally }) {
+export async function collectWithCache({
+  registries,
+  quota,
+  perPage,
+  cacheDir,
+  requestTally = { count: 0 },
+  collect = collectRegistry,
+}) {
   const collected = []
   for (const registry of registries) {
     const cachePath = cacheDir ? resolve(cacheDir, `${registry.id}.json`) : null
     const cached = cachePath ? await readCache(cachePath) : null
 
-    if (cached !== null) {
+    if (cached === null) {
       console.error(
         `[generate_gem_digest] cache hit: ${registry.id}（${cached.length} 件・収集スキップ）`,
       )
@@ -149,7 +157,7 @@ async function collectWithCache({ registries, quota, perPage, cacheDir, requestT
       continue
     }
 
-    const packages = await collectRegistry({
+    const packages = await collect({
       registry,
       quota,
       perPage,
@@ -167,7 +175,7 @@ async function collectWithCache({ registries, quota, perPage, cacheDir, requestT
   return collected
 }
 
-function resolveOutDir(outDir) {
+export function resolveOutDir(outDir) {
   const here = dirname(fileURLToPath(import.meta.url))
   return resolve(here, '..', outDir)
 }
@@ -218,11 +226,33 @@ async function main() {
   )
 }
 
-try {
-  await main()
-} catch (err) {
-  process.stderr.write(
-    `[generate_gem_digest] error: ${err instanceof Error ? err.message : String(err)}\n`,
-  )
-  process.exit(1)
+async function run() {
+  try {
+    await main()
+  } catch (err) {
+    process.stderr.write(
+      `[generate_gem_digest] error: ${err instanceof Error ? err.message : String(err)}\n`,
+    )
+    process.exit(1)
+  }
+}
+
+/**
+ * 実行ガード（指摘 1・CRITICAL）: `import`（テストからの import 含む）されただけでは
+ * 起動せず、`node tools/generate_gem_digest.mjs` として直接実行された時だけ起動する。
+ * ガードなしだと `generate_gem_digest.test.mjs` から関数を import するたびに本番の
+ * ネットワーク収集とファイル書き込みが走ってしまう。
+ */
+function isDirectRun() {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    return import.meta.url === pathToFileURL(entry).href
+  } catch {
+    return false
+  }
+}
+
+if (isDirectRun()) {
+  await run()
 }

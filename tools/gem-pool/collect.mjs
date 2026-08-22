@@ -110,8 +110,16 @@ export async function collectRegistry({
     })
 
     if (body === null) {
-      // fetchPage 側で警告済み。ここでは「このレジストリは丸ごと諦める」ことだけ確定させる。
-      return []
+      // fetchPage 側で失敗理由は警告済み。ここで [] を返すと「途中まで取れていた分」まで
+      // 巻き添えで捨ててしまう（quota=15000 のうち 14 ページ成功・15 ページ目だけ transient
+      // failure、という 1 回の一時障害でレジストリ丸ごと 0 件になる方が実害が大きい）。
+      // 取得済みの分だけを確定させて返す（0 件のままなら結果的に [] になる）。
+      if (results.length > 0) {
+        console.warn(
+          `[gem-pool/collect] ${registry.id}: page=${page} で打ち切り・${results.length} 件を部分取得のまま確定`,
+        )
+      }
+      return results.slice(0, effectiveQuota)
     }
     if (!Array.isArray(body) || body.length === 0) break
 
