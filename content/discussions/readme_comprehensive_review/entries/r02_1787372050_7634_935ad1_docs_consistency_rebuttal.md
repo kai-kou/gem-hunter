@@ -47,7 +47,7 @@ README.md 101 行目を以下に修正：
 
 ### 判定: reader_flow の「変更不要」に譲歩する
 
-docs_consistency が指摘した 5 つのキーファイル（inception-deck, lean-canvas, user-story-map, domain-model, ui-ux-guidelines）について、**reader_flow の役割分担観が妥当**と判断する。
+docs_consistency が指摘した 5 つのキーファイル（inception-deck, lean-canvas, user-story-map, domain-model, ui-ux-guidelines）について、**reader_flow の役割分担観が妥当** と判断する。
 
 理由:
 - `docs/README.md` が「全体構成」を網羅し、README.md は「最初に読む厳選 5 点」という分業が機能している

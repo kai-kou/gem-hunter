@@ -2,8 +2,12 @@
 
 star の多さでは埋もれてしまう「実際に使われている OSS」を、個人開発者が見つけられるようにする検索プラットフォーム。
 
-- **使ってみる**: <https://gem-hunter.kinamocchi-tech.workers.dev/ja>
-- **紹介ページ**: <https://kai-kou.github.io/gem-hunter/>（ソースは [`site/`](./site)）
+キーワードで GitHub のリポジトリを検索して詳細（統計・README）を読めるほか、トップには **star の数のわりに多くのパッケージから使われている** リポジトリを日次で入れ替わるダイジェスト「今日の Gem」として並べる。日本語・英語に対応し、登録なしで全機能を使える。
+
+- **使ってみる**: <https://gem-hunter.kinamocchi-tech.workers.dev/ja>（[English](https://gem-hunter.kinamocchi-tech.workers.dev/en)）
+- **紹介ページ**（スクリーンショット・できること・FAQ）: <https://kai-kou.github.io/gem-hunter/>（ソースは [`site/`](./site)）
+
+> **この README で分かること**: [動かし方](#開発ローカル) / [環境変数](#環境変数) / [設計上の判断](#設計上の判断) / [AI の利用範囲](#ai-を利用した範囲と方法nfr-31) / [ADR 一覧](#技術的意思決定の記録adr)
 
 > 旧称: IndieGems（[`Q-12`](./docs/02_requirements/open-questions.md) により `gem-hunter` に統一）
 
@@ -18,24 +22,26 @@ npm test             # ユニット・結合テスト（Vitest）
 npm run test:e2e     # E2E テスト（Playwright。スタブ API + アプリを自動起動、外部ネットワーク非依存）
 npm run lint         # ESLint
 npm run format       # Prettier
-npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_checks.sh。PR 前の唯一の機械的証跡）
+npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_checks.sh）
 ```
 
 `npm test` / `npm run test:e2e` は環境変数を一切設定しなくても通る（外部 API はモック化されている）。
 
+本リポジトリでは GitHub Actions が使えない（[`D-23`](./docs/02_requirements/open-questions.md)）ため、上記を走らせる CI は動いていない。代わりに `npm run check` を実行し、出力される結果表を PR 本文に貼ることが PR 前の唯一の機械的証跡になっている。
+
 ### 環境変数
 
-すべて **任意**。1 つも設定しなくても `npm run dev` は起動し、検索・詳細表示は動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。⚠️ 本リポジトリに `.env.example` は存在しない（追加候補として Issue 化を検討する）。以下の表を参照して `.env.local`（Next.js の規約どおり）に必要な分だけ設定する。
+すべて **任意**。1 つも設定しなくても `npm run dev` は起動し、検索・詳細表示は動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。本リポジトリに `.env.example` は用意していない。以下の表を参照して `.env.local`（Next.js の規約どおり）に必要な分だけ設定する。
 
 | 変数 | 用途 | 未設定時の挙動 |
 |---|---|---|
 | `GITHUB_APP_CLIENT_ID` | GitHub App の installation token 取得（[ADR 0003](./docs/adr/0003-github-app-authentication.md)） | 3 変数が揃わない限り未認証で GitHub API を叩く（レート枠が狭い） |
 | `GITHUB_APP_INSTALLATION_ID` | 同上 | 同上 |
 | `GITHUB_APP_PRIVATE_KEY_PKCS8` | 同上（**PKCS#8 形式** で注入する必要がある） | 同上 |
-| `GITHUB_OAUTH_CLIENT_ID` | 任意ログイン（`AR-5`・[ADR 0012](./docs/adr/0012-optional-github-oauth.md)） | 3 変数が揃わない限りログイン導線が静かに無効化される（未ログイン相当の機能はすべて動く） |
+| `GITHUB_OAUTH_CLIENT_ID` | 任意ログイン（`AR-5`・[ADR 0012](./docs/adr/0012-optional-github-oauth.md)） | 下記 `SESSION_ENCRYPTION_KEY` を含む **4 変数が揃わない限り** ログイン導線が静かに無効化される（未ログイン相当の機能はすべて動く） |
 | `GITHUB_OAUTH_CLIENT_SECRET` | 同上 | 同上 |
 | `GITHUB_OAUTH_CALLBACK_URL` | 同上（デプロイ先ごとに異なる。オープンリダイレクト対策の検証にも使う） | 同上 |
-| `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | セッション機能が無効化される |
+| `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | 同上（**本行だけが欠けても** ログイン導線ごと無効化される。表示可否は `src/composition/auth.ts` の `isAuthConfigured()` が 4 変数の AND で判定する） |
 | `RATE_LIMIT_SALT` | 検索経路の自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt | レート制限の間引きをしない（フェイルオープン） |
 
 上記はいずれも `src/infrastructure/` 配下の各ファイルが `process.env` から直接読む（秘匿情報を読んでよい層を 1 ファイルに限定する設計・`ARCH-5` / `NFR-22`）。`GITHUB_API_ORIGIN` と `GITHUB_OAUTH_ORIGIN` はテスト専用のスタブ切替であり（ループバック宛てのみ有効）、アプリの実行時には使わない。
@@ -46,10 +52,10 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 |---|---|
 | フレームワーク | Next.js 16（App Router・React Server Components） |
 | UI | Tailwind CSS v4 + shadcn/ui（Radix UI・[ADR 0001](./docs/adr/0001-ui-stack.md)） |
-| 実行環境 | Cloudflare Workers（`@opennextjs/cloudflare`・[ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)） |
+| 実行環境 | Cloudflare Workers（`@opennextjs/cloudflare`。本番・プレビュー配信の詳細は [ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)） |
 | テスト | Vitest 4 + Testing Library + MSW 2（ユニット・結合）/ Playwright + axe（E2E）（[テスト戦略](./docs/04_development/testing-strategy.md)） |
 
-層と依存規則は [アプリケーションアーキテクチャ](./docs/03_design/architecture/application-architecture.md) が正本（`python3 tools/check_architecture_boundaries.py` で機械検証する）。
+層と依存規則は [アプリケーションアーキテクチャ](./docs/03_design/architecture/application-architecture.md) が正本（`python3 tools/check_architecture_boundaries.py` で機械検証する）。ドメインの用語（ユビキタス言語）は [ドメインモデル](./docs/03_design/data-model/domain-model.md) が正本。
 
 ## ドキュメント
 
@@ -64,6 +70,17 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 ## 設計上の判断
 
 > 与件（[`minimum-requirements.md`](./docs/02_requirements/minimum-requirements.md) §6）が求める「設計上の判断・工夫した点」を記載する。各項目の全文と経緯は [決定ログ](./docs/02_requirements/open-questions.md)（`D-n`）を参照。
+
+### Hidden Gem を「被依存数に対する star の残差」と定義した（`ADR 0009`）
+
+「知られざる良質な OSS」を測るために独自の合成スコア（保守性・ドキュメント品質・依存シグナルの加重和）を作る構想から出発したが、**作らない** ことにした。
+
+- **1 行で言える定義に絞った**: Gem とは「実際に使われている度合い（被依存数）に対して、注目度（star 数）が不釣り合いに小さいリポジトリ」。`Gem Index` は **被依存数のパーセンタイル順位 − star のパーセンタイル順位** という残差で、重みを持たないぶん「なぜこの順位なのか」を利用者に説明できる
+- **健全性は自作しない**: 保守されているかの判定は OpenSSF `criticality_score` / Scorecard に委ね、被依存数は Ecosyste.ms のオープンデータに委ねる。自作すると既存スコアの再実装になり、重み・正規化・再計算頻度が未定のままでは受け入れ条件が書けなかった
+- **2 軸を合算しない**: 過小評価度は「並び順」、健全性は「足切り」と役割を分け、1 つの数値に混ぜない
+- **効いている範囲を広げない**: 現在この指標が効くのは日次ダイジェスト「今日の Gem」のみで、検索結果への適用は候補プールの被覆率が足りず撤去した（[`D-33`](./docs/02_requirements/open-questions.md)）
+
+検討した代替案と却下理由は [ADR 0009](./docs/adr/0009-hidden-gem-score-definition.md) に記録している。
 
 ### リリースサイクル: 常設の dev 環境を持たない（`D-21`）
 
@@ -85,6 +102,8 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 
 上乗せの経緯・却下した代替案（認証必須化・PAT 手入力・複数トークンのローテーション等）は [ADR 0012](./docs/adr/0012-optional-github-oauth.md) に記録している。
 
+なお上記は **実装の仕様** であり、公開中の本番環境には OAuth の環境変数を供給していないため、現在ログイン導線は表示されていない（未ログインで全機能が使える状態）。
+
 ## AI を利用した範囲と方法（`NFR-31`）
 
 本プロダクトは Claude Code（クラウド実行環境）による **自律スプリント運用** で開発している。実際の運用は本リポジトリの `CLAUDE.md` と `docs/rules/` 配下のルール群が正本であり、以下はその要約。
@@ -98,9 +117,9 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 
 ## 技術的意思決定の記録（ADR）
 
-`NFR-32` に対応。技術的意思決定は「なぜその選択をしたか / 何を捨てたか」を [`docs/adr/`](./docs/adr) に ADR として記録する。記録すべき主題の一覧は [PRD §12](./docs/02_requirements/prd.md#12-記録すべき-adr) が正本であり、下表はそこへの索引として各 ADR の見出しを転記したもの（転記漏れ・言い換えによる食い違いは `tools/check_adr_coverage.py` が機械検査する）。
+`NFR-32` に対応。技術的意思決定は「なぜその選択をしたか / 何を捨てたか」を [`docs/adr/`](./docs/adr) に ADR として記録する。記録すべき主題の一覧は [PRD §12](./docs/02_requirements/prd.md#12-記録すべき-adr) が正本であり、下表はそこへの索引として、各 ADR の見出しから `ADR NNNN: ` を除いたタイトルを転記したもの（転記漏れ・言い換えによる食い違いは `tools/check_adr_coverage.py` が機械検査する）。
 
-| ADR | タイトル（各 ADR の見出しをそのまま転記） |
+| ADR | タイトル（各 ADR の見出しから `ADR NNNN: ` を除いて転記） |
 |---|---|
 | [0001](./docs/adr/0001-ui-stack.md) | UI スタックに Tailwind CSS v4 + shadcn/ui（Radix UI 明示指定）を採用する |
 | [0002](./docs/adr/0002-cloudflare-workers-infrastructure.md) | インフラを Cloudflare Workers（`@opennextjs/cloudflare`）に確定し、wrangler CLI を運用の一次経路にする |
