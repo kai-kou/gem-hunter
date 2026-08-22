@@ -14,7 +14,7 @@
 | サブエージェント / Agent Teams の回答が空・期待外の形式で返る・フックが偽の観測を注入する | `docs/rules/lessons/agent-delegation.md`（L-121/L-122） |
 | これまで `Skill` ツールで呼べていたビルトイン機能が `disable-model-invocation` で失敗する（起動経路の移動） | `docs/rules/lessons/skill-routing.md`（L-123）・`native-fallback-rules.md` §2.5 |
 | 外部 API に認証を足す・トークン種別を変える（レート枠だけでなく取得できるデータの可視範囲が変わる） | `docs/rules/lessons/api-integration.md`（L-128） |
-| 実装をわざと壊す検証（変異テスト）中に、意図しない一時改変が commit / push されてしまう・Stop フックがコミットを迫る・**変異を戻す `git checkout --` で未コミットの実装ごと消える** | `docs/rules/lessons/session-safety.md`（L-131 / **L-132**・`tools/mutation_guard.sh`） |
+| 実装をわざと壊す検証（変異テスト）中に、意図しない一時改変が commit / push されてしまう・Stop フックがコミットを迫る・**変異を戻す `git checkout --` で未コミットの実装ごと消える** | `docs/rules/lessons/session-safety.md`（L-131 / **L-133**・`tools/mutation_guard.sh`） |
 | PR レビュー・CI 系 | `docs/rules/lessons/pr-review.md` / `ci-cd.md` |
 | その他カテゴリ | `docs/rules/lessons/<category>.md` |
 
