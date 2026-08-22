@@ -1,0 +1,14 @@
+{
+  "id": "issue-triage-20260822",
+  "topic": "機能追加を除く open Issue 182 件の棚卸し判断を確定する",
+  "brief": "並行検証 7 役がまとめた棚卸し提案（クローズ 24 件・Epic 5 本新設・優先度改訂）の妥当性を敵対的に検証し、実際に適用する判断を確定する。提案書: content/discussions/issue-triage-20260822/proposal.md",
+  "participants": [
+    "evidence_auditor",
+    "dedupe_skeptic",
+    "backlog_strategist",
+    "priority_calibrator",
+    "docs_trace"
+  ],
+  "created_at": "2026-08-22T12:59:37+09:00",
+  "updated_at": "2026-08-22T12:59:37+09:00"
+}

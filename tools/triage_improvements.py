@@ -239,6 +239,92 @@ def detect_duplicates(rows):
     return dups
 
 
+# ---------------------------------------------------------------------------
+# 棚卸しの判定規則（#385 の議論型レビューで確定・SSOT はここ）
+# 議論記録: content/discussions/issue-triage-20260822/whiteboard.md
+# ---------------------------------------------------------------------------
+
+# priority:high が全体に占める割合の上限。これを超えると「最優先」バケットが
+# 順序付けの情報を持たなくなる（実質 medium の言い換えになる）。
+HIGH_RATIO_CEILING = 0.30
+
+# 「後回しでよい」ことを本文が明示しているシグナル。
+_LOW_SIGNALS = ("低頻度", "稀", "代替手段", "影響範囲は限定", "限定的")
+
+# 実際に発生した failure を示すシグナル（予防的・提案的表現と区別する）。
+_FAILURE_SIGNALS = ("grep", "実測", "再現", "500", "落ち", "失敗", "エラー", "不整合")
+
+# 実測された失敗事象が無い限り high に上げないカテゴリ（予防的検査・整合・計画）。
+_PREVENTIVE_CATEGORIES = ("CHECK", "RULE", "BACKLOG")
+
+
+def assign_priority(title, body, category=None):
+    """priority ラベルが欠損している Issue へ付ける優先度を決める（#385）。
+
+    優先度の高い順に評価し、最初に一致した規則を適用する（1 Issue につき 1 規則）。
+
+      1. title が fix: / bug: 始まり かつ body に実測された失敗事象の記述がある → high
+      2. body に「低頻度 / 稀 / 代替手段あり / 影響範囲は限定的」の記述がある     → low
+      3. category が予防的（CHECK / RULE / BACKLOG）で実測失敗事象なし            → medium
+      4. それ以外（判定材料不足）                                                 → medium
+
+    一律 medium で埋めない理由: medium が全体の 7 割に膨らむと medium 自体が
+    順序付けの情報を持たなくなるため（欠損 43 件を一律 medium にすると 127 件になった）。
+    """
+    title = title or ""
+    body = body or ""
+    head = title.strip().lower()
+    if head.startswith(("fix:", "bug:")) and any(s in body for s in _FAILURE_SIGNALS):
+        return "high"
+    if any(s in body for s in _LOW_SIGNALS):
+        return "low"
+    if category in _PREVENTIVE_CATEGORIES:
+        return "medium"
+    return "medium"
+
+
+def should_demote_high(evidence):
+    """priority:high から medium へ降格すべきかを判定する（#385）。
+
+    判定軸: evidence に「実際に発生した failure・データ不整合・事故」の実測記述が無く、
+    「〜すべき」「〜の可能性がある」「検知できるようにする」という予防的・提案的表現に
+    留まるものは降格する。
+    """
+    evidence = evidence or ""
+    if any(s in evidence for s in _FAILURE_SIGNALS):
+        return False
+    return True
+
+
+def select_keep(a, b):
+    """重複クラスタで残す（keep する）側を決める（#385）。
+
+    引数はいずれも {"num", "requirements"} を持つ dict。`requirements` は
+    対応方針・完了条件から抽出した要求の集合。
+
+    基準: **要求が最も広い（他方を部分集合として包含する）方**を keep する。
+    「常に新しい方」「常に履歴のある方」という単純ルールは採らない（#94 / #322 と
+    #201 / #350 の 2 例で破綻したため）。包含関係が無い場合は None を返し、
+    人（またはセッション）が本文を突き合わせて決める。
+
+    包含関係があっても、**dup 側にしか無い要求は keep 側の本文へ追記してから統合する**
+    （追記を怠ると要求が消える。#385 では 9 クラスタ中 4 組で発生した）。
+    """
+    ra, rb = set(a.get("requirements") or ()), set(b.get("requirements") or ())
+    if ra and rb >= ra and rb != ra:
+        return b["num"]
+    if rb and ra >= rb and ra != rb:
+        return a["num"]
+    return None
+
+
+def high_ratio_ok(high_count, total):
+    """priority:high の比率が閾値内かを判定する（#385）。"""
+    if total <= 0:
+        return True
+    return (high_count / total) <= HIGH_RATIO_CEILING
+
+
 def build_report(issues, epic_threshold):
     rows = []
     for it in issues:
@@ -394,8 +480,42 @@ def _self_test():
     ])
     check(any(d["type"] == "title-similar" for d in dups), f"dup title-similar ({dups})")
 
+    # assign_priority: 規則 1（fix: + 実測された失敗事象）
+    check(assign_priority("fix: 一覧が 500 になる", "grep で再現手順を確認した") == "high",
+          "assign_priority rule1")
+    # assign_priority: 規則 1 は失敗事象の記述が無ければ発火しない
+    check(assign_priority("fix: たぶん直したほうがよい", "気になる") == "medium",
+          "assign_priority rule1 needs failure evidence")
+    # assign_priority: 規則 2（後回しシグナル）が規則 3 より優先される
+    check(assign_priority("improvement: 検査を足す", "低頻度なので急がない", "CHECK") == "low",
+          "assign_priority rule2 precedence")
+    # assign_priority: 規則 3（予防的カテゴリ）
+    check(assign_priority("improvement: 検査を足す", "あると安全", "CHECK") == "medium",
+          "assign_priority rule3")
+    # assign_priority: 規則 4（判定材料不足の既定）
+    check(assign_priority("improvement: なにか", "") == "medium", "assign_priority rule4")
+    # should_demote_high: 予防的表現のみ → 降格
+    check(should_demote_high("〜を検知できるようにすべき") is True, "should_demote_high preventive")
+    # should_demote_high: 実測記述あり → 据え置き
+    check(should_demote_high("grep 実測で 3 件の不整合を確認") is False, "should_demote_high measured")
+    # select_keep: 要求の包含関係で決める（新しい / 古いでは決めない）
+    check(select_keep({"num": 81, "requirements": {"strip"}},
+                      {"num": 221, "requirements": {"strip", "lineno"}}) == 221,
+          "select_keep superset")
+    check(select_keep({"num": 201, "requirements": {"a", "b"}},
+                      {"num": 350, "requirements": {"a"}}) == 201,
+          "select_keep superset reversed")
+    # select_keep: 包含関係が無ければ判定しない（人が本文を突き合わせる）
+    check(select_keep({"num": 1, "requirements": {"a"}},
+                      {"num": 2, "requirements": {"b"}}) is None,
+          "select_keep no containment")
+    # high_ratio_ok: 閾値
+    check(high_ratio_ok(30, 100) is True, "high_ratio_ok under ceiling")
+    check(high_ratio_ok(31, 100) is False, "high_ratio_ok over ceiling")
+    check(high_ratio_ok(1, 0) is True, "high_ratio_ok empty")
+
     if fail == 0:
-        print("PASS: triage_improvements self-test (9 checks)")
+        print("PASS: triage_improvements self-test (22 checks)")
     return 1 if fail else 0
 
 
