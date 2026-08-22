@@ -62,7 +62,8 @@
     "開発者向け解説 / 2026-08-22"
    ],
    "visual": "新規生成 new-01（表紙）",
-   "source": "docs/project-mission.md ミッションステートメント"
+   "source": "docs/project-mission.md ミッションステートメント",
+   "layout": "title"
   },
   {
    "no": 2,
@@ -77,7 +78,8 @@
     "この画面がこの発表のゴール。ここに至るまでの判断をこれから話す"
    ],
    "visual": "実 UI スクリーンショット shot-01（検索結果一覧）",
-   "source": "docs/02_requirements/user-story-map.md SP-1〜SP-11 / ADR 0012 / 実画面（スタブ API）"
+   "source": "docs/02_requirements/user-story-map.md SP-1〜SP-11 / ADR 0012 / 実画面（スタブ API）",
+   "layout": "bullets"
   },
   {
    "no": 3,
@@ -92,7 +94,8 @@
     "Gem Index を使うのはこのダイジェストだけで、検索結果の並び順には効かない"
    ],
    "visual": "実 UI スクリーンショット shot-02（今日の Gem ダイジェスト）",
-   "source": "ADR 0014 §2.1 / §2.2 / open-questions.md D-33"
+   "source": "ADR 0014 §2.1 / §2.2 / open-questions.md D-33",
+   "layout": "bullets"
   },
   {
    "no": 4,
@@ -107,7 +110,8 @@
     "だから「実利用のわりに注目されていないもの」を測る指標が要る、というのが最初の仮説"
    ],
    "visual": "新規生成 new-02（課題の対比図）",
-   "source": "docs/00_concept/initial-concept.md / lean-canvas.md P-1・P-2 / ADR 0009 §2.1 / project-mission.md"
+   "source": "docs/00_concept/initial-concept.md / lean-canvas.md P-1・P-2 / ADR 0009 §2.1 / project-mission.md",
+   "layout": "bullets"
   },
   {
    "no": 5,
@@ -122,7 +126,8 @@
     "各ドキュメントは 16:9 のインフォグラフィック 1 枚に要約してあり、この発表でもそれを使っている"
    ],
    "visual": "既存流用 docs/infographics/08-doc-relations.webp",
-   "source": "docs/README.md / inception-deck.md Q1 / minimum-requirements.md / docs/infographics/README.md"
+   "source": "docs/README.md / inception-deck.md Q1 / minimum-requirements.md / docs/infographics/README.md",
+   "layout": "bullets"
   },
   {
    "no": 6,
@@ -137,7 +142,8 @@
     "ポートは 5 つ（検索・キャッシュ・レート制限・時刻・認証）。表にないポートは実装しない"
    ],
    "visual": "既存流用 docs/infographics/07-design.webp",
-   "source": "docs/03_design/architecture/application-architecture.md §1.1-1.3 / §2 / docs/rules/architecture-rules.md §2"
+   "source": "docs/03_design/architecture/application-architecture.md §1.1-1.3 / §2 / docs/rules/architecture-rules.md §2",
+   "layout": "bullets"
   },
   {
    "no": 7,
@@ -152,7 +158,8 @@
     "ARCH-1〜ARCH-7 は専用スクリプトが機械検査する。ARCH-4・ARCH-5 は抑止コメントも効かない"
    ],
    "visual": "新規生成 new-11（層を足す条件）",
-   "source": "application-architecture.md §1.1 / architecture-rules.md §2 の ARCH 表 / ADR 0005 §3.1 / tools/check_architecture_boundaries.py"
+   "source": "application-architecture.md §1.1 / architecture-rules.md §2 の ARCH 表 / ADR 0005 §3.1 / tools/check_architecture_boundaries.py",
+   "layout": "bullets"
   },
   {
    "no": 8,
@@ -167,7 +174,8 @@
     "この組み合わせは「事業者固有の API をアプリコードへ持ち込まない」という制約から選んでいる"
    ],
    "visual": "既存流用 docs/infographics/12-cloudflare.webp",
-   "source": "README.md 技術スタック表 / ADR 0001 / ADR 0002 / ADR 0006 / NFR-21"
+   "source": "README.md 技術スタック表 / ADR 0001 / ADR 0002 / ADR 0006 / NFR-21",
+   "layout": "bullets"
   },
   {
    "no": 9,
@@ -182,7 +190,8 @@
     "以後「動いた」ではなく「どの環境で動いたか」で記録するようにした"
    ],
    "visual": "新規生成 new-03（罠の実測表）",
-   "source": "docs/rules/lessons/cloud-environment.md L-129 / L-130 / ADR 0002 決定 #6"
+   "source": "docs/rules/lessons/cloud-environment.md L-129 / L-130 / ADR 0002 決定 #6",
+   "layout": "bullets"
   },
   {
    "no": 10,
@@ -197,7 +206,8 @@
     "セッションが途中で切れても、Issue のラベルと記録から次のセッションが再開できる"
    ],
    "visual": "新規生成 new-04（セッション = スプリントの流れ）",
-   "source": "docs/rules/session-sprint-rules.md §1-2 / user-confirmation-minimization.md §1 / sprint-development-rules.md SD-3"
+   "source": "docs/rules/session-sprint-rules.md §1-2 / user-confirmation-minimization.md §1 / sprint-development-rules.md SD-3",
+   "layout": "bullets"
   },
   {
    "no": 11,
@@ -212,7 +222,8 @@
     "テストを後回しにした回は、動くものは早くできても後から直すコストの方が高くついた"
    ],
    "visual": "既存流用 docs/infographics/11-testing-strategy.webp",
-   "source": "docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2 / README.md"
+   "source": "docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2 / README.md",
+   "layout": "bullets"
   },
   {
    "no": 12,
@@ -227,7 +238,8 @@
     "アーキテクチャの依存規則もここで落ちる。規律が文書だけで終わらない仕組みにしている"
    ],
    "visual": "新規生成 new-05（機械検証ゲート）",
-   "source": "tools/run_checks.sh（実測 20 項目）/ pr-review-flow-summary.md / .claude/hooks/pre-pr-create-check.sh"
+   "source": "tools/run_checks.sh（実測 20 項目）/ pr-review-flow-summary.md / .claude/hooks/pre-pr-create-check.sh",
+   "layout": "bullets"
   },
   {
    "no": 13,
@@ -242,7 +254,8 @@
     "対応しないと決めた指摘も、理由を返信してから Resolve する。黙って閉じない"
    ],
    "visual": "新規生成 new-12（レビューの 3 段）",
-   "source": ".claude/skills/code-review/SKILL.md Step 1-3 / docs/rules/ai-reviewer-strategy.md / pr-review-flow.md（#461）"
+   "source": ".claude/skills/code-review/SKILL.md Step 1-3 / docs/rules/ai-reviewer-strategy.md / pr-review-flow.md（#461）",
+   "layout": "bullets"
   },
   {
    "no": 14,
@@ -258,7 +271,8 @@
     "速度の効果は測っていないので語らない。言えるのは「この手順で回っている」ことだけ"
    ],
    "visual": "新規生成 new-13（PR 自律フロー）",
-   "source": "docs/rules/pr-review-flow-summary.md / pr-review-flow.md（サーキットブレーカー）/ session-concurrency-rules.md / GitHub 検索実測 2026-08-22"
+   "source": "docs/rules/pr-review-flow-summary.md / pr-review-flow.md（サーキットブレーカー）/ session-concurrency-rules.md / GitHub 検索実測 2026-08-22",
+   "layout": "bullets"
   },
   {
    "no": 15,
@@ -273,7 +287,8 @@
     "被依存数は Ecosyste.ms、star は GitHub API から取る"
    ],
    "visual": "既存流用 docs/infographics/10-gem-score.webp",
-   "source": "ADR 0009 §2.1 / §3.1 / §3.2 / §3.3"
+   "source": "ADR 0009 §2.1 / §3.1 / §3.2 / §3.3",
+   "layout": "bullets"
   },
   {
    "no": 16,
@@ -289,7 +304,8 @@
     "差別化の見せ場を自分で外す決定だったが、実測の数字の前では迷う余地がなかった"
    ],
    "visual": "新規生成 new-06（採用 vs 却下）",
-   "source": "ADR 0009 D-33 追記 / open-questions.md D-33"
+   "source": "ADR 0009 D-33 追記 / open-questions.md D-33",
+   "layout": "bullets"
   },
   {
    "no": 17,
@@ -305,7 +321,8 @@
     "軸は「どれが効いたか」ではなく「どれが拒否権を持つか」で並べてある"
    ],
    "visual": "新規生成 new-07（採用 vs 却下）",
-   "source": "ADR 0003 §3.2 / §6.1 の 6 軸表"
+   "source": "ADR 0003 §3.2 / §6.1 の 6 軸表",
+   "layout": "bullets"
   },
   {
    "no": 18,
@@ -321,7 +338,8 @@
     "代わりに利用者ごとの状態は端末に閉じ、端末間で共有できない（受け入れた代償）"
    ],
    "visual": "新規生成 new-08（採用 vs 却下）",
-   "source": "ADR 0007 §2 / §6 / ADR 0005"
+   "source": "ADR 0007 §2 / §6 / ADR 0005",
+   "layout": "bullets"
   },
   {
    "no": 19,
@@ -335,7 +353,8 @@
     "どれも gem-hunter に固有ではなく、次に作るものにそのまま持ち込める"
    ],
    "visual": "新規生成 new-09（まとめ）",
-   "source": "ADR 0009 / application-architecture.md W-1〜W-3 / open-questions.md D-33 / project-mission.md"
+   "source": "ADR 0009 / application-architecture.md W-1〜W-3 / open-questions.md D-33 / project-mission.md",
+   "layout": "bullets"
   },
   {
    "no": 20,
@@ -349,7 +368,8 @@
     "この発表の構成・画像・生成スクリプトもリポジトリに入っている"
    ],
    "visual": "新規生成 new-10（クロージング）",
-   "source": "README.md / docs/README.md / content/slides/project-explanation-20260822/"
+   "source": "README.md / docs/README.md / content/slides/project-explanation-20260822/",
+   "layout": "bullets"
   }
  ],
  "new_images": [
