@@ -206,7 +206,10 @@ describe('RepositoryList — Gem バッジ（SP-18 / D-36）', () => {
       id: 2,
       fullName: 'sindresorhus/is-color-stop',
       name: 'is-color-stop',
-      owner: { login: 'sindresorhus', avatarUrl: 'https://avatars.githubusercontent.com/u/170270?v=4' },
+      owner: {
+        login: 'sindresorhus',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/170270?v=4',
+      },
       description: null,
       primaryLanguage: 'JavaScript',
       stars: 12,
@@ -313,7 +316,11 @@ describe('RepositoryList — Gem バッジ（SP-18 / D-36）', () => {
     const renderedOrder = Array.from(container.querySelectorAll('li a')).map(
       (a) => a.textContent ?? '',
     )
-    expect(renderedOrder).toEqual(['facebook/react', 'sindresorhus/is-color-stop', 'arkworks-rs/algebra'])
+    expect(renderedOrder).toEqual([
+      'facebook/react',
+      'sindresorhus/is-color-stop',
+      'arkworks-rs/algebra',
+    ])
   })
 
   it('「付かない＝低評価ではない」注記は一覧に 1 回だけ出る（カードごとに出さない）', () => {

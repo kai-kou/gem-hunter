@@ -24,7 +24,7 @@
 export function GemBadge({ label, srHint }: { label: string; srHint: string }) {
   return (
     <span className="bg-accent text-accent-foreground inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium">
-      {label}
+      <span>{label}</span>
       <span className="sr-only">{srHint}</span>
     </span>
   )

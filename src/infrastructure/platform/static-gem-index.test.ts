@@ -23,7 +23,13 @@ function indexJson(fileNames: readonly string[]): string {
 /** シャードの最小形（`columns` の並びは呼び出し側が指定できる）。 */
 function shardJson(
   entries: readonly (readonly unknown[])[],
-  columns: readonly string[] = ['repositoryFullName', 'packageName', 'dependentCount', 'stars', 'gemIndex'],
+  columns: readonly string[] = [
+    'repositoryFullName',
+    'packageName',
+    'dependentCount',
+    'stars',
+    'gemIndex',
+  ],
 ): string {
   return JSON.stringify({ registry: 'test', ecosystem: 'test', columns, entries })
 }
@@ -179,7 +185,10 @@ describe('StaticGemIndex', () => {
     const reader = stubReader({
       [INDEX_PATH]: indexJson(['a.json', 'noColumns.json']),
       '/data/gem-index/a.json': twoShards['/data/gem-index/a.json'],
-      '/data/gem-index/noColumns.json': shardJson([['owner/x', 1]], ['repositoryFullName', 'stars']),
+      '/data/gem-index/noColumns.json': shardJson(
+        [['owner/x', 1]],
+        ['repositoryFullName', 'stars'],
+      ),
     })
 
     const found = await new StaticGemIndex(reader).lookup(['owner/alpha', 'owner/x'])

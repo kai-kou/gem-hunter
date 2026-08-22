@@ -5,13 +5,17 @@ import { GemBadge } from './gem-badge'
 
 describe('GemBadge', () => {
   it('可視のテキストラベルを表示する（色だけで意味を伝えない・WCAG 1.4.1）', () => {
-    render(<GemBadge label="Gem" srHint="star の数のわりに、多くのパッケージから使われている候補です" />)
+    render(
+      <GemBadge label="Gem" srHint="star の数のわりに、多くのパッケージから使われている候補です" />,
+    )
 
     expect(screen.getByText('Gem')).toBeInTheDocument()
   })
 
   it('バッジの意味を説明する srHint が支援技術に届く（sr-only でも DOM 上に存在する）', () => {
-    render(<GemBadge label="Gem" srHint="star の数のわりに、多くのパッケージから使われている候補です" />)
+    render(
+      <GemBadge label="Gem" srHint="star の数のわりに、多くのパッケージから使われている候補です" />,
+    )
 
     const hint = screen.getByText('star の数のわりに、多くのパッケージから使われている候補です')
     expect(hint).toBeInTheDocument()

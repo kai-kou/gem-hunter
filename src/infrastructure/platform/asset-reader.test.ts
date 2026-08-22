@@ -58,12 +58,15 @@ describe('createWorkersAssetReader', () => {
   })
 
   it('binding の fetch が 200 を返せば本文を返す', async () => {
-    const fetch = vi.fn(async () => new Response('{"ok":true}', { status: 200 }))
+    const requested: URL[] = []
+    const fetch = vi.fn(async (input: URL) => {
+      requested.push(input)
+      return new Response('{"ok":true}', { status: 200 })
+    })
     const read = createWorkersAssetReader({ fetch })
 
     await expect(read('/data/gem-index/index.json')).resolves.toBe('{"ok":true}')
-    const requested = fetch.mock.calls[0]?.[0] as URL
-    expect(String(requested)).toBe('https://assets.local/data/gem-index/index.json')
+    expect(String(requested[0])).toBe('https://assets.local/data/gem-index/index.json')
   })
 
   it('404 は null（例外にしない）', async () => {

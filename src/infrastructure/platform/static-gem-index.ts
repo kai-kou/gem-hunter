@@ -157,7 +157,10 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
 }
 
 /** 1 シャードを読んで `[小文字の owner/repo, Gem Index]` の配列にする。読めなければ空配列。 */
-async function loadShard(read: AssetReader, fileName: string): Promise<readonly [string, number][]> {
+async function loadShard(
+  read: AssetReader,
+  fileName: string,
+): Promise<readonly [string, number][]> {
   const path = `${GEM_INDEX_DIR}/${fileName}`
   const raw = await read(path)
   if (raw === null) {
