@@ -1,5 +1,6 @@
 import type { CachePort } from '../domain/ports/cache-port'
 import type { ClockPort } from '../domain/ports/clock-port'
+import type { GemIndex } from '../domain/model/gem-index'
 import type { TokenProvider } from '../infrastructure/github/github-repository-query'
 import { GithubRepositoryQuery } from '../infrastructure/github/github-repository-query'
 import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
@@ -7,6 +8,7 @@ import { CachingRepositoryQuery } from '../infrastructure/platform/cached-reposi
 import { InMemoryCache } from '../infrastructure/platform/cache'
 import { SystemClock } from '../infrastructure/system-clock'
 import { StaticGemDigest } from '../infrastructure/platform/static-gem-digest'
+import { StaticGemIndex } from '../infrastructure/platform/static-gem-index'
 import { makeGetDailyDigest, type GetDailyDigest } from '../usecases/get-daily-digest'
 import {
   makeGetRepositoryDetail,
@@ -61,6 +63,15 @@ const sharedCache: CachePort = new InMemoryCache(new SystemClock())
  * バンドル済み JSON の再パースを毎リクエスト避けるための使い回しに過ぎない。
  */
 const sharedGemDigestPort = new StaticGemDigest()
+
+/**
+ * 検索結果カードの Gem バッジ（`SP-18`）が引く候補プール全量の単一インスタンス
+ * （モジュールスコープ）。`sharedGemDigestPort` と同じ理由で使い回す: `StaticGemIndex` は
+ * 読み取り専用・状態を持たない実装（`static-gem-index.ts`）なので `sharedCache` のような
+ * 可変状態の共有ではなく、**レジストリ別シャード（`D-38`）の再パースを毎リクエスト避ける**
+ * ための使い回しに過ぎない（isolate 内メモリキャッシュは実装側が持つ）。
+ */
+const sharedGemIndexPort = new StaticGemIndex()
 
 /**
  * SP-8: レート枠切替（AR-5）。`accessToken` があればユーザー自身のアクセストークンを、
@@ -146,4 +157,20 @@ export function searchRepositoriesWithCacheStatus(accessToken?: string | null): 
  */
 export function getDailyDigestUseCase(): GetDailyDigest {
   return makeGetDailyDigest({ port: sharedGemDigestPort })
+}
+
+/**
+ * SP-18: 検索結果カードへ出す Gem バッジの判定材料を引く（`D-36` / `D-38`）。
+ * 見つからないリポジトリはキーに入らない。読み込みに失敗しても例外を投げず空 Map になる
+ * （`GemIndexPort` の契約）ため、呼び出し側は「バッジが出ない」だけで済む。
+ *
+ * 🔴 **usecase を新設していない**（`makeSearchRepositories` 等と非対称に見えるのは意図的）。
+ * ポートの `lookup()` をそのまま通すだけで、並べ替え・選定・閾値判定といったドメインの判断が
+ * 1 つも無いため（`D-36`: 並び順は変えない）。1 箇所しか使わない抽象を先回りで足さない（YAGNI）。
+ * ドメイン判断が生じた時点で `src/usecases/` へ切り出す。
+ */
+export function lookupGemIndexes(
+  repositoryFullNames: readonly string[],
+): Promise<ReadonlyMap<string, GemIndex>> {
+  return sharedGemIndexPort.lookup(repositoryFullNames)
 }

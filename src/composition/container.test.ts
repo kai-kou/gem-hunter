@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import {
   getRepositoryDetailUseCase,
+  lookupGemIndexes,
   searchRepositoriesUseCase,
   searchRepositoriesWithCacheStatus,
 } from './container'
@@ -118,5 +119,49 @@ describe('searchRepositoriesWithCacheStatus — TokenProvider 切替', () => {
 
     expect(capturedAuth).toBe('Bearer user-access-token-3')
     expect(getCacheStatus()).toBe('MISS')
+  })
+})
+
+/**
+ * SP-18: 検索結果カードの Gem バッジ（`D-36` / `D-38`）が引く照会口の配線。
+ *
+ * 🔴 **実データの中身に依存させない**（`public/data/gem-index/` の候補プールは
+ * `tools/gem-pool/pipeline.mjs` が定期再生成するため、「この名前は必ず載っている」を
+ * 前提にすると再生成のたびにテストが落ちる）。ここで固定するのは母集団が変わっても
+ * 成立する不変条件だけ:
+ *   ① 例外を投げない（`GemIndexPort` の SPOF 方針: 失敗しても空 Map・検索は止めない）
+ *   ② 返り値が `Map` である（呼び出し側が `.get()` / `.has()` で引ける）
+ *   ③ プールに載っていない名前はキーに入らない
+ * ネットワークを踏まないことは、このファイル冒頭の msw
+ * （`onUnhandledRequest: 'error'`）が未登録リクエストを失敗させることで担保される。
+ */
+describe('lookupGemIndexes — Gem バッジ判定材料の照会（SP-18）', () => {
+  it('空配列を渡しても throw せず、空の Map を返す', async () => {
+    const indexes = await lookupGemIndexes([])
+
+    expect(indexes).toBeInstanceOf(Map)
+    expect(indexes.size).toBe(0)
+  })
+
+  it('候補プールに載っていない名前を渡しても throw せず、その名前をキーに持たない Map を返す', async () => {
+    // E2E スタブと同じ架空のオーナー。実プール（Ecosyste.ms 由来）には存在し得ない。
+    const missing = 'octostub/not-in-the-gem-pool'
+
+    const indexes = await lookupGemIndexes([missing])
+
+    expect(indexes).toBeInstanceOf(Map)
+    expect(indexes.has(missing)).toBe(false)
+    expect(indexes.get(missing)).toBeUndefined()
+  })
+
+  it('同じ照会口（モジュールスコープの単一インスタンス）を 2 回呼んでも結果が変わらない', async () => {
+    // `sharedGemIndexPort` を関数内で `new` すると（= 使い回しをやめると）シャードの
+    // 再パースが毎回走る。結果の同一性を固定して、その退行を検知できるようにする。
+    const names = ['octostub/not-in-the-gem-pool']
+
+    const first = await lookupGemIndexes(names)
+    const second = await lookupGemIndexes(names)
+
+    expect([...second.keys()]).toEqual([...first.keys()])
   })
 })

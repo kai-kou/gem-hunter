@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { type GemIndex, gemIndex } from '../domain/model/gem-index'
 import { locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { RepositoryList } from './repository-list'
@@ -175,5 +176,212 @@ describe('RepositoryList', () => {
     const status = screen.getByRole('status')
     expect(status.contains(img)).toBe(false)
     expect(img?.parentElement).toBe(status.parentElement)
+  })
+})
+
+describe('RepositoryList — Gem バッジ（SP-18 / D-36）', () => {
+  const gemLabels = {
+    ...labels,
+    gemBadge: 'Gem',
+    gemBadgeSrHint: 'star の数のわりに、多くのパッケージから使われている候補です',
+    gemBadgeNote:
+      'Gem の印は 12 のパッケージレジストリから集めた限定的なデータに基づきます。印が付かないことは、そのリポジトリの評価が低いことを意味しません。',
+  }
+
+  /** 並び順の検証に使う複数件。`items[0]` は Gem 候補プールに載っていない想定。 */
+  const threeItems: RepositorySummary[] = [
+    {
+      id: 1,
+      fullName: 'facebook/react',
+      name: 'react',
+      owner: { login: 'facebook', avatarUrl: 'https://avatars.githubusercontent.com/u/69631?v=4' },
+      description: null,
+      primaryLanguage: 'JavaScript',
+      stars: 233000,
+      lastPushedAt: new Date('2026-08-18T09:00:00Z'),
+      topics: [],
+      htmlUrl: 'https://github.com/facebook/react',
+    },
+    {
+      id: 2,
+      fullName: 'sindresorhus/is-color-stop',
+      name: 'is-color-stop',
+      owner: { login: 'sindresorhus', avatarUrl: 'https://avatars.githubusercontent.com/u/170270?v=4' },
+      description: null,
+      primaryLanguage: 'JavaScript',
+      stars: 12,
+      lastPushedAt: new Date('2026-08-10T09:00:00Z'),
+      topics: [],
+      htmlUrl: 'https://github.com/sindresorhus/is-color-stop',
+    },
+    {
+      id: 3,
+      fullName: 'arkworks-rs/algebra',
+      name: 'algebra',
+      owner: { login: 'arkworks-rs', avatarUrl: 'https://avatars.githubusercontent.com/u/3?v=4' },
+      description: null,
+      primaryLanguage: 'Rust',
+      stars: 40,
+      lastPushedAt: new Date('2026-08-01T09:00:00Z'),
+      topics: [],
+      htmlUrl: 'https://github.com/arkworks-rs/algebra',
+    },
+  ]
+
+  const gemIndexes = new Map<string, GemIndex>([
+    ['sindresorhus/is-color-stop', gemIndex(-0.42)],
+    ['arkworks-rs/algebra', gemIndex(-0.31)],
+  ])
+
+  /** カード（`<li>`）ごとの「Gem バッジを持っているか」を items の並び順で返す。 */
+  function badgePresenceByCard(container: HTMLElement): boolean[] {
+    return Array.from(container.querySelectorAll('li')).map((li) =>
+      Array.from(li.querySelectorAll('span')).some((span) => span.textContent === 'Gem'),
+    )
+  }
+
+  it('gemIndexes に載っているカードにだけバッジが出る', () => {
+    const { container } = render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    expect(badgePresenceByCard(container)).toEqual([false, true, true])
+    expect(screen.getAllByText('Gem')).toHaveLength(2)
+  })
+
+  it('バッジには意味を説明する sr-only 文言が添えられる（色だけに頼らない・§7）', () => {
+    render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    // カードごとに 1 つずつ（＝バッジと同数）。全カードに配って読み上げを増やさない。
+    expect(screen.getAllByText(gemLabels.gemBadgeSrHint)).toHaveLength(2)
+  })
+
+  it('gemIndexes を渡さないとバッジも注記も出ない（既存呼び出しとの後方互換）', () => {
+    const { container } = render(
+      <RepositoryList items={threeItems} labels={labels} locale={locale('ja')} />,
+    )
+
+    expect(badgePresenceByCard(container)).toEqual([false, false, false])
+    expect(screen.queryByText('Gem')).not.toBeInTheDocument()
+    expect(screen.queryByText(/評価が低いことを意味しません/)).not.toBeInTheDocument()
+  })
+
+  it('🔴 バッジの有無で並び順を変えない（items の順序をそのまま描画する・D-36）', () => {
+    const { container } = render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    const renderedOrder = Array.from(container.querySelectorAll('li a')).map(
+      (a) => a.textContent ?? '',
+    )
+    expect(renderedOrder).toEqual(threeItems.map((item) => item.fullName))
+  })
+
+  it('🔴 Gem Index の値の大小でも並び替えない（gemIndexes の順序に引きずられない）', () => {
+    // gemIndexes 側の並びを逆にしても描画順は items のまま。
+    const reversed = new Map<string, GemIndex>([
+      ['arkworks-rs/algebra', gemIndex(-0.31)],
+      ['sindresorhus/is-color-stop', gemIndex(-0.42)],
+    ])
+
+    const { container } = render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={reversed}
+      />,
+    )
+
+    const renderedOrder = Array.from(container.querySelectorAll('li a')).map(
+      (a) => a.textContent ?? '',
+    )
+    expect(renderedOrder).toEqual(['facebook/react', 'sindresorhus/is-color-stop', 'arkworks-rs/algebra'])
+  })
+
+  it('「付かない＝低評価ではない」注記は一覧に 1 回だけ出る（カードごとに出さない）', () => {
+    render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    expect(screen.getAllByText(gemLabels.gemBadgeNote)).toHaveLength(1)
+  })
+
+  it('注記は一覧（ul）の外に置き、カードの中に混ぜない', () => {
+    const { container } = render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    const note = screen.getByText(gemLabels.gemBadgeNote)
+    expect(container.querySelector('ul')?.contains(note)).toBe(false)
+  })
+
+  it('バッジが 0 件のときは注記を出さない（無関係な説明でノイズを増やさない）', () => {
+    render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={new Map<string, GemIndex>()}
+      />,
+    )
+
+    expect(screen.queryByText('Gem')).not.toBeInTheDocument()
+    expect(screen.queryByText(gemLabels.gemBadgeNote)).not.toBeInTheDocument()
+  })
+
+  it('0 件表示の経路は Gem 用 props を渡しても壊れない（labels.empty がそのまま出る）', () => {
+    render(
+      <RepositoryList
+        items={[]}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(gemLabels.empty)
+    expect(screen.queryByText('Gem')).not.toBeInTheDocument()
+    expect(screen.queryByText(gemLabels.gemBadgeNote)).not.toBeInTheDocument()
+  })
+
+  it('照合は fullName の完全一致で行う（大文字小文字違い・部分一致では付かない）', () => {
+    const { container } = render(
+      <RepositoryList
+        items={threeItems}
+        labels={gemLabels}
+        locale={locale('ja')}
+        gemIndexes={new Map<string, GemIndex>([['Sindresorhus/Is-Color-Stop', gemIndex(-0.42)]])}
+      />,
+    )
+
+    expect(badgePresenceByCard(container)).toEqual([false, false, false])
   })
 })
