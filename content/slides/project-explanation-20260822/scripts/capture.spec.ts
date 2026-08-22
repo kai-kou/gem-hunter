@@ -47,11 +47,9 @@ test('shot-02: 今日の Gem ダイジェスト', async ({ page }, testInfo) => 
   await page.goto('/ja?date=20260820')
   await page.getByRole('heading', { name: '今日の Gem', level: 2 }).waitFor()
   await replaceStubAvatars(page)
-  // 主役のスマホは **ファーストビューのまま** 撮る（共通ヘッダーとヒーロー画像 `/images/hero-idle.webp`
-  // は最初の画面にしか出ないため、スクロールすると資料から消えてしまう）。
-  // 添えの PC 側は逆にスクロールして、ダイジェスト 5 件が全部入った状態を見せる。
-  const offset = testInfo.project.name === 'mobile' ? 0 : 330
-  await page.evaluate((y) => window.scrollTo(0, y), offset)
+  // スマホ・PC とも **ファーストビューのまま** 撮る。共通ヘッダーとヒーロー画像
+  // （`/images/hero-idle.webp`）は最初の画面にしか出ないため、スクロールすると資料から消える。
+  // ヒーローが 16:9 になって縦幅が詰まった（#362）ので、スクロールしなくてもダイジェストが数件入る。
   await page.waitForTimeout(300)
   await page.screenshot({ path: `${OUT}/shot-02-${testInfo.project.name}.png` })
 })
