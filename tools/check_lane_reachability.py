@@ -129,6 +129,40 @@ def extract_lane_skills(text, known_skills):
     return found
 
 
+def extract_stale_references(text, known_skills):
+    """レーン表の「スキル」列にあるが `.claude/skills/` に実在しない名前を返す。
+
+    ホワイトリスト方式で絞ると、スキルをリネーム・削除したときに **その名前が
+    レーン一覧から静かに消える**。レーンが評価対象から外れるので `unreachable` にも
+    載らず、実運用が壊れているのに検査は緑を返す（最も危険な偽陰性）。
+
+    「スキル」列に書かれた kebab-case 名は定義上すべてスキルなので、実在しないものは
+    リネーム漏れ・typo・削除漏れとして FAIL させる。
+    """
+    stale = set()
+    skill_col = None
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("|"):
+            skill_col = None
+            continue
+        cells = _cells(line)
+        if skill_col is None:
+            for idx, cell in enumerate(cells):
+                if cell.strip() == "スキル":
+                    skill_col = idx
+                    break
+            continue
+        if set(stripped) <= set("|-: "):
+            continue
+        if skill_col >= len(cells):
+            continue
+        for name in BACKTICK_NAME.findall(cells[skill_col]):
+            if name not in known_skills:
+                stale.add(name)
+    return stale
+
+
 # 決定木テーブルのヘッダ行。この表だけを経路 A の証拠にする（他の表は拾わない）。
 ROUTER_TABLE_HEADER = re.compile(r"^\|\s*Step\s*\|.*委譲先")
 
@@ -170,6 +204,41 @@ def extract_router_delegations(text, known_skills):
             if name in known_skills:
                 found.add(name)
     return found
+
+
+def _router_delegation_col(text):
+    """決定木テーブルの「委譲先スキル」列のインデックスを返す（見つからなければ None）。"""
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if ROUTER_TABLE_HEADER.match(stripped):
+            for idx, cell in enumerate(_cells(line)):
+                if "委譲先" in cell:
+                    return idx
+    return None
+
+
+def extract_stale_delegations(text, known_skills):
+    """決定木の **委譲先列** にあるが `.claude/skills/` に実在しない名前を返す。
+
+    行全体を見ると判定条件・実行内容の列に出てくるバッククォート語（通知名 `routine-idle`・
+    ラベル名など）まで「実在しないスキル」として誤検出する。委譲先列だけを見る。
+
+    `BACKTICK_NAME` は `[a-z][a-z0-9-]+` なので `tools/sprint_backlog_sync.py` のような
+    スクリプト委譲（`/` `_` `.` を含む）には最初からマッチしない。したがってこの列で拾える
+    kebab-case 名は定義上すべてスキルであり、実在しないものはリネーム漏れ・typo。
+    """
+    col = _router_delegation_col(text)
+    if col is None:
+        return set()
+    stale = set()
+    for line in _router_table_lines(text):
+        cells = _cells(line)
+        if col >= len(cells):
+            continue
+        for name in BACKTICK_NAME.findall(cells[col]):
+            if name not in known_skills:
+                stale.add(name)
+    return stale
 
 
 def is_launched_in_body(skill, text, self_skill=None, known_skills=None):
@@ -225,11 +294,15 @@ def check(skills_dir=None, lane_map=None, router_skill=None):
     known = discover_skills(skills_dir)
     lane_path = Path(lane_map) if lane_map else LANE_MAP
     router_path = Path(router_skill) if router_skill else ROUTER_SKILL
-    lanes = extract_lane_skills(lane_path.read_text(encoding="utf-8"), known) if lane_path.is_file() else set()
-    delegations = (
-        extract_router_delegations(router_path.read_text(encoding="utf-8"), known)
-        if router_path.is_file() else set()
-    )
+    lane_text = lane_path.read_text(encoding="utf-8") if lane_path.is_file() else ""
+    lanes = extract_lane_skills(lane_text, known)
+    stale = extract_stale_references(lane_text, known)
+    router_text = router_path.read_text(encoding="utf-8") if router_path.is_file() else ""
+    delegations = extract_router_delegations(router_text, known)
+    # 決定木の委譲先も stale 検査の対象にする。レーン表に載らないスキル
+    # （`pr-review-watcher` / `claude-code-spec-sync` 等）のリネーム漏れは、
+    # レーン側の検査だけでは一切現れない。
+    stale |= extract_stale_delegations(router_text, known)
 
     sd = Path(skills_dir) if skills_dir else SKILLS_DIR
     bodies = {}
@@ -253,7 +326,11 @@ def check(skills_dir=None, lane_map=None, router_skill=None):
             "via_router": via_a,
             "via_skills": sorted(via_b),
         })
-    return {"lanes": results, "unreachable": [r["skill"] for r in results if not r["reachable"]]}
+    return {
+        "lanes": results,
+        "unreachable": [r["skill"] for r in results if not r["reachable"]],
+        "stale_references": sorted(stale),
+    }
 
 
 def render(report):
@@ -267,6 +344,11 @@ def render(report):
             f"{'✅' if r['via_router'] else '—'} | {via_b} |"
         )
     lines.append("")
+    if report.get("stale_references"):
+        lines.append("## ❌ 実在しないスキルを参照しているレーン")
+        for s in report["stale_references"]:
+            lines.append(f"- `{s}`: `.claude/skills/{s}/` が存在しない（リネーム漏れ・削除漏れ・typo）")
+        lines.append("")
     if report["unreachable"]:
         lines.append("## ❌ 到達不能なレーン")
         for s in report["unreachable"]:
@@ -277,7 +359,7 @@ def render(report):
         lines.append("")
         lines.append("> 参考: `improvement-lane-map.md` に「未実装」等の自己申告が無いかも目視で確認する")
         lines.append("> （自己申告そのものは判定材料にしない。誠実な注記を消すインセンティブを作らないため）。")
-    else:
+    elif not report.get("stale_references"):
         lines.append("✅ すべてのレーンが実装から到達可能。")
     return "\n".join(lines)
 
@@ -357,6 +439,28 @@ def _self_test():
     )
     got = extract_lane_skills(caller_md, known)
     check_(got == {"retrospective"}, f"R5: caller column is not a lane skill ({got})")
+    # R6: スキルのリネーム・削除で、レーンが静かに評価対象から消えないこと。
+    #     旧名がレーン表に残っているのに実体が無い状態を FAIL させる。
+    renamed_md = (
+        "| レーン | スキル | 担当 | 主な起動 |\n"
+        "|---|---|---|---|\n"
+        "| **振り返りレーン** | `retro-try-handler` | x | y |\n"
+    )
+    check_(extract_stale_references(renamed_md, known - {"retro-try-handler"})
+           == {"retro-try-handler"}, "R6: renamed/removed skill is reported as stale")
+    check_(extract_stale_references(renamed_md, known) == set(),
+           "R6': existing skill is not stale")
+    # R7: 決定木の委譲先のリネーム漏れも検出する（レーン表に載らないスキルが対象）
+    check_(extract_stale_delegations(
+        ROUTER_HDR + "| 2 | x | y | `pr-review-watcher-old` |\n", known) == {"pr-review-watcher-old"},
+        "R7: renamed router delegation is reported as stale")
+    check_(extract_stale_delegations(
+        ROUTER_HDR + "| 2 | x | y | `pr-review-watcher` |\n", known) == set(),
+        "R7': existing delegation is not stale")
+    # R7'': tools/*.py へのスクリプト委譲は stale にしない（正規表現に最初からマッチしない）
+    check_(extract_stale_delegations(
+        ROUTER_HDR + "| 3.5 | x | y | `tools/sprint_backlog_sync.py` |\n", known) == set(),
+        "R7'': script delegation is not stale")
     # マーカー行は除外される
     marked = lane_md + f"| **単発** | `sprint-cycle-router` | x | y | {NATURAL_TRIGGER_MARKER}\n"
     got = extract_lane_skills(marked, known)
@@ -435,7 +539,7 @@ def _self_test():
         "R4: negation keyword 除外 is exercised")
 
     if fail == 0:
-        print("PASS: check_lane_reachability self-test (27 checks)")
+        print("PASS: check_lane_reachability self-test (32 checks)")
     return 1 if fail else 0
 
 
@@ -450,7 +554,7 @@ def main():
 
     report = check()
     print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else render(report))
-    return 1 if report["unreachable"] else 0
+    return 1 if (report["unreachable"] or report.get("stale_references")) else 0
 
 
 if __name__ == "__main__":
