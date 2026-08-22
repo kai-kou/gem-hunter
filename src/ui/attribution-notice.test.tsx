@@ -131,4 +131,43 @@ describe('AttributionNotice', () => {
     // `$&` 等の特殊置換パターンが解釈されることはない。
     expect(screen.getByRole('link', { name: 'A $& B' })).toBeInTheDocument()
   })
+  /**
+   * 🔵 `{generatedAt}` を含まない文言（Gem 一覧の `gems.attribution`）でも同じ実装を使えること。
+   * 含まないのに時刻ノードを描くと、文末へ日時が接ぎ木されて意味の通らない文になる。
+   */
+  it('{generatedAt} を含まない文言では生成時刻のノードを描かない', () => {
+    const { container } = render(
+      <AttributionNotice
+        meta={meta}
+        labels={{ attribution: 'このデータについて: {source}（{license}）をもとにしています。' }}
+        locale={locale('ja')}
+      />,
+    )
+
+    expect(container.querySelector('time')).toBeNull()
+    expect(screen.getByText(/をもとにしています。/)).toBeInTheDocument()
+    expect(screen.queryByText(/JST/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ecosyste.ms' })).toBeInTheDocument()
+  })
+
+  /**
+   * 🔴 出典 URL は配信 JSON（外部データ）由来なので無検査で `href` へ流さない。
+   */
+  it('http(s) 以外の URL はリンクにせずテキストのまま出す（javascript: を href に流さない）', () => {
+    render(
+      <AttributionNotice
+        meta={{
+          ...meta,
+          sourceUrl: 'javascript:alert(1)',
+          sourceLicenseUrl: 'javascript:alert(2)',
+        }}
+        labels={labels}
+        locale={locale('ja')}
+      />,
+    )
+
+    expect(screen.queryByRole('link', { name: 'Ecosyste.ms' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Ecosyste\.ms/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'CC BY-SA 4.0' })).not.toBeInTheDocument()
+  })
 })
