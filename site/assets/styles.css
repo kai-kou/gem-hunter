@@ -445,6 +445,39 @@ summary {
   color: var(--accent);
 }
 
+/* ---- スクリーンショット（スマートフォンのフレーム） ---- */
+
+.phone {
+  width: min(248px, 58vw);
+  margin-inline: auto;
+  padding: 10px 10px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 34px;
+  background: var(--bg-subtle);
+  box-shadow: var(--shadow-lg);
+}
+
+.phone-speaker {
+  display: block;
+  width: 48px;
+  height: 5px;
+  margin: 2px auto 10px;
+  border-radius: 999px;
+  background: var(--hairline);
+}
+
+.phone-screen {
+  border: 1px solid var(--hairline);
+  border-radius: 24px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.phone-screen img {
+  display: block;
+  width: 100%;
+}
+
 /* ---- スクリーンショット（ブラウザフレーム） ---- */
 
 .shot-stage {
@@ -774,13 +807,6 @@ summary {
   width: 100%;
 }
 
-/* shot-mobile.webp（640×1280）の上部だけを見せ、同じ行のタイルと行高を揃える */
-.tile-figure img.crop-top {
-  max-height: 320px;
-  object-fit: cover;
-  object-position: top;
-}
-
 
 .icon {
   width: 20px;
@@ -1059,7 +1085,8 @@ summary {
 
 /* 読み込み直後のヒーローだけは時間ベースでフェードさせる（必ず終わる） */
 @media (prefers-reduced-motion: no-preference) {
-  .hero > .wrap > * {
+  .hero > .wrap > *,
+  .hero-copy > * {
     animation: hero-in 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
   }
   .hero .eyebrow {
@@ -1158,15 +1185,22 @@ summary {
   }
 
   .browser,
-  .browser-bar {
+  .browser-bar,
+  .phone,
+  .phone-screen {
     background: var(--shot-frame-bg);
     border-color: var(--shot-frame-border);
   }
 
-  .browser {
+  .browser,
+  .phone {
     box-shadow:
       0 0 0 1px var(--shot-frame-ring),
       0 24px 60px oklch(0 0 0 / 0.6);
+  }
+
+  .phone-speaker {
+    background: var(--shot-frame-border);
   }
 
   .url-pill {
@@ -1189,8 +1223,8 @@ summary {
 
 /* ============================ 追加コンポーネント ============================ */
 
-/* ヒーロー内の要素順（モバイルではキーワード例をスクリーンショットの下へ回す） */
-.hero > .wrap {
+/* ヒーロー内の要素順（コピー → 実画面 → キーワード例。DOM 順がそのまま表示順） */
+.hero-copy {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1205,14 +1239,37 @@ summary {
   font-size: 0.9375rem;
 }
 
-@media (max-width: 640px) {
-  .hero .samples {
-    order: 10;
-    margin-top: 24px;
+/* 広い画面ではヒーローを 2 カラムにし、スマートフォンの実画面をファーストビューへ収める */
+@media (min-width: 1000px) {
+  .hero > .wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 300px);
+    column-gap: clamp(32px, 5vw, 72px);
+    align-items: start;
+  }
+
+  .hero-copy {
+    grid-column: 1;
+    grid-row: 1;
   }
 
   .hero .shot-stage {
-    order: 5;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    margin-top: 0;
+  }
+
+  .hero .samples {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: clamp(24px, 3vw, 36px);
+  }
+}
+
+@media (max-width: 640px) {
+  .hero .samples {
+    margin-top: 24px;
   }
 
   /* fold を詰める。MIT ライセンスは最終 CTA とフッターに出ている */
