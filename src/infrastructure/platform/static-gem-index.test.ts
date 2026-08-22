@@ -3,7 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { gemIndexValue } from '../../domain/model/gem-index'
 
 import type { AssetReader } from './asset-reader'
+import { FALLBACK_META } from './static-gem-digest'
 import { StaticGemIndex, resetGemIndexCacheForTest } from './static-gem-index'
+
+/**
+ * `tokenizeIdentifier` の呼び出し回数を数えるためのカウンタ（`vi.hoisted` で `vi.mock` の
+ * ファクトリより先に初期化する）。
+ *
+ * 🔴 これは「照合用トークンを **cold start で 1 回だけ** 計算しているか」を担保するための計測。
+ * warm のリクエストで再 tokenize していると、62,483 件 × リクエスト数だけ CPU を食う。
+ * ⚠️ `vi.fn` ではなく素の関数でラップする（`vi.restoreAllMocks()` に実装を消されないため）。
+ */
+const tokenize = vi.hoisted(() => ({ calls: 0 }))
+
+vi.mock('../../domain/model/gem-keyword', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../domain/model/gem-keyword')>()
+  return {
+    ...actual,
+    tokenizeIdentifier: (value: string) => {
+      tokenize.calls += 1
+      return actual.tokenizeIdentifier(value)
+    },
+  }
+})
 
 const INDEX_PATH = '/data/gem-index/index.json'
 
@@ -57,6 +79,7 @@ const twoShards = {
 describe('StaticGemIndex', () => {
   beforeEach(() => {
     resetGemIndexCacheForTest()
+    tokenize.calls = 0
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
