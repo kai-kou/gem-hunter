@@ -25,16 +25,26 @@ export default defineConfig({
   timeout: 120_000,
   use: {
     baseURL,
-    // 既存インフォグラフィック（1536x864・完全な 16:9）と同じ寸法で撮る。
-    viewport: { width: 1536, height: 864 },
-    deviceScaleFactor: 1,
+    deviceScaleFactor: 2, // 縮小して合成するため 2 倍で撮る（文字が潰れない）
   },
+  // スライドではスマホ表示を主役に、PC 表示を添えとして合成する（飼い主の指示・2026-08-22）。
+  // どちらのプロジェクトも同じ capture.spec.ts を走らせ、ファイル名は project 名で分ける。
   projects: [
     {
-      name: 'chromium',
+      name: 'mobile',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { width: 393, height: 852 },
+        deviceScaleFactor: 2,
+        launchOptions: { args: ['--ssl-version-max=tls1.2'] },
+      },
+    },
+    {
+      name: 'desktop',
       use: {
         ...devices['Desktop Chrome'],
-        viewport: { width: 1536, height: 864 },
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 2,
         launchOptions: { args: ['--ssl-version-max=tls1.2'] },
       },
     },
