@@ -185,6 +185,11 @@ export class StaticGemIndex implements GemIndexPort {
    * 🔵 **全語 AND → 0 件なら最も選択的な 1 語へ緩和**（`D-37`）。`image processing` のような
    * 概念語は AND では 1 件しかヒットしない実測があるため、0 件で終わらせない。
    * 🔵 初回呼び出しでだけ検索インデックス（第 2 段）を作る。2 回目以降は参照するだけ。
+   *
+   * ⚠️ **絞り込みは 62,483 件の線形走査**（warm で実測 8〜12ms）。トークン → レコードの
+   * 転置索引にすれば sub-ms にできるが、その索引の構築コストとメモリが cold start 側へ
+   * 上乗せされ、`limits.cpu_ms` を押し上げる方向に働く。warm 8〜12ms は許容範囲と判断して
+   * **採らない**（`SP-19` の裁定・2026-08-22）。作り直す前に同じ計測をやり直さなくてよい。
    */
   async search(input: GemPoolSearchInput): Promise<GemPoolSearchResult> {
     const pool = await this.pool()
