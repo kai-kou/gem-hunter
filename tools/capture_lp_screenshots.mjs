@@ -86,7 +86,18 @@ function fetchAvatar(url) {
   try {
     const buf = execFileSync(
       'curl',
-      ['-sSfL', '--proto', '=https', '--proto-redir', '=https', '--max-redirs', '3', '--max-time', '20', url],
+      [
+        '-sSfL',
+        '--proto',
+        '=https',
+        '--proto-redir',
+        '=https',
+        '--max-redirs',
+        '3',
+        '--max-time',
+        '20',
+        url,
+      ],
       { maxBuffer: 20e6 },
     )
     avatarCache.set(url, buf)
@@ -155,7 +166,11 @@ try {
         const context2d = canvas.getContext('2d')
         context2d.imageSmoothingQuality = 'high'
         context2d.drawImage(image, 0, 0, canvas.width, canvas.height)
-        return { dataUrl: canvas.toDataURL('image/webp', 0.86), width: canvas.width, height: canvas.height }
+        return {
+          dataUrl: canvas.toDataURL('image/webp', 0.86),
+          width: canvas.width,
+          height: canvas.height,
+        }
       },
       { base64: readFileSync(pngPath).toString('base64'), width: shot.width },
     )
@@ -164,7 +179,9 @@ try {
     await converter.close()
 
     written.push({ name: shot.name, width: converted.width, height: converted.height })
-    console.log(`${shot.name}.webp を更新した（${converted.width}×${converted.height} / ${webp.length} bytes）`)
+    console.log(
+      `${shot.name}.webp を更新した（${converted.width}×${converted.height} / ${webp.length} bytes）`,
+    )
   }
 } finally {
   await browser.close()

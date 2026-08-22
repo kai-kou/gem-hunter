@@ -36,29 +36,14 @@
       },
       {
         "heading": "開発フロー",
-        "items": [
-          "Issue作成",
-          "作業ブランチ作成",
-          "PR作成",
-          "セルフレビュー",
-          "自動マージ"
-        ]
+        "items": ["Issue作成", "作業ブランチ作成", "PR作成", "セルフレビュー", "自動マージ"]
       },
       {
         "heading": "PR自律化",
-        "items": [
-          "確認なしPR作成",
-          "AIレビュー自己完結",
-          "指摘対応→自動マージ"
-        ]
+        "items": ["確認なしPR作成", "AIレビュー自己完結", "指摘対応→自動マージ"]
       }
     ],
-    "key_numbers": [
-      "CP-1〜6",
-      "A-1〜6",
-      "SD-1〜4",
-      "sp:1〜8"
-    ],
+    "key_numbers": ["CP-1〜6", "A-1〜6", "SD-1〜4", "sp:1〜8"],
     "layout_hint": "Central flowchart banner across the bottom showing Issue -> branch -> PR -> self-review -> auto-merge as connected arrow nodes. Above it, three parallel columns titled CP (principles), A (confirmation boundary), SD (sprint discipline), each as a stacked list of numbered pill-shaped labels in distinct accent colors. Small PR自律化 callout box tucked near the flowchart. Handdrawn graphic-recording style with icons (lock for A, checklist for SD, compass for CP)."
   }
 }

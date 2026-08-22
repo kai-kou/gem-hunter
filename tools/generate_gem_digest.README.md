@@ -64,14 +64,14 @@ node tools/generate_gem_digest.mjs --quota 20000 --digest-limit 500 \
 
 ## 実測値（2026-08-22 JST・`SP-17` 着地時）
 
-| 項目                   | 実測                                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 収集                   | **180 リクエスト / 約 3〜4 分**（12 レジストリ × 15 ページ・`per_page=1000`・匿名 5,000 req/時の枠内）                                                              |
-| 取得パッケージ         | 180,000 件（12 レジストリ × 15,000 件の固定枠）                                                                                                                     |
-| 変換（キャッシュから） | 約 1.2 秒                                                                                                                                                           |
-| 最終候補プール         | **94,856 リポジトリ**（`star=0` の比率 14.8%）                                                                                                                      |
-| レジストリ別内訳       | packagist 11,707 / hex 11,098 / go 10,328 / pypi 9,749 / pub 9,080 / npm 8,503 / cargo 7,985 / cpan 7,300 / cran 6,696 / rubygems 4,732 / nuget 4,339 / maven 3,339 |
-| 出力サイズ             | `daily-digest.json` 64KB / `gem-index/*.json` 合計 9.4MB（gzip 約 2.4MB・npm シャード単体は raw 1.05MB → gzip 246KB）                                               |
+| 項目                   | 実測                                                                                                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 収集                   | **180 リクエスト / 約 3〜4 分**（12 レジストリ × 15 ページ・`per_page=1000`・匿名 5,000 req/時の枠内）                                                                                             |
+| 取得パッケージ         | 180,000 件（12 レジストリ × 15,000 件の固定枠）                                                                                                                                                    |
+| 変換（キャッシュから） | 約 1.2 秒                                                                                                                                                                                          |
+| 最終候補プール         | **94,856 リポジトリ**（`star=0` の比率 14.8%）                                                                                                                                                     |
+| レジストリ別内訳       | packagist 11,707 / hex 11,098 / go 10,328 / pypi 9,749 / pub 9,080 / npm 8,503 / cargo 7,985 / cpan 7,300 / cran 6,696 / rubygems 4,732 / nuget 4,339 / maven 3,339                                |
+| 出力サイズ             | `daily-digest.json` 64KB / `gem-index/*.json` 合計 9.4MB（gzip 約 2.4MB・npm シャード単体は raw 1.05MB → gzip 246KB）                                                                              |
 | 被覆率                 | 一般語 25 件 × GitHub 検索上位 100 件で **平均 33.4% / 中央値 34%**（`http client` 56% / `orm` 50% ↔ `encryption` 16% / `machine learning` 5%）。`D-36` の 3 クエリ実測（32% / 36% / 19%）と同水準 |
 
 ### 汚染フィルタの既定値をどう決めたか（`D-37`）
@@ -108,7 +108,11 @@ node tools/generate_gem_digest.mjs --quota 20000 --digest-limit 500 \
 ## テスト
 
 ```sh
-npx vitest run tools/gem-pool/
+npx vitest run tools/gem-pool/ tools/generate_gem_digest.test.mjs
 ```
 
-各モジュールは **ネットワークに依存しないテスト**（`fetch` は注入可能）。実データでの動作確認は `--cache-dir` にサンプル JSON を置いて `node tools/generate_gem_digest.mjs --cache-dir ... --out-dir /tmp/...` のように隔離実行する。
+各モジュール（`tools/gem-pool/*.test.mjs`）は **ネットワークに依存しないテスト**（`fetch` は注入可能）。本 CLI 自身（`tools/generate_gem_digest.test.mjs`）は引数解析（`parseArgs` / `parseIntOption`）とキャッシュ制御（`collectWithCache`）を、収集関数を注入して実ネットワークなしで検証する。
+
+🔴 **`tools/generate_gem_digest.mjs` は実行ガード付き**: `node tools/generate_gem_digest.mjs` として直接実行された時だけ `main()` が起動する（`import.meta.url` と `process.argv[1]` の比較）。テストから `parseArgs` 等を `import` しても本番のネットワーク収集・ファイル書き込みは走らない。
+
+実データでの動作確認は `--cache-dir` にサンプル JSON を置いて `node tools/generate_gem_digest.mjs --cache-dir ... --out-dir /tmp/...` のように隔離実行する。

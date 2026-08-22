@@ -146,7 +146,14 @@ describe('buildDailyDigest', () => {
     expect(digest.candidates).toHaveLength(1)
     expect(digest.candidates[0]).not.toHaveProperty('downloads')
     expect(Object.keys(digest.candidates[0]).sort()).toEqual(
-      ['dependentCount', 'gemIndex', 'packageName', 'registry', 'repositoryFullName', 'stars'].sort(),
+      [
+        'dependentCount',
+        'gemIndex',
+        'packageName',
+        'registry',
+        'repositoryFullName',
+        'stars',
+      ].sort(),
     )
   })
 

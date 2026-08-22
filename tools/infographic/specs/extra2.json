@@ -5,11 +5,7 @@
     "sections": [
       {
         "heading": "前提制約",
-        "items": [
-          "asyncRSCはE2Eのみ",
-          "外部APIは既定で遮断",
-          "コマンド1つでCI実行"
-        ]
+        "items": ["asyncRSCはE2Eのみ", "外部APIは既定で遮断", "コマンド1つでCI実行"]
       },
       {
         "heading": "採用道具",
@@ -34,27 +30,15 @@
       },
       {
         "heading": "ダブル方針",
-        "items": [
-          "①フェイク優先",
-          "②MSWはACL限定",
-          "③vi.mockは最終手段"
-        ]
+        "items": ["①フェイク優先", "②MSWはACL限定", "③vi.mockは最終手段"]
       },
       {
         "heading": "二重ループ",
-        "items": [
-          "外側:操作レビュー→E2ERed",
-          "内側:Red→Green→Refactor",
-          "test→feat順にコミット"
-        ]
+        "items": ["外側:操作レビュー→E2ERed", "内側:Red→Green→Refactor", "test→feat順にコミット"]
       },
       {
         "heading": "禁止事項",
-        "items": [
-          "スキップして緑にしない",
-          "未実行なのに通過と報告",
-          "実装をテストに合わせない"
-        ]
+        "items": ["スキップして緑にしない", "未実行なのに通過と報告", "実装をテストに合わせない"]
       }
     ],
     "key_numbers": [
@@ -80,35 +64,19 @@
       },
       {
         "heading": "ランタイム",
-        "items": [
-          "OpenNextアダプタ",
-          "Next16.2.11以上",
-          "Workers上で実行"
-        ]
+        "items": ["OpenNextアダプタ", "Next16.2.11以上", "Workers上で実行"]
       },
       {
         "heading": "キャッシュ階層",
-        "items": [
-          "L1:リクエスト内メモ化",
-          "L2:InMemoryCacheが主役",
-          "L3:外部ストア未採用"
-        ]
+        "items": ["L1:リクエスト内メモ化", "L2:InMemoryCacheが主役", "L3:外部ストア未採用"]
       },
       {
         "heading": "バインディング",
-        "items": [
-          "RateLimiting binding",
-          "keyはIPのHMAC化",
-          "検索エンドポイントに適用"
-        ]
+        "items": ["RateLimiting binding", "keyはIPのHMAC化", "検索エンドポイントに適用"]
       },
       {
         "heading": "環境構成",
-        "items": [
-          "local:wrangler dev",
-          "preview:versions+alias",
-          "production:Worker本体"
-        ]
+        "items": ["local:wrangler dev", "preview:versions+alias", "production:Worker本体"]
       },
       {
         "heading": "デプロイ",
@@ -120,11 +88,7 @@
       },
       {
         "heading": "コスト境界",
-        "items": [
-          "Free:リクエスト無料枠",
-          "超過で課金でなく停止",
-          "Paidは実測してから判定"
-        ]
+        "items": ["Free:リクエスト無料枠", "超過で課金でなく停止", "Paidは実測してから判定"]
       }
     ],
     "key_numbers": [

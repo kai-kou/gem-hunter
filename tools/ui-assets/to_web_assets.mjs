@@ -15,56 +15,56 @@
  * では色数が減らず容量が膨らむ（og-background で実測 500KB 超）。--colors 32 --dither 0 程度で
  * 大きく縮む（同じ画像で約 140KB）。
  */
-import sharp from "sharp";
-import { parseArgs } from "node:util";
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import sharp from 'sharp'
+import { parseArgs } from 'node:util'
+import { mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 
 function usageAndExit(message) {
-  if (message) console.error(`error: ${message}`);
+  if (message) console.error(`error: ${message}`)
   console.error(
-    "usage: node to_web_assets.mjs --in <src.png> --out <dest> --width <px> " +
-      "[--height <px>] [--format webp|png] [--fit cover|contain|inside]"
-  );
-  process.exit(1);
+    'usage: node to_web_assets.mjs --in <src.png> --out <dest> --width <px> ' +
+      '[--height <px>] [--format webp|png] [--fit cover|contain|inside]',
+  )
+  process.exit(1)
 }
 
 const { values } = parseArgs({
   options: {
-    in: { type: "string" },
-    out: { type: "string" },
-    width: { type: "string" },
-    height: { type: "string" },
-    format: { type: "string", default: "webp" },
-    fit: { type: "string", default: "inside" },
-    quality: { type: "string", default: "82" },
-    colors: { type: "string" },
-    dither: { type: "string" },
+    in: { type: 'string' },
+    out: { type: 'string' },
+    width: { type: 'string' },
+    height: { type: 'string' },
+    format: { type: 'string', default: 'webp' },
+    fit: { type: 'string', default: 'inside' },
+    quality: { type: 'string', default: '82' },
+    colors: { type: 'string' },
+    dither: { type: 'string' },
   },
-});
+})
 
 if (!values.in || !values.out || !values.width) {
-  usageAndExit("--in / --out / --width は必須");
+  usageAndExit('--in / --out / --width は必須')
 }
-if (!["webp", "png"].includes(values.format)) {
-  usageAndExit("--format は webp か png のみ対応");
+if (!['webp', 'png'].includes(values.format)) {
+  usageAndExit('--format は webp か png のみ対応')
 }
 
-const width = Number.parseInt(values.width, 10);
-const height = values.height ? Number.parseInt(values.height, 10) : undefined;
+const width = Number.parseInt(values.width, 10)
+const height = values.height ? Number.parseInt(values.height, 10) : undefined
 
 async function main() {
-  await mkdir(dirname(values.out), { recursive: true });
+  await mkdir(dirname(values.out), { recursive: true })
 
-  let pipeline = sharp(values.in, { failOn: "none" }).resize({
+  let pipeline = sharp(values.in, { failOn: 'none' }).resize({
     width,
     height,
     fit: values.fit,
     withoutEnlargement: false,
-  });
+  })
 
-  if (values.format === "webp") {
-    pipeline = pipeline.webp({ quality: Number.parseInt(values.quality, 10), alphaQuality: 100 });
+  if (values.format === 'webp') {
+    pipeline = pipeline.webp({ quality: Number.parseInt(values.quality, 10), alphaQuality: 100 })
   } else if (values.colors) {
     pipeline = pipeline.png({
       palette: true,
@@ -72,12 +72,12 @@ async function main() {
       dither: values.dither !== undefined ? Number.parseFloat(values.dither) : 1.0,
       compressionLevel: 9,
       effort: 10,
-    });
+    })
   } else {
-    pipeline = pipeline.png({ compressionLevel: 9 });
+    pipeline = pipeline.png({ compressionLevel: 9 })
   }
 
-  const info = await pipeline.toFile(values.out);
+  const info = await pipeline.toFile(values.out)
   console.log(
     JSON.stringify({
       in: values.in,
@@ -88,11 +88,11 @@ async function main() {
       bytes: info.size,
       channels: info.channels,
       hasAlpha: info.channels === 4,
-    })
-  );
+    }),
+  )
 }
 
 main().catch((err) => {
-  console.error(`変換に失敗した: ${err.message}`);
-  process.exit(1);
-});
+  console.error(`変換に失敗した: ${err.message}`)
+  process.exit(1)
+})

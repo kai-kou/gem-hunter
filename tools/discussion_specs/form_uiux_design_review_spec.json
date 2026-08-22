@@ -52,7 +52,9 @@
     },
     "scope": {
       "this_pr": ["この PR でやること"],
-      "follow_up_issues": [{"title": "Issue タイトル", "labels": ["type:* / sp:*"], "why": "理由"}]
+      "follow_up_issues": [
+        { "title": "Issue タイトル", "labels": ["type:* / sp:*"], "why": "理由" }
+      ]
     },
     "open_questions": ["飼い主の判断が要る事項"]
   }

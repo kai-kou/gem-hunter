@@ -5,15 +5,15 @@ OpenAI の `gpt-image-2` を使い、ドキュメントから抽出した構造�
 
 ## 構成
 
-| パス | 役割 |
-|---|---|
-| `specs/*.json` | 各ドキュメントから抽出した **画像に描くテキストの正本**（`title` / `subtitle` / `sections` / `key_numbers`） |
-| `layouts/*.txt` | 図としてどう並べるかの指示（英語。画像モデルへそのまま渡る） |
-| `build_prompt.py` | spec + layout → 生成プロンプトを組み立てる（「見出し + 箇条書き」型の 12 枚） |
-| `build_grid_prompt.py` | `specs/usm_grid.json` → 格子型プロンプトを組み立てる（ユーザーストーリーマップ専用） |
-| `prompts/*.txt` | 組み立て済みプロンプト（実際に投げた内容の記録） |
-| `generate.py` | プロンプトを `gpt-image-2` に投げて PNG を保存する CLI |
-| `to_webp.mjs` | 生成した PNG をまとめて WebP へ変換し `docs/infographics/` へ置く |
+| パス                   | 役割                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `specs/*.json`         | 各ドキュメントから抽出した **画像に描くテキストの正本**（`title` / `subtitle` / `sections` / `key_numbers`） |
+| `layouts/*.txt`        | 図としてどう並べるかの指示（英語。画像モデルへそのまま渡る）                                                 |
+| `build_prompt.py`      | spec + layout → 生成プロンプトを組み立てる（「見出し + 箇条書き」型の 12 枚）                                |
+| `build_grid_prompt.py` | `specs/usm_grid.json` → 格子型プロンプトを組み立てる（ユーザーストーリーマップ専用）                         |
+| `prompts/*.txt`        | 組み立て済みプロンプト（実際に投げた内容の記録）                                                             |
+| `generate.py`          | プロンプトを `gpt-image-2` に投げて PNG を保存する CLI                                                       |
+| `to_webp.mjs`          | 生成した PNG をまとめて WebP へ変換し `docs/infographics/` へ置く                                            |
 
 ## 使い方
 
@@ -57,21 +57,21 @@ python3 tools/infographic/build_grid_prompt.py --out tools/infographic/prompts/0
 
 `build_prompt.py` の引数（spec ファイル / キー / レイアウト）は画像ごとに違うので、ここを正本にする。
 
-| 出力プロンプト | spec ファイル | キー | レイアウト |
-|---|---|---|---|
-| `01-initial-concept.txt` | `specs/concept.json` | `initial-concept` | `layouts/initial-concept.txt` |
-| `02-lean-canvas.txt` | `specs/concept.json` | `lean-canvas` | `layouts/lean-canvas.txt` |
-| `03-inception-deck.txt` | `specs/concept.json` | `inception-deck` | `layouts/inception-deck.txt` |
-| `04-prd.txt` | `specs/requirements.json` | `prd` | `layouts/prd.txt` |
-| `05-user-story-map.txt` | `specs/usm_grid.json` | （格子・`build_grid_prompt.py` を使う） | `layouts/user-story-map.txt` |
-| `06-roadmap.txt` | `specs/requirements.json` | `roadmap` | `layouts/roadmap.txt` |
-| `07-design.txt` | `specs/design.json` | `design` | `layouts/design.txt` |
-| `08-doc-relations.txt` | `specs/design.json` | `doc-relations` | `layouts/doc-relations.txt` |
-| `09-adr-map.txt` | `specs/extra1.json` | `adr-map` | `layouts/adr-map.txt` |
-| `10-gem-score.txt` | `specs/extra1.json` | `gem-score` | `layouts/gem-score.txt` |
-| `11-testing-strategy.txt` | `specs/extra2.json` | `testing` | `layouts/testing.txt` |
-| `12-cloudflare.txt` | `specs/extra2.json` | `cloudflare` | `layouts/cloudflare.txt` |
-| `13-ops-rules.txt` | `specs/extra3.json` | `ops-rules` | `layouts/ops-rules.txt` |
+| 出力プロンプト            | spec ファイル             | キー                                    | レイアウト                    |
+| ------------------------- | ------------------------- | --------------------------------------- | ----------------------------- |
+| `01-initial-concept.txt`  | `specs/concept.json`      | `initial-concept`                       | `layouts/initial-concept.txt` |
+| `02-lean-canvas.txt`      | `specs/concept.json`      | `lean-canvas`                           | `layouts/lean-canvas.txt`     |
+| `03-inception-deck.txt`   | `specs/concept.json`      | `inception-deck`                        | `layouts/inception-deck.txt`  |
+| `04-prd.txt`              | `specs/requirements.json` | `prd`                                   | `layouts/prd.txt`             |
+| `05-user-story-map.txt`   | `specs/usm_grid.json`     | （格子・`build_grid_prompt.py` を使う） | `layouts/user-story-map.txt`  |
+| `06-roadmap.txt`          | `specs/requirements.json` | `roadmap`                               | `layouts/roadmap.txt`         |
+| `07-design.txt`           | `specs/design.json`       | `design`                                | `layouts/design.txt`          |
+| `08-doc-relations.txt`    | `specs/design.json`       | `doc-relations`                         | `layouts/doc-relations.txt`   |
+| `09-adr-map.txt`          | `specs/extra1.json`       | `adr-map`                               | `layouts/adr-map.txt`         |
+| `10-gem-score.txt`        | `specs/extra1.json`       | `gem-score`                             | `layouts/gem-score.txt`       |
+| `11-testing-strategy.txt` | `specs/extra2.json`       | `testing`                               | `layouts/testing.txt`         |
+| `12-cloudflare.txt`       | `specs/extra2.json`       | `cloudflare`                            | `layouts/cloudflare.txt`      |
+| `13-ops-rules.txt`        | `specs/extra3.json`       | `ops-rules`                             | `layouts/ops-rules.txt`       |
 
 全 13 枚のプロンプトをまとめて組み立て直すには `build_all_prompts.sh` を使う。
 

@@ -93,9 +93,13 @@ export function parseArgs(argv) {
     } else if (a === '--digest-limit') {
       out.digestLimit = parseIntOption(argv[++i], '--digest-limit', { min: 1 })
     } else if (a === '--zero-star-dependent-threshold') {
-      out.zeroStarDependentThreshold = parseIntOption(argv[++i], '--zero-star-dependent-threshold', {
-        min: 1,
-      })
+      out.zeroStarDependentThreshold = parseIntOption(
+        argv[++i],
+        '--zero-star-dependent-threshold',
+        {
+          min: 1,
+        },
+      )
     } else if (a === '--min-downloads-per-dependent') {
       // min: 0（0 で判定を無効化できる・parseIntOption を min 違いで再利用）。
       out.minDownloadsPerDependent = parseIntOption(argv[++i], '--min-downloads-per-dependent', {
@@ -149,7 +153,7 @@ export async function collectWithCache({
     const cachePath = cacheDir ? resolve(cacheDir, `${registry.id}.json`) : null
     const cached = cachePath ? await readCache(cachePath) : null
 
-    if (cached === null) {
+    if (cached !== null) {
       console.error(
         `[generate_gem_digest] cache hit: ${registry.id}（${cached.length} 件・収集スキップ）`,
       )

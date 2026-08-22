@@ -8,20 +8,20 @@ Issue #364）を `gpt-image-2` で生成し、配信用ファイルへ変換す�
 
 ## 構成
 
-| ファイル | 役割 |
-|---|---|
-| `prompts/logo.txt` | ヘッダー 24px ロゴ / favicon 原型の完成プロンプト |
-| `prompts/hero-idle.txt` | 未検索（待ち受け）状態の完成プロンプト |
-| `prompts/loading.txt` | 読み込み中状態の完成プロンプト |
-| `prompts/empty-result.txt` | 検索結果 0 件の完成プロンプト |
-| `prompts/not-found.txt` | 404 ページの完成プロンプト |
-| `prompts/og-background.txt` | OG 画像背景（1536×864）の完成プロンプト |
-| `prompts/error-network.txt` | エラー種別: ネットワーク不通の完成プロンプト |
-| `prompts/error-rate-limit.txt` | エラー種別: レート制限（待てば回復）の完成プロンプト |
-| `prompts/error-upstream.txt` | エラー種別: 上流（GitHub 等）障害の完成プロンプト |
-| `prompts/error-validation.txt` | エラー種別: 入力バリデーション不通過の完成プロンプト |
-| `to_web_assets.mjs` | 原寸 PNG → 配信用 WebP/PNG への変換スクリプト（`sharp` 使用） |
-| `build_favicon_ico.mjs` | `app/icon.png` → `app/favicon.ico`（複数サイズ内包）への変換スクリプト（`sharp` で PNG 化 + 自前 ICO コンテナ組み立て） |
+| ファイル                       | 役割                                                                                                                    |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `prompts/logo.txt`             | ヘッダー 24px ロゴ / favicon 原型の完成プロンプト                                                                       |
+| `prompts/hero-idle.txt`        | 未検索（待ち受け）状態の完成プロンプト                                                                                  |
+| `prompts/loading.txt`          | 読み込み中状態の完成プロンプト                                                                                          |
+| `prompts/empty-result.txt`     | 検索結果 0 件の完成プロンプト                                                                                           |
+| `prompts/not-found.txt`        | 404 ページの完成プロンプト                                                                                              |
+| `prompts/og-background.txt`    | OG 画像背景（1536×864）の完成プロンプト                                                                                 |
+| `prompts/error-network.txt`    | エラー種別: ネットワーク不通の完成プロンプト                                                                            |
+| `prompts/error-rate-limit.txt` | エラー種別: レート制限（待てば回復）の完成プロンプト                                                                    |
+| `prompts/error-upstream.txt`   | エラー種別: 上流（GitHub 等）障害の完成プロンプト                                                                       |
+| `prompts/error-validation.txt` | エラー種別: 入力バリデーション不通過の完成プロンプト                                                                    |
+| `to_web_assets.mjs`            | 原寸 PNG → 配信用 WebP/PNG への変換スクリプト（`sharp` 使用）                                                           |
+| `build_favicon_ico.mjs`        | `app/icon.png` → `app/favicon.ico`（複数サイズ内包）への変換スクリプト（`sharp` で PNG 化 + 自前 ICO コンテナ組み立て） |
 
 各 `prompts/*.txt` は共通スタイル段落（線幅・パレット・「文字なし」等の指定）+ アセット固有の
 モチーフ段落を連結した完成形で、**そのまま** `--prompt-file` に渡せる。
@@ -111,20 +111,20 @@ done
 
 ## アセット表
 
-| アセット | 生成サイズ・透過 | quality | 配信ファイル | 変換後の幅 |
-|---|---|---|---|---|
-| logo | 1024×1024・透過 | medium | `public/images/logo.webp` | 96px |
-| logo（同じ原寸から） | — | — | `app/icon.png`（PNG・透過） | 256px |
-| logo（`app/icon.png` から） | — | — | `app/favicon.ico`（ICO・透過・16/32/48 の 3 サイズ内包） | 16px / 32px / 48px |
-| hero-idle | 1536×864（16:9）・透過 | medium | `public/images/hero-idle.webp` | 768px |
-| loading | 1024×1024・透過 | medium | `public/images/loading.webp` | 256px |
-| empty-result | 1024×1024・透過 | medium | `public/images/empty-result.webp` | 256px |
-| not-found | 1024×1024・透過 | medium | `public/images/not-found.webp` | 320px |
-| og-background | 1536×864・不透過 | medium | `public/images/og-background.png` | 1200×630（cover） |
-| error-network | 1024×1024・透過 | medium | `public/images/error-network.webp` | 256px |
-| error-rate-limit | 1024×1024・透過 | medium | `public/images/error-rate-limit.webp` | 256px |
-| error-upstream | 1024×1024・透過 | medium | `public/images/error-upstream.webp` | 256px |
-| error-validation | 1024×1024・透過 | medium | `public/images/error-validation.webp` | 256px |
+| アセット                    | 生成サイズ・透過       | quality | 配信ファイル                                             | 変換後の幅         |
+| --------------------------- | ---------------------- | ------- | -------------------------------------------------------- | ------------------ |
+| logo                        | 1024×1024・透過        | medium  | `public/images/logo.webp`                                | 96px               |
+| logo（同じ原寸から）        | —                      | —       | `app/icon.png`（PNG・透過）                              | 256px              |
+| logo（`app/icon.png` から） | —                      | —       | `app/favicon.ico`（ICO・透過・16/32/48 の 3 サイズ内包） | 16px / 32px / 48px |
+| hero-idle                   | 1536×864（16:9）・透過 | medium  | `public/images/hero-idle.webp`                           | 768px              |
+| loading                     | 1024×1024・透過        | medium  | `public/images/loading.webp`                             | 256px              |
+| empty-result                | 1024×1024・透過        | medium  | `public/images/empty-result.webp`                        | 256px              |
+| not-found                   | 1024×1024・透過        | medium  | `public/images/not-found.webp`                           | 320px              |
+| og-background               | 1536×864・不透過       | medium  | `public/images/og-background.png`                        | 1200×630（cover）  |
+| error-network               | 1024×1024・透過        | medium  | `public/images/error-network.webp`                       | 256px              |
+| error-rate-limit            | 1024×1024・透過        | medium  | `public/images/error-rate-limit.webp`                    | 256px              |
+| error-upstream              | 1024×1024・透過        | medium  | `public/images/error-upstream.webp`                      | 256px              |
+| error-validation            | 1024×1024・透過        | medium  | `public/images/error-validation.webp`                    | 256px              |
 
 ## OG 画像背景の埋め込み（`app/[locale]/opengraph-image.tsx` 用・追加タスク・Issue #347）
 
