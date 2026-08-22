@@ -79,7 +79,7 @@ export function buildRegistryShards(records, meta) {
   }
 
   return [...byRegistry.keys()]
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .sort(compareString)
     .map((registry) => ({
       fileName: `${registryFileSlug(registry)}.json`,
       doc: {
@@ -123,7 +123,7 @@ export function buildDailyDigestDoc(records, meta, { date, limit } = {}) {
  *
  * @param {ReadonlyArray<{fileName:string, doc:object}>} shards
  * @param {object} meta
- * @param {object} [stats] `buildPool()` の `stats`（Map を含んでいてもよい）
+ * @param {object} [stats] `buildPool()` の `stats`（プレーンオブジェクトと数値だけの JSON 安全な値）
  */
 export function buildShardIndex(shards, meta, stats) {
   const list = (shards ?? []).map(({ fileName, doc }) => ({
@@ -137,8 +137,23 @@ export function buildShardIndex(shards, meta, stats) {
     meta,
     totalCount: list.reduce((sum, s) => sum + s.count, 0),
     shards: list,
-    stats: toJsonSafe(stats) ?? {},
+    stats: stats ?? {},
   }
+}
+
+/**
+ * 配信 JSON の直列化（**この形が生成物のバイト列の唯一の正本**）。
+ *
+ * 🔴 **dry-run のサイズ算出も必ずこれを使うこと（直列化を 2 箇所に持たない）。**
+ * CLI 側が `JSON.stringify(...)` をコピーして持つと、整形を変えたときに `--dry-run` /
+ * `--report` が報告するバイト数だけが実ファイルとずれ、嘘の実測が README / PR に残る。
+ *
+ * @param {unknown} doc 直列化するドキュメント
+ * @param {{pretty?: boolean}} [options] `pretty: true` で 2 スペースインデント
+ * @returns {string} 末尾に改行を 1 つ付けた JSON 文字列
+ */
+export function serializeJson(doc, { pretty = false } = {}) {
+  return JSON.stringify(doc, null, pretty ? 2 : 0) + '\n'
 }
 
 /**
@@ -151,7 +166,7 @@ export function buildShardIndex(shards, meta, stats) {
  * @returns {Promise<{path:string, bytes:number}>} 書き込んだバイト数（実測サマリー用）
  */
 export async function writeJsonFile(path, doc, { pretty = false } = {}) {
-  const text = JSON.stringify(doc, null, pretty ? 2 : 0) + '\n'
+  const text = serializeJson(doc, { pretty })
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, text, 'utf8')
   return { path, bytes: Buffer.byteLength(text, 'utf8') }
@@ -208,36 +223,4 @@ function toDate(value) {
     return Number.isNaN(parsed.getTime()) ? null : parsed
   }
   return null
-}
-
-/**
- * `stats` を JSON で読める素の値へ落とす。
- *
- * `buildPool()` の `stats` は Map を含みうる（`JSON.stringify` すると `{}` に潰れて統計が消える）。
- * 形を先読みで固定するとパイプライン側の変更で壊れるため、**構造を問わず変換だけ** する。
- */
-function toJsonSafe(value, depth = 0) {
-  if (depth > 6) return undefined
-  if (value === null) return null
-  const type = typeof value
-  if (type === 'string' || type === 'boolean') return value
-  if (type === 'number') return Number.isFinite(value) ? value : undefined
-  if (type === 'bigint') return Number(value)
-  if (value instanceof Date) return value.toISOString()
-  if (value instanceof Map) return fromEntries([...value.entries()], depth)
-  if (value instanceof Set) return toJsonSafe([...value], depth)
-  if (Array.isArray(value)) {
-    return value.map((v) => toJsonSafe(v, depth + 1)).filter((v) => v !== undefined)
-  }
-  if (type === 'object') return fromEntries(Object.entries(value), depth)
-  return undefined
-}
-
-function fromEntries(entries, depth) {
-  const out = {}
-  for (const [key, raw] of entries) {
-    const converted = toJsonSafe(raw, depth + 1)
-    if (converted !== undefined) out[String(key)] = converted
-  }
-  return out
 }

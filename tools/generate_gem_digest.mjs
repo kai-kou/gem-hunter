@@ -20,23 +20,26 @@
  * ⚠️ CI での自動実行はしない（更新は `D-28` どおり Cloudflare の外で回して git commit → デプロイ）。
  */
 
+import { readdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { collectAll } from './gem-pool/collect.mjs'
+import { DEFAULT_PER_PAGE, MAX_PER_PAGE, collectAll } from './gem-pool/collect.mjs'
 import {
   buildDailyDigestDoc,
   buildMeta,
   buildRegistryShards,
   buildShardIndex,
+  serializeJson,
   writeJsonFile,
 } from './gem-pool/output.mjs'
 import { buildPool, projectPackage } from './gem-pool/pipeline.mjs'
 import { REGISTRIES } from './gem-pool/registries.mjs'
 
 /** レジストリごとの取得枠（`D-37` (1) の固定枠。母数比例枠は採らない）。 */
-const DEFAULT_QUOTA = 15000
-const DEFAULT_PER_PAGE = 1000
+export const DEFAULT_QUOTA = 15000
+// `--per-page` の既定と上限は収集側（`collect.mjs`）が正本。CLI では再定義せず import する。
+export { DEFAULT_PER_PAGE }
 /**
  * 汚染フィルタ: star 数がこれ未満のものは Gem 候補に載せない（`D-37` (2)）。
  *
@@ -58,16 +61,16 @@ const DEFAULT_PER_PAGE = 1000
  * プール件数の差は 7% にとどまるため、余裕のある `5` を既定にする。閾値を変えるときは
  * `python3 tools/measure_gem_coverage.py` で被覆率を測り直して決定ログへ追記する（`D-37`）。
  */
-const DEFAULT_MIN_STARS = 5
+export const DEFAULT_MIN_STARS = 5
 /**
  * 汚染フィルタ: 被依存数の「上位帯」をパーセンタイルで定義する。
  * 既定 `100`（= 全帯）。上記のとおり本プールは全件が高被依存帯にあたるため、帯で絞ると
  * 低被依存側に残った spam（star=0 で被依存 2,000 級の npm パッケージ）を取りこぼす。
  */
-const DEFAULT_HIGH_DEPENDENT_RANK = 100
-const DEFAULT_DIGEST_LIMIT = 300
-const DEFAULT_OUT_DIR = 'public/data/gem-index'
-const DEFAULT_DIGEST_OUT = 'public/data/daily-digest.json'
+export const DEFAULT_HIGH_DEPENDENT_RANK = 100
+export const DEFAULT_DIGEST_LIMIT = 300
+export const DEFAULT_OUT_DIR = 'public/data/gem-index'
+export const DEFAULT_DIGEST_OUT = 'public/data/daily-digest.json'
 /** #388 が「どのシャードがあるか」を知る入口。 */
 const INDEX_FILE_NAME = 'index.json'
 const TOP_ROWS = 20
@@ -78,20 +81,27 @@ const HELP = `Usage: node tools/generate_gem_digest.mjs [options]
 
 Options:
   --quota N                 レジストリごとの取得枠（既定 ${DEFAULT_QUOTA}）
-  --per-page N              1 リクエストあたりの件数（既定 ${DEFAULT_PER_PAGE}）
+  --per-page N              1 リクエストあたりの件数（既定 ${DEFAULT_PER_PAGE} / 上限 ${MAX_PER_PAGE}）
   --registries a,b,c        対象レジストリ名をカンマ区切りで指定（既定は全 ${REGISTRIES.length} 件）
   --min-stars N             汚染フィルタ: star 数の下限（既定 ${DEFAULT_MIN_STARS}）
   --high-dependent-rank N   汚染フィルタ: 被依存数の上位帯をパーセンタイルで定義（既定 ${DEFAULT_HIGH_DEPENDENT_RANK}）
   --digest-limit N          daily-digest.json に載せる件数（既定 ${DEFAULT_DIGEST_LIMIT}）
   --out-dir path            シャード出力先ディレクトリ（既定 ${DEFAULT_OUT_DIR}）
   --digest-out path         今日の Gem の候補プール出力先（既定 ${DEFAULT_DIGEST_OUT}）
-  --report path             実行統計を JSON で書き出す
+  --report path             実行統計を JSON で書き出す（部分実行でも書く）
+  --allow-partial-write     部分実行（--registries 指定 / 収集失敗あり）でも配信データを書き換える
+                            ※ 索引に載らない孤児シャードは削除される
   --dry-run                 ファイルを書かず統計だけ出す
   -h, --help                このヘルプを表示する
 
 対象レジストリ: ${REGISTRIES.map((r) => r.name).join(', ')}`
 
-function parseArgs(argv) {
+/**
+ * CLI 引数を解析する。**ここで組み立てた既定値が出荷値の正本**（README の表は `--help` の写し）。
+ *
+ * @param {string[]} argv `process.argv.slice(2)` 相当
+ */
+export function parseArgs(argv) {
   const out = {
     quota: DEFAULT_QUOTA,
     perPage: DEFAULT_PER_PAGE,
@@ -103,6 +113,7 @@ function parseArgs(argv) {
     digestOut: DEFAULT_DIGEST_OUT,
     report: null,
     dryRun: false,
+    allowPartialWrite: false,
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -117,6 +128,7 @@ function parseArgs(argv) {
     else if (a === '--report') out.report = requiredPath(a, argv[++i])
     else if (a === '--registries') out.registries = parseRegistryList(argv[++i])
     else if (a === '--dry-run') out.dryRun = true
+    else if (a === '--allow-partial-write') out.allowPartialWrite = true
     else if (a === '--help' || a === '-h') {
       process.stdout.write(HELP + '\n')
       process.exit(0)
@@ -177,6 +189,93 @@ function parseRegistryList(value) {
   return [...new Set(names)].map((n) => known.get(n))
 }
 
+/* ------------------------------------------------------------------ 純粋な判断ロジック */
+
+/**
+ * CLI 引数を `buildPool()` のオプションへ変換する。
+ *
+ * 🔴 **キー名 `highDependentRankPercentile` は `pipeline.buildPool()` の契約**。取り違えると
+ * `buildPool` 側のモジュール既定（全帯ではない値）へ静かにフォールバックし、汚染が復活する。
+ * 出荷値の固定はテスト（`generate_gem_digest.test.mjs`）が担う。
+ *
+ * @param {{minStars:number, highDependentRank:number}} args
+ * @returns {{minStars:number, highDependentRankPercentile:number}}
+ */
+export function toBuildPoolOptions(args) {
+  return {
+    minStars: args.minStars,
+    highDependentRankPercentile: args.highDependentRank,
+  }
+}
+
+/**
+ * 配信データ（シャード・`index.json`・`daily-digest.json`）を書き換えてよいかを判定する。
+ *
+ * **部分実行**（`--registries` で一部だけ指定した／収集に失敗したレジストリがある）で書き込むと、
+ * `index.json` の `shards` が今回集めた分だけに置き換わり、**索引から消えたシャードが孤児として
+ * ディスクに残る**（#388 は索引経由で読むためレジストリが消え、`measure_gem_coverage.py` は
+ * ディレクトリ内の全 JSON を読むため被覆率が水増しされる）。よって既定では拒否する。
+ *
+ * @param {Object} args
+ * @param {number} args.selectedRegistryCount 今回の対象レジストリ数
+ * @param {number} args.totalRegistryCount    全レジストリ数（`REGISTRIES.length`）
+ * @param {number} args.failureCount          収集に失敗したレジストリ数
+ * @param {boolean} [args.allowPartialWrite]  `--allow-partial-write`
+ * @param {boolean} [args.dryRun]             `--dry-run`
+ * @returns {{partial:boolean, write:boolean, blocked:boolean, reason:string|null}}
+ */
+export function decideOutputWrite({
+  selectedRegistryCount,
+  totalRegistryCount,
+  failureCount,
+  allowPartialWrite = false,
+  dryRun = false,
+}) {
+  const missing = Math.max(0, totalRegistryCount - selectedRegistryCount)
+  const partial = missing > 0 || failureCount > 0
+
+  if (dryRun) {
+    return { partial, write: false, blocked: false, reason: 'dry-run のため書き込みません' }
+  }
+  if (!partial) return { partial: false, write: true, blocked: false, reason: null }
+  if (allowPartialWrite) {
+    return {
+      partial: true,
+      write: true,
+      blocked: false,
+      reason: '--allow-partial-write が指定されたため部分結果で書き込みます',
+    }
+  }
+
+  const causes = []
+  if (missing > 0) causes.push(`対象外レジストリ ${missing} 件（--registries 指定）`)
+  if (failureCount > 0) causes.push(`収集失敗 ${failureCount} 件`)
+  return {
+    partial: true,
+    write: false,
+    blocked: true,
+    reason:
+      `全 ${totalRegistryCount} レジストリぶんが揃っていないため配信データを書き換えません` +
+      `（${causes.join(' / ')}）。意図した部分更新なら --allow-partial-write を付けてください`,
+  }
+}
+
+/**
+ * 出力ディレクトリに残った **孤児シャード**（今回の索引に載らない `*.json`）を選ぶ。
+ *
+ * 索引とディスクの不一致を作らないための後始末。`index.json` 自身は常に残す。
+ *
+ * @param {ReadonlyArray<string>} existingFiles 出力ディレクトリのファイル名一覧
+ * @param {ReadonlyArray<string>} keepFileNames 今回書き出したファイル名（索引を含む）
+ * @returns {string[]} 削除対象のファイル名（名前順）
+ */
+export function selectOrphanShards(existingFiles, keepFileNames) {
+  const keep = new Set(keepFileNames)
+  return [...(existingFiles ?? [])]
+    .filter((name) => name.endsWith('.json') && !keep.has(name))
+    .sort()
+}
+
 /* ------------------------------------------------------------------ 進捗・整形 */
 
 function progress(message) {
@@ -208,25 +307,20 @@ function formatBytes(bytes) {
 /**
  * `collectAll` のコールバック payload から人間が読める 1 行を作る。
  *
- * payload の形はモジュール側の実装詳細なので、**存在するフィールドだけを拾う**
- * （キー名を決め打ちすると、収集側の小さな変更で進捗表示だけが静かに壊れる）。
+ * 🔵 **payload の契約の正本は `tools/gem-pool/collect.mjs`**（`onPage` は
+ * `{registry, page, fetched, kept, elapsedMs}`・`onRegistryDone` は
+ * `{registry, ok, kept, fetched, requestCount, message?}`）。キー名はここで決め打ちする
+ * （推測で拾っても収集側の変更時に表示が静かに空へ縮退するだけで、防御にならない）。
  */
 function describeProgress(info) {
   if (!info || typeof info !== 'object') return ''
   const parts = []
-  const registry = info.registry?.name ?? info.registry
-  if (typeof registry === 'string') parts.push(registry)
+  if (typeof info.registry === 'string') parts.push(info.registry)
   if (Number.isFinite(info.page)) parts.push(`page=${info.page}`)
-  const fetched = firstFinite(info.fetched, info.fetchedCount, info.count, info.records?.length)
-  if (fetched !== null) parts.push(`fetched=${fetched}`)
+  if (Number.isFinite(info.fetched)) parts.push(`fetched=${info.fetched}`)
   if (Number.isFinite(info.kept)) parts.push(`kept=${info.kept}`)
   if (Number.isFinite(info.requestCount)) parts.push(`requests=${info.requestCount}`)
   return parts.join(' ')
-}
-
-function firstFinite(...values) {
-  for (const v of values) if (Number.isFinite(v)) return v
-  return null
 }
 
 /** 半角前提の簡易テーブル（目視確認用・完了条件 2）。 */
@@ -356,11 +450,16 @@ async function main() {
   process.stdout.write(renderSummary(summary, args) + '\n')
 }
 
-/** 1 ファイル書き出す（dry-run のときは書かずにサイズだけ測る）。 */
-async function emit(path, doc, dryRun, pretty) {
-  if (dryRun) {
-    const bytes = Buffer.byteLength(JSON.stringify(doc, null, pretty ? 2 : 0) + '\n', 'utf8')
-    return { path, bytes }
+/**
+ * 1 ファイル書き出す（書かないときは `output.serializeJson` でサイズだけ測る）。
+ *
+ * サイズ算出は必ず `serializeJson` を通す（`writeJsonFile` と同じ直列化）。整形方法を
+ * 文字列レベルでコピーすると、整形を変えたときに報告バイト数だけ実ファイルとずれて
+ * 嘘の実測が README / PR に残る。
+ */
+async function emit(path, doc, write, pretty) {
+  if (!write) {
+    return { path, bytes: Buffer.byteLength(serializeJson(doc, { pretty }), 'utf8') }
   }
   return writeJsonFile(path, doc, { pretty })
 }

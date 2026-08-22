@@ -34,6 +34,19 @@ const DROP_REASONS = /** @type {const} */ ([
 ])
 
 /**
+ * プロトタイプ汚染の入口になりうるキー。外部 API 由来の文字列をそのまま集計オブジェクトのキーに
+ * するため、通常オブジェクトへの代入時に `Object.prototype` を書き換えられないよう弾く
+ * （集計オブジェクト自体も `Object.create(null)` にする多層防御）。
+ */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/**
+ * パッケージ名の上限長。npm の 214 文字を全レジストリ共通の上限として使う
+ * （他レジストリはこれより短い制限しか持たないため、超過分は API の異常値とみなしてよい）。
+ */
+const MAX_PACKAGE_NAME_LENGTH = 214
+
+/**
  * GitHub の URL（`https://` / `git+https://` / `git://` / `ssh://` / スキーム省略）から
  * `owner/repo` を取り出すパターン。末尾の `.git` とスラッシュは任意。
  */
@@ -61,6 +74,30 @@ function compareString(a, b) {
 /** 有限数かどうか。 */
 function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+/** キーだけを持つ空の集計オブジェクト（プロトタイプ汚染の入口を作らない）。 */
+function emptyRecord() {
+  return Object.create(null)
+}
+
+/**
+ * 表示を詐称できる文字を含むか。C0/C1 制御文字と双方向制御文字（`U+200E`-`200F` /
+ * `U+202A`-`202E` / `U+2066`-`2069`）を対象にする。
+ *
+ * パッケージ名はトップページのリンクラベルとして表示するため、双方向制御文字が混ざると
+ * 表示上の詐称（別パッケージ名に見せる）やレイアウト破壊が成立しうる
+ * （React が HTML エスケープするので XSS にはならないが、表示の信頼性は別問題）。
+ */
+function hasUnsafeCharacter(value) {
+  for (const char of value) {
+    const code = char.codePointAt(0)
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return true // C0 / C1 制御文字
+    if (code === 0x200e || code === 0x200f) return true // LRM / RLM
+    if (code >= 0x202a && code <= 0x202e) return true // LRE / RLE / PDF / LRO / RLO
+    if (code >= 0x2066 && code <= 0x2069) return true // LRI / RLI / FSI / PDI
+  }
+  return false
 }
 
 /**
@@ -96,6 +133,9 @@ export function parseGitHubRepository(repositoryUrl) {
  * 2. `repo_metadata` はあるが `stargazers_count` キーが無い / 非有限数 → **欠損**（Maven の実測で 100 件中 22 件）
  * 3. `stargazers_count: 0` が明示 → **真の 0**（`stars: 0`）
  *
+ * 🔵 **`packageName` は外部 API 由来のまま配信物へ載る**ため、他フィールド（`repositoryFullName` の
+ * 正規表現・数値の有限性チェック）と同水準で検証する（長さ上限・制御文字 / 双方向制御文字の排除）。
+ *
  * @param {Record<string, unknown>} raw   一覧 API の 1 レコード
  * @param {string} [registry]             レジストリ名（省略時は `raw.registry.name` を使う）
  * @returns {PoolRecord|null}             投影できないものは `null`
@@ -112,9 +152,13 @@ export function projectPackage(raw, registry) {
         ? raw.registry.name
         : null
   if (registryName === null) return null
+  // レジストリ名は集計オブジェクトのキーになる。外部由来の `__proto__` 等はここで弾く。
+  if (FORBIDDEN_KEYS.has(registryName)) return null
 
   const packageName = typeof raw.name === 'string' ? raw.name.trim() : ''
   if (packageName === '') return null
+  if (packageName.length > MAX_PACKAGE_NAME_LENGTH) return null
+  if (hasUnsafeCharacter(packageName)) return null
 
   const repositoryFullName = parseGitHubRepository(raw.repository_url)
   if (repositoryFullName === null) return null
@@ -162,12 +206,33 @@ function assignPercentileRanks(records, valueOf) {
 }
 
 /**
+ * 順位の不変条件（0〜100 の有限数・0 が最上位）を検証する。
+ *
+ * 🔴 domain の `computeGemIndex`（`src/domain/model/gem-index.ts` の `assertRank`）と **同一規則**。
+ * **変更するときは両方**（片方だけ緩めると、静かに壊れた `gemIndex` がそのまま配信される）。
+ */
+function assertRank(name, value, record) {
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new RangeError(
+      `${name} は 0〜100 の有限数でなければならない（rankings は 0 が最上位）: ` +
+        `${record.registry}/${record.packageName} = ${value}`,
+    )
+  }
+}
+
+/**
  * `D-37 (1)` レジストリ別成層化。**レジストリごとに独立して** パーセンタイル順位を再計算する。
  *
  * - `dependentCount` 降順 / `stars` 降順で **別々に** 順位を付ける（0 が最上位）。
  * - `gemIndex = round2(dependentRank - starRank)`。
  * - 🔴 `stars` が欠損（`null` / 非有限数）のレコードは **ランク計算の母集団に入れず、出力からも落とす**
  *   （落とした件数は `buildPool` の `stats.byRegistry[*].missingStars` に出る）。
+ * - 出力の `dependentRank` / `starRank` は 0〜100 の値域を **アサートする**（外れたら例外・上記 `assertRank`）。
+ *
+ * 🔵 **母集団を渡す側の責任**: 順位は「渡した集合の中での相対位置」でしかない。除外（汚染フィルタ・
+ * dedupe）を通した **生き残りだけ** を渡すこと（除外率がレジストリ間で違うと、除外前に振った順位は
+ * レジストリごとに違う量だけ切り詰められ、`gemIndex` が系統的に偏る）。`buildPool` は最終順位を
+ * 生き残りに対して再計算する。
  *
  * 出力は決定論的（レジストリ名昇順 → `dependentCount` 降順 → `packageName` 昇順）。
  *
@@ -197,6 +262,8 @@ export function restratifyByRegistry(records) {
     for (const record of ordered) {
       const dependentRank = dependentRanks.get(record)
       const starRank = starRanks.get(record)
+      assertRank('dependentRank', dependentRank, record)
+      assertRank('starRank', starRank, record)
       result.push({
         ...record,
         dependentRank,
@@ -216,6 +283,9 @@ export function restratifyByRegistry(records) {
  * - `stars < minStars` **かつ** `dependentRank <= highDependentRankPercentile` → repo 誤紐付けの疑いとして
  *   除外（reason `'suspicious-zero-star'`）。
  * - star が欠損のまま渡された場合は除外（reason `'missing-stars'`。通常は `restratifyByRegistry` が先に落とす）。
+ *
+ * 🔵 **渡すのは repo dedupe 後の代表レコード**（`buildPool` の段順）。dedupe より前に判定すると、
+ * 同一 repo の flagship だけが落ちて被依存数の小さい兄弟パッケージが代表として生き残る。
  *
  * **2 つのつまみ**（親セッションが実測で閾値を決めるため、どちらも独立に効く）:
  * - `highDependentRankPercentile: 100` → 全帯が対象になる（被依存帯による絞り込みを無効化）。
@@ -256,6 +326,10 @@ export function applyPollutionFilter(records, options = {}) {
  * `D-37 (3)` repo 単位 dedupe。同一 `repositoryFullName` の代表は
  * **`dependentCount` が最大の flagship パッケージ**。同値のタイブレークは `packageName` 昇順（決定論）。
  *
+ * 🔵 **キーは小文字化して突き合わせる**（GitHub の owner / repo は大文字小文字を区別しないため、
+ * `perl/perl5` と `Perl/perl5` は同一 repo。実測シャード 62,565 件中 65 repo が case 違いで重複していた）。
+ * 出力する `repositoryFullName` は **代表レコードの元の綴り** をそのまま保つ。
+ *
  * 🔴 `D-37` が却下したため **実装しない**: `sum` 集約（workspace 分割による被依存数の水増し）/
  * `min`・`max`（`gemIndex`）による代表選定（`arkworks-rs/algebra` でベンチマーク用付属クレートが
  * 代表になり、実際に 1,829 件から依存される `ark-ff` を取りこぼす）。
@@ -268,9 +342,10 @@ export function dedupeByRepository(records) {
   const representatives = new Map()
 
   for (const record of records ?? []) {
-    const current = representatives.get(record.repositoryFullName)
+    const key = record.repositoryFullName.toLowerCase()
+    const current = representatives.get(key)
     if (current === undefined || isFlagshipOver(record, current)) {
-      representatives.set(record.repositoryFullName, record)
+      representatives.set(key, record)
     }
   }
 
@@ -315,8 +390,25 @@ function normalizeByRegistry(byRegistry) {
 }
 
 /**
- * 変換パイプライン全体。順序は
- * **投影済み入力 → 欠損 star の除去 → 成層化（レジストリ別ランク再計算）→ 汚染フィルタ → repo dedupe**。
+ * 変換パイプライン全体。段順は **除外を全部終わらせてから最終順位を振る**:
+ *
+ * 1. 投影済み入力を受け取る
+ * 2. `stars` 欠損を落とす（reason `'missing-stars'`）
+ * 3. `dependentCount === 0` を落とす（reason `'no-dependents'`）
+ * 4. **暫定順位** を計算する（汚染フィルタの「高被依存帯」判定にだけ使う）
+ * 5. **repo 単位 dedupe**（代表 = 被依存数最大の flagship・`D-37 (3)`）
+ * 6. **汚染フィルタ**（代表レコードに対して判定・`D-37 (2)`）
+ * 7. **最終順位を生き残りだけで再計算**（`restratifyByRegistry`・`D-37 (1)`）
+ * 8. `gemIndex` 昇順（同値は `repositoryFullName` 昇順）で返す
+ *
+ * 🔴 **7 を最後に置く理由**: 除外率はレジストリごとに大きく違う（実測で npm 4.8% 〜 metacpan 86.9%）。
+ * 除外前に振った順位のままだと、除外率の高いレジストリは生き残りの `starRank` が上側へ切り詰められて
+ * `gemIndex` が正へ寄り、**最終プールの構成比が均衡していても上位帯だけが少数レジストリに支配される**
+ * （実測: 上位 300 件が npm + Maven で 84%・6 レジストリが 0 件）。`D-37 (1)` が成層化で避けたはずの
+ * 1 レジストリ支配が配信面で再発するため、順位は必ず生き残り集合の中で再計算する。
+ *
+ * 🔴 **5 を 6 より前に置く理由**: 逆順だと同一 repo の flagship だけが汚染判定で落ち、被依存数の小さい
+ * 兄弟パッケージが代表として生き残る（実測で再現）。dedupe を先に置けば判定対象は常に代表になる。
  *
  * 出力 `records` は `gemIndex` 昇順（**値が小さいほど上位＝過小評価度が高い**）で並べ、
  * 同値は `repositoryFullName` 昇順でタイブレークする。入力（`Map` / 配列 / レコード）は破壊しない。
@@ -333,11 +425,21 @@ function normalizeByRegistry(byRegistry) {
 export function buildPool(byRegistry, options = {}) {
   const groups = normalizeByRegistry(byRegistry)
 
+  // 集計オブジェクトのキーは外部由来（レジストリ名）になりうるため、`Object.create(null)` を使う。
+  // 通常オブジェクトだと `__proto__` キーの代入が `Object.prototype` へ抜ける（プロトタイプ汚染）。
   /** @type {Record<string, {collected:number, missingStars:number, filtered:number, deduped:number, kept:number}>} */
-  const statsByRegistry = {}
+  const statsByRegistry = emptyRecord()
   /** @type {Record<string, number>} */
-  const droppedByReason = Object.fromEntries(DROP_REASONS.map((reason) => [reason, 0]))
+  const droppedByReason = emptyRecord()
+  for (const reason of DROP_REASONS) droppedByReason[reason] = 0
 
+  /** 該当レジストリの集計値を 1 増やす（未知のレジストリは無視する）。 */
+  const bump = (registry, key) => {
+    const stat = statsByRegistry[registry]
+    if (stat !== undefined) stat[key] += 1
+  }
+
+  /** ① 投影済み入力 → ② star 欠損の除去 → ③ 被依存 0 件の除去 */
   /** @type {PoolRecord[]} */
   const projected = []
   for (const { registry, records } of groups) {
@@ -356,38 +458,45 @@ export function buildPool(byRegistry, options = {}) {
         droppedByReason['missing-stars'] += 1
         continue
       }
+      if (record.dependentCount === 0) {
+        // 被依存 0 件は Gem 候補になりえない。暫定順位の母集団からも外す。
+        statsByRegistry[registry].filtered += 1
+        droppedByReason['no-dependents'] += 1
+        continue
+      }
       // レジストリ名は入力のグループキーを正本とする（入力レコードは破壊しない）。
       projected.push({ ...record, registry })
     }
   }
 
-  const ranked = restratifyByRegistry(projected)
-  const { kept, dropped } = applyPollutionFilter(ranked, options)
-  for (const { reason, record } of dropped) {
-    droppedByReason[reason] = (droppedByReason[reason] ?? 0) + 1
-    if (statsByRegistry[record.registry] !== undefined)
-      statsByRegistry[record.registry].filtered += 1
-  }
+  // ④ 暫定順位（汚染フィルタの「高被依存帯」判定にだけ使う。最終順位は ⑦ で振り直す）
+  const provisional = restratifyByRegistry(projected)
 
-  const deduped = dedupeByRepository(kept)
-  const survivors = new Set(deduped)
-  for (const record of kept) {
+  // ⑤ repo 単位 dedupe（汚染フィルタより前。判定対象を常に代表 = flagship にするため）
+  const representatives = dedupeByRepository(provisional)
+  const survivors = new Set(representatives)
+  for (const record of provisional) {
     if (survivors.has(record)) continue
     droppedByReason['duplicate-repository'] += 1
-    if (statsByRegistry[record.registry] !== undefined)
-      statsByRegistry[record.registry].deduped += 1
+    bump(record.registry, 'deduped')
   }
 
-  const records = [...deduped].sort(
+  // ⑥ 汚染フィルタ（代表レコードに対して判定）
+  const { kept, dropped } = applyPollutionFilter(representatives, options)
+  for (const { reason, record } of dropped) {
+    droppedByReason[reason] = (droppedByReason[reason] ?? 0) + 1
+    bump(record.registry, 'filtered')
+  }
+
+  // ⑦ 最終順位を生き残りだけで再計算 → ⑧ gemIndex 昇順
+  const records = restratifyByRegistry(kept).sort(
     (a, b) => a.gemIndex - b.gemIndex || compareString(a.repositoryFullName, b.repositoryFullName),
   )
-  for (const record of records) {
-    if (statsByRegistry[record.registry] !== undefined) statsByRegistry[record.registry].kept += 1
-  }
+  for (const record of records) bump(record.registry, 'kept')
 
   const totalUnique = records.length
   /** @type {Record<string, number>} 最終プールのレジストリ別構成比（%・kept が 0 のレジストリは載せない） */
-  const registryShare = {}
+  const registryShare = emptyRecord()
   for (const [registry, stat] of Object.entries(statsByRegistry)) {
     if (stat.kept > 0) registryShare[registry] = round2((stat.kept / totalUnique) * 100)
   }

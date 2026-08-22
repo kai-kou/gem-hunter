@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import statistics
 import sys
 import time
 import urllib.error
@@ -53,6 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SHARD_DIR = REPO_ROOT / "public" / "data" / "gem-index"
 JST = timezone(timedelta(hours=9))
 USER_AGENT = "gem-hunter/0.1 (+https://github.com/kai-kou/gem-hunter)"
+GITHUB_API_HOST = "api.github.com"
 
 # 一般語 24 件。`D-36` の 3 件（react / test framework / image processing）を必ず含めたうえで、
 # 言語・分野が偏らないように広げる（特定エコシステムに寄せると被覆率が実力より高く出る）。
@@ -103,15 +105,44 @@ def load_pool_repos(shard_dir: Path) -> set[str]:
     return repos
 
 
+class GitHubOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """`api.github.com` 以外へのリダイレクトを拒否するハンドラ（トークン漏洩の防止）。
+
+    既定の `urllib.request.urlopen` はリダイレクトを自動追従し、CPython の
+    `HTTPRedirectHandler.redirect_request` は `Content-Length` / `Content-Type` しか落とさないため、
+    `Authorization`（= `GITHUB_TOKEN`）をリダイレクト先ホストへそのまま再送してしまう。
+    企業プロキシ・DNS 汚染・GitHub 側の 30x があると本物のトークンが第三者のアクセスログに残るため、
+    正常系では 30x が起きないこの用途では **追従せず例外に倒す** のが最も安全。
+    """
+
+    @staticmethod
+    def assert_same_host(newurl: str) -> None:
+        """リダイレクト先が `api.github.com` でなければ例外にする（ホスト検証の単体テスト対象）。"""
+        host = (urllib.parse.urlsplit(newurl).hostname or "").lower()
+        if host != GITHUB_API_HOST:
+            raise urllib.error.URLError(
+                f"api.github.com 以外へのリダイレクトを拒否しました（Authorization 再送の防止）: {host or newurl!r}"
+            )
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102 (親のドキュメント参照)
+        self.assert_same_host(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _build_opener() -> urllib.request.OpenerDirector:
+    """リダイレクト先ホストを検証する opener を作る（`urlopen` の既定を使わない理由は上記クラス参照）。"""
+    return urllib.request.build_opener(GitHubOnlyRedirectHandler())
+
+
 def search_github(keyword: str, top: int, token: str | None) -> list[str]:
     """GitHub 検索 API で関連度順の上位 `top` 件（最大 100）の `full_name` を返す。"""
     params = urllib.parse.urlencode({"q": keyword, "per_page": str(min(top, 100))})
-    url = f"https://api.github.com/search/repositories?{params}"
+    url = f"https://{GITHUB_API_HOST}/search/repositories?{params}"
     headers = {"user-agent": USER_AGENT, "accept": "application/vnd.github+json"}
     if token:
         headers["authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as res:  # noqa: S310 (固定ホスト)
+    with _build_opener().open(req, timeout=60) as res:  # noqa: S310 (固定ホスト + リダイレクト拒否)
         body = json.load(res)
     return [item["full_name"] for item in body.get("items", [])][:top]
 
@@ -128,17 +159,20 @@ def measure(
     rows = []
     for i, keyword in enumerate(keywords):
         if prefetched is not None:
-            names = [n for n in prefetched.get(keyword, []) if isinstance(n, str)][:top]
-            if not names:
+            # 「キーが渡されていない（未測定）」と「検索結果が本当に 0 件」を区別する。
+            # 後者を除外すると 0% の行が母数から消え、平均・最小・zeroHitKeywords が構造的に上振れする。
+            if keyword not in prefetched:
                 print(
                     f"[measure_gem_coverage] WARN: {keyword!r} の検索結果が渡されていません",
                     file=sys.stderr,
                 )
                 continue
+            names = [n for n in prefetched[keyword] if isinstance(n, str)][:top]
         else:
             if i > 0:
                 time.sleep(sleep_seconds)
             try:
+                # API が 0 件を返した場合は 0% の行として計上する（スキップは通信失敗のときだけ）。
                 names = search_github(keyword, top, token)
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as err:
                 print(
@@ -172,7 +206,8 @@ def measure(
         "keywordCount": len(rows),
         "elapsedSeconds": round(elapsed, 1),
         "meanCoverage": round(sum(coverages) / len(coverages), 1) if coverages else 0.0,
-        "medianCoverage": round(sorted(coverages)[len(coverages) // 2], 1) if coverages else 0.0,
+        # 偶数件のときは中央 2 値の平均を取る（上側を返すと既定 24 件で常に上振れする）
+        "medianCoverage": round(statistics.median(coverages), 1) if coverages else 0.0,
         "minCoverage": min(coverages) if coverages else 0.0,
         "maxCoverage": max(coverages) if coverages else 0.0,
         "weightedCoverage": (
@@ -220,6 +255,48 @@ def self_test() -> int:
     )
     assert prefetched_result["rows"][0]["hits"] == 2, prefetched_result
     assert prefetched_result["rows"][0]["searched"] == 3, prefetched_result
+
+    # 中央値: 偶数件では中央 2 値の平均になる（[0.0, 50.0] → 25.0。上側の 50.0 を返さない）
+    even_result = measure(
+        ["zero", "half"],
+        repos,
+        100,
+        0,
+        None,
+        {"zero": ["x/y", "z/w"], "half": ["a/b", "z/w"]},
+    )
+    assert [r["coverage"] for r in even_result["rows"]] == [0.0, 50.0], even_result
+    assert even_result["medianCoverage"] == 25.0, even_result
+
+    # 検索結果 0 件は「未測定」ではなく 0% の行として母数に残す（平均・最小の上振れ防止）
+    zero_result = measure(
+        ["empty", "hit"], repos, 100, 0, None, {"empty": [], "hit": ["a/b"]}
+    )
+    assert zero_result["keywordCount"] == 2, zero_result
+    assert zero_result["rows"][0] == {
+        "keyword": "empty",
+        "searched": 0,
+        "hits": 0,
+        "coverage": 0.0,
+        "sampleHits": [],
+    }, zero_result
+    assert zero_result["zeroHitKeywords"] == ["empty"], zero_result
+    assert zero_result["meanCoverage"] == 50.0, zero_result
+    assert zero_result["minCoverage"] == 0.0, zero_result
+
+    # キー自体が渡されていないキーワードは（未測定なので）行に残さない
+    missing_result = measure(["absent", "hit"], repos, 100, 0, None, {"hit": ["a/b"]})
+    assert [r["keyword"] for r in missing_result["rows"]] == ["hit"], missing_result
+
+    # リダイレクト先ホスト検証（GITHUB_TOKEN を第三者へ再送しない・ネットワークは使わない）
+    GitHubOnlyRedirectHandler.assert_same_host("https://api.github.com/search/repositories?q=x")
+    for bad in ("https://evil.example/steal", "https://api.github.com.evil.example/x", "http://127.0.0.1/x"):
+        try:
+            GitHubOnlyRedirectHandler.assert_same_host(bad)
+        except urllib.error.URLError:
+            pass
+        else:  # pragma: no cover - 失敗時のみ
+            raise AssertionError(f"リダイレクトが拒否されませんでした: {bad}")
 
     # シャード読み込み（列順に依存しないこと）
     import tempfile
