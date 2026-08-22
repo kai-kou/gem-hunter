@@ -16,7 +16,7 @@
 
 `project-manager`（Issue / Milestone の個別 CRUD）・`waiting-user-handler`（`status:waiting-user` のトリアージ）・
 `skill-audit`（Agent Skills 資産の構造監査）・`audit-runner`（外部監査プロトコルによるセットアップ構成監査）は
-上記 3 レーンのいずれにも属さない **単発オペレーション** で、本マップの対象外。<!-- lanecheck:natural-trigger-only -->
+上記 3 レーンのいずれにも属さない **単発オペレーション** で、本マップの対象外。
 
 > **振り返りレーンの起動元は現時点で `pr-review-watcher`（`SP-n` スコープ）のみ実装済み**。他パイプライン
 > （`self-improvement-loop` / `workflow-health-check` / `retro-try-handler`）の最終ステップからの
@@ -32,7 +32,7 @@
 
 | レーン | スキル | 担当フェーズ | 主な起動 |
 |--------|--------|------------|---------|
-| **スプリント開発レーン** | `sprint-cycle-router`（決定木 Step 3.5 / Step 4） | SP → Issue 同期（Step 3.5）→ Issue 選定・実装（TDD）・PR・Layer 1 セルフレビュー・マージ（Step 4） | 単一ルーティン（cron 式の正本は `docs/routines/sprint-cycle-routine.md`・可変）の決定木。ただし Step 1〜3 が埋まっていると Step 4 に到達しないため、飢餓防止のエージング（Ready な `SP-n` があるのに直近 3 日 Step 4 未実行なら差し込む）がある |
+| **スプリント開発レーン** | `sprint-cycle-router`（決定木 Step 3.5 / Step 4） | SP → Issue 同期（Step 3.5）→ Issue 選定・実装（TDD）・PR・Layer 1 セルフレビュー・マージ（Step 4） | 単一ルーティン（cron 式の正本は `docs/routines/sprint-cycle-routine.md`・可変）の決定木。ただし Step 1〜3 が埋まっていると Step 4 に到達しないため、飢餓防止のエージング（Ready な `SP-n` があるのに直近 3 日 Step 4 未実行なら差し込む）がある | <!-- lanecheck:natural-trigger-only -->
 
 **対象**: `type:feature` の `SP-n`（プロダクト機能開発）のみ。`type:improvement` / `type:retro-try` / 衛生対象は既存 3 レーンの担当のまま（本レーンは奪わない）。
 
