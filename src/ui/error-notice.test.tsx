@@ -1,7 +1,24 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import type { ErrorKind } from '@/src/domain/errors'
 
 import { ErrorNotice } from './error-notice'
+
+/**
+ * `ErrorKind` → イラスト画像の割り当て表（仕様・Issue #364・`ui-ux-guidelines.md` §5）。
+ * `error-notice.tsx` の `ERROR_ILLUSTRATION` と 1:1 で対応する。ここに独自の期待値を持つことで
+ * 実装側の対応表がずれたときにテストが検知する。
+ */
+const KIND_TO_IMAGE_SRC: Record<ErrorKind, string> = {
+  network: '/images/error-network.webp',
+  rateLimitPrimary: '/images/error-rate-limit.webp',
+  rateLimitSecondary: '/images/error-rate-limit.webp',
+  auth: '/images/error-upstream.webp',
+  upstream: '/images/error-upstream.webp',
+  validation: '/images/error-validation.webp',
+  // 404 は新規生成せず既存の not-found.webp を流用する（仕様）。
+  notFound: '/images/not-found.webp',
+}
 
 describe('ErrorNotice', () => {
   it('role="alert" で本文を伝える（US-24 / US-26 / NFR-12）', () => {
