@@ -84,6 +84,23 @@ const COLUMN_STARS = 'stars'
 const REPOSITORY_FULL_NAME_PATTERN = /^[^/\s]+\/[^/\s]+$/
 
 /**
+ * `owner/repo` として受理してよい値か。
+ *
+ * 🔴 上のパターン **だけでは `../settings` を弾けない**（`..` は `/` も空白も含まないので
+ * `[^/\s]+` に一致してしまう）。`F-09` が問題にしたのはまさにその値なので、ドットだけの
+ * セグメント（`.` / `..`）を明示的に落とす。
+ * ⚠️ したがって本関数は正本（`static-gem-digest.ts` の同一パターン）より **厳しい**。
+ * 共有モジュールへ切り出すときは、この 1 段も一緒に持っていく（別 Issue）。
+ */
+function isSafeRepositoryFullName(value: string): boolean {
+  if (!REPOSITORY_FULL_NAME_PATTERN.test(value)) {
+    return false
+  }
+  // パターン上ちょうど 2 セグメントなので、それぞれがドットだけでないことを見れば足りる。
+  return value.split('/').every((segment) => segment !== '.' && segment !== '..')
+}
+
+/**
  * プール 1 件。`GemPoolEntry`（一覧が必要とする全項目）に、照合の基準となる小文字名を足したもの。
  *
  * `lowerName` は dedupe・大文字小文字を無視した照合・並べ替えのタイブレークを
