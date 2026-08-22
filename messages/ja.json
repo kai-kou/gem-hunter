@@ -51,6 +51,9 @@
     "pageNext": "次のページへ",
     "pageCurrent": "{page} ページ目",
     "pageLimitReached": "表示できる最終ページです。キーワードを絞り込むと他の結果を確認できます。",
+    "gemListLink": {
+      "label": "この検索語の Gem 候補を一覧で見る"
+    },
     "gemBadge": {
       "label": "Gem",
       "srHint": "（star の数のわりに、多くのパッケージから使われている候補です）",
@@ -66,6 +69,21 @@
       "newBadge": "新着",
       "firstVisitNote": "初回として全件を表示しています"
     }
+  },
+  "gems": {
+    "title": "Gem 一覧",
+    "description": "検索語に関連する Gem 候補を、過小評価度（Gem Index）が高い順に一覧します。",
+    "heading": "「{query}」の Gem",
+    "empty": "この検索語に一致する Gem 候補はありませんでした。この一覧は 12 のパッケージレジストリの被依存数上位から作った限定的な候補プールだけを対象にしています。ここに載らないことは、そのリポジトリの評価が低いことを意味しません。",
+    "relaxedNotice": "すべての語を含む Gem 候補が無かったため、「{token}」だけで絞り込んだ結果を表示しています。",
+    "totalCount": "{count} 件",
+    "starCount": "star 数",
+    "dependentCount": "被依存パッケージ数",
+    "gemIndexLabel": "Gem Index",
+    "registryLabel": "レジストリ",
+    "attribution": "このデータについて: 被依存パッケージ数と star 数は {source}（{license}）のオープンデータをもとにした参考値です。GitHub の最新値や詳細画面の表示とは差があります。並び順（Gem Index）はこちらで再算出しています。",
+    "backToSearch": "検索に戻る",
+    "queryRequired": "検索語を指定すると、その語に関連する Gem 候補を一覧できます。トップページでキーワードを検索してから、この一覧を開いてください。"
   },
   "detail": {
     "backLink": "一覧へ戻る",

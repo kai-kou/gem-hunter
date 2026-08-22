@@ -18,6 +18,7 @@ import {
   makeGetRepositoryReadme,
   type GetRepositoryReadme,
 } from '../usecases/get-repository-readme'
+import { makeSearchGems, type SearchGems } from '../usecases/search-gems'
 import { makeSearchRepositories, type SearchRepositories } from '../usecases/search-repositories'
 
 /**
@@ -173,4 +174,19 @@ export function lookupGemIndexes(
   repositoryFullNames: readonly string[],
 ): Promise<ReadonlyMap<string, GemIndex>> {
   return sharedGemIndexPort.lookup(repositoryFullNames)
+}
+
+/**
+ * SP-19: 検索語を引き継いだ Gem 一覧（`D-37` の照合規則）。
+ *
+ * 🔴 **`GemIndexPort` の実装を新しく `new` しない**（`sharedGemIndexPort` をそのまま使う）。
+ * `StaticGemIndex` はレジストリ別シャード（計 3.5MB 弱・`D-38`）を isolate 内メモリへ載せる
+ * singleton promise を持つため、ここで別インスタンスを作ると `SP-18` のバッジ経路と
+ * キャッシュが分裂し、cold start のシャード取得が二重に走る。
+ *
+ * `lookupGemIndexes`（上）と違い **ユースケースを経由する**: 生の検索語をトークン列へ
+ * 正規化するというドメイン規則の適用があるため（理由は `src/usecases/search-gems.ts` の JSDoc）。
+ */
+export function searchGemsUseCase(): SearchGems {
+  return makeSearchGems({ gems: sharedGemIndexPort })
 }

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { DEFAULT_PAGE } from '@/src/domain/model/page-number'
+import { formatMessage } from '@/src/shared/i18n/format-message'
 import { gemIndexValue } from '../domain/model/gem-index'
 import type { Locale } from '../domain/model/locale'
 import type { GemPoolSearchResult } from '../domain/ports/gem-index-port'
@@ -85,7 +86,7 @@ export function GemList({
 
   return (
     <>
-      <h2 className="text-lg font-semibold">{fill(labels.heading, '{query}', query)}</h2>
+      <h2 className="text-lg font-semibold">{formatMessage(labels.heading, { query })}</h2>
       {/*
         全語 AND が 0 件だったため 1 語へ緩めたことの明示（`D-37`）。一覧の **前** に出す。
         ライブリージョンにはしない（0 件の `role="status"` と二重に読み上げられるのを避ける・
@@ -93,7 +94,7 @@ export function GemList({
       */}
       {result.relaxed ? (
         <p className="text-muted-foreground mt-2 text-sm">
-          {fill(labels.relaxedNotice, '{token}', result.usedTokens[0] ?? '')}
+          {formatMessage(labels.relaxedNotice, { token: result.usedTokens[0] ?? '' })}
         </p>
       ) : null}
       {result.items.length === 0 ? (
@@ -105,7 +106,7 @@ export function GemList({
       ) : (
         <>
           <p role="status" className="text-muted-foreground mt-2 text-sm">
-            {fill(labels.totalCount, '{count}', numberFormat.format(result.totalCount))}
+            {formatMessage(labels.totalCount, { count: numberFormat.format(result.totalCount) })}
           </p>
           <ul className="divide-border mt-2 divide-y">
             {result.items.map((entry) => {
@@ -235,12 +236,6 @@ function splitRepositoryFullName(fullName: string): { owner: string; name: strin
   const [owner, name] = parts
   if (owner === '' || name === '') return null
   return { owner, name }
-}
-
-/** テンプレート中のプレースホルダを 1 回だけ置換する（見つからなければそのまま返す）。 */
-function fill(template: string, token: string, value: string): string {
-  const [before, after] = splitOn(template, token)
-  return `${before}${value}${after}`
 }
 
 /** `template` を `token` の最初の出現位置で 2 分割する。見つからなければ `[template, '']`。 */

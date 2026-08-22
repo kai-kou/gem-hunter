@@ -12,11 +12,11 @@ import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
-import { tryPageNumber } from '@/src/domain/model/page-number'
-import { tryParse as tryPerPage } from '@/src/domain/model/per-page'
+import { DEFAULT_PAGE, tryPageNumber } from '@/src/domain/model/page-number'
+import { DEFAULT_PER_PAGE, tryParse as tryPerPage } from '@/src/domain/model/per-page'
 import type { SearchResult } from '@/src/domain/model/repository'
 import { searchKeyword } from '@/src/domain/model/search-keyword'
-import { tryParse as trySortOrder } from '@/src/domain/model/sort-order'
+import { DEFAULT_SORT_ORDER, tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
@@ -26,6 +26,7 @@ import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/
 import { AttributionNotice } from '@/src/ui/attribution-notice'
 import { DailyDigest } from '@/src/ui/daily-digest'
 import { ErrorNotice } from '@/src/ui/error-notice'
+import { GemListLink } from '@/src/ui/gem-list-link'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { LoadingIndicator } from '@/src/ui/loading-indicator'
 import { Pagination } from '@/src/ui/pagination'
@@ -217,6 +218,25 @@ async function SearchBody({
 
   return (
     <>
+      {/*
+        SP-19: 検索語を引き継いだ Gem 一覧（`/{locale}/gems`）への導線（`US-34` / `GR-4`）。
+        🔴 **結果一覧より前（上部）に置く**（`user-story-map.md` §5.3 `SP-19` 操作レビュー手順 2
+        「検索結果の **上部** にある『この検索語の Gem を見る』導線を押す」）。
+        🔵 行き先の URL は既定値（1 ページ目・既定ソート・既定表示件数）で組み立てる。いまの検索の
+        `page` / `sort` / `per_page` を持ち込むと、Gem 一覧が解釈しない条件が URL に載るため。
+        0 件のときは引き継ぐ意味がないので出さない。
+      */}
+      {state.result.items.length > 0 ? (
+        <GemListLink
+          href={buildSearchUrl(`/${locale}/gems`, {
+            keyword: searchState.keyword,
+            page: DEFAULT_PAGE,
+            sort: DEFAULT_SORT_ORDER,
+            perPage: DEFAULT_PER_PAGE,
+          })}
+          label={messages.home.gemListLink.label}
+        />
+      ) : null}
       <RepositoryList
         items={state.result.items}
         gemIndexes={gemIndexes}

@@ -52,9 +52,7 @@ function resultOf(overrides: Partial<GemPoolSearchResult> = {}): GemPoolSearchRe
 
 describe('GemList', () => {
   it('検索語入りの見出しを出す（{query} を置換する）', () => {
-    render(
-      <GemList result={resultOf()} query="left pad" locale={locale('ja')} labels={labels} />,
-    )
+    render(<GemList result={resultOf()} query="left pad" locale={locale('ja')} labels={labels} />)
 
     expect(screen.getByRole('heading', { name: '「left pad」の Gem' })).toBeInTheDocument()
   })
@@ -200,7 +198,7 @@ describe('GemList', () => {
         result={resultOf({
           meta: {
             ...meta,
-            // eslint-disable-next-line no-script-url -- 危険な URL を弾くことの回帰テスト
+            // 危険な URL を弾くことの回帰テスト（href へ流さないことを固定する）
             sourceUrl: 'javascript:alert(1)',
             sourceLicenseUrl: 'javascript:alert(2)',
           },
