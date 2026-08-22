@@ -75,6 +75,7 @@
     "description": "Browse the Gem candidates related to your keyword, the most underrated ones first.",
     "heading": "Gems for \"{query}\"",
     "empty": "No Gem candidate matched this keyword. This list only covers a limited pool built from the most depended-upon packages of 12 package registries, so a repository that is missing here is not rated any lower.",
+    "unmatchableQuery": "We could not take any term out of this keyword to narrow the list. Matching runs as whole-word matches against package names and repository names, which are alphanumeric identifiers, so a keyword without alphanumeric words cannot narrow the list. Trying an English keyword such as \"image processing\" may surface related Gem candidates.",
     "relaxedNotice": "No candidate contained all of your words, so the list is narrowed by \"{token}\" only.",
     "totalCount": "{count} results",
     "starCount": "stars",

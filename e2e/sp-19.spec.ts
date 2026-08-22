@@ -43,6 +43,13 @@ const HIT_QUERY = 'kafka'
  */
 const MISS_QUERY = 'zzgemhunterzz'
 
+/**
+ * 日本語だけの検索語。`tokenizeQuery`（`D-37`）は ASCII 英数字以外を区切りとして扱うため
+ * トークンが 1 つも取れない。🔴 **ここで全件（実測 62,483 件）が出る回帰を止めるための語**
+ * （「『画像処理』の Gem」と名乗って候補プール全件を並べるのは端的な誤表示）。
+ */
+const UNMATCHABLE_QUERY = '画像処理'
+
 /** Gem 一覧の 1 ページあたり表示件数（`app/[locale]/gems/page.tsx` が `DEFAULT_PER_PAGE` 固定）。 */
 const PER_PAGE = 20
 
@@ -104,7 +111,7 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
     })
   })
 
-  await test.step('2. 検索結果の上部にある「この検索語の Gem を見る」導線を押す', async () => {
+  await test.step('2. 検索結果の上部にある「この検索語の Gem 候補を一覧で見る」導線を押す', async () => {
     const link = page.getByRole('link', { name: ja.home.gemListLink.label })
     await expect(link).toBeVisible()
 
@@ -225,6 +232,36 @@ test('SP-19: ヒットしない検索語では母集団を明示した空状態�
   await test.step('検索へ戻る導線がある', async () => {
     await page.getByRole('link', { name: ja.gems.backToSearch }).click()
     await expect(page).toHaveURL(new RegExp(`/ja\\?${SEARCH_PARAM_KEYS.keyword}=${MISS_QUERY}$`))
+  })
+})
+
+test('SP-19: 日本語だけの検索語では全件を出さず、照合できなかったことを案内する（ja・D-37）', async ({
+  page,
+}) => {
+  await page.goto(`/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(UNMATCHABLE_QUERY)}`)
+
+  await test.step('照合規則と次の行動を示す案内が読める（母集団の説明とは別の文言）', async () => {
+    await expect(page.getByText(ja.gems.unmatchableQuery, { exact: true })).toBeVisible({
+      timeout: FIRST_RESULT_TIMEOUT_MS,
+    })
+    // 候補プールに載っていない場合の説明（`gems.empty`）とすり替わっていない。
+    await expect(page.getByText(ja.gems.empty, { exact: true })).toHaveCount(0)
+  })
+
+  await test.step('🔴 一覧項目は 0 件（候補プール全件を「この検索語の Gem」として出さない）', async () => {
+    await expect(gemList(page)).toHaveCount(0)
+    await expect(gemItems(page)).toHaveCount(0)
+    // 総件数（`gems.totalCount` = `{count} 件`）も出ない＝全件が母数になっていない。
+    await expect(page.getByText(/^[\d,]+ 件$/)).toHaveCount(0)
+    // ページネーションも出ない（全件のページ送りが生えない）。
+    await expect(page.getByRole('navigation', { name: ja.home.paginationLabel })).toHaveCount(0)
+  })
+
+  await test.step('検索へ戻る導線がある', async () => {
+    await page.getByRole('link', { name: ja.gems.backToSearch }).click()
+    await expect(page).toHaveURL(
+      new RegExp(`/ja\\?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(UNMATCHABLE_QUERY)}$`),
+    )
   })
 })
 

@@ -139,9 +139,16 @@ export default async function GemListPage({
             locale={locale}
             // 詳細へ入って戻ったときに同じページへ帰れるよう、現在のページを渡す（操作レビュー手順 4）。
             page={page}
+            /**
+             * 🔴 0 件の理由が「照合不能」（検索語は空でないのに、照合に使える英数字の語を
+             * 1 つも取り出せなかった）かどうか。判定は `searchGems` ユースケースが持ち、
+             * ここは受け取って渡すだけ（`GemList` が空状態の文言を切り替える）。
+             */
+            unmatchableQuery={result.unmatchableQuery}
             labels={{
               heading: messages.gems.heading,
               empty: messages.gems.empty,
+              unmatchableQuery: messages.gems.unmatchableQuery,
               relaxedNotice: messages.gems.relaxedNotice,
               totalCount: messages.gems.totalCount,
               starCount: messages.gems.starCount,

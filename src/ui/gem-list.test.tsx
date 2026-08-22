@@ -11,6 +11,8 @@ const labels: GemListLabels = {
   heading: '「{query}」の Gem',
   empty:
     'この検索語に一致する Gem はありませんでした。この一覧は 12 のパッケージレジストリの被依存数上位から作った限定的な候補プールが対象です。ここに載らないことは評価が低いことを意味しません。',
+  unmatchableQuery:
+    'この検索語からは絞り込みに使える語を取り出せませんでした。照合はパッケージ名・リポジトリ名（英数字の識別子）の単語境界一致で行っています。英語のキーワードで試してみてください。',
   relaxedNotice: 'すべての語では見つからなかったため、「{token}」だけで絞り込みました。',
   totalCount: '{count} 件',
   starCount: 'star 数',
@@ -153,6 +155,46 @@ describe('GemList', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/限定的な候補プール/)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 🔴 0 件には理由が 2 つある（候補プールに載っていない / 照合自体ができなかった）。
+   * 説明も次の行動も違うため、**取り違えていないこと** を両方向で固定する。
+   */
+  it('照合不能のときは専用の案内を出し、母集団の説明（empty）は出さない', () => {
+    render(
+      <GemList
+        result={resultOf({ items: [], totalCount: 0, usedTokens: [] })}
+        query="画像処理"
+        locale={locale('ja')}
+        labels={labels}
+        unmatchableQuery
+      />,
+    )
+
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(/絞り込みに使える語を取り出せませんでした/)
+    // 照合規則と次に取れる行動が読める（`D-37` の照合規則を利用者へ説明する）。
+    expect(status).toHaveTextContent(/単語境界一致/)
+    expect(status).toHaveTextContent(/英語のキーワード/)
+    // 母集団の説明（候補プールに載っていない場合の文言）へすり替わっていない。
+    expect(screen.queryByText(/限定的な候補プール/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it('通常の 0 件のときは母集団の説明を出し、照合不能の案内は出さない', () => {
+    render(
+      <GemList
+        result={resultOf({ items: [], totalCount: 0, usedTokens: [] })}
+        query="zzgemhunterzz"
+        locale={locale('ja')}
+        labels={labels}
+        unmatchableQuery={false}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(/限定的な候補プール/)
+    expect(screen.queryByText(/絞り込みに使える語を取り出せませんでした/)).not.toBeInTheDocument()
   })
 
   it('relaxed=true のとき緩和の注記を出し、false のときは出さない', () => {

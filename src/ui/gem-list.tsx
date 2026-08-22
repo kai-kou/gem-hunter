@@ -21,8 +21,17 @@ export type GemListLabels = {
    * 0 件時の本文。🔴 **母集団を明示する文言を渡す**（`D-36`）: この一覧は 12 のパッケージ
    * レジストリの被依存数上位から作った限定的な候補プールが対象であり、載っていないことは
    * 評価が低いことを意味しない。
+   *
+   * ⚠️ こちらは **候補プールに載っていなかった** ときの説明。照合そのものができなかったとき
+   * （日本語だけの検索語など）は `unmatchableQuery` を出す（2 つの空状態を取り違えない）。
    */
   empty: string
+  /**
+   * 照合不能時の本文（`unmatchableQuery` プロパティが `true` のとき）。🔴 **照合規則
+   * （パッケージ名・リポジトリ名という英数字識別子に対する単語境界一致・`D-37`）と、
+   * 利用者が次に取れる行動（英語のキーワードで試す）を含む文言を渡す**。
+   */
+  unmatchableQuery: string
   /** 全語 AND が 0 件で 1 語へ緩めたときの注記。使ったトークンを埋める `{token}` を含む。 */
   relaxedNotice: string
   /** 総件数の表示。整形済みの件数を埋める `{count}` を含む。 */
@@ -59,12 +68,21 @@ export function GemList({
   locale,
   labels,
   page = DEFAULT_PAGE,
+  unmatchableQuery = false,
 }: {
   result: GemPoolSearchResult
   /** 画面に出ている検索語（見出しと戻り先クエリに使う）。 */
   query: string
   locale: Locale
   labels: GemListLabels
+  /**
+   * 🔴 **0 件の理由が「照合不能」か**（検索語は空でないのに照合に使えるトークンが 1 つも
+   * 取れなかった。日本語だけの検索語など）。判定の正本は `src/usecases/search-gems.ts`
+   * （生の検索語 → トークン列の変換を持つ層）で、ここは受け取って文言を切り替えるだけ。
+   * `result` に混ぜず独立した prop で受けるのは、`GemPoolSearchResult` が
+   * `GemIndexPort` の契約であり UI 都合で広げないため。
+   */
+  unmatchableQuery?: boolean
   /**
    * 現在のページ番号（省略時は 1）。詳細ページから戻ったときに同じページへ帰れるよう、
    * 戻り先クエリへ載せる。既定ページのときは省略する（`build-search-url.ts` と同じ作法）。
@@ -100,8 +118,10 @@ export function GemList({
       {result.items.length === 0 ? (
         // 0 件は視覚表現だけにせず `role="status"` で支援技術にも伝える（§7.2）。
         // `role="alert"` は使わない（0 件は緊急の割り込みではない）。
+        // 🔴 0 件には **理由が 2 つ** ある。候補プールに載っていない（`empty`）のか、照合自体が
+        // できなかった（`unmatchableQuery`）のかで説明も次の行動も違うため、文言を切り替える。
         <p role="status" className="text-muted-foreground mt-4 text-sm">
-          {labels.empty}
+          {unmatchableQuery ? labels.unmatchableQuery : labels.empty}
         </p>
       ) : (
         <>
