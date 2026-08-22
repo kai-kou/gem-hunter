@@ -405,6 +405,61 @@ const gemBadgeRepos = [
       ]),
 ]
 
+// SP-19 E2E 追記: Gem 一覧（`/{locale}/gems`）から詳細へ入る経路を通せるようにする。
+//
+// Gem 一覧に並ぶのは **候補プール（`public/data/gem-index/`）の実在リポジトリ** であり、
+// `octostub/*` のフィクスチャには 1 件も存在しない。そのため詳細 API がすべて 404 になり、
+// `user-story-map.md` §5.3 `SP-19` 操作レビュー手順 4（一覧 → 詳細 → 戻る）を画面越しに
+// なぞれなかった。そこで **既存フィクスチャを一切変えず**、どのフィクスチャにも該当しない
+// owner/repo が候補プールに載っている場合にだけ、詳細 API が 200 を返すようにする。
+//
+// 🔴 既存の挙動を壊さない: この判定は既存 5 データセットの検索・詳細をすべて素通りした
+//    最後のフォールバックで、しかも「プールに載っている名前」に限る（`octostub/*` は載らない）。
+//    `not-found` / `upstream-error` / `rate-limit` の分岐はこれより前段にあるため影響しない。
+// 🔴 読み込みに失敗しても起動は続ける（空 Set になり従来どおり 404 に倒れる）。
+const gemPoolFullNames = readPoolRepositoryFullNames()
+
+/** 候補プール全シャードの `repositoryFullName` を小文字で集めた Set（読めなければ空）。 */
+function readPoolRepositoryFullNames() {
+  const names = new Set()
+  try {
+    const index = JSON.parse(readFileSync(path.join(gemIndexDir, 'index.json'), 'utf8'))
+    const shards = Array.isArray(index?.shards) ? index.shards : []
+    for (const shard of shards) {
+      const fileName = shard?.fileName
+      if (typeof fileName !== 'string' || fileName.length === 0) continue
+      const parsed = JSON.parse(readFileSync(path.join(gemIndexDir, fileName), 'utf8'))
+      const nameIndex = Array.isArray(parsed?.columns)
+        ? parsed.columns.indexOf('repositoryFullName')
+        : -1
+      if (nameIndex < 0 || !Array.isArray(parsed?.entries)) continue
+      for (const entry of parsed.entries) {
+        const fullName = Array.isArray(entry) ? entry[nameIndex] : undefined
+        if (typeof fullName === 'string' && fullName.includes('/')) {
+          names.add(fullName.toLowerCase())
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `[e2e-stub] 候補プールの一覧を読めませんでした（Gem 一覧からの詳細遷移は 404 になります）: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+  }
+  return names
+}
+
+/** 候補プール実在リポジトリの詳細（フィクスチャに無い owner/repo 用のフォールバック）。 */
+function gemPoolRepo(owner, repoName) {
+  return gemBadgeRepo({
+    // フィクスチャの id 帯（90 万台）と衝突しない固定値。詳細画面は id を表示しない。
+    id: 980001,
+    fullName: `${owner}/${repoName}`,
+    description: 'Repository present in the Gem candidate pool (SP-19 E2E fallback).',
+  })
+}
+
 /** `sort`（relevance/stars/updated）に従って並べ替える（実 API の挙動を模す）。 */
 function sortManyRepos(list, sort) {
   if (sort === 'stars') {
@@ -712,7 +767,12 @@ const server = http.createServer((req, res) => {
       // Issue #339: 書式要素を網羅したリッチな README の再現用
       readmeRichExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       // SP-18: Gem バッジ経路の 2 件（詳細へ遷移しても 404 にならないようにする）
-      gemBadgeRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
+      gemBadgeRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
+      // SP-19: 候補プール実在のリポジトリ（Gem 一覧 → 詳細の経路）。上記のどれにも当たらず、
+      // かつプールに載っている名前のときだけ 200 を合成する（上記の追記コメント参照）。
+      (gemPoolFullNames.has(`${owner}/${repoName}`.toLowerCase())
+        ? gemPoolRepo(owner, repoName)
+        : undefined)
     if (!found) {
       return sendJson(res, 404, { message: 'stub: Not Found (no fixture for this owner/repo)' })
     }

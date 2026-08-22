@@ -434,14 +434,26 @@ describe('StaticGemIndex#search', () => {
     expect(result.totalCount).toBe(1)
   })
 
-  it('緩めても 0 件なら空結果（relaxed は緩和を試みた事実として true）', async () => {
+  it('どの語も単独で 0 件なら空結果（緩和は起きていないので relaxed は false）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
     const result = await port.search({ tokens: ['zzz', 'qqq'], page: 1, perPage: 10 })
 
     expect(result.items).toEqual([])
     expect(result.totalCount).toBe(0)
-    expect(result.relaxed).toBe(true)
+    // 🔴 `relaxed` は「実際に 1 語へ緩めたか」。試みただけで true にすると、UI が空の語で
+    //    「『』だけで絞り込んだ」と注記してしまう（完全 0 件の空状態が壊れる）。
+    expect(result.relaxed).toBe(false)
+    expect(result.usedTokens).toEqual([])
+  })
+
+  it('1 語だけの検索がヒットしないときも relaxed は false（緩和の余地がない）', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const result = await port.search({ tokens: ['zzz'], page: 1, perPage: 10 })
+
+    expect(result.totalCount).toBe(0)
+    expect(result.relaxed).toBe(false)
     expect(result.usedTokens).toEqual([])
   })
 
