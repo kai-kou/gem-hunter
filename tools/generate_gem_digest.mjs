@@ -24,8 +24,18 @@ import { fileURLToPath } from 'node:url'
 
 import { collectRegistry } from './gem-pool/collect.mjs'
 import { buildDailyDigest, buildShards, writeOutputs } from './gem-pool/output.mjs'
-import { DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD, buildPool, poolStats } from './gem-pool/pipeline.mjs'
-import { DEFAULT_PER_PAGE, DEFAULT_QUOTA, REGISTRIES, findRegistry } from './gem-pool/registries.mjs'
+import {
+  DEFAULT_MIN_DOWNLOADS_PER_DEPENDENT,
+  DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD,
+  buildPool,
+  poolStats,
+} from './gem-pool/pipeline.mjs'
+import {
+  DEFAULT_PER_PAGE,
+  DEFAULT_QUOTA,
+  REGISTRIES,
+  findRegistry,
+} from './gem-pool/registries.mjs'
 
 const DEFAULT_DIGEST_LIMIT = 300
 const DEFAULT_OUT_DIR = 'public/data'
@@ -36,6 +46,7 @@ const HELP = `Usage: node tools/generate_gem_digest.mjs [options]
   --registries id,id,...             対象レジストリ（既定: 全 ${REGISTRIES.length} 件・${REGISTRIES.map((r) => r.id).join(',')}）
   --digest-limit N                   daily-digest.json に載せる件数（既定 ${DEFAULT_DIGEST_LIMIT}）
   --zero-star-dependent-threshold N  star=0 汚染判定の被依存数閾値（既定 ${DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD}）
+  --min-downloads-per-dependent N    「被依存 1 件あたりの総 DL 数」の下限（既定 ${DEFAULT_MIN_DOWNLOADS_PER_DEPENDENT}・0 で無効）
   --out-dir path                     出力先ディレクトリ（既定 ${DEFAULT_OUT_DIR}）
   --no-shards                        レジストリ別シャード JSON を書かない（digest のみ）
   --cache-dir path                   収集結果をレジストリ別 JSON でキャッシュし、次回はそこから読む
@@ -50,12 +61,22 @@ function parsePositiveInt(raw, flag) {
   return Math.floor(v)
 }
 
+/** 0 を許す非負整数（`--min-downloads-per-dependent 0` で判定を無効化できるようにするため）。 */
+function parseNonNegativeInt(raw, flag) {
+  const v = Number(raw)
+  if (!Number.isFinite(v) || v < 0) {
+    throw new Error(`${flag} には 0 以上の整数を指定してください（受け取った値: ${raw}）`)
+  }
+  return Math.floor(v)
+}
+
 function parseArgs(argv) {
   const out = {
     quota: DEFAULT_QUOTA,
     registries: REGISTRIES,
     digestLimit: DEFAULT_DIGEST_LIMIT,
     zeroStarDependentThreshold: DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD,
+    minDownloadsPerDependent: DEFAULT_MIN_DOWNLOADS_PER_DEPENDENT,
     outDir: DEFAULT_OUT_DIR,
     writeShards: true,
     cacheDir: null,
@@ -66,13 +87,23 @@ function parseArgs(argv) {
     if (a === '--quota') {
       out.quota = parsePositiveInt(argv[++i], '--quota')
     } else if (a === '--registries') {
-      const ids = (argv[++i] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-      if (ids.length === 0) throw new Error('--registries には 1 件以上のレジストリ id を指定してください')
+      const ids = (argv[++i] ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      if (ids.length === 0)
+        throw new Error('--registries には 1 件以上のレジストリ id を指定してください')
       out.registries = ids.map(findRegistry)
     } else if (a === '--digest-limit') {
       out.digestLimit = parsePositiveInt(argv[++i], '--digest-limit')
     } else if (a === '--zero-star-dependent-threshold') {
-      out.zeroStarDependentThreshold = parsePositiveInt(argv[++i], '--zero-star-dependent-threshold')
+      out.zeroStarDependentThreshold = parsePositiveInt(
+        argv[++i],
+        '--zero-star-dependent-threshold',
+      )
+    } else if (a === '--min-downloads-per-dependent') {
+      // 0（無効化）を許すため parsePositiveInt は使わない。
+      out.minDownloadsPerDependent = parseNonNegativeInt(argv[++i], '--min-downloads-per-dependent')
     } else if (a === '--out-dir') {
       out.outDir = argv[++i]
       if (!out.outDir) throw new Error('--out-dir にパスを指定してください')
@@ -111,7 +142,9 @@ async function collectWithCache({ registries, quota, perPage, cacheDir, requestT
     const cached = cachePath ? await readCache(cachePath) : null
 
     if (cached !== null) {
-      console.error(`[generate_gem_digest] cache hit: ${registry.id}（${cached.length} 件・収集スキップ）`)
+      console.error(
+        `[generate_gem_digest] cache hit: ${registry.id}（${cached.length} 件・収集スキップ）`,
+      )
       collected.push({ registry: registry.id, packages: cached })
       continue
     }
@@ -154,6 +187,7 @@ async function main() {
 
   const candidates = buildPool(collected, {
     zeroStarDependentThreshold: args.zeroStarDependentThreshold,
+    minDownloadsPerDependent: args.minDownloadsPerDependent,
   })
   const stats = poolStats(candidates)
 

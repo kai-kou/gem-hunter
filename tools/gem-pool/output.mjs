@@ -20,7 +20,13 @@ export function buildMeta(generatedAt) {
 }
 
 // #388 が消費する配信契約。列の意味・順序を変えない（増やす場合は #388 側と合意してから）。
-export const SHARD_COLUMNS = ['repositoryFullName', 'packageName', 'dependentCount', 'stars', 'gemIndex']
+export const SHARD_COLUMNS = [
+  'repositoryFullName',
+  'packageName',
+  'dependentCount',
+  'stars',
+  'gemIndex',
+]
 
 function toRow(candidate) {
   return [
@@ -46,16 +52,14 @@ export function buildShards(candidates, { generatedAt }) {
     byRegistry.get(candidate.registry).push(candidate)
   }
 
-  return [...byRegistry.keys()]
-    .sort()
-    .map((registry) => {
-      const rows = byRegistry
-        .get(registry)
-        .slice()
-        .sort((a, b) => a.gemIndex - b.gemIndex)
-        .map(toRow)
-      return { registry, doc: { meta, columns: SHARD_COLUMNS, rows } }
-    })
+  return [...byRegistry.keys()].sort().map((registry) => {
+    const rows = byRegistry
+      .get(registry)
+      .slice()
+      .sort((a, b) => a.gemIndex - b.gemIndex)
+      .map(toRow)
+    return { registry, doc: { meta, columns: SHARD_COLUMNS, rows } }
+  })
 }
 
 function yyyymmddUtc(now) {

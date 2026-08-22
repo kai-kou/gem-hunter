@@ -41,6 +41,12 @@ export function extractGithubFullName(url) {
  * GitHub 以外・name 不正・dependentCount 非数・star 欠損のいずれかに該当したら候補から落とす
  * （null）。star が「真の 0」であるケースはここでは落とさず `stars: 0` として残す
  * （汚染判定は `isContaminated` が別途担う）。
+ *
+ * `downloads`（`raw.downloads` 由来）・`isFork`（`repo_metadata.fork`）・
+ * `isMirror`（`repo_metadata.mirror_url` の有無）は、一覧 API に追加リクエストなしで
+ * 同梱されている汚染判定用の追加シグナル（`D-37`・fork/mirror は本家の代表リポジトリでは
+ * ないため star が少ないのは当然で「過小評価の証拠」にならない）。
+ * `GemCandidate`（配信スキーマ）には出さない。
  */
 export function normalizeRecord(raw, registryId) {
   const repositoryFullName = extractGithubFullName(raw?.repository_url)
@@ -56,19 +62,67 @@ export function normalizeRecord(raw, registryId) {
   if (starState === 'missing') return null
   const stars = starState === 'zero' ? 0 : raw.repo_metadata.stargazers_count
 
-  return { registry: registryId, packageName, repositoryFullName, dependentCount, stars }
+  const rawDownloads = raw?.downloads
+  const downloads =
+    typeof rawDownloads === 'number' && Number.isFinite(rawDownloads) ? rawDownloads : null
+
+  const isFork = raw?.repo_metadata?.fork === true
+
+  const mirrorUrl = raw?.repo_metadata?.mirror_url
+  const isMirror = typeof mirrorUrl === 'string' && mirrorUrl.trim() !== ''
+
+  return {
+    registry: registryId,
+    packageName,
+    repositoryFullName,
+    dependentCount,
+    stars,
+    downloads,
+    isFork,
+    isMirror,
+  }
 }
 
 // 汚染フィルタの既定閾値。star=0 かつ被依存数がこの件数以上のパッケージは、
 // repo 誤紐付け・自動生成ミラー（例: Maven WebJars）の疑いとして除外する（`D-37`）。
-export const DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD = 1000
+export const DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD = 100
+
+// ダウンロード比フィルタの既定値。0 = 無効（親が実測でレジストリごとの妥当な閾値を決める）。
+// スパム farm は「1 万パッケージから依存されているのに総ダウンロードは小さい」という
+// 不可能な比になる（`http_crawler`: downloads/dependentCount ≈ 11）。本物（`rake` 17,000・
+// `concat-map` 245,000）と桁が違うため、閾値を有効化すれば強い判別力を持つ。
+export const DEFAULT_MIN_DOWNLOADS_PER_DEPENDENT = 100
 
 /**
- * 「star=0 と高被依存数の組み合わせ」を repo 誤紐付けの疑いとして検出する。
- * 閾値ちょうど（`>=`）も汚染とみなす（境界を安全側に倒す）。
+ * repo 誤紐付け・スパムの疑いを 3 つのシグナル（OR）で検出する。
+ * - A（既存）: stars=0 と高被依存数の組み合わせ（閾値ちょうど `>=` も汚染とみなし、
+ *   境界を安全側に倒す）
+ * - B（新規）: fork / mirror。本家の代表リポジトリではないため、star が少ないのは
+ *   当然で「過小評価の証拠」にならない（CRAN の `doRNG` が第三者フォークに紐付いていた実例）
+ * - C（新規）: ダウンロード比。`minDownloadsPerDependent > 0` のときだけ有効。
+ *   `downloads === null`（API 側の欠落）は汚染扱いにしない
+ *   （`dependent_repos_count` の失敗＝カバレッジ欠落を汚染と誤判定した反省を繰り返さない）。
+ *   `dependentCount === 0` は 0 除算を避けて非汚染とする。
  */
-export function isContaminated(pkg, { zeroStarDependentThreshold = DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD } = {}) {
-  return pkg.stars === 0 && pkg.dependentCount >= zeroStarDependentThreshold
+export function isContaminated(
+  pkg,
+  {
+    zeroStarDependentThreshold = DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD,
+    minDownloadsPerDependent = DEFAULT_MIN_DOWNLOADS_PER_DEPENDENT,
+  } = {},
+) {
+  const zeroStarHighDependent = pkg.stars === 0 && pkg.dependentCount >= zeroStarDependentThreshold
+
+  const forkOrMirror = pkg.isFork === true || pkg.isMirror === true
+
+  const lowDownloadRatio =
+    minDownloadsPerDependent > 0 &&
+    pkg.downloads !== null &&
+    pkg.downloads !== undefined &&
+    pkg.dependentCount > 0 &&
+    pkg.downloads / pkg.dependentCount < minDownloadsPerDependent
+
+  return zeroStarHighDependent || forkOrMirror || lowDownloadRatio
 }
 
 /**
@@ -160,6 +214,11 @@ export function recomputeRanks(items) {
         dependentCount: item.dependentCount,
         stars: item.stars,
         gemIndex: round2(dependentRank - starRank),
+        // 🔴 契約 §2.5 が定義する GemCandidate の出力スキーマ（`output.mjs` が書き出す形）には
+        // 含めない診断用フィールド。`output.mjs` は常に明示キー抽出でシリアライズするため
+        // このフィールドが配信 JSON に混入することはない。`poolStats` が `nullDownloadsRatio`
+        // を実測できるよう、内部の受け渡しにのみ使う。
+        downloads: item.downloads,
       })
     }
   }
@@ -171,7 +230,10 @@ export function recomputeRanks(items) {
  * normalize → 汚染フィルタ → dedupe（横断）→ recomputeRanks（レジストリ別）→ gemIndex 昇順。
  */
 export function buildPool(collected, options = {}) {
-  const { zeroStarDependentThreshold = DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD } = options
+  const {
+    zeroStarDependentThreshold = DEFAULT_ZERO_STAR_DEPENDENT_THRESHOLD,
+    minDownloadsPerDependent = DEFAULT_MIN_DOWNLOADS_PER_DEPENDENT,
+  } = options
 
   const normalized = []
   for (const { registry, packages } of collected) {
@@ -181,7 +243,9 @@ export function buildPool(collected, options = {}) {
     }
   }
 
-  const clean = normalized.filter((item) => !isContaminated(item, { zeroStarDependentThreshold }))
+  const clean = normalized.filter(
+    (item) => !isContaminated(item, { zeroStarDependentThreshold, minDownloadsPerDependent }),
+  )
   const deduped = dedupeByRepository(clean)
   const ranked = recomputeRanks(deduped)
   ranked.sort((a, b) => a.gemIndex - b.gemIndex)
@@ -191,16 +255,54 @@ export function buildPool(collected, options = {}) {
 /**
  * 実測ログ・README 記録用の統計値を返す（純関数・副作用なし）。
  */
+// ownerConcentration が見る上位件数。rubygems スパム farm（`superjagger/*` 等・同一オーナーの
+// 機械生成パッケージ群）が Gem Index 上位を占拠していないかを親が実測で確認するための観測値。
+// 🔴 フィルタとしては使わない（値を返すだけ・除外判定には組み込まない）。
+const OWNER_CONCENTRATION_TOP_N = 100
+
+/**
+ * 上位 `OWNER_CONCENTRATION_TOP_N` 件（gemIndex 昇順）の repositoryFullName から
+ * GitHub owner を抜き出し、最頻 owner とその件数を返す。候補が 0 件なら null。
+ * 件数が同値のときは owner 名昇順で決定論的に選ぶ（入力順に依存させない）。
+ */
+function computeOwnerConcentration(candidates) {
+  const top = [...candidates]
+    .sort((a, b) => a.gemIndex - b.gemIndex)
+    .slice(0, OWNER_CONCENTRATION_TOP_N)
+  if (top.length === 0) return null
+
+  const counts = new Map()
+  for (const c of top) {
+    const owner = c.repositoryFullName.split('/')[0]
+    counts.set(owner, (counts.get(owner) ?? 0) + 1)
+  }
+
+  let bestOwner = null
+  let bestCount = -1
+  for (const [owner, count] of counts) {
+    if (count > bestCount || (count === bestCount && owner < bestOwner)) {
+      bestOwner = owner
+      bestCount = count
+    }
+  }
+  return { owner: bestOwner, count: bestCount }
+}
+
 export function poolStats(candidates) {
   const total = candidates.length
   const byRegistry = {}
   let zeroCount = 0
+  let nullDownloadsCount = 0
   let min = Infinity
   let max = -Infinity
 
   for (const c of candidates) {
     byRegistry[c.registry] = (byRegistry[c.registry] ?? 0) + 1
     if (c.stars === 0) zeroCount += 1
+    // downloads はレジストリによって欠落しうる（プロパティ自体が無いケースも「値が
+    // 分かっていない」として null 扱いに寄せる）。全体値 1 つで持つ（レジストリ別の
+    // 偏りは親が実測ログで別途確認する）。
+    if (c.downloads === null || c.downloads === undefined) nullDownloadsCount += 1
     if (c.gemIndex < min) min = c.gemIndex
     if (c.gemIndex > max) max = c.gemIndex
   }
@@ -209,6 +311,8 @@ export function poolStats(candidates) {
     total,
     byRegistry,
     starZeroRatio: total === 0 ? 0 : zeroCount / total,
+    nullDownloadsRatio: total === 0 ? 0 : nullDownloadsCount / total,
     gemIndexRange: total === 0 ? [0, 0] : [min, max],
+    ownerConcentration: computeOwnerConcentration(candidates),
   }
 }
