@@ -35,6 +35,16 @@ test.describe('SP-9: 読み込み中と 0 件が区別できる', () => {
       const status = page.locator('main').getByRole('status')
       await expect(status).toContainText(ja.common.loading)
       await expect(status).toHaveAttribute('aria-live', 'polite')
+
+      // Issue #359 T-3: 読み込み中専用イラスト（「ふるいを振って小石がこぼれる」モチーフ）。
+      // このテストは既に `sp9-slow` スタブで応答を 1.5 秒遅らせて読み込み中を確実に捕まえて
+      // いるため、新たな不安定要素を持ち込まずに検証できる（キーワード検索中は hero-idle が
+      // 描画されないので `main img[alt=""]` が loading.webp と競合しない）。
+      const loadingImage = page.locator('main img[src="/images/loading.webp"]')
+      await expect(loadingImage).toBeVisible()
+      await expect
+        .poll(() => loadingImage.evaluate((el: HTMLImageElement) => el.naturalWidth))
+        .toBeGreaterThan(0)
     })
 
     await test.step('2. 見出しと検索欄は待ち時間中も表示されている（LCP 要素を隠さない）', async () => {

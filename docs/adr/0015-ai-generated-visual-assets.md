@@ -25,10 +25,13 @@ Issue #347 は「gpt-image-2 を利用して画像生成、活用するように
 |---|---|---|---|
 | logo | 1024²・透過 | `public/images/logo.webp`（96px へ縮小） | 24×24 |
 | favicon | logo と同じ生成物を流用 | `app/icon.png`（256px） | ブラウザ任せ |
-| hero-idle | 1024²・透過 | `public/images/hero-idle.webp`（640px） | 最大 320px |
+| hero-idle | 1024²・透過 | `public/images/hero-idle.webp`（768×432・**16:9** へ変換） | 最大幅 320px（16:9） |
+| loading | 1024²・透過 | `public/images/loading.webp`（256px） | 64×64 |
 | empty-result | 1024²・透過 | `public/images/empty-result.webp`（256px） | 96〜120px |
 | not-found | 1024²・透過 | `public/images/not-found.webp`（320px） | 160px |
 | og-background | 1536×864・不透過 | `public/images/og-background.png`（1200×630 へ変換） | OG 1200×630 |
+
+> 🔴 **改訂（Issue #359・2026-08-21）**: `hero-idle` はユーザーフィードバックにより **1:1（640px）→ 16:9（768×432）** へ変更し、縦幅を詰めた。あわせて読み込み中専用の `loading`（「ふるいを振って小石がこぼれる」モチーフ）を追加した。**本 ADR の決定（§2.1〜§2.3・生成物をそのまま透過 WebP のまま配信する方針）自体は変更しない**。両アセットとも本節の生成・変換パイプライン（`tools/ui-assets/to_web_assets.mjs`）と §2.2 の「文字非焼き込み・ロケール非依存の 1 枚」方針をそのまま踏襲する。
 
 プロンプトの正本は `tools/ui-assets/prompts/*.txt` に置き、生成手順は `tools/ui-assets/README.md` に記録する。**中間生成物（1024² の原寸 PNG）はコミットしない**。画像生成は非決定的なため、再生成は「同じ結果の復元」ではなく「デザインを変えたいときの起点」であり、正本は git 管理下の配信ファイルそのものとする。
 
@@ -64,7 +67,7 @@ OG 画像（`app/[locale]/opengraph-image.tsx`）は、`og-background.png`（文
 ### 良い方向
 
 - gpt-image-2 の実際の生成品質がそのままユーザーに届く（未検証の中間工程を挟まない）
-- 実測（`ls -l public/images/`・`ui-ux-guidelines.md` §8.6 の表）では、256px アセット（`empty-result.webp` 約 10.2KB）や 96px アセット（`logo.webp` 約 2.8KB）は個別予算 30KB に大きな余裕がある。ただし全アセットが同水準ではなく、640px の `hero-idle.webp` は約 27.2KB（個別予算の約 91%）と予算に近い。いずれも **予算超過（30KB 超）は発生していない** が、「予算は制約になっていない」と一律には言えず、アセットごとに実測して確認する必要がある
+- 実測値は `ui-ux-guidelines.md` §8.6 の表が正本（本 ADR に個別バイト数を複製しない・数値はアセット差し替えのたびに変わるため）。256px・96px アセットは個別予算 30KB に大きな余裕がある一方、寸法の大きいアセットは予算に近づくものがあり、「予算は制約になっていない」と一律には言えない。いずれの実測でも **予算超過（30KB 超）は発生していない** が、アセットごとに実測して確認する必要がある
 - OG 画像のロケール追従が `messages/*.json` の更新だけで完結し、画像側の手作業を要しない
 
 ### 受け入れる代償

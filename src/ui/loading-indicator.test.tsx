@@ -21,4 +21,11 @@ describe('LoadingIndicator', () => {
 
     expect(screen.getByText('Loading')).not.toHaveClass('sr-only')
   })
+
+  it('読み込み中専用の装飾イラストを alt="" で表示する（Issue #359 T-2）', () => {
+    render(<LoadingIndicator label="読み込み中" />)
+
+    const image = screen.getByAltText('')
+    expect(image).toHaveAttribute('src', '/images/loading.webp')
+  })
 })
