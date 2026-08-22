@@ -277,6 +277,37 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
     expect(await readRepositoryFullNames(page)).toContain(firstFullName)
     expectAscending(await readGemIndexes(page))
   })
+
+  /**
+   * 🔴 F-33: 詳細ページで **言語を切り替えても** 出所マーカー（`from=gems`）・検索語・ページを
+   * 落とさない。落とすと切替後の戻りリンクが「Gem 一覧へ戻る」から検索結果一覧へすり替わり、
+   * 操作レビュー手順 4 がそこだけ破れる（`currentPath` の組み立てを回帰させないための固定）。
+   */
+  await test.step('4-3. 詳細ページで言語を切り替えても Gem 一覧の該当ページへ戻れる', async () => {
+    const [firstFullName] = await readRepositoryFullNames(page)
+    await page.getByRole('link', { name: firstFullName, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp('/ja/repos/'))
+
+    await page
+      .getByRole('navigation', { name: ja.common.localeSwitcher.navLabel })
+      .getByRole('link', { name: en.common.localeSwitcher.localeNames.en })
+      .click()
+
+    await expect(page).toHaveURL(new RegExp('/en/repos/'))
+    const switchedUrl = new URL(page.url())
+    expect(switchedUrl.searchParams.get('from')).toBe('gems')
+    expect(switchedUrl.searchParams.get(SEARCH_PARAM_KEYS.keyword)).toBe(HIT_QUERY)
+    expect(switchedUrl.searchParams.get(SEARCH_PARAM_KEYS.page)).toBe('2')
+
+    // 英語 UI の戻りリンク（ラベルも英語）から、Gem 一覧の **同じページ** へ帰る。
+    await page.getByRole('link', { name: en.detail.backToGemList }).click()
+    await expect(page).toHaveURL(
+      new RegExp(
+        `/en/gems\\?${SEARCH_PARAM_KEYS.keyword}=${HIT_QUERY}&${SEARCH_PARAM_KEYS.page}=2$`,
+      ),
+    )
+    await expect(gemItems(page)).toHaveCount(PER_PAGE)
+  })
 })
 
 test('SP-19: ヒットしない検索語では母集団を明示した空状態が出る（ja・操作レビュー手順 5）', async ({
@@ -299,7 +330,7 @@ test('SP-19: ヒットしない検索語では母集団を明示した空状態�
   })
 
   await test.step('0 件でも出典表示は読める（GR-6 / D-29）', async () => {
-    await expect(page.getByRole('link', { name: 'Ecosyste.ms' })).toBeVisible()
+    await expectAttributionFromPoolData(page)
   })
 
   await test.step('検索へ戻る導線がある', async () => {
