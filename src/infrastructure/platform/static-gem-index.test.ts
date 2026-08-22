@@ -670,6 +670,243 @@ describe('StaticGemIndex#search', () => {
     expect(searchIndexBuildCountForTest()).toBe(1)
   })
 
+  it('緩和の候補選択は同数のときトークン昇順で決まる（カウント方向を変えても不変）', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    // `gamma` 1 件 / `solo` 1 件で AND は 0 件 → 同数なのでトークン昇順の `gamma` が選ばれる。
+    const result = await port.search({ tokens: ['solo', 'gamma'], page: 1, perPage: perPageOf(10) })
+
+    expect(result.relaxed).toBe(true)
+    expect(result.usedTokens).toEqual(['gamma'])
+    expect(names(result.items)).toEqual(['Gamma/Image-Tools'])
+  })
+
+  it(`🔴 入力トークンは ${MAX_QUERY_TOKENS} 語で切る（ポートも二重に上限を持つ・\`F-01\`）`, async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+    const noise = Array.from({ length: MAX_QUERY_TOKENS }, (_, i) => `zq${i}`)
+
+    // 上限を超えた位置にある `solo` は切り捨てられるので、照合には使われない。
+    const result = await port.search({
+      tokens: [...noise, 'solo'],
+      page: 1,
+      perPage: perPageOf(10),
+    })
+
+    expect(result.totalCount).toBe(0)
+    expect(result.usedTokens).toEqual([])
+    expect(result.relaxed).toBe(false)
+  })
+
+  it('🔴 同一 repo・同一 Gem Index の重複はレジストリ名昇順で決める（読み込み順に依存しない・`F-08`）', async () => {
+    const shards = {
+      '/data/gem-index/npm.json': registryShardJson('npmjs.org', [
+        ['acme/dup', 'dup-npm', 10, 1, -50],
+      ]),
+      '/data/gem-index/pypi.json': registryShardJson('pypi.org', [
+        ['acme/dup', 'dup-pypi', 20, 2, -50],
+      ]),
+    }
+
+    const npmFirst = await new StaticGemIndex(
+      stubReader({ [INDEX_PATH]: indexJsonWithMeta(['npm.json', 'pypi.json']), ...shards }),
+    ).search({ tokens: ['dup'], page: 1, perPage: perPageOf(10) })
+    resetGemIndexCacheForTest()
+    const pypiFirst = await new StaticGemIndex(
+      stubReader({ [INDEX_PATH]: indexJsonWithMeta(['pypi.json', 'npm.json']), ...shards }),
+    ).search({ tokens: ['dup'], page: 1, perPage: perPageOf(10) })
+
+    // シャードの並びを入れ替えても同じレジストリ（昇順で先の `npmjs.org`）が勝つ。
+    expect(npmFirst.items[0]!.registry).toBe('npmjs.org')
+    expect(pypiFirst.items[0]!.registry).toBe('npmjs.org')
+    expect(pypiFirst.items[0]!.packageName).toBe('dup-npm')
+  })
+})
+
+describe('StaticGemIndex: 一覧用の列が欠けたシャード（`F-17`）', () => {
+  /** 一覧用の列（packageName / dependentCount / stars）が無いシャード。 */
+  const partialFiles = {
+    [INDEX_PATH]: indexJsonWithMeta(['full.json', 'legacy.json']),
+    '/data/gem-index/full.json': registryShardJson('npmjs.org', [['acme/full', 'full', 9, 8, -70]]),
+    '/data/gem-index/legacy.json': JSON.stringify({
+      registry: 'pypi.org',
+      ecosystem: 'pypi',
+      columns: ['repositoryFullName', 'gemIndex'],
+      entries: [
+        ['legacy/one', -90],
+        ['legacy/two', -80],
+      ],
+    }),
+  }
+
+  beforeEach(() => {
+    resetGemIndexCacheForTest()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    resetGemIndexCacheForTest()
+    vi.restoreAllMocks()
+  })
+
+  it('🔴 欠損列を 0 埋めしたエントリは一覧（search）の母集団に出さない', async () => {
+    const port = new StaticGemIndex(stubReader(partialFiles))
+
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+
+    expect(names(result.items)).toEqual(['acme/full'])
+    expect(result.totalCount).toBe(1)
+  })
+
+  it('同じエントリでもバッジ（lookup）では引ける（所属判定は列が欠けても成立する）', async () => {
+    const port = new StaticGemIndex(stubReader(partialFiles))
+
+    const found = await port.lookup(['legacy/one', 'legacy/two', 'acme/full'])
+
+    expect(found.size).toBe(3)
+    expect(gemIndexValue(found.get('legacy/one')!)).toBe(-90)
+  })
+
+  it('除外したことをレジストリ名と件数付きで警告する（黙って減らさない）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await new StaticGemIndex(stubReader(partialFiles)).search({
+      tokens: [],
+      page: 1,
+      perPage: perPageOf(10),
+    })
+
+    const messages = warn.mock.calls.map((call) => String(call[0]))
+    const excluded = messages.find((message) => message.includes('母集団から除外'))
+    expect(excluded).toBeDefined()
+    expect(excluded).toContain('registry=pypi.org')
+    expect(excluded).toContain('2 件')
+  })
+})
+
+describe('StaticGemIndex: repositoryFullName の形式検証（`F-09`）', () => {
+  beforeEach(() => {
+    resetGemIndexCacheForTest()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    resetGemIndexCacheForTest()
+    vi.restoreAllMocks()
+  })
+
+  it('🔴 `owner/repo` の形でないエントリは入口でスキップし、件数付きで警告する', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const reader = stubReader({
+      [INDEX_PATH]: indexJsonWithMeta(['npm.json']),
+      '/data/gem-index/npm.json': registryShardJson('npmjs.org', [
+        ['acme/ok', 'ok', 1, 1, -10],
+        ['../settings', 'traversal', 1, 1, -20],
+        ['owner/', 'trailing', 1, 1, -30],
+        ['a/b/c', 'deep', 1, 1, -40],
+        ['owner repo', 'space', 1, 1, -50],
+        ['noslash', 'noslash', 1, 1, -60],
+      ]),
+    })
+    const port = new StaticGemIndex(reader)
+
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+    const found = await port.lookup(['../settings', 'acme/ok'])
+
+    expect(names(result.items)).toEqual(['acme/ok'])
+    expect(found.has('../settings')).toBe(false)
+    const skipped = warn.mock.calls
+      .map((call) => String(call[0]))
+      .find((message) => message.includes('owner/repo の形でない'))
+    expect(skipped).toContain('5 件')
+  })
+
+  it('末尾ハイフンの owner は通す（実データに `Qix-/color-convert` 等が 25 件実在する）', async () => {
+    const reader = stubReader({
+      [INDEX_PATH]: indexJsonWithMeta(['npm.json']),
+      '/data/gem-index/npm.json': registryShardJson('npmjs.org', [
+        ['Qix-/color-convert', 'color-convert', 1, 1, -10],
+      ]),
+    })
+
+    const result = await new StaticGemIndex(reader).search({
+      tokens: ['color'],
+      page: 1,
+      perPage: perPageOf(10),
+    })
+
+    expect(names(result.items)).toEqual(['Qix-/color-convert'])
+  })
+})
+
+describe('StaticGemIndex: index.json の meta の入口ガード（`F-34`）', () => {
+  beforeEach(() => {
+    resetGemIndexCacheForTest()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    resetGemIndexCacheForTest()
+    vi.restoreAllMocks()
+  })
+
+  /** `meta` を任意に差し替えた `index.json` + 最小シャード 1 本。 */
+  function filesWithMeta(meta: unknown): Record<string, string> {
+    return {
+      [INDEX_PATH]: JSON.stringify({ meta, shards: [{ fileName: 'npm.json' }] }),
+      '/data/gem-index/npm.json': registryShardJson('npmjs.org', [['acme/x', 'x', 1, 1, -1]]),
+    }
+  }
+
+  it('🔴 `sourceUrl` が `javascript:` なら既定 URL へ倒し、他フィールドは元の値のまま活かす', async () => {
+    const port = new StaticGemIndex(
+      stubReader(filesWithMeta({ ...POOL_META, sourceUrl: 'javascript:alert(1)' })),
+    )
+
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+
+    expect(result.meta.sourceUrl).toBe(FALLBACK_META.sourceUrl)
+    // 丸ごと FALLBACK_META へ退化していないこと（フィールド単位のフォールバック）。
+    expect(result.meta.source).toBe(POOL_META.source)
+    expect(result.meta.license).toBe(POOL_META.license)
+    expect(result.meta.generatedAt).toBe(POOL_META.generatedAt)
+    expect(result.meta.generatedAt).not.toBe(FALLBACK_META.generatedAt)
+  })
+
+  it('`license` だけ欠けても既定へ倒すのはその 1 項目だけ', async () => {
+    const { license: _license, ...withoutLicense } = POOL_META
+    const port = new StaticGemIndex(stubReader(filesWithMeta(withoutLicense)))
+
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+
+    expect(result.meta.license).toBe(FALLBACK_META.license)
+    expect(result.meta.source).toBe(POOL_META.source)
+    expect(result.meta.sourceUrl).toBe(POOL_META.sourceUrl)
+    expect(result.meta.generatedAt).toBe(POOL_META.generatedAt)
+  })
+
+  it('`sourceLicenseUrl` が `data:` でも既定へ倒す（`http(s)` 以外は通さない）', async () => {
+    const port = new StaticGemIndex(
+      stubReader(filesWithMeta({ ...POOL_META, sourceLicenseUrl: 'data:text/html,x' })),
+    )
+
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+
+    expect(result.meta.sourceLicenseUrl).toBe(FALLBACK_META.sourceLicenseUrl)
+    expect(result.meta.sourceUrl).toBe(POOL_META.sourceUrl)
+  })
+})
+
+describe('StaticGemIndex#search（続き）', () => {
+  beforeEach(() => {
+    resetGemIndexCacheForTest()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    resetGemIndexCacheForTest()
+    vi.restoreAllMocks()
+  })
+
   it('lookup と search は同じ 1 回の読み込み・parse を共有する（アセットを増やさない）', async () => {
     const reader = stubReader(searchFiles)
     const port = new StaticGemIndex(reader)
