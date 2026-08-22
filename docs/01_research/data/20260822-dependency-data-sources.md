@@ -27,7 +27,7 @@
 
 出典: [registries API](https://packages.ecosyste.ms/api/v1/registries) / [open-data](https://packages.ecosyste.ms/open-data) / [licences](https://docs.ecosyste.ms/docs/usage/licences/)
 
-- **100 レジストリ・合計 1,300 万パッケージ超**。主要どころは npm 5,764,611 / Go 2,281,833 / PyPI 929,795 / NuGet 842,021 / Maven 617,071 / Packagist 510,768 / crates.io 327,700 / RubyGems 211,249。
+- **109 レジストリ・合計 約 1,470 万パッケージ**（`total-count` ヘッダの実測値・2026-08-22）。主要どころは npm 5,764,611 / Go 2,281,833 / PyPI 929,795 / NuGet 842,021 / Maven 617,071 / Packagist 510,768 / crates.io 327,700 / RubyGems 211,249。
 - 一覧 API は **`per_page=1000` が通り、深いページ（offset 30 万）でも 200**。1 レコードに `rankings`・`repository_url`・`repo_metadata.stargazers_count`・`dependent_packages_count`・`dependent_repos_count` が同梱されるため、**1 パスの取得だけで Gem Index を計算して GitHub の `owner/repo` へ正規化できる**（個別 fetch 不要）。
 - レート制限は **匿名 5,000 req/時**（実測ヘッダ `x-ratelimit-limit: 5000`）。polite pool（UA に連絡先）で 15,000 req/時。
 - 🔴 **`rankings` はレジストリ内順位**（値域 0〜100・0 が最上位）。PyPI `requests` も npm `lodash` も `dependent_repos_count` 順位は 0.0 付近になるため、**レジストリを混ぜてそのまま並べると小さいレジストリの無名パッケージが上位を占拠する**。横断ランキングを作るなら収集後に全体パーセンタイルを再計算する必要がある。
@@ -58,8 +58,8 @@ Ecosyste.ms の一覧 API を **12 レジストリ × 被依存数降順** で�
 | 8 レジストリ × 2,500 | 20,000 | 12,558 | 23% | 23% | 7% |
 | **12 レジストリ × 15,000** | **180,000** | **109,469**（rankings 完備） | **32%** | **36%** | **19%** |
 
-- 収集コスト: **144 リクエスト・約 10 分**（匿名 5,000 req/時の枠内）。
-- ヒットのレジストリ内訳（12,558 件プール時点）: npm 32 / PyPI 6 / Maven 5 / Packagist 5 / RubyGems 2 / Go 2 / crates 1 → **非 npm が約 3 割**。`D-33` が指摘した「npm 限定という構造的限界」は **レジストリを増やすことで実際に解消する**。
+- 収集コスト: **180 リクエスト（12 レジストリ × 15 ページ・`per_page=1000`）・約 10 分**（匿名 5,000 req/時の枠内）。
+- **母集団の構成**: npm は 10,026 件で **全体の 9.2%**（各レジストリから同数を取る固定枠のため）。**検索ヒット 87 件のレジストリ内訳** は npm 42 / PyPI 13 / Maven 7 / Packagist 7 / Go 7 / RubyGems 5 / crates 2 / NuGet 2 / pub.dev 1 / Hex 1 で、**ヒットの 52% が非 npm**。`D-33` が指摘した「npm 限定という構造的限界」は **レジストリを増やすことで実際に解消する**。
 - 生成物のサイズ: `owner/repo → gemIndex`（小数 2 桁）の最小 JSON で **raw 3.3MB / gzip 1.34MB**（109,469 件）。
 - ⚠️ この時点の Gem Index 上位は hex / CRAN / pub.dev の極小パッケージに偏る（レジストリ内順位をそのまま混ぜた副作用・§2 の 🔴 と同じ問題）。**横断ランキングにはパーセンタイルの再計算が要る**。
 
@@ -87,7 +87,7 @@ Ecosyste.ms の一覧 API を **12 レジストリ × 被依存数降順** で�
 **確定**
 
 1. 被依存数は GitHub API では取れない（`ADR 0009` の前提は今も正しい）。
-2. Ecosyste.ms の API 巡回で **10 万リポジトリ級の母集団を 10 分・144 リクエストで作れる**（バルクダンプ不要）。
+2. Ecosyste.ms の API 巡回で **10 万リポジトリ級の母集団を 10 分・180 リクエストで作れる**（バルクダンプ不要）。
 3. 母集団を広げると被覆率は実際に上がる（0〜6% → 19〜36%）。npm 限定という構造的限界は解消する。
 4. Static Assets はバンドル 3MB 枠の外であり、`D-33` のサイズ根拠は配信方式の変更で崩れる。
 
