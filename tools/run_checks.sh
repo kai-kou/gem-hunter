@@ -241,6 +241,14 @@ else
   skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 被覆率測定（SP-17・D-36 / D-37）も --self-test だけを配線する。本測定は GitHub 検索 API を
+# 叩くためネットワーク非依存を保てない（run_checks.sh はオフラインで完走できることを保つ）。
+if [ -f "$REPO_ROOT/tools/measure_gem_coverage.py" ]; then
+  run_check "Gem 被覆率測定 self-test (measure_gem_coverage.py --self-test)" python3 tools/measure_gem_coverage.py --self-test
+else
+  skip_check "Gem 被覆率測定 self-test (measure_gem_coverage.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 本番乖離検知は「--self-test だけ」を配線する（判定ロジックの退行を機械で守るため）。
 # 本判定（`check_prod_drift.py` を引数なしで実行）は本番疎通に依存するので配線しない
 # （本番側の一時的な事情で PR が赤くなるのを避ける・Issue #288）。

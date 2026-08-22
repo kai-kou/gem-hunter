@@ -13,7 +13,14 @@
    上位 `--top` 件（既定 100）を取得する。
 3. 上位 N 件のうち何件がプールに含まれるかを数える（= 被覆率）。
 
-【レート制限】
+【クラウド実行環境での経路（🔴 重要）】
+クラウドセッションからは `api.github.com` への直叩きが **403 で止まる**（`L-114`・GitHub API
+プロキシの許可範囲外）。そのため検索結果は `mcp__github__search_repositories` で取得し、
+`{"keyword": ["owner/repo", ...]}` 形式の JSON へ落として `--search-results` で渡す
+（本ツールは集計だけを行う）。ローカル実行や `GITHUB_TOKEN` が使える環境では
+`--search-results` を省略して直接取得できる。
+
+【レート制限（直接取得のとき）】
 未認証の検索 API は **10 req/分**。既定で 1 リクエストごとに 6.5 秒待つ（`--sleep`）。
 `GITHUB_TOKEN` が環境にあれば `Authorization` ヘッダを付け、待ち時間を 2 秒へ短縮する
 （認証時は 30 req/分）。トークンは表示・記録しない。
@@ -25,6 +32,7 @@
     python3 tools/measure_gem_coverage.py                      # 既定の一般語 24 件
     python3 tools/measure_gem_coverage.py --keywords react,orm # 任意のキーワード
     python3 tools/measure_gem_coverage.py --json out.json      # 結果を JSON で保存
+    python3 tools/measure_gem_coverage.py --search-results r.json  # 取得済み検索結果から集計
     python3 tools/measure_gem_coverage.py --self-test          # ネットワーク不要の自己テスト
 """
 
@@ -109,18 +117,35 @@ def search_github(keyword: str, top: int, token: str | None) -> list[str]:
 
 
 def measure(
-    keywords: list[str], repos: set[str], top: int, sleep_seconds: float, token: str | None
+    keywords: list[str],
+    repos: set[str],
+    top: int,
+    sleep_seconds: float,
+    token: str | None,
+    prefetched: dict[str, list[str]] | None = None,
 ) -> dict:
     started = datetime.now(timezone.utc)
     rows = []
     for i, keyword in enumerate(keywords):
-        if i > 0:
-            time.sleep(sleep_seconds)
-        try:
-            names = search_github(keyword, top, token)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as err:
-            print(f"[measure_gem_coverage] WARN: {keyword!r} の取得に失敗しました: {err}", file=sys.stderr)
-            continue
+        if prefetched is not None:
+            names = [n for n in prefetched.get(keyword, []) if isinstance(n, str)][:top]
+            if not names:
+                print(
+                    f"[measure_gem_coverage] WARN: {keyword!r} の検索結果が渡されていません",
+                    file=sys.stderr,
+                )
+                continue
+        else:
+            if i > 0:
+                time.sleep(sleep_seconds)
+            try:
+                names = search_github(keyword, top, token)
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as err:
+                print(
+                    f"[measure_gem_coverage] WARN: {keyword!r} の取得に失敗しました: {err}",
+                    file=sys.stderr,
+                )
+                continue
         hits = [n for n in names if n.lower() in repos]
         rows.append(
             {
@@ -189,6 +214,13 @@ def self_test() -> int:
     assert result["keywordCount"] == 0, result
     assert result["meanCoverage"] == 0.0, result
 
+    # 取得済み検索結果からの集計（クラウド経路）
+    prefetched_result = measure(
+        ["x"], repos, 100, 0, None, {"x": ["A/B", "e/f", "c/d"]}
+    )
+    assert prefetched_result["rows"][0]["hits"] == 2, prefetched_result
+    assert prefetched_result["rows"][0]["searched"] == 3, prefetched_result
+
     # シャード読み込み（列順に依存しないこと）
     import tempfile
 
@@ -234,6 +266,10 @@ def main() -> int:
     parser.add_argument("--top", type=int, default=100)
     parser.add_argument("--sleep", type=float, default=None, help="リクエスト間の待機秒数")
     parser.add_argument("--json", dest="json_out", help="結果 JSON の保存先")
+    parser.add_argument(
+        "--search-results",
+        help='取得済み検索結果の JSON（{"keyword": ["owner/repo", ...]}）。クラウドでは MCP 経由で作る',
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -242,14 +278,19 @@ def main() -> int:
 
     token = os.environ.get("GITHUB_TOKEN") or None
     sleep_seconds = args.sleep if args.sleep is not None else (2.0 if token else 6.5)
+    prefetched = None
+    if args.search_results:
+        prefetched = json.loads(Path(args.search_results).read_text(encoding="utf-8"))
+        if not isinstance(prefetched, dict):
+            raise SystemExit("--search-results は {キーワード: [owner/repo, ...]} の JSON を指定してください")
     keywords = (
         [k.strip() for k in args.keywords.split(",") if k.strip()]
         if args.keywords
-        else list(DEFAULT_KEYWORDS)
+        else (list(prefetched.keys()) if prefetched else list(DEFAULT_KEYWORDS))
     )
 
     repos = load_pool_repos(Path(args.shard_dir))
-    result = measure(keywords, repos, args.top, sleep_seconds, token)
+    result = measure(keywords, repos, args.top, sleep_seconds, token, prefetched)
     print(render_markdown(result))
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
