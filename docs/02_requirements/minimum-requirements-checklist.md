@@ -170,7 +170,7 @@
 | `npx eslint`（`npm run check` 内） | **PASS**（8 秒） |
 | `npx tsc --noEmit`（同上） | **PASS**（8 秒） |
 | `python3 tools/check_architecture_boundaries.py`（同上） | **PASS** |
-| `npm run check`（`tools/run_checks.sh`・全 19 チェック） | **18 PASS / 1 FAIL**。FAIL は `CJK Markdown (--changed)` のみで、原因は **執筆途中の本ファイル**（実行後に `--fix` 適用済み・再実行で `OK`）。アプリ実装に起因する FAIL はゼロ |
+| `npm run check`（`tools/run_checks.sh`・全 20 チェック） | **全 PASS**（上記に加え Lighthouse a11y ゲート・ADR 記載検査・配色コントラスト検査・CJK Markdown 検査・各 self-test を含む） |
 | `npm run format:check` | **FAIL**（110 ファイル。`src` 26 / `app` 10 / `e2e` 11 を含む） |
 | `grep -rn "NEXT_PUBLIC" src app next.config.ts wrangler.jsonc` | **0 件**（秘匿情報のクライアント露出なし） |
 | `ls .github/workflows` | **存在しない**（`D-23` により撤去済み） |
