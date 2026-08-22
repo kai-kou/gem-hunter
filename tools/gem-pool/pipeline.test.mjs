@@ -187,7 +187,6 @@ describe('projectPackage（投影）', () => {
     expect(record).not.toHaveProperty('rankings')
     expect(record).not.toHaveProperty('dependentRank')
   })
-})
 
   it('packageName は長さ上限（214 文字）と制御文字 / 双方向制御文字を検証する', () => {
     const project = (name) =>
@@ -409,6 +408,27 @@ describe('restratifyByRegistry（レジストリ別成層化）', () => {
     expect(byName.c.dependentRank).toBe(100)
   })
 
+  it('出力の dependentRank / starRank は必ず 0〜100 に収まる', () => {
+    // domain の `computeGemIndex`（`src/domain/model/gem-index.ts` の `assertRank`）と同じ不変条件。
+    // 実装側は値域を外れたら例外にする（多層防御）ので、ここでは不変条件が保たれることを固定する。
+    const input = Array.from({ length: 13 }, (_, i) => ({
+      registry: i % 2 === 0 ? 'npm' : 'cargo',
+      packageName: `p${i}`,
+      repositoryFullName: `o/p${i}`,
+      dependentCount: (i * 37) % 11,
+      stars: (i * 53) % 7,
+    }))
+    const result = restratifyByRegistry(input)
+    expect(result).toHaveLength(13)
+    for (const record of result) {
+      expect(record.dependentRank).toBeGreaterThanOrEqual(0)
+      expect(record.dependentRank).toBeLessThanOrEqual(100)
+      expect(record.starRank).toBeGreaterThanOrEqual(0)
+      expect(record.starRank).toBeLessThanOrEqual(100)
+      expect(Math.abs(record.gemIndex)).toBeLessThanOrEqual(100)
+    }
+  })
+
   it('出力は決定論的（同値のタイブレークは packageName 昇順）', () => {
     const input = [
       {
@@ -569,6 +589,24 @@ describe('dedupeByRepository（repo 単位 dedupe）', () => {
     expect(dedupeByRepository([...records].reverse())[0].packageName).toBe('alpha')
   })
 
+  it('repositoryFullName の大文字小文字違いを同一 repo として畳む（GitHub は case を区別しない）', () => {
+    const records = [
+      ranked({ packageName: 'perl-small', repositoryFullName: 'perl/perl5', dependentCount: 3 }),
+      ranked({
+        packageName: 'perl-flagship',
+        repositoryFullName: 'Perl/perl5',
+        dependentCount: 900,
+      }),
+    ]
+    const result = dedupeByRepository(records)
+    expect(result).toHaveLength(1)
+    expect(result[0].packageName).toBe('perl-flagship')
+    // 表示値は代表レコードの元の綴りを保つ（小文字化するのは突き合わせキーだけ）
+    expect(result[0].repositoryFullName).toBe('Perl/perl5')
+    // 入力順を変えても代表は変わらない（決定論）
+    expect(dedupeByRepository([...records].reverse())[0].repositoryFullName).toBe('Perl/perl5')
+  })
+
   it('異なる repo は残す（レジストリが違っても repo が同じなら 1 件に畳む）', () => {
     const records = [
       ranked({ registry: 'npm', packageName: 'a', repositoryFullName: 'o/a', dependentCount: 10 }),
@@ -664,16 +702,19 @@ describe('buildPool（全段の統合）', () => {
 
   it('stats の件数が合う（レジストリ別 collected / missingStars / filtered / kept）', () => {
     const { stats } = buildPool(fixture())
-    expect(stats.byRegistry.npm).toMatchObject({
+    // 全項目一致で見る（`deduped` を落とす変異がすり抜けないように・`index.json` の運用判断に使う値）
+    expect(stats.byRegistry.npm).toEqual({
       collected: 4,
       missingStars: 1,
       filtered: 1,
+      deduped: 0,
       kept: 2,
     })
-    expect(stats.byRegistry.cargo).toMatchObject({
+    expect(stats.byRegistry.cargo).toEqual({
       collected: 3,
       missingStars: 0,
       filtered: 1,
+      deduped: 1,
       kept: 1,
     })
     expect(stats.totalUnique).toBe(3)
@@ -762,6 +803,134 @@ describe('buildPool（全段の統合）', () => {
     expect(byName.h1.gemIndex).toBe(-100)
     expect(byName.n2.gemIndex).toBe(100)
     expect(byName.h2.gemIndex).toBe(100)
+  })
+
+  it('回帰防止: 最終順位は生き残りだけで再計算する（除外率のレジストリ差を順位に漏らさない）', () => {
+    // レジストリ a は 10 件中 9 件が汚染で落ち、レジストリ b は 1 件も落ちない。
+    // 除外前に振った順位のまま配信すると、a の生き残りは dependentRank=100 のまま残り
+    // gemIndex=100（最下位）になる。生き残り集合で再計算すれば単独の 1 件なので 0 になる。
+    const byRegistry = new Map([
+      [
+        'a',
+        Array.from({ length: 10 }, (_, i) => ({
+          registry: 'a',
+          packageName: `a${i}`,
+          repositoryFullName: `o/a${i}`,
+          dependentCount: 1000 - i * 100,
+          stars: i < 9 ? 0 : 5, // 被依存上位 9 件は star 0（＝汚染扱い）
+        })),
+      ],
+      [
+        'b',
+        Array.from({ length: 10 }, (_, i) => ({
+          registry: 'b',
+          packageName: `b${i}`,
+          repositoryFullName: `o/b${i}`,
+          dependentCount: 1000 - i * 100,
+          stars: 10 + i,
+        })),
+      ],
+    ])
+    const { records, stats } = buildPool(byRegistry, {
+      minStars: 1,
+      highDependentRankPercentile: 90,
+    })
+
+    expect(stats.byRegistry.a).toEqual({
+      collected: 10,
+      missingStars: 0,
+      filtered: 9,
+      deduped: 0,
+      kept: 1,
+    })
+    expect(stats.byRegistry.b).toEqual({
+      collected: 10,
+      missingStars: 0,
+      filtered: 0,
+      deduped: 0,
+      kept: 10,
+    })
+
+    const survivor = records.find((r) => r.registry === 'a')
+    expect(survivor.packageName).toBe('a9')
+    // 生き残り集合（a は 1 件だけ）で再計算されるので 0/0/0。100 なら除外前の順位が漏れている。
+    expect(survivor.dependentRank).toBe(0)
+    expect(survivor.starRank).toBe(0)
+    expect(survivor.gemIndex).toBe(0)
+
+    // b 側は 10 件そのままなので 0〜100 に広がる（再計算が b の順位を壊していないこと）
+    const bRanks = records.filter((r) => r.registry === 'b').map((r) => r.dependentRank)
+    expect(Math.min(...bRanks)).toBe(0)
+    expect(Math.max(...bRanks)).toBe(100)
+  })
+
+  it('回帰防止: 汚染判定は dedupe 後の代表（flagship）に対して行う', () => {
+    // 逆順（汚染フィルタ → dedupe）だと flagship だけが落ち、被依存 3 件の兄弟が代表に繰り上がる。
+    const byRegistry = new Map([
+      [
+        'npm',
+        [
+          {
+            registry: 'npm',
+            packageName: 'spam-flagship',
+            repositoryFullName: 'spam/repo',
+            dependentCount: 9000,
+            stars: 0,
+          },
+          {
+            registry: 'npm',
+            packageName: 'spam-sibling',
+            repositoryFullName: 'spam/repo',
+            dependentCount: 3,
+            stars: 0,
+          },
+          {
+            registry: 'npm',
+            packageName: 'legit',
+            repositoryFullName: 'o/legit',
+            dependentCount: 100,
+            stars: 50,
+          },
+        ],
+      ],
+    ])
+    const { records, stats } = buildPool(byRegistry)
+    expect(records.map((r) => r.repositoryFullName)).toEqual(['o/legit'])
+    expect(records.map((r) => r.packageName)).not.toContain('spam-sibling')
+    expect(stats.droppedByReason['duplicate-repository']).toBe(1)
+    expect(stats.droppedByReason['suspicious-zero-star']).toBe(1)
+  })
+
+  it('レジストリ名が __proto__ でも Object.prototype を汚染しない', () => {
+    const byRegistry = new Map([
+      [
+        '__proto__',
+        [
+          {
+            registry: '__proto__',
+            packageName: 'p',
+            repositoryFullName: 'o/p',
+            dependentCount: 10,
+            stars: 5,
+          },
+        ],
+      ],
+    ])
+    const { stats } = buildPool(byRegistry)
+
+    expect(Object.keys(stats.byRegistry)).toEqual(['__proto__'])
+    expect(Object.values(stats.byRegistry)[0]).toEqual({
+      collected: 1,
+      missingStars: 0,
+      filtered: 0,
+      deduped: 0,
+      kept: 1,
+    })
+    expect(stats.totalCollected).toBe(1)
+    // `Object.prototype` に集計値が生えていないこと（`??=` が prototype を見て代入を握り潰さないこと）
+    expect({}.collected).toBeUndefined()
+    expect(Object.prototype.collected).toBeUndefined()
+    expect(Object.prototype.kept).toBeUndefined()
   })
 
   it('入力の Map / 配列を破壊しない', () => {
