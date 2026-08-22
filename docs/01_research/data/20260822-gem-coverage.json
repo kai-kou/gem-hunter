@@ -1,0 +1,327 @@
+{
+  "measuredAt": "2026-08-22 15:08 JST",
+  "poolSize": 62483,
+  "top": 100,
+  "keywordCount": 24,
+  "elapsedSeconds": 0.0,
+  "meanCoverage": 34.5,
+  "medianCoverage": 34.5,
+  "minCoverage": 5.0,
+  "maxCoverage": 57.0,
+  "weightedCoverage": 34.5,
+  "zeroHitKeywords": [],
+  "rows": [
+    {
+      "keyword": "react",
+      "searched": 100,
+      "hits": 35,
+      "coverage": 35.0,
+      "sampleHits": [
+        "react/react",
+        "vercel/next.js",
+        "react/react-native",
+        "remix-run/react-router",
+        "streamich/react-use"
+      ]
+    },
+    {
+      "keyword": "test framework",
+      "searched": 100,
+      "hits": 38,
+      "coverage": 38.0,
+      "sampleHits": [
+        "vitest-dev/vitest",
+        "junit-team/junit-framework",
+        "sebastianbergmann/phpunit",
+        "robolectric/robolectric",
+        "pytest-dev/pytest"
+      ]
+    },
+    {
+      "keyword": "image processing",
+      "searched": 100,
+      "hits": 22,
+      "coverage": 22.0,
+      "sampleHits": [
+        "Intervention/image",
+        "scikit-image/scikit-image",
+        "elixir-image/image",
+        "disintegration/imaging",
+        "imagej/ImageJ"
+      ]
+    },
+    {
+      "keyword": "orm",
+      "searched": 100,
+      "hits": 50,
+      "coverage": 50.0,
+      "sampleHits": [
+        "doctrine/orm",
+        "drizzle-team/drizzle-orm",
+        "hibernate/hibernate-orm",
+        "laravel-doctrine/orm",
+        "SeaQL/sea-orm"
+      ]
+    },
+    {
+      "keyword": "http client",
+      "searched": 100,
+      "hits": 56,
+      "coverage": 56.0,
+      "sampleHits": [
+        "httprb/http",
+        "AsyncHttpClient/async-http-client",
+        "encode/httpx",
+        "nodejs/undici",
+        "apache/httpcomponents-client"
+      ]
+    },
+    {
+      "keyword": "logging",
+      "searched": 100,
+      "hits": 39,
+      "coverage": 39.0,
+      "sampleHits": [
+        "sirupsen/logrus",
+        "apache/logging-log4j2",
+        "TwP/logging",
+        "Delgan/loguru",
+        "uber-go/zap"
+      ]
+    },
+    {
+      "keyword": "cli",
+      "searched": 100,
+      "hits": 31,
+      "coverage": 31.0,
+      "sampleHits": [
+        "cli/cli",
+        "httpie/cli",
+        "npm/cli",
+        "urfave/cli",
+        "docker/cli"
+      ]
+    },
+    {
+      "keyword": "json parser",
+      "searched": 100,
+      "hits": 32,
+      "coverage": 32.0,
+      "sampleHits": [
+        "tidwall/gjson",
+        "buger/jsonparser",
+        "zaach/jsonlint",
+        "salsify/jsonstreamingparser",
+        "APIDevTools/json-schema-ref-parser"
+      ]
+    },
+    {
+      "keyword": "web framework",
+      "searched": 100,
+      "hits": 49,
+      "coverage": 49.0,
+      "sampleHits": [
+        "laravel/framework",
+        "encode/django-rest-framework",
+        "aurelia/framework",
+        "ionic-team/ionic-framework",
+        "vaadin/framework"
+      ]
+    },
+    {
+      "keyword": "database driver",
+      "searched": 100,
+      "hits": 57,
+      "coverage": 57.0,
+      "sampleHits": [
+        "lib/pq",
+        "go-sql-driver/mysql",
+        "mattn/go-sqlite3",
+        "mongodb/node-mongodb-native",
+        "xerial/sqlite-jdbc"
+      ]
+    },
+    {
+      "keyword": "authentication",
+      "searched": 100,
+      "hits": 38,
+      "coverage": 38.0,
+      "sampleHits": [
+        "nextauthjs/next-auth",
+        "heartcombo/devise",
+        "AzureAD/microsoft-authentication-library-for-js",
+        "jaredhanson/passport",
+        "ueberauth/guardian"
+      ]
+    },
+    {
+      "keyword": "markdown",
+      "searched": 100,
+      "hits": 19,
+      "coverage": 19.0,
+      "sampleHits": [
+        "Python-Markdown/markdown",
+        "markdown-it/markdown-it",
+        "gomarkdown/markdown",
+        "sindresorhus/github-markdown-css",
+        "DavidAnson/markdownlint"
+      ]
+    },
+    {
+      "keyword": "csv",
+      "searched": 100,
+      "hits": 31,
+      "coverage": 31.0,
+      "sampleHits": [
+        "thephpleague/csv",
+        "JoshClose/CsvHelper",
+        "goodby/csv",
+        "beatrichartz/csv",
+        "wireservice/csvkit"
+      ]
+    },
+    {
+      "keyword": "date time",
+      "searched": 100,
+      "hits": 34,
+      "coverage": 34.0,
+      "sampleHits": [
+        "time-rs/time",
+        "dangrossman/daterangepicker",
+        "chronotope/chrono",
+        "iamkun/dayjs",
+        "dateutil/dateutil"
+      ]
+    },
+    {
+      "keyword": "encryption",
+      "searched": 100,
+      "hits": 16,
+      "coverage": 16.0,
+      "sampleHits": [
+        "defuse/php-encryption",
+        "hashicorp/vault",
+        "RustCrypto/AEADs",
+        "illuminate/encryption",
+        "minio/kes"
+      ]
+    },
+    {
+      "keyword": "graphql",
+      "searched": 100,
+      "hits": 43,
+      "coverage": 43.0,
+      "sampleHits": [
+        "graphql-go/graphql",
+        "nestjs/graphql",
+        "graphql/graphql-js",
+        "shurcooL/graphql",
+        "machinebox/graphql"
+      ]
+    },
+    {
+      "keyword": "machine learning",
+      "searched": 100,
+      "hits": 5,
+      "coverage": 5.0,
+      "sampleHits": [
+        "tensorflow/tensorflow",
+        "scikit-learn/scikit-learn",
+        "onnx/onnx",
+        "dotnet/machinelearning",
+        "lutzroeder/netron"
+      ]
+    },
+    {
+      "keyword": "template engine",
+      "searched": 100,
+      "hits": 45,
+      "coverage": 45.0,
+      "sampleHits": [
+        "goofychris/art-template",
+        "pallets/jinja",
+        "gofiber/template",
+        "pugjs/pug",
+        "Antaris/RazorEngine"
+      ]
+    },
+    {
+      "keyword": "validation",
+      "searched": 100,
+      "hits": 48,
+      "coverage": 48.0,
+      "sampleHits": [
+        "Respect/Validation",
+        "validatorjs/validator.js",
+        "pydantic/pydantic",
+        "jquery-validation/jquery-validation",
+        "rakit/validation"
+      ]
+    },
+    {
+      "keyword": "queue",
+      "searched": 100,
+      "hits": 39,
+      "coverage": 39.0,
+      "sampleHits": [
+        "OCA/queue",
+        "celery/celery",
+        "rq/rq",
+        "laravel/horizon",
+        "RichardKnop/machinery"
+      ]
+    },
+    {
+      "keyword": "websocket",
+      "searched": 99,
+      "hits": 33,
+      "coverage": 33.3,
+      "sampleHits": [
+        "gorilla/websocket",
+        "TooTallNate/Java-WebSocket",
+        "sta/websocket-sharp",
+        "python-websockets/websockets",
+        "websocket-client/websocket-client"
+      ]
+    },
+    {
+      "keyword": "pdf",
+      "searched": 100,
+      "hits": 33,
+      "coverage": 33.0,
+      "sampleHits": [
+        "mozilla/pdf.js",
+        "rsc/pdf",
+        "parallax/jsPDF",
+        "pdf-rs/pdf",
+        "ocrmypdf/OCRmyPDF"
+      ]
+    },
+    {
+      "keyword": "compression",
+      "searched": 100,
+      "hits": 17,
+      "coverage": 17.0,
+      "sampleHits": [
+        "expressjs/compression",
+        "google/brotli",
+        "klauspost/compress",
+        "Donaldcwl/browser-image-compression",
+        "pieroxy/lz-string"
+      ]
+    },
+    {
+      "keyword": "state management",
+      "searched": 100,
+      "hits": 18,
+      "coverage": 18.0,
+      "sampleHits": [
+        "mobxjs/mobx",
+        "reduxjs/redux",
+        "vuejs/vuex",
+        "pmndrs/jotai",
+        "pmndrs/zustand"
+      ]
+    }
+  ]
+}
