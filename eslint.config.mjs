@@ -16,7 +16,12 @@ const eslintConfig = defineConfig([
     '.open-next/**',
     'content/**',
     'docs/**',
-    'tools/**',
+    // 🔴 `tools/**` は原則 Lint 対象外だが、Gem Index の中核アルゴリズム（`tools/gem-pool/**`）と
+    //    その呼び出し元（`tools/generate_gem_digest.mjs`）だけは対象に戻す（`SP-17` / PR #416
+    //    セルフレビュー指摘）。`.mjs` は `tsc --noEmit` の対象でもないため、除外したままだと
+    //    約 1,000 行の production 算出コードが lint・型のすべてのゲート外に置かれる。
+    'tools/!(gem-pool|generate_gem_digest.mjs)/**',
+    'tools/*.!(mjs)',
   ]),
 ])
 
