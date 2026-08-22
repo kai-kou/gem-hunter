@@ -35,12 +35,11 @@ describe('StaticGemDigest', () => {
     expect(meta.sourceLicenseUrl).toMatch(/^https?:\/\//)
     expect(meta.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     // 候補は 1 件もスキップされない（バッチ出力が候補の契約を満たしている）。
-    // 🔴 最重要の回帰ポイント（F-6）: 本番 JSON は `sourceUrl` フィールドをまだ持たない
-    // （`tools/generate_gem_digest.mjs` が次回バッチ実行時に書き込む）。それでも
-    // ランタイムは落ちず、meta.sourceUrl だけがフィールド単位で既定値へフォールバックする
-    // （上の `meta.sourceUrl` アサーションが既定値でも http(s) URL として通ることで担保済み）。
-    expect(console.warn).toHaveBeenCalledTimes(1)
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('meta.sourceUrl'))
+    // 🔵 `SP-17`（#387）で `tools/gem-pool/output.mjs` が `sourceUrl` を書くようになったため、
+    //    フィールド単位のフォールバック警告は **1 件も出ない** のが正しい状態になった
+    //    （F-6 の時点では本番 JSON に `sourceUrl` が無く、警告 1 件が期待値だった）。
+    //    フォールバック経路そのものは上の異常系テスト群が引き続き検証している。
+    expect(console.warn).not.toHaveBeenCalled()
   })
 
   it('meta の 5 フィールド（source / sourceUrl / license / sourceLicenseUrl / generatedAt）が全て string で揃う（D-29 / F-6）', async () => {

@@ -72,7 +72,7 @@ node tools/generate_gem_digest.mjs --quota 20000 --digest-limit 500 \
 | 最終候補プール         | **94,856 リポジトリ**（`star=0` の比率 14.8%）                                                                                                                      |
 | レジストリ別内訳       | packagist 11,707 / hex 11,098 / go 10,328 / pypi 9,749 / pub 9,080 / npm 8,503 / cargo 7,985 / cpan 7,300 / cran 6,696 / rubygems 4,732 / nuget 4,339 / maven 3,339 |
 | 出力サイズ             | `daily-digest.json` 64KB / `gem-index/*.json` 合計 9.4MB（gzip 約 2.4MB・npm シャード単体は raw 1.05MB → gzip 246KB）                                               |
-| 被覆率                 | 一般語 25 件 × GitHub 検索上位 100 件で **平均 33.6% / 中央値 34%**（`http client` 56% ↔ `machine learning` 5%）。`D-36` の 3 クエリ実測（32% / 36% / 19%）と同水準 |
+| 被覆率                 | 一般語 25 件 × GitHub 検索上位 100 件で **平均 33.4% / 中央値 34%**（`http client` 56% / `orm` 50% ↔ `encryption` 16% / `machine learning` 5%）。`D-36` の 3 クエリ実測（32% / 36% / 19%）と同水準 |
 
 ### 汚染フィルタの既定値をどう決めたか（`D-37`）
 
