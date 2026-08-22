@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""画像版 PPTX を組み立てる（17 枚すべてが 16:9 の画像 1 枚で構成される）。
+"""画像版 PPTX を組み立てる（全スライドが 16:9 の画像 1 枚で構成される）。
 
 スライドごとの画像は 3 系統:
   - 新規生成 `new-NN`: `gpt-image-2` の PNG（既定 `/tmp/claude/slide-images/`）を JPEG 化して取り込む
