@@ -15,7 +15,7 @@
 
 | 版 | 中身 | リンク |
 |---|---|---|
-| 画像版 | グラフィックレコーディング調のイラスト 19 枚 | [Google スライド](https://docs.google.com/presentation/d/1ITQogVybzYEjCY0g3huePvI9nAOJ9Fc4-RQ1DzYJhRA/edit) / `output/gem-hunter.pptx` |
+| 画像版 | グラフィックレコーディング調のイラスト 19 枚 | [Google スライド](https://docs.google.com/presentation/d/1mAaocH_zSWUPP8iDPfjXziTrqcdbtrMgh8N-H_EFcO4/edit) / `output/gem-hunter.pptx` |
 | テキスト版 | 同じ内容を文字だけで組んだもの | [Google スライド](https://docs.google.com/presentation/d/1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g/edit) / `output/gem-hunter_text.pptx` |
 | 構成 | スライドの原稿（見出し・本文・出典） | [`content/slides_content_gem-hunter.md`](./content/slides_content_gem-hunter.md) |
 

@@ -7,8 +7,12 @@
   - 既存流用        : `docs/infographics/*.webp` を JPEG 化して取り込む
 
 PNG のままだと 1 枚約 2MB で `docs/infographics/README.md` の方針（PNG はリポジトリに入れない）に
-反するため、リポジトリに置くのは JPEG（quality 88）に統一する。`python-pptx` は WebP を
-埋め込めないので、既存インフォグラフィックも JPEG へ変換してから貼る。
+反するため、リポジトリに置くのは JPEG に統一する。`python-pptx` は WebP を埋め込めないので、
+既存インフォグラフィックも JPEG へ変換してから貼る。
+
+品質は 78。88 だと 19 枚を束ねた PPTX が 5.5MB になり、`tools/self_review_check.py` の巨大ファイル
+検査（5.0MB 超で PR 作成をブロック）に掛かる。平坦な色面のイラストなので、78 でも投影時の劣化は
+判別できない。
 """
 
 import json
@@ -33,6 +37,7 @@ RAW_NEW = Path("/tmp/claude/slide-images")
 OUT = ROOT / "output" / "gem-hunter.pptx"
 
 SIZE = (1536, 864)  # 完全な 16:9（既存インフォグラフィックと同じ）
+QUALITY = 78        # PPTX 全体を 5.0MB 未満に収めるための圧縮率（上のドキストリング参照）
 
 
 def to_jpeg(src: Path, dest: Path) -> Path:
@@ -42,7 +47,7 @@ def to_jpeg(src: Path, dest: Path) -> Path:
         if im.size != SIZE:
             im = im.resize(SIZE, Image.LANCZOS)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        im.save(dest, "JPEG", quality=88, optimize=True)
+        im.save(dest, "JPEG", quality=QUALITY, optimize=True)
     return dest
 
 
