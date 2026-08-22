@@ -1,35 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { gemIndexValue } from '../../domain/model/gem-index'
+import { MAX_QUERY_TOKENS } from '../../domain/model/gem-keyword'
+import type { PerPage } from '../../domain/model/per-page'
 
 import type { AssetReader } from './asset-reader'
 import { FALLBACK_META } from './static-gem-digest'
-import { StaticGemIndex, resetGemIndexCacheForTest } from './static-gem-index'
+import {
+  StaticGemIndex,
+  resetGemIndexCacheForTest,
+  searchIndexBuildCountForTest,
+} from './static-gem-index'
 
 /**
- * `tokenizeIdentifier` の呼び出し回数を数えるためのカウンタ（`vi.hoisted` で `vi.mock` の
- * ファクトリより先に初期化する）。
+ * テスト専用: `PerPage` のブランドを被せる。
  *
- * 🔴 これは「照合用トークンを **cold start で 1 回だけ** 計算しているか」を担保するための計測。
- * warm のリクエストで再 tokenize していると、62,483 件 × リクエスト数だけ CPU を食う。
- * ⚠️ `vi.fn` ではなく素の関数でラップする（`vi.restoreAllMocks()` に実装を消されないため）。
+ * 🔴 本番経路は `per-page.ts` の `parse` / `tryParse` を通る（`AR-3`: 20 / 50 / 100 のみ）。
+ * ここで許容値の外（1 / 2 / 10）を使うのは、5 件しかないテスト用プールで **ページングの境界**
+ * （スライス・最終ページへのクランプ）を確かめるためだけ。
  */
-const tokenize = vi.hoisted(() => ({ calls: 0, fail: false }))
-
-vi.mock('../../domain/model/gem-keyword', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../domain/model/gem-keyword')>()
-  return {
-    ...actual,
-    tokenizeIdentifier: (value: string) => {
-      tokenize.calls += 1
-      if (tokenize.fail) {
-        // 検索インデックス（第 2 段）の構築失敗を再現するための注入。
-        throw new Error('tokenize boom')
-      }
-      return actual.tokenizeIdentifier(value)
-    },
-  }
-})
+function perPageOf(value: number): PerPage {
+  return value as unknown as PerPage
+}
 
 const INDEX_PATH = '/data/gem-index/index.json'
 
@@ -83,8 +75,6 @@ const twoShards = {
 describe('StaticGemIndex', () => {
   beforeEach(() => {
     resetGemIndexCacheForTest()
-    tokenize.calls = 0
-    tokenize.fail = false
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
@@ -373,8 +363,6 @@ function names(items: readonly { readonly repositoryFullName: string }[]): reado
 describe('StaticGemIndex#search', () => {
   beforeEach(() => {
     resetGemIndexCacheForTest()
-    tokenize.calls = 0
-    tokenize.fail = false
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
@@ -386,7 +374,7 @@ describe('StaticGemIndex#search', () => {
   it('検索語なし（tokens 空）は絞り込みなしで全件を Gem Index 昇順に返す（同値は repo 名昇順）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: [], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
 
     expect(result.totalCount).toBe(5)
     expect(names(result.items)).toEqual([
@@ -403,7 +391,7 @@ describe('StaticGemIndex#search', () => {
   it('全語 AND で絞り込む（部分一致では引かない）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: ['orm', 'client'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['orm', 'client'], page: 1, perPage: perPageOf(10) })
 
     expect(names(result.items)).toEqual(['beta/orm-client'])
     expect(result.totalCount).toBe(1)
@@ -414,7 +402,7 @@ describe('StaticGemIndex#search', () => {
   it('大文字小文字を無視して照合する（プール側の綴りが大文字でも引ける）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: ['gamma'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['gamma'], page: 1, perPage: perPageOf(10) })
 
     expect(names(result.items)).toEqual(['Gamma/Image-Tools'])
   })
@@ -423,7 +411,7 @@ describe('StaticGemIndex#search', () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
     // `processing` は repo 名（Gamma/Image-Tools）には無く、パッケージ名にだけある語。
-    const result = await port.search({ tokens: ['processing'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['processing'], page: 1, perPage: perPageOf(10) })
 
     expect(names(result.items)).toEqual(['Gamma/Image-Tools'])
   })
@@ -432,7 +420,7 @@ describe('StaticGemIndex#search', () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
     // image=1 件 / client=2 件 → 件数の少ない image が選ばれる。
-    const result = await port.search({ tokens: ['image', 'client'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['image', 'client'], page: 1, perPage: perPageOf(10) })
 
     expect(result.relaxed).toBe(true)
     expect(result.usedTokens).toEqual(['image'])
@@ -443,7 +431,7 @@ describe('StaticGemIndex#search', () => {
   it('どの語も単独で 0 件なら空結果（緩和は起きていないので relaxed は false）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: ['zzz', 'qqq'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['zzz', 'qqq'], page: 1, perPage: perPageOf(10) })
 
     expect(result.items).toEqual([])
     expect(result.totalCount).toBe(0)
@@ -456,7 +444,7 @@ describe('StaticGemIndex#search', () => {
   it('1 語だけの検索がヒットしないときも relaxed は false（緩和の余地がない）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: ['zzz'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['zzz'], page: 1, perPage: perPageOf(10) })
 
     expect(result.totalCount).toBe(0)
     expect(result.relaxed).toBe(false)
@@ -466,7 +454,7 @@ describe('StaticGemIndex#search', () => {
   it('一覧に必要な項目（packageName / stars / dependentCount / registry）が揃って返る', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: ['solo'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['solo'], page: 1, perPage: perPageOf(10) })
 
     expect(result.items).toHaveLength(1)
     const item = result.items[0]!
@@ -481,7 +469,7 @@ describe('StaticGemIndex#search', () => {
   it('内部の派生値（照合用トークン等）は返り値に載せない', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: ['solo'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['solo'], page: 1, perPage: perPageOf(10) })
 
     expect(Object.keys(result.items[0]!).sort()).toEqual([
       'dependentCount',
@@ -496,8 +484,8 @@ describe('StaticGemIndex#search', () => {
   it('page / perPage でスライスし、totalCount は絞り込み後の全件数を返す', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const page2 = await port.search({ tokens: [], page: 2, perPage: 2 })
-    const page3 = await port.search({ tokens: [], page: 3, perPage: 2 })
+    const page2 = await port.search({ tokens: [], page: 2, perPage: perPageOf(2) })
+    const page3 = await port.search({ tokens: [], page: 3, perPage: perPageOf(2) })
 
     expect(names(page2.items)).toEqual(['beta/orm-client', 'Gamma/Image-Tools'])
     expect(page2.totalCount).toBe(5)
@@ -508,7 +496,7 @@ describe('StaticGemIndex#search', () => {
   it('範囲外のページは空配列（totalCount は変わらない）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: [], page: 99, perPage: 2 })
+    const result = await port.search({ tokens: [], page: 99, perPage: perPageOf(2) })
 
     expect(result.items).toEqual([])
     expect(result.totalCount).toBe(5)
@@ -517,7 +505,7 @@ describe('StaticGemIndex#search', () => {
   it('出典メタデータ（index.json の meta）を返す', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: [], page: 1, perPage: 1 })
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(1) })
 
     expect(result.meta).toEqual(POOL_META)
   })
@@ -525,7 +513,7 @@ describe('StaticGemIndex#search', () => {
   it('読み込みに失敗しても throw せず空結果を返す（meta は既定値）', async () => {
     const port = new StaticGemIndex(stubReader({}))
 
-    const result = await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
 
     expect(result.items).toEqual([])
     expect(result.totalCount).toBe(0)
@@ -540,7 +528,7 @@ describe('StaticGemIndex#search', () => {
     }
 
     await expect(
-      new StaticGemIndex(reader).search({ tokens: ['orm'], page: 1, perPage: 10 }),
+      new StaticGemIndex(reader).search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) }),
     ).resolves.toEqual({
       items: [],
       totalCount: 0,
@@ -563,7 +551,7 @@ describe('StaticGemIndex#search', () => {
       }),
     })
 
-    const result = await new StaticGemIndex(reader).search({ tokens: [], page: 1, perPage: 10 })
+    const result = await new StaticGemIndex(reader).search({ tokens: [], page: 1, perPage: perPageOf(10) })
 
     expect(names(result.items)).toEqual(['acme/keep'])
     expect(warn).toHaveBeenCalled()
@@ -580,7 +568,7 @@ describe('StaticGemIndex#search', () => {
       ]),
     })
 
-    const result = await new StaticGemIndex(reader).search({ tokens: ['dup'], page: 1, perPage: 10 })
+    const result = await new StaticGemIndex(reader).search({ tokens: ['dup'], page: 1, perPage: perPageOf(10) })
 
     expect(result.totalCount).toBe(1)
     expect(gemIndexValue(result.items[0]!.gemIndex)).toBe(-90)
@@ -591,12 +579,12 @@ describe('StaticGemIndex#search', () => {
     const reader = stubReader(searchFiles)
     const port = new StaticGemIndex(reader)
 
-    await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
     const afterFirstSearch = tokenize.calls
     expect(afterFirstSearch).toBeGreaterThan(0)
 
-    await port.search({ tokens: ['client'], page: 1, perPage: 10 })
-    await port.search({ tokens: ['image', 'client'], page: 1, perPage: 10 })
+    await port.search({ tokens: ['client'], page: 1, perPage: perPageOf(10) })
+    await port.search({ tokens: ['image', 'client'], page: 1, perPage: perPageOf(10) })
 
     expect(tokenize.calls).toBe(afterFirstSearch)
     expect(reader.calls).toHaveLength(3) // index.json + シャード 2 本（取得も 1 セットだけ）
@@ -620,9 +608,9 @@ describe('StaticGemIndex#search', () => {
     await port.lookup(['acme/orm-core'])
     expect(tokenize.calls).toBe(0)
 
-    await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
     const afterFirstSearch = tokenize.calls
-    await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
 
     expect(afterFirstSearch).toBeGreaterThan(0)
     expect(tokenize.calls).toBe(afterFirstSearch)
@@ -633,14 +621,14 @@ describe('StaticGemIndex#search', () => {
     const serial = new StaticGemIndex(stubReader(searchFiles))
 
     // 直列 1 回分の tokenize 回数を基準にする。
-    await serial.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    await serial.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
     const oneBuild = tokenize.calls
     resetGemIndexCacheForTest()
     tokenize.calls = 0
 
     const [first, second] = await Promise.all([
-      port.search({ tokens: ['orm'], page: 1, perPage: 10 }),
-      port.search({ tokens: ['client'], page: 1, perPage: 10 }),
+      port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) }),
+      port.search({ tokens: ['client'], page: 1, perPage: perPageOf(10) }),
     ])
 
     expect(tokenize.calls).toBe(oneBuild) // 2 本走っても構築は 1 回
@@ -651,9 +639,9 @@ describe('StaticGemIndex#search', () => {
   it('インスタンスが別でも検索インデックスの singleton を共有する', async () => {
     const reader = stubReader(searchFiles)
 
-    await new StaticGemIndex(reader).search({ tokens: ['orm'], page: 1, perPage: 10 })
+    await new StaticGemIndex(reader).search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
     const afterFirst = tokenize.calls
-    await new StaticGemIndex(reader).search({ tokens: ['client'], page: 1, perPage: 10 })
+    await new StaticGemIndex(reader).search({ tokens: ['client'], page: 1, perPage: perPageOf(10) })
 
     expect(tokenize.calls).toBe(afterFirst)
   })
@@ -663,7 +651,7 @@ describe('StaticGemIndex#search', () => {
     const port = new StaticGemIndex(reader)
     tokenize.fail = true
 
-    const result = await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
     const found = await port.lookup(['acme/orm-core', 'delta/solo'])
 
     expect(result.items).toEqual([])
@@ -677,10 +665,10 @@ describe('StaticGemIndex#search', () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
     tokenize.fail = true
 
-    expect((await port.search({ tokens: ['orm'], page: 1, perPage: 10 })).totalCount).toBe(0)
+    expect((await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })).totalCount).toBe(0)
 
     tokenize.fail = false
-    const retried = await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const retried = await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
 
     expect(retried.totalCount).toBe(2)
     expect(names(retried.items)).toEqual(['acme/orm-core', 'beta/orm-client'])
@@ -692,7 +680,7 @@ describe('StaticGemIndex#search', () => {
 
     const found = await port.lookup(['acme/orm-core'])
     const afterLookup = [...reader.calls]
-    const result = await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const result = await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
 
     expect(gemIndexValue(found.get('acme/orm-core')!)).toBe(-70)
     expect(result.totalCount).toBe(2)

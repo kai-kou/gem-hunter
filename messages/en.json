@@ -79,10 +79,10 @@
     "relaxedNotice": "No candidate contained all of your words, so the list is narrowed by \"{token}\" only.",
     "totalCount": "{count} results",
     "starCount": "stars",
-    "dependentCount": "dependent packages",
+    "dependentCount": "Used by",
     "gemIndexLabel": "Gem Index",
     "registryLabel": "Registry",
-    "attribution": "About this data: dependent package counts and star counts come from {source} ({license}) open data and are reference values, so they can differ from the latest values on GitHub and from the detail page. The order (Gem Index) is recomputed here.",
+    "attribution": "About this data: \"Used by\" and star counts come from {source} ({license}) open data and are reference values, so they can differ from the latest values on GitHub and from the detail page. The order (Gem Index) is recomputed here.",
     "backToSearch": "Back to search",
     "queryRequired": "Enter a keyword to list the Gem candidates related to it. Search from the home page first, then open this list."
   },

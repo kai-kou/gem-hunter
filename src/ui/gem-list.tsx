@@ -1,12 +1,47 @@
 import Link from 'next/link'
 
-import { DEFAULT_PAGE } from '@/src/domain/model/page-number'
+import { DEFAULT_PER_PAGE } from '@/src/domain/model/per-page'
+import { DEFAULT_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { formatMessage } from '@/src/shared/i18n/format-message'
+import type { DigestMeta, GemPoolEntry } from '../domain/model/gem'
 import { gemIndexValue } from '../domain/model/gem-index'
 import type { Locale } from '../domain/model/locale'
-import type { GemPoolSearchResult } from '../domain/ports/gem-index-port'
+import { AttributionNotice } from './attribution-notice'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
-import { SEARCH_PARAM_KEYS } from './url/search-params'
+import { buildSearchUrl } from './url/build-search-url'
+import { GEM_LIST_SOURCE_PARAM_KEY, GEM_LIST_SOURCE_PARAM_VALUE } from './url/search-params'
+
+/**
+ * Gem 一覧（`/{locale}/gems`）が描画に必要とする値だけを持つ ViewModel。
+ *
+ * 🔴 **ポートの契約型（`GemPoolSearchResult`）を props に採らない**（`application-architecture.md`
+ * §3 のデータフローは「ドメインモデル → ユースケース → ViewModel → UI」）。ポートは複数の
+ * 消費者を持つ境界契約なので、直接採ると別の消費者の都合で表示契約が動く／UI 都合でポート面積が
+ * 膨らむ、の両方が起きる（PR #440 Layer 1 指摘）。ページ側がユースケースの結果からここへ写す。
+ */
+export type GemListViewModel = {
+  /** 表示順に並んだ 1 ページ分のエントリ（`gemIndex` 昇順）。**ここで並べ替えない**。 */
+  readonly items: readonly GemPoolEntry[]
+  /** 絞り込み結果の総件数（ページ内件数ではない）。 */
+  readonly totalCount: number
+  /** 実際に表示しているページ（1 始まり）。詳細から戻ったとき同じページへ帰るために使う。 */
+  readonly effectivePage: number
+  /**
+   * 全語 AND が 0 件で 1 語へ緩めたときに、実際に使った語。緩和していなければ `null`。
+   * 🔴 「緩和したか」と「使った語」を 2 つの値で持たない（片方だけ更新される状態を作らない）。
+   */
+  readonly relaxedToken: string | null
+  /**
+   * 🔴 **0 件の理由が「照合不能」か**（検索語は空でないのに、照合に使えるトークンが 1 つも
+   * 取れなかった。日本語だけの検索語など）。判定の正本は `src/usecases/search-gems.ts`
+   * （生の検索語 → トークン列の変換を持つ層）で、ここは受け取って文言を切り替えるだけ。
+   * **必須フィールド**（既定値を付けない）: 省略できると呼び出し側の書き忘れが型で通り、
+   * 日本語クエリの 0 件画面が「候補プールに載っていません」へ黙って化ける。
+   */
+  readonly unmatchableQuery: boolean
+  /** 出典メタデータ（`D-29` の帰属表示）。 */
+  readonly meta: DigestMeta
+}
 
 /**
  * Gem 一覧（`/{locale}/gems`）の文言。**UI コンポーネントに日本語を直書きしない**（`E-4`）。
@@ -27,7 +62,7 @@ export type GemListLabels = {
    */
   empty: string
   /**
-   * 照合不能時の本文（`unmatchableQuery` プロパティが `true` のとき）。🔴 **照合規則
+   * 照合不能時の本文（`view.unmatchableQuery` が `true` のとき）。🔴 **照合規則
    * （パッケージ名・リポジトリ名という英数字識別子に対する単語境界一致・`D-37`）と、
    * 利用者が次に取れる行動（英語のキーワードで試す）を含む文言を渡す**。
    */
@@ -36,9 +71,9 @@ export type GemListLabels = {
   relaxedNotice: string
   /** 総件数の表示。整形済みの件数を埋める `{count}` を含む。 */
   totalCount: string
-  /** star 数の `sr-only` ラベル（数値だけでは意味が伝わらないため）。 */
+  /** star 数の `sr-only` ラベル（`★` の意味が言語間で伝わらないため）。 */
   starCount: string
-  /** 被依存パッケージ数の `sr-only` ラベル。 */
+  /** 利用パッケージ数の見出し語（可視・`domain-model.md` §2.1 が表示語まで正本）。 */
   dependentCount: string
   /** Gem Index の見出し語（可視）。 */
   gemIndexLabel: string
@@ -49,45 +84,29 @@ export type GemListLabels = {
 }
 
 /**
- * 詳細ページから Gem 一覧へ戻るための出所マーカー。
- * 🔴 **文字列を各所へ直書きしない**（戻り先判定は `app/` 側の責務だが、名前の正本はここ）。
+ * ページ送り後にフォーカスを移す受け口（`ui-ux-guidelines.md` §7.1・`AC-8`）。
+ * `app/` 側が `<FocusOnNavigate targetId={GEM_LIST_HEADING_ID} />` で参照する。
  */
-export const GEM_LIST_SOURCE_PARAM_KEY = 'from'
-export const GEM_LIST_SOURCE_PARAM_VALUE = 'gems'
+export const GEM_LIST_HEADING_ID = 'gems-heading'
 
 /**
  * Gem 候補プールの絞り込み結果一覧（`SP-19` / `D-37`）。表示だけを持つ Server Component。
  *
- * - 並び順は `result.items` の順序そのまま（`gemIndex` 昇順）。**ここで並べ替えない**
+ * - 並び順は `view.items` の順序そのまま（`gemIndex` 昇順）。**ここで並べ替えない**
  *   （`gemIndex` は母集団相対の値で、UI で閾値・順序を作り直すと正本が 2 箇所に分かれる）
  * - ページネーション UI は持たない（`app/` 側の配線が扱う）。総件数の表示までにとどめる
  */
 export function GemList({
-  result,
+  view,
   query,
   locale,
   labels,
-  page = DEFAULT_PAGE,
-  unmatchableQuery = false,
 }: {
-  result: GemPoolSearchResult
+  view: GemListViewModel
   /** 画面に出ている検索語（見出しと戻り先クエリに使う）。 */
   query: string
   locale: Locale
   labels: GemListLabels
-  /**
-   * 🔴 **0 件の理由が「照合不能」か**（検索語は空でないのに照合に使えるトークンが 1 つも
-   * 取れなかった。日本語だけの検索語など）。判定の正本は `src/usecases/search-gems.ts`
-   * （生の検索語 → トークン列の変換を持つ層）で、ここは受け取って文言を切り替えるだけ。
-   * `result` に混ぜず独立した prop で受けるのは、`GemPoolSearchResult` が
-   * `GemIndexPort` の契約であり UI 都合で広げないため。
-   */
-  unmatchableQuery?: boolean
-  /**
-   * 現在のページ番号（省略時は 1）。詳細ページから戻ったときに同じページへ帰れるよう、
-   * 戻り先クエリへ載せる。既定ページのときは省略する（`build-search-url.ts` と同じ作法）。
-   */
-  page?: number
 }) {
   const localeTag = toIntlLocaleTag(locale)
   const numberFormat = new Intl.NumberFormat(localeTag)
@@ -97,170 +116,165 @@ export function GemList({
     maximumFractionDigits: 1,
   })
 
-  // 戻り先の保持（`SP-7` と同じ考え方）。`build-search-url.ts` は検索ページの 4 条件
-  // （q/page/sort/per_page）専用で `from` を持てないため、キー名だけ `SEARCH_PARAM_KEYS`
-  // から借りて最小限のクエリを組み立てる（新しい URL 抽象は先回りで作らない）。
-  const backQuery = buildBackQuery(query, page)
+  // 戻り先の保持（`SP-7` と同じ考え方）。URL 契約を組み立てる実装は `build-search-url.ts` の
+  // 1 本だけ（`from` は付帯パラメータとして渡す）。sort / per_page は Gem 一覧が持たない条件
+  // なので既定値を渡して省略させる。
+  const backQuery = buildSearchUrl(
+    '',
+    {
+      keyword: query,
+      page: view.effectivePage,
+      sort: DEFAULT_SORT_ORDER,
+      perPage: DEFAULT_PER_PAGE,
+    },
+    { [GEM_LIST_SOURCE_PARAM_KEY]: GEM_LIST_SOURCE_PARAM_VALUE },
+  )
 
   return (
     <>
-      <h2 className="text-lg font-semibold">{formatMessage(labels.heading, { query })}</h2>
+      {/*
+        🔴 ページ送り（クライアント遷移）の完了をフォーカス移動で伝えるための受け口
+        （`ui-ux-guidelines.md` §7.1）。`tabIndex={-1}` はプログラムからのフォーカスだけを
+        許し Tab 順には入れない。フォーカスリングは検索一覧の見出しと同じ意匠に揃える。
+      */}
+      <h2
+        id={GEM_LIST_HEADING_ID}
+        tabIndex={-1}
+        className="rounded-sm text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring"
+      >
+        {formatMessage(labels.heading, { query })}
+      </h2>
       {/*
         全語 AND が 0 件だったため 1 語へ緩めたことの明示（`D-37`）。一覧の **前** に出す。
         ライブリージョンにはしない（0 件の `role="status"` と二重に読み上げられるのを避ける・
         `ui-ux-guidelines.md` §7.2「ライブリージョンは 1 つ」）。
       */}
-      {result.relaxed ? (
+      {view.relaxedToken !== null ? (
         <p className="text-muted-foreground mt-2 text-sm">
-          {formatMessage(labels.relaxedNotice, { token: result.usedTokens[0] ?? '' })}
+          {formatMessage(labels.relaxedNotice, { token: view.relaxedToken })}
         </p>
       ) : null}
-      {result.items.length === 0 ? (
+      {/*
+        🔴 空状態には理由が 2 つあり、説明も次の行動も違う（`D-36` / `D-37`）。
+        ① 照合自体ができなかった（`unmatchableQuery`）→ 照合規則と次の行動を案内する
+        ② 候補プールに載っていなかった（`totalCount === 0`）→ 母集団を明示する
+        ⚠️ 「ヒットはあるがこのページには無い」（`totalCount > 0` かつ `items` が空）は
+        どちらでもない。ページ範囲の問題を「候補プールに載っていない」と説明するのは
+        **誤った理由** なので何も出さない（ページ番号の解決は `app/` 側が最終ページへ
+        クランプするため、通常は到達しない防御的な分岐）。
+      */}
+      {view.unmatchableQuery ? (
         // 0 件は視覚表現だけにせず `role="status"` で支援技術にも伝える（§7.2）。
         // `role="alert"` は使わない（0 件は緊急の割り込みではない）。
-        // 🔴 0 件には **理由が 2 つ** ある。候補プールに載っていない（`empty`）のか、照合自体が
-        // できなかった（`unmatchableQuery`）のかで説明も次の行動も違うため、文言を切り替える。
         <p role="status" className="text-muted-foreground mt-4 text-sm">
-          {unmatchableQuery ? labels.unmatchableQuery : labels.empty}
+          {labels.unmatchableQuery}
+        </p>
+      ) : view.totalCount === 0 ? (
+        <p role="status" className="text-muted-foreground mt-4 text-sm">
+          {labels.empty}
         </p>
       ) : (
         <>
           <p role="status" className="text-muted-foreground mt-2 text-sm">
-            {formatMessage(labels.totalCount, { count: numberFormat.format(result.totalCount) })}
+            {formatMessage(labels.totalCount, { count: numberFormat.format(view.totalCount) })}
           </p>
-          <ul className="divide-border mt-2 divide-y">
-            {result.items.map((entry) => {
-              const repo = splitRepositoryFullName(entry.repositoryFullName)
-              return (
-                <li
-                  key={`${entry.registry}/${entry.packageName}`}
-                  className="relative py-4"
-                  // E2E（`e2e/sp-19.spec.ts`）が並び順を機械的に検証するための値。可視テキストは
-                  // ロケール桁区切り・丸めで表記が変わるため、生値を `data-` 属性で出す。
-                  data-gem-index={String(gemIndexValue(entry.gemIndex))}
-                  data-repository-full-name={entry.repositoryFullName}
-                >
-                  {/*
-                    詳細ページ（独立 URL・`AC-4`）への遷移。カード全体をクリック可能にするが
-                    `<a>` で全体を包まず、リポジトリ名だけをリンクにして `::after` で領域を
-                    広げる（`ui-ux-guidelines.md` §4.3）。
-                    🔴 `repositoryFullName` が `owner/name` に割れない値のときはリンクを作らない
-                    （壊れたリンクを出すより、テキストとして見せる方が害が小さい）。
-                  */}
-                  {repo ? (
-                    <Link
-                      href={`/${locale}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}${backQuery}`}
-                      // ネイティブ <a> の既定フォーカスは太さが足りないため `ring-3` に揃える（§7.3）。
-                      className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
-                    >
-                      {entry.repositoryFullName}
-                    </Link>
-                  ) : (
-                    <span className="font-medium">{entry.repositoryFullName}</span>
-                  )}
-                  <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                    <span>{entry.packageName}</span>
-                    <span>
-                      {labels.registryLabel} {entry.registry}
-                    </span>
-                    <span>
-                      <span aria-hidden="true">★ </span>
-                      <span className="sr-only">{labels.starCount} </span>
-                      {numberFormat.format(entry.stars)}
-                    </span>
-                    <span>
-                      <span className="sr-only">{labels.dependentCount} </span>
-                      {numberFormat.format(entry.dependentCount)}
-                    </span>
-                    <span>
-                      {labels.gemIndexLabel} {gemIndexFormat.format(gemIndexValue(entry.gemIndex))}
-                    </span>
-                  </p>
-                </li>
-              )
-            })}
-          </ul>
+          {view.items.length > 0 ? (
+            <ul className="divide-border mt-2 divide-y">
+              {view.items.map((entry) => {
+                const repo = splitRepositoryFullName(entry.repositoryFullName)
+                return (
+                  <li
+                    // 🔴 `repositoryFullName` を key にする（`byRepo` のキーがその小文字なので
+                    // 一意性が構造的に保証されている）。`registry/packageName` は
+                    // `packageName` 欠損時に空文字で埋まる仕様のため同一ページ内で衝突する。
+                    key={entry.repositoryFullName}
+                    className="relative py-4"
+                    // E2E（`e2e/sp-19.spec.ts`）が並び順を機械的に検証するための値。可視テキストは
+                    // ロケール桁区切り・丸めで表記が変わるため、生値を `data-` 属性で出す。
+                    data-gem-index={String(gemIndexValue(entry.gemIndex))}
+                    data-repository-full-name={entry.repositoryFullName}
+                  >
+                    {/*
+                      詳細ページ（独立 URL・`AC-4`）への遷移。カード全体をクリック可能にするが
+                      `<a>` で全体を包まず、リポジトリ名だけをリンクにして `::after` で領域を
+                      広げる（`ui-ux-guidelines.md` §4.3）。
+                      🔴 `repositoryFullName` が `owner/name` に割れない値のときはリンクを作らない
+                      （壊れたリンクを出すより、テキストとして見せる方が害が小さい）。
+                    */}
+                    {repo ? (
+                      <Link
+                        href={`/${locale}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}${backQuery}`}
+                        // ネイティブ <a> の既定フォーカスは太さが足りないため `ring-3` に揃える（§7.3）。
+                        className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                      >
+                        {entry.repositoryFullName}
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{entry.repositoryFullName}</span>
+                    )}
+                    <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      <span>{entry.packageName}</span>
+                      <span>
+                        {labels.registryLabel} {entry.registry}
+                      </span>
+                      <span>
+                        <span aria-hidden="true">★ </span>
+                        <span className="sr-only">{labels.starCount} </span>
+                        {numberFormat.format(entry.stars)}
+                      </span>
+                      {/*
+                        🔴 メタ情報は可視ラベルを添える（`ui-ux-guidelines.md` §4.2）。
+                        ここだけ裸の数値にすると、支援技術なしの利用者には star の別表記なのか
+                        利用パッケージ数なのか判別できない（`sr-only` の方が情報量が多い逆転）。
+                      */}
+                      <span>
+                        {labels.dependentCount} {numberFormat.format(entry.dependentCount)}
+                      </span>
+                      <span>
+                        {labels.gemIndexLabel}{' '}
+                        {gemIndexFormat.format(gemIndexValue(entry.gemIndex))}
+                      </span>
+                    </p>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : null}
         </>
       )}
-      <Attribution meta={result.meta} template={labels.attribution} />
+      {/*
+        帰属表示（`D-29`）はトップページと同じ `AttributionNotice` を使う（実装を 2 本持たない）。
+        `gems.attribution` は `{generatedAt}` を含まないため生成時刻のノードは描かれない。
+      */}
+      <AttributionNotice
+        meta={view.meta}
+        labels={{ attribution: labels.attribution }}
+        locale={locale}
+      />
     </>
   )
 }
 
+const REPOSITORY_FULL_NAME_PATTERN = /^[^/\s]+\/[^/\s]+$/
+
 /**
- * 帰属表示（`D-29`）。`{source}` / `{license}` の位置をリンクへ差し替える。
+ * `owner/name` を分解する。分解できなければ `null`（リンクを作らない）。
  *
- * 🔴 **`http(s)` 以外の URL はリンクにしない**（`javascript:` を `href` に流さない）。候補プール
- * JSON は外部データ由来なので、URL を無検査で `href` へ渡さない。
- *
- * 新しいタブでは開かない: `ui-ux-guidelines.md` §7.4a が `target="_blank"` に `sr-only` 文言を
- * 必須としており、本コンポーネントの文言キーはコントラクトで固定されているため（追加キーを
- * 勝手に増やさない）、同一タブ遷移にして §7.4a の要件自体を発生させない。
+ * ⚠️ **ドメインの関数へ寄せられない**: `tryRepositoryFullName` の `OWNER_PATTERN` は末尾
+ * ハイフンの owner を弾くが、候補プールの実データに末尾ハイフン owner が 25 件（`Qix-/color-convert`
+ * 等）実在するため適用すると正当な行のリンクが消える。`ownerOf` / `repoOf` は分解専用で
+ * 検証を持たない（`daily-digest.tsx` はインフラ側が形式検証済みの前提で使っている）。
+ * そのため判定はインフラ側（`static-gem-digest.ts`）と同じ形式に揃えたうえで、パス走査に
+ * 使われる `.` / `..` セグメントを明示的に弾く（`encodeURIComponent` はドットを残すため、
+ * これが無いと `../x` が `/{locale}/repos/../x` として正規化され表示名と遷移先が食い違う）。
  */
-function Attribution({ meta, template }: { meta: GemPoolSearchResult['meta']; template: string }) {
-  const [beforeSource, afterSource] = splitOn(template, '{source}')
-  const [beforeLicense, afterLicense] = splitOn(afterSource, '{license}')
-
-  return (
-    <p className="text-muted-foreground mt-6 text-xs">
-      {beforeSource}
-      <SafeLink href={meta.sourceUrl} text={meta.source} />
-      {beforeLicense}
-      <SafeLink href={meta.sourceLicenseUrl} text={meta.license} />
-      {afterLicense}
-    </p>
-  )
-}
-
-const INLINE_LINK_CLASS_NAME =
-  'text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring'
-
-/** `http(s)` のときだけリンクにし、それ以外はテキストのまま出す。 */
-function SafeLink({ href, text }: { href: string; text: string }) {
-  if (!isHttpUrl(href)) {
-    return <>{text}</>
-  }
-  return (
-    <a href={href} className={INLINE_LINK_CLASS_NAME}>
-      {text}
-    </a>
-  )
-}
-
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
-/** 戻り先クエリ（`?from=gems&q=...&page=...`）。既定ページ・空の検索語は省略する。 */
-function buildBackQuery(query: string, page: number): string {
-  const params = new URLSearchParams()
-  params.set(GEM_LIST_SOURCE_PARAM_KEY, GEM_LIST_SOURCE_PARAM_VALUE)
-  if (query !== '') {
-    params.set(SEARCH_PARAM_KEYS.keyword, query)
-  }
-  if (page !== DEFAULT_PAGE) {
-    params.set(SEARCH_PARAM_KEYS.page, String(page))
-  }
-  return `?${params.toString()}`
-}
-
-/** `owner/name` を分解する。分解できなければ `null`（リンクを作らない）。 */
 function splitRepositoryFullName(fullName: string): { owner: string; name: string } | null {
-  const parts = fullName.split('/')
-  if (parts.length !== 2) return null
-  const [owner, name] = parts
-  if (owner === '' || name === '') return null
+  if (!REPOSITORY_FULL_NAME_PATTERN.test(fullName)) return null
+  const [owner, name] = fullName.split('/')
+  if (isDotSegment(owner) || isDotSegment(name)) return null
   return { owner, name }
 }
 
-/** `template` を `token` の最初の出現位置で 2 分割する。見つからなければ `[template, '']`。 */
-function splitOn(template: string, token: string): [string, string] {
-  const idx = template.indexOf(token)
-  if (idx < 0) return [template, '']
-  return [template.slice(0, idx), template.slice(idx + token.length)]
+function isDotSegment(segment: string): boolean {
+  return segment === '.' || segment === '..'
 }
