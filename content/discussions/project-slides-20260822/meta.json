@@ -1,0 +1,14 @@
+{
+  "id": "project-slides-20260822",
+  "topic": "gem-hunter プロジェクト解説スライド（開発者向け・15〜20 枚 / 15〜20 分）の構成をアウトライン案から確定する",
+  "brief": "Issue #363。参照リポジトリ kai-kou/qiita-bash-lt-2026 の slides スキル 15 ステップに沿って gem-hunter 解説スライドを作る。対象読者=開発者、15〜20枚/15〜20分、既存インフォグラフィック13枚活用＋不足分のみ gpt-image-2 新規生成、成果物はリポジトリ内配置。争点 A〜F はスペック（tools/discussion_specs/project_slides_spec.json）参照。",
+  "participants": [
+    "narrative_design",
+    "project_truth",
+    "dev_audience",
+    "visual_assets",
+    "workflow_compliance"
+  ],
+  "created_at": "2026-08-22T09:14:46+09:00",
+  "updated_at": "2026-08-22T09:14:46+09:00"
+}
