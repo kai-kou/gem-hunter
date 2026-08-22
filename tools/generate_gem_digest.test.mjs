@@ -170,9 +170,11 @@ describe('decideOutputWrite（部分実行で配信物を壊さない）', () =>
       write: false,
       blocked: false,
     })
-    expect(
-      decideOutputWrite({ ...full, selectedRegistryCount: 1, dryRun: true }),
-    ).toMatchObject({ partial: true, write: false, blocked: false })
+    expect(decideOutputWrite({ ...full, selectedRegistryCount: 1, dryRun: true })).toMatchObject({
+      partial: true,
+      write: false,
+      blocked: false,
+    })
   })
 })
 
