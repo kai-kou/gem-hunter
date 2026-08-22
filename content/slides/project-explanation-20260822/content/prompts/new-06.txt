@@ -1,0 +1,52 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+--- TEXT INCLUSION RULE (VERBATIM) ---
+Render EVERY text element listed under "Text elements" EXACTLY (verbatim) — character for character,
+with no omission, abbreviation, paraphrase, summarization, translation or substitution.
+You MAY reorganize the layout or adjust font size for readability, but you must NOT change the wording
+of any listed element.
+Do NOT add any text that is not in the list — not even partial words, captions, or decorative labels.
+Do NOT render any text element more than once — each element must appear exactly once in the image.
+Do NOT add furigana (ruby annotations).
+Preserve letter case EXACTLY: a word written in lowercase in the list (for example "star",
+"sort=gem-index", "gem-hunter") must stay lowercase — never capitalize the first letter,
+even at the start of a title or a line.
+The 「 」 around each listed element are delimiters marking where the element starts and ends —
+they are NOT part of the text. Do not draw them. Only 「 」 that appear INSIDE an element
+(for example 「今日の Gem」 within a longer sentence) are drawn.
+--------------------------------------
+
+--- SLIDE RULE ---
+This image is ONE presentation slide (16:9), not a document summary.
+The first listed text element is the slide title: draw it once, in a top banner, as the largest text.
+Keep the whole composition readable when projected: few, large elements with generous margins.
+------------------
+
+
+TITLE (top banner, largest text, drawn once):
+「作った差別化機能を、実測で撤去した」
+
+Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
+「作った差別化機能を、実測で撤去した」
+「却下」
+「候補プールはユニーク 227 リポジトリ」
+「候補拡大はバンドル 3MB 上限を超える」
+「採用」
+「sort=gem-index を検索結果から撤去」
+「体感 3〜8 秒 → 0.5〜1 秒」
+「Gem Index は「今日の Gem」で継続」
+「ADR-0009」
+「D-33」
+
+Visual elements (icons and shapes ONLY — never draw any text inside these):
+左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）を並べる 2 カラム対比。下部にチップ 2 つ
