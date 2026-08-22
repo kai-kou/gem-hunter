@@ -99,8 +99,10 @@ E2E と Lighthouse が大量に落ちる。失敗はすべて `net::ERR_CONNECTI
 まず **並走を疑う**（`pgrep -f "bash tools/run_checks.sh"` で確認する）。テストの中身を読む前にこれを見る。
 
 **対策**:
-- 再実行の前に `pgrep -f "bash tools/run_checks.sh"` で先行実行の有無を確認する。走っていたら
-  終わるまで待つ（`while pgrep -f "bash tools/run_checks.sh" >/dev/null; do sleep 10; done`）
+- 再実行の前に `pgrep -af 'run_check[s]\.sh'` で先行実行の有無を確認する。走っていたら終わるまで待つ
+- 🔴 **`pgrep -f` のパターンを自分のコマンドラインにそのまま書かない**。`pgrep -f "bash tools/run_checks.sh"`
+  は **自分自身のシェル**（コマンド文字列にその語を含む）にマッチするため、`while pgrep ...; do sleep; done`
+  は永久に終わらない。文字クラスで自己マッチを外す（`run_check[s]\.sh`）か、PID ファイルで判定する
 - **バックグラウンド実行の完了通知だけで完了と断定しない**。ログの末尾に `run_checks サマリー` の表が
   出ているかを見てから判断する（L-113 の実結果原則をバックグラウンド実行にも適用する）
 - 恒久対策として `tools/run_checks.sh` への排他ロック（`flock`）導入を起票済み（#404）
