@@ -44,4 +44,38 @@ describe('buildSearchUrl', () => {
     const url = buildSearchUrl('/ja', { keyword: '', page: 1, sort: 'relevance', perPage: 100 })
     expect(url).toBe('/ja?per_page=100')
   })
+  describe('extraParams（検索 4 条件以外の付帯パラメータ）', () => {
+    it('検索条件の後ろに付帯パラメータを載せる', () => {
+      const url = buildSearchUrl(
+        '',
+        { keyword: 'left pad', page: 3, sort: 'relevance', perPage: 20 },
+        { from: 'gems' },
+      )
+      const params = new URLSearchParams(url.split('?')[1])
+
+      expect(params.get('q')).toBe('left pad')
+      expect(params.get('page')).toBe('3')
+      expect(params.get('from')).toBe('gems')
+    })
+
+    it('検索条件が全て既定値でも付帯パラメータがあればクエリを返す', () => {
+      expect(
+        buildSearchUrl(
+          '',
+          { keyword: '', page: 1, sort: 'relevance', perPage: 20 },
+          { from: 'gems' },
+        ),
+      ).toBe('?from=gems')
+    })
+
+    it('空文字の付帯パラメータは載せない', () => {
+      expect(
+        buildSearchUrl(
+          '/ja',
+          { keyword: '', page: 1, sort: 'relevance', perPage: 20 },
+          { from: '' },
+        ),
+      ).toBe('/ja')
+    })
+  })
 })

@@ -117,4 +117,53 @@ describe('Pagination', () => {
     expect(current).toHaveAttribute('aria-current', 'page')
     expect(current.tagName).not.toBe('A')
   })
+  /**
+   * 🔴 GitHub 検索 API を経由しない面（Gem 一覧）は 1,000 件上限に縛られない。
+   * `maxPage` を渡した場合は上限を上書きし、API 上限の注記も出さない。
+   */
+  describe('maxPage で上限を上書きする（API を経由しない面）', () => {
+    it('MAX_PAGE を超えるページへもリンクを出す', () => {
+      render(
+        <Pagination
+          basePath="/ja/gems"
+          current={{ keyword: 'core', page: MAX_PAGE, sort: 'relevance', perPage: 20 }}
+          totalCount={1631}
+          labels={labels}
+          maxPage={Math.ceil(1631 / 20)}
+        />,
+      )
+
+      const href = screen.getByRole('link', { name: '次のページへ' }).getAttribute('href') ?? ''
+      expect(new URLSearchParams(href.split('?')[1]).get('page')).toBe(String(MAX_PAGE + 1))
+    })
+
+    it('上書きした上限の最終ページでも API 上限の注記は出さない（誤った理由を伝えない）', () => {
+      render(
+        <Pagination
+          basePath="/ja/gems"
+          current={{ keyword: 'core', page: MAX_PAGE, sort: 'relevance', perPage: 20 }}
+          totalCount={MAX_PAGE * 20}
+          labels={labels}
+          maxPage={MAX_PAGE}
+        />,
+      )
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: '次のページへ' })).not.toBeInTheDocument()
+    })
+
+    it('maxPage を省略した既存の呼び出しは従来どおり API 上限で振る舞う', () => {
+      render(
+        <Pagination
+          basePath="/ja"
+          current={{ keyword: 'react', page: MAX_PAGE, sort: 'relevance', perPage: 20 }}
+          totalCount={100000}
+          labels={labels}
+        />,
+      )
+
+      expect(screen.queryByRole('link', { name: '次のページへ' })).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent('表示できる最終ページです。')
+    })
+  })
 })
