@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import type { GemIndex } from '../domain/model/gem-index'
 import type { Locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
+import { GemBadge } from './gem-badge'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 import { buildSearchUrl, type SearchUrlState } from './url/build-search-url'
 
@@ -8,6 +10,12 @@ type RepositoryListLabels = {
   empty: string
   starCount: string
   updatedAt: string
+  /** Gem バッジの可視ラベル（短い語・例「Gem」）。`gemIndexes` と対で渡す（SP-18 / D-36）。 */
+  gemBadge?: string
+  /** Gem バッジの意味を支援技術へ伝える 1 文（`sr-only`）。区切りの括弧は文言側に含める（§7.4a）。 */
+  gemBadgeSrHint?: string
+  /** 🔴 バッジが付かないことが低評価を意味しない旨の注記（`D-36` の明示要件）。一覧に 1 回だけ出す。 */
+  gemBadgeNote?: string
 }
 
 /**
@@ -19,6 +27,7 @@ export function RepositoryList({
   labels,
   locale,
   searchState,
+  gemIndexes,
 }: {
   items: readonly RepositorySummary[]
   labels: RepositoryListLabels
@@ -29,6 +38,16 @@ export function RepositoryList({
    * 省略時はクエリなしのパスのまま（既存呼び出しとの後方互換）。
    */
   searchState?: SearchUrlState
+  /**
+   * Gem 候補プールに載っているリポジトリの `fullName` → Gem Index（SP-18 / D-36）。
+   * 渡すと該当カードにだけ Gem バッジを出す。省略時はバッジも注記も出ない（後方互換）。
+   *
+   * 🔴 **キーは `item.fullName` をそのまま使う**（大文字小文字の畳み込み等、照合の正規化は
+   * データ側の責務。ここで正規化すると照合規則の正本が 2 箇所に分かれる）。
+   * 🔴 **値（Gem Index）を並び替えに使わない**。`D-36` は「ソート軸としての体験破綻」を理由に
+   * `sort=gem-index` を却下しており、バッジは並び順を変えない注釈である。
+   */
+  gemIndexes?: ReadonlyMap<string, GemIndex>
 }) {
   if (items.length === 0) {
     // 0 件は「視覚表現だけ」にせず role="status" で支援技術にも伝える（US-23 / US-26 / NFR-12）。
@@ -67,7 +86,17 @@ export function RepositoryList({
     timeZone: 'Asia/Tokyo',
   })
 
+  // バッジを出せるのは文言が揃っているときだけ（`gemIndexes` だけでは描画しない）。
+  const gemBadgeLabel = labels.gemBadge
+  const gemBadgeSrHint = labels.gemBadgeSrHint
+  const canShowGemBadge = gemIndexes !== undefined && gemBadgeLabel !== undefined && gemBadgeSrHint !== undefined
+  // 注記は「バッジが 1 つ以上出ているとき」だけ、一覧に 1 回だけ出す（カードごとに出さない）。
+  const shownGemBadgeCount = canShowGemBadge
+    ? items.filter((item) => gemIndexes.has(item.fullName)).length
+    : 0
+
   return (
+    <>
     <ul className="divide-border divide-y">
       {items.map((item) => (
         <li key={item.id} className="relative flex gap-3 py-4">
@@ -100,6 +129,15 @@ export function RepositoryList({
             >
               {item.fullName}
             </Link>
+            {/*
+              Gem バッジはリポジトリ名リンクの直後（同じ行）に置く（SP-18 / D-36）。
+              🔴 リンクの **外**（兄弟）に置く: 内側に入れるとリンクのアクセシブルネームに
+              `srHint` が混ざり、リンク一覧の読み上げが冗長になる（§7.4a の裏返し）。
+              非フォーカス要素なので、カード全体を覆う `::after` のクリック領域と競合しない（§4.3）。
+            */}
+            {canShowGemBadge && gemIndexes.has(item.fullName) ? (
+              <> <GemBadge label={gemBadgeLabel} srHint={gemBadgeSrHint} /></>
+            ) : null}
             {item.description ? (
               <p className="text-muted-foreground mt-1 text-sm">{item.description}</p>
             ) : null}
@@ -130,5 +168,15 @@ export function RepositoryList({
         </li>
       ))}
     </ul>
+      {/*
+        🔴 `D-36` の明示要件: バッジが付かないことが低評価を意味しない旨の注記。
+        Gem Index は 12 レジストリの被依存数上位に限った **限定母集団** に対するカバレッジ指標で、
+        実測でも一般語の検索上位 100 件のうち平均 34.5% しか載らない（`D-36` の SP-17 実測追記）。
+        一覧の外（`ul` の兄弟）に 1 回だけ置き、カードごとの重複読み上げを避ける。
+      */}
+      {shownGemBadgeCount > 0 && labels.gemBadgeNote ? (
+        <p className="text-muted-foreground mt-3 text-xs">{labels.gemBadgeNote}</p>
+      ) : null}
+    </>
   )
 }
