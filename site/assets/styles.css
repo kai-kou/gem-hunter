@@ -30,6 +30,7 @@
   --hairline: oklch(0.89 0 0);
   --ring: oklch(0.42 0.14 250);
   --shadow: 0 1px 2px oklch(0.145 0 0 / 0.06), 0 12px 32px oklch(0.145 0 0 / 0.08);
+  --shadow-lg: 0 2px 4px oklch(0.145 0 0 / 0.06), 0 24px 60px oklch(0.145 0 0 / 0.14);
   --glow-a: oklch(0.62 0.19 250 / 0.28);
   --glow-b: oklch(0.72 0.14 190 / 0.2);
   --code-bg: oklch(0.96 0 0);
@@ -64,6 +65,7 @@
     --hairline: oklch(0.3 0 0);
     --ring: oklch(0.72 0.16 250);
     --shadow: 0 1px 2px oklch(0 0 0 / 0.5), 0 16px 40px oklch(0 0 0 / 0.45);
+    --shadow-lg: 0 24px 60px oklch(0 0 0 / 0.6);
     --glow-a: oklch(0.62 0.19 250 / 0.35);
     --glow-b: oklch(0.72 0.14 190 / 0.22);
     --code-bg: oklch(0.24 0 0);
@@ -89,7 +91,9 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
-  font-size: 16px;
+  /* 🔴 px で固定しない（ユーザーのブラウザ既定フォントサイズに追従させる。
+     アプリ本体の --text-control-min: 1rem と同じ方針）。 */
+  font-size: 1rem;
   line-height: 1.75;
   letter-spacing: 0.01em;
   overflow-x: hidden;
@@ -199,10 +203,12 @@ summary {
   position: sticky;
   top: 0;
   z-index: 50;
-  height: var(--header-h);
+  min-height: var(--header-h);
   display: flex;
   align-items: center;
+  background: var(--bg); /* color-mix() 非対応ブラウザ向けフォールバック（無いと完全透明になる） */
   background: color-mix(in oklab, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--hairline);
 }
@@ -218,7 +224,7 @@ summary {
   align-items: center;
   gap: 8px;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 1.0625rem;
   letter-spacing: -0.02em;
   color: var(--fg);
   text-decoration: none;
@@ -238,7 +244,7 @@ summary {
 .header-nav a {
   color: var(--fg-muted);
   text-decoration: none;
-  font-size: 14px;
+  font-size: 0.875rem;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   min-height: 40px;
@@ -268,7 +274,7 @@ summary {
   padding: 0 22px;
   border-radius: var(--radius);
   font-weight: 600;
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.2;
   text-decoration: none;
   border: 1px solid transparent;
@@ -307,7 +313,7 @@ summary {
 .btn-sm {
   min-height: 36px;
   padding: 0 14px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 @media (min-width: 900px) {
@@ -342,7 +348,7 @@ summary {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--accent);
@@ -378,7 +384,7 @@ summary {
 
 .assurance {
   margin-top: 14px;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg-muted);
   display: flex;
   flex-wrap: wrap;
@@ -388,7 +394,7 @@ summary {
 }
 
 .assurance li::before {
-  content: '✓';
+  content: '✓' / ''; /* 代替テキスト空指定。読み上げから外す（非対応ブラウザは従来どおり） */
   color: var(--accent);
   font-weight: 700;
   margin-right: 5px;
@@ -400,7 +406,7 @@ summary {
 }
 
 .samples-label {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg-muted);
   margin-bottom: 8px;
 }
@@ -420,11 +426,11 @@ summary {
   min-height: 36px;
   padding: 0 14px;
   border-radius: 999px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 0.875rem;
   text-decoration: none;
 }
 
@@ -444,10 +450,8 @@ summary {
   border: 1px solid var(--hairline);
   border-radius: var(--radius-xl);
   background: var(--bg-subtle);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
-  transform: rotateX(3deg);
-  transform-origin: top center;
 }
 
 .browser-bar {
@@ -475,7 +479,7 @@ summary {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg-muted);
   background: var(--bg);
   border: 1px solid var(--hairline);
@@ -499,7 +503,7 @@ summary {
 
 .shot-caption {
   margin-top: 14px;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg-muted);
   text-align: center;
 }
@@ -532,7 +536,7 @@ summary {
 }
 
 .kicker {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -559,6 +563,8 @@ summary {
   border-radius: var(--radius-lg);
   background: var(--bg);
   padding: 24px;
+  display: flex;
+  flex-direction: column;
 }
 
 .compare-card h3 {
@@ -571,7 +577,11 @@ summary {
 .compare-card p {
   margin-top: 10px;
   color: var(--fg-muted);
-  font-size: 15px;
+  font-size: 0.9375rem;
+}
+
+.compare-card.is-good .stat b {
+  color: var(--accent);
 }
 
 .compare-card.is-good {
@@ -590,7 +600,8 @@ summary {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 28px;
-  margin-top: 18px;
+  margin-top: auto;
+  padding-block-start: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--hairline);
 }
@@ -608,7 +619,7 @@ summary {
 }
 
 .stat span {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg-muted);
 }
 
@@ -648,7 +659,7 @@ summary {
   background: var(--accent);
   color: var(--accent-fg);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 0.9375rem;
   margin-bottom: 14px;
 }
 
@@ -659,7 +670,7 @@ summary {
 .steps p {
   margin-top: 8px;
   color: var(--fg-muted);
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 /* ---- 数式カード ---- */
@@ -672,21 +683,22 @@ summary {
   padding: clamp(20px, 3vw, 32px);
 }
 
+/* 🔴 overflow-x / white-space: nowrap を置かない。狭幅でキーボード操作できない
+   スクロール領域（SC 2.1.1）になり、式の後半が読めなくなる。折り返すほうが読める。 */
 .formula-expr {
   font-family: var(--font-mono);
   font-size: clamp(0.95rem, 2.1vw, 1.25rem);
   font-weight: 600;
+  line-height: 1.6;
   background: var(--code-bg);
   border-radius: var(--radius);
   padding: 16px 18px;
-  overflow-x: auto;
-  white-space: nowrap;
 }
 
 .formula p {
   margin-top: 14px;
   color: var(--fg-muted);
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 /* ---- bento ---- */
@@ -741,7 +753,7 @@ summary {
 
 .tile p {
   color: var(--fg-muted);
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 .tile-figure {
@@ -758,7 +770,7 @@ summary {
 }
 
 .tile-figure img.crop-top {
-  max-height: 420px;
+  max-height: 320px;
   object-fit: cover;
   object-position: top;
 }
@@ -784,7 +796,7 @@ summary {
 }
 
 .tag-list li {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg-muted);
   border: 1px solid var(--hairline);
   border-radius: 999px;
@@ -828,16 +840,16 @@ summary {
 .fact span {
   display: block;
   margin-top: 4px;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg-muted);
 }
 
 .limits {
   margin-top: 28px;
-  border: 1px dashed var(--border);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
   padding: 22px 24px;
-  background: var(--bg);
+  background: color-mix(in oklab, var(--bg-subtle) 55%, var(--bg));
 }
 
 .limits h3 {
@@ -848,7 +860,8 @@ summary {
   margin: 12px 0 0;
   padding-left: 1.25em;
   color: var(--fg-muted);
-  font-size: 15px;
+  font-size: 0.9375rem;
+  max-width: 76ch;
 }
 
 .limits li + li {
@@ -905,7 +918,7 @@ summary {
 .faq .answer {
   padding: 0 22px 20px;
   color: var(--fg-muted);
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 /* ---- 最終 CTA ---- */
@@ -936,6 +949,7 @@ summary {
   display: block;
 }
 
+.final-cta h1,
 .final-cta h2 {
   font-size: clamp(1.6rem, 3.6vw, 2.5rem);
   margin-top: 12px;
@@ -960,7 +974,7 @@ summary {
   border-top: 1px solid var(--hairline);
   background: var(--bg-subtle);
   padding-block: 40px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .footer-grid {
@@ -975,7 +989,7 @@ summary {
 }
 
 .footer-grid h2 {
-  font-size: 13px;
+  font-size: 0.8125rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -1010,7 +1024,7 @@ summary {
   padding-top: 20px;
   border-top: 1px solid var(--hairline);
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .footer-note a {
@@ -1028,7 +1042,6 @@ summary {
       animation-timeline: view();
       animation-range: entry 0% entry 46%;
       animation-duration: 1ms; /* Firefox は duration 0 だと発火しない */
-      will-change: transform;
     }
     @keyframes reveal-in {
       from {
@@ -1067,13 +1080,13 @@ summary {
   .shot-stage {
     animation-delay: 0.26s;
   }
+  /* 🔴 opacity は動かさない（.reveal と同じ規律）。初回描画で opacity: 0 だと
+     h1 とヒーロー画像が LCP 候補から永久に除外され、白画面の時間も伸びる。 */
   @keyframes hero-in {
     from {
-      opacity: 0;
       transform: translateY(14px);
     }
     to {
-      opacity: 1;
       transform: none;
     }
   }
@@ -1089,9 +1102,6 @@ summary {
     scroll-behavior: auto !important;
     animation-timeline: none !important;
   }
-  .browser {
-    transform: none;
-  }
 }
 
 @media print {
@@ -1105,7 +1115,141 @@ summary {
 /* 出典・注釈の 1 行 */
 .source-note {
   margin-top: 20px;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg-muted);
   max-width: 78ch;
+}
+
+/* ============================ モバイル調整 ============================ */
+
+@media (max-width: 819px) {
+  /* 縦積みになったら矢印も縦を向く */
+  .compare-arrow {
+    transform: rotate(90deg);
+  }
+}
+
+@media (max-width: 520px) {
+  /* 主要導線を全幅にして幅の不揃いをなくす（タップ面積も広がる） */
+  .hero-actions .btn {
+    width: 100%;
+  }
+}
+
+/* 縦が短いビューポート（＝ 400% ズーム相当）では sticky をやめ、
+   ヘッダーがフォーカス中の要素を覆う余地を構造的になくす（SC 2.4.11）。 */
+@media (max-height: 26rem) {
+  .site-header {
+    position: static;
+  }
+}
+
+/* ============ ダークテーマでのスクリーンショットの額装（VD-1） ============
+   アプリ本体にテーマ切替が無く、ダーク版の画面は実在しない。撮り直して出し分けると
+   「到達できない画面」を見せることになるため、ライトの画面を意図して額装する。 */
+@media (prefers-color-scheme: dark) {
+  .browser,
+  .browser-bar {
+    background: oklch(0.97 0 0);
+    border-color: oklch(0.87 0 0);
+  }
+
+  .browser {
+    box-shadow:
+      0 0 0 1px oklch(1 0 0 / 0.14),
+      0 24px 60px oklch(0 0 0 / 0.6);
+  }
+
+  .url-pill {
+    background: oklch(1 0 0);
+    color: oklch(0.42 0 0);
+    border-color: oklch(0.87 0 0);
+  }
+
+  .dots span {
+    background: oklch(0.87 0 0);
+  }
+
+  .tile-figure {
+    background: oklch(0.97 0 0);
+    border-color: oklch(0.8 0 0);
+    padding: 8px;
+    box-shadow: 0 0 0 1px oklch(1 0 0 / 0.1);
+  }
+}
+
+/* ============================ 追加コンポーネント ============================ */
+
+/* ヒーロー内の要素順（モバイルではキーワード例をスクリーンショットの下へ回す） */
+.hero > .wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.hero .eyebrow {
+  align-self: flex-start;
+}
+
+.hero-alt-link {
+  margin-top: 12px;
+  font-size: 0.9375rem;
+}
+
+@media (max-width: 640px) {
+  .hero .samples {
+    order: 10;
+    margin-top: 24px;
+  }
+
+  .hero .shot-stage {
+    order: 5;
+  }
+
+  /* fold を詰める。MIT ライセンスは最終 CTA とフッターに出ている */
+  .assurance-extra {
+    display: none;
+  }
+}
+
+/* bento タイル内の実データ（画像に頼らず数字をテキストでも出す） */
+.tile-datum {
+  font-size: 0.9375rem;
+  color: var(--fg);
+}
+
+.tile-datum b {
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-datum-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.78125rem;
+  color: var(--fg-muted);
+}
+
+/* 技術スタックは数値カードから外してバッジ行にする */
+.facts-stack {
+  margin-top: 16px;
+  gap: 8px;
+}
+
+.facts-stack li {
+  font-size: 0.84375rem;
+  padding: 4px 12px;
+}
+
+.formula-heading {
+  font-size: 1.0625rem;
+  margin-bottom: 12px;
+}
+
+.footer-brand {
+  margin-bottom: 8px;
+}
+
+.footer-tagline {
+  color: var(--fg-muted);
+  max-width: 44ch;
 }
