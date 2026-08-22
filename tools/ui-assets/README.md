@@ -157,11 +157,22 @@ node tools/ui-assets/build_data_uri_module.mjs --in /tmp/og-background-embed.png
 
 ## 位置づけ（重要）
 
+- 🔴 **リポジトリ内の画像はすべて `gpt-image-2` 由来（または `sharp`/本ディレクトリのスクリプトで
+  そこから機械的に変換したもの）である。** `app/favicon.ico` も例外ではない（`app/icon.png` を
+  `build_favicon_ico.mjs` で ICO コンテナへ詰め直しただけで、由来は `gpt-image-2` の logo 原画）。
+  手書き・ストック素材・別 AI 生成物を混ぜない。
+- 🔴 **ロゴを変更するときは `app/icon.png` / `public/images/logo.webp` / `app/favicon.ico` の
+  3 つを揃えて作り直す。** どれか 1 つだけ差し替えると、favicon.ico だけ旧ロゴのまま取り残される
+  （実際に Issue #369 で `app/favicon.ico` が Next.js 初期テンプレート由来のまま長期間放置されて
+  いた前例がある）。3 つとも同じ原寸 PNG（`logo.png`）から作るため、`to_web_assets.mjs` の
+  `logo.webp` / `icon.png` 生成コマンドと `build_favicon_ico.mjs` の実行は常にセットで行う。
 - **中間生成物（原寸 1024² などの PNG）はコミットしない。** 正本は配信ファイル（`public/images/*`・
-  `app/icon.png`、いずれも git 管理下）である。
+  `app/icon.png`・`app/favicon.ico`、いずれも git 管理下）である。
 - **画像生成は非決定的**。同じプロンプトを再実行しても同じ画素は返らない。したがって
   「再生成」は「同じ結果の復元」ではなく、**デザインを変えたいときの起点** として扱う。壊れた
   配信ファイルを直すために再生成しても、以前と寸分違わぬ絵には戻らないことを前提に運用する。
+  （`favicon.ico` は例外で、`app/icon.png` という確定した入力からの決定的な機械変換なので、
+  何度実行しても同じ ICO が得られる。）
 - 争点 C（`entries/r04_*_lead_consensus.md`）で「手書き SVG 再作図」は明示的に却下されている。
-  配信するのは **`gpt-image-2` の生成物そのもの**（`sharp` によるリサイズ・形式変換のみ）であり、
-  エージェントが絵を描き直すことはしない。
+  配信するのは **`gpt-image-2` の生成物そのもの**（`sharp` によるリサイズ・形式変換・ICO 化のみ）
+  であり、エージェントが絵を描き直すことはしない。
