@@ -1,4 +1,32 @@
+import type { DigestMeta, GemPoolEntry } from '../model/gem'
 import type { GemIndex } from '../model/gem-index'
+
+/**
+ * Gem 候補プールの絞り込み条件（`SP-19` / `D-37`）。
+ */
+export type GemPoolSearchInput = {
+  /** 正規化済みの検索トークン（`tokenizeQuery` の出力）。空配列なら絞り込みなし＝全件。 */
+  readonly tokens: readonly string[]
+  /** 1 始まりのページ番号。 */
+  readonly page: number
+  readonly perPage: number
+}
+
+/**
+ * Gem 候補プールの絞り込み結果（`SP-19` / `D-37`）。
+ */
+export type GemPoolSearchResult = {
+  /** `gemIndex` 昇順（値が小さいほど過小評価度が高い）。同値は `repositoryFullName` 昇順。 */
+  readonly items: readonly GemPoolEntry[]
+  /** 絞り込み後の総件数（ページングの母数）。 */
+  readonly totalCount: number
+  /** 実際に AND 一致へ使ったトークン（緩和が起きたときは 1 語だけ）。 */
+  readonly usedTokens: readonly string[]
+  /** 🔴 全語 AND が 0 件で「最も選択的な 1 語」へ緩めたか（`D-37`）。UI が明示するために返す。 */
+  readonly relaxed: boolean
+  /** 出典メタデータ（`D-29` / `GR-6`）。一覧にも帰属表示を出すため返す。 */
+  readonly meta: DigestMeta
+}
 
 /**
  * Gem 候補プール（レジストリ別シャードの全量・`D-38`）に対する照会口（`SP-18`）。
@@ -24,4 +52,21 @@ export interface GemIndexPort {
    *   動き続ける。`D-28` の SPOF 方針と同じ）
    */
   lookup(repositoryFullNames: readonly string[]): Promise<ReadonlyMap<string, GemIndex>>
+
+  /**
+   * 検索語で Gem 候補プールを絞り込み、`gemIndex` 昇順の 1 ページ分を返す（`SP-19`）。
+   *
+   * - 🔴 **照合規則の正本は `src/domain/model/gem-keyword.ts`**（repo 名・パッケージ名の
+   *   単語境界一致・全語 AND・0 件時のみ「最も選択的な 1 語」へ緩和・`D-37`）。実装側で
+   *   独自の照合（部分一致・あいまい一致）を足さない
+   * - 緩和が起きたかは `relaxed`、実際に使ったトークンは `usedTokens` で返す（UI が
+   *   「全語では 0 件だったので 1 語で絞り込んだ」ことを明示できるようにするため）
+   * - `tokens` が空配列なら絞り込みなし＝プール全件が母数になる
+   * - 🔴 **`gemIndex` の閾値では絞らない**。一覧に載るのは **プールに載っているもの全部** で、
+   *   `gemIndex` は **順序** にだけ使う（値は母集団相対なので、閾値の意味が母集団ごとに変わる）
+   * - 🔴 読み込みに失敗しても **例外を投げず空の結果を返す**（`items: []` / `totalCount: 0` /
+   *   `usedTokens: []` / `relaxed: false` / `meta` は既定値）。一覧が空になるだけで
+   *   アプリは動き続ける（`lookup()` と同じ `D-28` の SPOF 方針）
+   */
+  search(input: GemPoolSearchInput): Promise<GemPoolSearchResult>
 }
