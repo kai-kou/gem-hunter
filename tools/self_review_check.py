@@ -111,8 +111,13 @@ LAYER_LABEL_PATTERN = re.compile(
 )
 
 # テストパス判定（whiteboard 確定パターン）
+# 🔴 `.mjs` を含める理由（`SP-17` / PR #416 セルフレビュー指摘）: ビルド時ツール（`tools/`）の
+#    ユニットテストは `*.test.mjs` で書かれる。これが本タプルに無いと、テストファイルが
+#    「プロダクションコード」として数えられ、`SD-2` の TDD コミット順序チェック
+#    （`test:` コミット → `feat:` コミット）が当該ディレクトリに対して恒久的に無効化される。
 TEST_PATH_GLOBS = (
     "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx",
+    "**/*.test.mjs", "**/*.spec.mjs",
     "e2e/**", "**/__tests__/**", "**/*_test.py", "tests/**",
 )
 
@@ -548,6 +553,7 @@ def _self_test_is_test_path() -> list[str]:
     true_cases = [
         "src/foo.test.ts", "src/foo.test.tsx", "src/foo.spec.ts", "src/foo.spec.tsx",
         "e2e/login.spec.ts", "src/__tests__/foo.ts", "scripts/foo_test.py", "tests/unit/foo.py",
+        "tools/gem-pool/collect.test.mjs", "tools/gem-pool/output.spec.mjs",
     ]
     for p in true_cases:
         if not is_test_path(p):
@@ -555,6 +561,7 @@ def _self_test_is_test_path() -> list[str]:
     false_cases = [
         "src/domain/foo.ts", "app/foo/page.tsx", "src/usecases/handler.ts",
         "tools/self_review_check.py", "src/infrastructure/db.ts",
+        "tools/gem-pool/collect.mjs", "tools/generate_gem_digest.mjs",
     ]
     for p in false_cases:
         if is_test_path(p):

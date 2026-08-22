@@ -354,7 +354,12 @@ function renderStats(stats, indent = '  ') {
 
 /* ------------------------------------------------------------------ 本体 */
 
-async function main() {
+/**
+ * CLI 本体。**テストから import しても走らないよう、実行はエントリポイント判定の下だけで行う**。
+ *
+ * @returns {Promise<number>} 終了コード（0 = 正常 / 1 = 配信データの書き込みを拒否した）
+ */
+export async function main() {
   const args = parseArgs(process.argv.slice(2))
   const registries = args.registries ?? REGISTRIES
   const startedAt = Date.now()
@@ -400,10 +405,7 @@ async function main() {
     `収集完了: requests=${collected.requestCount} fetched=${collected.fetchedCount} (${formatDuration(Date.now() - startedAt)})`,
   )
 
-  const { records, stats } = buildPool(collected.byRegistry, {
-    minStars: args.minStars,
-    highDependentRankPercentile: args.highDependentRank,
-  })
+  const { records, stats } = buildPool(collected.byRegistry, toBuildPoolOptions(args))
 
   if (records.length === 0) {
     throw new Error(
@@ -420,13 +422,30 @@ async function main() {
   const outDir = resolve(REPO_ROOT, args.outDir)
   const digestOut = resolve(REPO_ROOT, args.digestOut)
 
+  // 部分収集の結果で配信物を壊さない（判定は純粋関数側・理由は必ず stderr に出す）。
+  const decision = decideOutputWrite({
+    selectedRegistryCount: registries.length,
+    totalRegistryCount: REGISTRIES.length,
+    failureCount: failures.length,
+    allowPartialWrite: args.allowPartialWrite,
+    dryRun: args.dryRun,
+  })
+  if (decision.blocked) warn(decision.reason)
+  else if (decision.partial && decision.write) warn(decision.reason)
+
   /** @type {{path:string, bytes:number}[]} */
   const outputs = []
   for (const shard of shards) {
-    outputs.push(await emit(resolve(outDir, shard.fileName), shard.doc, args.dryRun, false))
+    outputs.push(await emit(resolve(outDir, shard.fileName), shard.doc, decision.write, false))
   }
-  outputs.push(await emit(resolve(outDir, INDEX_FILE_NAME), index, args.dryRun, true))
-  outputs.push(await emit(digestOut, digest, args.dryRun, true))
+  outputs.push(await emit(resolve(outDir, INDEX_FILE_NAME), index, decision.write, true))
+  outputs.push(await emit(digestOut, digest, decision.write, true))
+
+  // 索引に載らないシャードをディスクに残さない（レジストリ構成が変わったときの残留・部分更新の孤児）。
+  const removedFiles = decision.write
+    ? await removeOrphanShards(outDir, [...shards.map((s) => s.fileName), INDEX_FILE_NAME])
+    : []
+  for (const name of removedFiles) progress(`孤児シャードを削除しました: ${name}`)
 
   const durationMs = Date.now() - startedAt
   const summary = buildSummary({
@@ -438,16 +457,40 @@ async function main() {
     outputs,
     durationMs,
     meta,
+    decision,
+    removedFiles,
   })
 
   if (args.report) {
-    // レポートは dry-run でも書く（実測を README / PR に貼るのが目的で、配信データではないため）。
+    // レポートは dry-run / 書き込み拒否のときでも書く
+    // （実測を README / PR に貼るのが目的で、配信データではないため）。
     const reportPath = resolve(REPO_ROOT, args.report)
     await writeJsonFile(reportPath, summary, { pretty: true })
     progress(`レポートを書き出しました → ${reportPath}`)
   }
 
   process.stdout.write(renderSummary(summary, args) + '\n')
+
+  if (decision.blocked) {
+    warn(decision.reason)
+    return 1
+  }
+  return 0
+}
+
+/** 出力ディレクトリの孤児シャードを削除して、削除したファイル名を返す。 */
+async function removeOrphanShards(outDir, keepFileNames) {
+  /** @type {string[]} */
+  let existing
+  try {
+    existing = await readdir(outDir)
+  } catch (err) {
+    if (err?.code === 'ENOENT') return []
+    throw err
+  }
+  const orphans = selectOrphanShards(existing, keepFileNames)
+  for (const name of orphans) await rm(resolve(outDir, name), { force: true })
+  return orphans
 }
 
 /**
@@ -465,7 +508,18 @@ async function emit(path, doc, write, pretty) {
 }
 
 /** stdout サマリーと `--report` JSON の共通の中身。 */
-function buildSummary({ args, registries, collected, records, stats, outputs, durationMs, meta }) {
+function buildSummary({
+  args,
+  registries,
+  collected,
+  records,
+  stats,
+  outputs,
+  durationMs,
+  meta,
+  decision,
+  removedFiles,
+}) {
   const byRegistry = new Map()
   for (const r of records) byRegistry.set(r.registry, (byRegistry.get(r.registry) ?? 0) + 1)
 
@@ -473,6 +527,12 @@ function buildSummary({ args, registries, collected, records, stats, outputs, du
     generatedAt: meta.generatedAt,
     durationMs,
     dryRun: args.dryRun,
+    // 部分実行だったか / 実際に配信データを書いたか（実測レポートを後から読む人向け）。
+    partial: decision.partial,
+    wroteOutputs: decision.write,
+    blocked: decision.blocked,
+    writeDecisionReason: decision.reason,
+    removedFiles: removedFiles ?? [],
     options: {
       quota: args.quota,
       perPage: args.perPage,
@@ -480,6 +540,7 @@ function buildSummary({ args, registries, collected, records, stats, outputs, du
       minStars: args.minStars,
       highDependentRank: args.highDependentRank,
       digestLimit: args.digestLimit,
+      allowPartialWrite: args.allowPartialWrite,
     },
     requestCount: collected.requestCount ?? null,
     fetchedCount: collected.fetchedCount ?? null,
@@ -526,7 +587,10 @@ function renderSummary(s, args) {
   }
 
   lines.push('')
-  lines.push(`出力ファイル: ${s.outputs.length} 件（合計 ${formatBytes(s.totalBytes)}）`)
+  lines.push(
+    `出力ファイル: ${s.outputs.length} 件（合計 ${formatBytes(s.totalBytes)}）` +
+      (s.wroteOutputs ? '' : '（書き込みなし・サイズのみ算出）'),
+  )
   lines.push(
     renderTable(
       ['file', 'bytes', 'size'],
@@ -567,15 +631,30 @@ function renderSummary(s, args) {
     ),
   )
 
+  if (s.removedFiles.length > 0) {
+    lines.push('')
+    lines.push(`孤児シャードを削除: ${s.removedFiles.length} 件`)
+    for (const name of s.removedFiles) lines.push(`  - ${name}`)
+  }
+
   if (args.dryRun) lines.push('', '※ --dry-run のためファイルは書き込んでいません。')
+  else if (s.blocked) lines.push('', `※ ${s.writeDecisionReason}`)
+  else if (s.partial) lines.push('', `※ ${s.writeDecisionReason}`)
   return lines.join('\n')
 }
 
-try {
-  await main()
-} catch (err) {
-  process.stderr.write(
-    `[generate_gem_digest] error: ${err instanceof Error ? err.message : String(err)}\n`,
-  )
-  process.exit(1)
+/** `node tools/generate_gem_digest.mjs` として起動されたときだけ実行する（import では走らせない）。 */
+const isEntryPoint =
+  typeof process.argv[1] === 'string' &&
+  resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
+
+if (isEntryPoint) {
+  try {
+    process.exit(await main())
+  } catch (err) {
+    process.stderr.write(
+      `[generate_gem_digest] error: ${err instanceof Error ? err.message : String(err)}\n`,
+    )
+    process.exit(1)
+  }
 }

@@ -8,7 +8,15 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { API_BASE, DEFAULT_PER_PAGE, USER_AGENT, collectAll, collectRegistry } from './collect.mjs'
+import {
+  API_BASE,
+  DEFAULT_PER_PAGE,
+  MAX_PER_PAGE,
+  MAX_RESPONSE_BYTES,
+  USER_AGENT,
+  collectAll,
+  collectRegistry,
+} from './collect.mjs'
 import { REGISTRIES, registryFileSlug } from './registries.mjs'
 
 /** 投影関数のスタブ: 生レコードをそのまま通す（null を返さない） */
@@ -20,8 +28,30 @@ function makeRawPage(prefix, n) {
 }
 
 /** 成功レスポンス（Response 互換の最小スタブ） */
-function okResponse(body) {
-  return { ok: true, status: 200, headers: new Headers(), json: async () => body }
+function okResponse(body, headers = {}) {
+  return { ok: true, status: 200, headers: new Headers(headers), json: async () => body }
+}
+
+/**
+ * `per_page` の要求値によらず最大 `cap` 件しか返さないサーバのスタブ
+ * （Ecosyste.ms が per_page を 1000 で頭打ちにする実測挙動を再現する）。
+ *
+ * @param {number} cap 1 ページの上限件数
+ * @param {number} total 全件数（これを超えたページは残りだけ返す）
+ */
+function makeCappedFetchImpl(cap, total) {
+  const calls = []
+  const fetchImpl = vi.fn(async (url, init) => {
+    calls.push({ url: String(url), init })
+    const params = new URL(url).searchParams
+    const page = Number(params.get('page'))
+    const requested = Number(params.get('per_page'))
+    const size = Math.min(cap, requested)
+    const offset = (page - 1) * size
+    const count = Math.max(0, Math.min(size, total - offset))
+    return okResponse(makeRawPage(`p${page}`, count))
+  })
+  return { fetchImpl, calls }
 }
 
 /** エラーレスポンス（Response 互換の最小スタブ） */
@@ -125,7 +155,8 @@ describe('collectRegistry', () => {
 
     await collectRegistry({
       registry: 'npmjs.org',
-      quota: 10,
+      // 1 ページ目の実測件数（3）が停止基準になるため、quota でループを閉じる
+      quota: 3,
       perPage: 5,
       fetchImpl,
       project: passThrough,
@@ -175,7 +206,7 @@ describe('collectRegistry', () => {
     expect(result.registry).toBe('npmjs.org')
   })
 
-  it('最終ページ（返却件数が perPage 未満）で停止する', async () => {
+  it('最終ページ（返却件数が実測ページサイズ未満）で停止する', async () => {
     const { fetchImpl, calls } = makeFetchImpl([
       okResponse(makeRawPage('p1', 10)),
       okResponse(makeRawPage('p2', 4)),
@@ -406,6 +437,103 @@ describe('collectRegistry', () => {
   })
 })
 
+describe('collectRegistry のページング上限まわり', () => {
+  it('perPage を MAX_PER_PAGE で切り詰め、onWarn で知らせる（例外にはしない）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([okResponse([])])
+    const onWarn = vi.fn()
+
+    await collectRegistry({
+      registry: 'npmjs.org',
+      quota: 10,
+      perPage: MAX_PER_PAGE + 500,
+      fetchImpl,
+      project: passThrough,
+      onWarn,
+    })
+
+    expect(new URL(calls[0].url).searchParams.get('per_page')).toBe(String(MAX_PER_PAGE))
+    expect(onWarn).toHaveBeenCalledTimes(1)
+    expect(onWarn.mock.calls[0][0]).toContain(String(MAX_PER_PAGE))
+  })
+
+  it('要求 per_page が上限で頭打ちにされても quota までページをめくる', async () => {
+    // per_page=1500 を要求しても 1000 件しか返らないサーバ（実測挙動）
+    const { fetchImpl, calls } = makeCappedFetchImpl(MAX_PER_PAGE, 2500)
+
+    const result = await collectRegistry({
+      registry: 'npmjs.org',
+      quota: 2500,
+      perPage: MAX_PER_PAGE + 500,
+      fetchImpl,
+      project: passThrough,
+    })
+
+    // 「返却件数 < 要求件数」で止めていた頃は 1 ページ 1000 件で正常終了していた
+    expect(calls).toHaveLength(3)
+    expect(calls.map((c) => new URL(c.url).searchParams.get('page'))).toEqual(['1', '2', '3'])
+    expect(result.fetchedCount).toBe(2500)
+    expect(result.records).toHaveLength(2500)
+  })
+
+  it('要求 perPage 未満のページが続いても、実測ページサイズを下回るまで止まらない', async () => {
+    // 要求 10 件に対して常に 4 件しか返さないサーバ（全 10 件）
+    const { fetchImpl, calls } = makeCappedFetchImpl(4, 10)
+
+    const result = await collectRegistry({
+      registry: 'hex.pm',
+      quota: 1000,
+      perPage: 10,
+      fetchImpl,
+      project: passThrough,
+    })
+
+    // 4 / 4 / 2 → 3 ページ目で実測サイズ（4）を下回って停止
+    expect(calls).toHaveLength(3)
+    expect(result.fetchedCount).toBe(10)
+    expect(result.records).toHaveLength(10)
+  })
+
+  it('content-length が MAX_RESPONSE_BYTES を超えるページは本文を読まず失敗扱いにする', async () => {
+    const huge = okResponse(makeRawPage('p1', 1), {
+      'content-length': String(MAX_RESPONSE_BYTES + 1),
+    })
+    const json = vi.fn(async () => makeRawPage('p1', 1))
+    const { fetchImpl, calls } = makeFetchImpl([{ ...huge, json }, { ...huge, json }])
+    const { sleepImpl } = makeSleepImpl()
+
+    await expect(
+      collectRegistry({
+        registry: 'npmjs.org',
+        quota: 10,
+        perPage: 10,
+        fetchImpl,
+        project: passThrough,
+        maxRetries: 1,
+        sleepImpl,
+      }),
+    ).rejects.toThrow(/content-length/)
+
+    expect(calls).toHaveLength(2) // 既存のリトライ経路に乗る
+    expect(json).not.toHaveBeenCalled() // 全量バッファリングしない
+  })
+
+  it('content-length が上限以下なら通常どおり読む（ヘッダが無い場合も同じ）', async () => {
+    const { fetchImpl } = makeFetchImpl([
+      okResponse(makeRawPage('p1', 2), { 'content-length': String(MAX_RESPONSE_BYTES) }),
+    ])
+
+    const result = await collectRegistry({
+      registry: 'npmjs.org',
+      quota: 2,
+      perPage: 10,
+      fetchImpl,
+      project: passThrough,
+    })
+
+    expect(result.records).toHaveLength(2)
+  })
+})
+
 describe('collectAll', () => {
   it('複数レジストリを逐次で収集して byRegistry にまとめる', async () => {
     const order = []
@@ -475,6 +603,50 @@ describe('collectAll', () => {
     expect(result.fetchedCount).toBe(6)
     expect(onRegistryDone).toHaveBeenCalledTimes(3)
     expect(onRegistryDone.mock.calls.map((c) => c[0].ok)).toEqual([true, false, true])
+  })
+
+  it('巨大レスポンスのレジストリだけ failures に落ち、他は収集できる', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      const registry = new URL(url).pathname.split('/')[4]
+      if (registry === 'pypi.org') {
+        return okResponse(makeRawPage('x', 1), {
+          'content-length': String(MAX_RESPONSE_BYTES + 1),
+        })
+      }
+      return okResponse(makeRawPage(registry, 2))
+    })
+    const { sleepImpl } = makeSleepImpl()
+
+    const result = await collectAll({
+      registries: ['npmjs.org', 'pypi.org', 'crates.io'],
+      quota: 2,
+      perPage: 10,
+      fetchImpl,
+      project: passThrough,
+      maxRetries: 0,
+      sleepImpl,
+    })
+
+    expect([...result.byRegistry.keys()]).toEqual(['npmjs.org', 'crates.io'])
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0].registry).toBe('pypi.org')
+    expect(result.failures[0].message).toMatch(/content-length/)
+  })
+
+  it('perPage の切り詰め警告はレジストリごとに繰り返さない（全体で 1 回）', async () => {
+    const fetchImpl = vi.fn(async () => okResponse(makeRawPage('x', 1)))
+    const onWarn = vi.fn()
+
+    await collectAll({
+      registries: ['npmjs.org', 'pypi.org'],
+      quota: 1,
+      perPage: MAX_PER_PAGE + 1,
+      fetchImpl,
+      project: passThrough,
+      onWarn,
+    })
+
+    expect(onWarn).toHaveBeenCalledTimes(1)
   })
 
   it('registries が空なら何も収集せず空の結果を返す', async () => {
