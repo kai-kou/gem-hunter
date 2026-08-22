@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import ja from '../messages/ja.json'
