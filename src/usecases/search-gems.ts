@@ -1,7 +1,11 @@
 import { tokenizeQuery } from '../domain/model/gem-keyword'
 import { DEFAULT_PAGE } from '../domain/model/page-number'
 import { tryParse as tryPerPage } from '../domain/model/per-page'
-import type { GemIndexPort, GemPoolSearchResult } from '../domain/ports/gem-index-port'
+import type {
+  GemIndexPort,
+  GemPoolSearchInput,
+  GemPoolSearchResult,
+} from '../domain/ports/gem-index-port'
 
 export type SearchGemsInput = {
   /** 利用者が入力した検索語の **生値**（URL の `q`）。正規化は本ユースケースが行う。 */
@@ -151,7 +155,10 @@ export function makeSearchGems(deps: { gems: GemIndexPort }): SearchGems {
  * 実データのプールは 62,483 件あり、健全なら「絞り込みなし」は必ず 1 件以上を返す。
  * 0 件なら読み込みに失敗している（`GemIndexPort#search` の契約では失敗も空結果になる）。
  */
-async function isPoolUnavailable(gems: GemIndexPort, perPage: number): Promise<boolean> {
+async function isPoolUnavailable(
+  gems: GemIndexPort,
+  perPage: GemPoolSearchInput['perPage'],
+): Promise<boolean> {
   const pool = await gems.search({ tokens: [], page: DEFAULT_PAGE, perPage })
   return pool.totalCount === 0
 }
