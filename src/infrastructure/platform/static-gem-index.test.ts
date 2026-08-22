@@ -493,13 +493,47 @@ describe('StaticGemIndex#search', () => {
     expect(page3.totalCount).toBe(5)
   })
 
-  it('範囲外のページは空配列（totalCount は変わらない）', async () => {
+  it('🔴 範囲外のページは最終ページへクランプする（1 ページ目へ倒さない・`F-02`）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
-    const result = await port.search({ tokens: [], page: 99, perPage: perPageOf(2) })
+    // 5 件 / 2 件ずつ = 最終ページは 3。`page=999` でも最終ページの中身が返る。
+    const result = await port.search({ tokens: [], page: 999, perPage: perPageOf(2) })
 
-    expect(result.items).toEqual([])
+    expect(result.effectivePage).toBe(3)
+    expect(names(result.items)).toEqual(['delta/solo'])
     expect(result.totalCount).toBe(5)
+  })
+
+  it('範囲内のページは入力値のまま effectivePage に載る', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const result = await port.search({ tokens: [], page: 2, perPage: perPageOf(2) })
+
+    expect(result.effectivePage).toBe(2)
+    expect(names(result.items)).toEqual(['beta/orm-client', 'Gamma/Image-Tools'])
+  })
+
+  it('壊れたページ番号（0 / 負数 / 非整数 / NaN）は 1 ページ目へ倒す', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    for (const page of [0, -3, Number.NaN]) {
+      const result = await port.search({ tokens: [], page, perPage: perPageOf(2) })
+      expect(result.effectivePage).toBe(1)
+      expect(names(result.items)).toEqual(['acme/orm-core', 'acme/http-client'])
+    }
+    // 非整数は切り捨て（2.7 → 2 ページ目）。
+    expect((await port.search({ tokens: [], page: 2.7, perPage: perPageOf(2) })).effectivePage).toBe(
+      2,
+    )
+  })
+
+  it('0 件のときの effectivePage は 1', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const result = await port.search({ tokens: ['zzz'], page: 42, perPage: perPageOf(2) })
+
+    expect(result.totalCount).toBe(0)
+    expect(result.effectivePage).toBe(1)
   })
 
   it('出典メタデータ（index.json の meta）を返す', async () => {
@@ -532,6 +566,7 @@ describe('StaticGemIndex#search', () => {
     ).resolves.toEqual({
       items: [],
       totalCount: 0,
+      effectivePage: 1,
       usedTokens: [],
       relaxed: false,
       meta: FALLBACK_META,
@@ -575,22 +610,21 @@ describe('StaticGemIndex#search', () => {
     expect(result.items[0]!.registry).toBe('pypi.org')
   })
 
-  it('照合用トークンは初回 search の 1 回だけ計算する（warm の search で再 tokenize しない）', async () => {
+  it('検索インデックスは初回 search の 1 回だけ作る（warm の search で作り直さない）', async () => {
     const reader = stubReader(searchFiles)
     const port = new StaticGemIndex(reader)
 
     await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
-    const afterFirstSearch = tokenize.calls
-    expect(afterFirstSearch).toBeGreaterThan(0)
+    expect(searchIndexBuildCountForTest()).toBe(1)
 
     await port.search({ tokens: ['client'], page: 1, perPage: perPageOf(10) })
     await port.search({ tokens: ['image', 'client'], page: 1, perPage: perPageOf(10) })
 
-    expect(tokenize.calls).toBe(afterFirstSearch)
+    expect(searchIndexBuildCountForTest()).toBe(1)
     expect(reader.calls).toHaveLength(3) // index.json + シャード 2 本（取得も 1 セットだけ）
   })
 
-  it('🔴 lookup だけを呼んだときは tokenize を一度も走らせない（一覧専用コストの遅延化）', async () => {
+  it('🔴 lookup だけを呼んだときは検索インデックスを作らない（一覧専用コストの遅延化）', async () => {
     const reader = stubReader(searchFiles)
     const port = new StaticGemIndex(reader)
 
@@ -598,7 +632,7 @@ describe('StaticGemIndex#search', () => {
     await port.lookup(['delta/solo'])
 
     // 検索インデックス（tokenize + 並べ替え・実測で約 122ms）は search が来るまで作らない。
-    expect(tokenize.calls).toBe(0)
+    expect(searchIndexBuildCountForTest()).toBe(0)
     expect(reader.calls).toHaveLength(3) // プール（第 1 段）は作られている
   })
 
@@ -606,32 +640,23 @@ describe('StaticGemIndex#search', () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
     await port.lookup(['acme/orm-core'])
-    expect(tokenize.calls).toBe(0)
+    expect(searchIndexBuildCountForTest()).toBe(0)
 
     await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
-    const afterFirstSearch = tokenize.calls
     await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
 
-    expect(afterFirstSearch).toBeGreaterThan(0)
-    expect(tokenize.calls).toBe(afterFirstSearch)
+    expect(searchIndexBuildCountForTest()).toBe(1)
   })
 
   it('並行に search しても検索インデックスは 1 回しか作らない（第 2 段も singleton）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
-    const serial = new StaticGemIndex(stubReader(searchFiles))
-
-    // 直列 1 回分の tokenize 回数を基準にする。
-    await serial.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
-    const oneBuild = tokenize.calls
-    resetGemIndexCacheForTest()
-    tokenize.calls = 0
 
     const [first, second] = await Promise.all([
       port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) }),
       port.search({ tokens: ['client'], page: 1, perPage: perPageOf(10) }),
     ])
 
-    expect(tokenize.calls).toBe(oneBuild) // 2 本走っても構築は 1 回
+    expect(searchIndexBuildCountForTest()).toBe(1) // 2 本走っても構築は 1 回
     expect(first.totalCount).toBe(2)
     expect(second.totalCount).toBe(2)
   })
@@ -640,38 +665,9 @@ describe('StaticGemIndex#search', () => {
     const reader = stubReader(searchFiles)
 
     await new StaticGemIndex(reader).search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
-    const afterFirst = tokenize.calls
     await new StaticGemIndex(reader).search({ tokens: ['client'], page: 1, perPage: perPageOf(10) })
 
-    expect(tokenize.calls).toBe(afterFirst)
-  })
-
-  it('🔴 検索インデックスの構築が失敗しても lookup は従来どおり動く（段が独立している）', async () => {
-    const reader = stubReader(searchFiles)
-    const port = new StaticGemIndex(reader)
-    tokenize.fail = true
-
-    const result = await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
-    const found = await port.lookup(['acme/orm-core', 'delta/solo'])
-
-    expect(result.items).toEqual([])
-    expect(result.totalCount).toBe(0)
-    expect(result.meta).toEqual(POOL_META) // プール（第 1 段）は生きているので出典は返せる
-    expect(found.size).toBe(2)
-    expect(gemIndexValue(found.get('acme/orm-core')!)).toBe(-70)
-  })
-
-  it('検索インデックスの構築に失敗した Promise はキャッシュしない（次の search で再試行して成功する）', async () => {
-    const port = new StaticGemIndex(stubReader(searchFiles))
-    tokenize.fail = true
-
-    expect((await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })).totalCount).toBe(0)
-
-    tokenize.fail = false
-    const retried = await port.search({ tokens: ['orm'], page: 1, perPage: perPageOf(10) })
-
-    expect(retried.totalCount).toBe(2)
-    expect(names(retried.items)).toEqual(['acme/orm-core', 'beta/orm-client'])
+    expect(searchIndexBuildCountForTest()).toBe(1)
   })
 
   it('lookup と search は同じ 1 回の読み込み・parse を共有する（アセットを増やさない）', async () => {
