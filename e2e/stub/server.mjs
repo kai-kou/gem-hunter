@@ -33,6 +33,11 @@
 //                             データセット。実 API と同様に `page` / `per_page` / `sort` を
 //                             実際に反映して切り出す（他キーワードは PAGE_1_REPOS/PAGE_2_REPOS
 //                             固定・既存 E2E への影響を避けるため分離）。
+//   gem-badge を含む       → SP-18（Gem バッジ）E2E 専用の 2 件データセット。1 件目は候補プールに
+//                             載っていない `octostub/not-a-gem`（バッジなし）、2 件目は
+//                             `public/data/gem-index/` の実在プールから取り出したリポジトリ
+//                             （バッジあり）。返却順は「バッジなし → バッジあり」に固定し、
+//                             バッジが並び替えに使われていないこと（`D-36`）を検証できるようにする。
 //
 // `/__stats`: スタブへ実際に届いたリクエスト数（`searchCount` / `detailCount`）を返す。
 // SP-5（キャッシュ）の E2E は「2 回目の検索でスタブへのリクエストが増えないこと」をこの値で
@@ -272,12 +277,12 @@ function readmeRichHtml(owner, repoName) {
     '</tbody>' +
     '</table>' +
     '<h2>Example usage</h2>' +
-    '<pre><code>import { createClient } from \'octo-readme-rich\'\n\n' +
+    "<pre><code>import { createClient } from 'octo-readme-rich'\n\n" +
     'const client = createClient({ token: process.env.OCTO_TOKEN, ' +
     "baseUrl: 'https://api.example.com/v1/octo-readme-rich/really/long/endpoint/path/" +
     "that/keeps/going/and/going/without/ever/wrapping/to/the/next/line' })\n" +
     "const result = await client.search({ query: 'gem-hunter', perPage: 50, sort: 'stars' })\n" +
-    'console.log(result.items.map((item) =&gt; item.fullName).join(\', \'))</code></pre>' +
+    "console.log(result.items.map((item) =&gt; item.fullName).join(', '))</code></pre>" +
     '<p>Full docs: <a href="https://github.com/octostub/octo-readme-rich/blob/main/docs/' +
     'very/long/nested/path/that/should/not/force/horizontal/scroll/on/the/page/README.md">' +
     'https://github.com/octostub/octo-readme-rich/blob/main/docs/very/long/nested/path/' +
@@ -303,6 +308,101 @@ const privateMixedRepos = [
     isPrivate: true,
     description: 'PRIVATE-SECRET-DESCRIPTION',
   }),
+]
+
+// SP-18 E2E 専用: `q` に `gem-badge` を含む検索でのみ使う 2 件データセット
+// （`e2e/sp-18.spec.ts`）。Gem バッジは「候補プール（`public/data/gem-index/`）に載っているか」
+// だけで決まるため、架空の `octostub/*` しか返さない既存データセットではバッジ経路を 1 度も
+// 通せなかった。そこで **プール実在のリポジトリ 1 件 + 非実在 1 件** を返し、
+// 「一部のカードにだけバッジが出る」（`user-story-map.md` §5.3 `SP-18` 手順 2）を検証可能にする。
+//
+// 🔴 **プール側のリポジトリ名をハードコードしない**。候補プールは定期再生成されるため、
+//    名前を固定すると将来のプール更新でテストが落ちる。起動時に `index.json` →
+//    `shards[0].fileName` → そのシャードの `entries[0]` から `repositoryFullName` を引く
+//    （`columns` の位置は決め打ちしない・`static-gem-index.ts` と同じ作法）。
+// 🔴 **読み込みに失敗してもスタブ起動は失敗させない**（他の spec を巻き添えにしない）。
+//    その場合は 1 件だけ返し、`console.warn` で理由を出す。テスト側は「2 件返ること」を
+//    `expect` して失敗する（静かに素通りさせない）。
+const GEM_BADGE_MARKER = 'gem-badge'
+const GEM_BADGE_AVATAR =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const gemIndexDir = path.join(__dirname, '..', '..', 'public', 'data', 'gem-index')
+
+/**
+ * 候補プールの先頭リポジトリ（`owner/repo`）を返す。読めなければ `null`。
+ * `static-gem-index.ts` と同じく `columns.indexOf('repositoryFullName')` で列位置を引く。
+ */
+function readFirstPoolRepositoryFullName() {
+  try {
+    const index = JSON.parse(readFileSync(path.join(gemIndexDir, 'index.json'), 'utf8'))
+    const fileName = Array.isArray(index?.shards) ? index.shards[0]?.fileName : undefined
+    if (typeof fileName !== 'string' || fileName.length === 0) {
+      throw new Error('index.json の shards[0].fileName が読めない')
+    }
+    const shard = JSON.parse(readFileSync(path.join(gemIndexDir, fileName), 'utf8'))
+    const nameIndex = Array.isArray(shard?.columns)
+      ? shard.columns.indexOf('repositoryFullName')
+      : -1
+    if (nameIndex < 0) {
+      throw new Error(`${fileName} の columns に repositoryFullName が無い`)
+    }
+    const entry = Array.isArray(shard?.entries) ? shard.entries[0] : undefined
+    const fullName = Array.isArray(entry) ? entry[nameIndex] : undefined
+    if (typeof fullName !== 'string' || !fullName.includes('/')) {
+      throw new Error(`${fileName} の entries[0] から repositoryFullName を取り出せない`)
+    }
+    return fullName
+  } catch (error) {
+    console.warn(
+      `[e2e-stub] 候補プールの先頭リポジトリを読めませんでした（gem-badge データセットは 1 件のみ）: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+    return null
+  }
+}
+
+/** `owner/repo` から詳細 API でもそのまま返せる 1 件を組み立てる（既存データセットと同じ形）。 */
+function gemBadgeRepo({ id, fullName, description }) {
+  const [login, name] = fullName.split('/')
+  return {
+    id,
+    name,
+    full_name: fullName,
+    html_url: `https://github.com/${fullName}`,
+    description,
+    language: 'TypeScript',
+    stargazers_count: 7,
+    watchers_count: 7,
+    subscribers_count: 2,
+    forks_count: 1,
+    open_issues_count: 0,
+    updated_at: '2026-08-01T00:00:00Z',
+    pushed_at: '2026-08-01T00:00:00Z',
+    private: false,
+    topics: [],
+    owner: { login, avatar_url: GEM_BADGE_AVATAR },
+  }
+}
+
+const gemBadgePoolFullName = readFirstPoolRepositoryFullName()
+// 🔴 返却順は「バッジなし → バッジあり」。バッジ付きが先頭へ繰り上がっていないことを
+//    テストが検出できるようにするため（バッジは注釈であって並び替え軸ではない・`D-36`）。
+const gemBadgeRepos = [
+  gemBadgeRepo({
+    id: 970001,
+    fullName: 'octostub/not-a-gem',
+    description: 'Repository absent from the Gem candidate pool (SP-18 E2E).',
+  }),
+  ...(gemBadgePoolFullName === null
+    ? []
+    : [
+        gemBadgeRepo({
+          id: 970002,
+          fullName: gemBadgePoolFullName,
+          description: 'Repository present in the Gem candidate pool (SP-18 E2E).',
+        }),
+      ]),
 ]
 
 /** `sort`（relevance/stars/updated）に従って並べ替える（実 API の挙動を模す）。 */
@@ -522,6 +622,16 @@ const server = http.createServer((req, res) => {
       })
     }
 
+    // SP-18: Gem バッジ経路（プール実在 1 件 + 非実在 1 件）。`page` / `sort` は反映しない
+    // （本データセットは 1 ページに収まる 2 件しかないため）。
+    if (q.includes(GEM_BADGE_MARKER)) {
+      return sendJson(res, 200, {
+        total_count: gemBadgeRepos.length,
+        incomplete_results: false,
+        items: gemBadgeRepos.map(toSearchItem),
+      })
+    }
+
     if (q.includes(MANY_HITS_MARKER)) {
       const pageNum = Math.max(1, Number.parseInt(page, 10) || 1)
       const perPage = Math.max(
@@ -600,7 +710,9 @@ const server = http.createServer((req, res) => {
       // Issue #334 F-4: README 不在の再現用（詳細本体は 200・README エンドポイントのみ 404）
       readmeExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       // Issue #339: 書式要素を網羅したリッチな README の再現用
-      readmeRichExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
+      readmeRichExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
+      // SP-18: Gem バッジ経路の 2 件（詳細へ遷移しても 404 にならないようにする）
+      gemBadgeRepos.find((repo) => repo.owner.login === owner && repo.name === repoName)
     if (!found) {
       return sendJson(res, 404, { message: 'stub: Not Found (no fixture for this owner/repo)' })
     }
@@ -612,4 +724,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[e2e-stub] listening on http://127.0.0.1:${PORT}`)
+  // SP-18: どのリポジトリを「プール実在」として使ったかを起動ログに残す（プール再生成で
+  // 変わるため、失敗時の切り分けに要る）。
+  console.log(`[e2e-stub] gem-badge pool repository: ${gemBadgePoolFullName ?? '(読み込み失敗)'}`)
 })

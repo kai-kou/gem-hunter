@@ -145,7 +145,7 @@ flowchart TB
   "preview_urls": true,
   "cache": { "enabled": true },
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
-  "limits": { "cpu_ms": 50 },
+  "limits": { "cpu_ms": 200 },
   "ratelimits": [
     { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
   ]
@@ -154,6 +154,7 @@ flowchart TB
 
 - `preview_urls` は 2025-09-17 以降 opt-in。`workers_dev` を切るなら明示が必要
 - `limits.cpu_ms` は Free では意味を持たないが、**Paid へ上げた瞬間に denial-of-wallet 対策として効く** ため最初から書いておく
+- 🔴 **値は `SP-18`（#388）で 50 → 200 へ引き上げた**（`D-38` の `SP-18` 実測追記が正本）。理由は `D-38` のシャード配信で cold start の CPU が **約 81ms**（`JSON.parse` 39.9ms + `Map` 構築 40.7ms・ローカル実測）に達し、暫定 50ms では超過しうるため。超過時は **Error 1102**（`Worker exceeded resource limits` / invocation outcome `exceededCpu`）になる（1027 は Free の使用量到達による停止で Paid では出ない）。⚠️ Workers 上の p95 は未測定で、軽量アセット化（Issue #434）で締め直せる見込みがある
 - `ratelimits` は **`wrangler.jsonc` の宣言だけで有効になる**（事前のリソース作成コマンドは不要）。`namespace_id` はアカウント内で一意な任意の識別子、`period` は **10 秒か 60 秒のみ**。⚠️ wrangler 4.36.0 以上が必要
 - ⚠️ `wrangler deploy` は設定ファイルを source of truth として扱う。**Dashboard で変えた設定は次回デプロイで巻き戻る**
 

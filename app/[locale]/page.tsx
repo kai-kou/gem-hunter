@@ -5,6 +5,7 @@ import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import {
   DAILY_DIGEST_LIMIT,
   getDailyDigestUseCase,
+  lookupGemIndexes,
   searchRepositoriesUseCase,
 } from '@/src/composition/container'
 import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
@@ -192,14 +193,40 @@ async function SearchBody({
     return null
   }
 
+  /*
+    SP-18: 検索結果カードの Gem バッジ（`D-36` / `D-38`）。
+
+    🔴 **並び順は一切変えない**（`D-36`: `sort=gem-index` は復活させない）。ここで引くのは
+       「この `fullName` が候補プールに載っているか」だけで、`state.result.items` の順序は
+       上流（GitHub Search API の関連度順・またはユーザー指定のソート）のまま `RepositoryList`
+       へ渡す。
+    🔴 **検索の Promise は増やさない**（上位の `runSearch()` は 1 本のまま）。結果が出て初めて
+       `fullName` が分かるので、`await statePromise` の **後** にこの 1 本だけを追加で待つ。
+    🔴 **二重防御**: `GemIndexPort` は契約上失敗しても空 Map を返すが、ここでも
+       `.catch(() => undefined)` を張り「Gem Index の取得失敗が検索結果を巻き添えにして 500 に
+       する」経路を塞ぐ（`dailyDigest` と同じ思想）。`undefined` はバッジ無しで描画される。
+    0 件のときは引く対象が無いので呼ばない（無駄な cold start を避ける。エラー時・キーワード
+    未入力時（`idle`）はそもそもこの行に到達しない）。
+  */
+  const gemIndexes =
+    state.result.items.length > 0
+      ? await lookupGemIndexes(state.result.items.map((item) => item.fullName)).catch(
+          () => undefined,
+        )
+      : undefined
+
   return (
     <>
       <RepositoryList
         items={state.result.items}
+        gemIndexes={gemIndexes}
         labels={{
           empty: messages.home.empty,
           starCount: messages.home.starCount,
           updatedAt: messages.home.updatedAt,
+          gemBadge: messages.home.gemBadge.label,
+          gemBadgeSrHint: messages.home.gemBadge.srHint,
+          gemBadgeNote: messages.home.gemBadge.note,
         }}
         locale={locale}
         searchState={searchState}

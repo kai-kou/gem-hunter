@@ -51,6 +51,11 @@
     "pageNext": "Next page",
     "pageCurrent": "Page {page}",
     "pageLimitReached": "This is the last page available. Refine your keyword to see more results.",
+    "gemBadge": {
+      "label": "Gem",
+      "srHint": "(Many packages depend on this repository, yet few people have starred it.)",
+      "note": "The Gem mark comes from a limited dataset gathered from 12 package registries. A repository without the mark is not rated any lower."
+    },
     "digest": {
       "heading": "Today's Gems",
       "lead": "Repositories that many packages depend on but few people have starred. The higher an entry sits, the more underrated it is. The list changes daily.",

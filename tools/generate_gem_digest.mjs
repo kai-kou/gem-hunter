@@ -562,8 +562,10 @@ function buildSummary({
       })),
     outputs: outputs.map((o) => ({ path: o.path, bytes: o.bytes })),
     totalBytes: outputs.reduce((sum, o) => sum + o.bytes, 0),
-    // 形を決め打ちできないので `buildShardIndex` と同じ経路で JSON 化する。
-    stats: buildShardIndex([], meta, stats).stats,
+    // `buildPool` の `stats` はプレーンオブジェクトと数値だけ（`pipeline.mjs` の契約）なので
+    // そのまま載せる。以前は `buildShardIndex([], meta, stats).stats` と空配列を渡して
+    // 内部の JSON 変換だけを借りていたが、無関係な関数の実装変更で `--report` が壊れるため外した。
+    stats: stats ?? {},
     top: records.slice(0, TOP_ROWS).map((r, i) => ({
       rank: i + 1,
       repositoryFullName: r.repositoryFullName,
