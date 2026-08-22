@@ -71,4 +71,4 @@ gws drive files delete --params '{"fileId":"<OLD_FILE_ID>"}'
 | 版 | ファイル ID | URL |
 |---|---|---|
 | テキスト版 | `1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g` | https://docs.google.com/presentation/d/1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g/edit |
-| 画像版 | （未作成・Step 9 以降） | — |
+| 画像版 | `1nO55SRlLhh5V4X1_bLVmmFjSEjcNbG-73qG2jqHd540` | https://docs.google.com/presentation/d/1nO55SRlLhh5V4X1_bLVmmFjSEjcNbG-73qG2jqHd540/edit |

@@ -31,6 +31,13 @@ Do NOT add furigana (ruby annotations).
 Preserve letter case EXACTLY: a word written in lowercase in the list (for example "star",
 "sort=gem-index", "gem-hunter") must stay lowercase — never capitalize the first letter,
 even at the start of a title or a line.
+Do NOT draw medals, rosettes, award ribbons, seals, or circular badges anywhere in the image.
+Never truncate an element: every element must be drawn to its final character, including short
+trailing clauses after a full stop (。). Shrink the font rather than dropping the tail of a sentence.
+Do NOT draw any digit, number, or numeral that is not part of a listed text element —
+no counters, no step totals, no badges showing a count. Numbers appear ONLY inside listed elements.
+Each listed element must appear EXACTLY ONCE. Before finishing, check the whole canvas for any
+sentence that appears twice (for example the same line in a box and again in a bottom banner) and remove the repeat.
 The 「 」 around each listed element are delimiters marking where the element starts and ends —
 they are NOT part of the text. Do not draw them. Only 「 」 that appear INSIDE an element
 (for example 「今日の Gem」 within a longer sentence) are drawn.
