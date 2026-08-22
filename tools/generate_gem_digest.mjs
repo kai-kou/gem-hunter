@@ -211,7 +211,10 @@ function renderTable(headers, rows) {
     Math.max(String(h).length, ...rows.map((r) => String(r[i] ?? '').length)),
   )
   const line = (cells) =>
-    cells.map((c, i) => String(c ?? '').padEnd(widths[i])).join('  ').trimEnd()
+    cells
+      .map((c, i) => String(c ?? '').padEnd(widths[i]))
+      .join('  ')
+      .trimEnd()
   return [line(headers), line(widths.map((w) => '-'.repeat(w))), ...rows.map(line)].join('\n')
 }
 
@@ -308,7 +311,16 @@ async function main() {
   outputs.push(await emit(digestOut, digest, args.dryRun, true))
 
   const durationMs = Date.now() - startedAt
-  const summary = buildSummary({ args, registries, collected, records, stats, outputs, durationMs, meta })
+  const summary = buildSummary({
+    args,
+    registries,
+    collected,
+    records,
+    stats,
+    outputs,
+    durationMs,
+    meta,
+  })
 
   if (args.report) {
     // レポートは dry-run でも書く（実測を README / PR に貼るのが目的で、配信データではないため）。
@@ -380,7 +392,9 @@ function buildSummary({ args, registries, collected, records, stats, outputs, du
 function renderSummary(s, args) {
   const lines = []
   lines.push('=== gem-pool 生成サマリー ===')
-  lines.push(`実行時間: ${formatDuration(s.durationMs)}${s.dryRun ? '（dry-run: 書き込みなし）' : ''}`)
+  lines.push(
+    `実行時間: ${formatDuration(s.durationMs)}${s.dryRun ? '（dry-run: 書き込みなし）' : ''}`,
+  )
   lines.push(`総リクエスト数: ${s.requestCount ?? '(不明)'}`)
   lines.push(`総取得パッケージ数: ${s.fetchedCount ?? '(不明)'}`)
   lines.push(`プール件数: ${s.poolCount}（ユニーク repo: ${s.uniqueRepositoryCount}）`)

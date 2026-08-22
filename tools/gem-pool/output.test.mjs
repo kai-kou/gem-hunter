@@ -176,7 +176,9 @@ describe('buildDailyDigestDoc', () => {
   })
 
   it('limit がレコード数を超えても全件で止まる', () => {
-    expect(buildDailyDigestDoc(RECORDS, META, { date: '20260822', limit: 99 }).candidates).toHaveLength(3)
+    expect(
+      buildDailyDigestDoc(RECORDS, META, { date: '20260822', limit: 99 }).candidates,
+    ).toHaveLength(3)
   })
 })
 
@@ -188,7 +190,9 @@ describe('buildShardIndex', () => {
     expect(index.meta).toEqual(META)
     expect(index.totalCount).toBe(3)
     // ecosystem の値は `registries.mjs` が正本なので、ここでは契約に明記された npm だけを固定検証する。
-    expect(index.shards.map(({ registry, fileName, count }) => ({ registry, fileName, count }))).toEqual([
+    expect(
+      index.shards.map(({ registry, fileName, count }) => ({ registry, fileName, count })),
+    ).toEqual([
       { registry: 'npmjs.org', fileName: 'npmjs-org.json', count: 2 },
       { registry: 'rubygems.org', fileName: 'rubygems-org.json', count: 1 },
     ])
