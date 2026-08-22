@@ -206,6 +206,41 @@ def extract_router_delegations(text, known_skills):
     return found
 
 
+def _router_delegation_col(text):
+    """決定木テーブルの「委譲先スキル」列のインデックスを返す（見つからなければ None）。"""
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if ROUTER_TABLE_HEADER.match(stripped):
+            for idx, cell in enumerate(_cells(line)):
+                if "委譲先" in cell:
+                    return idx
+    return None
+
+
+def extract_stale_delegations(text, known_skills):
+    """決定木の **委譲先列** にあるが `.claude/skills/` に実在しない名前を返す。
+
+    行全体を見ると判定条件・実行内容の列に出てくるバッククォート語（通知名 `routine-idle`・
+    ラベル名など）まで「実在しないスキル」として誤検出する。委譲先列だけを見る。
+
+    `BACKTICK_NAME` は `[a-z][a-z0-9-]+` なので `tools/sprint_backlog_sync.py` のような
+    スクリプト委譲（`/` `_` `.` を含む）には最初からマッチしない。したがってこの列で拾える
+    kebab-case 名は定義上すべてスキルであり、実在しないものはリネーム漏れ・typo。
+    """
+    col = _router_delegation_col(text)
+    if col is None:
+        return set()
+    stale = set()
+    for line in _router_table_lines(text):
+        cells = _cells(line)
+        if col >= len(cells):
+            continue
+        for name in BACKTICK_NAME.findall(cells[col]):
+            if name not in known_skills:
+                stale.add(name)
+    return stale
+
+
 def is_launched_in_body(skill, text, self_skill=None, known_skills=None):
     """本文中でそのスキルが「起動されている」と読めるかを判定する（経路 B）。
 
@@ -262,10 +297,12 @@ def check(skills_dir=None, lane_map=None, router_skill=None):
     lane_text = lane_path.read_text(encoding="utf-8") if lane_path.is_file() else ""
     lanes = extract_lane_skills(lane_text, known)
     stale = extract_stale_references(lane_text, known)
-    delegations = (
-        extract_router_delegations(router_path.read_text(encoding="utf-8"), known)
-        if router_path.is_file() else set()
-    )
+    router_text = router_path.read_text(encoding="utf-8") if router_path.is_file() else ""
+    delegations = extract_router_delegations(router_text, known)
+    # 決定木の委譲先も stale 検査の対象にする。レーン表に載らないスキル
+    # （`pr-review-watcher` / `claude-code-spec-sync` 等）のリネーム漏れは、
+    # レーン側の検査だけでは一切現れない。
+    stale |= extract_stale_delegations(router_text, known)
 
     sd = Path(skills_dir) if skills_dir else SKILLS_DIR
     bodies = {}
@@ -413,6 +450,17 @@ def _self_test():
            == {"retro-try-handler"}, "R6: renamed/removed skill is reported as stale")
     check_(extract_stale_references(renamed_md, known) == set(),
            "R6': existing skill is not stale")
+    # R7: 決定木の委譲先のリネーム漏れも検出する（レーン表に載らないスキルが対象）
+    check_(extract_stale_delegations(
+        ROUTER_HDR + "| 2 | x | y | `pr-review-watcher-old` |\n", known) == {"pr-review-watcher-old"},
+        "R7: renamed router delegation is reported as stale")
+    check_(extract_stale_delegations(
+        ROUTER_HDR + "| 2 | x | y | `pr-review-watcher` |\n", known) == set(),
+        "R7': existing delegation is not stale")
+    # R7'': tools/*.py へのスクリプト委譲は stale にしない（正規表現に最初からマッチしない）
+    check_(extract_stale_delegations(
+        ROUTER_HDR + "| 3.5 | x | y | `tools/sprint_backlog_sync.py` |\n", known) == set(),
+        "R7'': script delegation is not stale")
     # マーカー行は除外される
     marked = lane_md + f"| **単発** | `sprint-cycle-router` | x | y | {NATURAL_TRIGGER_MARKER}\n"
     got = extract_lane_skills(marked, known)
@@ -491,7 +539,7 @@ def _self_test():
         "R4: negation keyword 除外 is exercised")
 
     if fail == 0:
-        print("PASS: check_lane_reachability self-test (29 checks)")
+        print("PASS: check_lane_reachability self-test (32 checks)")
     return 1 if fail else 0
 
 

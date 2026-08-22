@@ -287,9 +287,15 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
    （Step 2 の対象 PR は次回 firing 以降に持ち越しても CP-4 上問題ない
    ＝ pr-review-watcher の active_session 判定・stale 判定がそのまま安全弁になる）
 
-4. Step 5.5（retro-try）の飢餓防止（#377）:
-   `status:waiting-claude` かつ `type:retro-try` の Issue が存在し、**直近の retro-try 対応から
-   8 時間以上経過**していれば、この firing に限り Step 5 の判定を後回しにして Step 5.5 を実行する。
+4. Step 5.5（retro-try）の飢餓防止（#377 / #419）:
+   次のどちらかを満たしたら、この firing に限り Step 5 の判定を後回しにして Step 5.5 を実行する。
+   **① を ② より優先して選定する**。
+   - **①（再開・優先）**: `status:in-progress` かつ `type:retro-try` の Issue が **4 時間超 stale**。
+     着手して中断したものの回収で、放置すると CP-4 の論理ロックが永久に解放されない。
+     **経過時間の条件を課さない**（Step 5 の在庫は常に 2 桁あるため、①にオーバーライドを与えないと
+     Step 5 に永久に先を越されて条件が書いてあるだけになる）。
+   - **②（新規消化）**: `status:waiting-claude` かつ `type:retro-try` の Issue が存在し、**直近の
+     retro-try 対応から 8 時間以上経過**している。
    直近の対応時刻は直近 closed の `type:retro-try` Issue の `closed_at` から逆算する
    （`mcp__github__list_issues(state="CLOSED", labels=["type:retro-try"],
    orderBy="UPDATED_AT", direction="DESC", perPage=1)`）。専用ログもラベルも新設しない。
