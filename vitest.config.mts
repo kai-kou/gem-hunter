@@ -7,7 +7,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
-    include: ['{app,src}/**/*.{test,spec}.{ts,tsx}'],
+    // `tools/` はビルド時ツール（アプリ層ではない）。Gem 候補プール生成の純粋関数を
+    // ユニットテストするため .mjs も対象に含める（`SP-17` / Issue #387）。
+    include: ['{app,src}/**/*.{test,spec}.{ts,tsx}', 'tools/**/*.{test,spec}.mjs'],
     globals: true,
   },
 })
