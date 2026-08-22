@@ -88,16 +88,12 @@ python3 -m venv /tmp/slides-venv
 **実行はリポジトリルートから**: `screenshots.config.ts` は `process.cwd()` を基準に
 スタブサーバー（`e2e/stub/server.mjs`）を起動するため、`scripts/` の中へ `cd` して実行すると失敗する。
 
-**手順の順序に依存する箇所**: `build_image_deck.py` は新規生成画像を `/tmp/claude/slide-images/`
-（git 管理外）から読む。画像生成をやり直さずにデッキだけ組み直したい場合は、リポジトリに
-コミット済みの `images/new-*.jpg` を同ディレクトリへ戻してから実行する。
+**画像を生成し直さずにデッキだけ組み直す場合**: `build_image_deck.py` は新規生成画像を
+`/tmp/claude/slide-images/`（git 管理外）から読むが、**そこに無ければコミット済みの
+`images/new-*.jpg` へ自動でフォールバックする**ので、そのまま実行してよい。
 
-```bash
-mkdir -p /tmp/claude/slide-images
-for f in content/slides/project-explanation-20260822/images/new-*.jpg; do
-  cp "$f" "/tmp/claude/slide-images/$(basename "${f%.jpg}").png"   # 拡張子だけ合わせれば Pillow が読む
-done
-```
+このとき JPEG は再エンコードせずコピーする。JPEG を開いて保存し直すと世代劣化が乗り、
+組み直すたびに画質が落ちていくため。
 
 ## 既知の限界
 
