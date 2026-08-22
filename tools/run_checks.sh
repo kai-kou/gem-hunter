@@ -178,6 +178,16 @@ else
   skip_check "Prose トークン検査 (check_prose_tokens.py)" "スクリプトが見つかりません"
 fi
 
+# 4.65. ランディングページ（site/）の静的検査（Issue #360）
+#       site/ はアプリ本体の検査のどれにも掛からないため、参照切れ・寸法不一致・アンカー切れ・
+#       ADR 本数のドリフトをここで止める（ネットワーク不要・決定論的）。
+if [ -f "$REPO_ROOT/tools/check_site.py" ]; then
+  run_check "LP 静的検査 (check_site.py)" python3 tools/check_site.py
+  run_check "LP 静的検査 self-test (check_site.py --self-test)" python3 tools/check_site.py --self-test
+else
+  skip_check "LP 静的検査 (check_site.py)" "スクリプトが見つかりません"
+fi
+
 # 4.7. ADR 記録と README 必須記載のゲート（E-18 / E-19 / NFR-29〜NFR-32 / AC-11）
 if [ -f "$REPO_ROOT/tools/check_adr_coverage.py" ]; then
   run_check "ADR / README 記載検査 (check_adr_coverage.py)" python3 tools/check_adr_coverage.py

@@ -18,6 +18,8 @@
 | [`meeting-notes/`](./meeting-notes) | 議事録・ミーティングメモ |
 | [`infographics/`](./infographics) | 主要ドキュメントのグラレコ風インフォグラフィック（16:9・要約であって正本ではない） |
 
+> **リポジトリ直下の [`site/`](../site)** は GitHub Pages で公開するランディングページのソース（`docs/` 配下ではない）。公開方式の決定は `D-35`、手順の正本は [`site/README.md`](../site/README.md)。
+
 > **実装時に読む 3 つの正本**（クリーンアーキテクチャ / DDD / TDD）: [アプリケーションアーキテクチャ](./03_design/architecture/application-architecture.md)（層・依存規則）/ [ドメインモデル](./03_design/data-model/domain-model.md)（ユビキタス言語）/ [テスト戦略](./04_development/testing-strategy.md)（層分担・道具）。実装中の判断チェックリストは [`docs/rules/architecture-rules.md`](./rules/architecture-rules.md)。
 
 ## 運用ルール（暫定）

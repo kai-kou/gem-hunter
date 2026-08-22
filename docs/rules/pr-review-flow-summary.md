@@ -40,7 +40,7 @@
 |---------|-----------|
 | PR 作成直後 | Layer 1 セルフレビュー → **指摘を行単位インラインコメントで投稿** → 指摘対応（修正コミット or スキップ + **同一スレッドへの返信** + Resolve） |
 | Layer 0+1 通過後 | `mcp__github__merge_pull_request`（`merge_method="squash"`）で即マージ |
-| **マージ直後** | **公開リポジトリへ反映（`publish-sync`）**。`post-merge-publish-check.sh` がドリフトを判定して指示を注入する。反映できないセッション（`add_repo` 不在・L-117）は `[publish-sync]` Issue に記録して終える（沈黙禁止・#449）。続けて 🔴 **本番デプロイの発火条件をゲート判定**（`Sprint Goal:` 行ありなら Step 7 のスプリントレビュー判定へ委譲・無ければ `tools/check_deploy_gate.py` の結果に従う。判断基準・終了コードは `cloudflare-infrastructure.md` §8.2 が SSOT・実行手順は `pr-review-watcher` スキル Step 6/7）→ Slack 完了通知 |
+| **マージ直後** | 🔵 **`site/`（LP）を変更していたら `gh-pages` ブランチへ同期する**（手順の正本は [`site/README.md`](../../site/README.md)・決定は `D-35`）。続けて **公開リポジトリへ反映（`publish-sync`）**。`post-merge-publish-check.sh` がドリフトを判定して指示を注入する。反映できないセッション（`add_repo` 不在・L-117）は `[publish-sync]` Issue に記録して終える（沈黙禁止・#449）。続けて 🔴 **本番デプロイの発火条件をゲート判定**（`Sprint Goal:` 行ありなら Step 7 のスプリントレビュー判定へ委譲・無ければ `tools/check_deploy_gate.py` の結果に従う。判断基準・終了コードは `cloudflare-infrastructure.md` §8.2 が SSOT・実行手順は `pr-review-watcher` スキル Step 6/7）→ Slack 完了通知 |
 | 任意 | CI 失敗・人手コメントがあれば対応してからマージ |
 
 サーキットブレーカー: 修正サイクル 2 回超で STOP → ユーザー報告（A-4）。
