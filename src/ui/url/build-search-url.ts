@@ -21,9 +21,17 @@ export type SearchUrlState = {
  * `per-page.ts`）が未指定を既定値へ倒すため、往復しても同じ状態に戻り、URL も簡潔になる。
  *
  * `basePath` を空文字にすると、パスを持たないクエリ文字列（`?q=...` または `''`）だけを返す
- * （一覧カードのリンクへ現在の検索条件を「継ぎ足す」用途・`repository-list.tsx`）。
+ * （一覧カードのリンクへ現在の検索条件を「継ぎ足す」用途・`repository-list.tsx` / `gem-list.tsx`）。
+ *
+ * `extraParams` は検索 4 条件以外の付帯パラメータ（Gem 一覧の `from=gems` 等）を同じ URL へ
+ * 載せるための任意引数。🔴 **URL 契約を組み立てる実装をここ以外に作らない**ための受け口で、
+ * 既定値による省略は行わない（渡された値をそのまま載せる）。空文字の値は載せない。
  */
-export function buildSearchUrl(basePath: string, state: SearchUrlState): string {
+export function buildSearchUrl(
+  basePath: string,
+  state: SearchUrlState,
+  extraParams: Readonly<Record<string, string>> = {},
+): string {
   const params = new URLSearchParams()
   if (state.keyword !== '') {
     params.set(SEARCH_PARAM_KEYS.keyword, state.keyword)
@@ -36,6 +44,11 @@ export function buildSearchUrl(basePath: string, state: SearchUrlState): string 
   }
   if (state.perPage !== DEFAULT_PER_PAGE) {
     params.set(SEARCH_PARAM_KEYS.perPage, String(state.perPage))
+  }
+  for (const [key, value] of Object.entries(extraParams)) {
+    if (value !== '') {
+      params.set(key, value)
+    }
   }
   const qs = params.toString()
   return qs === '' ? basePath : `${basePath}?${qs}`

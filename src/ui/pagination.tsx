@@ -18,6 +18,15 @@ type PaginationProps = {
   current: SearchUrlState
   totalCount: number
   labels: PaginationLabels
+  /**
+   * ページ番号の上限。省略時は `maxPageFor(current.perPage)`（GitHub 検索 API の 1,000 件上限）。
+   *
+   * 🔴 GitHub 検索 API を経由しない面（Gem 一覧は静的な候補プールが母集団）はこの上限に
+   * 縛られないため、`Math.ceil(totalCount / perPage)` のような**その面の実際の最終ページ**を
+   * 渡す。渡した場合は「API 上限に達した」注記（`limitReached`）を出さない — その面に
+   * API 上限は存在せず、出せば嘘の理由を伝えることになる。
+   */
+  maxPage?: number
 }
 
 const linkClassName = buttonVariants({ variant: 'ghost', size: 'default' })
@@ -30,23 +39,35 @@ const disabledClassName = buttonVariants({
 /**
  * ページネーション（SP-7 / AC-7）。前後ページへの GET リンク + 現在ページ表示。
  *
- * `maxPageFor(current.perPage)`（GitHub 検索 API が返せる 1,000 件と実際の表示件数から
+ * 既定では `maxPageFor(current.perPage)`（GitHub 検索 API が返せる 1,000 件と実際の表示件数から
  * 決まる上限・`page-number.ts`）を超えるページへは絶対にリンクを出さない（AC-7）。
+ * API を経由しない面は `maxPage` で上限を上書きする。
  * あわせて `totalCount` から算出した実際の最終ページも尊重し、結果が尽きた次ページへもリンクを出さない。
  *
  * `<nav aria-label>` でラップし、現在ページはリンクにせず `aria-current="page"` を付与する
  * （ui-ux-guidelines.md §4.5）。
  */
-export function Pagination({ basePath, current, totalCount, labels }: PaginationProps) {
+export function Pagination({
+  basePath,
+  current,
+  totalCount,
+  labels,
+  maxPage: maxPageOverride,
+}: PaginationProps) {
   const totalPages = totalCount > 0 ? Math.ceil(totalCount / current.perPage) : current.page
-  const maxPage = maxPageFor(current.perPage)
+  const maxPage = maxPageOverride ?? maxPageFor(current.perPage)
   const lastPage = Math.min(maxPage, totalPages)
   const hasPrev = current.page > 1
   const hasNext = current.page < lastPage
-  const atApiLimit = lastPage === maxPage && current.page === maxPage
+  // 上限を明示的に渡された面には GitHub 検索 API の 1,000 件上限が存在しない（上記 JSDoc）。
+  const atApiLimit =
+    maxPageOverride === undefined && lastPage === maxPage && current.page === maxPage
 
   return (
-    <nav aria-label={labels.navLabel} className="mt-4 flex flex-wrap items-center justify-center gap-3">
+    <nav
+      aria-label={labels.navLabel}
+      className="mt-4 flex flex-wrap items-center justify-center gap-3"
+    >
       {hasPrev ? (
         <Link
           href={buildSearchUrl(basePath, { ...current, page: current.page - 1 })}

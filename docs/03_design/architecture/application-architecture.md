@@ -111,7 +111,7 @@ e2e/                                # Playwright（操作レビュー手順の�
 | `CachePort` | `get(key)` / `set(key, value, ttl)` / `invalidate(key)` | `infrastructure/platform/` | `NFR-17`（YAGNI の意図的な例外。面積を広げない） |
 | `RateLimitPort` | `consume(key): Promise<Decision>` | `infrastructure/platform/` | `INF-n` / `NFR-7` |
 | `ClockPort` | `now(): Date` | `infrastructure/` | テスト決定性（`SD-2`） |
-| `GemIndexPort` | `lookup(repositoryFullNames): Promise<ReadonlyMap<string, GemIndex>>` | `infrastructure/platform/`（`static-gem-index.ts`） | `W-1`（Gem 候補プールの配信方式 — レジストリ別シャードの静的アセット + isolate 内メモリ — を UI・usecase から隠す）。`D-36`（バッジの再導入）/ `D-38`（シャード配信）/ `SP-18`。面積は `lookup()` 1 本（YAGNI）。母集団の違う `GemDigestPort` と統合しない |
+| `GemIndexPort` | `lookup(repositoryFullNames): Promise<ReadonlyMap<string, GemIndex>>` / `search(input): Promise<GemPoolSearchResult>` | `infrastructure/platform/`（`static-gem-index.ts`） | `W-1`（Gem 候補プールの配信方式 — レジストリ別シャードの静的アセット + isolate 内メモリ — を UI・usecase から隠す）。`D-36`（バッジの再導入）/ `D-38`（シャード配信）/ `SP-18` / `SP-19`。面積は `lookup()`（バッジ判定）と `search()`（Gem 候補の一覧）の 2 本。**`search()` が守るのも `W-1`**（検索語での絞り込み・`gemIndex` 昇順の並べ替え・ページングを同じ配信方式の内側で完結させ、シャード構成と第 2 段の検索インデックスを UI・usecase から隠す）。同じ isolate 内メモリを共有するため `lookup()` と同一ポートに置く（別ポートへ切ると `StaticGemIndex` のシングルトンが分裂し cold start でシャードを二重取得する）。母集団の違う `GemDigestPort` と統合しない |
 | `AuthPort` | `exchangeAuthorizationCode(code): Promise<{ accessToken: string }>` | `infrastructure/github/`（`oauth.ts`） | `W-3`（フェイクでユニットテストできる）。`AR-5` / `SP-8`。GitHub `/user` プロフィール取得は AC 未記載のため面積に含めない（YAGNI・`whiteboard/sp8-auth-i18n-20260819` 争点 C round2 決定） |
 
 🔴 **ポートを増やすときの条件**: `W-1`〜`W-3` のどれを守るかを 1 行で書き、本表に行を足す。**表に無いポートを実装しない。**
@@ -198,7 +198,26 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 | Route Handler（`route.ts`） | Frameworks & Drivers | 同上（薄く保つ）。MVP は Read 中心のため原則不要 |
 | Server Action | Frameworks & Drivers | 入力検証 → ユースケース呼び出しのみ |
 | `use cache` / `cacheLife` / `cacheTag` | Infrastructure の実装詳細 | 🔴 **ユースケース・ドメインから直接触らない**。キャッシュは `CachePort` 越しに扱う（`D-18` により Cloudflare での実体は HTTP `Cache-Control` + Workers Caching） |
-| `searchParams` | 入力の境界 | 🔴 **値オブジェクトへ変換してからユースケースへ渡す**（生の文字列を奥へ流さない・`NFR-19`） |
+| `searchParams` | 入力の境界 | 🔴 **値オブジェクトへ変換してからユースケースへ渡す**（生の文字列を奥へ流さない・`NFR-19`）。⚠️ **唯一の例外は Gem 一覧（`/[locale]/gems`）の `q`**（下記） |
+
+⚠️ **`searchParams` 値オブジェクト化の唯一の例外: Gem 一覧の `q`**（`SP-19` / `D-37`）
+
+Gem 一覧（`app/[locale]/gems/page.tsx`）は `q` を **生値のままユースケース（`searchGems`）へ渡し**、ユースケース内で
+`tokenizeQuery`（`src/domain/model/gem-keyword.ts`）が照合トークン列へ正規化する。境界で `searchKeyword` を挟まないのは、
+GitHub 検索（`RepositoryQueryPort`）と Gem 候補プールで **照合規則そのものが違う** ためにゃ。
+
+- `searchKeyword` は GitHub 検索 API の不変条件（修飾子・ブール演算子の拒否、`MAX_KEYWORD_LENGTH`）を守る値オブジェクトで、
+  違反した入力は `''` へ丸められる。これを Gem 一覧の境界に挟むと、`q=go NOT rust` や日本語だけの検索語が「未入力」扱いになり、
+  画面が `gems.queryRequired`（検索語を入れてください）へ落ちて `gems.unmatchableQuery`（この検索語では照合できない旨の案内）に
+  到達しなくなる — **拒否理由が別物にすり替わる退行**が入る
+- Gem 候補プール側の照合規則（repo 名・パッケージ名の単語境界一致・全語 AND・0 件時のみ 1 語へ緩和）は
+  `gem-keyword.ts` が正本であり、そこが生値の切り詰め（トークン数 16 語・生値長 256 文字）と正規化を担う。
+  つまり「生の文字列を奥へ流さない」の趣旨（**検証されていない値をドメインの奥で使わない**）は、境界ではなくユースケース入口の
+  `tokenizeQuery` で満たしている
+
+🔴 **この例外を「規約違反」として `searchKeyword(rawQuery)` を境界に挟み直さないこと。** 例外はこの 1 経路だけで、
+他の入力（検索ページの `q`・`page`・`sort`）は従来どおり境界で値オブジェクトへ変換する。
+`tools/check_architecture_boundaries.py` は import 方向しか見ないため、この規約は機械検査では守られない。
 
 ### 5.1. `LocaleSwitcher` を `layout.tsx` へ一本化しない理由（`SP-8`）
 

@@ -15,6 +15,17 @@ export const SEARCH_PARAM_KEYS = {
   perPage: 'per_page',
 } as const
 
+/**
+ * 詳細ページから Gem 一覧（`/{locale}/gems`）へ戻るための出所マーカー（`SP-19`）。
+ *
+ * 🔴 **URL 契約の正本は本ファイル 1 箇所**（`SEARCH_PARAM_KEYS` の隣）。以前は表示コンポーネント
+ * （`src/ui/gem-list.tsx`）が持っていたが、URL パラメータ名は表示都合ではなく外部契約なので
+ * 契約の置き場所へ寄せた（PR #440 Layer 1 指摘）。名前・許容値の仕様正本は
+ * docs/02_requirements/prd.md §2.4.1。
+ */
+export const GEM_LIST_SOURCE_PARAM_KEY = 'from'
+export const GEM_LIST_SOURCE_PARAM_VALUE = 'gems'
+
 export type RawSearchParams = Record<string, string | string[] | undefined>
 
 export type ParsedSearchParams = {

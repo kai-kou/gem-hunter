@@ -21,6 +21,28 @@
 const SEPARATOR = /[^a-z0-9]+/
 
 /**
+ * 検索語の **生値** として受け付ける最大文字数（超過分は切り捨てる）。
+ *
+ * 🔵 `src/domain/model/search-keyword.ts` の `MAX_KEYWORD_LENGTH`（256）と **同値** だが、
+ * 本ファイルは「他モジュールに依存しない照合規則の正本」という設計のため import せずローカルに持つ。
+ * 🔴 **値がズレたときは `MAX_KEYWORD_LENGTH` が正本**（利用者入力の上限の正本はあちら）。本定数は
+ * それを超える経路（`/gems` は `searchKeyword` を通さず生値を受ける）を塞ぐための独立した防御なので、
+ * あちらより **大きくしない**。
+ */
+export const MAX_QUERY_LENGTH = 256
+
+/**
+ * 検索語から取り出す最大トークン数（超過分は切り捨てる）。
+ *
+ * 🔴 **なぜ上限があるか（`F-01`）**: 全語 AND が 0 件のときの緩和候補カウントは、トークン数に比例した
+ * 仕事量になりうる。上限が無いと `?q=zq0+zq1+…` と語を並べるだけで 1 リクエストが CPU を使い切れる
+ * （プレビュー実機で **800 語（URL 4.8KB）→ `error code: 1102`（HTTP 503）** を再現済み）。
+ * 16 語あれば実用上の複合語検索（実測の中央値は 1〜2 語）は十分に表現でき、これを超える入力は
+ * 検索意図ではなく総当たりとみなして切り捨てる。
+ */
+export const MAX_QUERY_TOKENS = 16
+
+/**
  * 識別子（repo 名・パッケージ名）を単語境界で分割し、小文字のトークン列にする。
  *
  * 例:
@@ -49,14 +71,25 @@ export function tokenizeIdentifier(value: string): readonly string[] {
  *
  * 空文字・空白だけ・記号だけの入力は空配列になる。空配列は「絞り込みなし＝全件」を意味する
  * （`matchesAllTokens` が常に `true` を返す）。例外は投げない。
+ *
+ * 🔴 **上限（`F-01`・CPU 枯渇の防止）**: 生値は先頭 `MAX_QUERY_LENGTH` 文字まで、トークンは
+ * 重複を畳んだ後の先頭 `MAX_QUERY_TOKENS` 語までを見る。**超過分は切り捨てる**（例外を投げず、
+ * 0 件にも倒さない — 利用者から見れば「長すぎる分が無視された」だけで検索は成立する）。
+ * 上限に達したことは返り値では通知しない（呼び出し側に分岐を増やさないため）。
+ * 🔵 上限を課すのは **検索語側だけ**。照合対象側（`tokenizeIdentifier`）には課さない
+ * （そちらは配信データ由来で、語数はレコードの実態に従う必要がある）。
  */
 export function tokenizeQuery(query: string): readonly string[] {
+  // 🔴 語数上限より先に生値長で切る。区切り文字だけを大量に並べた入力（`a b c d …`）は
+  //    1 語あたり 2 文字なので、文字数で切らないと語数上限に達する前の走査量が青天井になる。
+  const bounded = query.length > MAX_QUERY_LENGTH ? query.slice(0, MAX_QUERY_LENGTH) : query
   const seen = new Set<string>()
   const tokens: string[] = []
-  for (const token of tokenizeIdentifier(query)) {
+  for (const token of tokenizeIdentifier(bounded)) {
     if (seen.has(token)) continue
     seen.add(token)
     tokens.push(token)
+    if (tokens.length >= MAX_QUERY_TOKENS) break
   }
   return tokens
 }

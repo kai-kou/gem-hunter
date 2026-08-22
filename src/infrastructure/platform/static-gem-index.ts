@@ -1,10 +1,13 @@
 import type { DigestMeta, GemPoolEntry } from '../../domain/model/gem'
 import {
+  MAX_QUERY_TOKENS,
   matchesAllTokens,
   selectMostSelectiveToken,
   tokenizeIdentifier,
 } from '../../domain/model/gem-keyword'
 import { type GemIndex, gemIndex, gemIndexValue } from '../../domain/model/gem-index'
+import { DEFAULT_PAGE } from '../../domain/model/page-number'
+import { DEFAULT_PER_PAGE } from '../../domain/model/per-page'
 import type {
   GemIndexPort,
   GemPoolSearchInput,
@@ -69,8 +72,16 @@ const COLUMN_PACKAGE_NAME = 'packageName'
 const COLUMN_DEPENDENT_COUNT = 'dependentCount'
 const COLUMN_STARS = 'stars'
 
-/** ページングの防御既定値（ドメイン側で検証済みの値が来る前提だが、壊れた入力でも落とさない）。 */
-const DEFAULT_PER_PAGE = 20
+/**
+ * `owner/repo` の形式判定。`string かつ非空` だけでは `../settings` `owner/` `a/b/c` が通り、
+ * 一覧の項目名とリンク先が食い違う（`F-09`）。
+ *
+ * 🔴 **正本は `static-gem-digest.ts` の `REPOSITORY_FULL_NAME_PATTERN`（同一パターン）**。
+ * 共有モジュールへの切り出しは別 Issue（本 PR のファイル分担の外側にあるため今回は同値複製）。
+ * ⚠️ ドメインの `tryRepositoryFullName` は使わない。`OWNER_PATTERN` が末尾ハイフンを禁止しており、
+ * 実データに末尾ハイフンの owner が 25 件（`Qix-/color-convert` 等）実在してリンクが消える。
+ */
+const REPOSITORY_FULL_NAME_PATTERN = /^[^/\s]+\/[^/\s]+$/
 
 /**
  * プール 1 件。`GemPoolEntry`（一覧が必要とする全項目）に、照合の基準となる小文字名を足したもの。
@@ -81,6 +92,15 @@ const DEFAULT_PER_PAGE = 20
  */
 type PoolEntry = GemPoolEntry & {
   readonly lowerName: string
+  /**
+   * 一覧の母集団に出してよいか（`F-17`）。
+   *
+   * 🔴 一覧用の列（`packageName` / `dependentCount` / `stars`）が **シャードに揃っていた** ときだけ
+   * `true`。揃っていないシャードのレコードは所属判定（バッジ）にだけ使い、一覧には出さない。
+   * 欠損を `''` / `0` で埋めた値を「★ 0 / 0 件」という **事実として** 表示してしまうため
+   * （検証ではなく捏造・`ARCH-R1`）。
+   */
+  readonly listable: boolean
 }
 
 /** cold start で作る第 1 段。`lookup` はこれだけで応答できる。 */
@@ -139,10 +159,25 @@ let cachedPool: Promise<GemPool> | undefined
  */
 let cachedSearchIndex: { readonly pool: GemPool; readonly index: Promise<SearchIndex> } | undefined
 
-/** テスト用: モジュールスコープの singleton promise を **両段とも** 捨てる。 */
+/**
+ * 検索インデックス（第 2 段）を **実際に構築した回数**。
+ *
+ * 🔴 「一覧専用のコストを `lookup` に払わせない」「warm では作り直さない」という設計上の不変条件を、
+ * テストが **モックなしで** 観測するための計測点（`F-18`。自作モジュールへの `vi.mock` は
+ * `testing-strategy.md` §4 が禁じている）。本番コードの分岐には一切使わない。
+ */
+let searchIndexBuilds = 0
+
+/** テスト用: 検索インデックスの構築回数（`resetGemIndexCacheForTest()` で 0 に戻る）。 */
+export function searchIndexBuildCountForTest(): number {
+  return searchIndexBuilds
+}
+
+/** テスト用: モジュールスコープの singleton promise を **両段とも** 捨てる（計測点も 0 に戻す）。 */
 export function resetGemIndexCacheForTest(): void {
   cachedPool = undefined
   cachedSearchIndex = undefined
+  searchIndexBuilds = 0
 }
 
 export class StaticGemIndex implements GemIndexPort {
@@ -237,12 +272,15 @@ export class StaticGemIndex implements GemIndexPort {
     // `records` は検索インデックス構築時に並べ替え済みなので、絞り込み結果は既に
     // 「`gemIndex` 昇順・同値は `repositoryFullName` 昇順」を保っている（ここで並べ替えない）。
     const perPage = positiveIntOr(input.perPage, DEFAULT_PER_PAGE)
-    const page = positiveIntOr(input.page, 1)
-    const start = (page - 1) * perPage
+    // 🔵 範囲外のページは **最終ページへクランプ**（`F-02`）。1 ページ目へ倒すと、`?page=999` を
+    //    直打ちした利用者に「最後のページ」ではなく「先頭」が返り、総件数表示と食い違う。
+    const effectivePage = clampPage(input.page, matched.length, perPage)
+    const start = (effectivePage - 1) * perPage
 
     return {
       items: matched.slice(start, start + perPage).map((record) => toEntry(record.entry)),
       totalCount: matched.length,
+      effectivePage,
       usedTokens,
       relaxed,
       meta: pool.meta,
@@ -322,8 +360,14 @@ function searchIndex(pool: GemPool): Promise<SearchIndex> {
  * cold start に置かない理由（本ファイル冒頭の 2 段構成を参照）。
  */
 async function buildSearchIndex(pool: GemPool): Promise<SearchIndex> {
+  searchIndexBuilds += 1
   const records: SearchRecord[] = []
   for (const entry of pool.byRepo.values()) {
+    // 🔴 一覧に出せないレコード（欠損列を埋めたもの）は母集団に入れない（`F-17`）。
+    //    `lookup`（バッジ）は `pool.byRepo` を直接引くので、除外してもバッジは出続ける。
+    if (!entry.listable) {
+      continue
+    }
     records.push({ entry, tokens: mergeTokens(entry.lowerName, entry.packageName) })
   }
   records.sort(compareRecords)
@@ -331,10 +375,30 @@ async function buildSearchIndex(pool: GemPool): Promise<SearchIndex> {
 }
 
 function emptyResult(meta: DigestMeta): GemPoolSearchResult {
-  return { items: [], totalCount: 0, usedTokens: [], relaxed: false, meta }
+  return {
+    items: [],
+    totalCount: 0,
+    effectivePage: DEFAULT_PAGE,
+    usedTokens: [],
+    relaxed: false,
+    meta,
+  }
 }
 
-/** 内部の派生値（`lowerName`）を落として、外へ出す形に写す。 */
+/**
+ * 実際に返すページ番号（1 始まり）を決める。範囲外は **最終ページへクランプ** する（`F-02`）。
+ * 0 件・壊れた入力は 1 ページ目。
+ */
+function clampPage(page: number, totalCount: number, perPage: number): number {
+  if (totalCount <= 0) {
+    return DEFAULT_PAGE
+  }
+  const lastPage = Math.max(DEFAULT_PAGE, Math.ceil(totalCount / perPage))
+  const requested = Math.max(DEFAULT_PAGE, Math.trunc(page) || DEFAULT_PAGE)
+  return Math.min(requested, lastPage)
+}
+
+/** 内部の派生値（`lowerName` / `listable`）を落として、外へ出す形に写す。 */
 function toEntry(entry: PoolEntry): GemPoolEntry {
   return {
     packageName: entry.packageName,
@@ -346,31 +410,41 @@ function toEntry(entry: PoolEntry): GemPoolEntry {
   }
 }
 
-/** 各トークンが **単独で** 何件に当たるかを 1 パスで数える（0 件の語は候補から外す）。 */
+/**
+ * 各トークンが **単独で** 何件に当たるかを 1 パスで数える（0 件の語は候補に入らない）。
+ *
+ * 🔴 **ループの向き（`F-01`・CPU 枯渇の防止）**: 「レコード × トークン」ではなく
+ * **レコード側だけを回し、そのレコードが持つ語（平均 3.4 語）を `wanted` に問い合わせる**。
+ * 逆向き（トークンごとに全レコードを走査）は仕事量が `62,483 × トークン数` になり、
+ * 一致しない語を並べるだけで 1 リクエストが CPU を使い切れた
+ * （実機で 800 語 → `error code: 1102`）。この向きなら **トークン数に依存しない O(レコード数)** で、
+ * `MAX_QUERY_TOKENS` の上限と合わせて二重に有界になる。
+ * 🔵 0 件の語は Map に入らないので、後段で削除する処理も要らない（1 件も当たらない語を残すと
+ * 「最も選択的（＝件数最小）」がその語になり、緩めても必ず 0 件になる）。
+ */
 function countSingleTokenHits(
   records: readonly SearchRecord[],
   tokens: readonly string[],
 ): ReadonlyMap<string, number> {
-  const singles = tokens.map((token) => [token, [token] as readonly string[]] as const)
-  const counts = new Map<string, number>(tokens.map((token) => [token, 0]))
+  const wanted = new Set(tokens)
+  const counts = new Map<string, number>()
   for (const record of records) {
-    for (const [token, single] of singles) {
-      if (matchesAllTokens(record.tokens, single)) {
+    for (const token of record.tokens) {
+      if (wanted.has(token)) {
         counts.set(token, (counts.get(token) ?? 0) + 1)
       }
-    }
-  }
-  // 🔵 1 件も当たらない語を残すと「最も選択的（＝件数最小）」がその語になり、緩和しても
-  //    必ず 0 件になる。緩和の意味がなくなるので、ヒットのある語だけを候補にする。
-  for (const [token, count] of counts) {
-    if (count === 0) {
-      counts.delete(token)
     }
   }
   return counts
 }
 
-/** 入力トークンの防御的な正規化（非空文字列のみ・重複は畳む・順序は維持）。 */
+/**
+ * 入力トークンの防御的な正規化（非空文字列のみ・重複は畳む・順序は維持）。
+ *
+ * 🔴 **語数上限も二重に掛ける**（`F-01`）。上限値の正本は照合規則側の
+ * `MAX_QUERY_TOKENS`（`domain/model/gem-keyword.ts`）で、ここは import して使うだけ。
+ * ポートは外部入力の受け口なので、`tokenizeQuery` を通さずに直接呼ばれても有界にしておく。
+ */
 function normalizeTokens(tokens: readonly string[] | undefined): readonly string[] {
   if (!Array.isArray(tokens)) {
     return []
@@ -379,6 +453,9 @@ function normalizeTokens(tokens: readonly string[] | undefined): readonly string
   for (const token of tokens) {
     if (typeof token === 'string' && token.length > 0) {
       seen.add(token)
+      if (seen.size >= MAX_QUERY_TOKENS) {
+        break
+      }
     }
   }
   return [...seen]
@@ -422,8 +499,14 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
     for (const entry of shard) {
       const current = byRepo.get(entry.lowerName)
       // 同一リポジトリが複数レジストリに出る場合は **値が小さい方（より過小評価）** を採る。
-      // シャードの読み込み順に依存しない決定論的な選択にするための規則。
-      if (current === undefined || entry.gemIndex < current.gemIndex) {
+      // 🔴 同値のときは `registry` 昇順で決める（`F-08`）。狭義比較だけだと同値では先に読んだ
+      //    シャードが勝ち、`index.json` の `shards` の並びを入れ替えるだけで一覧に出る
+      //    `registry` / `packageName` が入れ替わる（＝読み込み順に依存してしまう）。
+      if (
+        current === undefined ||
+        entry.gemIndex < current.gemIndex ||
+        (entry.gemIndex === current.gemIndex && entry.registry < current.registry)
+      ) {
         byRepo.set(entry.lowerName, entry)
       }
     }

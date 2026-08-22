@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  MAX_QUERY_LENGTH,
+  MAX_QUERY_TOKENS,
   matchesAllTokens,
   selectMostSelectiveToken,
   tokenizeIdentifier,
@@ -95,6 +97,56 @@ describe('tokenizeQuery', () => {
     expect(tokenizeQuery('')).toEqual([])
     expect(tokenizeQuery('   ')).toEqual([])
     expect(tokenizeQuery('!!! ---')).toEqual([])
+  })
+})
+
+describe('tokenizeQuery の上限（CPU 枯渇の防止・`F-01`）', () => {
+  it(`トークン数が ${MAX_QUERY_TOKENS} 語を超えたら先頭から切り捨てる（例外にも 0 件にもしない）`, () => {
+    const words = Array.from({ length: MAX_QUERY_TOKENS + 8 }, (_, i) => `w${i}`)
+
+    const tokens = tokenizeQuery(words.join(' '))
+
+    expect(tokens).toHaveLength(MAX_QUERY_TOKENS)
+    expect(tokens).toEqual(words.slice(0, MAX_QUERY_TOKENS))
+  })
+
+  it(`ちょうど ${MAX_QUERY_TOKENS} 語は切り詰めない（境界）`, () => {
+    const words = Array.from({ length: MAX_QUERY_TOKENS }, (_, i) => `w${i}`)
+
+    expect(tokenizeQuery(words.join(' '))).toEqual(words)
+  })
+
+  it('重複を畳んだ後の語数で数える（同じ語を並べても上限に食われない）', () => {
+    const query = Array.from({ length: MAX_QUERY_TOKENS + 50 }, () => 'orm').join(' ')
+
+    expect(tokenizeQuery(query)).toEqual(['orm'])
+  })
+
+  it(`生値が ${MAX_QUERY_LENGTH} 文字を超えたら先に切る（区切りだけの長大入力で語数上限を素通りさせない）`, () => {
+    // 1 語 1 文字 + 区切り 1 文字。上限文字数を超えた分は tokenize 前に落ちる。
+    const raw = Array.from({ length: MAX_QUERY_LENGTH }, (_, i) => `${i % 10}`).join(' ')
+    expect(raw.length).toBeGreaterThan(MAX_QUERY_LENGTH)
+
+    const tokens = tokenizeQuery(raw)
+
+    // 切り取った 256 文字の中に現れる 1 文字語は最大 10 種類（0〜9・重複は畳む）。
+    expect(tokens.length).toBeLessThanOrEqual(10)
+    expect(tokens.length).toBeGreaterThan(0)
+  })
+
+  it('切り詰めても既存の照合は壊れない（先頭側の語で従来どおり AND 一致する）', () => {
+    const haystack = tokenizeIdentifier('doctrine/orm-tool')
+    const noise = Array.from({ length: MAX_QUERY_TOKENS + 30 }, (_, i) => `zq${i}`).join(' ')
+
+    expect(matchesAllTokens(haystack, tokenizeQuery('orm tool'))).toBe(true)
+    // 上限を超えるノイズ語を後ろに並べても、先頭 2 語の解釈は変わらない。
+    expect(tokenizeQuery(`orm tool ${noise}`).slice(0, 2)).toEqual(['orm', 'tool'])
+  })
+
+  it('上限は照合対象側（tokenizeIdentifier）には掛けない', () => {
+    const identifier = Array.from({ length: MAX_QUERY_TOKENS + 10 }, (_, i) => `p${i}`).join('/')
+
+    expect(tokenizeIdentifier(identifier)).toHaveLength(MAX_QUERY_TOKENS + 10)
   })
 })
 
