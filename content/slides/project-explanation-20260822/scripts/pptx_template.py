@@ -8,6 +8,13 @@
 カラー定数（C_BG / C_HEADER / C_ACCENT / C_TEXT / C_CARD_BG）は呼び出し側が
 モジュール属性として差し替える前提。既定値は参照テンプレートのまま。
 """
+# ⚠️ 本ファイルは外部リポジトリ kai-kou/qiita-bash-lt-2026 の
+# .claude/skills/slides/references/PPTX_TEMPLATE.md から抽出したテンプレート（MIT・2026-08-22 取得）。
+# 原典との差分を追えるようにするため原文のまま置いており、本デッキが実際に使うのは
+# make_title_slide / make_bullets_slide / make_summary_slide の 3 つだけ。
+# 他のレイアウト関数（two-column / three-column / comparison-table / key-message / timeline /
+# section）は未使用だが、原典の同一性を保つために削らない。
+
 import os
 import sys
 import json

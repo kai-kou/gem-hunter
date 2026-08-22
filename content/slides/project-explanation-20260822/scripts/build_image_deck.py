@@ -7,7 +7,7 @@
   - 既存流用        : `docs/infographics/*.webp` を JPEG 化して取り込む
 
 PNG のままだと 1 枚約 2MB で `docs/infographics/README.md` の方針（PNG はリポジトリに入れない）に
-反するため、リポジトリに置くのは JPEG に統一する。`python-pptx` は WebP を埋め込めないので、
+反するため、リポジトリに置くのは JPEG（品質は下記 QUALITY）に統一する。`python-pptx` は WebP を埋め込めないので、
 既存インフォグラフィックも JPEG へ変換してから貼る。
 
 品質は 78。88 だと 19 枚を束ねた PPTX が 5.5MB になり、`tools/self_review_check.py` の巨大ファイル

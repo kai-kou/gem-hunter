@@ -69,3 +69,36 @@
 | Step 14 画像版最終セルフレビュー | 完了 |
 | Step 15 最終版アップロード | 完了 |
 | 追加成果物 | [`slide-guide.md`](../slide-guide.md)（画像版スライドに 1 枚ずつ解説を付けた読み物） |
+
+
+## 作り直すときの前提（第三者が clone して実行する場合）
+
+**依存**: 本ディレクトリのスクリプトは、リポジトリ既定の `requirements.txt`（PyYAML のみ）には無い
+Python パッケージを使う。**先に入れること。**
+
+```bash
+python3 -m venv /tmp/slides-venv
+/tmp/slides-venv/bin/pip install python-pptx Pillow openai
+```
+
+`openai` は画像生成（`tools/infographic/generate.py`）にだけ必要で、`OPENAI_API_KEY` も要る。
+`render_pptx_preview.py` は日本語フォント（`fonts-ipafont-gothic`）を使う。未検出時は理由を出して止まる。
+
+**実行はリポジトリルートから**: `screenshots.config.ts` は `process.cwd()` を基準に
+スタブサーバー（`e2e/stub/server.mjs`）を起動するため、`scripts/` の中へ `cd` して実行すると失敗する。
+
+**手順の順序に依存する箇所**: `build_image_deck.py` は新規生成画像を `/tmp/claude/slide-images/`
+（git 管理外）から読む。画像生成をやり直さずにデッキだけ組み直したい場合は、リポジトリに
+コミット済みの `images/new-*.jpg` を同ディレクトリへ戻してから実行する。
+
+```bash
+mkdir -p /tmp/claude/slide-images
+for f in content/slides/project-explanation-20260822/images/new-*.jpg; do
+  cp "$f" "/tmp/claude/slide-images/$(basename "${f%.jpg}").png"   # 拡張子だけ合わせれば Pillow が読む
+done
+```
+
+## 既知の限界
+
+- `verify_text_pptx.py` が見るのは **文言が入っているか** だけで、テキストボックスからのはみ出しは検査していない（目視と `render_pptx_preview.py` の描き起こしで確認する）
+- 画像版には内容照合の自動検査が無い（`gpt-image-2` の出力なので、Step 10 の目視照合が唯一の手段）

@@ -64,12 +64,21 @@ def to_slide_data(slide: dict) -> dict:
             "subtitle": " / ".join(slide["elements"][1:]),
         }
     if layout == "summary":
-        # まとめは「持ち帰る考え方」4 点をカード化し、最後の 1 点は締めの一行として本文に回す。
+        # カードは SUMMARY_CARD_TITLES の数だけしか作れない。あふれた要素を黙って捨てると
+        # 構成にある文言が PPTX から消えるので、ここで明示的に失敗させる。
+        if len(slide["elements"]) > len(SUMMARY_CARD_TITLES):
+            raise ValueError(
+                f'スライド {slide["no"]}: summary レイアウトは {len(SUMMARY_CARD_TITLES)} 点までしか'
+                f'描けないが本文が {len(slide["elements"])} 点ある。bullets に変えるか本文を減らすこと。'
+            )
         cards = [
             {"title": t, "body": b}
             for t, b in zip(SUMMARY_CARD_TITLES, slide["elements"])
         ]
         return {"type": "summary", "header": slide["title"], "cards": cards}
+    if layout != "bullets":
+        # 未対応の値をサイレントに箇条書きへ落とすと、意図したレイアウトが失われたことに気づけない。
+        raise ValueError(f'スライド {slide["no"]}: 未対応の layout: {layout}')
     return {"type": "bullets", "header": slide["title"], "points": slide["elements"]}
 
 

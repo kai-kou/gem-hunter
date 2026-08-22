@@ -19,6 +19,11 @@ OUT_W = 1536
 
 
 def load_font(size_px: int) -> ImageFont.FreeTypeFont:
+    if not Path(FONT).exists():
+        raise SystemExit(
+            f"日本語フォントが見つからない: {FONT}\n"
+            "IPA ゴシック（fonts-ipafont-gothic）を入れるか、FONT を環境にある CJK フォントへ変えること。"
+        )
     return ImageFont.truetype(FONT, max(size_px, 8))
 
 
@@ -90,32 +95,6 @@ def _layout_lines(drw, shape, k, max_w):
             h = font.size * 1.35 + (gap if i == len(buf) - 1 else 0)
             out.append((ln, font, h))
     return out
-
-
-def _unused(drw, shape, k, x0, y0, x1, y1):
-    y = y0 + 4
-    for para in shape.text_frame.paragraphs:
-        text = "".join(r.text for r in para.runs)
-        if not text:
-            y += 8
-            continue
-        run = para.runs[0]
-        size_pt = run.font.size.pt if run.font.size else 12
-        color = rgb(run.font.color, (30, 30, 30))
-        font = load_font(int(size_pt * k * 12700))
-        # 折り返し（描画幅に収まる文字数で機械的に割る）
-        max_w = x1 - x0 - 8
-        line, lines = "", []
-        for ch in text:
-            if drw.textlength(line + ch, font=font) > max_w and line:
-                lines.append(line)
-                line = ch
-            else:
-                line += ch
-        lines.append(line)
-        for ln in lines:
-            drw.text((x0 + 4, y), ln, font=font, fill=color)
-            y += font.size * 1.35
 
 
 def render(pptx_path: Path, out_dir: Path) -> int:
