@@ -1,6 +1,6 @@
 ---
 name: retro-try-handler
-description: type:retro-try ラベル（およびプロジェクト定義の更新系ラベル）の未対応 GitHub Issue を自動検出・分類・実装・PR 化するスキル。レトロスペクティブスキルが生成した Try アイテムを実際の改善コードとして反映する。「retro-try 対応して」「Try Issue を処理して」「/retro-try-handler」と依頼された時、または日次の消化スロット（プロジェクト定義）から自動起動する時に使用する。
+description: type:retro-try ラベル（およびプロジェクト定義の更新系ラベル）の未対応 GitHub Issue を自動検出・分類・実装・PR 化するスキル。レトロスペクティブスキルが生成した Try アイテムを実際の改善コードとして反映する。「retro-try 対応して」「Try Issue を処理して」「/retro-try-handler」と依頼された時、または `sprint-cycle-router` の決定木 Step 5.5（2 時間おきの単一ルーティン・エージング 8 時間）から自動起動される時に使用する。
 effort: medium
 model: haiku
 ---

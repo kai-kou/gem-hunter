@@ -7,8 +7,9 @@
 
 ## このルーティンは単一である
 
-開発（Step 4）・改善 Issue 消化（Step 5）・衛生（Step 6）・リファインメント（Step 7）・
-`claude-code-spec-sync`（Step 1 / 8）を **すべて 1 本の決定木**（`sprint-cycle-router` スキル）に
+開発（Step 4）・改善 Issue 消化（Step 5）・**振り返り Issue 消化（Step 5.5・`type:retro-try`）**・
+衛生（Step 6）・リファインメント（Step 7）・`claude-code-spec-sync`（Step 1 / 8）を
+**すべて 1 本の決定木**（`sprint-cycle-router` スキル）に
 束ねている。別 cron・別ルーティンを追加で作らない（飼い主要求「単一のルーティン設定内で」との
 整合を保つため）。既存 R-1 ルーティンが別スロットで稼働している場合は、本ルーティンへ統合し
 cron は 1 本だけ持つ。
