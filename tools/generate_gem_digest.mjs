@@ -193,8 +193,9 @@ function describeProgress(info) {
   const registry = info.registry?.name ?? info.registry
   if (typeof registry === 'string') parts.push(registry)
   if (Number.isFinite(info.page)) parts.push(`page=${info.page}`)
-  const count = firstFinite(info.fetchedCount, info.total, info.count, info.records?.length)
-  if (count !== null) parts.push(`fetched=${count}`)
+  const fetched = firstFinite(info.fetched, info.fetchedCount, info.count, info.records?.length)
+  if (fetched !== null) parts.push(`fetched=${fetched}`)
+  if (Number.isFinite(info.kept)) parts.push(`kept=${info.kept}`)
   if (Number.isFinite(info.requestCount)) parts.push(`requests=${info.requestCount}`)
   return parts.join(' ')
 }
@@ -242,6 +243,9 @@ async function main() {
     `収集開始: ${registries.length} レジストリ × 最大 ${args.quota} 件（per_page=${args.perPage}）`,
   )
 
+  // 10 分級の実行になるため、ページ単位で「どこまで来たか」を stderr に出し続ける（無出力にしない）。
+  // 累計はコールバック payload に無い（ページ単位の件数しか来ない）ため、ここで積み上げる。
+  let cumulative = 0
   const collected = await collectAll({
     registries,
     quota: args.quota,
@@ -249,12 +253,14 @@ async function main() {
     fetchImpl: fetch,
     project: projectPackage,
     onPage: (info) => {
+      if (Number.isFinite(info?.kept)) cumulative += info.kept
+      else if (Number.isFinite(info?.fetched)) cumulative += info.fetched
       const text = describeProgress(info)
-      if (text) progress(`${text} (+${elapsedSec(startedAt)}s)`)
+      if (text) progress(`${text} total=${cumulative} (+${elapsedSec(startedAt)}s)`)
     },
     onRegistryDone: (info) => {
       const text = describeProgress(info)
-      progress(`done ${text || '(registry)'} (+${elapsedSec(startedAt)}s)`)
+      progress(`done ${text || '(registry)'} total=${cumulative} (+${elapsedSec(startedAt)}s)`)
     },
   })
 
