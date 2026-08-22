@@ -284,7 +284,8 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
    * 操作レビュー手順 4 がそこだけ破れる（`currentPath` の組み立てを回帰させないための固定）。
    */
   await test.step('4-3. 詳細ページで言語を切り替えても Gem 一覧の該当ページへ戻れる', async () => {
-    const [firstFullName] = await readRepositoryFullNames(page)
+    const namesBefore = await readRepositoryFullNames(page)
+    const [firstFullName] = namesBefore
     await page.getByRole('link', { name: firstFullName, exact: true }).click()
     await expect(page).toHaveURL(new RegExp('/ja/repos/'))
 
@@ -306,7 +307,8 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
         `/en/gems\\?${SEARCH_PARAM_KEYS.keyword}=${HIT_QUERY}&${SEARCH_PARAM_KEYS.page}=2$`,
       ),
     )
-    await expect(gemItems(page)).toHaveCount(PER_PAGE)
+    // 件数を決め打ちせず「同じページの中身が戻ってきた」ことで判定する（2 ページ目は端数）。
+    expect(await readRepositoryFullNames(page)).toEqual(namesBefore)
   })
 })
 
