@@ -104,6 +104,10 @@ describe('StaticGemDigest', () => {
       const { meta } = await port.listCandidates()
 
       expect(meta.sourceUrl).toBe('https://ecosyste.ms/')
+      // 🔴 警告の **発生側** を positive に固定する。本番 JSON 側のテストが
+      //    `expect(console.warn).not.toHaveBeenCalled()` という否定形だけになると、`warn()` を
+      //    no-op 化しても全テストが緑のままになり、その回帰点が vacuous になるため。
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('meta.sourceUrl'))
       // 他のフィールドは validMeta の値のまま（sourceUrl 単体のフォールバックが波及しない）。
       expect(meta.source).toBe(validMeta.source)
       expect(meta.sourceLicenseUrl).toBe(validMeta.sourceLicenseUrl)

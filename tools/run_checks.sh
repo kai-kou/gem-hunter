@@ -241,6 +241,16 @@ else
   skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 配信シャード（public/data/gem-index/）の静的検査（SP-17・PR #416 セルフレビュー指摘）。
+# 索引整合・列定義・行の型・gemIndex 昇順・サイズ予算（D-38 の cold start CPU 予算の保険）を見る。
+# ローカルの生成物しか読まないためネットワーク非依存（本判定も self-test も両方配線する）。
+if [ -f "$REPO_ROOT/tools/check_gem_shards.py" ]; then
+  run_check "Gem シャード検査 (check_gem_shards.py)" python3 tools/check_gem_shards.py
+  run_check "Gem シャード検査 self-test (check_gem_shards.py --self-test)" python3 tools/check_gem_shards.py --self-test
+else
+  skip_check "Gem シャード検査 (check_gem_shards.py)" "スクリプトが見つかりません"
+fi
+
 # 被覆率測定（SP-17・D-36 / D-37）も --self-test だけを配線する。本測定は GitHub 検索 API を
 # 叩くためネットワーク非依存を保てない（run_checks.sh はオフラインで完走できることを保つ）。
 if [ -f "$REPO_ROOT/tools/measure_gem_coverage.py" ]; then
