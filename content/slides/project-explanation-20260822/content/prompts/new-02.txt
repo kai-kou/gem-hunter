@@ -1,0 +1,56 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+--- TEXT INCLUSION RULE (VERBATIM) ---
+Render EVERY text element listed under "Text elements" EXACTLY (verbatim) — character for character,
+with no omission, abbreviation, paraphrase, summarization, translation or substitution.
+You MAY reorganize the layout or adjust font size for readability, but you must NOT change the wording
+of any listed element.
+Do NOT add any text that is not in the list — not even partial words, captions, or decorative labels.
+Do NOT render any text element more than once — each element must appear exactly once in the image.
+Do NOT add furigana (ruby annotations).
+Preserve letter case EXACTLY: a word written in lowercase in the list (for example "star",
+"sort=gem-index", "gem-hunter") must stay lowercase — never capitalize the first letter,
+even at the start of a title or a line.
+Do NOT draw medals, rosettes, award ribbons, seals, or circular badges anywhere in the image.
+Never truncate an element: every element must be drawn to its final character, including short
+trailing clauses after a full stop (。). Shrink the font rather than dropping the tail of a sentence.
+Do NOT draw any digit, number, or numeral that is not part of a listed text element —
+no counters, no step totals, no badges showing a count. Numbers appear ONLY inside listed elements.
+Each listed element must appear EXACTLY ONCE. Before finishing, check the whole canvas for any
+sentence that appears twice (for example the same line in a box and again in a bottom banner) and remove the repeat.
+The 「 」 around each listed element are delimiters marking where the element starts and ends —
+they are NOT part of the text. Do not draw them. Only 「 」 that appear INSIDE an element
+(for example 「今日の Gem」 within a longer sentence) are drawn.
+--------------------------------------
+
+--- SLIDE RULE ---
+This image is ONE presentation slide (16:9), not a document summary.
+The first listed text element is the slide title: draw it once, in a top banner, as the largest text.
+Keep the whole composition readable when projected: few, large elements with generous margins.
+------------------
+
+
+TITLE (top banner, largest text, drawn once):
+「star の多さは、使われている証拠ではない」
+
+Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
+「star の多さは、使われている証拠ではない」
+「出発点は「自分が使うライブラリを選ぶとき、star 以外に判断材料がない」という不便だった」
+「star は「後で読む」ブックマーク代わりにも押されるので、利用実績とは意味が違う」
+「約 600 万個の偽 star が観測されている（He et al., ICSE 2026）」
+「debug_inspector は 25 star で 111,000 以上のプロジェクトから依存されている」
+「被依存数なら実際に組み込まれた回数を近似できるが、それだけで並べると有名どころが上位を占める」
+「だから「実利用のわりに注目されていないもの」を測る指標が要る、というのが最初の仮説」
+
+Visual elements (icons and shapes ONLY — never draw any text inside these):
+左右 2 カラムの対比。左は星アイコンの山をグレーで、右はダイヤアイコン 1 つをコーラルで強調。中央に上下を分ける矢印記号

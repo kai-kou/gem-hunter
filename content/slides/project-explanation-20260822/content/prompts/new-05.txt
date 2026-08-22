@@ -1,0 +1,56 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+--- TEXT INCLUSION RULE (VERBATIM) ---
+Render EVERY text element listed under "Text elements" EXACTLY (verbatim) — character for character,
+with no omission, abbreviation, paraphrase, summarization, translation or substitution.
+You MAY reorganize the layout or adjust font size for readability, but you must NOT change the wording
+of any listed element.
+Do NOT add any text that is not in the list — not even partial words, captions, or decorative labels.
+Do NOT render any text element more than once — each element must appear exactly once in the image.
+Do NOT add furigana (ruby annotations).
+Preserve letter case EXACTLY: a word written in lowercase in the list (for example "star",
+"sort=gem-index", "gem-hunter") must stay lowercase — never capitalize the first letter,
+even at the start of a title or a line.
+Do NOT draw medals, rosettes, award ribbons, seals, or circular badges anywhere in the image.
+Never truncate an element: every element must be drawn to its final character, including short
+trailing clauses after a full stop (。). Shrink the font rather than dropping the tail of a sentence.
+Do NOT draw any digit, number, or numeral that is not part of a listed text element —
+no counters, no step totals, no badges showing a count. Numbers appear ONLY inside listed elements.
+Each listed element must appear EXACTLY ONCE. Before finishing, check the whole canvas for any
+sentence that appears twice (for example the same line in a box and again in a bottom banner) and remove the repeat.
+The 「 」 around each listed element are delimiters marking where the element starts and ends —
+they are NOT part of the text. Do not draw them. Only 「 」 that appear INSIDE an element
+(for example 「今日の Gem」 within a longer sentence) are drawn.
+--------------------------------------
+
+--- SLIDE RULE ---
+This image is ONE presentation slide (16:9), not a document summary.
+The first listed text element is the slide title: draw it once, in a top banner, as the largest text.
+Keep the whole composition readable when projected: few, large elements with generous margins.
+------------------
+
+
+TITLE (top banner, largest text, drawn once):
+「機械検証を通さないと PR を出せない」
+
+Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
+「機械検証を通さないと PR を出せない」
+「GitHub Actions は使わない判断をし、CI の代わりにセッション自身が npm run check を実行する」
+「内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）」
+「残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）」
+「結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする」
+「機械で落とせる項目は人が見ないので、レビューは設計判断に集中できる」
+「アーキテクチャの依存規則もここで落ちる。規律が文書だけで終わらない仕組みにしている」
+
+Visual elements (icons and shapes ONLY — never draw any text inside these):
+円環状のフロー。4 つのノードを矢印でつなぎ、中央に大きな数字のバッジ 1 つ。ノードには歯車・虫眼鏡・吹き出し・マージ記号のアイコン

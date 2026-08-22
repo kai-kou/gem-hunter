@@ -1,0 +1,68 @@
+{
+  "topic": "gem-hunter プロジェクト解説スライド（開発者向け・15〜20 枚 / 15〜20 分）の構成をアウトライン案から確定する",
+  "brief": "ユーザー指示（Issue #363）: 参照リポジトリ kai-kou/qiita-bash-lt-2026 のスライド作成ノウハウ（slides スキルの 15 ステップワークフローと必達原則）に忠実に沿って、gem-hunter の詳細な解説スライドを作る。(1) アウトライン案をベースに構成を検討し、スライド構成のベストプラクティスをリサーチして適用する。(2) 既存のインフォグラフィックがあれば積極的に活用する。(3) 1 スライドごとに『スライドを読めば伝えたいことが伝わる』テキスト量にする。(4) 画像は gpt-image-2 で適切な品質・コスト・16:9 で作る。(5) 画像にテキストを含める場合『一字一句正確に』の指示を必ず含める。\n\nユーザー確認済みの前提（AskUserQuestion 済み・再確認不要）: 対象読者=開発者・エンジニア / 尺=15〜20 枚・15〜20 分 / 画像版=既存インフォグラフィック 13 枚を活用し不足分のみ gpt-image-2 で新規生成 / 成果物=リポジトリ内に配置（Google スライド化はユーザーが手動、gws はこの環境に無い）。\n\nアウトライン案（ユーザー提示・これをベースに構成を検討する）: (a) なぜ作ったのか（与件ありきではなく初期コンセプトをベースに説明）(b) 何ができるのか、ツールの解説（アウトカム）(c) 作るためにどういった検討をしてどういったドキュメントを作成したのか（全体像）(d) アーキテクチャ (e) 技術スタック (f) 開発プロセス（1 セッション 1 スプリント、PR 運用、TDD）(g) 技術的課題とどう判断したのか。\n\n参照できる一次資料（すべてリポジトリ絶対パス /home/user/gem-hunter/ 配下）: docs/00_concept/initial-concept.md・lean-canvas.md・inception-deck.md / docs/02_requirements/prd.md・user-story-map.md・roadmap.md・open-questions.md（決定ログ D-n）・minimum-requirements.md（与件）/ docs/03_design/architecture/application-architecture.md・data-model/domain-model.md・ui-ux/ui-ux-guidelines.md・infrastructure/cloudflare-infrastructure.md / docs/04_development/testing-strategy.md / docs/adr/0001〜0015 / docs/project-mission.md / README.md / CLAUDE.md / docs/rules/session-sprint-rules.md・sprint-development-rules.md・pr-review-flow-summary.md・core-principles.md・user-confirmation-minimization.md / docs/infographics/README.md（既存インフォグラフィック 13 枚の索引: 01 初期コンセプト・02 リーンキャンバス・03 インセプションデッキ・04 PRD・05 ユーザーストーリーマップ・06 ロードマップ・07 デザイン設計・08 ドキュメント相関図・09 ADR 意思決定マップ・10 Gem Score 算出ロジック・11 テスト戦略・12 Cloudflare 構成・13 自律運用ルール体系。いずれも 1536x864 の 16:9 WebP・gpt-image-2 quality=medium・ネイビー/ティール/コーラル/マスタード + 生成りの紙地）。参照リポジトリの読み取り済みクローンは /home/user/kai-kou/qiita-bash-lt-2026/（.claude/skills/slides/SKILL.md が 15 ステップの正本）。\n\n争点は少なくとも次の 6 つ: A) スライド構成の骨格（アウトライン案 7 項目を 15〜20 枚へどう割り付けるか。順序を変える/統合する/分割する提案は根拠付きで出す。冒頭に『何ができるのか』のデモ的な絵を先に置く案と、初期コンセプトから入る案のどちらが開発者聴衆に効くかを実際に戦わせる。スライド構成のベストプラクティス＝assertion-evidence 構造・1 スライド 1 メッセージ・SCQA/PREP・Duarte の Sparkline・10/20/30 則などを WebSearch/WebFetch で一次情報に当たり、出典付きで採否を判断する。『本や記事にそう書いてある』ではなく本件の聴衆・尺に効くかで採る）B) 各スライドの見出し文の型（体言止めのラベル型か、主張を言い切る assertion 型か。日本語スライドでの可読性と、画像へ焼き込むときの文字数上限を突き合わせて型を 1 つに決める）C) 既存インフォグラフィック 13 枚の活用マッピング（どのスライドにどの画像を充て、どれは使わないか。既存画像は『そのドキュメントの要約』であってスライド 1 枚のメッセージとは粒度が違うという反論を必ず出すこと。流用でデザインの統一が崩れないか、16:9 1536x864 のまま PPTX に貼れるか、不足分は何枚・どんな絵が要るかを枚数レベルで確定する）D) 技術的課題スライドで何を語るか（ADR 0001〜0015 と open-questions.md の D-n から『判断が割れた・トレードオフが実在した』ものだけを選ぶ。開発者聴衆が最も学べる 2〜4 件へ絞り、却下した代替案とその理由まで載せる。全部載せは不可）E) 開発プロセススライドの誠実さ（1 セッション 1 スプリント・PR 自律運用・TDD・AI エージェントの自律運用ルール体系を、実績値で裏取りできる範囲だけ語る。裏取りできない効果（『N 倍速くなった』等）は載せない。何を数値として出せるかを実データの所在付きで示す。誇張・宣伝臭の検出役を兼ねる）F) 成果物のディレクトリ構成とワークフロー準拠（参照リポジトリは events/<日付>/{content,references,scripts,output} 規約。本リポジトリは content/ 配下に discussions/research/context がある。どこに何を置くかを決める。加えて slides スキルの必達原則 1〜8 と 15 ステップのうち、gws 不在で読み替える Step 5/11/15 の扱い、セルフレビュー Step 2/4/8/10/14 とユーザーレビュー Step 6/12 をこのセッションでどう実施するかの具体手順を決める）。",
+  "participants": [
+    {
+      "name": "narrative_design",
+      "model": "sonnet",
+      "lens": "スライド構成・ストーリーテリング設計（プレゼン構成のベストプラクティスを WebSearch/WebFetch で一次情報に当たり、出典付き＝URL と取得日で主張する。assertion-evidence 構造（Penn State Alley）・1 スライド 1 メッセージ・SCQA/PREP・Nancy Duarte の Sparkline / What is-What could be・Garr Reynolds Presentation Zen・Guy Kawasaki 10/20/30・技術カンファレンス LT の実務知見などを比較し、本件（開発者聴衆・15〜20 分・プロジェクト解説）に効くものだけを採る。アウトライン案 7 項目を 15〜20 枚の具体的なスライド一覧＝各枚のタイトル + 伝えたい 1 メッセージ + 載せる要素まで落とす。順序変更・統合・分割を提案する場合は必ず根拠と、変更しない案に対する優位性を述べる。争点 A・B の主担当）"
+    },
+    {
+      "name": "project_truth",
+      "model": "sonnet",
+      "lens": "プロジェクト事実の抽出とファクトチェック（docs/00_concept/・02_requirements/・03_design/・04_development/・adr/・project-mission.md・README.md を実際に読み、スライドに載せる事実・数値・固有名詞を一次情報で裏取りする。initial-concept.md が語る『なぜ作ったのか』の原型と、minimum-requirements.md の与件との関係を正確に切り分ける（ユーザー指示は『与件ありきではなく初期コンセプトをベースに』）。ADR 0001〜0015 と open-questions.md の D-n から実在したトレードオフを抽出し、却下された代替案まで対で示す。裏取りできない主張・誇張を検出したら名指しで潰す。争点 D・E の事実面の主担当。新しい売り文句を作らず、書いてあることの正確な要約に徹する）"
+    },
+    {
+      "name": "dev_audience",
+      "model": "sonnet",
+      "lens": "開発者聴衆の受け手視点（個人開発者・エンジニアがこのスライドを見たとき、どこで身を乗り出しどこで飽きるかを具体的に判定する。『何ができるのか（アウトカム）』を早く見せないと以降の技術説明が入ってこない、という導入設計の反対尋問役。アーキテクチャ・技術スタック・開発プロセスの各スライドについて、開発者にとって既知で退屈な情報（Next.js とは・TDD とはの一般論）と、このプロジェクト固有で価値のある情報（AI 自律運用の実際・Cloudflare Workers での OpenNext 運用・Gem Score の設計）を切り分け、後者に枚数を寄せる配分を提案する。15〜20 分で語り切れるかを 1 枚あたりの秒数から定量的に検証し、詰め込みすぎを潰す。争点 A・D の受け手面の主担当）"
+    },
+    {
+      "name": "visual_assets",
+      "model": "sonnet",
+      "lens": "ビジュアル資産の活用と画像生成設計（docs/infographics/README.md と 13 枚の既存インフォグラフィックの内容・粒度を確認し、どのスライドに流用できてどれが粒度不一致かを 1 枚ずつ判定する。流用する場合の見せ方＝全面貼り / 部分トリミング / 補足テキスト併記を決める。不足分について gpt-image-2 で何枚・どんな構図・どのテキスト要素を焼き込むかを設計し、品質とコストのバランス（quality=low/medium/high の選択根拠・1536x864 の 16:9・生成枚数）を定量的に提案する。参照リポジトリ .claude/skills/slides/SKILL.md の Step 9 プロンプト構成ルール（Text elements の一字一句列挙・Visual elements にテキストや固有名詞を書かない・重複禁止・ルビ禁止）と .claude/skills/infographic/references/INFOGRAPHIC_PROMPT.md を読み、既存 13 枚とのデザイン統一（ネイビー/ティール/コーラル/マスタード + 生成りの紙地）をどう担保するかを具体的に示す。『既存画像の流用はデザインが割れるので全枚新規生成すべき』という対案も本気で検討して結論を出す。争点 C の主担当）"
+    },
+    {
+      "name": "workflow_compliance",
+      "model": "haiku",
+      "lens": "参照ワークフロー準拠と成果物配置の機械的検証（/home/user/kai-kou/qiita-bash-lt-2026/ の CLAUDE.md・README.md・.claude/skills/slides/SKILL.md・.claude/rules/lessons.md を読み、15 ステップと必達原則 1〜8 のうち本セッションで満たせる項目・読み替えが要る項目・満たせない項目を表で列挙する。とくに gws 不在による Step 5/11/15 の読み替え、セルフレビュー Step 2/4/8/10/14 とユーザーレビュー Step 6/12 の実施方法、lessons.md のストリームタイムアウト対策（Write は 80 行以内・繰り返し構造は Edit で 3〜4 要素ずつ・テンプレートの全読み禁止）を漏らさず拾う。成果物ディレクトリについては本リポジトリの既存規約（content/ 配下の構成・docs/ の階層）と参照リポジトリの events/<日付>/ 規約を突合し、配置案を提示する。新しい主張はせず、規約との差分と抜け漏れの指摘に徹する。争点 F の主担当）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜F それぞれについて採用する結論を 1 つに決める。最重要成果物は『確定したスライド一覧』であり、各スライドについて 枚番号 / タイトル / 伝えたい 1 メッセージ / 載せるテキスト要素 / 使う画像（既存流用ならファイル名・新規生成なら構図の指示）まで落とす。衝突は 事実の正確さ（裏取り済みか）> ユーザー指示の充足 > 受け手（開発者）への伝わりやすさ > 制作コスト の順で解決する。議論で否定された案は採用しない。裏取りできない主張はスライドに載せない。仕様解釈が 2 通り以上あり成果物が変わるものは open_questions に列挙する（SD-3 第 2 系統）。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜F のいずれか",
+        "decision": "採用する結論の要点",
+        "rationale": "根拠（出典 URL があれば併記）",
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "slides": [
+      {
+        "no": "スライド番号",
+        "title": "スライドタイトル",
+        "message": "このスライドで伝えたい 1 メッセージ",
+        "elements": ["載せるテキスト要素"],
+        "visual": "既存流用ならファイル名 / 新規生成なら構図の指示 / なしなら none",
+        "source": "根拠となるドキュメントのパスまたは ID"
+      }
+    ],
+    "new_images": [
+      {
+        "id": "画像 ID",
+        "slide_no": "対応スライド番号",
+        "quality": "low|medium|high",
+        "motif": "構図・モチーフの指示",
+        "text_elements": ["焼き込むテキスト（一字一句）"]
+      }
+    ],
+    "artifacts": ["成果物の配置先パス"],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）"]
+  }
+}
