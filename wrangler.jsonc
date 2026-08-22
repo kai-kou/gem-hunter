@@ -7,7 +7,7 @@
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "workers_dev": true,
   "preview_urls": true,
-  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "observability": { "enabled": true, "logs": { "invocation_logs": true } },
   "limits": { "cpu_ms": 50 },
   // 🔴 `period` を変えたら src/infrastructure/platform/rate-limit.ts の RATE_LIMIT_PERIOD_SECONDS も
   //    同じ値へ更新する（超過時の Retry-After に使うため、ずれると案内した秒数と実際の窓が食い違う）。
