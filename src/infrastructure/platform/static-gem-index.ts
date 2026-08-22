@@ -581,19 +581,16 @@ async function loadShard(
 
   // 🔵 一覧用の列（`packageName` / `dependentCount` / `stars`）は **無くてもスキップしない**。
   //    所属照会（バッジ）は `repositoryFullName` と `gemIndex` だけで成立するため、
-  //    ここで必須にすると古い形のシャードでバッジまで落ちる。欠けた列は既定値で埋める。
+  //    ここで必須にすると古い形のシャードでバッジまで落ちる。
+  // 🔴 ただし **一覧の母集団からは外す**（`F-17`）。欠けた列を `''` / `0` で埋めた値を
+  //    「★ 0 / 0 件」という事実として表示してしまうのは検証ではなく捏造（`ARCH-R1`）。
   const packageIndex = shard.columns.indexOf(COLUMN_PACKAGE_NAME)
   const dependentIndex = shard.columns.indexOf(COLUMN_DEPENDENT_COUNT)
   const starsIndex = shard.columns.indexOf(COLUMN_STARS)
-  if (packageIndex < 0 || dependentIndex < 0 || starsIndex < 0) {
-    warn(
-      `シャード ${fileName} の columns に一覧用の列（${COLUMN_PACKAGE_NAME} /` +
-        ` ${COLUMN_DEPENDENT_COUNT} / ${COLUMN_STARS}）が揃っていません。` +
-        '所属判定のみに使い、欠けた項目は既定値で埋めます。',
-    )
-  }
+  const listable = packageIndex >= 0 && dependentIndex >= 0 && starsIndex >= 0
 
   const entries: PoolEntry[] = []
+  let malformedNames = 0
   for (const entry of shard.entries) {
     if (!Array.isArray(entry)) {
       continue
@@ -601,6 +598,12 @@ async function loadShard(
     const fullName = entry[nameIndex]
     const value = entry[valueIndex]
     if (typeof fullName !== 'string' || fullName.length === 0) {
+      continue
+    }
+    // 🔴 `owner/repo` の形でないものは入口で落とす（`F-09`）。`../settings` のような値が通ると
+    //    詳細ページへのリンクが URL 正規化で別のページへ化け、項目名と遷移先が食い違う。
+    if (!REPOSITORY_FULL_NAME_PATTERN.test(fullName)) {
+      malformedNames += 1
       continue
     }
     // 非有限数は `gemIndex()`（スマートコンストラクタ）が throw するため、ここで先に弾く。
@@ -616,7 +619,22 @@ async function loadShard(
       gemIndex: gemIndex(value),
       registry,
       lowerName: fullName.toLowerCase(),
+      listable,
     })
+  }
+
+  if (!listable) {
+    warn(
+      `シャード ${fileName}（registry=${registry}）の columns に一覧用の列` +
+        `（${COLUMN_PACKAGE_NAME} / ${COLUMN_DEPENDENT_COUNT} / ${COLUMN_STARS}）が揃っていません。` +
+        `${entries.length} 件を Gem 一覧の母集団から除外し、所属判定（バッジ）にのみ使います。`,
+    )
+  }
+  if (malformedNames > 0) {
+    warn(
+      `シャード ${fileName}（registry=${registry}）の repositoryFullName が` +
+        ` owner/repo の形でないエントリを ${malformedNames} 件スキップしました。`,
+    )
   }
   return entries
 }
