@@ -162,7 +162,7 @@
 
 - 見出し: 機械検証を通さないと PR を出せない
 - 本文:
-  - GitHub Actions が使えないため、CI の代わりにセッション自身が npm run check を実行する
+  - GitHub Actions は使わない判断をし、CI の代わりにセッション自身が npm run check を実行する
   - 内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）
   - 残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）
   - 結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする
@@ -210,25 +210,28 @@
   - star を水増しすると値は下がる。偽 star に構造的に強い
   - 健全性は criticality_score（OpenSSF の既存指標）をそのまま使い、自作しない
   - 健全性は合算せず足切りにだけ使う。合算すると「健全だが有名」が上位に戻る
-  - 被依存数は Ecosyste.ms、star は GitHub API から取る
+  - 被依存数は Ecosyste.ms の npm レジストリ API、star は GitHub API から取る
+  - Ecosyste.ms のデータは CC BY-SA 4.0。画面に出典・ライセンス・生成時刻を明記している
 - ビジュアル: 既存流用 docs/infographics/10-gem-score.webp
 - 伝えたい 1 メッセージ: 差別化ロジックの定義（直後の撤去話への助走）
-- 出典: ADR 0009 §2.1 / §3.1 / §3.2 / §3.3
+- 出典: ADR 0009 §2.1 / §2.2 / §3.1 / §3.2 / §3.3 / tools/generate_gem_digest.mjs / src/ui/attribution-notice.tsx
 
 ## Slide 16: 作った差別化機能を、実測で撤去した
 
 - 見出し: 作った差別化機能を、実測で撤去した
 - 本文:
   - 作る前は「被依存数で並べれば埋もれた良いものが出る」と考えていた
-  - 却下: 候補プールはユニーク 227 リポジトリしかなく、検索上位 100 件との一致は一般語でほぼ 0 件
-  - 却下: 候補を広げる案もあったが、バンドルが Workers Free の 3 MB 上限を超える
+  - 候補プールは Ecosyste.ms の npm レジストリを被依存数の降順に上位 294 件、事前バッチで取ったもの
+  - 同じリポジトリが複数パッケージを出すため、ユニークなリポジトリは 227 件まで減る
+  - 却下: この 227 件では検索上位 100 件との一致が一般語でほぼ 0 件で、並べ替える対象がなかった
+  - 却下: 候補を広げる案も、バンドル 3 MB 上限に当たるうえ、npm 限定では非 JS 系に当たらない
   - 採用: sort=gem-index を検索結果から撤去した（Gem Index の定義そのものは撤回しない）
-  - 採用: 1 検索あたり最大 10 リクエスト（体感 3〜8 秒）だったものが、常に 1 回（0.5〜1 秒）になった
+  - 採用: 1 検索あたり最大 10 リクエスト（体感 3〜8 秒）が、常に 1 回（0.5〜1 秒）になった
   - 採用: Gem Index は「今日の Gem」ダイジェストで使い続ける
   - 差別化の見せ場を自分で外す決定だったが、実測の数字の前では迷う余地がなかった
 - ビジュアル: 新規生成 new-06（採用 vs 却下）
 - 伝えたい 1 メッセージ: 技術的課題 1: 測って自分で殺す（この発表の主役・90〜100 秒）
-- 出典: ADR 0009 D-33 追記 / open-questions.md D-33
+- 出典: ADR 0009 D-33 追記 / open-questions.md D-30・D-33 / ADR 0014 §2.6 / tools/generate_gem_digest.mjs
 
 ## Slide 17: 認証方式は 6 つの軸で選ぶ
 
@@ -272,17 +275,4 @@
 - ビジュアル: 新規生成 new-09（まとめ）
 - 伝えたい 1 メッセージ: 聴衆が自分の現場で使えるもの（主題の回収）
 - 出典: ADR 0009 / application-architecture.md W-1〜W-3 / open-questions.md D-33 / project-mission.md
-
-## Slide 20: リポジトリとドキュメントの入口
-
-- 見出し: リポジトリとドキュメントの入口
-- 本文:
-  - 動くものを触るなら: github.com/kai-kou/gem-hunter
-  - 要件の正本: docs/02_requirements/prd.md
-  - 決定の経緯: docs/02_requirements/open-questions.md
-  - 技術的意思決定: docs/adr/（15 本）
-  - この発表の構成・画像・生成スクリプトもリポジトリに入っている
-- ビジュアル: 新規生成 new-10（クロージング）
-- 伝えたい 1 メッセージ: 次に読むもの・触るもの
-- 出典: README.md / docs/README.md / content/slides/project-explanation-20260822/
 

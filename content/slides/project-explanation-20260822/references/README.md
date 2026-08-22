@@ -58,5 +58,6 @@
 | Step 3 テキスト版作成 | 完了（`output/gem-hunter_text.pptx`・20 枚） |
 | Step 4 テキスト版セルフレビュー | 完了（`verify_text_pptx.py` で全文言の反映を機械照合・描き起こしで目視確認） |
 | Step 5 アップロード | 完了（Google スライド化。手順は `google-slides-upload.md`） |
-| Step 6 テキスト版ユーザーレビュー | **承認待ち** |
+| Step 6 テキスト版ユーザーレビュー | 実施（フィードバック 3 件） |
+| Step 7 フィードバック反映 | 完了（GitHub Actions の表現・被依存数の取得元と母数・最終ページ削除で 19 枚） |
 | Step 9 以降（画像版） | Step 6 の承認後に着手する |

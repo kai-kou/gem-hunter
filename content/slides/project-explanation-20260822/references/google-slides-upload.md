@@ -60,9 +60,15 @@ URL は `https://docs.google.com/presentation/d/<FILE_ID>/edit`。
 
 同名で作り直すと重複するので、`gws drive files delete` で既存を消してから作り直す（参照ワークフロー Step 7 / 13 と同じ）。
 
+```bash
+gws drive files delete --params '{"fileId":"<OLD_FILE_ID>"}'
+```
+
+⚠️ `files delete` は成功時にレスポンス本体が空で、`gws` が **カレントディレクトリに `download.html` を書き出す**（`"saved_file": "download.html"`）。実害はないが作業ツリーが汚れるので、実行後に消す。
+
 ## 現在の成果物
 
 | 版 | ファイル ID | URL |
 |---|---|---|
-| テキスト版 | `1QfTwVmjgxn0cfDUYI8xTVUhwzvUDbox90Af_nq9WKQs` | https://docs.google.com/presentation/d/1QfTwVmjgxn0cfDUYI8xTVUhwzvUDbox90Af_nq9WKQs/edit |
+| テキスト版 | `1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g` | https://docs.google.com/presentation/d/1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g/edit |
 | 画像版 | （未作成・Step 9 以降） | — |

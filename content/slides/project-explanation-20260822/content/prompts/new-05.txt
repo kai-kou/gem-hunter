@@ -38,7 +38,7 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「機械検証を通さないと PR を出せない」
-「GitHub Actions が使えないため、CI の代わりにセッション自身が npm run check を実行する」
+「GitHub Actions は使わない判断をし、CI の代わりにセッション自身が npm run check を実行する」
 「内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）」
 「残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）」
 「結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする」
