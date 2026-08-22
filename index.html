@@ -258,7 +258,8 @@
               <p>
                 キーワードを入れずに開くと、被依存数のわりに star が少ないリポジトリを
                 毎日 5 件だけ提示します。前回の訪問になかったものには「新着」が付きます
-                （初回はすべてが新着として出ます）。
+                （初回は「初回として全件を表示しています」と出て、個別の新着マークは
+                2 回目の訪問から付きます）。
               </p>
             </li>
             <li>
@@ -309,7 +310,7 @@
             <div class="tile span-2">
               <h3>
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" stroke-linecap="round" />
+                  <path d="M7 3h10l4 6-9 12L3 9l4-6Z" stroke-linejoin="round" /><path d="M3 9h18M12 21 9 9l3-6 3 6-3 12" stroke-linejoin="round" />
                 </svg>
                 今日の Gem
               </h3>
@@ -408,13 +409,13 @@
             <div class="tile span-3 tile-wide">
               <h3>
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                  <path d="M12 3l7 3v5c0 4.2-2.9 7.6-7 8.7-4.1-1.1-7-4.5-7-8.7V6l7-3Z" stroke-linejoin="round" />
                 </svg>
                 渡すものが何もない
               </h3>
               <p>
-                アカウント登録もログインもありません。広告も、アクセス解析のトラッキングも
-                入れていません。検索したキーワードをサーバーに保存する仕組みも持っていません
+                アカウント登録は要りません。広告も、アクセス解析のトラッキングも入れていません。
+                検索したキーワードをサーバーに保存する仕組みも持っていません
                 （データベースを 1 つも接続していないので、保存しようがない、が正確です）。
               </p>
               <ul class="tag-list">
@@ -534,7 +535,7 @@
             <details>
               <summary>アカウント登録は必要ですか？</summary>
               <div class="answer">
-                不要です。ログインの仕組み自体を置いていないので、開いた瞬間から全機能が使えます。
+                不要です。ログインなしで、検索・詳細表示・「今日の Gem」のすべてが使えます。
               </div>
             </details>
             <details>
