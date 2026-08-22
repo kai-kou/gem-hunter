@@ -215,10 +215,9 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
     expectAscending(firstPageIndexes)
   })
 
-  await test.step('6. 出典表示（Ecosyste.ms / CC BY-SA 4.0）が読める（GR-6 / D-29）', async () => {
+  await test.step('6. 出典表示（配信データの帰属情報）が読める（GR-6 / D-29）', async () => {
     // 帰属表示は `GemList` 末尾の 1 段落。出典名とライセンス名がリンクとして読める。
-    await expect(page.getByRole('link', { name: 'Ecosyste.ms' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'CC BY-SA 4.0' })).toBeVisible()
+    await expectAttributionFromPoolData(page)
   })
 
   await test.step('3-2. 2 ページ目へ進んでも Gem Index 順が破綻していない', async () => {
@@ -228,6 +227,13 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
       .click()
 
     await expect(page).toHaveURL(new RegExp(`[?&]${SEARCH_PARAM_KEYS.page}=2(&|$)`))
+    /**
+     * 🔴 ページ送りの完了後、フォーカスが一覧見出しへ移る（`ui-ux-guidelines.md` §7.1 / F-04）。
+     * `<title>` は固定・総件数の文言もページ間で同一なので、これが無いと「一覧が差し替わった」
+     * ことがスクリーンリーダー利用者に一切伝わらない。
+     */
+    await expect(page.locator(`#${GEM_LIST_HEADING_ID}`)).toBeFocused()
+
     const secondPageIndexes = await readGemIndexes(page)
     expectAscending(secondPageIndexes)
     // ページを跨いでも大小関係が保たれている（ページ内だけの局所ソートになっていない）。
