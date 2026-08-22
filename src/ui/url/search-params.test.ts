@@ -1,10 +1,36 @@
 import { describe, expect, it } from 'vitest'
 
-import { SEARCH_PARAM_KEYS, parseSearchParams, rawKeywordOf } from './search-params'
+import {
+  GEM_LIST_SOURCE_PARAM_KEY,
+  GEM_LIST_SOURCE_PARAM_VALUE,
+  SEARCH_PARAM_KEYS,
+  parseSearchParams,
+  rawKeywordOf,
+} from './search-params'
 
 describe('SEARCH_PARAM_KEYS', () => {
   it('keyword は q、page は page、sort は sort、perPage は per_page に固定されている', () => {
-    expect(SEARCH_PARAM_KEYS).toEqual({ keyword: 'q', page: 'page', sort: 'sort', perPage: 'per_page' })
+    expect(SEARCH_PARAM_KEYS).toEqual({
+      keyword: 'q',
+      page: 'page',
+      sort: 'sort',
+      perPage: 'per_page',
+    })
+  })
+})
+
+/**
+ * 🔴 URL 契約（外部に共有・ブックマークされる）の正本は本ファイル。表示コンポーネント側に
+ * 名前を持たせない（`prd.md` §2.4.1 が仕様の正本）。
+ */
+describe('Gem 一覧の出所マーカー', () => {
+  it('from=gems に固定されている', () => {
+    expect(GEM_LIST_SOURCE_PARAM_KEY).toBe('from')
+    expect(GEM_LIST_SOURCE_PARAM_VALUE).toBe('gems')
+  })
+
+  it('検索 4 条件のキーと衝突しない', () => {
+    expect(Object.values(SEARCH_PARAM_KEYS)).not.toContain(GEM_LIST_SOURCE_PARAM_KEY)
   })
 })
 
@@ -68,7 +94,10 @@ describe('parseSearchParams', () => {
   })
 
   it('sort が配列で来たら先頭の値を採る', () => {
-    expect(parseSearchParams({ sort: ['stars', 'updated'] })).toEqual({ ...DEFAULTS, sort: 'stars' })
+    expect(parseSearchParams({ sort: ['stars', 'updated'] })).toEqual({
+      ...DEFAULTS,
+      sort: 'stars',
+    })
   })
 
   it('per_page をそのまま読み取り、不正値・未指定は 20 に正規化される', () => {

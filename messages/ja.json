@@ -51,6 +51,9 @@
     "pageNext": "次のページへ",
     "pageCurrent": "{page} ページ目",
     "pageLimitReached": "表示できる最終ページです。キーワードを絞り込むと他の結果を確認できます。",
+    "gemListLink": {
+      "label": "この検索語の Gem 候補を一覧で見る"
+    },
     "gemBadge": {
       "label": "Gem",
       "srHint": "（star の数のわりに、多くのパッケージから使われている候補です）",
@@ -67,8 +70,26 @@
       "firstVisitNote": "初回として全件を表示しています"
     }
   },
+  "gems": {
+    "title": "Gem 一覧",
+    "description": "検索語に関連する Gem 候補を、過小評価度（Gem Index）が高い順に一覧します。",
+    "heading": "「{query}」の Gem",
+    "empty": "この検索語に一致する Gem 候補はありませんでした。この一覧は 12 のパッケージレジストリの被依存数上位から作った限定的な候補プールだけを対象にしています。ここに載らないことは、そのリポジトリの評価が低いことを意味しません。",
+    "unmatchableQuery": "この検索語からは、絞り込みに使える語を取り出せませんでした。絞り込みはパッケージ名・リポジトリ名（英数字の識別子）に対する単語境界一致で行っているため、日本語だけの検索語では候補を絞り込めません。「image processing」のように英語のキーワードで試すと、関連する Gem 候補が見つかることがあります。",
+    "relaxedNotice": "すべての語を含む Gem 候補が無かったため、「{token}」だけで絞り込んだ結果を表示しています。",
+    "totalCount": "{count} 件",
+    "starCount": "star 数",
+    "dependentCount": "利用パッケージ数",
+    "gemIndexLabel": "Gem Index",
+    "registryLabel": "レジストリ",
+    "attribution": "このデータについて: 利用パッケージ数と star 数は {source}（{license}）のオープンデータをもとにした参考値です。GitHub の最新値や詳細画面の表示とは差があります。並び順（Gem Index）はこちらで再算出しています。",
+    "backToSearch": "検索に戻る",
+    "queryRequired": "検索語を指定すると、その語に関連する Gem 候補を一覧できます。トップページでキーワードを検索してから、この一覧を開いてください。",
+    "loadFailed": "Gem 候補プールを読み込めませんでした。一時的な問題の可能性があります。少し待ってから再試行してください。"
+  },
   "detail": {
     "backLink": "一覧へ戻る",
+    "backToGemList": "Gem 一覧へ戻る",
     "language": "主要言語",
     "starCount": "star 数",
     "watcherCount": "watcher 数",

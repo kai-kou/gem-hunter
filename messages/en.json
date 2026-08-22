@@ -51,6 +51,9 @@
     "pageNext": "Next page",
     "pageCurrent": "Page {page}",
     "pageLimitReached": "This is the last page available. Refine your keyword to see more results.",
+    "gemListLink": {
+      "label": "See Gem candidates for this keyword"
+    },
     "gemBadge": {
       "label": "Gem",
       "srHint": "(Many packages depend on this repository, yet few people have starred it.)",
@@ -67,8 +70,26 @@
       "firstVisitNote": "Showing all items as your first visit"
     }
   },
+  "gems": {
+    "title": "Gems",
+    "description": "Browse the Gem candidates related to your keyword, the most underrated ones first.",
+    "heading": "Gems for \"{query}\"",
+    "empty": "No Gem candidate matched this keyword. This list only covers a limited pool built from the most depended-upon packages of 12 package registries, so a repository that is missing here is not rated any lower.",
+    "unmatchableQuery": "We could not take any term out of this keyword to narrow the list. Matching runs as whole-word matches against package names and repository names, which are alphanumeric identifiers, so a keyword without alphanumeric words cannot narrow the list. Trying an English keyword such as \"image processing\" may surface related Gem candidates.",
+    "relaxedNotice": "No candidate contained all of your words, so the list is narrowed by \"{token}\" only.",
+    "totalCount": "{count} results",
+    "starCount": "stars",
+    "dependentCount": "Used by",
+    "gemIndexLabel": "Gem Index",
+    "registryLabel": "Registry",
+    "attribution": "About this data: \"Used by\" and star counts come from {source} ({license}) open data and are reference values, so they can differ from the latest values on GitHub and from the detail page. The order (Gem Index) is recomputed here.",
+    "backToSearch": "Back to search",
+    "queryRequired": "Enter a keyword to list the Gem candidates related to it. Search from the home page first, then open this list.",
+    "loadFailed": "We couldn't load the Gem candidate pool. This may be temporary — please wait a moment and retry."
+  },
   "detail": {
     "backLink": "Back to results",
+    "backToGemList": "Back to Gems",
     "language": "Language",
     "starCount": "stars",
     "watcherCount": "watchers",

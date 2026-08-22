@@ -1,6 +1,9 @@
 import type { DigestMeta } from '../domain/model/gem'
 import type { Locale } from '../domain/model/locale'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
+import { INLINE_LINK_CLASS_NAME, isHttpUrl, splitOn } from './inline-template'
+
+const GENERATED_AT_PLACEHOLDER = '{generatedAt}'
 
 type AttributionNoticeLabels = {
   /**
@@ -8,17 +11,12 @@ type AttributionNoticeLabels = {
    * ライセンス名の後段は、数値が取得時点の参考値であることと「並び順は日付をもとに毎日算出
    * しています」（改変の明示・`D-29`）まで含める（辞書側の文言を分割せず 1 本にしたい・
    * 切れ目で改行しない）。🔴 文言は `D-33`（#308）で初見ユーザー向けに刷新済み。
+   *
+   * 🔵 `{generatedAt}` は **任意**。含まれていなければ生成時刻のノードを描かない
+   * （Gem 一覧の `gems.attribution` のように生成時刻を出さない面でも同じ実装を使えるようにする）。
    */
   attribution: string
 }
-
-/**
- * 本文中インラインリンク（出典元・ライセンス）の共通クラス。
- * 同じ段落に 2 本のリンクがあるため、片方だけ意匠を変えて食い違うことを構造的に防ぐ
- * （Issue #334 Layer 1 レビュー指摘）。
- */
-const INLINE_LINK_CLASS_NAME =
-  'text-primary rounded-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring'
 
 /**
  * データ出典と改変の明示（`ADR 0014` §2.6 の `D-29` 帰属表示）。
@@ -27,6 +25,9 @@ const INLINE_LINK_CLASS_NAME =
  * 参考値であり詳細画面（GitHub API のライブ値）と差があることも同じ文で伝える（`D-33`）。
  *
  * 単純な `<p>` + `<a>` + `<time>`。ARIA の追加ロールは不要（本文中の脚注扱い）。
+ *
+ * 🔴 **帰属表示の実装はこの 1 本だけ**（トップページと Gem 一覧が共用する）。面ごとに
+ * 派生版を作らない（PR #440 Layer 1 指摘: 同じ `D-29` 要件の実装が 2 つに割れていた）。
  *
  * 🔴 生成時刻は **JST 表示**（`docs/rules/datetime-rules.md` §0）。書式は既存の
  * `repository-list.tsx` と同じ `Intl.DateTimeFormat(localeTag, { timeZone: 'Asia/Tokyo' })`
@@ -51,59 +52,64 @@ export function AttributionNotice({
     timeZone: 'Asia/Tokyo',
   })
 
-  // 候補プール JSON が壊れていると `generatedAt` は空文字・非 ISO 文字列になりうる
-  // （`StaticGemDigest` はそこで throw せずフォールバックする）。`Intl` は Invalid Date で
-  // RangeError を投げるので、パースできた場合だけ整形し、それ以外は生値をそのまま出す。
-  const generatedAtDate = toValidDate(meta.generatedAt)
-  const generatedAtNode = generatedAtDate ? (
-    <time dateTime={meta.generatedAt}>{`${dateTimeFormat.format(generatedAtDate)} JST`}</time>
-  ) : (
-    <>{meta.generatedAt}</>
-  )
-
   // 出典元 URL は `sourceUrl`（例: Ecosyste.ms トップページ）、ライセンス URL は
   // `sourceLicenseUrl`（例: CC BY-SA 4.0 の deed 頁）。ラベル文字列の中の `{source}` /
   // `{license}` / `{generatedAt}` プレースホルダ位置を要素へ置き換えるため、この順で
   // 逐次分割する（実際の辞書文言はこの順で並ぶ・`messages/ja.json` `home.digest.attribution`）。
   const [beforeSource, afterSource] = splitOn(labels.attribution, '{source}')
   const [beforeLicense, afterLicense] = splitOn(afterSource, '{license}')
-  const [beforeGeneratedAt, afterGeneratedAt] = splitOn(afterLicense, '{generatedAt}')
+  const hasGeneratedAt = afterLicense.includes(GENERATED_AT_PLACEHOLDER)
+  const [beforeGeneratedAt, afterGeneratedAt] = splitOn(afterLicense, GENERATED_AT_PLACEHOLDER)
 
   return (
     <p className="text-muted-foreground mt-6 text-xs">
       {beforeSource}
-      <a
-        href={meta.sourceUrl}
-        rel="noopener noreferrer"
-        target="_blank"
-        className={INLINE_LINK_CLASS_NAME}
-      >
-        {meta.source}
-      </a>
+      <SafeLink href={meta.sourceUrl} text={meta.source} />
       {beforeLicense}
-      <a
-        href={meta.sourceLicenseUrl}
-        rel="noopener noreferrer"
-        target="_blank"
-        className={INLINE_LINK_CLASS_NAME}
-      >
-        {meta.license}
-      </a>
-      {beforeGeneratedAt}
-      {generatedAtNode}
-      {afterGeneratedAt}
+      <SafeLink href={meta.sourceLicenseUrl} text={meta.license} />
+      {/*
+        🔵 `{generatedAt}` を含まない文言（Gem 一覧）では時刻ノードごと描かない。
+        含まないのに描くと、文の末尾へ日時が接ぎ木されて意味の通らない文になる。
+      */}
+      {hasGeneratedAt ? (
+        <>
+          {beforeGeneratedAt}
+          <GeneratedAt value={meta.generatedAt} format={dateTimeFormat} />
+          {afterGeneratedAt}
+        </>
+      ) : (
+        beforeGeneratedAt
+      )}
     </p>
   )
 }
 
 /**
- * `template` を `token` の最初の出現位置で 2 分割する（`String.prototype.split(limit)` は
- * 残りを捨てるため使わない）。見つからなければ `[template, '']` を返す。
+ * 生成時刻。候補プール JSON が壊れていると `generatedAt` は空文字・非 ISO 文字列になりうる
+ * （`StaticGemDigest` はそこで throw せずフォールバックする）。`Intl` は Invalid Date で
+ * RangeError を投げるので、パースできた場合だけ整形し、それ以外は生値をそのまま出す。
  */
-function splitOn(template: string, token: string): [string, string] {
-  const idx = template.indexOf(token)
-  if (idx < 0) return [template, '']
-  return [template.slice(0, idx), template.slice(idx + token.length)]
+function GeneratedAt({ value, format }: { value: string; format: Intl.DateTimeFormat }) {
+  const date = toValidDate(value)
+  if (!date) return <>{value}</>
+  return <time dateTime={value}>{`${format.format(date)} JST`}</time>
+}
+
+/**
+ * `http(s)` のときだけリンクにし、それ以外はテキストのまま出す。
+ *
+ * 🔴 候補プール JSON は外部データ由来なので、URL を無検査で `href` へ渡さない
+ * （`javascript:` を `href` に流さない）。
+ */
+function SafeLink({ href, text }: { href: string; text: string }) {
+  if (!isHttpUrl(href)) {
+    return <>{text}</>
+  }
+  return (
+    <a href={href} rel="noopener noreferrer" target="_blank" className={INLINE_LINK_CLASS_NAME}>
+      {text}
+    </a>
+  )
 }
 
 /** ISO 8601 としてパースできれば `Date`、できなければ `null`（Invalid Date を外へ出さない）。 */

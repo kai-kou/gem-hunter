@@ -76,3 +76,14 @@ export type DailyDigest = {
   /** 出典メタデータ（`D-29`）。 */
   readonly meta: DigestMeta
 }
+
+/**
+ * Gem 候補プール（レジストリ別シャードの全量・`D-38`）の 1 レコード。
+ *
+ * `Gem` に、どのレジストリから収集したかを足したもの（`D-36` の緊急除外・一覧の出所表示に使う）。
+ * 🔴 `registry` は **レジストリ名そのもの**（`npmjs.org` / `pypi.org` / `repo1.maven.org` …）で
+ * あって、エコシステム名（`npm` / `pypi` / `cargo` …）ではない（`domain-model.md` §2.1 の
+ * 「レジストリ」と「エコシステム」は似て非なる 2 語）。成層化・パーセンタイル母集団の区切りに
+ * 使うのは `registry` の方。
+ */
+export type GemPoolEntry = Gem & { readonly registry: string }
