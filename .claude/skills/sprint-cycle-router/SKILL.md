@@ -108,7 +108,7 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
 | **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
-| **5.5** | `status:waiting-claude` かつ `type:retro-try` の Issue が存在し、**直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5） | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
+| **5.5** | ① `status:in-progress` かつ `type:retro-try` の Issue が **4 時間超 stale**（着手して中断したものの再開。Step 3 は Sprint Planning コメントを持つ `SP-n` しか拾わないためここで拾う）、または ② `status:waiting-claude` かつ `type:retro-try` の Issue が存在し **直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5）。① は ② より優先する | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
 | **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
 | **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
 | **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
@@ -153,6 +153,14 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
   （`improvement-lane-map.md`）。**外した先は Step 5.5 が拾う**（#377）。かつては外すだけで
   受け皿が無く、`type:retro-try` が決定木のどのブランチからも起動されずに滞留していた
   （open の 6 割が到達不能だった）。Step 5.5 を消すなら同時に本行の除外も撤回すること
+
+### Step 3 が拾わない `status:in-progress`（#419）
+
+Step 3 の対象は「**Sprint Planning コメントがある** Issue」で、これは `SP-n` スプリントの着手時に
+投稿されるもの。`type:retro-try` の Issue には付かないため、Step 5.5 で着手して中断した
+retro-try Issue は Step 3 では再開されない。**その再開は Step 5.5 の条件 ① が担う**
+（`status:in-progress` かつ 4 時間超 stale）。Step 3 の条件は変更しない（他ファイルから
+Step 番号と条件を名指しで参照されているため）。
 
 ### エージング（Step 4 の飢餓防止・§5 で詳述）
 
@@ -285,6 +293,9 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
    直近の対応時刻は直近 closed の `type:retro-try` Issue の `closed_at` から逆算する
    （`mcp__github__list_issues(state="CLOSED", labels=["type:retro-try"],
    orderBy="UPDATED_AT", direction="DESC", perPage=1)`）。専用ログもラベルも新設しない。
+   🔴 **closed の `type:retro-try` が 0 件のとき**（プロジェクト初期など）は「無限に経過済み」と
+   みなして Step 5.5 を実行する。逆に解釈する（経過 0 として非該当にする）と、一度も消化されて
+   いないから永久に消化されない、という #377 そのものが再発する。
 ```
 
 ### なぜ Step 5.5 にエージングが要るか（#377・実測）
