@@ -27,6 +27,22 @@ function errorNotice(page: import('@playwright/test').Page) {
   return page.locator('main').getByRole('alert')
 }
 
+/**
+ * `ErrorKind` ごとの装飾イラスト（Issue #364・割り当て表・`ui-ux-guidelines.md` §5）が
+ * 可視 + 実際にデコードできていることを確認する（`toBeVisible()` だけでは画像バイト列の
+ * 破損を検出できない・#347 のレビューで確立した方針を踏襲）。
+ */
+async function expectIllustrationVisible(
+  page: import('@playwright/test').Page,
+  src: string,
+): Promise<void> {
+  const image = page.locator('main').locator(`img[src="${src}"]`)
+  await expect(image).toBeVisible()
+  await expect
+    .poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0)
+}
+
 const STUB_ORIGIN = `http://127.0.0.1:${process.env.E2E_STUB_PORT ?? '8788'}`
 
 /**
@@ -53,6 +69,10 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
 
     await test.step('2. 「接続できませんでした」相当の文言が role="alert" で出る', async () => {
       await expect(errorNotice(page)).toContainText(ja.common.errors.network)
+    })
+
+    await test.step('2.5. network 用イラストが出る（割り当て表・Issue #364）', async () => {
+      await expectIllustrationVisible(page, '/images/error-network.webp')
     })
 
     await test.step('3. 再試行手段（同じ検索をやり直すリンク）が示され、押すと実際に再取得が走る', async () => {
@@ -96,6 +116,10 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
       await expect(loginLink).toHaveAttribute('href', '/api/auth/login')
     })
 
+    await test.step('3.5. rateLimitPrimary 用イラストが出る（割り当て表・Issue #364）', async () => {
+      await expectIllustrationVisible(page, '/images/error-rate-limit.webp')
+    })
+
     await test.step('4. 他のエラー種別とは文言が違う（AC-8）', async () => {
       const alert = errorNotice(page)
       await expect(alert).not.toContainText(ja.common.errors.network)
@@ -123,6 +147,10 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
         page.locator('main').getByRole('link', { name: ja.common.auth.login }),
       ).toHaveCount(0)
     })
+
+    await test.step('4. rateLimitSecondary 用イラストが出る（一次と同じ画像・割り当て表）', async () => {
+      await expectIllustrationVisible(page, '/images/error-rate-limit.webp')
+    })
   })
 
   test('GitHub 側の障害（5xx）: 上流障害の文言 + 再試行手段が出る（prd.md §7）', async ({
@@ -134,6 +162,7 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
     await expect(errorNotice(page)).toContainText(ja.common.errors.upstream)
     await expect(page.locator('main').getByRole('link', { name: ja.common.retry })).toBeVisible()
     await expect(errorNotice(page)).not.toContainText(ja.common.errors.network)
+    await expectIllustrationVisible(page, '/images/error-upstream.webp')
   })
 
   test('詳細ページのエラーも種別ベースの文言 + 再試行手段になる（US-24）', async ({ page }) => {
@@ -202,6 +231,8 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
     await expect(errorNotice(page)).not.toContainText(ja.common.errors.upstream)
     await expect(errorNotice(page)).not.toContainText(ja.common.errors.network)
     await expect(page.locator('main').getByRole('link', { name: ja.common.retry })).toBeVisible()
+    // auth は upstream と同じイラストを共有する（割り当て表・Issue #364）。
+    await expectIllustrationVisible(page, '/images/error-upstream.webp')
   })
 
   /**
@@ -239,5 +270,21 @@ test.describe('SP-9: エラーは種別ごとに区別され、再試行手段�
     expect(href).toContain('page=2')
     expect(href).toContain('sort=stars')
     expect(href).toContain('per_page=50')
+  })
+
+  /**
+   * `validation`（`AC-12` / `NFR-33`）は HTTP スタブではなく、キーワード自体（修飾子入り）が
+   * ドメイン（`search-keyword.ts`）で拒否されて発火する唯一の種別（`e2e/ac-12-private.spec.ts`
+   * が同じ発火条件で文言・private 非流出を検証済み）。ここでは最小限、割り当て表のイラストが
+   * 出ることだけを相乗りで確認する（重複ケースを増やさない・Issue #364）。
+   */
+  test('入力検証エラー（修飾子入りキーワード）: validation 用イラストが出る（AC-12 と同じ発火条件）', async ({
+    page,
+  }) => {
+    await page.goto('/ja')
+    await searchFor(page, `${uniqueKeyword('sp9-validation')} is:private`)
+
+    await expect(errorNotice(page)).toContainText(ja.common.errors.validation)
+    await expectIllustrationVisible(page, '/images/error-validation.webp')
   })
 })

@@ -110,6 +110,7 @@ export default async function RepositoryDetailPage({
             */}
             <h2 className="mb-4 text-2xl font-semibold">{`${owner}/${repo}`}</h2>
             <ErrorNotice
+              kind={kind}
               presentation={toErrorPresentation(kind, messages, {
                 locale,
                 retryAfter: rateLimit?.retryAfter,

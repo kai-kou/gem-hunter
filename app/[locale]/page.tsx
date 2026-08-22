@@ -169,6 +169,7 @@ async function SearchBody({
   if (state.status === 'error') {
     return (
       <ErrorNotice
+        kind={state.kind}
         presentation={toErrorPresentation(state.kind, messages, {
           locale,
           retryAfter: state.retryAfter,

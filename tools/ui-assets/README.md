@@ -1,7 +1,8 @@
 # UI 画像アセット
 
-gem-hunter の装飾イラスト 6 点（logo / hero-idle / loading / empty-result / not-found / og-background）を
-`gpt-image-2` で生成し、配信用ファイルへ変換するツール群。経緯・判断根拠は
+gem-hunter の装飾イラスト 6 点（logo / hero-idle / loading / empty-result / not-found / og-background）と、
+エラー種別ごとのイラスト 4 点（error-network / error-rate-limit / error-upstream / error-validation・
+Issue #364）を `gpt-image-2` で生成し、配信用ファイルへ変換するツール群。経緯・判断根拠は
 `content/discussions/ui_image_assets_20260821/whiteboard.md` の `entries/r03_*_ux_visual_claim.md`
 （プロンプト全文）と `entries/r04_*_lead_consensus.md`（争点 C の最終確定）を参照。
 
@@ -15,6 +16,10 @@ gem-hunter の装飾イラスト 6 点（logo / hero-idle / loading / empty-resu
 | `prompts/empty-result.txt` | 検索結果 0 件の完成プロンプト |
 | `prompts/not-found.txt` | 404 ページの完成プロンプト |
 | `prompts/og-background.txt` | OG 画像背景（1536×864）の完成プロンプト |
+| `prompts/error-network.txt` | エラー種別: ネットワーク不通の完成プロンプト |
+| `prompts/error-rate-limit.txt` | エラー種別: レート制限（待てば回復）の完成プロンプト |
+| `prompts/error-upstream.txt` | エラー種別: 上流（GitHub 等）障害の完成プロンプト |
+| `prompts/error-validation.txt` | エラー種別: 入力バリデーション不通過の完成プロンプト |
 | `to_web_assets.mjs` | 原寸 PNG → 配信用 WebP/PNG への変換スクリプト（`sharp` 使用） |
 
 各 `prompts/*.txt` は共通スタイル段落（線幅・パレット・「文字なし」等の指定）+ アセット固有の
@@ -80,6 +85,15 @@ node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/not-found.png \
 node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/og-background.png \
   --out public/images/og-background.png --width 1200 --height 630 --format png \
   --fit cover --colors 32 --dither 0
+
+# エラー種別イラスト 4 点（透過・1024×1024・素の webp 変換で個別予算 30KB 以内）
+for name in error-network error-rate-limit error-upstream error-validation; do
+  python3 tools/infographic/generate.py --prompt-file tools/ui-assets/prompts/$name.txt \
+    --out /tmp/assets/$name.png --size 1024x1024 --quality medium \
+    --background transparent --timeout 900
+  node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/$name.png \
+    --out public/images/$name.webp --width 256 --format webp
+done
 ```
 
 `--format png` で `--colors` を付けるとパレット（インデックスカラー）PNG になる。`gpt-image-2` は
@@ -102,6 +116,10 @@ node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/og-background.png \
 | empty-result | 1024×1024・透過 | medium | `public/images/empty-result.webp` | 256px |
 | not-found | 1024×1024・透過 | medium | `public/images/not-found.webp` | 320px |
 | og-background | 1536×864・不透過 | medium | `public/images/og-background.png` | 1200×630（cover） |
+| error-network | 1024×1024・透過 | medium | `public/images/error-network.webp` | 256px |
+| error-rate-limit | 1024×1024・透過 | medium | `public/images/error-rate-limit.webp` | 256px |
+| error-upstream | 1024×1024・透過 | medium | `public/images/error-upstream.webp` | 256px |
+| error-validation | 1024×1024・透過 | medium | `public/images/error-validation.webp` | 256px |
 
 ## OG 画像背景の埋め込み（`app/[locale]/opengraph-image.tsx` 用・追加タスク・Issue #347）
 

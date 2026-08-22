@@ -1,8 +1,11 @@
 import Link from 'next/link'
+import type { ErrorKind } from '../domain/errors'
 import { Button } from './components/button'
 import type { ErrorPresentation } from './i18n/error-message'
 
 type ErrorNoticeProps = {
+  /** エラー種別（Issue #364）。装飾イラストの出し分けにのみ使う（文言は `presentation` 側の責務）。 */
+  kind: ErrorKind
   /** `toErrorPresentation()` の結果（種別判定・文言整形は呼び出し側で済ませる）。 */
   presentation: ErrorPresentation
   /** 再試行先の URL（`US-24`）。省略すると再試行導線を出さない。 */
@@ -16,6 +19,22 @@ type ErrorNoticeProps = {
   loginHref?: string
   /** ログイン導線のラベル（`common.auth.login`）。 */
   loginLabel?: string
+}
+
+/**
+ * `ErrorKind` ごとの装飾イラスト（Issue #364・7 種別すべてを網羅する対応表が仕様）。
+ * `Record<ErrorKind, string>` にすることで `ErrorKind` へ新しい種別が増えたときに
+ * 型エラーで検出できるようにする（網羅漏れの防止）。
+ */
+const ERROR_ILLUSTRATION: Record<ErrorKind, string> = {
+  network: '/images/error-network.webp',
+  rateLimitPrimary: '/images/error-rate-limit.webp',
+  rateLimitSecondary: '/images/error-rate-limit.webp',
+  auth: '/images/error-upstream.webp',
+  upstream: '/images/error-upstream.webp',
+  validation: '/images/error-validation.webp',
+  // 404 は既存の not-found.webp を流用する（新規生成しない・Issue #364）。
+  notFound: '/images/not-found.webp',
 }
 
 /**
@@ -41,8 +60,19 @@ type ErrorNoticeProps = {
  * 面を `bg-danger/5` のようなアルファ合成で塗ると `--color-danger` の実効コントラストが
  * 4.36:1 まで落ち axe（wcag143・serious）に落ちるため、本文は素の背景の上に置き、
  * 枠線は検証済みの `--color-border` を使う。新しい合成色を足すときは同ツールへペアを追加すること。
+ *
+ * 🔴 **装飾イラスト（`ERROR_ILLUSTRATION`・Issue #364）は `role="alert"` の要素の外
+ * （兄弟要素）に置く**（`ui-ux-guidelines.md` §7.4 追記の「ライブリージョンの外に置く」原則を
+ * `role="status"` だけでなく本コンポーネントの `role="alert"` にも適用する）。エラー表示は
+ * `loading-indicator.tsx` の読み込み中イラストのような構造上の例外に当たらない——読み込み中は
+ * `<Suspense>` の fallback として `role="status"` の内側に **居続けることが遷移の通知に必須**
+ * だが、`ErrorNotice` は一度確定した最終状態として 1 回描画されるだけで、`role="alert"` の
+ * 内側に居続けなければならない構造上の理由が無い。したがって既定どおり外（兄弟）に出せる。
+ * サイズは控えめ（64〜96px 角）にし、`width`/`height`（実配信ファイルは 256×256）を明示して
+ * レイアウトシフトを防ぐ（`next/image` は使わない・`INF-11`）。
  */
 export function ErrorNotice({
+  kind,
   presentation,
   retryHref,
   retryLabel,
@@ -54,25 +84,37 @@ export function ErrorNotice({
     presentation.loginHint !== undefined && loginHref !== undefined && loginLabel !== undefined
 
   return (
-    <div role="alert" className="border-border rounded-lg border p-4">
-      <p className="[color:var(--color-danger)]">{presentation.message}</p>
-      {showLogin ? (
-        <p className="mt-2 [color:var(--color-fg-muted)]">{presentation.loginHint}</p>
-      ) : null}
-      {showRetry || showLogin ? (
-        <div className="mt-3 flex flex-wrap gap-3">
-          {showRetry ? (
-            <Button asChild size="xl">
-              <Link href={retryHref}>{retryLabel}</Link>
-            </Button>
-          ) : null}
-          {showLogin ? (
-            <Button asChild variant="outline" size="lg">
-              <Link href={loginHref}>{loginLabel}</Link>
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+    <div>
+      {/* eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image の最適化は使わない */}
+      <img
+        src={ERROR_ILLUSTRATION[kind]}
+        alt=""
+        width={256}
+        height={256}
+        loading="eager"
+        decoding="async"
+        className="mb-3 w-20"
+      />
+      <div role="alert" className="border-border rounded-lg border p-4">
+        <p className="[color:var(--color-danger)]">{presentation.message}</p>
+        {showLogin ? (
+          <p className="mt-2 [color:var(--color-fg-muted)]">{presentation.loginHint}</p>
+        ) : null}
+        {showRetry || showLogin ? (
+          <div className="mt-3 flex flex-wrap gap-3">
+            {showRetry ? (
+              <Button asChild size="xl">
+                <Link href={retryHref}>{retryLabel}</Link>
+              </Button>
+            ) : null}
+            {showLogin ? (
+              <Button asChild variant="outline" size="lg">
+                <Link href={loginHref}>{loginLabel}</Link>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

@@ -28,4 +28,22 @@ describe('LoadingIndicator', () => {
     const image = screen.getByAltText('')
     expect(image).toHaveAttribute('src', '/images/loading.webp')
   })
+
+  /**
+   * 🔴 Issue #364 で実測した退行の回帰テスト。
+   *
+   * ラベルに `animate-pulse` を付けると opacity が周期的に下がり、脈動の谷で
+   * `--color-fg-muted` の実効コントラストが **4.35:1**（AA の 4.5:1 未満）まで落ちて
+   * axe の `color-contrast`（serious / wcag143）に掛かる。テキストのコントラストは
+   * **アニメーションの全位相で**満たす必要がある（`ui-ux-guidelines.md` §2.2 / `NFR-13`）。
+   *
+   * `e2e/sp-9-a11y.spec.ts` の axe スキャンは 1 時点しか見ないため、**谷を踏んだときだけ
+   * 落ちる**（実際にフルスイートでのみ再現し、単独実行では 45 回連続で緑になった）。
+   * 間欠的なテストを再発検知の頼りにしないよう、ここで決定論的に固定する。
+   */
+  it('ラベルに opacity を animate するクラスを付けない（脈動の谷で AA コントラストを割るため・Issue #364）', () => {
+    render(<LoadingIndicator label="読み込み中" />)
+
+    expect(screen.getByText('読み込み中')).not.toHaveClass('animate-pulse')
+  })
 })

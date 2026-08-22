@@ -18,7 +18,11 @@
  * アクセシビリティツリーから除外されるため、ライブリージョンの再構成対象に実質含まれない。
  * 🔴 **この画像に有意味な `alt` を与えない**（与えた瞬間、再検索のたびに代替テキストまで
  * 読み上げ直され §7.2 の不変条件が破れる）。画像自体もアニメーションさせない
- * （`animate-pulse` は文言側にのみ置く・`prefers-reduced-motion` への配慮）。
+ * 🔴 **文言にも `animate-pulse` を付けない**（Issue #364 の E2E で実測）。opacity を落とす
+ * アニメーションは脈動の谷で実効コントラストを下げ、`--color-fg-muted` の文言が
+ * **4.35:1**（AA の 4.5:1 未満）まで落ちて axe の `color-contrast`（serious・wcag143）に
+ * 掛かる。テキストのコントラストは**アニメーションの全位相で**満たす必要があるため、
+ * 進行中であることは静止したイラストだけで伝える（`ui-ux-guidelines.md` §2.2 / `NFR-13`）。
  *
  * 文言は視覚的にも表示し（`sr-only` にしない）、0 件・エラーと同じ領域で
  * 見た目が区別できるようにする。
@@ -42,7 +46,7 @@ export function LoadingIndicator({ label }: { label: string }) {
         decoding="async"
         className="mx-auto mb-2 h-16 w-16"
       />
-      <p className="text-muted-foreground animate-pulse text-sm motion-reduce:animate-none">
+      <p className="text-muted-foreground text-sm">
         {label}
       </p>
     </div>
