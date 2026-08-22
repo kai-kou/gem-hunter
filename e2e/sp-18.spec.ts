@@ -28,6 +28,12 @@ import { searchFor } from './helpers'
  * ②③ は「バッジが出る」「出ない」の **どちらの状態でも成立する**（`if` で分岐しない）ため、
  * 将来スタブのフィクスチャへ実在の候補プール所属リポジトリが加われば、テストを書き換えずに
  * そのままバッジ経路の検証として機能する。
+ *
+ * 🔵 **バッジが実際に描画される経路は `gem-badge` マーカーで通す**（後半 2 テスト）。スタブは
+ * `public/data/gem-index/` の実在プールから 1 件を取り出して返すため（名前はハードコードせず
+ * 起動時に読む・`e2e/stub/server.mjs`）、「一部のカードにだけバッジが出る」（操作レビュー手順 2）と
+ * 「注記が読める」（手順 3）を画面越しに確認できる。スタブの返却順は
+ * 「バッジなし → バッジあり」に固定してあり、バッジ付きが先頭へ繰り上がっていないことも同時に見る。
  */
 
 /**
@@ -48,6 +54,17 @@ function uniqueManyHitsKeyword(): string {
   return `many-hits-${randomBytes(4).toString('hex')}`
 }
 
+/**
+ * `gem-badge` データセット用の一意キーワード（マーカーは部分一致なので接尾辞を足してよい）。
+ * `many-hits` 側と同じく、他ファイル・retry 試行とのキャッシュ衝突を避けるために毎回変える。
+ */
+function uniqueGemBadgeKeyword(): string {
+  return `gem-badge-${randomBytes(4).toString('hex')}`
+}
+
+/** `gem-badge` データセットでバッジが付かない側（候補プールに載っていない架空のリポジトリ）。 */
+const NOT_A_GEM_FULL_NAME = 'octostub/not-a-gem'
+
 /** 検索結果一覧（トップレベルの `ul`。カード内の topics `ul` ではない）。 */
 function resultList(page: Page): Locator {
   return page.getByRole('list').first()
@@ -67,6 +84,20 @@ async function readResultFullNames(page: Page): Promise<string[]> {
     names.push((await cards.nth(i).getByRole('link').first().innerText()).trim())
   }
   return names
+}
+
+/**
+ * カードごとの Gem バッジ有無を **表示順のまま** 読み出す。合計件数だけでは
+ * 「どのカードに付いたか」「バッジ付きが繰り上がっていないか」を判定できないため分けて取る。
+ */
+async function readBadgeFlags(page: Page, srHint: string): Promise<boolean[]> {
+  const cards = resultCards(page)
+  const count = await cards.count()
+  const flags: boolean[] = []
+  for (let i = 0; i < count; i++) {
+    flags.push((await cards.nth(i).getByText(srHint, { exact: true }).count()) > 0)
+  }
+  return flags
 }
 
 /**
@@ -176,6 +207,58 @@ test('SP-18: 英語 UI でも同じ基準で判定され、注記は英語で読
   await test.step('3. 注記が英語で読める（バッジが出るなら 1 回だけ・日本語文言は出ない）', async () => {
     await expectGemBadgeInvariants(page, labels)
     // 英語 UI に日本語の注記が混ざっていないこと（文言の取り違えの検出）
+    await expect(page.getByText(ja.home.gemBadge.note, { exact: true })).toHaveCount(0)
+  })
+})
+
+test('SP-18: 候補プール実在のカードにだけ Gem バッジが出て、並び順は返却順のまま（ja・操作レビュー手順 2/3）', async ({
+  page,
+}) => {
+  const keyword = uniqueGemBadgeKeyword()
+  const labels = { srHint: ja.home.gemBadge.srHint, note: ja.home.gemBadge.note }
+  let names: string[] = []
+
+  await test.step('1. キーワード検索する（プール実在 1 件 + 非実在 1 件）', async () => {
+    await page.goto('/ja')
+    await searchFor(page, keyword)
+    // 🔴 スタブが候補プール（`public/data/gem-index/`）を読めなかった場合は 1 件しか返らない。
+    //    その状態をスキップで隠さず、ここで明示的に落とす（バッジ経路が未検証のまま緑にしない）。
+    await expect(resultCards(page)).toHaveCount(2, { timeout: FIRST_RESULT_TIMEOUT_MS })
+    names = await readResultFullNames(page)
+  })
+
+  await test.step('2. 一部のカードにだけバッジが出ており、並び順は関連度順（返却順）のまま', async () => {
+    // スタブは「バッジなし → バッジあり」の順で返す。バッジが並び替えに使われていれば
+    // ここで先頭が入れ替わる（`D-36`: バッジは注釈であって並び替え軸ではない）。
+    expect(names[0]).toBe(NOT_A_GEM_FULL_NAME)
+    expect(names[1]).not.toBe(NOT_A_GEM_FULL_NAME)
+
+    expect(await readBadgeFlags(page, labels.srHint)).toEqual([false, true])
+  })
+
+  await test.step('3. バッジが付かないことが低評価を意味しない旨の注記が一覧に 1 回だけ読める', async () => {
+    expect(await expectGemBadgeInvariants(page, labels)).toBe(1)
+  })
+})
+
+test('SP-18: 英語 UI でもプール実在のカードにだけバッジが出て、注記が英語で読める（en）', async ({
+  page,
+}) => {
+  const keyword = uniqueGemBadgeKeyword()
+  const labels = { srHint: en.home.gemBadge.srHint, note: en.home.gemBadge.note }
+
+  await test.step('1. 英語 UI でキーワード検索する（URL 直接指定・本テストの関心は文言の i18n）', async () => {
+    await page.goto(`/en?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(keyword)}`)
+    await expect(resultCards(page)).toHaveCount(2, { timeout: FIRST_RESULT_TIMEOUT_MS })
+  })
+
+  await test.step('2. 英語 UI でも同じカードにだけバッジが出て、並び順は返却順のまま', async () => {
+    expect((await readResultFullNames(page))[0]).toBe(NOT_A_GEM_FULL_NAME)
+    expect(await readBadgeFlags(page, labels.srHint)).toEqual([false, true])
+  })
+
+  await test.step('3. 注記が英語で 1 回だけ読める（日本語文言は混ざらない）', async () => {
+    expect(await expectGemBadgeInvariants(page, labels)).toBe(1)
     await expect(page.getByText(ja.home.gemBadge.note, { exact: true })).toHaveCount(0)
   })
 })

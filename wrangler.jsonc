@@ -7,8 +7,19 @@
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "workers_dev": true,
   "preview_urls": true,
-  "observability": { "enabled": true, "logs": { "invocation_logs": true } },
-  "limits": { "cpu_ms": 50 },
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // 🔴 `SP-18`（#388）実測にもとづく値。`D-38` は暫定 50ms を置き「`wrangler tail` の p95 実測後に
+  //    20〜30ms へ締める」としていたが、**実測は逆方向を示した**ので引き上げる。
+  //    ローカル（Node/V8）で cold start の内訳を測ると、12 シャード 3.47 MiB に対して
+  //    `JSON.parse` 39.9ms + `Map` 構築 40.7ms = **約 81ms**（I/O 待ちを除く純 CPU 相当）。
+  //    warm 時は `Map.get()` だけで 30 件 0.012ms（cold start 1 回に閉じている）。
+  //    50ms のままだと cold start（isolate ごとに継続的に発生する）で Error 1027 になりうる。
+  //    ⚠️ **Workers 上の p95 は本セッションでは測れていない**: `wrangler tail` の WebSocket が
+  //    実行環境のプロキシを通らず、Observability のクエリでもプレビュー版のイベントが出ない。
+  //    プレビュー（`pr-388`）へ 14 リクエスト投げて全て 200・1027 ゼロという間接証拠はあるが、
+  //    cold start が実際に起きたかまでは確認できていない。本番で p95 を測れるようになったら締め直す。
+  //    🔵 上限は「超えたら止める」ための天井であって、実消費が増えるわけではない（未使用分は課金されない）。
+  "limits": { "cpu_ms": 200 },
   // 🔴 `period` を変えたら src/infrastructure/platform/rate-limit.ts の RATE_LIMIT_PERIOD_SECONDS も
   //    同じ値へ更新する（超過時の Retry-After に使うため、ずれると案内した秒数と実際の窓が食い違う）。
   "ratelimits": [
