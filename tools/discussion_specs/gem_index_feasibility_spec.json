@@ -1,0 +1,32 @@
+{
+  "topic": "gem-hunter のコンセプト（被依存数に対する star の残差 = Gem Index）を現実に成立させる方法",
+  "brief": "D-33 で撤去された『検索結果の Gem Index 順ソート』を、母集団拡大と配信方式の見直しで成立させられるかを実測データに基づいて判定する。実測ブリーフィングは /tmp/claude-0/-home-user-gem-hunter/e7d14fdc-57de-53b0-8099-5580a6e422ff/scratchpad/briefing.md（必読）。争点 A: 検索への Gem Index 再導入をやるか（D-33 の再導入条件 = 一般語の上位 100 件で 30% 以上に付与。実測は react 32% / test framework 36% / image processing 19%）。B: 母集団設計（レジストリ数・件数・パーセンタイルの母集団・モノレポ集約）。C: 配信方式（シャード化静的 JSON + ASSETS / D1 / ソート済みバイナリ + Range / 現行のバンドル焼き込み）。D: UX（Gem Index が付かない結果が 6〜7 割残る前提での見せ方）。E: 運用（更新頻度・実行場所・CC BY-SA 継承）。制約は D-5/D-18（永続ストアを持たない・D-27 の境界注記あり）・INF-2/INF-3（Workers Free 維持）・NFR-21（PaaS 固有 API をアプリコードに持ち込まない）・ADR 0009（2 軸を合算しない）。",
+  "participants": [
+    {
+      "name": "data",
+      "model": "sonnet",
+      "lens": "データ源・母集団・指標設計（Ecosyste.ms の rankings がレジストリ内順位である事実をどう扱うか＝全体パーセンタイル再計算 vs レジストリ内正規化 vs レジストリ別タブ。実測で上位が hex/CRAN の極小パッケージに占拠される問題の解法。モノレポ集約ルール。deps.dev BigQuery（CC-BY 4.0）に乗り換える価値。被覆率をさらに上げるための収集設計＝何レジストリ×何件、被依存降順で切ることのバイアス。指標が gaming に耐えるか）"
+    },
+    {
+      "name": "infra",
+      "model": "sonnet",
+      "lens": "Cloudflare Free での配信可能性（Static Assets はバンドル 3MB 枠外・20,000 ファイル・リクエスト無料無制限だが subrequest 50/invocation・CPU 10ms・メモリ 128MB。109,469 件の repo→gemIndex マップは raw 3.3MB / gzip 1.34MB。検索 1 ページ 100 件を引くのに何が現実的か＝シャード化静的 JSON / ソート済みバイナリ + 二分探索 / D1 の IN クエリ / isolate 内メモリキャッシュ。D-5『DB を持たない』と D-27 の境界注記に照らして D1 が許容されるか。NFR-21 との整合。更新のたびに全アセットを差し替える運用コスト）"
+    },
+    {
+      "name": "product",
+      "model": "sonnet",
+      "lens": "ミッション適合と UX（D-33 の撤去理由は『機能として成立していない』だった。被覆 19〜36% は再導入に足るのか、それとも別の見せ方に倒すべきか。Gem Index が付かない結果が 6〜7 割残る前提でソート軸として出す是非。代案＝検索結果へのバッジ表示のみ / Gem 専用の発見面（エコシステム別 Gem 一覧・topics 絞り込み）/ 検索対象そのものを Gem コーパスにする。R-2『GitHub 純正検索の 1 クエリで再現できるものは差別化にならない』に照らした評価。初見ユーザーのフィードバック（体感速度・数値が出ない不安）を再燃させないか。D-3 主目的＝選考課題/ポートフォリオとしての説明可能性への寄与）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "3 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれに結論を出したうえで、飼い主へ提示する『推奨案 1 つ + 対案 1 つ』に収束させる。各案は (1) 何を作るか (2) スプリント何本ぶんか (3) 何を捨てるか (4) 失敗と判定する条件、まで書く。議論で否定された案は採用しない。実測で確かめていないことは断定せず『実装時に潰す』として残す。飼い主に判断を仰ぐべき仕様分岐（選択で成果物が変わるもの）は open_questions に最大 2 件だけ挙げる。"
+  },
+  "verdict_schema": {
+    "decisions": [{ "issue": "争点 A〜E のいずれか", "conclusion": "結論", "rationale": "根拠（実測値を引く）", "rejected": "却下した案と理由" }],
+    "recommendation": { "name": "推奨案の名前", "what": "作るもの", "sprints": "スプリント数の目安", "drops": "捨てるもの", "fail_criteria": "失敗判定の条件" },
+    "alternative": { "name": "対案の名前", "what": "", "sprints": "", "drops": "", "fail_criteria": "" },
+    "open_questions": [{ "question": "飼い主に聞くこと", "options": ["A", "B"], "recommended": "A" }],
+    "critical": ["議論を経ても残った真の問題"]
+  }
+}
