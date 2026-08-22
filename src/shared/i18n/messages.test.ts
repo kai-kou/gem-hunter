@@ -79,4 +79,33 @@ describe('messages カタログ', () => {
       expect(messages.home.digest.attribution).toContain('{generatedAt}')
     })
   })
+
+  /**
+   * 🔴 候補プールの **取得失敗** は 0 件とは別の状態で、原因も別（自前の静的アセット
+   * `public/data/gem-index/` が読めていない）。`common.errors.upstream`（「GitHub 側で問題が
+   * 起きています」）を流用すると **存在しない原因** を利用者に伝えることになるため、
+   * 専用の文言を持つ（PR #440 Layer 1 指摘 F-05）。型では守れないのでカタログ本文で固定する。
+   */
+  describe('gems.loadFailed（取得失敗の原因を GitHub にすり替えない）', () => {
+    it('ja は障害元（Gem 候補プール）を名指しする', () => {
+      expect(ja.gems.loadFailed).toContain('Gem 候補プール')
+    })
+
+    it('ja は原因を GitHub のせいにしない', () => {
+      expect(ja.gems.loadFailed).not.toContain('GitHub')
+    })
+
+    it('en も障害元を名指しし、GitHub のせいにしない', () => {
+      expect(en.gems.loadFailed).toContain('Gem candidate pool')
+      expect(en.gems.loadFailed).not.toContain('GitHub')
+    })
+
+    it.each([
+      ['ja', ja],
+      ['en', en],
+    ])('%s は再試行を促す（行き止まりにしない・`US-24`）', (_name, messages) => {
+      expect(messages.gems.loadFailed.length).toBeGreaterThan(0)
+      expect(messages.common.retry.length).toBeGreaterThan(0)
+    })
+  })
 })

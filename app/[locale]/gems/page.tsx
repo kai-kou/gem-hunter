@@ -12,7 +12,6 @@ import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { GemList, GEM_LIST_HEADING_ID, type GemListViewModel } from '@/src/ui/gem-list'
-import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { Pagination } from '@/src/ui/pagination'
 import { SiteHeader } from '@/src/ui/site-header'
 import { buildSearchUrl, type SearchUrlState } from '@/src/ui/url/build-search-url'
@@ -164,11 +163,12 @@ export default async function GemListPage({
           {/* エラー時も見出しを失わない（詳細ページのエラー分岐と同じ理由・`NFR-12`）。 */}
           <h2 className="mb-4 text-lg font-semibold">{messages.gems.title}</h2>
           <ErrorNotice
+            // 🔴 文言は `gems.loadFailed`。`common.errors.upstream`（「GitHub 側で問題が
+            // 起きています」）は流用しない — 障害元は GitHub ではなく自前の静的アセット
+            // （`public/data/gem-index/`）で、利用者に誤った原因を伝えることになる。
+            // `kind` は装飾イラストの出し分けにのみ使われるので `upstream` のままでよい。
             kind="upstream"
-            presentation={toErrorPresentation('upstream', messages, {
-              locale,
-              isLoggedIn: accessToken !== null,
-            })}
+            presentation={{ message: messages.gems.loadFailed }}
             // 再試行手段（`US-24`）: いま失敗した一覧 URL をそのまま開き直す。
             retryHref={currentPath}
             retryLabel={messages.common.retry}
