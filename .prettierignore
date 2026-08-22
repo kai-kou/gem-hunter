@@ -4,3 +4,5 @@ node_modules/
 package-lock.json
 content/
 docs/
+# 手書きで最適化した静的 LP（prettier に整形させると表示が変わる・Issue #360）
+site/

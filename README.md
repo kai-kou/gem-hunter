@@ -2,6 +2,9 @@
 
 star の多さでは埋もれてしまう「実際に使われている OSS」を、個人開発者が見つけられるようにする検索プラットフォーム。
 
+- **使ってみる**: <https://gem-hunter.kinamocchi-tech.workers.dev/ja>
+- **紹介ページ**: <https://kai-kou.github.io/gem-hunter/>（ソースは [`site/`](./site)）
+
 > 旧称: IndieGems（[`Q-12`](./docs/02_requirements/open-questions.md) により `gem-hunter` に統一）
 
 ## 開発（ローカル）

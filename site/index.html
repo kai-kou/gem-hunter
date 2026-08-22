@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gem-hunter — star では埋もれる「実際に使われている OSS」を見つける</title>
+    <meta
+      name="description"
+      content="gem-hunter は、star の数ではなく被依存数（実際にそのリポジトリを使っているパッケージの数）を手がかりに GitHub を探せる検索ツールです。登録不要・無料・MIT ライセンスのオープンソース。"
+    />
+    <link rel="canonical" href="https://kai-kou.github.io/gem-hunter/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="gem-hunter" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta property="og:url" content="https://kai-kou.github.io/gem-hunter/" />
+    <meta
+      property="og:title"
+      content="gem-hunter — star では埋もれる「実際に使われている OSS」を見つける"
+    />
+    <meta
+      property="og:description"
+      content="star 111 なのに 26,633 個のパッケージから使われている——そんな OSS を毎日 5 件。star ではなく被依存数から GitHub を探す検索ツール。登録不要・無料・MIT。"
+    />
+    <meta property="og:image" content="https://kai-kou.github.io/gem-hunter/assets/img/ogp.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="gem-hunter の検索結果画面のスクリーンショット"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+
+    <link rel="icon" href="./assets/img/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./assets/img/icon.png" />
+    <link rel="preload" href="./assets/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./assets/styles.css" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://kai-kou.github.io/gem-hunter/#website",
+            "name": "gem-hunter",
+            "url": "https://kai-kou.github.io/gem-hunter/",
+            "inLanguage": "ja"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "gem-hunter",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Web",
+            "url": "https://gem-hunter.kinamocchi-tech.workers.dev/ja",
+            "codeRepository": "https://github.com/kai-kou/gem-hunter",
+            "license": "https://opensource.org/licenses/MIT",
+            "inLanguage": ["ja", "en"],
+            "description": "star の数ではなく被依存数を手がかりに GitHub リポジトリを探す検索ツール。"
+          }
+        ]
+      }
+    </script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">本文へスキップ</a>
+
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="#top">
+          <img src="./assets/img/logo.webp" alt="" width="24" height="24" />
+          gem-hunter
+        </a>
+
+        <nav class="header-nav" aria-label="ページ内">
+          <a href="#why">なぜ star では足りないか</a>
+          <a href="#how">仕組み</a>
+          <a href="#features">できること</a>
+          <a href="#trust">つくり</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+
+        <a
+          class="btn btn-primary btn-sm"
+          href="https://gem-hunter.kinamocchi-tech.workers.dev/ja"
+        >
+          gem-hunter を開く
+        </a>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <!-- ============ ヒーロー ============ -->
+      <section class="hero" id="top">
+        <div class="wrap">
+          <p class="eyebrow">被依存数から探す GitHub 検索</p>
+
+          <h1>
+            star では埋もれる、<br /><span class="em">実際に使われている</span> OSS を見つける。
+          </h1>
+
+          <p class="hero-lead">
+            gem-hunter は、GitHub のキーワード検索に加えて、<strong>被依存数</strong>
+            のわりに star が少ない OSS を毎日 5 件提示する検索ツールです。被依存数とは、
+            そのリポジトリを実際に依存関係へ入れているパッケージの数のこと。
+            ブラウザで開くだけ、登録は要りません。
+          </p>
+
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="https://gem-hunter.kinamocchi-tech.workers.dev/ja">
+              gem-hunter を開く
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+            <a class="btn btn-secondary" href="https://github.com/kai-kou/gem-hunter">
+              <svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+              </svg>
+              GitHub でソースを見る
+            </a>
+          </div>
+
+          <ul class="assurance">
+            <li>登録不要</li>
+            <li>無料</li>
+            <li>広告・トラッキングなし</li>
+            <li class="assurance-extra">MIT ライセンス</li>
+          </ul>
+
+          <p class="hero-alt-link">
+            <a href="https://gem-hunter.kinamocchi-tech.workers.dev/ja"
+              >キーワードなしで開いて「今日の Gem」を見る</a
+            >
+          </p>
+
+          <div class="samples">
+            <p class="samples-label" id="samples-label">キーワードの例（クリックでそのまま検索）</p>
+            <ul class="chips" aria-labelledby="samples-label">
+              <li><a class="chip" href="https://gem-hunter.kinamocchi-tech.workers.dev/ja?q=react">react</a></li>
+              <li><a class="chip" href="https://gem-hunter.kinamocchi-tech.workers.dev/ja?q=postgres">postgres</a></li>
+              <li><a class="chip" href="https://gem-hunter.kinamocchi-tech.workers.dev/ja?q=cli">cli</a></li>
+              <li><a class="chip" href="https://gem-hunter.kinamocchi-tech.workers.dev/ja?q=zod">zod</a></li>
+              <li><a class="chip" href="https://gem-hunter.kinamocchi-tech.workers.dev/ja?q=rollup+plugin">rollup plugin</a></li>
+            </ul>
+          </div>
+
+          <div class="shot-stage">
+            <figure class="browser">
+              <div class="browser-bar">
+                <span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                <span class="url-pill" aria-hidden="true"
+                  >gem-hunter.kinamocchi-tech.workers.dev/ja?q=react</span
+                >
+              </div>
+              <div class="browser-body">
+                <img
+                  src="./assets/img/shot-search.webp"
+                  width="1600"
+                  height="1025"
+                  fetchpriority="high"
+                  decoding="async"
+                  alt="gem-hunter の検索結果画面。「react」で検索し、リポジトリ名・説明・主要言語・star 数・最終更新日・トピックが一覧で並んでいる。上部には関連度・star 数・更新日時の並び替えと、20 / 50 / 100 件の表示件数の切り替えがある。"
+                />
+              </div>
+            </figure>
+            <p class="shot-caption">実際の画面です（検索結果は GitHub API から取得しています）。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ なぜ star では足りないか ============ -->
+      <section class="section section-alt" id="why">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="kicker">課題</p>
+            <h2>star は「注目度」であって、「使われている証拠」ではない。</h2>
+            <p>
+              star は誰でも 1 クリックで押せます。だから star 順に並べるほど、
+              地味だけど本当に使われているライブラリは下に沈んでいきます。
+            </p>
+          </div>
+
+          <div class="compare reveal">
+            <div class="compare-card">
+              <h3>star の多い順に見ると</h3>
+              <p>
+                すでに有名なリポジトリが上位を占めます。人気の指標としては正しくても、
+                「自分の実装に使えるか」の判断材料にはなりません。
+              </p>
+              <div class="stat-row">
+                <span class="stat">
+                  <b>約 600 万</b>
+                  <span>研究が「偽の疑いあり」と判定した star 数</span>
+                </span>
+                <span class="stat">
+                  <b>18,600</b>
+                  <span>その star が集まっていたリポジトリ数</span>
+                </span>
+              </div>
+            </div>
+
+            <p class="compare-arrow" aria-hidden="true">→</p>
+
+            <div class="compare-card is-good">
+              <h3>被依存数から見ると</h3>
+              <p>
+                「実際に import されている数」は水増ししにくい指標です。star が少ないのに
+                多くのパッケージから使われているものが、見つけたかった OSS です。
+              </p>
+              <div class="stat-row">
+                <span class="stat">
+                  <b>25 star</b>
+                  <span><code>debug_inspector</code> の star 数</span>
+                </span>
+                <span class="stat">
+                  <b>111,000+</b>
+                  <span>そのリポジトリに依存する OSS の数</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <p class="source-note">
+            出典: He et al.
+            <a
+              href="https://github.com/kai-kou/gem-hunter/blob/main/docs/01_research/market/20260817-github-repo-search-competitive-analysis.md"
+              ><span lang="en">Six Million (Suspected) Fake Stars on GitHub</span></a
+            >（ICSE 2026）ほかの調査まとめ。実例に挙げた <code>debug_inspector</code> は RubyGems の
+            パッケージで、25 star に対し 111,000 以上の OSS プロジェクトから依存されています。
+          </p>
+        </div>
+      </section>
+
+      <!-- ============ 仕組み ============ -->
+      <section class="section" id="how">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="kicker">仕組み</p>
+            <h2>やることは 3 つだけ。</h2>
+            <p>アカウントも設定もいりません。開いて、打って、読むだけです。</p>
+          </div>
+
+          <ol class="steps reveal">
+            <li>
+              <h3>キーワードで GitHub を検索する</h3>
+              <p>
+                関連度 / star 数 / 更新日時で並び替え、20・50・100 件から表示件数を選べます。
+                検索条件は URL に載るので、そのまま共有・ブックマークできます。
+              </p>
+            </li>
+            <li>
+              <h3>キーワードなしで開いて「今日の Gem」を見る</h3>
+              <p>
+                キーワードを入れずに開くと、被依存数のわりに star が少ないリポジトリを
+                毎日 5 件だけ提示します。前回の訪問になかったものには「新着」が付きます
+                （初回は「初回として全件を表示しています」と出て、個別の新着マークは
+                2 回目の訪問から付きます）。
+              </p>
+            </li>
+            <li>
+              <h3>詳細画面で README まで読む</h3>
+              <p>
+                star / watcher / fork / open issue の 4 指標と README 本文をその場で表示します。
+                読み終わって戻れば、検索条件はそのまま残っています。
+              </p>
+            </li>
+          </ol>
+
+          <div class="formula reveal">
+            <h3 class="formula-heading">「今日の Gem」の並び順</h3>
+            <p class="formula-expr">Gem Index = 被依存数の順位 − star の順位</p>
+            <p>
+              どちらも <a href="https://ecosyste.ms/">Ecosyste.ms</a> の
+              0〜100 のパーセンタイル順位（0 が最上位）です。値が小さいほど
+              「使われ方に対して star が少ない」＝ 過小評価されている、という意味になります。
+              例えば被依存数が上位 0.1（＝ 上位 0.1%）で star が上位 7（＝ 上位 7%）なら
+              Gem Index は −6.9。実際のデータでもこのあたりが最上位帯です。
+            </p>
+            <p>
+              この値が小さい上位 60 件を母集団に、日付から決まる順序で毎日 5 件を選び、
+              その 5 件をこの値の順に並べています。同じ日なら、誰が見ても同じ 5 件です。
+            </p>
+            <p>
+              健全性スコア（OpenSSF criticality_score など）は
+              <strong>この値に足し込みません</strong>。足すと「健全だが有名」なリポジトリが
+              上位に戻ってきて、結局 star 順のランキングに退化するからです。
+              判断の経緯は
+              <a href="https://github.com/kai-kou/gem-hunter/blob/main/docs/adr/0009-hidden-gem-score-definition.md">ADR 0009</a>
+              に残してあります。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ できること ============ -->
+      <section class="section section-alt" id="features">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="kicker">できること</p>
+            <h2>いま動いている機能。</h2>
+            <p>これから作るものではなく、いま開いて触れるものだけを載せています。</p>
+          </div>
+
+          <div class="bento reveal">
+            <div class="tile span-2">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M7 3h10l4 6-9 12L3 9l4-6Z" stroke-linejoin="round" /><path d="M3 9h18M12 21 9 9l3-6 3 6-3 12" stroke-linejoin="round" />
+                </svg>
+                今日の Gem
+              </h3>
+              <p>
+                被依存数のわりに star が少ないリポジトリを、毎日 5 件だけ入れ替えて提示します。
+                「利用パッケージ数」と star 数を並べて出すので、そのギャップがひと目でわかります。
+              </p>
+              <p class="tile-datum">
+                ある日の 1 位:
+                <a href="https://github.com/pmowrer/rollup-plugin-peer-deps-external"
+                  ><code>rollup-plugin-peer-deps-external</code></a
+                >
+                — 利用パッケージ数 <b>26,633</b> に対して star は <b>111</b>
+                <span class="tile-datum-note">（2026-08-21 時点の一例。顔ぶれは毎日入れ替わります）</span>
+              </p>
+              <figure class="tile-figure">
+                <img
+                  src="./assets/img/shot-digest.webp"
+                  width="1100"
+                  height="459"
+                  loading="lazy"
+                  decoding="async"
+                  alt="gem-hunter の「今日の Gem」セクションの上部。1 位の rollup-plugin-peer-deps-external が利用パッケージ数 26,633・star 111、2 位の rollup-plugin-commonjs が利用パッケージ数 41,102・star 501 と表示されている。"
+                />
+              </figure>
+            </div>
+
+            <div class="tile">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="6" y="2" width="12" height="20" rx="3" /><path d="M11 18h2" stroke-linecap="round" />
+                </svg>
+                スマートフォンでも同じ
+              </h3>
+              <p>
+                同じ画面がそのまま縦に積み替わります。主要導線のタップ領域は 44px、
+                入力欄は 16px 以上で iOS の自動ズームも起きません。
+              </p>
+              <figure class="tile-figure">
+                <img
+                  src="./assets/img/shot-mobile.webp"
+                  width="640"
+                  height="1280"
+                  loading="lazy"
+                  decoding="async"
+                  alt="スマートフォン幅で表示した gem-hunter の検索結果。ヘッダー、検索欄、並び替え、リポジトリカードが縦に積み重なっている。"
+                  class="crop-top"
+                />
+              </figure>
+            </div>
+
+            <div class="tile">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9h10M7 13h7" stroke-linecap="round" />
+                </svg>
+                詳細画面と README
+              </h3>
+              <p>
+                star / watcher / fork / open issue と README 本文を同じ画面で読めます。
+                独立した URL なので、共有もブラウザバックも素直に動きます。
+              </p>
+            </div>
+
+            <div class="tile">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 3v18M4 7h16M6 21h12" stroke-linecap="round" />
+                </svg>
+                キーボードだけで完走できる
+              </h3>
+              <p>
+                検索から詳細閲覧までマウスなしで到達できます。Lighthouse の
+                Accessibility 100 を「下回ったらリリースしない」基準として運用しています。
+              </p>
+              <ul class="tag-list">
+                <li>WCAG 2.2 AA</li>
+                <li>コントラスト実測</li>
+                <li>フォーカス可視</li>
+              </ul>
+            </div>
+
+            <div class="tile">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+                </svg>
+                日本語 / English
+              </h3>
+              <p>
+                画面右上でいつでも切り替えられます。切り替えはリンク遷移なので、
+                JavaScript を切っていても動きます。
+              </p>
+            </div>
+
+            <div class="tile span-3 tile-wide">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 3l7 3v5c0 4.2-2.9 7.6-7 8.7-4.1-1.1-7-4.5-7-8.7V6l7-3Z" stroke-linejoin="round" />
+                </svg>
+                渡すものが何もない
+              </h3>
+              <p>
+                アカウント登録は要りません。広告も、アクセス解析のトラッキングも入れていません。
+                検索したキーワードをサーバーに保存する仕組みも持っていません
+                （データベースを 1 つも接続していないので、保存しようがない、が正確です）。
+              </p>
+              <ul class="tag-list">
+                <li>登録なし</li>
+                <li>トラッキングなし</li>
+                <li>保存なし</li>
+              </ul>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ つくり ============ -->
+      <section class="section" id="trust">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="kicker">つくり</p>
+            <h2>中身を全部見せています。</h2>
+            <p>
+              使ってもらう相手が開発者なので、「何を根拠に並べているか」「どう作ったか」を
+              隠さないことを信頼の代わりにしています。
+            </p>
+          </div>
+
+          <div class="facts reveal">
+            <div class="fact">
+              <b>682 ケース</b>
+              <span>
+                ユニット・結合 593 / E2E 89。<a
+                  href="https://github.com/kai-kou/gem-hunter/blob/main/docs/04_development/testing-strategy.md"
+                  >テスト戦略</a
+                >
+              </span>
+            </div>
+            <div class="fact">
+              <b>Accessibility 100</b>
+              <span>Lighthouse の必須ゲート。下回ったらリリースしない</span>
+            </div>
+            <div class="fact">
+              <b>ADR 15 本</b>
+              <span>
+                意思決定と却下案を<a href="https://github.com/kai-kou/gem-hunter/tree/main/docs/adr"
+                  >すべて文書化</a
+                >
+              </span>
+            </div>
+            <div class="fact">
+              <b>JavaScript 0 行</b>
+              <span>このページはページ内 JavaScript も外部 CDN も使っていません</span>
+            </div>
+          </div>
+
+          <ul class="tag-list facts-stack reveal">
+            <li>Next.js 16 / React Server Components</li>
+            <li>Cloudflare Workers</li>
+            <li>Tailwind CSS v4 + shadcn/ui</li>
+            <li>Vitest + Playwright + axe</li>
+            <li>MIT ライセンス</li>
+          </ul>
+
+          <div class="limits reveal">
+            <h3>先に言っておく制約</h3>
+            <ul>
+              <li>
+                出てくる 5 件は毎日入れ替わります。ただし元になる被依存データは定期的に取り直した
+                スナップショットなので、GitHub の最新値や詳細画面の表示とは差が出ることがあります
+                （画面に生成時刻を出しています）。
+              </li>
+              <li>
+                共有の API レート枠で動いています。混み合う時間帯は検索が一時的に失敗することが
+                あります。少し時間をおいてから試してください。
+              </li>
+              <li>
+                Gem Index は「今日の Gem」の並び順にだけ使っています。
+                キーワード検索の結果は GitHub の検索結果をそのまま並べています。
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FAQ ============ -->
+      <section class="section section-alt" id="faq">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="kicker">FAQ</p>
+            <h2>よくある質問</h2>
+          </div>
+
+          <div class="faq reveal">
+            <details open>
+              <summary>GitHub の検索と何が違いますか？</summary>
+              <div class="answer">
+                キーワード検索そのものは GitHub の検索結果です。違うのは「今日の Gem」で、
+                <code>stars:</code> のような条件では書けない
+                「使われ方に対して star が少ない」という観点を足しています。
+              </div>
+            </details>
+            <details>
+              <summary>「被依存数」とは何ですか？</summary>
+              <div class="answer">
+                そのリポジトリを依存関係に入れている（実際に使っている）パッケージの数です。
+                gem-hunter は <a href="https://ecosyste.ms/">Ecosyste.ms</a>
+                が算出したパーセンタイル順位を使い、star の順位との差を
+                「過小評価されている度合い」として扱っています。
+              </div>
+            </details>
+            <details>
+              <summary>対応しているエコシステムは何ですか？</summary>
+              <div class="answer">
+                キーワード検索は GitHub 全体が対象で、言語もエコシステムも問いません。
+                一方「今日の Gem」の被依存数は、いまのところ
+                <strong>npm（npmjs.org）のパッケージだけ</strong>を対象にしています。
+              </div>
+            </details>
+            <details>
+              <summary>アカウント登録は必要ですか？</summary>
+              <div class="answer">
+                不要です。ログインなしで、検索・詳細表示・「今日の Gem」のすべてが使えます。
+              </div>
+            </details>
+            <details>
+              <summary>データはどのくらい新しいですか？</summary>
+              <div class="answer">
+                検索結果とリポジトリ詳細はアクセスのたびに GitHub API から取得しています。
+                「今日の Gem」の被依存データは定期的に取り直したスナップショットで、
+                画面に生成時刻を表示しています。
+              </div>
+            </details>
+            <details>
+              <summary>なぜ無料なのですか？いつまで使えますか？</summary>
+              <div class="answer">
+                個人プロジェクトとして無償で運用しています。現時点で収益化の予定はなく、
+                広告を入れることもありません。仮に運用を止める場合でも、ソースは MIT ライセンスで
+                GitHub に残るので、自分の環境で動かし続けられます。
+              </div>
+            </details>
+            <details>
+              <summary>広告やトラッキングはありますか？</summary>
+              <div class="answer">
+                ありません。アクセス解析のトラッキングも入れていませんし、
+                検索したキーワードをサーバーに保存する仕組みも持っていません。
+              </div>
+            </details>
+            <details>
+              <summary>自分の環境で動かせますか？</summary>
+              <div class="answer">
+                動かせます。MIT ライセンスなので、
+                <a href="https://github.com/kai-kou/gem-hunter">リポジトリ</a>
+                を clone して <code>npm ci</code> → <code>npm run dev</code> で起動できます。
+                環境変数はすべて任意で、1 つも設定しなくても検索と詳細表示は動きます。
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 最終 CTA ============ -->
+      <section class="final-cta">
+        <div class="wrap">
+          <img class="gem" src="./assets/img/gem.webp" alt="" width="640" height="640" loading="lazy" decoding="async" />
+          <h2>探しているのは、たぶん star の下にあります。</h2>
+          <p>キーワードを 1 つ入れるところから。登録も設定もありません。</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="https://gem-hunter.kinamocchi-tech.workers.dev/ja">
+              gem-hunter を開く
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+            <a class="btn btn-secondary" href="https://github.com/kai-kou/gem-hunter">
+              <svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+              </svg>
+              GitHub でソースを見る
+            </a>
+          </div>
+          <ul class="assurance">
+            <li>登録不要</li>
+            <li>無料</li>
+            <li>広告・トラッキングなし</li>
+            <li>MIT ライセンス</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-grid">
+          <div>
+            <a class="brand footer-brand" href="#top">
+              <img src="./assets/img/logo.webp" alt="" width="24" height="24" />
+              gem-hunter
+            </a>
+            <p class="footer-tagline">
+              star の多さでは埋もれてしまう「実際に使われている OSS」を、
+              個人開発者が見つけられるようにする検索プラットフォームです。
+            </p>
+          </div>
+
+          <nav aria-label="プロダクト">
+            <h2>プロダクト</h2>
+            <ul>
+              <li>
+                <a href="https://gem-hunter.kinamocchi-tech.workers.dev/ja"
+                  >gem-hunter を開く（日本語）</a
+                >
+              </li>
+              <li>
+                <a href="https://gem-hunter.kinamocchi-tech.workers.dev/en" lang="en"
+                  >Open the tool (English)</a
+                >
+              </li>
+              <li><a href="#why">なぜ star では足りないか</a></li>
+              <li><a href="#how">仕組み</a></li>
+              <li><a href="#features">できること</a></li>
+              <li><a href="#trust">つくり</a></li>
+              <li><a href="#faq">FAQ</a></li>
+            </ul>
+          </nav>
+
+          <nav aria-label="開発">
+            <h2>開発</h2>
+            <ul>
+              <li><a href="https://github.com/kai-kou/gem-hunter">GitHub リポジトリ</a></li>
+              <li><a href="https://github.com/kai-kou/gem-hunter/tree/main/docs">ドキュメント</a></li>
+              <li><a href="https://github.com/kai-kou/gem-hunter/tree/main/docs/adr">ADR（意思決定記録）</a></li>
+              <li><a href="https://github.com/kai-kou/gem-hunter/blob/main/LICENSE">MIT ライセンス</a></li>
+            </ul>
+          </nav>
+        </div>
+
+        <p class="footer-note">
+          被依存データは <a href="https://ecosyste.ms/">Ecosyste.ms</a>（CC BY-SA 4.0）、
+          リポジトリ情報は GitHub API を利用しています。
+          本文フォントに <a href="https://github.com/vercel/geist-font">Geist</a>（SIL Open Font License 1.1）を使用しています。
+          gem-hunter は GitHub, Inc. とは無関係の個人プロジェクトです。
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
