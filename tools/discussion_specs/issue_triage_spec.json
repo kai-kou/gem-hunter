@@ -1,6 +1,6 @@
 {
   "topic": "機能追加を除く open Issue 182 件の棚卸し判断（クローズ・重複統合・Epic 集約・優先度改訂）を確定する",
-  "brief": "飼い主指示: 『現時点で機能追加に関わらない改善、不具合修整に関する未対応の Issue について、カテゴライズ、重複まとめ、優先度見直し、トリアージ、対応済みであればクローズするなどの棚卸ししてください』（Issue #385）。並行検証 7 役が open 182 件（type:feature を除く全件）をリポジトリ実物と突き合わせ、verdict（DONE 8 / OBSOLETE 6 / PARTIAL 17 / OPEN 151）・カテゴリ・重複クラスタ 9 組・Epic 提案 7 本・優先度改訂案をまとめた。その提案書が /tmp/claude-0/-home-user-gem-hunter/fac157d8-62ca-561f-898b-deba57589816/scratchpad/proposal.md にある。この提案をそのまま適用すると 24 件前後がクローズされ、5 本の新規 Epic が生まれる。クローズは取り消しコストが高く、Epic 増設は滞留を階層化するだけの恐れがある。争点は 5 つ: A) 対応済みクローズ 8 件の根拠は実測として十分か（特に #144 は『専用 CSRF トークンは本 Issue へ先送り』とコード側コメントが明記、#108 は実装形態が提案と異なる） B) 前提消滅クローズ 6 件は本当に前提が消えたか（特に #305 は撤去された経路の話だが get-daily-digest.ts 側の例外安全性が未検証） C) 重複クラスタ 9 組の判定が過剰でないか・keep をどちらにすべきか（後発の具体性 vs 先発のコメント履歴。#94 はコメント 13 件 priority:high の最古起票なのに提案は #322 を keep としている） D) Epic 5 本新設は #377『type:retro-try が自走ルーティンのどのブランチからも拾われず open 107 件が構造的に滞留する』の解決になるのか、それとも滞留の階層化か。#153（棚卸しレーンの担当決定）・#377 の解消を先にすべきという順序論が成り立つか E) priority の分布設計（現在 high 41 / medium 84 / low 13 / 欠損 43。提案は medium→high をさらに 7 件以上足す）。制約: CP-3（Issue/PR ゼロ放置）・CP-4（マルチセッション共存。#380 は他セッションが status:in-progress で着手中の可能性）・CP-6（ユーザー確認最小化。棚卸しの判断は自律実行する）・improvement-lane-map.md の 3 レーン責務境界・user-instruction-issue-rules.md（Issue は『なぜ変更したか』を記録する唯一の場所＝安易なクローズは記録の破棄）。",
+  "brief": "飼い主指示: 『現時点で機能追加に関わらない改善、不具合修整に関する未対応の Issue について、カテゴライズ、重複まとめ、優先度見直し、トリアージ、対応済みであればクローズするなどの棚卸ししてください』（Issue #385）。並行検証 7 役が open 182 件（type:feature を除く全件）をリポジトリ実物と突き合わせ、verdict（DONE 8 / OBSOLETE 6 / PARTIAL 17 / OPEN 151）・カテゴリ・重複クラスタ 9 組・Epic 提案 7 本・優先度改訂案をまとめた。その提案書は content/discussions/issue-triage-20260822/proposal.md に保存してある。この提案をそのまま適用すると 24 件前後がクローズされ、5 本の新規 Epic が生まれる。クローズは取り消しコストが高く、Epic 増設は滞留を階層化するだけの恐れがある。争点は 5 つ: A) 対応済みクローズ 8 件の根拠は実測として十分か（特に #144 は『専用 CSRF トークンは本 Issue へ先送り』とコード側コメントが明記、#108 は実装形態が提案と異なる） B) 前提消滅クローズ 6 件は本当に前提が消えたか（特に #305 は撤去された経路の話だが get-daily-digest.ts 側の例外安全性が未検証） C) 重複クラスタ 9 組の判定が過剰でないか・keep をどちらにすべきか（後発の具体性 vs 先発のコメント履歴。#94 はコメント 13 件 priority:high の最古起票なのに提案は #322 を keep としている） D) Epic 5 本新設は #377『type:retro-try が自走ルーティンのどのブランチからも拾われず open 107 件が構造的に滞留する』の解決になるのか、それとも滞留の階層化か。#153（棚卸しレーンの担当決定）・#377 の解消を先にすべきという順序論が成り立つか E) priority の分布設計（現在 high 41 / medium 84 / low 13 / 欠損 43。提案は medium→high をさらに 7 件以上足す）。制約: CP-3（Issue/PR ゼロ放置）・CP-4（マルチセッション共存。#380 は他セッションが status:in-progress で着手中の可能性）・CP-6（ユーザー確認最小化。棚卸しの判断は自律実行する）・improvement-lane-map.md の 3 レーン責務境界・user-instruction-issue-rules.md（Issue は『なぜ変更したか』を記録する唯一の場所＝安易なクローズは記録の破棄）。",
   "participants": [
     {
       "name": "evidence_auditor",
@@ -38,11 +38,17 @@
       {
         "issue": "争点 A〜E のいずれか",
         "decision": "確定した判断",
-        "affected_issues": ["#N の扱い（close:completed / close:not_planned / close:duplicate→#M / keep / label 変更）"],
+        "affected_issues": [
+          "#N の扱い（close:completed / close:not_planned / close:duplicate→#M / keep / label 変更）"
+        ],
         "rejected": "議論で否定された代替案と理由"
       }
     ],
-    "critical": ["議論を経ても残った真の問題"],
-    "open_questions": ["ユーザー確認が要る仕様分岐"]
+    "critical": [
+      "議論を経ても残った真の問題"
+    ],
+    "open_questions": [
+      "ユーザー確認が要る仕様分岐"
+    ]
   }
 }

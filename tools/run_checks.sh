@@ -250,6 +250,15 @@ else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 棚卸しの判定規則（priority 補完の if-then・重複統合の keep 選択・high 比率の上限）の
+# self-test だけを配線する（Issue #385）。本判定（引数なし実行）は GitHub API に依存するので
+# 配線しない。規則の SSOT はコード側であり、議論記録はその由来を残すだけにする。
+if [ -f "$REPO_ROOT/tools/triage_improvements.py" ]; then
+  run_check "棚卸し判定規則 self-test (triage_improvements.py --self-test)" python3 tools/triage_improvements.py --self-test
+else
+  skip_check "棚卸し判定規則 self-test (triage_improvements.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # WIP 自動コミット抑止ガードの回帰テスト（Issue #304 / L-131）。
 # 隔離した一時 git リポジトリでフックを実行し、変異テスト中の一時改変が拾われないこと・
 # マーカーが無ければ従来どおり保全されること・置き忘れが TTL で失効することを実測する。

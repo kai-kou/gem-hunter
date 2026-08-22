@@ -2,10 +2,10 @@
 # 🧑‍🏫 議論ホワイトボード: 機能追加を除く open Issue 182 件の棚卸し判断を確定する
 
 - 議題ID: `issue-triage-20260822`
-- 論点: 並行検証 7 役がまとめた棚卸し提案（クローズ 24 件・Epic 5 本新設・優先度改訂）の妥当性を敵対的に検証し、実際に適用する判断を確定する。提案書: /tmp/claude-0/-home-user-gem-hunter/fac157d8-62ca-561f-898b-deba57589816/scratchpad/proposal.md
+- 論点: 並行検証 7 役がまとめた棚卸し提案（クローズ 24 件・Epic 5 本新設・優先度改訂）の妥当性を敵対的に検証し、実際に適用する判断を確定する。提案書: content/discussions/issue-triage-20260822/proposal.md
 - 参加者: `evidence_auditor`, `dedupe_skeptic`, `backlog_strategist`, `priority_calibrator`, `docs_trace`
-- 投稿数: 10
-- 更新: 2026-08-22T13:16:04+09:00
+- 投稿数: 11
+- 更新: 2026-08-22T13:36:03+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -625,10 +625,10 @@ backlog_strategist が実測した「16/16 open・消化ゼロ」は **#377 が�
 
 ## ラウンド 3
 
-### `lead` — 判定
-<sub>2026-08-22T13:16:04+09:00</sub>
+### `lead` — 合意
+<sub>2026-08-22T13:35:09+09:00</sub>
 
-# lead: 棚卸し判断の確定（verdict）
+# lead: 対立点と合意点の整理（consensus）
 
 5 レンズの claim / rebuttal を突き合わせ、争点 A〜E の判断を確定し **実際に適用した**。
 
@@ -639,7 +639,7 @@ backlog_strategist が実測した「16/16 open・消化ゼロ」は **#377 が�
 | 判断 | Issue |
 |---|---|
 | `completed` でクローズ | #108 #182 #288 #292 #346 |
-| **クローズせず open 継続**（残作業をコメント記録） | #55（増減ログ・本文・実測の 3 値が現在も不一致）/ #85（`--under` の委譲プロンプトへの周知が未了）/ #144（コード側コメントが本 Issue 自身を名指しする forward reference） |
+| **クローズせず open 継続**（残作業をコメント記録） | #55（増減ログ・本文・実測の 3 値が現在も不一致）/ #85（`--under` の委譲プロンプトへの周知が未了）/ #144（コード側コメントが本 Issue 自身を名指しする forward reference）/ #323（起票原因の残骸は除去済みだが `check_dead_code.py` 相当の機械検査は未実装） |
 
 **#182 / #292 は両方 `completed` で個別クローズ**（lead 裁定）。`evidence_auditor` は R2 で「#292 を duplicate に」と譲歩し、`dedupe_skeptic` は R2 で「両方 completed に」と譲歩して主張が入れ替わったため lead が決めた。採用理由は `dedupe_skeptic` R2 の論拠 — `duplicate` は「残作業が別 Issue へ引き継がれる」ことを含意するが今回は引き継ぐ作業が無く、#292 固有の実測値（animate-pulse 中の谷 4.23）と再現条件が `duplicate` の下に埋もれると将来の同種リグレッションで検索に拾われない。
 
@@ -672,7 +672,8 @@ backlog_strategist が実測した「16/16 open・消化ゼロ」は **#377 が�
 
 `backlog_strategist` の実測が決定打:
 
-- **既存 Epic #151 / #152 の子 16 件が、Epic 作成から 2 日間で 1 件も消化されていない**（16/16 open）。16 件中 15 件が `type:retro-try`
+- **既存 Epic #151 の子 8 件は、Epic 作成から 2 日間で後続セッションによる消化がゼロ**（#69 #70 #101 #109 #116 #130 #134 が open。#104 は本セッションで重複統合）。#152 の子 7 件は #93 #99 #103 #112 が **Epic 作成当日にクローズ**（起票セッション自身による消化）、#85 #91 が open、#94 は本セッションで重複統合
+  > ⚠️ **セルフレビューによる訂正（2026-08-22）**: 議論中は「子 16 件が 16/16 open・消化ゼロ」としていたが誤り。`backlog_strategist` が Epic の実際の子ではなく dedupe 役の「追加候補」リストを子として読んでいた。実際の子は計 15 件で、うち 4 件は Epic 作成当日に完了している。ただし **後続セッションが Epic 経由で子を拾った実績はゼロ**（#151 の 8 件は 2 日間 open のまま）という点は訂正後も変わらないため、争点 D の結論（新規 Epic 見送り）は維持する。
 - `.claude/skills/sprint-cycle-router/SKILL.md` の決定木 Step 1〜9 のどのブランチにも `retro-try-handler` への委譲が無い（`retro-try-handler` の出現は Step 5 の **除外規定** 1 箇所のみ・L151）
 - 新規 Epic 5 本の子候補 28 件のうち 18 件（64%）が `type:retro-try` で、同じ穴に落ちる
 
@@ -680,8 +681,8 @@ backlog_strategist が実測した「16/16 open・消化ゼロ」は **#377 が�
 
 **代わりに採ったこと**（`backlog_strategist` R2 の concession「A/B/C 実行が即効・#377 実装が根治」の 2 段構え）:
 
-1. A/B/C の実行だけで `type:retro-try` を 109 → 100 件に圧縮（クローズ 19 件のうち 10 件が retro-try）
-2. 恒久策として **#394 を起票** — `improvement-lane-map.md` のレーン定義が実際に `sprint-cycle-router` から呼ばれているかを機械照合する（`tools/check_lane_reachability.py`）。今回の「16/16 消化ゼロ」は人が手で番号突合しないと見つからなかった
+1. A/B/C の実行だけで `type:retro-try` を 109 → 100 件に圧縮（クローズ 19 件のうち **9 件** が retro-try: #282 #283 #94 #341 #104 #344 #350 #100 #258）
+2. 恒久策として **#394 を起票** — `improvement-lane-map.md` のレーン定義が実際に `sprint-cycle-router` から呼ばれているかを機械照合する（`tools/check_lane_reachability.py`）。この「レーン定義があるのに呼ばれない」断絶は人が手で番号突合しないと見つからず、議論の 2 ラウンドでは子 Issue の実測自体を取り違えたまま誰も検出できなかった
 3. **#393 を起票** — 同一問題の複数回起票（#94→#322→#341、#201→#350、#104→#321、#81→#221、#319→#344、#100→#357）の原因は retro が起票前に既存 Issue を検索していないこと。`retrospective` スキルへ重複検索を必須ステップとして入れる
 
 **却下**: 「ラベルによる束ね（`epic:*`）」— 経路（#377）が無い現状ではラベルで束ねても Epic と同じ結果（滞留）になる。#377 解消後に再検討する。
@@ -709,7 +710,7 @@ backlog_strategist が実測した「16/16 open・消化ゼロ」は **#377 が�
 
 ## 適用後の実測（GitHub から再取得して確認）
 
-- open Issue: 182 → **168 件**（`type:feature` を除く。クローズ 19・新規起票 4）
+- open Issue: 182 → **168 件**（`type:feature` を除く。クローズ 19 ・ 本セッション起票 4（#385 #392 #393 #394）・ 他セッション起票 1（#391））
 - `type:retro-try`: 109 → **100 件**
 - `priority` 欠損: 43 → **1 件**（#391 のみ。他セッションが `status:in-progress` で着手中のため CP-4 により触れていない）
 - `status` 欠損: 34 → **0 件**
@@ -724,3 +725,80 @@ backlog_strategist が実測した「16/16 open・消化ゼロ」は **#377 が�
 ## open_questions
 
 なし（A-1〜A-6 該当なし。仕様解釈の分岐も生じなかった）。
+
+### `lead` — 判定
+<sub>2026-08-22T13:36:03+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: 対応済みクローズ",
+      "decision": "提案 8 件のうち、実測で完了条件を満たす 5 件のみ completed でクローズする。#182 / #292 は同一修正だが測定条件が異なる独立検証のため両方 completed で個別クローズする（duplicate は残作業の引き継ぎを含意し、#292 固有の実測値 4.23 が埋もれる）。「クローズ前に一律で後継 Issue を起票する」原則は却下（#144 は先送り先が本 Issue 自身であり新 Issue はコード内参照を dangling にするだけ）。",
+      "affected_issues": [
+        "#108 close:completed", "#182 close:completed", "#288 close:completed",
+        "#292 close:completed", "#346 close:completed",
+        "#55 keep（3 値が現在も不一致）", "#85 keep（--under の委譲プロンプトへの周知が未了）",
+        "#144 keep（コード側コメントが本 Issue 自身を名指し）",
+        "#323 keep（残骸は除去済みだが機械検査が未実装）"
+      ],
+      "rejected": "#55 / #85 / #144 のクローズ（完了条件が実測で未達）。docs_trace の「一律で後継 Issue を起票してから閉じる」原則（#305 以外には当てはまらない）。"
+    },
+    {
+      "issue": "B: 前提消滅クローズ",
+      "decision": "6 件すべてを not_planned でクローズする。#63 / #77 は duplicate ではなく両方 not_planned（両者共通の前提である GitHub Actions 経由デプロイが D-23 / D-31 / D-32 で消滅しており、どちらも生きていない）。#305 のみ後継 Issue を起票する（設計欠陥が別ファイルの別経路へ移動しており、コード側に本 Issue への forward reference が無い）。",
+      "affected_issues": [
+        "#63 close:not_planned", "#77 close:not_planned", "#282 close:not_planned",
+        "#283 close:not_planned", "#295 close:not_planned",
+        "#305 close:not_planned + 後継 #392 起票"
+      ],
+      "rejected": "#77 を keep として #63 を duplicate で閉じる案（#77 が今も追跡すべきという誤った含意が残る）。"
+    },
+    {
+      "issue": "C: 重複統合",
+      "decision": "8 件を duplicate でクローズする。keep 選択の一般基準を「対応方針・完了条件の要求が最も広い（他方を部分集合として包含する）方」と確定し、close 前に dup 側との diff を取って片方にしかない要求を keep 側の本文へ追記してから統合する。#201 / #350 は証拠密度（実インシデント由来か推測ベースか）により keep を R1 提案から反転した。",
+      "affected_issues": [
+        "#94 close:duplicate→#322", "#341 close:duplicate→#322",
+        "#104 close:duplicate→#321（未使用キー検出・実装参照キー存在検査を #321 へ追記）",
+        "#81 close:duplicate→#221（lineno_at() の共通化を #221 へ追記）",
+        "#344 close:duplicate→#319（自動 1 回再指示・プロンプト文言見直しを #319 へ追記）",
+        "#350 close:duplicate→#201（全検査層への拡大・check_contrast.py の追随漏れを #201 へ追記）",
+        "#100 close:duplicate→#357", "#258 close:duplicate→#159（session-concurrency-rules.md と grep 完了条件を #159 へ追記）"
+      ],
+      "rejected": "「常に新しい方を keep」「常に履歴のある方を keep」の単純ルール（#94 / #322 と #201 / #350 の 2 度破綻した）。#292 と #63 の duplicate 扱い（それぞれ A / B へ振り替え）。"
+    },
+    {
+      "issue": "D: Epic 化",
+      "decision": "新規 Epic 5 本の作成を全て見送り、既存 Epic へのメンバー追加も行わない。dup 側の固有要求は Epic ではなく keep 側 Issue の本文追記で保全する。恒久策として、レーン定義が実際にルーターから呼ばれているかの機械検査（#394）と、レトロの Try 起票時の重複検索必須化（#393）を起票する。",
+      "affected_issues": [
+        "#151 keep（子 8 件は 2 日間で後続セッションによる消化ゼロ・メンバー追加なし）",
+        "#152 keep（子 7 件のうち 4 件は Epic 作成当日に起票セッション自身が消化・メンバー追加なし）",
+        "#393 新規起票（レトロの Try 起票時に既存 Issue の重複検索を必須化）",
+        "#394 新規起票（レーン到達可能性の機械検査）",
+        "#377 最優先（type:retro-try 100 件は今もルーターの決定木から到達不能）"
+      ],
+      "rejected": "新規 Epic 5 本（子候補 28 件のうち 18 件が type:retro-try で、ルーターから到達不能という同じ穴に落ちる）。ラベルによる束ね（epic:*）も経路が無い現状では同じ結果になるため #377 解消後に再検討する。"
+    },
+    {
+      "issue": "E: 優先度",
+      "decision": "high が全体の 25〜30% を超えると順序付けの情報として機能しなくなるという閾値設計を採用し、昇格と降格をセットで適用する。降格の判定軸は「evidence 欄に実際に発生した failure・データ不整合・事故の実測記述が無く、予防的・提案的表現に留まるもの」。欠損補完は if-then 規則（① fix:/bug: 始まり かつ 実測された失敗事象あり → high ② 低頻度・稀・代替手段あり・影響範囲は限定的 の記述あり → low ③ CHECK / RULE / BACKLOG で実測失敗事象なし → medium ④ それ以外 → medium）で機械的に行う。sp:2 の偏在は見積もりの機能不全ではない（検証 7 役の独立推奨分布と現行ラベルがほぼ完全一致・不一致は 182 件中 11 件のみ）。",
+      "affected_issues": [
+        "#205 high→medium", "#202 high→medium", "#281 high→medium",
+        "#257 high→medium", "#130 high→medium", "#299 high→medium",
+        "#227 medium→high", "#236 medium→high", "#245 medium→high",
+        "#259 medium→high", "#272 medium→high",
+        "#365 欠損→high", "#338 欠損→high", "#354 欠損→high", "#352 欠損→high", "#27 欠損→high",
+        "#310 priority:P2→medium", "#317 priority:P2→medium",
+        "欠損 31 件 →medium", "status 欠損 30 件 →status:waiting-claude"
+      ],
+      "rejected": "提案書の「medium→high を 7 件無条件で加算」（#247 はコスト監視未実装だが予算超過の実績記録なし、#278 は refactor 目的で実害記述なしのため据え置き）。欠損 43 件を一律 medium で埋める案（medium が 127 件 70% に膨張し medium 自体が無意味化する）。"
+    }
+  ],
+  "critical": [
+    "type:retro-try 100 件は今も自走ルーティンから到達不能。sprint-cycle-router の決定木 Step 1〜9 に retro-try-handler への委譲が無く（出現は Step 5 の除外規定 L151 の 1 箇所のみ）、この棚卸しは母数を 9% 減らしただけ。#377 を実装しない限り次のレトロで再び増える。",
+    "priority:low が 12 件（7%）しか使われず medium が 111 件（66%）に膨らんだまま。if-then 規則の②（低頻度・代替手段ありの記述）に該当する Issue が実データに 1 件も存在せず、Issue 本文が「後回しでよい」と書く文化が無いため機械規則では low を埋められない。medium 内の順序付けは依然として情報を持たない。",
+    "議論の 2 ラウンドを通じて、争点 D の主要根拠だった Epic 子 Issue の実測が誤ったまま誰にも検出されなかった（提案リストを既存の子として読んでいた）。セルフレビューの正確性観点が一次データと突き合わせて初めて発覚した。議論型レビューは相互反論を促すが、参加者が同じ誤ったデータを共有していると訂正が働かない。",
+    "消化ゼロの Epic #151 自体の処遇が未決（#377 の実装結果を見てから判断する）。",
+    "今回確定した判定規則（keep 選択基準・priority の if-then 規則）が議論記録の中にしか存在せず、tools/ のコードに落ちていない。次回の棚卸しで再現される保証がない。"
+  ],
+  "open_questions": []
+}
