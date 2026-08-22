@@ -266,10 +266,13 @@ describe('collectRegistry: 恒久失敗時の扱い', () => {
   it('collectAll: 1 レジストリが恒久失敗しても他レジストリの収集は続行する', async () => {
     const fetchImpl = vi.fn(async (url) => {
       const requested = new URL(url)
-      // 🔴 部分一致（`pathname.includes('npmjs.org')`）は「前後に任意のホストが来てもよい」
-      //   判定になり CodeQL の Incomplete URL substring sanitization に引っかかる。
-      //   パスをセグメントに割ってから完全一致で見る。
-      expect(requested.href.startsWith(API_BASE)).toBe(true)
+      // 🔴 URL の判定は必ず **パース済みの構成要素で完全一致** させる。
+      //   `href.startsWith(API_BASE)` や `pathname.includes('npmjs.org')` のような
+      //   部分一致は「前後に任意のホスト・パスが来てもよい」判定になり、CodeQL の
+      //   Incomplete URL substring sanitization（高重大度）に引っかかる。
+      const apiBase = new URL(API_BASE)
+      expect(requested.origin).toBe(apiBase.origin)
+      expect(requested.pathname.startsWith(`${apiBase.pathname}/`)).toBe(true)
       const segments = requested.pathname.split('/').filter(Boolean)
       const isNpm = segments.includes('npmjs.org')
       if (isNpm) return jsonResponse(null, 500)
