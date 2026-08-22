@@ -266,16 +266,14 @@ describe('collectRegistry: 恒久失敗時の扱い', () => {
   it('collectAll: 1 レジストリが恒久失敗しても他レジストリの収集は続行する', async () => {
     const fetchImpl = vi.fn(async (url) => {
       const requested = new URL(url)
-      // 🔴 URL の判定は必ず **パース済みの構成要素で完全一致** させる。
-      //   `href.startsWith(API_BASE)` や `pathname.includes('npmjs.org')` のような
-      //   部分一致は「前後に任意のホスト・パスが来てもよい」判定になり、CodeQL の
-      //   Incomplete URL substring sanitization（高重大度）に引っかかる。
+      // 🔴 URL の判定は **パース済みの構成要素の完全一致（`===`）** で行う。
+      //   `href.startsWith(...)` / `pathname.includes(...)` / セグメントの `includes(...)`
+      //   はいずれも部分一致であり「前後に任意のホスト・パスが来てもよい」判定になるため、
+      //   CodeQL の Incomplete URL substring sanitization（高重大度）に引っかかる。
       const apiBase = new URL(API_BASE)
+      const npmUrl = new URL(`${API_BASE}/${NPM.name}/packages`)
       expect(requested.origin).toBe(apiBase.origin)
-      expect(requested.pathname.startsWith(`${apiBase.pathname}/`)).toBe(true)
-      const segments = requested.pathname.split('/').filter(Boolean)
-      const isNpm = segments.includes('npmjs.org')
-      if (isNpm) return jsonResponse(null, 500)
+      if (requested.pathname === npmUrl.pathname) return jsonResponse(null, 500)
       return jsonResponse(makePackages(2))
     })
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
