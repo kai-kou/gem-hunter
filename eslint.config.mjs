@@ -20,8 +20,11 @@ const eslintConfig = defineConfig([
     //    その呼び出し元（`tools/generate_gem_digest.mjs`）だけは対象に戻す（`SP-17` / PR #416
     //    セルフレビュー指摘）。`.mjs` は `tsc --noEmit` の対象でもないため、除外したままだと
     //    約 1,000 行の production 算出コードが lint・型のすべてのゲート外に置かれる。
-    'tools/**',
-    '!tools/gem-pool/**',
+    //    ⚠️ ESLint 9 の flat config では「ディレクトリごと無視（`tools/**`）」した中身は
+    //    `!` で戻せない（走査自体が打ち切られる）。直下の子だけを無視（`tools/*`）してから
+    //    戻したい対象を `!` で個別に解除する、という公式の書き方に従う。
+    'tools/*',
+    '!tools/gem-pool',
     '!tools/generate_gem_digest.mjs',
     '!tools/generate_gem_digest.test.mjs',
   ]),
