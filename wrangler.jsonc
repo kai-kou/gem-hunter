@@ -13,11 +13,15 @@
   //    ローカル（Node/V8）で cold start の内訳を測ると、12 シャード 3.47 MiB に対して
   //    `JSON.parse` 39.9ms + `Map` 構築 40.7ms = **約 81ms**（I/O 待ちを除く純 CPU 相当）。
   //    warm 時は `Map.get()` だけで 30 件 0.012ms（cold start 1 回に閉じている）。
-  //    50ms のままだと cold start（isolate ごとに継続的に発生する）で Error 1027 になりうる。
+  //    50ms のままだと cold start（isolate ごとに継続的に発生する）で **Error 1102**
+  //    （`Worker exceeded resource limits` / invocation outcome `exceededCpu`）になりうる。
+  //    （Error 1027 は Workers **Free** の使用量到達による停止で、本アカウント（Paid）では出ない。
+  //     典拠: https://developers.cloudflare.com/workers/platform/limits/#cpu-time ）
   //    ⚠️ **Workers 上の p95 は本セッションでは測れていない**: `wrangler tail` の WebSocket が
   //    実行環境のプロキシを通らず、Observability のクエリでもプレビュー版のイベントが出ない。
-  //    プレビュー（`pr-388`）へ 14 リクエスト投げて全て 200・1027 ゼロという間接証拠はあるが、
-  //    cold start が実際に起きたかまでは確認できていない。本番で p95 を測れるようになったら締め直す。
+  //    プレビュー（`pr-388`）へ 14 リクエスト投げて全て 200・CPU 超過（`exceededCpu`）ゼロという
+  //    間接証拠はあるが、cold start が実際に起きたかまでは確認できていない。
+  //    本番で p95 を測れるようになったら締め直す。
   //    🔵 上限は「超えたら止める」ための天井であって、実消費が増えるわけではない（未使用分は課金されない）。
   "limits": { "cpu_ms": 200 },
   // 🔴 `period` を変えたら src/infrastructure/platform/rate-limit.ts の RATE_LIMIT_PERIOD_SECONDS も

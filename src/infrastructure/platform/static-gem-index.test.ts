@@ -226,6 +226,62 @@ describe('StaticGemIndex', () => {
     expect(gemIndexValue(retried.get('owner/alpha')!)).toBe(-80.5)
   })
 
+  it('index.json は読めても全シャードが失敗したらキャッシュせず、次の lookup で再試行して成功する', async () => {
+    // 入口だけ読める状態（シャードは 1 本も無い）。ここを「成功」としてキャッシュすると
+    // その isolate の生存期間ずっとバッジが出なくなる。
+    let files: Record<string, string> = { [INDEX_PATH]: indexJson(['a.json', 'b.json']) }
+    const calls: string[] = []
+    const reader: AssetReader = async (path) => {
+      calls.push(path)
+      return files[path] ?? null
+    }
+    const port = new StaticGemIndex(reader)
+
+    expect((await port.lookup(['owner/alpha'])).size).toBe(0)
+    expect(calls).toHaveLength(3) // index.json + シャード 2 本
+
+    files = twoShards
+    const retried = await port.lookup(['owner/alpha'])
+
+    expect(gemIndexValue(retried.get('owner/alpha')!)).toBe(-80.5)
+    expect(calls).toHaveLength(6) // 再試行でもう 1 セット取得している
+  })
+
+  it('部分成功（一部シャードだけ失敗）はキャッシュして再取得しない', async () => {
+    const reader = stubReader({
+      [INDEX_PATH]: indexJson(['a.json', 'missing.json']),
+      '/data/gem-index/a.json': twoShards['/data/gem-index/a.json'],
+    })
+    const port = new StaticGemIndex(reader)
+
+    expect((await port.lookup(['owner/alpha'])).size).toBe(1)
+    const afterFirst = [...reader.calls]
+    await port.lookup(['owner/beta'])
+
+    expect(reader.calls).toEqual(afterFirst)
+  })
+
+  it('同一 repo が複数シャードにあるときは Gem Index が小さい方を採る（大文字小文字も同一視）', async () => {
+    const reader = stubReader({
+      [INDEX_PATH]: indexJson(['first.json', 'second.json']),
+      // dup は先に大きい値、dup2 は先に小さい値（読み込み順に依存しないことを両向きで固定する）。
+      '/data/gem-index/first.json': shardJson([
+        ['Owner/Dup', 'dup', 10, 1, -10],
+        ['owner/dup2', 'dup2', 10, 1, -90],
+      ]),
+      '/data/gem-index/second.json': shardJson([
+        ['owner/dup', 'dup', 20, 2, -90],
+        ['Owner/Dup2', 'dup2', 20, 2, -10],
+      ]),
+    })
+
+    const found = await new StaticGemIndex(reader).lookup(['owner/dup', 'owner/dup2'])
+
+    expect(found.size).toBe(2)
+    expect(gemIndexValue(found.get('owner/dup')!)).toBe(-90)
+    expect(gemIndexValue(found.get('owner/dup2')!)).toBe(-90)
+  })
+
   it('AssetReader が例外を投げても空 Map に倒す', async () => {
     const reader: AssetReader = async () => {
       throw new Error('boom')

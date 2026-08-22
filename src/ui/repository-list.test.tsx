@@ -350,6 +350,40 @@ describe('RepositoryList — Gem バッジ（SP-18 / D-36）', () => {
     expect(container.querySelector('ul')?.contains(note)).toBe(false)
   })
 
+  it('🔴 gemBadgeNote を渡さないとバッジ自体が出ない（注記だけ欠けた状態を作らない・D-36）', () => {
+    // 3 つの文言は独立した optional なので、注記だけ渡し忘れる呼び出しが型では防げない。
+    // 「バッジは出るのに『付かない＝低評価ではない』注記が出ない」状態は D-36 の明示要件違反。
+    const withoutNote = { ...gemLabels, gemBadgeNote: undefined }
+
+    render(
+      <RepositoryList
+        items={threeItems}
+        labels={withoutNote}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    expect(screen.queryByText('Gem')).not.toBeInTheDocument()
+    expect(screen.queryByText(gemLabels.gemBadgeNote)).not.toBeInTheDocument()
+  })
+
+  it('gemBadgeSrHint を渡さないときもバッジは出ない（3 点セットでのみ描画する）', () => {
+    const withoutSrHint = { ...gemLabels, gemBadgeSrHint: undefined }
+
+    render(
+      <RepositoryList
+        items={threeItems}
+        labels={withoutSrHint}
+        locale={locale('ja')}
+        gemIndexes={gemIndexes}
+      />,
+    )
+
+    expect(screen.queryByText('Gem')).not.toBeInTheDocument()
+    expect(screen.queryByText(gemLabels.gemBadgeNote)).not.toBeInTheDocument()
+  })
+
   it('バッジが 0 件のときは注記を出さない（無関係な説明でノイズを増やさない）', () => {
     render(
       <RepositoryList

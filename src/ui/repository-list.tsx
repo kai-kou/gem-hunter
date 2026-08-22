@@ -14,7 +14,10 @@ type RepositoryListLabels = {
   gemBadge?: string
   /** Gem バッジの意味を支援技術へ伝える 1 文（`sr-only`）。区切りの括弧は文言側に含める（§7.4a）。 */
   gemBadgeSrHint?: string
-  /** 🔴 バッジが付かないことが低評価を意味しない旨の注記（`D-36` の明示要件）。一覧に 1 回だけ出す。 */
+  /**
+   * 🔴 バッジが付かないことが低評価を意味しない旨の注記（`D-36` の明示要件）。一覧に 1 回だけ出す。
+   * **これを渡さないとバッジ自体が出ない**（`gemBadge` / `gemBadgeSrHint` と 3 点セットで渡す）。
+   */
   gemBadgeNote?: string
 }
 
@@ -86,11 +89,18 @@ export function RepositoryList({
     timeZone: 'Asia/Tokyo',
   })
 
-  // バッジを出せるのは文言が揃っているときだけ（`gemIndexes` だけでは描画しない）。
+  // バッジを出せるのは文言が **3 つとも** 揃っているときだけ（`gemIndexes` だけでは描画しない）。
+  // 🔴 `gemBadgeNote` を条件に含めるのが要点: 3 つは独立した optional なので、注記だけ渡し忘れた
+  //    呼び出しがあると「バッジは出るのに『付かない＝低評価ではない』注記が出ない」状態になる。
+  //    これは `D-36` が明示要件とした注記の欠落そのものなので、描画側で構造的に防ぐ。
   const gemBadgeLabel = labels.gemBadge
   const gemBadgeSrHint = labels.gemBadgeSrHint
+  const gemBadgeNote = labels.gemBadgeNote
   const canShowGemBadge =
-    gemIndexes !== undefined && gemBadgeLabel !== undefined && gemBadgeSrHint !== undefined
+    gemIndexes !== undefined &&
+    gemBadgeLabel !== undefined &&
+    gemBadgeSrHint !== undefined &&
+    gemBadgeNote !== undefined
   // 注記は「バッジが 1 つ以上出ているとき」だけ、一覧に 1 回だけ出す（カードごとに出さない）。
   const shownGemBadgeCount = canShowGemBadge
     ? items.filter((item) => gemIndexes.has(item.fullName)).length
@@ -178,8 +188,8 @@ export function RepositoryList({
         実測でも一般語の検索上位 100 件のうち平均 34.5% しか載らない（`D-36` の SP-17 実測追記）。
         一覧の外（`ul` の兄弟）に 1 回だけ置き、カードごとの重複読み上げを避ける。
       */}
-      {shownGemBadgeCount > 0 && labels.gemBadgeNote ? (
-        <p className="text-muted-foreground mt-3 text-xs">{labels.gemBadgeNote}</p>
+      {shownGemBadgeCount > 0 && gemBadgeNote !== undefined ? (
+        <p className="text-muted-foreground mt-3 text-xs">{gemBadgeNote}</p>
       ) : null}
     </>
   )

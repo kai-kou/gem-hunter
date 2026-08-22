@@ -6,6 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createFileSystemAssetReader, createWorkersAssetReader } from './asset-reader'
 
+/**
+ * 生文字列には `..` が現れないのに、`new URL()` の正規化でディレクトリ脱出・別オリジンに化ける
+ * 入力。**両経路とも同じ判定で拒否する**（経路によって受理される入力が変わらない）。
+ */
+const TRAVERSAL_PATHS = [
+  '/data/gem-index/%2e%2e/%2e%2e/secret.json', // → '/secret.json'
+  '/data/gem-index/%2E%2E/etc.json', // → '/data/etc.json'
+  '//evil.com/x.json', // → 別オリジン
+] as const
+
 describe('createFileSystemAssetReader', () => {
   let baseDir: string
 
@@ -45,6 +55,12 @@ describe('createFileSystemAssetReader', () => {
     const read = createFileSystemAssetReader(baseDir)
 
     await expect(read('data/gem-index/index.json')).resolves.toBeNull()
+  })
+
+  it.each(TRAVERSAL_PATHS)('正規化で階層を移動するパスは受け付けない: %s', async (path) => {
+    const read = createFileSystemAssetReader(baseDir)
+
+    await expect(read(path)).resolves.toBeNull()
   })
 })
 
@@ -92,5 +108,51 @@ describe('createWorkersAssetReader', () => {
     await expect(read('/data/../secret.json')).resolves.toBeNull()
     await expect(read('data/gem-index/index.json')).resolves.toBeNull()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each(TRAVERSAL_PATHS)(
+    '正規化で階層を移動するパスは binding を呼ばずに null: %s',
+    async (path) => {
+      const fetch = vi.fn(async () => new Response('secret', { status: 200 }))
+      const read = createWorkersAssetReader({ fetch })
+
+      await expect(read(path)).resolves.toBeNull()
+      expect(fetch).not.toHaveBeenCalled()
+    },
+  )
+
+  it('AbortSignal.timeout が使える環境では signal を渡す', async () => {
+    let received: { signal?: AbortSignal } | undefined
+    const fetch = vi.fn(async (input: URL, init?: { signal?: AbortSignal }) => {
+      received = init
+      return new Response(String(input), { status: 200 })
+    })
+    const read = createWorkersAssetReader({ fetch })
+
+    await read('/data/gem-index/index.json')
+
+    if (typeof AbortSignal.timeout === 'function') {
+      expect(received?.signal).toBeInstanceOf(AbortSignal)
+      expect(received?.signal?.aborted).toBe(false)
+    } else {
+      expect(received).toBeUndefined()
+    }
+  })
+
+  it('binding.fetch が応答を返さなくても上限時間で null に倒す（ハング対策）', async () => {
+    vi.useFakeTimers()
+    try {
+      // 決して解決しない fetch（reject もしないため呼び出し側の catch では拾えない）。
+      const fetch = vi.fn(() => new Promise<Response>(() => undefined))
+      const read = createWorkersAssetReader({ fetch })
+
+      const pending = read('/data/gem-index/index.json')
+      // 上限（2,000ms）までタイマーを進めれば解決するので、テスト自体は待たない。
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      await expect(pending).resolves.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

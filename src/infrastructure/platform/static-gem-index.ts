@@ -35,7 +35,16 @@ const COLUMN_GEM_INDEX = 'gemIndex'
 /** 小文字化した `owner/repo` → Gem Index の生値。 */
 type GemIndexPool = ReadonlyMap<string, number>
 
-/** 構築結果。`ok=false` は「入口ごと読めなかった」＝ キャッシュしてはいけない失敗。 */
+/**
+ * 構築結果。`ok=false` は **キャッシュしてはいけない失敗**（次のリクエストで再試行する）。
+ *
+ * 🔴 `ok` は「`index.json` が読めたか」ではなく **「シャードを 1 本でも読めたか」** で決める。
+ * 入口だけ読めてシャードが全滅した状態を成功として singleton promise に固定すると、
+ * その isolate の生存期間ずっと空プールのままバッジが出なくなる（本ファイル冒頭の不変条件が
+ * シャード層で破れる）。
+ * 🔵 逆に **部分成功（例: 12 本中 11 本）はキャッシュしたままにする**。1 本の欠落で毎リクエスト
+ * 12 本の再取得を走らせる方が害が大きく、読めた分だけでバッジは成立する。
+ */
 type PoolBuild = {
   readonly pool: GemIndexPool
   readonly ok: boolean
@@ -140,9 +149,10 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
 
   // 🔵 `D-38`: cold start で全シャードを **並列**（`Promise.all`）に取得する。
   const shards = await Promise.all(fileNames.map((fileName) => loadShard(read, fileName)))
+  const loaded = shards.filter((shard): shard is readonly [string, number][] => shard !== null)
 
   const pool = new Map<string, number>()
-  for (const shard of shards) {
+  for (const shard of loaded) {
     for (const [fullName, value] of shard) {
       const current = pool.get(fullName)
       // 同一リポジトリが複数レジストリに出る場合は **値が小さい方（より過小評価）** を採る。
@@ -153,25 +163,36 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
     }
   }
 
+  // 全滅（1 本も読めなかった）のときだけ失敗扱いにして再試行対象にする。部分成功はキャッシュする。
+  if (loaded.length === 0) {
+    warn(
+      'シャードを 1 本も読めませんでした。Gem バッジなしで継続し、次のリクエストで再試行します。',
+    )
+    return { pool, ok: false }
+  }
   return { pool, ok: true }
 }
 
-/** 1 シャードを読んで `[小文字の owner/repo, Gem Index]` の配列にする。読めなければ空配列。 */
+/**
+ * 1 シャードを読んで `[小文字の owner/repo, Gem Index]` の配列にする。
+ * 🔴 **読めなかった場合は `null`**（空配列と区別する）。呼び出し側が「全滅か部分成功か」を
+ * 判定できなくなるため、失敗を空配列に潰さない。
+ */
 async function loadShard(
   read: AssetReader,
   fileName: string,
-): Promise<readonly [string, number][]> {
+): Promise<readonly [string, number][] | null> {
   const path = `${GEM_INDEX_DIR}/${fileName}`
   const raw = await read(path)
   if (raw === null) {
     warn(`シャード ${fileName} を読めませんでした。このレジストリを除いて継続します。`)
-    return []
+    return null
   }
 
   const shard = tryParseJson(raw, path)
   if (!isObject(shard) || !Array.isArray(shard.columns) || !Array.isArray(shard.entries)) {
     warn(`シャード ${fileName} の形が想定と違います（columns / entries）。スキップします。`)
-    return []
+    return null
   }
 
   // 🔴 列の位置を決め打ちしない（`SP-17` が `columns` を同梱しているのは位置依存を避けるため）。
@@ -182,7 +203,7 @@ async function loadShard(
       `シャード ${fileName} の columns に ${COLUMN_REPOSITORY_FULL_NAME} / ${COLUMN_GEM_INDEX} が` +
         ' ありません。スキップします。',
     )
-    return []
+    return null
   }
 
   const rows: [string, number][] = []
