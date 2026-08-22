@@ -619,7 +619,7 @@ async function loadShard(
     }
     // 🔴 `owner/repo` の形でないものは入口で落とす（`F-09`）。`../settings` のような値が通ると
     //    詳細ページへのリンクが URL 正規化で別のページへ化け、項目名と遷移先が食い違う。
-    if (!REPOSITORY_FULL_NAME_PATTERN.test(fullName)) {
+    if (!isSafeRepositoryFullName(fullName)) {
       malformedNames += 1
       continue
     }
