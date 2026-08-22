@@ -72,8 +72,9 @@ const SHOTS = [
     },
   },
   {
+    // ヒーローの主役。`shot-search` と同じキーワードで撮り、PC 版との対比が成立するようにする
     name: 'shot-mobile',
-    path: '/ja?q=zod',
+    path: '/ja?q=react',
     viewport: { width: 390, height: 780 },
     width: 640,
   },
