@@ -10,9 +10,16 @@ import { DEFAULT_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { getMessages } from '@/src/shared/i18n/messages'
 import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
-import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
+import {
+  GEM_LIST_SOURCE_PARAM_KEY,
+  GEM_LIST_SOURCE_PARAM_VALUE,
+  parseSearchParams,
+  rawKeywordOf,
+  SEARCH_PARAM_KEYS,
+  type RawSearchParams,
+} from '@/src/ui/url/search-params'
+import { toGemListPage } from '@/src/usecases/search-gems'
 import { BackLink } from '@/src/ui/back-link'
-import { GEM_LIST_SOURCE_PARAM_KEY, GEM_LIST_SOURCE_PARAM_VALUE } from '@/src/ui/gem-list'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { ReadmeSection, ReadmeStatusText } from '@/src/ui/readme-section'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
@@ -69,13 +76,24 @@ export default async function RepositoryDetailPage({
    */
   const rawFrom = rawSearchParams[GEM_LIST_SOURCE_PARAM_KEY]
   const cameFromGemList = !Array.isArray(rawFrom) && rawFrom === GEM_LIST_SOURCE_PARAM_VALUE
+  /**
+   * 🔴 Gem 一覧の状態は **ここで 1 回だけ導出する**（`backHref` と `currentPath` で別々に
+   * 組み立てない・F-06）。戻り先が生値の `q` を持つのに自分自身の URL が検証済みの
+   * `searchState.keyword` を使っていたため、`?q=go NOT rust` のように `trySearchKeyword` が
+   * 弾く検索語だと、言語切替・再試行を 1 回踏んだ瞬間に `q` が消え、「Gem 一覧へ戻る」が
+   * `/{locale}/gems`（検索語なし＝`gems.queryRequired` の画面）へ落ちて一覧へ戻れなくなっていた。
+   * 🔵 ページ番号も `searchState.page`（GitHub 検索 API 由来の 50 ページ上限つき）ではなく
+   * Gem 一覧と同じ解釈（上限なし・`toGemListPage`）を使う。1,000 件を超える検索語では
+   * 51 ページ目以降から入った詳細ページの戻り先が 1 ページ目に化けるため（F-02 と同根）。
+   */
+  const gemListState = {
+    keyword: rawKeywordOf(rawSearchParams),
+    page: toGemListPage(rawSearchParams[SEARCH_PARAM_KEYS.page]),
+    sort: DEFAULT_SORT_ORDER,
+    perPage: DEFAULT_PER_PAGE,
+  }
   const backHref = cameFromGemList
-    ? buildSearchUrl(`/${locale}/gems`, {
-        keyword: rawKeywordOf(rawSearchParams),
-        page: searchState.page,
-        sort: DEFAULT_SORT_ORDER,
-        perPage: DEFAULT_PER_PAGE,
-      })
+    ? buildSearchUrl(`/${locale}/gems`, gemListState)
     : buildSearchUrl(`/${locale}`, searchState)
   /** 戻り先が変わるならラベルも変える（「一覧へ戻る」だけではどちらの一覧か分からない）。 */
   const backLinkLabel = cameFromGemList ? messages.detail.backToGemList : messages.detail.backLink
@@ -88,13 +106,17 @@ export default async function RepositoryDetailPage({
    * 必ず再エンコードする（`..` や `/` を含む値を踏ませたときに行き先がずれるのを防ぐ）。
    * 🔴 SP-19: 出所マーカー（`from=gems`）も落とさない。落とすと言語切替・再試行を挟んだ瞬間に
    * 「Gem 一覧へ戻る」が検索結果一覧へすり替わる（上と同じ理由）。値は本ファイルが import した
-   * 定数そのもので、外部入力をそのまま連結しない。
+   * 定数そのもので、外部入力をそのまま連結しない。`?` / `&` の手組みはせず `buildSearchUrl` の
+   * 追加パラメータ引数へ寄せる（区切り文字の分岐を各所に増やさない）。
+   * 🔴 Gem 一覧から来たときの検索語・ページは `gemListState`（上で 1 回だけ導出）を使う。
+   * `backHref` と別々に組み立てると導出がズレる（F-06）。
    */
   const detailPath = `/${locale}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
-  const detailUrlWithSearchState = buildSearchUrl(detailPath, searchState)
   const currentPath = cameFromGemList
-    ? `${detailUrlWithSearchState}${detailUrlWithSearchState.includes('?') ? '&' : '?'}${GEM_LIST_SOURCE_PARAM_KEY}=${GEM_LIST_SOURCE_PARAM_VALUE}`
-    : detailUrlWithSearchState
+    ? buildSearchUrl(detailPath, gemListState, {
+        [GEM_LIST_SOURCE_PARAM_KEY]: GEM_LIST_SOURCE_PARAM_VALUE,
+      })
+    : buildSearchUrl(detailPath, searchState)
 
   const accessToken = await getSessionAccessToken()
   const showAuthLink = isAuthConfigured()
