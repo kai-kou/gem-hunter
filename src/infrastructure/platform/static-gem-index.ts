@@ -24,27 +24,37 @@ import { FALLBACK_META } from './static-gem-digest'
  * Range 二分探索・バンドル焼き込みはいずれも却下済み（理由は `open-questions.md` `D-38`）。
  *
  * 🔴 **アセットは 1 セットのまま・parse も 1 回のまま**（`SP-19` の制約）。所属照会（`lookup`）と
- * 絞り込み一覧（`search`）は **同じ 1 回の parse から作った同じ索引** を共有する。
+ * 絞り込み一覧（`search`）は **同じ 1 回の parse から作った同じプール** を共有する。
  * 一覧に必要な `packageName` / `stars` / `dependentCount` / `registry` のためにアセットを
  * 増やしたり 2 回目の parse を走らせたりしない。
  *
- * 🔵 **cold start で作るもの（リクエスト時にやり直さないもの）**:
- * - `records`: **`gemIndex` 昇順・同値は `repositoryFullName` 昇順** に並べ替え済みの全レコード配列。
- *   一覧の並び順はプール全体で不変なので、ここで 1 回だけ並べておけばリクエスト側は
- *   「絞り込んで slice する」だけで済む（毎回 62,483 件を並べ替えない）。
- * - `tokens`: 照合用トークン列（`repositoryFullName` と `packageName` の単語和集合）。
- *   リクエストごとに全件を tokenize し直すと CPU 予算（`limits.cpu_ms`）を食う。
+ * ## 🔴 2 段の遅延構築（`SP-19` 実測に基づく設計・親裁定 2026-08-22）
  *
- * 🔵 **singleton promise パターン**: 構築中の Promise を **モジュールスコープ** に保持し、
- * cold start 直後に同一 isolate へ並行到達したリクエストは同じ Promise を await するだけにする。
- * これをしないと並行リクエストがそれぞれ 12 本ずつ取得を走らせる。
+ * 索引は **用途ごとに 2 段** に分け、`search` にしか要らないコストを `lookup` に払わせない。
+ *
+ * | 段 | 中身 | いつ作るか | 実測コスト |
+ * |---|---|---|---|
+ * | **プール**（`GemPool`） | `byRepo`（小文字 repo 名 → エントリ）・`meta` | cold start（`lookup` / `search` のどちらでも） | 約 82ms |
+ * | **検索インデックス**（`SearchIndex`） | 照合用トークン列 + `gemIndex` 昇順に並べ替えた配列 | **初回の `search()`** | 追加で約 122ms |
+ * |
+ *
+ * ⚠️ **なぜ分けるか**: tokenize（62,483 件 × 2 識別子・約 91ms）と並べ替え（約 31ms）は
+ * **一覧専用のコスト**。これを cold start に置くと、`SP-18` で出荷済みの「検索結果ページの
+ * Gem バッジ」経路（`lookup` だけを呼ぶ）が、自分では使わないコストを isolate ごとに払う
+ * **既存機能の回帰** になる。したがって `lookup` しか来ないリクエストでは tokenize も
+ * 並べ替えも走らせない。
+ *
+ * 🔵 **どちらの段も singleton**（構築中の Promise をモジュールスコープに保持する）。
+ * cold start 直後に同一 isolate へ並行到達したリクエストは同じ Promise を await するだけで、
+ * 12 本の取得も 62,483 件の tokenize も二重に走らない。
  * ⚠️ cold start は「デプロイ直後の 1 回」ではなく **isolate ごとに継続的に発生する**。
  *
- * 🔴 **初期化に失敗した Promise はキャッシュしない**。失敗を抱え込むと、デプロイ直後の一時障害で
- * その isolate の生存期間ずっとバッジも一覧も出なくなる。失敗時は次のリクエストで再試行する。
+ * 🔴 **初期化に失敗した Promise はキャッシュしない**（どちらの段も同じ扱い）。失敗を抱え込むと、
+ * デプロイ直後の一時障害でその isolate の生存期間ずっとバッジも一覧も出なくなる。
  *
  * 🔴 **例外を投げない**（`GemIndexPort` の契約 / `D-28` の SPOF 方針）。壊れた入力・取得失敗は
  * `console.warn` でログだけ残し、**読めた分だけ**で索引を作る（全滅なら空の索引）。
+ * 検索インデックスの構築が失敗しても **`lookup` は従来どおり動く**（段が独立しているため）。
  */
 
 /** シャード置き場（`public/data/gem-index/`）の絶対パス。 */
@@ -63,39 +73,45 @@ const COLUMN_STARS = 'stars'
 const DEFAULT_PER_PAGE = 20
 
 /**
- * 索引 1 件。`GemPoolEntry`（一覧が必要とする全項目）に、cold start で 1 回だけ計算した
- * 照合用の派生値を足したもの。
+ * プール 1 件。`GemPoolEntry`（一覧が必要とする全項目）に、照合の基準となる小文字名を足したもの。
  *
- * - `tokens`: `repositoryFullName` と `packageName` を単語境界で割った **和集合**（重複は畳む）
- * - `lowerName`: 小文字化した `repositoryFullName`。dedupe・大文字小文字を無視した照合・
- *   ソートのタイブレークを **すべて同じ基準** で行うために持つ
- *
- * 🔴 これらは内部の派生値なので `search()` の返り値には載せない（`toEntry()` で素の
- * `GemPoolEntry` へ写す）。載せると UI へそのまま渡ったときにトークン列まで転送される。
+ * `lowerName` は dedupe・大文字小文字を無視した照合・並べ替えのタイブレークを
+ * **すべて同じ基準** で行うために持つ。
+ * 🔴 内部の派生値なので外へ出す前に `toEntry()` で素の `GemPoolEntry` へ写す。
  */
-type GemPoolRecord = GemPoolEntry & {
-  readonly tokens: readonly string[]
+type PoolEntry = GemPoolEntry & {
   readonly lowerName: string
 }
 
-/** cold start で 1 回だけ作る索引。`lookup` も `search` もこれだけを見る。 */
+/** cold start で作る第 1 段。`lookup` はこれだけで応答できる。 */
 type GemPool = {
-  /** `gemIndex` 昇順・同値は `lowerName`（小文字 `owner/repo`）昇順に並べ替え済みの全レコード。 */
-  readonly records: readonly GemPoolRecord[]
-  /** 小文字 `owner/repo` → レコード。`lookup()` の O(1) 照会用。 */
-  readonly byRepo: ReadonlyMap<string, GemPoolRecord>
+  /** 小文字 `owner/repo` → エントリ。`lookup()` の O(1) 照会用。 */
+  readonly byRepo: ReadonlyMap<string, PoolEntry>
   /** 出典表示（`D-29` / `GR-6`）。`index.json` の `meta`。 */
   readonly meta: DigestMeta
 }
 
+/** 検索インデックス 1 件。プールのエントリ（参照）に、照合用トークン列を添えたもの。 */
+type SearchRecord = {
+  readonly entry: PoolEntry
+  /** `repositoryFullName` と `packageName` を単語境界で割った **和集合**（重複は畳む）。 */
+  readonly tokens: readonly string[]
+}
+
+/** 初回の `search()` で作る第 2 段。`gemIndex` 昇順・同値は repo 名昇順に並べ替え済み。 */
+type SearchIndex = {
+  readonly records: readonly SearchRecord[]
+}
+
 const EMPTY_POOL: GemPool = {
-  records: [],
-  byRepo: new Map<string, GemPoolRecord>(),
+  byRepo: new Map<string, PoolEntry>(),
   meta: FALLBACK_META,
 }
 
+const EMPTY_SEARCH_INDEX: SearchIndex = { records: [] }
+
 /**
- * 構築結果。`ok=false` は **キャッシュしてはいけない失敗**（次のリクエストで再試行する）。
+ * プールの構築結果。`ok=false` は **キャッシュしてはいけない失敗**（次のリクエストで再試行する）。
  *
  * 🔴 `ok` は「`index.json` が読めたか」ではなく **「シャードを 1 本でも読めたか」** で決める。
  * 入口だけ読めてシャードが全滅した状態を成功として singleton promise に固定すると、
@@ -110,14 +126,23 @@ type PoolBuild = {
 }
 
 /**
- * モジュールスコープの singleton promise。isolate の生存期間だけ生き、リクエストをまたいで共有される。
+ * モジュールスコープの singleton promise（第 1 段）。isolate の生存期間だけ生き、
+ * リクエストをまたいで共有される。
  * 🔴 ここを instance フィールドにすると、リクエストごとに索引を作り直して `D-38` の前提が崩れる。
  */
 let cachedPool: Promise<GemPool> | undefined
 
-/** テスト用: モジュールスコープの singleton promise を捨てる。 */
+/**
+ * モジュールスコープの singleton promise（第 2 段）。**どのプールから作ったか** を一緒に持つ。
+ * 🔴 プールが作り直された（失敗後の再試行で別インスタンスになった）ときに古い検索インデックスを
+ * 使い回さないための同一性チェック用。
+ */
+let cachedSearchIndex: { readonly pool: GemPool; readonly index: Promise<SearchIndex> } | undefined
+
+/** テスト用: モジュールスコープの singleton promise を **両段とも** 捨てる。 */
 export function resetGemIndexCacheForTest(): void {
   cachedPool = undefined
+  cachedSearchIndex = undefined
 }
 
 export class StaticGemIndex implements GemIndexPort {
@@ -127,6 +152,10 @@ export class StaticGemIndex implements GemIndexPort {
    */
   constructor(private readonly reader?: AssetReader) {}
 
+  /**
+   * 🔵 **第 1 段だけで応答する**（トークン計算も並べ替えもしない）。検索結果ページの
+   * Gem バッジはこの経路しか使わないため、一覧専用のコストを払わせない。
+   */
   async lookup(repositoryFullNames: readonly string[]): Promise<ReadonlyMap<string, GemIndex>> {
     const pool = await this.pool()
     const found = new Map<string, GemIndex>()
@@ -139,11 +168,11 @@ export class StaticGemIndex implements GemIndexPort {
         continue
       }
       // 照合は索引側の正規化（小文字）に合わせる。返り値のキーは **入力の綴りのまま**。
-      const record = pool.byRepo.get(name.toLowerCase())
-      if (record === undefined) {
+      const entry = pool.byRepo.get(name.toLowerCase())
+      if (entry === undefined) {
         continue
       }
-      found.set(name, record.gemIndex)
+      found.set(name, entry.gemIndex)
     }
     return found
   }
@@ -155,29 +184,37 @@ export class StaticGemIndex implements GemIndexPort {
    * 全件が Gem なので Gem Index 順ソートが成立する」と定めた形）。
    * 🔵 **全語 AND → 0 件なら最も選択的な 1 語へ緩和**（`D-37`）。`image processing` のような
    * 概念語は AND では 1 件しかヒットしない実測があるため、0 件で終わらせない。
+   * 🔵 初回呼び出しでだけ検索インデックス（第 2 段）を作る。2 回目以降は参照するだけ。
    */
   async search(input: GemPoolSearchInput): Promise<GemPoolSearchResult> {
     const pool = await this.pool()
-    const tokens = normalizeTokens(input.tokens)
 
     // 🔴 読み込み失敗（プールが空）は `GemIndexPort#search` の契約どおり
     //    「`usedTokens: []` / `relaxed: false` の空結果」にする（緩和も試みない）。
-    if (pool.records.length === 0) {
-      return { items: [], totalCount: 0, usedTokens: [], relaxed: false, meta: pool.meta }
+    //    ここで打ち切ることで、失敗時に無駄な検索インデックス構築も走らせない。
+    if (pool.byRepo.size === 0) {
+      return emptyResult(pool.meta)
     }
 
-    let matched: readonly GemPoolRecord[]
+    const { records } = await searchIndex(pool)
+    if (records.length === 0) {
+      // 検索インデックスの構築に失敗した場合（`lookup` は上のとおり生きている）。
+      return emptyResult(pool.meta)
+    }
+
+    const tokens = normalizeTokens(input.tokens)
+    let matched: readonly SearchRecord[]
     let usedTokens: readonly string[] = tokens
     let relaxed = false
 
     if (tokens.length === 0) {
       // 検索語なし = 絞り込みなし（プール全件を Gem Index 順に見せる）。
-      matched = pool.records
+      matched = records
     } else {
-      matched = pool.records.filter((record) => matchesAllTokens(record.tokens, tokens))
+      matched = records.filter((record) => matchesAllTokens(record.tokens, tokens))
       // 🔵 `D-37`: 全語 AND が 0 件のときだけ「最も選択的な 1 語」へ緩める。
       if (matched.length === 0) {
-        const fallbackToken = selectMostSelectiveToken(countSingleTokenHits(pool.records, tokens))
+        const fallbackToken = selectMostSelectiveToken(countSingleTokenHits(records, tokens))
         if (fallbackToken === null) {
           // 🔴 どの語も単独で 1 件もヒットしない = **緩和は起きていない**（試みただけ）。
           //    ここで `relaxed: true` を返すと UI が「『{usedTokens[0]}』だけで絞り込んだ」と
@@ -185,21 +222,21 @@ export class StaticGemIndex implements GemIndexPort {
           usedTokens = []
         } else {
           const single: readonly string[] = [fallbackToken]
-          matched = pool.records.filter((record) => matchesAllTokens(record.tokens, single))
+          matched = records.filter((record) => matchesAllTokens(record.tokens, single))
           usedTokens = single
           relaxed = true
         }
       }
     }
 
-    // `records` は cold start で並べ替え済みなので、絞り込み結果は既に
+    // `records` は検索インデックス構築時に並べ替え済みなので、絞り込み結果は既に
     // 「`gemIndex` 昇順・同値は `repositoryFullName` 昇順」を保っている（ここで並べ替えない）。
     const perPage = positiveIntOr(input.perPage, DEFAULT_PER_PAGE)
     const page = positiveIntOr(input.page, 1)
     const start = (page - 1) * perPage
 
     return {
-      items: matched.slice(start, start + perPage).map(toEntry),
+      items: matched.slice(start, start + perPage).map((record) => toEntry(record.entry)),
       totalCount: matched.length,
       usedTokens,
       relaxed,
@@ -207,7 +244,7 @@ export class StaticGemIndex implements GemIndexPort {
     }
   }
 
-  /** singleton promise を返す（未構築なら構築を開始する）。 */
+  /** 第 1 段の singleton promise を返す（未構築なら構築を開始する）。 */
   private pool(): Promise<GemPool> {
     const cached = cachedPool
     if (cached !== undefined) {
@@ -218,12 +255,12 @@ export class StaticGemIndex implements GemIndexPort {
       (build) => {
         if (!build.ok) {
           // 失敗はキャッシュしない（次のリクエストで再試行できるようにする）。
-          forget(pending)
+          forgetPool(pending)
         }
         return build.pool
       },
       (error: unknown) => {
-        forget(pending)
+        forgetPool(pending)
         warn(`候補プールの初期化に失敗しました: ${describe(error)}`)
         return EMPTY_POOL
       },
@@ -239,27 +276,74 @@ export class StaticGemIndex implements GemIndexPort {
 }
 
 /** 自分が置いた Promise だけを取り下げる（別の構築が既に始まっていたらそれを壊さない）。 */
-function forget(pending: Promise<GemPool>): void {
+function forgetPool(pending: Promise<GemPool>): void {
   if (cachedPool === pending) {
     cachedPool = undefined
   }
 }
 
-/** 内部の派生値（`tokens` / `lowerName`）を落として、外へ出す形に写す。 */
-function toEntry(record: GemPoolRecord): GemPoolEntry {
+function forgetSearchIndex(pending: Promise<SearchIndex>): void {
+  if (cachedSearchIndex?.index === pending) {
+    cachedSearchIndex = undefined
+  }
+}
+
+/**
+ * 第 2 段（検索インデックス）の singleton promise を返す。
+ *
+ * 🔴 **`search()` からしか呼ばない**（`lookup` には tokenize も並べ替えも要らない）。
+ * 🔴 失敗した Promise はキャッシュしない（第 1 段と同じ扱い）。失敗しても `lookup` は生きる。
+ */
+function searchIndex(pool: GemPool): Promise<SearchIndex> {
+  const cached = cachedSearchIndex
+  // プールが作り直されていたら（失敗後の再試行等）、古いインデックスは捨てて作り直す。
+  if (cached !== undefined && cached.pool === pool) {
+    return cached.index
+  }
+
+  const pending: Promise<SearchIndex> = buildSearchIndex(pool).catch((error: unknown) => {
+    forgetSearchIndex(pending)
+    warn(`検索インデックスの構築に失敗しました: ${describe(error)}`)
+    return EMPTY_SEARCH_INDEX
+  })
+  cachedSearchIndex = { pool, index: pending }
+  return pending
+}
+
+/**
+ * プールから検索インデックスを作る（**初回の `search()` で 1 回だけ**）。
+ *
+ * ⚠️ 実測（62,483 件）: tokenize 約 91ms + 並べ替え約 31ms。ここが一覧専用のコストであり、
+ * cold start に置かない理由（本ファイル冒頭の 2 段構成を参照）。
+ */
+async function buildSearchIndex(pool: GemPool): Promise<SearchIndex> {
+  const records: SearchRecord[] = []
+  for (const entry of pool.byRepo.values()) {
+    records.push({ entry, tokens: mergeTokens(entry.lowerName, entry.packageName) })
+  }
+  records.sort(compareRecords)
+  return { records }
+}
+
+function emptyResult(meta: DigestMeta): GemPoolSearchResult {
+  return { items: [], totalCount: 0, usedTokens: [], relaxed: false, meta }
+}
+
+/** 内部の派生値（`lowerName`）を落として、外へ出す形に写す。 */
+function toEntry(entry: PoolEntry): GemPoolEntry {
   return {
-    packageName: record.packageName,
-    repositoryFullName: record.repositoryFullName,
-    dependentCount: record.dependentCount,
-    stars: record.stars,
-    gemIndex: record.gemIndex,
-    registry: record.registry,
+    packageName: entry.packageName,
+    repositoryFullName: entry.repositoryFullName,
+    dependentCount: entry.dependentCount,
+    stars: entry.stars,
+    gemIndex: entry.gemIndex,
+    registry: entry.registry,
   }
 }
 
 /** 各トークンが **単独で** 何件に当たるかを 1 パスで数える（0 件の語は候補から外す）。 */
 function countSingleTokenHits(
-  records: readonly GemPoolRecord[],
+  records: readonly SearchRecord[],
   tokens: readonly string[],
 ): ReadonlyMap<string, number> {
   const singles = tokens.map((token) => [token, [token] as readonly string[]] as const)
@@ -304,7 +388,7 @@ function positiveIntOr(value: number, fallback: number): number {
   return floored >= 1 ? floored : fallback
 }
 
-/** `index.json` → 各シャードを並列取得 → 単一の索引にマージする。 */
+/** `index.json` → 各シャードを並列取得 → 単一のプールにマージする。 */
 async function buildPool(read: AssetReader): Promise<PoolBuild> {
   const indexRaw = await read(INDEX_PATH)
   if (indexRaw === null) {
@@ -314,11 +398,10 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
 
   const index = tryParseJson(indexRaw, INDEX_PATH)
   const meta = parseMeta(isObject(index) ? index.meta : undefined)
-  const emptyWithMeta: PoolBuild = { pool: { ...EMPTY_POOL, meta }, ok: false }
 
   if (!isObject(index) || !Array.isArray(index.shards)) {
     warn(`${INDEX_PATH} の shards が配列ではありません。Gem バッジ・Gem 一覧なしで継続します。`)
-    return emptyWithMeta
+    return { pool: { ...EMPTY_POOL, meta }, ok: false }
   }
 
   const fileNames = index.shards
@@ -327,23 +410,21 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
 
   // 🔵 `D-38`: cold start で全シャードを **並列**（`Promise.all`）に取得する。
   const shards = await Promise.all(fileNames.map((fileName) => loadShard(read, fileName)))
-  const loaded = shards.filter((shard): shard is readonly GemPoolRecord[] => shard !== null)
+  const loaded = shards.filter((shard): shard is readonly PoolEntry[] => shard !== null)
 
-  const byRepo = new Map<string, GemPoolRecord>()
+  const byRepo = new Map<string, PoolEntry>()
   for (const shard of loaded) {
-    for (const record of shard) {
-      const current = byRepo.get(record.lowerName)
+    for (const entry of shard) {
+      const current = byRepo.get(entry.lowerName)
       // 同一リポジトリが複数レジストリに出る場合は **値が小さい方（より過小評価）** を採る。
       // シャードの読み込み順に依存しない決定論的な選択にするための規則。
-      if (current === undefined || record.gemIndex < current.gemIndex) {
-        byRepo.set(record.lowerName, record)
+      if (current === undefined || entry.gemIndex < current.gemIndex) {
+        byRepo.set(entry.lowerName, entry)
       }
     }
   }
 
-  // 🔴 並べ替えは cold start の 1 回だけ（`gemIndex` 昇順 → 同値は `lowerName` 昇順）。
-  const records = [...byRepo.values()].sort(compareRecords)
-  const pool: GemPool = { records, byRepo, meta }
+  const pool: GemPool = { byRepo, meta }
 
   // 全滅（1 本も読めなかった）のときだけ失敗扱いにして再試行対象にする。部分成功はキャッシュする。
   if (loaded.length === 0) {
@@ -360,23 +441,24 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
  * 一覧の並び順（決定論）。`gemIndex` 昇順（小さいほど過小評価が強い＝上位）、
  * 同値は小文字化した `repositoryFullName` 昇順。
  */
-function compareRecords(a: GemPoolRecord, b: GemPoolRecord): number {
-  const diff = gemIndexValue(a.gemIndex) - gemIndexValue(b.gemIndex)
+function compareRecords(a: SearchRecord, b: SearchRecord): number {
+  const diff = gemIndexValue(a.entry.gemIndex) - gemIndexValue(b.entry.gemIndex)
   if (diff !== 0) {
     return diff
   }
-  return a.lowerName < b.lowerName ? -1 : a.lowerName > b.lowerName ? 1 : 0
+  return a.entry.lowerName < b.entry.lowerName ? -1 : a.entry.lowerName > b.entry.lowerName ? 1 : 0
 }
 
 /**
- * 1 シャードを読んでレコード配列にする。
+ * 1 シャードを読んでプールのエントリ配列にする。
  * 🔴 **読めなかった場合は `null`**（空配列と区別する）。呼び出し側が「全滅か部分成功か」を
  * 判定できなくなるため、失敗を空配列に潰さない。
+ * 🔵 ここでは **tokenize しない**（`search` が来なければ不要なコストのため・第 2 段へ回す）。
  */
 async function loadShard(
   read: AssetReader,
   fileName: string,
-): Promise<readonly GemPoolRecord[] | null> {
+): Promise<readonly PoolEntry[] | null> {
   const path = `${GEM_INDEX_DIR}/${fileName}`
   const raw = await read(path)
   if (raw === null) {
@@ -423,7 +505,7 @@ async function loadShard(
     )
   }
 
-  const records: GemPoolRecord[] = []
+  const entries: PoolEntry[] = []
   for (const entry of shard.entries) {
     if (!Array.isArray(entry)) {
       continue
@@ -438,30 +520,25 @@ async function loadShard(
       continue
     }
 
-    const packageName = stringAt(entry, packageIndex)
-    const lowerName = fullName.toLowerCase()
-    records.push({
-      packageName,
+    entries.push({
+      packageName: stringAt(entry, packageIndex),
       repositoryFullName: fullName,
       dependentCount: finiteAt(entry, dependentIndex),
       stars: finiteAt(entry, starsIndex),
       gemIndex: gemIndex(value),
       registry,
-      // 🔴 照合用トークンは cold start で 1 回だけ計算する（リクエストごとに全件を
-      //    tokenize し直すと `limits.cpu_ms` を食う）。repo 名とパッケージ名の和集合。
-      tokens: mergeTokens(lowerName, packageName),
-      lowerName,
+      lowerName: fullName.toLowerCase(),
     })
   }
-  return records
+  return entries
 }
 
 /**
  * `repositoryFullName` と `packageName` の単語を重複なく 1 本の配列に畳む。
  *
- * ⚠️ **`Set` を使わない**（実測・62,483 件の cold start で `Set` 版 69.5ms → 配列版 48.8ms）。
+ * ⚠️ **`Set` を使わない**（実測・62,483 件の構築で `Set` 版 69.5ms → 配列版 48.8ms）。
  * 1 件あたりのトークンは平均 3.4 語しかなく、この規模では `Array#includes` の線形探索の方が
- * `Set` の確保・反復・配列化より速い。cold start は `limits.cpu_ms` に直接効くため、
+ * `Set` の確保・反復・配列化より速い。検索インデックス構築は CPU 予算に直接効くため、
  * 「小さい集合には素の配列」を意図して選んでいる（可読性ではなく実測に基づく選択）。
  */
 function mergeTokens(repositoryFullName: string, packageName: string): readonly string[] {

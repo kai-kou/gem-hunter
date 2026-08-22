@@ -118,9 +118,11 @@ export default async function GemListPage({
    * `null` は下で「絞り込み結果なし」と同じ空表示に倒れる（出典メタデータを取れないため
    * `GemList` は描画せず、文言だけを出す）。
    */
-  const result = await searchGemsUseCase()({ query: rawQuery, page, perPage: DEFAULT_PER_PAGE }).catch(
-    () => null,
-  )
+  const result = await searchGemsUseCase()({
+    query: rawQuery,
+    page,
+    perPage: DEFAULT_PER_PAGE,
+  }).catch(() => null)
 
   return (
     <>

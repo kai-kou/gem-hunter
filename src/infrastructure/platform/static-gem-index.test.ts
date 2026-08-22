@@ -14,7 +14,7 @@ import { StaticGemIndex, resetGemIndexCacheForTest } from './static-gem-index'
  * warm のリクエストで再 tokenize していると、62,483 件 × リクエスト数だけ CPU を食う。
  * ⚠️ `vi.fn` ではなく素の関数でラップする（`vi.restoreAllMocks()` に実装を消されないため）。
  */
-const tokenize = vi.hoisted(() => ({ calls: 0 }))
+const tokenize = vi.hoisted(() => ({ calls: 0, fail: false }))
 
 vi.mock('../../domain/model/gem-keyword', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../domain/model/gem-keyword')>()
@@ -22,6 +22,10 @@ vi.mock('../../domain/model/gem-keyword', async (importOriginal) => {
     ...actual,
     tokenizeIdentifier: (value: string) => {
       tokenize.calls += 1
+      if (tokenize.fail) {
+        // 検索インデックス（第 2 段）の構築失敗を再現するための注入。
+        throw new Error('tokenize boom')
+      }
       return actual.tokenizeIdentifier(value)
     },
   }
@@ -80,6 +84,7 @@ describe('StaticGemIndex', () => {
   beforeEach(() => {
     resetGemIndexCacheForTest()
     tokenize.calls = 0
+    tokenize.fail = false
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
@@ -369,6 +374,7 @@ describe('StaticGemIndex#search', () => {
   beforeEach(() => {
     resetGemIndexCacheForTest()
     tokenize.calls = 0
+    tokenize.fail = false
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
@@ -581,19 +587,103 @@ describe('StaticGemIndex#search', () => {
     expect(result.items[0]!.registry).toBe('pypi.org')
   })
 
-  it('照合用トークンは cold start で 1 回だけ計算する（warm の search で再 tokenize しない）', async () => {
+  it('照合用トークンは初回 search の 1 回だけ計算する（warm の search で再 tokenize しない）', async () => {
     const reader = stubReader(searchFiles)
     const port = new StaticGemIndex(reader)
 
     await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
-    const afterColdStart = tokenize.calls
-    expect(afterColdStart).toBeGreaterThan(0)
+    const afterFirstSearch = tokenize.calls
+    expect(afterFirstSearch).toBeGreaterThan(0)
 
     await port.search({ tokens: ['client'], page: 1, perPage: 10 })
     await port.search({ tokens: ['image', 'client'], page: 1, perPage: 10 })
 
-    expect(tokenize.calls).toBe(afterColdStart)
+    expect(tokenize.calls).toBe(afterFirstSearch)
     expect(reader.calls).toHaveLength(3) // index.json + シャード 2 本（取得も 1 セットだけ）
+  })
+
+  it('🔴 lookup だけを呼んだときは tokenize を一度も走らせない（一覧専用コストの遅延化）', async () => {
+    const reader = stubReader(searchFiles)
+    const port = new StaticGemIndex(reader)
+
+    await port.lookup(['acme/orm-core'])
+    await port.lookup(['delta/solo'])
+
+    // 検索インデックス（tokenize + 並べ替え・実測で約 122ms）は search が来るまで作らない。
+    expect(tokenize.calls).toBe(0)
+    expect(reader.calls).toHaveLength(3) // プール（第 1 段）は作られている
+  })
+
+  it('lookup の後に search しても検索インデックスの構築は 1 回だけ', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    await port.lookup(['acme/orm-core'])
+    expect(tokenize.calls).toBe(0)
+
+    await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const afterFirstSearch = tokenize.calls
+    await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+
+    expect(afterFirstSearch).toBeGreaterThan(0)
+    expect(tokenize.calls).toBe(afterFirstSearch)
+  })
+
+  it('並行に search しても検索インデックスは 1 回しか作らない（第 2 段も singleton）', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+    const serial = new StaticGemIndex(stubReader(searchFiles))
+
+    // 直列 1 回分の tokenize 回数を基準にする。
+    await serial.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const oneBuild = tokenize.calls
+    resetGemIndexCacheForTest()
+    tokenize.calls = 0
+
+    const [first, second] = await Promise.all([
+      port.search({ tokens: ['orm'], page: 1, perPage: 10 }),
+      port.search({ tokens: ['client'], page: 1, perPage: 10 }),
+    ])
+
+    expect(tokenize.calls).toBe(oneBuild) // 2 本走っても構築は 1 回
+    expect(first.totalCount).toBe(2)
+    expect(second.totalCount).toBe(2)
+  })
+
+  it('インスタンスが別でも検索インデックスの singleton を共有する', async () => {
+    const reader = stubReader(searchFiles)
+
+    await new StaticGemIndex(reader).search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const afterFirst = tokenize.calls
+    await new StaticGemIndex(reader).search({ tokens: ['client'], page: 1, perPage: 10 })
+
+    expect(tokenize.calls).toBe(afterFirst)
+  })
+
+  it('🔴 検索インデックスの構築が失敗しても lookup は従来どおり動く（段が独立している）', async () => {
+    const reader = stubReader(searchFiles)
+    const port = new StaticGemIndex(reader)
+    tokenize.fail = true
+
+    const result = await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+    const found = await port.lookup(['acme/orm-core', 'delta/solo'])
+
+    expect(result.items).toEqual([])
+    expect(result.totalCount).toBe(0)
+    expect(result.meta).toEqual(POOL_META) // プール（第 1 段）は生きているので出典は返せる
+    expect(found.size).toBe(2)
+    expect(gemIndexValue(found.get('acme/orm-core')!)).toBe(-70)
+  })
+
+  it('検索インデックスの構築に失敗した Promise はキャッシュしない（次の search で再試行して成功する）', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+    tokenize.fail = true
+
+    expect((await port.search({ tokens: ['orm'], page: 1, perPage: 10 })).totalCount).toBe(0)
+
+    tokenize.fail = false
+    const retried = await port.search({ tokens: ['orm'], page: 1, perPage: 10 })
+
+    expect(retried.totalCount).toBe(2)
+    expect(names(retried.items)).toEqual(['acme/orm-core', 'beta/orm-client'])
   })
 
   it('lookup と search は同じ 1 回の読み込み・parse を共有する（アセットを増やさない）', async () => {

@@ -212,9 +212,7 @@ test('SP-19: ヒットしない検索語では母集団を明示した空状態�
 
   await test.step('検索へ戻る導線がある', async () => {
     await page.getByRole('link', { name: ja.gems.backToSearch }).click()
-    await expect(page).toHaveURL(
-      new RegExp(`/ja\\?${SEARCH_PARAM_KEYS.keyword}=${MISS_QUERY}$`),
-    )
+    await expect(page).toHaveURL(new RegExp(`/ja\\?${SEARCH_PARAM_KEYS.keyword}=${MISS_QUERY}$`))
   })
 })
 
