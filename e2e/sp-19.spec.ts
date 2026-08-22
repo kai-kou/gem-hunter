@@ -53,8 +53,45 @@ const MISS_QUERY = 'zzgemhunterzz'
  */
 const UNMATCHABLE_QUERY = '画像処理'
 
+/**
+ * 全語 AND では 0 件だが 1 語なら当たる検索語（`D-37` の緩和経路）。実データで
+ * `kafka` 33 件 / `zzgemhunterzz` 0 件・AND 0 件を実測しているため、必ず `kafka` へ緩和される。
+ */
+const RELAXED_QUERY = `${HIT_QUERY} ${MISS_QUERY}`
+
+/**
+ * 1,000 件（GitHub 検索 API の到達上限）を超えるヒット数になる検索語。実データを実装と同じ
+ * `tokenizeIdentifier` で数え直すと `core` は 1,631 件で、旧実装（`tryPageNumber` の 50 ページ
+ * 上限）では 631 件が到達不能だった（F-02）。
+ */
+const OVER_API_LIMIT_QUERY = 'core'
+
+/** スタブ（`e2e/stub/server.mjs`）が検索結果 0 件を返すキーワード。 */
+const ZERO_HITS_QUERY = 'zero-hits'
+
 /** Gem 一覧の 1 ページあたり表示件数（`app/[locale]/gems/page.tsx` が `DEFAULT_PER_PAGE` 固定）。 */
 const PER_PAGE = 20
+
+/**
+ * ページ送り後にフォーカスを受け取る見出しの `id`（正本は `src/ui/gem-list.tsx` の
+ * `GEM_LIST_HEADING_ID`）。E2E は Node 側で動くため、`next/link` を持つコンポーネント
+ * モジュールを読み込まずに済むよう値だけを写す。
+ */
+const GEM_LIST_HEADING_ID = 'gems-heading'
+
+/**
+ * 🔴 出典表示の期待値は **配信データそのもの**（`public/data/gem-index/index.json`）から作る。
+ * ハードコードすると `parseMeta` を `return FALLBACK_META` に退化させても（＝配信データの帰属
+ * 情報を一切読まなくても）E2E が緑のままになる（F-37）。
+ */
+const poolMeta = JSON.parse(
+  readFileSync(path.join(process.cwd(), 'public/data/gem-index/index.json'), 'utf8'),
+).meta as {
+  source: string
+  sourceUrl: string
+  license: string
+  sourceLicenseUrl: string
+}
 
 /** Gem 一覧（ページ内で唯一の list ロール。ヘッダー・ページネーションは `nav`）。 */
 function gemList(page: Page): Locator {
@@ -81,6 +118,33 @@ async function readGemIndexes(page: Page): Promise<number[]> {
     )
     return parsed
   })
+}
+
+/**
+ * 総件数表示（`gems.totalCount` = `{count} 件`）から件数を読む。ロケール桁区切りを外して数値化する。
+ */
+async function readTotalCount(page: Page): Promise<number> {
+  const text = await page
+    .getByText(/^[\d,]+ 件$/)
+    .first()
+    .innerText()
+  const parsed = Number(text.replace(/[^\d]/g, ''))
+  expect(Number.isFinite(parsed), `総件数を読めなかった: ${JSON.stringify(text)}`).toBe(true)
+  return parsed
+}
+
+/**
+ * 出典表示（`D-29` / `GR-6`）が **配信データの帰属情報** で描画されていることを見る（F-37）。
+ * リンクのテキストだけでなく `href` も配信データと突き合わせる。
+ */
+async function expectAttributionFromPoolData(page: Page): Promise<void> {
+  const sourceLink = page.getByRole('link', { name: poolMeta.source })
+  await expect(sourceLink).toBeVisible()
+  await expect(sourceLink).toHaveAttribute('href', poolMeta.sourceUrl)
+
+  const licenseLink = page.getByRole('link', { name: poolMeta.license })
+  await expect(licenseLink).toBeVisible()
+  await expect(licenseLink).toHaveAttribute('href', poolMeta.sourceLicenseUrl)
 }
 
 /** 表示順のままリポジトリ名（`owner/repo`）を読み出す。 */
