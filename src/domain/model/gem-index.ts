@@ -6,7 +6,7 @@ import { DomainValidationError } from '../errors'
  * 使い、健全性（`criticality_score` / Scorecard）とは 1 つのスコアに合算しない（`ADR 0009` §2.2）。
  *
  * ブランド型 + スマートコンストラクタ（`domain-model.md` §4）。値そのものは算出済みの数値を
- * 運ぶだけで、算出（rankings → 差）は `computeGemIndex` が行う。
+ * 運ぶだけで、算出（パーセンタイル順位 → 差）は `computeGemIndex` が行う。
  */
 
 declare const brand: unique symbol
@@ -29,7 +29,14 @@ export function gemIndexValue(value: GemIndex): number {
 }
 
 /**
- * Ecosyste.ms の `rankings`（パーセンタイル順位・0〜100・**0 が最上位**）から Gem Index を算出する。
+ * パーセンタイル順位（0〜100・**0 が最上位**）の差から Gem Index を算出する。
+ *
+ * 🔴 **母集団は呼び出し側が定める**（本関数は与えられた順位の差を取るだけで、母集団を知らない）。
+ * production の値は Ecosyste.ms の `rankings`（レジストリ全体の順位）**ではなく**、
+ * `tools/gem-pool/pipeline.mjs` が **レジストリ別・被依存数上位 15,000 件の自前プール内**で
+ * 再計算した順位から求める（`D-37` (1) のレジストリ別成層化）。
+ * ⚠️ **母集団が変われば同じパッケージの値も変わる**（絶対的な指標ではない）。閾値でバッジを
+ * 出す実装（`SP-18`）や順位を見せる実装（`SP-19`）は、値をプール横断の絶対値として扱わない。
  *
  * - `dependentRank`: 被依存数の順位（値が小さいほど実利用が多い＝上位）
  * - `starRank`:      star の順位（値が小さいほど注目度が高い＝上位）
