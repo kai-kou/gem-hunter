@@ -2,17 +2,17 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import {
-  getRepositoryDetailUseCase,
-  getRepositoryReadmeUseCase,
-} from '@/src/composition/container'
+import { getRepositoryDetailUseCase, getRepositoryReadmeUseCase } from '@/src/composition/container'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
+import { DEFAULT_PER_PAGE } from '@/src/domain/model/per-page'
+import { DEFAULT_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { getMessages } from '@/src/shared/i18n/messages'
 import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
-import { parseSearchParams, type RawSearchParams } from '@/src/ui/url/search-params'
+import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
 import { BackLink } from '@/src/ui/back-link'
+import { GEM_LIST_SOURCE_PARAM_KEY, GEM_LIST_SOURCE_PARAM_VALUE } from '@/src/ui/gem-list'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { ReadmeSection, ReadmeStatusText } from '@/src/ui/readme-section'
 import { RepositoryDetail } from '@/src/ui/repository-detail'
@@ -55,7 +55,30 @@ export default async function RepositoryDetailPage({
 
   const rawSearchParams = await searchParams
   const searchState = parseSearchParams(rawSearchParams)
-  const backHref = buildSearchUrl(`/${locale}`, searchState)
+  /**
+   * SP-19: どの一覧から来たかで戻り先を変える（`user-story-map.md` §5.3 `SP-19` 操作レビュー
+   * 手順 4「一覧から詳細へ入り、戻ると一覧の状態（検索語・ページ）が保たれている」）。
+   *
+   * 🔴 **既定の挙動は変えない**。`from` が **既知の値と完全一致** したときだけ Gem 一覧
+   * （`/{locale}/gems`）へ戻す。未知の値・空・配列（同名クエリの重複指定）はすべて従来どおり
+   * 検索結果一覧（`/{locale}`）へ倒す（`from` は URL 由来の外部入力なので許可リスト方式にする）。
+   * 🔵 `q` / `page` の検証規則は据え置き（`parseSearchParams` / `tryPageNumber`）。ただし Gem 一覧の
+   * 検索語は **生値** を使う: 一覧側の照合は `tokenizeQuery`（`D-37`）であり、検索キーワードの
+   * 不変条件（修飾子の排除等）に縛られない。`parseSearchParams` の丸めを通すと、そこで弾かれる
+   * 語で開いた一覧へ戻れなくなる。
+   */
+  const rawFrom = rawSearchParams[GEM_LIST_SOURCE_PARAM_KEY]
+  const cameFromGemList = !Array.isArray(rawFrom) && rawFrom === GEM_LIST_SOURCE_PARAM_VALUE
+  const backHref = cameFromGemList
+    ? buildSearchUrl(`/${locale}/gems`, {
+        keyword: rawKeywordOf(rawSearchParams),
+        page: searchState.page,
+        sort: DEFAULT_SORT_ORDER,
+        perPage: DEFAULT_PER_PAGE,
+      })
+    : buildSearchUrl(`/${locale}`, searchState)
+  /** 戻り先が変わるならラベルも変える（「一覧へ戻る」だけではどちらの一覧か分からない）。 */
+  const backLinkLabel = cameFromGemList ? messages.detail.backToGemList : messages.detail.backLink
   /**
    * 自分自身の URL（再試行・言語切替の行き先）。
    *
@@ -63,9 +86,15 @@ export default async function RepositoryDetailPage({
    * 「一覧へ戻る」が 1 ページ目・既定ソートに戻り `SP-7` の成果を壊す）。
    * 🔴 `owner` / `repo` は Next.js が decodeURIComponent 済みで渡すため、URL へ戻すときは
    * 必ず再エンコードする（`..` や `/` を含む値を踏ませたときに行き先がずれるのを防ぐ）。
+   * 🔴 SP-19: 出所マーカー（`from=gems`）も落とさない。落とすと言語切替・再試行を挟んだ瞬間に
+   * 「Gem 一覧へ戻る」が検索結果一覧へすり替わる（上と同じ理由）。値は本ファイルが import した
+   * 定数そのもので、外部入力をそのまま連結しない。
    */
   const detailPath = `/${locale}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
-  const currentPath = buildSearchUrl(detailPath, searchState)
+  const detailUrlWithSearchState = buildSearchUrl(detailPath, searchState)
+  const currentPath = cameFromGemList
+    ? `${detailUrlWithSearchState}${detailUrlWithSearchState.includes('?') ? '&' : '?'}${GEM_LIST_SOURCE_PARAM_KEY}=${GEM_LIST_SOURCE_PARAM_VALUE}`
+    : detailUrlWithSearchState
 
   const accessToken = await getSessionAccessToken()
   const showAuthLink = isAuthConfigured()
@@ -125,11 +154,7 @@ export default async function RepositoryDetailPage({
             />
             {/* 失敗しても行き止まりにしない（一覧へ戻れる・not-found.tsx と同じ導線）。 */}
             <div className="mt-6">
-              <BackLink
-                locale={locale}
-                labels={{ backLink: messages.detail.backLink }}
-                href={backHref}
-              />
+              <BackLink locale={locale} labels={{ backLink: backLinkLabel }} href={backHref} />
             </div>
           </main>
         </>
@@ -165,7 +190,7 @@ export default async function RepositoryDetailPage({
         <RepositoryDetail
           repository={repository}
           labels={{
-            backLink: messages.detail.backLink,
+            backLink: backLinkLabel,
             language: messages.detail.language,
             starCount: messages.detail.starCount,
             watcherCount: messages.detail.watcherCount,

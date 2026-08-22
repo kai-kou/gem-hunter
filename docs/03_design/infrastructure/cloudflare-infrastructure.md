@@ -145,7 +145,7 @@ flowchart TB
   "preview_urls": true,
   "cache": { "enabled": true },
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
-  "limits": { "cpu_ms": 200 },
+  "limits": { "cpu_ms": 300 },
   "ratelimits": [
     { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
   ]
@@ -155,6 +155,7 @@ flowchart TB
 - `preview_urls` は 2025-09-17 以降 opt-in。`workers_dev` を切るなら明示が必要
 - `limits.cpu_ms` は Free では意味を持たないが、**Paid へ上げた瞬間に denial-of-wallet 対策として効く** ため最初から書いておく
 - 🔴 **値は `SP-18`（#388）で 50 → 200 へ引き上げた**（`D-38` の `SP-18` 実測追記が正本）。理由は `D-38` のシャード配信で cold start の CPU が **約 81ms**（`JSON.parse` 39.9ms + `Map` 構築 40.7ms・ローカル実測）に達し、暫定 50ms では超過しうるため。超過時は **Error 1102**（`Worker exceeded resource limits` / invocation outcome `exceededCpu`）になる（1027 は Free の使用量到達による停止で Paid では出ない）。⚠️ Workers 上の p95 は未測定で、軽量アセット化（Issue #434）で締め直せる見込みがある
+- 🔴 **さらに `SP-19`（#389）で 200 → 300 へ引き上げた**（`D-38` の `SP-19` 実測追記が正本）。Gem 一覧は所属判定用の `Map` だけでなく **全レコード + 照合用トークン列** を同じ 1 回の parse から作るため、**一覧の初回リクエストが 237〜277ms**（ローカル実測・別プロセス 5 回）に達し 200ms では **Error 1102** になる。🔵 一覧専用のコスト（トークン計算 約 91ms + 並べ替え 約 31ms）は初回の一覧リクエストまで遅延させてあり、`SP-18` で出荷済みのバッジ経路（`lookup` のみ）は **96〜110ms**（`SP-18` 実装の同条件 84〜90ms に対し +約 14ms）に留まる。⚠️ 観測した最大 277ms に対して 300 の余裕は約 8% しかない（p95 は引き続き未測定）
 - `ratelimits` は **`wrangler.jsonc` の宣言だけで有効になる**（事前のリソース作成コマンドは不要）。`namespace_id` はアカウント内で一意な任意の識別子、`period` は **10 秒か 60 秒のみ**。⚠️ wrangler 4.36.0 以上が必要
 - ⚠️ `wrangler deploy` は設定ファイルを source of truth として扱う。**Dashboard で変えた設定は次回デプロイで巻き戻る**
 

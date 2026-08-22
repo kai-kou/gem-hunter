@@ -87,6 +87,7 @@
   },
   "detail": {
     "backLink": "Back to results",
+    "backToGemList": "Back to Gems",
     "language": "Language",
     "starCount": "stars",
     "watcherCount": "watchers",

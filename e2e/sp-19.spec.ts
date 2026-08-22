@@ -160,7 +160,7 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
     expect(firstPageIndexes[firstPageIndexes.length - 1]).toBeLessThanOrEqual(secondPageIndexes[0])
   })
 
-  await test.step('4. 一覧から詳細へ入り、戻ると一覧の状態（検索語・ページ）が保たれている', async () => {
+  await test.step('4. 一覧から詳細へ入り、画面の「戻る」で一覧の状態（検索語・ページ）が保たれている', async () => {
     const listUrl = page.url()
     const [firstFullName] = await readRepositoryFullNames(page)
     expect(firstFullName).not.toBe('')
@@ -174,14 +174,26 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
     expect(detailUrl.searchParams.get(SEARCH_PARAM_KEYS.keyword)).toBe(HIT_QUERY)
     expect(detailUrl.searchParams.get(SEARCH_PARAM_KEYS.page)).toBe('2')
 
-    // 🔵 「戻る」はブラウザバック。詳細画面の「一覧へ戻る」は **検索結果一覧**（`/{locale}`）
-    //    への導線であり、Gem 一覧へは戻らない（`from=gems` を解釈する詳細画面側の対応は
-    //    本スプリントのスコープ外・返り値で申し送り済み）。
-    await page.goBack()
+    // 🔴 主経路は **画面上の戻るリンク**（`SD-1`: レビュワーはリンクを開くだけで完走できる）。
+    //    Gem 一覧から来たときはラベルも「Gem 一覧へ戻る」に変わる（検索結果一覧と区別できる）。
+    await page.getByRole('link', { name: ja.detail.backToGemList }).click()
 
-    // 検索語（`q`）とページ（`page=2`）が保たれたまま同じ一覧に戻っている。
     await expect(page).toHaveURL(listUrl)
     await expect(page.getByRole('heading', { level: 2 })).toContainText(HIT_QUERY)
+    expect(await readRepositoryFullNames(page)).toContain(firstFullName)
+    expectAscending(await readGemIndexes(page))
+  })
+
+  await test.step('4-2. ブラウザバックでも同じ一覧・同じページに戻る（副経路の回帰）', async () => {
+    const listUrl = page.url()
+    const [firstFullName] = await readRepositoryFullNames(page)
+
+    await page.getByRole('link', { name: firstFullName, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp('/ja/repos/'))
+
+    await page.goBack()
+
+    await expect(page).toHaveURL(listUrl)
     expect(await readRepositoryFullNames(page)).toContain(firstFullName)
     expectAscending(await readGemIndexes(page))
   })
@@ -238,4 +250,25 @@ test('SP-19: 英語 UI でも同じ一覧が英語の文言で読める（en・E
   // 英語 UI に日本語の文言が混ざっていないこと（文言の取り違えの検出）。
   await expect(page.getByRole('link', { name: en.gems.backToSearch })).toBeVisible()
   await expect(page.getByText(ja.gems.backToSearch, { exact: true })).toHaveCount(0)
+})
+
+test('SP-19: from が無い / 未知の値のときは従来どおり検索結果一覧へ戻る（既定の挙動の回帰）', async ({
+  page,
+}) => {
+  const detailPath = '/ja/repos/octostub/octo-widgets'
+  const query = `${SEARCH_PARAM_KEYS.keyword}=octo&${SEARCH_PARAM_KEYS.page}=2`
+
+  await test.step('from が無い詳細ページ: ラベルは「一覧へ戻る」で、行き先は検索結果一覧', async () => {
+    await page.goto(`${detailPath}?${query}`)
+    await expect(page.getByRole('link', { name: ja.detail.backToGemList })).toHaveCount(0)
+    await page.getByRole('link', { name: ja.detail.backLink }).first().click()
+    await expect(page).toHaveURL(new RegExp(`/ja\\?.*${SEARCH_PARAM_KEYS.page}=2`))
+  })
+
+  await test.step('from が未知の値の詳細ページ: 許可リスト外なので既定（検索結果一覧）へ倒れる', async () => {
+    await page.goto(`${detailPath}?${query}&from=evil`)
+    await expect(page.getByRole('link', { name: ja.detail.backToGemList })).toHaveCount(0)
+    await page.getByRole('link', { name: ja.detail.backLink }).first().click()
+    await expect(page).toHaveURL(new RegExp(`/ja\\?.*${SEARCH_PARAM_KEYS.page}=2`))
+  })
 })

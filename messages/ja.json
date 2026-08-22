@@ -87,6 +87,7 @@
   },
   "detail": {
     "backLink": "一覧へ戻る",
+    "backToGemList": "Gem 一覧へ戻る",
     "language": "主要言語",
     "starCount": "star 数",
     "watcherCount": "watcher 数",
