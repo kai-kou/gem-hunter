@@ -2,7 +2,7 @@
 
 > **目的**: [`minimum-requirements.md`](./minimum-requirements.md)（第三者提供の与件・原文）に対して、現時点の実装が **最低限の与件をすべて満たしているか** を、実際のコード・テスト実行結果で 1 項目ずつ事実確認した記録。
 >
-> **検証日時**: 2026-08-22 08:5x JST / **検証コミット**: `c310e1f`（`main` 相当）/ **ブランチ**: `claude/minimum-requirements-checklist-98diee`
+> **検証日時**: 2026-08-22 08:47 JST（`npm test` 実行時刻を起点とする一連の検証） / **検証コミット**: `c310e1f`（`main` 相当）/ **ブランチ**: `claude/minimum-requirements-checklist-98diee`
 >
 > **判定記号**: ✅ 充足（実物で確認）/ ⚠️ 充足だが注記あり・または部分的 / ❌ 未充足
 >
@@ -18,10 +18,10 @@
 | 3. 機能要件（FR-1〜FR-7） | 7 | 0 | 0 |
 | 3.1 画面構成 | 8 | 0 | 0 |
 | 3.2 状態ごとの表示 | 4 | 1 | 0 |
-| 4. 非機能要件 | 12 | 2 | 0 |
+| 4. 非機能要件 | 11 | 2 | 0 |
 | 5. テスト要件 | 3 | 1 | 0 |
 | 6. ドキュメント要件 | 4 | 0 | 0 |
-| **合計** | **43** | **4** | **0** |
+| **合計** | **42** | **4** | **0** |
 
 **結論: 与件の機能要件・技術要件は全件充足しており、未充足（❌）はゼロ。** ただし以下 4 件に注記がある（詳細は各項）。
 
@@ -122,7 +122,7 @@
 
 | # | 要件（要約） | 判定 | 事実確認の根拠 |
 |---|---|---|---|
-| TS-1 | テストコードを記述する | ✅ | `npm test`（Vitest）→ **Test Files 67 passed / Tests 593 passed**（実行時間 35.84s・実行結果を確認済み）。E2E は `npm run test:e2e`（Playwright・21 spec ファイル / 88 テスト定義）→ `npm run check` 内で **PASS**（239 秒） |
+| TS-1 | テストコードを記述する | ✅ | `npm test`（Vitest）→ **Test Files 67 passed / Tests 593 passed**（実行時間 35.84s・実行結果を確認済み）。E2E は `npm run test:e2e`（Playwright・21 spec ファイル / 89 テスト。件数は `npx playwright test --list` の実測）→ `npm run check` 内で **PASS**（218 秒） |
 | TS-2 | 主要フロー（検索→一覧 / 一覧→詳細 / 読み込み中・0 件・エラー）を対象 | ✅ | 検索→一覧: `e2e/sp-1.spec.ts`（「SP-1: 検索して一覧が出る」）/ 一覧→詳細→戻る: `e2e/sp-3.spec.ts`（「SP-3: 詳細まで往復できる」）・`e2e/sp-7.spec.ts`（検索条件を保持した往復）/ 読み込み中・0 件: `e2e/sp-9-loading-empty.spec.ts` / エラー種別 5 ケース: `e2e/sp-9-errors.spec.ts` / 404: `e2e/sp-6-notfound.spec.ts`。ユニットでも `search-repositories.test.ts` `get-repository-detail.test.ts` `repository-list.test.tsx` `error-notice.test.tsx` 等が対応 |
 | TS-3 | 外部 API をモック化し、ネットワークに依存せず再現可能 | ✅ | ユニット・結合は **MSW 2**（`http.get('https://api.github.com/search/repositories', …)`）。E2E は Playwright がスタブ API + アプリを自動起動し外部ネットワークに出ない（README も明記）。`npm test` は環境変数ゼロで通る |
 | TS-4 | コマンド一つで実行でき、CI で自動実行できる状態 | ⚠️ | **コマンド一つは充足**（`npm test` / `npm run test:e2e` / まとめて `npm run check`）。**ただし現在この規模の CI が稼働していない**: `.github/workflows/` は **存在しない**（GitHub Actions がプラットフォーム側の制限で起動できず 2 本とも撤去・`D-23`）。代替の Workers Builds（`D-31`・`tools/workers_build_deploy.sh`）は **デプロイゲート + デプロイのみでテストを実行しない**。現状は各セッションが `npm run check` を実行し、結果表を PR 本文へ貼ることで機械的証跡としている |
@@ -166,7 +166,7 @@
 |---|---|
 | `node -p "require('./node_modules/next/package.json').version"` | `16.3.1` |
 | `npm test` | Test Files **67 passed** / Tests **593 passed**（35.84s） |
-| `npx playwright test`（`npm run check` 内） | **PASS**（239 秒・21 spec ファイル） |
+| `npx playwright test`（`npm run check` 内） | **PASS**（218 秒・21 spec ファイル / 89 テスト） |
 | `npx eslint`（`npm run check` 内） | **PASS**（8 秒） |
 | `npx tsc --noEmit`（同上） | **PASS**（8 秒） |
 | `python3 tools/check_architecture_boundaries.py`（同上） | **PASS** |
