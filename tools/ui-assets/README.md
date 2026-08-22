@@ -21,6 +21,7 @@ Issue #364）を `gpt-image-2` で生成し、配信用ファイルへ変換す�
 | `prompts/error-upstream.txt` | エラー種別: 上流（GitHub 等）障害の完成プロンプト |
 | `prompts/error-validation.txt` | エラー種別: 入力バリデーション不通過の完成プロンプト |
 | `to_web_assets.mjs` | 原寸 PNG → 配信用 WebP/PNG への変換スクリプト（`sharp` 使用） |
+| `build_favicon_ico.mjs` | `app/icon.png` → `app/favicon.ico`（複数サイズ内包）への変換スクリプト（`sharp` で PNG 化 + 自前 ICO コンテナ組み立て） |
 
 各 `prompts/*.txt` は共通スタイル段落（線幅・パレット・「文字なし」等の指定）+ アセット固有の
 モチーフ段落を連結した完成形で、**そのまま** `--prompt-file` に渡せる。
@@ -69,6 +70,9 @@ node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/logo.png \
   --out public/images/logo.webp --width 96 --format webp
 node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/logo.png \
   --out app/icon.png --width 256 --format png --colors 64
+# favicon.ico（16/32/48 の 3 サイズを内包する ICO）は app/icon.png から作る。
+# 画像を新規生成し直す必要はない（同じロゴの別サイズを ICO コンテナへ詰め直すだけ）。
+node tools/ui-assets/build_favicon_ico.mjs --in app/icon.png --out app/favicon.ico
 # hero-idle は 16:9 の広い画面で gpt-image-2 の微細ノイズが乗りやすく、素の webp 変換だと
 # 768px 幅で 60KB 超になり個別予算 30KB を超える。og-background と同じ「先に減色 PNG へ、
 # それを webp へ」の二段変換で 30KB 以内に収める。
@@ -111,6 +115,7 @@ done
 |---|---|---|---|---|
 | logo | 1024×1024・透過 | medium | `public/images/logo.webp` | 96px |
 | logo（同じ原寸から） | — | — | `app/icon.png`（PNG・透過） | 256px |
+| logo（`app/icon.png` から） | — | — | `app/favicon.ico`（ICO・透過・16/32/48 の 3 サイズ内包） | 16px / 32px / 48px |
 | hero-idle | 1536×864（16:9）・透過 | medium | `public/images/hero-idle.webp` | 768px |
 | loading | 1024×1024・透過 | medium | `public/images/loading.webp` | 256px |
 | empty-result | 1024×1024・透過 | medium | `public/images/empty-result.webp` | 256px |
