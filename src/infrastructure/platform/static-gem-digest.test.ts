@@ -34,13 +34,15 @@ describe('StaticGemDigest', () => {
     expect(meta.license).toBeTruthy()
     expect(meta.sourceLicenseUrl).toMatch(/^https?:\/\//)
     expect(meta.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-    // 候補は 1 件もスキップされない（バッチ出力が候補の契約を満たしている）。
-    // 🔴 最重要の回帰ポイント（F-6）: 本番 JSON は `sourceUrl` フィールドをまだ持たない
-    // （`tools/generate_gem_digest.mjs` が次回バッチ実行時に書き込む）。それでも
-    // ランタイムは落ちず、meta.sourceUrl だけがフィールド単位で既定値へフォールバックする
-    // （上の `meta.sourceUrl` アサーションが既定値でも http(s) URL として通ることで担保済み）。
-    expect(console.warn).toHaveBeenCalledTimes(1)
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('meta.sourceUrl'))
+    // 🔴 最重要の回帰ポイント（F-6）: 本番 JSON は **1 件もスキップされず、フィールド単位の
+    // フォールバックも起きない**（= バッチ出力が候補と `meta` の契約を完全に満たしている）。
+    // `warn` が 1 度でも出たら、それはバッチ側の出力欠落かパーサの解釈違いなので落とす。
+    //
+    // 経緯: `SP-14` 時点の本番 JSON は `meta.sourceUrl` を持たず、ここは「警告 1 回」を期待して
+    // フォールバック経路を担保していた。`SP-17`（#387）で `tools/generate_gem_digest.mjs` が
+    // 5 フィールドすべてを書くようになったため、期待を「警告ゼロ」へ反転させる。
+    // フォールバック経路そのものは、下の壊れた入力を注入するテスト群が引き続き担保する。
+    expect(console.warn).not.toHaveBeenCalled()
   })
 
   it('meta の 5 フィールド（source / sourceUrl / license / sourceLicenseUrl / generatedAt）が全て string で揃う（D-29 / F-6）', async () => {
