@@ -93,7 +93,7 @@ export function ErrorNotice({
         height={256}
         loading="eager"
         decoding="async"
-        className="mb-3 h-20 w-20"
+        className="mb-3 w-20"
       />
       <div role="alert" className="border-border rounded-lg border p-4">
         <p className="[color:var(--color-danger)]">{presentation.message}</p>
