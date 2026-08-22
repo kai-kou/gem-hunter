@@ -1085,7 +1085,8 @@ summary {
 
 /* 読み込み直後のヒーローだけは時間ベースでフェードさせる（必ず終わる） */
 @media (prefers-reduced-motion: no-preference) {
-  .hero > .wrap > *,
+  /* .hero-copy 自身は除く（親子で同じ移動が二重に掛かるのを避ける） */
+  .hero > .wrap > *:not(.hero-copy),
   .hero-copy > * {
     animation: hero-in 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
   }
