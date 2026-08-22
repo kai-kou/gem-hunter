@@ -1,0 +1,50 @@
+{
+  "topic": "GitHub Pages 用ランディングページ（site/）を公開前に多角レビューし、ブラッシュアップ項目を確定する",
+  "brief": "ユーザー指示: 『GitHub Pages を利用して本ツールのランディングページを実装・公開する。LP の最新トレンド / UI・UX / ベストプラクティス / マーケティング戦術を詳細にリサーチして設計する。CTA の優先順位は ① 本番ツール ② GitHub リポジトリ。ファーストビューに本ツールのスナップショットを含める。ツールに合わせたデザインにする。実装後に視覚的なものを含めた多角レビューを行いブラッシュアップしてからユーザー確認を求める。』。実装済みの成果物: site/index.html（単一ページ・ページ内 JavaScript ゼロ）、site/assets/styles.css、site/404.html、site/assets/img/*（アプリ実画面のスクリーンショット + OGP 1200x630）、site/assets/fonts/geist-latin.woff2（自前配信・SIL OFL）。公開方式は gh-pages ブランチ（GitHub Actions は本リポジトリで制限中のため CI デプロイは採らない）。公開 URL 予定は https://kai-kou.github.io/gem-hunter/ 。本番ツールは https://gem-hunter.kinamocchi-tech.workers.dev/ja 。ローカル配信中: http://127.0.0.1:8098/ 。レンダリング済みスクリーンショットは /tmp/claude-0/-home-user-gem-hunter/d2e5f9c2-513b-5347-bdb5-4acca9ed545d/scratchpad/lp/ に desktop-light-full.png / desktop-dark-full.png / mobile-light-full.png / fold.png / sec-why.png / sec-how.png / sec-features.png / sec-trust.png / sec-faq.png がある。争点は少なくとも次の 5 つ: A) ファーストビューの説得力（見出し・サブコピー・CTA・スクリーンショットの見せ方が 2026 年の LP トレンドと CVR の定石に照らして妥当か。過剰・不足はどこか） B) アクセシビリティ（WCAG 2.2 AA。ランドマーク・見出し階層・フォーカス可視・ターゲットサイズ 2.5.8・sticky ヘッダーと 2.4.11・コントラスト（ライト/ダーク両方）・装飾画像の alt・details/summary の扱い） C) コピーとマーケティング（開発者向けの誇張しないトーン・信頼の代替（star 0・ユーザーの声なし）・限界の明示・シェアされる 1 行・FAQ の異議処理が足りているか） D) 技術品質（Core Web Vitals・画像戦略・フォント・OGP/canonical の絶対 URL・構造化データの妥当性・GitHub Pages サブパス配信での相対パス事故・404.html・.nojekyll） E) 事実の正確性（実装していない機能を書いていないか。数値・引用・出典の裏が取れているか。ダークモード切替やフィルタ機能など存在しない機能に言及していないか）。",
+  "participants": [
+    {
+      "name": "visual_design",
+      "model": "sonnet",
+      "lens": "視覚デザイン（レンダリング済みスクリーンショットを実際に Read して評価する。タイポグラフィのスケールと日本語の折り返し / 余白のリズム / 情報密度 / カラーとコントラストの美的側面 / スクリーンショットの提示方法（ブラウザフレーム・傾き・マスク）/ セクションの視覚的リズムと単調さ / ライトとダークの完成度差 / モバイルでの破綻 / 2026 年の LP として古く見える要素がないか）"
+    },
+    {
+      "name": "a11y_wcag",
+      "model": "sonnet",
+      "lens": "アクセシビリティ（WCAG 2.2 AA。site/index.html と site/assets/styles.css を精読し、ランドマーク・見出し階層（h1 は 1 つか・レベル飛ばしがないか）・スキップリンク・:focus-visible の可視性とコントラスト・2.5.8 ターゲットサイズ・2.4.11 sticky ヘッダーによる隠れ・リンクテキストの自立性・装飾画像の alt=''・details/summary のキーボード操作・prefers-reduced-motion・400% ズーム時の Reflow を判定する。可能なら http://127.0.0.1:8098/ に対して実際に検査する）"
+    },
+    {
+      "name": "copy_cvr",
+      "model": "sonnet",
+      "lens": "コピーとコンバージョン（開発者向け LP としての説得力。見出しの型 / CTA 文言と個数と配置 / リスクリバーサル表記 / サンプルクエリチップの効果 / 信頼の代替（社会的証明が無い状況）/ 限界の明示が信頼になっているか逆に不安を煽っていないか / FAQ が本当の離脱理由を潰しているか / Show HN や SNS でシェアされる 1 行になっているか / 誇張・ダークパターンがないか / 日本語のトーンが不自然でないか）"
+    },
+    {
+      "name": "web_quality",
+      "model": "sonnet",
+      "lens": "技術品質（site/index.html と site/assets/styles.css を精読。Core Web Vitals（LCP 要素・fetchpriority・width/height による CLS 防止・フォント読み込み）/ 画像の重さと srcset の要否 / OGP と canonical が絶対 URL か / 構造化データ JSON-LD が仕様どおりか（実在しない評価を書いていないか）/ GitHub Pages のサブパス配信で壊れる相対・絶対パスがないか（404.html を含む）/ .nojekyll / CSS の実装品質（未使用セレクタ・color-mix や backdrop-filter の対応状況・@supports ガード）/ セキュリティ（外部リンクの rel）を判定する）"
+    },
+    {
+      "name": "fact_check",
+      "model": "sonnet",
+      "lens": "事実の正確性（LP に書かれた主張を 1 つずつリポジトリの実装で裏取りする。特に: 存在しない機能（テーマ切替・言語フィルタ・期間フィルタ・Gem Index による検索結果の並べ替え）に言及していないか / ソート種別と表示件数の選択肢 / 『今日の Gem』の件数と更新頻度と新着バッジ / 詳細画面の表示項目 / ログイン時に変わるものの説明 / レート枠の数値 / テストのケース数と ADR の本数 / Lighthouse Accessibility 100 がゲートである旨 / 偽 star の数値と debug_inspector の実例の出典 / ライセンスと出典表記（Ecosyste.ms CC BY-SA 4.0・Geist OFL）。裏が取れないものは『裏が取れない』と明言する）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて『公開前に直すこと』を確定する。指摘は must（公開前に必須）/ should（今回のうちに直す）/ later（別 Issue に回す）の 3 段階に分類し、must と should は必ず『どのファイルのどこを、どう直すか』まで落とす。相互検証で否定された指摘は採用しない。ユーザー確認が要る仕様分岐（成果物が変わるもの）は open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "fixes": [
+      {
+        "id": "F-n",
+        "severity": "must | should | later",
+        "issue": "争点 A〜E のいずれか",
+        "problem": "問題の要約",
+        "fix": "どのファイルのどこをどう直すか",
+        "file": "site/index.html 等"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐"]
+  }
+}
