@@ -13,6 +13,7 @@ import {
   buildMeta,
   buildRegistryShards,
   buildShardIndex,
+  serializeJson,
 } from './output.mjs'
 
 /** テスト用の RankedRecord を 1 件作る（`pipeline.buildPool` の出力と同じ形）。 */
@@ -201,18 +202,32 @@ describe('buildShardIndex', () => {
     expect(index.stats).toEqual({ total: 3, excluded: { missingStars: 7 } })
   })
 
-  it('stats の Map を JSON で読める素のオブジェクトへ変換する', () => {
-    const index = buildShardIndex([], META, { byRegistry: new Map([['npmjs.org', 2]]) })
-    expect(index.stats).toEqual({ byRegistry: { 'npmjs.org': 2 } })
-  })
-
-  it('stats に JSON 化できない値が混ざっても落とさず捨てる', () => {
-    const index = buildShardIndex([], META, { ok: 1, fn: () => {}, undef: undefined })
-    expect(index.stats).toEqual({ ok: 1 })
+  it('stats は JSON 往復で情報が落ちない（`buildPool()` はプレーンな値だけを返す）', () => {
+    // buildPool() の stats は「プレーンオブジェクト + 数値」だけなので、そのまま載せて往復できる
+    const stats = { total: 3, byRegistry: { 'npmjs.org': { collected: 10, kept: 2 } } }
+    const index = buildShardIndex([], META, stats)
+    expect(JSON.parse(JSON.stringify(index.stats))).toEqual(stats)
   })
 
   it('stats 未指定でも空オブジェクトで通す', () => {
     expect(buildShardIndex([], META).stats).toEqual({})
     expect(buildShardIndex([], META).totalCount).toBe(0)
+  })
+})
+
+describe('serializeJson', () => {
+  it('末尾に改行を 1 つ付けた JSON 文字列を返す', () => {
+    const text = serializeJson({ a: 1 })
+    expect(text).toBe('{"a":1}\n')
+    expect(JSON.parse(text)).toEqual({ a: 1 })
+  })
+
+  it('pretty: true のときだけ 2 スペースで整形する（既定は非整形）', () => {
+    const doc = { a: 1, b: { c: 2 } }
+    expect(serializeJson(doc, { pretty: true })).toBe(
+      '{\n  "a": 1,\n  "b": {\n    "c": 2\n  }\n}\n',
+    )
+    expect(serializeJson(doc, { pretty: false })).toBe(serializeJson(doc))
+    expect(serializeJson(doc, { pretty: true }).length).toBeGreaterThan(serializeJson(doc).length)
   })
 })
