@@ -1,0 +1,48 @@
+{
+  "topic": "機能追加を除く open Issue 182 件の棚卸し判断（クローズ・重複統合・Epic 集約・優先度改訂）を確定する",
+  "brief": "飼い主指示: 『現時点で機能追加に関わらない改善、不具合修整に関する未対応の Issue について、カテゴライズ、重複まとめ、優先度見直し、トリアージ、対応済みであればクローズするなどの棚卸ししてください』（Issue #385）。並行検証 7 役が open 182 件（type:feature を除く全件）をリポジトリ実物と突き合わせ、verdict（DONE 8 / OBSOLETE 6 / PARTIAL 17 / OPEN 151）・カテゴリ・重複クラスタ 9 組・Epic 提案 7 本・優先度改訂案をまとめた。その提案書が /tmp/claude-0/-home-user-gem-hunter/fac157d8-62ca-561f-898b-deba57589816/scratchpad/proposal.md にある。この提案をそのまま適用すると 24 件前後がクローズされ、5 本の新規 Epic が生まれる。クローズは取り消しコストが高く、Epic 増設は滞留を階層化するだけの恐れがある。争点は 5 つ: A) 対応済みクローズ 8 件の根拠は実測として十分か（特に #144 は『専用 CSRF トークンは本 Issue へ先送り』とコード側コメントが明記、#108 は実装形態が提案と異なる） B) 前提消滅クローズ 6 件は本当に前提が消えたか（特に #305 は撤去された経路の話だが get-daily-digest.ts 側の例外安全性が未検証） C) 重複クラスタ 9 組の判定が過剰でないか・keep をどちらにすべきか（後発の具体性 vs 先発のコメント履歴。#94 はコメント 13 件 priority:high の最古起票なのに提案は #322 を keep としている） D) Epic 5 本新設は #377『type:retro-try が自走ルーティンのどのブランチからも拾われず open 107 件が構造的に滞留する』の解決になるのか、それとも滞留の階層化か。#153（棚卸しレーンの担当決定）・#377 の解消を先にすべきという順序論が成り立つか E) priority の分布設計（現在 high 41 / medium 84 / low 13 / 欠損 43。提案は medium→high をさらに 7 件以上足す）。制約: CP-3（Issue/PR ゼロ放置）・CP-4（マルチセッション共存。#380 は他セッションが status:in-progress で着手中の可能性）・CP-6（ユーザー確認最小化。棚卸しの判断は自律実行する）・improvement-lane-map.md の 3 レーン責務境界・user-instruction-issue-rules.md（Issue は『なぜ変更したか』を記録する唯一の場所＝安易なクローズは記録の破棄）。",
+  "participants": [
+    {
+      "name": "evidence_auditor",
+      "model": "sonnet",
+      "lens": "クローズ根拠の実測監査（争点 A/B）。提案書 A 節 8 件・B 節 6 件それぞれについて、示された file:line / commit を **自分でリポジトリを開いて再確認** し、『完了条件の全項目を満たすか』『一部しか満たしていないのに DONE にしていないか』を敵対的に判定する。特に #144（CSRF トークン先送りのコメント）・#108（実装形態の相違）・#305（未検証の残留リスク）・#288（デプロイ経路移行が本当に完了しているか）を重点的に潰す。クローズ不可と判断したものは『何が残っているか』を 1 行で示す。推測で DONE を否定しない — 実ファイルの確認結果だけで語ること。"
+    },
+    {
+      "name": "dedupe_skeptic",
+      "model": "sonnet",
+      "lens": "重複判定の過剰検出を疑う（争点 C）。9 クラスタそれぞれについて 2 つの Issue 本文を実際に読み比べ、『完了条件が本当に同一か』『片方にしかない要求が捨てられていないか』を検証する。重複ではなく分割保持すべきものを名指しする。あわせて keep の選択基準を提案する（新しい方 vs コメント履歴のある方 vs 統合本文を作る）。GitHub の duplicate クローズは元 Issue のコメント履歴を残すが検索から外れるという実運用上の性質を踏まえること。#94 / #322 / #341 の三重起票は特に慎重に扱う。"
+    },
+    {
+      "name": "backlog_strategist",
+      "model": "sonnet",
+      "lens": "バックログ構造の実効性（争点 D）。Epic 5 本新設が滞留を解消するのか階層化するのかを、#151 / #152 という **既存 Epic が実際に消化されているか** を確認したうえで判定する（消化されていない既存 Epic があるなら新設は無効という証拠になる）。#153（棚卸しレーンの担当決定）・#377（ルーティンの拾い漏れ）・improvement-lane-map.md の 3 レーン責務境界を読み、『182 件を減らす唯一有効な打ち手は何か』を代案付きで示す。Epic を作らない案（例: ラベルによる束ね・retro-try の一括再査定・棚卸し自体の定期化）も対等に検討すること。"
+    },
+    {
+      "name": "priority_calibrator",
+      "model": "sonnet",
+      "lens": "優先度の情報量設計（争点 E）。high 41 件という現状で high をさらに増やす提案が優先度を無意味化しないかを検証し、high / medium / low の **目安件数と判定軸** を数値で定義する。欠損 43 件の埋め方（一律 medium は medium を 120 件超にする）の方針を決める。判定軸の候補: ①ユーザーに見える不具合・データ不整合 ②開発ワークフローが壊れている ③品質ゲートの穴 ④重複排除・共通化 ⑤ドキュメント整合。sp の妥当性（sp:2 が 96 件と偏っている）も併せて見る。『何件を high にすべきか』を必ず具体的な数で答えること。"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ルールとの整合（新しい事実を主張せず、突合に徹する）。提案が docs/rules/improvement-lane-map.md（3 レーン責務境界）・core-principles.md CP-3/CP-4/CP-6・user-instruction-issue-rules.md・session-concurrency-rules.md（他セッション着手中の Issue に触れない規律）・session-sprint-rules.md と矛盾しないかを機械的に洗い出す。特に『クローズしてよい主体は誰か』『status:in-progress の #380 に触れてよいか』『owner エージェントのラベル操作権限（sp:/priority: のみ許可・status 操作とクローズは禁止）』を該当ファイルの行番号付きで示す。矛盾があれば『どのファイルのどの記述に反するか』を列挙する。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E について『実際に適用する判断』を 1 つに決める。決定は必ず『どの Issue 番号をどう扱うか（close/keep/label 変更）』まで落とす。議論で否定された案は適用しない。クローズは取り消しコストが高いため、根拠が実測として不十分と判定されたものは close せず PARTIAL として残す。CP-4 により他セッションが着手中の Issue（status:in-progress）には触れない。ユーザー確認が要る仕様分岐があれば open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "decision": "確定した判断",
+        "affected_issues": ["#N の扱い（close:completed / close:not_planned / close:duplicate→#M / keep / label 変更）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐"]
+  }
+}
