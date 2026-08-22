@@ -72,31 +72,53 @@ node tools/generate_gem_digest.mjs
 # 書き込まず統計だけ見る（オプションの効き方を確かめるとき）
 node tools/generate_gem_digest.mjs --dry-run
 
-# 一部レジストリだけ再生成する / 緊急除外する
+# 一部レジストリだけ様子を見る（既定では配信データを書き換えない・非ゼロ終了）
 node tools/generate_gem_digest.mjs --registries npmjs.org,crates.io --quota 2000
+
+# 一部レジストリだけで配信データを作り直す / 緊急除外する（明示の逃げ道）
+node tools/generate_gem_digest.mjs --registries npmjs.org,crates.io --allow-partial-write
 
 # 実行統計を JSON で残す（実測を PR に貼るとき）
 node tools/generate_gem_digest.mjs --report content/analytics/gem-pool-report.json
 ```
 
-| オプション                | 既定                            | 説明                                                         |
-| ------------------------- | ------------------------------- | ------------------------------------------------------------ |
-| `--quota N`               | `15000`                         | レジストリごとの取得枠（`D-37` (1) の固定枠）                |
-| `--per-page N`            | `1000`                          | 1 リクエストあたりの件数                                     |
-| `--registries a,b,c`      | 全 12 件                        | 対象レジストリ。未知の名前を渡すと候補一覧付きで失敗する     |
-| `--min-stars N`           | `1`                             | 汚染フィルタ: star 数の下限                                  |
-| `--high-dependent-rank N` | `10`                            | 汚染フィルタ: 被依存数の「上位帯」をパーセンタイルで定義する |
-| `--digest-limit N`        | `300`                           | `daily-digest.json` に載せる件数                             |
-| `--out-dir path`          | `public/data/gem-index`         | シャード出力先                                               |
-| `--digest-out path`       | `public/data/daily-digest.json` | 今日の Gem の候補プールの出力先                              |
-| `--report path`           | なし                            | 実行統計を JSON で書き出す（`--dry-run` でも書く）           |
-| `--dry-run`               | off                             | ファイルを書かず統計だけ出す                                 |
-| `--help` / `-h`           | —                               | ヘルプ                                                       |
+> 🔵 **値の正本は `--help` の出力**（`generate_gem_digest.mjs` の `DEFAULT_*` 定数。既定値は `tools/generate_gem_digest.test.mjs` が固定している）。下表はその写しなので、食い違いを見つけたら `--help` を信じて表を直す。
+
+| オプション                | 既定                            | 説明                                                                                            |
+| ------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `--quota N`               | `15000`                         | レジストリごとの取得枠（`D-37` (1) の固定枠）                                                   |
+| `--per-page N`            | `1000`                          | 1 リクエストあたりの件数（API 上限 `1000` を超える値は切り詰める）                              |
+| `--registries a,b,c`      | 全 12 件                        | 対象レジストリ。未知の名前を渡すと候補一覧付きで失敗する                                        |
+| `--min-stars N`           | `5`                             | 汚染フィルタ: star 数の下限（実測で決めた採用値・`D-37`）                                       |
+| `--high-dependent-rank N` | `100`                           | 汚染フィルタ: 被依存数の「上位帯」をパーセンタイルで定義する。既定 `100` は **全帯** を対象にする（被依存帯による絞り込みを無効化する） |
+| `--digest-limit N`        | `300`                           | `daily-digest.json` に載せる件数                                                                |
+| `--out-dir path`          | `public/data/gem-index`         | シャード出力先                                                                                  |
+| `--digest-out path`       | `public/data/daily-digest.json` | 今日の Gem の候補プールの出力先                                                                 |
+| `--report path`           | なし                            | 実行統計を JSON で書き出す（`--dry-run`・書き込み拒否時でも書く）                               |
+| `--allow-partial-write`   | off                             | 部分実行でも配信データを書き換える（下記「部分実行と配信データの保護」）                        |
+| `--dry-run`               | off                             | ファイルを書かず統計だけ出す                                                                    |
+| `--help` / `-h`           | —                               | ヘルプ                                                                                          |
 
 - 必要な Node バージョン: **22+**（グローバル `fetch` を使う）
 - **進捗は stderr**（レジストリ名・ページ・累計件数・経過秒を 1 行ずつ）、**実測サマリーは stdout**（リクエスト数・取得件数・ユニーク repo 数・実行時間・出力ファイルとサイズ・レジストリ別構成比・除外理由別件数・Gem Index 上位 20 件の表）
-- **1 レジストリの失敗では止まらない**（stderr に警告を出して継続する・`NFR-8` と同じ思想）。**全レジストリが失敗したとき、または候補プールが 0 件になったときだけ** 非ゼロ終了し、生成物は更新しない
+- **1 レジストリの失敗では収集を止めない**（stderr に警告を出して残りを続ける・`NFR-8` と同じ思想）。ただし **揃わなかった実行では配信データを書き換えない**（下記）
+- **全レジストリが失敗したとき、または候補プールが 0 件になったとき** は収集段で非ゼロ終了し、生成物は更新しない
 - 引数エラー・致命的エラーは stderr へ 1 行 + 非ゼロ終了
+
+### 部分実行と配信データの保護
+
+配信データ（シャード / `index.json` / `daily-digest.json`）は **12 レジストリぶんが揃った実行でだけ** 書き換える。
+
+| 実行 | `--out-dir` / `--digest-out` | 終了コード |
+| --- | --- | --- |
+| 全 12 レジストリ成功 | 書き換える（+ 孤児シャードを削除） | `0` |
+| `--registries` で部分指定した / 収集に失敗したレジストリがある | **書き換えない**（理由を stderr に出す） | `1` |
+| 同上 + `--allow-partial-write` | 書き換える（+ 孤児シャードを削除） | `0` |
+| `--dry-run` | 書かない（サイズだけ算出） | `0` |
+
+- **なぜ拒否するか**: 部分実行の結果で上書きすると `index.json` の `shards` が今回集めた分だけに置き換わり、**索引から消えたシャードが孤児としてディスクに残る**。[#388](../src/infrastructure/) の読み手は索引経由で読むためレジストリが丸ごと消え、`tools/measure_gem_coverage.py` はディレクトリ内の全 JSON を読むため被覆率だけが水増しされる
+- **`--report` は常に書く**（実測の記録用途を潰さないため。拒否した実行でもサイズ・統計は算出される）
+- **孤児シャードの削除**: 書き込む実行では、今回の `index.json` に載らない `*.json` を `--out-dir` から削除して索引とディスクを一致させる。削除したファイル名は stdout のサマリーと stderr に出す（黙って消さない）
 
 ## 実測値
 
@@ -141,6 +163,7 @@ node tools/generate_gem_digest.mjs --report content/analytics/gem-pool-report.js
 ## テスト
 
 ```sh
-npx vitest run tools/gem-pool/output.test.mjs   # 生成物の形（純粋関数）
-npx vitest run tools/gem-pool                   # 収集・順位付けを含む gem-pool 全体
+npx vitest run tools/generate_gem_digest.test.mjs   # CLI の既定値・引数エラー・書き込み判定
+npx vitest run tools/gem-pool/output.test.mjs       # 生成物の形（純粋関数）
+npx vitest run tools/                               # 収集・順位付けを含む gem-pool 全体
 ```
