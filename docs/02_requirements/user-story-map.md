@@ -238,7 +238,7 @@
 
 | ID | イネイブラー | 参照要件 |
 |---|---|---|
-| **E-24** | Gem Index の算出パイプライン（Ecosyste.ms の S3 バルクダンプ + OpenSSF Scorecard → 静的 JSON の生成）。Cloudflare の外（セッション / Routine の cron）で実行し、生成した JSON を Static Assets として差し替える | `NFR-16` / `NFR-19` / `NFR-21` |
+| **E-24** | Gem Index の算出パイプライン（**Ecosyste.ms の REST 一覧 API 巡回による収集 → レジストリ別成層化 → 汚染フィルタ → repo 単位 dedupe → 静的 JSON の生成**・`D-37`）。Cloudflare の外（セッション / Routine の cron）で実行し、生成した JSON を Static Assets として差し替える | `NFR-16` / `NFR-19` / `NFR-21` |
 | **E-25** | 配信データの鮮度チェックと自己修復（既存の衛生スロットに載せる）。バッチが止まっても配信自体は止めず、劣化するのは鮮度のみとする | `NFR-8` |
 
 ---
