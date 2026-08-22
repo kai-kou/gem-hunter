@@ -192,11 +192,41 @@ describe('projectPackage（投影）', () => {
 describe('restratifyByRegistry（レジストリ別成層化）', () => {
   it('レジストリごとに独立して順位を振る（小さいレジストリの 1 位も 0 になる）', () => {
     const input = [
-      { registry: 'npm', packageName: 'n1', repositoryFullName: 'o/n1', dependentCount: 9000, stars: 900 },
-      { registry: 'npm', packageName: 'n2', repositoryFullName: 'o/n2', dependentCount: 5000, stars: 500 },
-      { registry: 'npm', packageName: 'n3', repositoryFullName: 'o/n3', dependentCount: 1000, stars: 100 },
-      { registry: 'hex', packageName: 'h1', repositoryFullName: 'o/h1', dependentCount: 30, stars: 3 },
-      { registry: 'hex', packageName: 'h2', repositoryFullName: 'o/h2', dependentCount: 10, stars: 1 },
+      {
+        registry: 'npm',
+        packageName: 'n1',
+        repositoryFullName: 'o/n1',
+        dependentCount: 9000,
+        stars: 900,
+      },
+      {
+        registry: 'npm',
+        packageName: 'n2',
+        repositoryFullName: 'o/n2',
+        dependentCount: 5000,
+        stars: 500,
+      },
+      {
+        registry: 'npm',
+        packageName: 'n3',
+        repositoryFullName: 'o/n3',
+        dependentCount: 1000,
+        stars: 100,
+      },
+      {
+        registry: 'hex',
+        packageName: 'h1',
+        repositoryFullName: 'o/h1',
+        dependentCount: 30,
+        stars: 3,
+      },
+      {
+        registry: 'hex',
+        packageName: 'h2',
+        repositoryFullName: 'o/h2',
+        dependentCount: 10,
+        stars: 1,
+      },
     ]
     const result = restratifyByRegistry(input)
     const byName = Object.fromEntries(result.map((r) => [r.packageName, r]))
@@ -211,8 +241,20 @@ describe('restratifyByRegistry（レジストリ別成層化）', () => {
 
   it('同値は同じランクになる（値が最初に現れるインデックスを使う）', () => {
     const input = [
-      { registry: 'npm', packageName: 'a', repositoryFullName: 'o/a', dependentCount: 10, stars: 5 },
-      { registry: 'npm', packageName: 'b', repositoryFullName: 'o/b', dependentCount: 10, stars: 5 },
+      {
+        registry: 'npm',
+        packageName: 'a',
+        repositoryFullName: 'o/a',
+        dependentCount: 10,
+        stars: 5,
+      },
+      {
+        registry: 'npm',
+        packageName: 'b',
+        repositoryFullName: 'o/b',
+        dependentCount: 10,
+        stars: 5,
+      },
       { registry: 'npm', packageName: 'c', repositoryFullName: 'o/c', dependentCount: 5, stars: 1 },
     ]
     const byName = Object.fromEntries(restratifyByRegistry(input).map((r) => [r.packageName, r]))
@@ -226,7 +268,13 @@ describe('restratifyByRegistry（レジストリ別成層化）', () => {
 
   it('1 件しかないレジストリのランクは 0（ゼロ除算しない）', () => {
     const [record] = restratifyByRegistry([
-      { registry: 'cran', packageName: 'solo', repositoryFullName: 'o/solo', dependentCount: 7, stars: 3 },
+      {
+        registry: 'cran',
+        packageName: 'solo',
+        repositoryFullName: 'o/solo',
+        dependentCount: 7,
+        stars: 3,
+      },
     ])
     expect(record.dependentRank).toBe(0)
     expect(record.starRank).toBe(0)
@@ -235,9 +283,27 @@ describe('restratifyByRegistry（レジストリ別成層化）', () => {
 
   it('gemIndex = dependentRank − starRank（小数第 2 位に丸める）', () => {
     const input = [
-      { registry: 'npm', packageName: 'a', repositoryFullName: 'o/a', dependentCount: 100, stars: 1 },
-      { registry: 'npm', packageName: 'b', repositoryFullName: 'o/b', dependentCount: 50, stars: 50 },
-      { registry: 'npm', packageName: 'c', repositoryFullName: 'o/c', dependentCount: 10, stars: 100 },
+      {
+        registry: 'npm',
+        packageName: 'a',
+        repositoryFullName: 'o/a',
+        dependentCount: 100,
+        stars: 1,
+      },
+      {
+        registry: 'npm',
+        packageName: 'b',
+        repositoryFullName: 'o/b',
+        dependentCount: 50,
+        stars: 50,
+      },
+      {
+        registry: 'npm',
+        packageName: 'c',
+        repositoryFullName: 'o/c',
+        dependentCount: 10,
+        stars: 100,
+      },
     ]
     const byName = Object.fromEntries(restratifyByRegistry(input).map((r) => [r.packageName, r]))
     // a: 被依存 1 位（0）・star 最下位（100）→ 最も過小評価
@@ -261,10 +327,34 @@ describe('restratifyByRegistry（レジストリ別成層化）', () => {
 
   it('stars が欠損（null）のレコードはランク計算の母集団に入れず出力から落とす', () => {
     const input = [
-      { registry: 'npm', packageName: 'a', repositoryFullName: 'o/a', dependentCount: 100, stars: 10 },
-      { registry: 'npm', packageName: 'missing', repositoryFullName: 'o/m', dependentCount: 90, stars: null },
-      { registry: 'npm', packageName: 'b', repositoryFullName: 'o/b', dependentCount: 50, stars: 5 },
-      { registry: 'npm', packageName: 'c', repositoryFullName: 'o/c', dependentCount: 10, stars: 1 },
+      {
+        registry: 'npm',
+        packageName: 'a',
+        repositoryFullName: 'o/a',
+        dependentCount: 100,
+        stars: 10,
+      },
+      {
+        registry: 'npm',
+        packageName: 'missing',
+        repositoryFullName: 'o/m',
+        dependentCount: 90,
+        stars: null,
+      },
+      {
+        registry: 'npm',
+        packageName: 'b',
+        repositoryFullName: 'o/b',
+        dependentCount: 50,
+        stars: 5,
+      },
+      {
+        registry: 'npm',
+        packageName: 'c',
+        repositoryFullName: 'o/c',
+        dependentCount: 10,
+        stars: 1,
+      },
     ]
     const result = restratifyByRegistry(input)
     expect(result.map((r) => r.packageName)).not.toContain('missing')
@@ -277,8 +367,20 @@ describe('restratifyByRegistry（レジストリ別成層化）', () => {
 
   it('出力は決定論的（同値のタイブレークは packageName 昇順）', () => {
     const input = [
-      { registry: 'npm', packageName: 'zzz', repositoryFullName: 'o/z', dependentCount: 10, stars: 5 },
-      { registry: 'npm', packageName: 'aaa', repositoryFullName: 'o/a', dependentCount: 10, stars: 5 },
+      {
+        registry: 'npm',
+        packageName: 'zzz',
+        repositoryFullName: 'o/z',
+        dependentCount: 10,
+        stars: 5,
+      },
+      {
+        registry: 'npm',
+        packageName: 'aaa',
+        repositoryFullName: 'o/a',
+        dependentCount: 10,
+        stars: 5,
+      },
     ]
     const first = restratifyByRegistry(input).map((r) => r.packageName)
     const second = restratifyByRegistry([...input].reverse()).map((r) => r.packageName)
@@ -310,7 +412,10 @@ describe('applyPollutionFilter（汚染フィルタ）', () => {
   })
 
   it('minStars=Infinity × highDependentRankPercentile=100 で star を持つものも全部落ちる', () => {
-    const records = [ranked({ packageName: 'a', stars: 1 }), ranked({ packageName: 'b', stars: 99999 })]
+    const records = [
+      ranked({ packageName: 'a', stars: 1 }),
+      ranked({ packageName: 'b', stars: 99999 }),
+    ]
     const { kept } = applyPollutionFilter(records, {
       minStars: Infinity,
       highDependentRankPercentile: 100,
@@ -358,9 +463,21 @@ describe('applyPollutionFilter（汚染フィルタ）', () => {
 describe('dedupeByRepository（repo 単位 dedupe）', () => {
   it('同一 repo では被依存数最大の flagship パッケージが代表になる', () => {
     const records = [
-      ranked({ packageName: 'ark-bench', repositoryFullName: 'arkworks-rs/algebra', dependentCount: 3 }),
-      ranked({ packageName: 'ark-ff', repositoryFullName: 'arkworks-rs/algebra', dependentCount: 1829 }),
-      ranked({ packageName: 'ark-poly', repositoryFullName: 'arkworks-rs/algebra', dependentCount: 400 }),
+      ranked({
+        packageName: 'ark-bench',
+        repositoryFullName: 'arkworks-rs/algebra',
+        dependentCount: 3,
+      }),
+      ranked({
+        packageName: 'ark-ff',
+        repositoryFullName: 'arkworks-rs/algebra',
+        dependentCount: 1829,
+      }),
+      ranked({
+        packageName: 'ark-poly',
+        repositoryFullName: 'arkworks-rs/algebra',
+        dependentCount: 400,
+      }),
     ]
     const result = dedupeByRepository(records)
     expect(result).toHaveLength(1)
@@ -412,7 +529,12 @@ describe('dedupeByRepository（repo 単位 dedupe）', () => {
     const records = [
       ranked({ registry: 'npm', packageName: 'a', repositoryFullName: 'o/a', dependentCount: 10 }),
       ranked({ registry: 'pypi', packageName: 'b', repositoryFullName: 'o/b', dependentCount: 20 }),
-      ranked({ registry: 'pypi', packageName: 'a-py', repositoryFullName: 'o/a', dependentCount: 5 }),
+      ranked({
+        registry: 'pypi',
+        packageName: 'a-py',
+        repositoryFullName: 'o/a',
+        dependentCount: 5,
+      }),
     ]
     const result = dedupeByRepository(records)
     expect(result.map((r) => r.repositoryFullName)).toEqual(['o/a', 'o/b'])
@@ -427,18 +549,60 @@ describe('buildPool（全段の統合）', () => {
       [
         'npm',
         [
-          { registry: 'npm', packageName: 'a-top', repositoryFullName: 'o/a', dependentCount: 1000, stars: 10 },
-          { registry: 'npm', packageName: 'b-mid', repositoryFullName: 'o/b', dependentCount: 500, stars: 5000 },
-          { registry: 'npm', packageName: 'c-missing', repositoryFullName: 'o/c', dependentCount: 300, stars: null },
-          { registry: 'npm', packageName: 'd-zero', repositoryFullName: 'o/d', dependentCount: 0, stars: 100 },
+          {
+            registry: 'npm',
+            packageName: 'a-top',
+            repositoryFullName: 'o/a',
+            dependentCount: 1000,
+            stars: 10,
+          },
+          {
+            registry: 'npm',
+            packageName: 'b-mid',
+            repositoryFullName: 'o/b',
+            dependentCount: 500,
+            stars: 5000,
+          },
+          {
+            registry: 'npm',
+            packageName: 'c-missing',
+            repositoryFullName: 'o/c',
+            dependentCount: 300,
+            stars: null,
+          },
+          {
+            registry: 'npm',
+            packageName: 'd-zero',
+            repositoryFullName: 'o/d',
+            dependentCount: 0,
+            stars: 100,
+          },
         ],
       ],
       [
         'cargo',
         [
-          { registry: 'cargo', packageName: 'ark-ff', repositoryFullName: 'ark/algebra', dependentCount: 1829, stars: 700 },
-          { registry: 'cargo', packageName: 'ark-bench', repositoryFullName: 'ark/algebra', dependentCount: 3, stars: 700 },
-          { registry: 'cargo', packageName: 'g-sus', repositoryFullName: 'x/g', dependentCount: 2000, stars: 0 },
+          {
+            registry: 'cargo',
+            packageName: 'ark-ff',
+            repositoryFullName: 'ark/algebra',
+            dependentCount: 1829,
+            stars: 700,
+          },
+          {
+            registry: 'cargo',
+            packageName: 'ark-bench',
+            repositoryFullName: 'ark/algebra',
+            dependentCount: 3,
+            stars: 700,
+          },
+          {
+            registry: 'cargo',
+            packageName: 'g-sus',
+            repositoryFullName: 'x/g',
+            dependentCount: 2000,
+            stars: 0,
+          },
         ],
       ],
     ])
@@ -509,15 +673,39 @@ describe('buildPool（全段の統合）', () => {
       [
         'npm',
         [
-          { registry: 'npm', packageName: 'n1', repositoryFullName: 'o/n1', dependentCount: 90000, stars: 100 },
-          { registry: 'npm', packageName: 'n2', repositoryFullName: 'o/n2', dependentCount: 100, stars: 90000 },
+          {
+            registry: 'npm',
+            packageName: 'n1',
+            repositoryFullName: 'o/n1',
+            dependentCount: 90000,
+            stars: 100,
+          },
+          {
+            registry: 'npm',
+            packageName: 'n2',
+            repositoryFullName: 'o/n2',
+            dependentCount: 100,
+            stars: 90000,
+          },
         ],
       ],
       [
         'hex',
         [
-          { registry: 'hex', packageName: 'h1', repositoryFullName: 'o/h1', dependentCount: 5, stars: 1 },
-          { registry: 'hex', packageName: 'h2', repositoryFullName: 'o/h2', dependentCount: 1, stars: 900 },
+          {
+            registry: 'hex',
+            packageName: 'h1',
+            repositoryFullName: 'o/h1',
+            dependentCount: 5,
+            stars: 1,
+          },
+          {
+            registry: 'hex',
+            packageName: 'h2',
+            repositoryFullName: 'o/h2',
+            dependentCount: 1,
+            stars: 900,
+          },
         ],
       ],
     ])
