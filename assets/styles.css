@@ -1253,3 +1253,10 @@ summary {
   color: var(--fg-muted);
   max-width: 44ch;
 }
+
+/* 404 ページ（単独レイアウト） */
+.page-404 {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+}
