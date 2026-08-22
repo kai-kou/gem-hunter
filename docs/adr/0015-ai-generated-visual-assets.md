@@ -30,8 +30,14 @@ Issue #347 は「gpt-image-2 を利用して画像生成、活用するように
 | empty-result | 1024²・透過 | `public/images/empty-result.webp`（256px） | 96〜120px |
 | not-found | 1024²・透過 | `public/images/not-found.webp`（320px） | 160px |
 | og-background | 1536×864・不透過 | `public/images/og-background.png`（1200×630 へ変換） | OG 1200×630 |
+| error-network | 1024²・透過 | `public/images/error-network.webp`（256px） | 80×80 |
+| error-rate-limit | 1024²・透過 | `public/images/error-rate-limit.webp`（256px） | 80×80 |
+| error-upstream | 1024²・透過 | `public/images/error-upstream.webp`（256px） | 80×80 |
+| error-validation | 1024²・透過 | `public/images/error-validation.webp`（256px） | 80×80 |
 
 > 🔴 **改訂（Issue #359・2026-08-21）**: `hero-idle` はユーザーフィードバックにより **1:1（640px）→ 16:9（768×432）** へ変更し、縦幅を詰めた。あわせて読み込み中専用の `loading`（「ふるいを振って小石がこぼれる」モチーフ）を追加した。**本 ADR の決定（§2.1〜§2.3・生成物をそのまま透過 WebP のまま配信する方針）自体は変更しない**。両アセットとも本節の生成・変換パイプライン（`tools/ui-assets/to_web_assets.mjs`）と §2.2 の「文字非焼き込み・ロケール非依存の 1 枚」方針をそのまま踏襲する。
+>
+> 🔵 **追記（Issue #364・2026-08-22）**: `ErrorKind` 種別ごとの装飾イラスト 4 点（`error-network` / `error-rate-limit` / `error-upstream` / `error-validation`）を追加した。`notFound` は新規生成せず既存の `not-found.webp` を流用する（対応表は `ui-ux-guidelines.md` §5.2 / §8.6）。**本 ADR の決定（§2.1〜§2.3）自体は変えない**——生成・変換パイプライン（`gpt-image-2` → `tools/ui-assets/to_web_assets.mjs`）と §2.2 の「文字非焼き込み」方針をそのまま踏襲する。ただし **ロケール非依存の 1 枚共用という §2.2 の対象は既存 4 点（logo / hero-idle / empty-result / not-found）のまま** であり、本追加はその対象範囲に手を加えていない（エラーイラストも文言と同様 ja/en で共用の 1 枚であることに変わりはないが、対象列挙の更新自体は本 ADR の範囲外・`ui-ux-guidelines.md` §5 が正本）。
 
 プロンプトの正本は `tools/ui-assets/prompts/*.txt` に置き、生成手順は `tools/ui-assets/README.md` に記録する。**中間生成物（1024² の原寸 PNG）はコミットしない**。画像生成は非決定的なため、再生成は「同じ結果の復元」ではなく「デザインを変えたいときの起点」であり、正本は git 管理下の配信ファイルそのものとする。
 
