@@ -873,7 +873,8 @@ describe('StaticGemIndex: index.json の meta の入口ガード（`F-34`）', (
   })
 
   it('`license` だけ欠けても既定へ倒すのはその 1 項目だけ', async () => {
-    const { license: _license, ...withoutLicense } = POOL_META
+    const withoutLicense: Record<string, unknown> = { ...POOL_META }
+    delete withoutLicense.license
     const port = new StaticGemIndex(stubReader(filesWithMeta(withoutLicense)))
 
     const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
