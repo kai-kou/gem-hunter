@@ -16,14 +16,14 @@ ts: 2026-08-22T13:02:36+09:00
 - **#152**（2026-08-20 作成・7 件: #322,#319,#260,#215,#216,#200,#314）
   → **7/7 件が今も open（クローズ 0 件）**
 
-**両 Epic 合計 16/16 件、Epic 作成から 2 日間で消化ゼロ**。さらに 16 件中 **15 件が `type:retro-try` ラベル**を持つ（唯一の例外は #191＝`type:improvement` のみ）。Epic 自身も `type:retro-try` ラベル。
+**両 Epic 合計 16/16 件、Epic 作成から 2 日間で消化ゼロ**。さらに 16 件中 **15 件が `type:retro-try` ラベル** を持つ（唯一の例外は #191＝`type:improvement` のみ）。Epic 自身も `type:retro-try` ラベル。
 
 ### 2. #377 の主張の検証（自分で行番号を確認した）
 
 `.claude/skills/sprint-cycle-router/SKILL.md`（399 行）を grep した。
 
-- `retro-try-handler` という文字列は **ファイル中 1 箇所のみ**出現（L151）: 「`type:retro-try` は振り返りレーン（`retro-try-handler`）の担当なので従来どおり除外する」— これは **Step 5（改善Issue消化）の除外規定**であり、決定木 Step 1〜9（§3、L98〜）のどのブランチにも `retro-try-handler` への委譲呼び出しは存在しない。
-- `docs/routines/sprint-cycle-routine.md` を確認: 「別 cron・別ルーティンを追加で作らない」と明記、cron は `0 0/2 * * *` の**単一ルーティンのみ**。
+- `retro-try-handler` という文字列は **ファイル中 1 箇所のみ** 出現（L151）: 「`type:retro-try` は振り返りレーン（`retro-try-handler`）の担当なので従来どおり除外する」— これは **Step 5（改善Issue消化）の除外規定** であり、決定木 Step 1〜9（§3、L98〜）のどのブランチにも `retro-try-handler` への委譲呼び出しは存在しない。
+- `docs/routines/sprint-cycle-routine.md` を確認: 「別 cron・別ルーティンを追加で作らない」と明記、cron は `0 0/2 * * *` の **単一ルーティンのみ**。
 - `retro-try-handler/SKILL.md` のトリガーは「日次の消化スロット（プロジェクト定義）」だが、その日次スロットは単一ルーティンへ統合済みで、統合先（sprint-cycle-router の決定木）に retro-try 用ブランチが無い。
 
 → **#377 の主張は完全に一致・検証済み**。既存 Epic の消化実績ゼロは机上の懸念ではなく、実際に起きている構造的滞留の直接的な証拠。
