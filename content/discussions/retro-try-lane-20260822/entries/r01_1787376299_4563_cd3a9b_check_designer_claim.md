@@ -22,7 +22,7 @@ ts: 2026-08-22T14:24:58+09:00
 | 経路 | 具体的な判定根拠 | 採用可否 |
 |---|---|---|
 | **A. 決定木からの委譲** | `sprint-cycle-router/SKILL.md` 決定木テーブル（§3, 現在L103-114）の「委譲先スキル」列にスキル名が出現 | ✅ 採用 |
-| **B. 他スキルの実行手順内での明示的呼び出し** | 他の `.claude/skills/*/SKILL.md` の **「実行フロー」節（Step 見出し配下の本文）** に、バッククォート付きスキル名 `` `S` `` の近傍（同一行または直後1行以内）に起動動詞（`起動する`/`起動し`/`呼び出す`/`委譲`/`合流`/`継続`）が現れる | ✅ 採用 |
+| **B. 他スキルの実行手順内での明示的呼び出し** | 他の `.claude/skills/*/SKILL.md` の **「実行フロー」節（Step 見出し配下の本文）** に、バッククォート付きスキル名 `` `S` `` の近傍（同一行または直後1行以内）に起動動詞（` 起動する `/` 起動し `/` 呼び出す `/` 委譲 `/` 合流 `/` 継続`）が現れる | ✅ 採用 |
 | **C. hooks 配線** | `.claude/settings.json` の hooks 定義、または `.claude/hooks/*.sh` 内でスキル起動コマンド（`claude -p` 等）に `S` の名が出現 | ✅ 採用（現状該当なしでも将来のため定義だけ持つ） |
 | **D. 自然文トリガーのみ**（frontmatter `description` の「〜して」「/S」表記だけ） | improvement-lane-map.md L17-19 が「単発オペレーション」として明示的にレーン外認定した4スキル（`project-manager`/`waiting-user-handler`/`skill-audit`/`audit-runner`）**に限り** 到達可能とみなす。レーン表（§1/§1.1）に載る6スキル（`self-improvement-loop`/`retrospective`/`retro-try-handler`/`workflow-health-check`/`project-sync`/`sprint-cycle-router`）には適用しない | ⚠️ 限定採用 |
 

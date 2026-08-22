@@ -108,7 +108,7 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
 | **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
-| **5.5** | `status:waiting-claude` かつ `type:retro-try` の Issue が存在し、**直近の retro-try 対応から 8 時間以上経過**している（エージング条件・§5） | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
+| **5.5** | `status:waiting-claude` かつ `type:retro-try` の Issue が存在し、**直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5） | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
 | **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
 | **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
 | **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
@@ -290,7 +290,7 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
 ### なぜ Step 5.5 にエージングが要るか（#377・実測）
 
 Step 5 の対象プール（`SP-n` 規約に一致しない `status:waiting-claude` Issue）は実測で常時 2 桁の
-在庫を抱えており、**ほぼ常に真**になる。「1 firing = 上から該当する最初の 1 ブランチだけ」という
+在庫を抱えており、**ほぼ常に真** になる。「1 firing = 上から該当する最初の 1 ブランチだけ」という
 設計上、エージングが無ければ Step 5 より下は永久に評価されない。Step 5.5 を単に足すだけでは
 `type:retro-try` の滞留は解消しない。
 

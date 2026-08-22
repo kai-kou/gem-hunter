@@ -50,7 +50,7 @@ labels = [
 - `SKILL.md:314`（消化モード実行フロー）「`type:retro-try`（振り返りレーンの担当）… を除外し、残り全件を…」
 - frontmatter の `description` 冒頭にも「type:retro-try（振り返り由来の Try）は retro-try-handler … が担当する」と明記
 
-案 2 は `improvement-lane-map.md` の書き換えだけでは終わらず、上記 4 箇所すべての除外条件を撤廃し、**さらに retro-try-handler が持つ専用ロジックを self-improvement-loop 側へ移植するか、失うかの二択**を迫られる。両者は処理の詳細度が全く別物と確認した:
+案 2 は `improvement-lane-map.md` の書き換えだけでは終わらず、上記 4 箇所すべての除外条件を撤廃し、**さらに retro-try-handler が持つ専用ロジックを self-improvement-loop 側へ移植するか、失うかの二択** を迫られる。両者は処理の詳細度が全く別物と確認した:
 
 | | retro-try-handler | self-improvement-loop 消化モード |
 |---|---|---|
@@ -67,7 +67,7 @@ labels = [
 
 `tools/triage_improvements.py`（Step G-1「棚卸し」本体＝重複統合・Epic 化・priority/sp 補完のデータソース）は `--label type:improvement`（既定値、`triage_improvements.py:524`）で無条件フェッチし、`type:retro-try` を除外するコードが **どこにもない**（`fetch_issues`/`label_names` 全文 grep で `retro` 0 件ヒット）。
 
-一方 `self-improvement-loop/SKILL.md` は Step G-1.5（リファインメント・142 行目）と消化モード（314 行目）では明示的に `type:retro-try` を除外しているのに、**Step G-1（棚卸し本体）だけ除外条件が実装されていない**（`SKILL.md:121`「Step G-1 のレポートは type:improvement に限定されるため本 Step では使わない」は G-1.5 の話で、G-1 自体の除外漏れには触れていない）。結果として **66 件の retro-try Issue が改善 Issue レーンの重複統合・Epic 化対象に混入している**。これは「レーン分割の設計ミス」ではなく「#160 のルール実装が 1 ツールだけ追従できていない」という **実装バグ**であり、案 1 のもとで直せば消える歪みである。
+一方 `self-improvement-loop/SKILL.md` は Step G-1.5（リファインメント・142 行目）と消化モード（314 行目）では明示的に `type:retro-try` を除外しているのに、**Step G-1（棚卸し本体）だけ除外条件が実装されていない**（`SKILL.md:121`「Step G-1 のレポートは type:improvement に限定されるため本 Step では使わない」は G-1.5 の話で、G-1 自体の除外漏れには触れていない）。結果として **66 件の retro-try Issue が改善 Issue レーンの重複統合・Epic 化対象に混入している**。これは「レーン分割の設計ミス」ではなく「#160 のルール実装が 1 ツールだけ追従できていない」という **実装バグ** であり、案 1 のもとで直せば消える歪みである。
 
 ## 3. 結論
 
