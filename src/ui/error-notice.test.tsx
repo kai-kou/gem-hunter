@@ -171,6 +171,12 @@ describe('ErrorNotice のイラスト（Issue #364・権威順で #347「エラ�
     },
   )
 
+  it('イラストは中央寄せにする（左寄りにならない・Issue #369・§7.4）', () => {
+    render(<ErrorNotice kind="network" presentation={{ message: '接続できませんでした。' }} />)
+
+    expect(screen.getByAltText('')).toHaveClass('mx-auto')
+  })
+
   it('イラストは role="alert" の要素の外（兄弟）に置かれる（読み込み中とは逆の扱い・#359 / §7.4）', () => {
     render(<ErrorNotice kind="network" presentation={{ message: '接続できませんでした。' }} />)
 

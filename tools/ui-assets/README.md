@@ -21,6 +21,7 @@ Issue #364）を `gpt-image-2` で生成し、配信用ファイルへ変換す�
 | `prompts/error-upstream.txt` | エラー種別: 上流（GitHub 等）障害の完成プロンプト |
 | `prompts/error-validation.txt` | エラー種別: 入力バリデーション不通過の完成プロンプト |
 | `to_web_assets.mjs` | 原寸 PNG → 配信用 WebP/PNG への変換スクリプト（`sharp` 使用） |
+| `build_favicon_ico.mjs` | `app/icon.png` → `app/favicon.ico`（複数サイズ内包）への変換スクリプト（`sharp` で PNG 化 + 自前 ICO コンテナ組み立て） |
 
 各 `prompts/*.txt` は共通スタイル段落（線幅・パレット・「文字なし」等の指定）+ アセット固有の
 モチーフ段落を連結した完成形で、**そのまま** `--prompt-file` に渡せる。
@@ -69,6 +70,9 @@ node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/logo.png \
   --out public/images/logo.webp --width 96 --format webp
 node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/logo.png \
   --out app/icon.png --width 256 --format png --colors 64
+# favicon.ico（16/32/48 の 3 サイズを内包する ICO）は app/icon.png から作る。
+# 画像を新規生成し直す必要はない（同じロゴの別サイズを ICO コンテナへ詰め直すだけ）。
+node tools/ui-assets/build_favicon_ico.mjs --in app/icon.png --out app/favicon.ico
 # hero-idle は 16:9 の広い画面で gpt-image-2 の微細ノイズが乗りやすく、素の webp 変換だと
 # 768px 幅で 60KB 超になり個別予算 30KB を超える。og-background と同じ「先に減色 PNG へ、
 # それを webp へ」の二段変換で 30KB 以内に収める。
@@ -111,6 +115,7 @@ done
 |---|---|---|---|---|
 | logo | 1024×1024・透過 | medium | `public/images/logo.webp` | 96px |
 | logo（同じ原寸から） | — | — | `app/icon.png`（PNG・透過） | 256px |
+| logo（`app/icon.png` から） | — | — | `app/favicon.ico`（ICO・透過・16/32/48 の 3 サイズ内包） | 16px / 32px / 48px |
 | hero-idle | 1536×864（16:9）・透過 | medium | `public/images/hero-idle.webp` | 768px |
 | loading | 1024×1024・透過 | medium | `public/images/loading.webp` | 256px |
 | empty-result | 1024×1024・透過 | medium | `public/images/empty-result.webp` | 256px |
@@ -152,11 +157,22 @@ node tools/ui-assets/build_data_uri_module.mjs --in /tmp/og-background-embed.png
 
 ## 位置づけ（重要）
 
+- 🔴 **リポジトリ内の画像はすべて `gpt-image-2` 由来（または `sharp`/本ディレクトリのスクリプトで
+  そこから機械的に変換したもの）である。** `app/favicon.ico` も例外ではない（`app/icon.png` を
+  `build_favicon_ico.mjs` で ICO コンテナへ詰め直しただけで、由来は `gpt-image-2` の logo 原画）。
+  手書き・ストック素材・別 AI 生成物を混ぜない。
+- 🔴 **ロゴを変更するときは `app/icon.png` / `public/images/logo.webp` / `app/favicon.ico` の
+  3 つを揃えて作り直す。** どれか 1 つだけ差し替えると、favicon.ico だけ旧ロゴのまま取り残される
+  （実際に Issue #369 で `app/favicon.ico` が Next.js 初期テンプレート由来のまま長期間放置されて
+  いた前例がある）。3 つとも同じ原寸 PNG（`logo.png`）から作るため、`to_web_assets.mjs` の
+  `logo.webp` / `icon.png` 生成コマンドと `build_favicon_ico.mjs` の実行は常にセットで行う。
 - **中間生成物（原寸 1024² などの PNG）はコミットしない。** 正本は配信ファイル（`public/images/*`・
-  `app/icon.png`、いずれも git 管理下）である。
+  `app/icon.png`・`app/favicon.ico`、いずれも git 管理下）である。
 - **画像生成は非決定的**。同じプロンプトを再実行しても同じ画素は返らない。したがって
   「再生成」は「同じ結果の復元」ではなく、**デザインを変えたいときの起点** として扱う。壊れた
   配信ファイルを直すために再生成しても、以前と寸分違わぬ絵には戻らないことを前提に運用する。
+  （`favicon.ico` は例外で、`app/icon.png` という確定した入力からの決定的な機械変換なので、
+  何度実行しても同じ ICO が得られる。）
 - 争点 C（`entries/r04_*_lead_consensus.md`）で「手書き SVG 再作図」は明示的に却下されている。
-  配信するのは **`gpt-image-2` の生成物そのもの**（`sharp` によるリサイズ・形式変換のみ）であり、
-  エージェントが絵を描き直すことはしない。
+  配信するのは **`gpt-image-2` の生成物そのもの**（`sharp` によるリサイズ・形式変換・ICO 化のみ）
+  であり、エージェントが絵を描き直すことはしない。
