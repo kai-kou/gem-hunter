@@ -187,7 +187,9 @@ describe('searchGems', () => {
   it('実際に返したページ（`effectivePage`）をそのまま返す（URL とズレても画面が真を出せる）', async () => {
     const received: GemPoolSearchInput[] = []
     const searchGems = makeSearchGems({
-      gems: fakePort(received, () => makeResult({ items: [entry], totalCount: 1, effectivePage: 82 })),
+      gems: fakePort(received, () =>
+        makeResult({ items: [entry], totalCount: 1, effectivePage: 82 }),
+      ),
     })
 
     const result = expectOk(await searchGems({ query: 'core', page: '51' }))
@@ -329,7 +331,9 @@ describe('searchGems', () => {
   it('プールは健全で一致だけが 0 件のときは、取得失敗にせず 0 件として返す', async () => {
     const received: GemPoolSearchInput[] = []
     const searchGems = makeSearchGems({
-      gems: fakePort(received, (input) => (input.tokens.length === 0 ? allEntriesResult : makeResult())),
+      gems: fakePort(received, (input) =>
+        input.tokens.length === 0 ? allEntriesResult : makeResult(),
+      ),
     })
 
     const result = expectOk(await searchGems({ query: 'zzgemhunterzz' }))

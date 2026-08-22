@@ -413,3 +413,98 @@ test('SP-19: from が無い / 未知の値のときは従来どおり検索結�
     await expect(page).toHaveURL(new RegExp(`/ja\\?.*${SEARCH_PARAM_KEYS.page}=2`))
   })
 })
+
+/**
+ * 🔴 F-36: 緩和経路（`D-37` の中核挙動）とラベル対応表を **画面越しに** 通す。
+ * ページが `GemList` へ渡す 10 キーのラベル対応表は手写しなので、行内ラベルを検証していないと
+ * `registryLabel` と `gemIndexLabel` の取り違えのような配線ミスが全テスト緑のまま通る。
+ */
+test('SP-19: 全語 AND が 0 件なら 1 語へ緩め、注記と行内ラベルが読める（ja・D-37）', async ({
+  page,
+}) => {
+  await page.goto(`/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(RELAXED_QUERY)}`)
+
+  await test.step('緩和注記に、実際に使った 1 語（kafka）が出る', async () => {
+    await expect(
+      page.getByText(ja.gems.relaxedNotice.replace('{token}', HIT_QUERY), { exact: true }),
+    ).toBeVisible({ timeout: FIRST_RESULT_TIMEOUT_MS })
+  })
+
+  await test.step('緩和後の一覧が Gem Index 順で出る（0 件で終わらせない）', async () => {
+    await expect(gemItems(page)).toHaveCount(PER_PAGE)
+    expectAscending(await readGemIndexes(page))
+    // 「候補プールに載っていない」の説明とすり替わっていない。
+    await expect(page.getByText(ja.gems.empty, { exact: true })).toHaveCount(0)
+  })
+
+  await test.step('行内に レジストリ / Gem Index のラベルが正しい値と組で出る', async () => {
+    const rowText = await gemItems(page).first().innerText()
+    // レジストリ名は英数字の識別子（`npmjs.org` 等）、Gem Index は符号つきの数値。
+    // ラベルを取り違えると（`registryLabel` に `gemIndexLabel` を渡す等）この組が崩れる。
+    expect(rowText).toMatch(new RegExp(`${ja.gems.registryLabel}\\s+[A-Za-z][^\\s]*`))
+    expect(rowText).toMatch(new RegExp(`${ja.gems.gemIndexLabel}\\s+-?[\\d,]+\\.\\d`))
+  })
+})
+
+/**
+ * 🔴 F-02: 候補プールは GitHub 検索 API の 1,000 件上限とは無関係なので、50 ページで
+ * 打ち切らない。範囲外のページ指定は **1 ページ目ではなく最終ページ** へ丸める。
+ */
+test('SP-19: 1,000 件超のヒットでも 50 ページで打ち切らず、範囲外ページは最終ページへ丸まる（ja）', async ({
+  page,
+}) => {
+  await page.goto(`/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${OVER_API_LIMIT_QUERY}`)
+  await expect(gemItems(page)).toHaveCount(PER_PAGE, { timeout: FIRST_RESULT_TIMEOUT_MS })
+
+  const totalCount = await readTotalCount(page)
+  const lastPage = Math.ceil(totalCount / PER_PAGE)
+  const firstPageNames = await readRepositoryFullNames(page)
+
+  await test.step('前提: この検索語は GitHub 検索 API の到達上限（1,000 件）を超える', async () => {
+    expect(
+      totalCount,
+      `候補プールの再生成で件数が変わった可能性がある（"${OVER_API_LIMIT_QUERY}" の実測は 1,631 件）`,
+    ).toBeGreaterThan(1000)
+  })
+
+  await test.step('旧上限（50 ページ）より後ろのページが実際に開ける', async () => {
+    await page.goto(
+      `/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${OVER_API_LIMIT_QUERY}&${SEARCH_PARAM_KEYS.page}=51`,
+    )
+    await expect(gemItems(page)).toHaveCount(PER_PAGE)
+    expect(await readRepositoryFullNames(page)).not.toEqual(firstPageNames)
+    await expect(
+      page.getByText(ja.home.pageCurrent.replace('{page}', '51'), { exact: true }),
+    ).toBeVisible()
+    // GitHub 検索 API 由来の上限注記は、この面では出さない（存在しない制約を伝えない）。
+    await expect(page.getByText(ja.home.pageLimitReached, { exact: true })).toHaveCount(0)
+  })
+
+  await test.step('最終ページより後ろを直打ちしても 1 ページ目に戻らず、最終ページが出る', async () => {
+    await page.goto(
+      `/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${OVER_API_LIMIT_QUERY}&${SEARCH_PARAM_KEYS.page}=${lastPage + 5}`,
+    )
+    await expect(
+      page.getByText(ja.home.pageCurrent.replace('{page}', String(lastPage)), { exact: true }),
+    ).toBeVisible()
+    expect(await readRepositoryFullNames(page)).not.toEqual(firstPageNames)
+    // 最終ページなので「次のページへ」はリンクにならない。「前のページへ」は残る（行き止まりにしない）。
+    const pagination = page.getByRole('navigation', { name: ja.home.paginationLabel })
+    await expect(pagination.getByRole('link', { name: ja.home.pageNext })).toHaveCount(0)
+    await expect(pagination.getByRole('link', { name: ja.home.pagePrev })).toBeVisible()
+  })
+})
+
+/**
+ * 🔴 F-32: 「検索結果 0 件のときは Gem 導線を出さない」分岐の固定（肯定側は手順 2 が押さえている）。
+ * 出してしまうと、空の検索語で `/{locale}/gems` へ飛ぶ行き止まりのリンクになる。
+ */
+test('SP-19: 検索結果が 0 件のときは Gem 一覧への導線を出さない（ja）', async ({ page }) => {
+  await page.goto('/ja')
+  await searchFor(page, ZERO_HITS_QUERY)
+
+  await expect(page.getByText(ja.home.empty, { exact: true })).toBeVisible({
+    timeout: FIRST_RESULT_TIMEOUT_MS,
+  })
+  await expect(page.getByRole('link', { name: ja.home.gemListLink.label })).toHaveCount(0)
+})

@@ -57,9 +57,7 @@ export type SearchGems = (input: SearchGemsInput) => Promise<SearchGemsResult>
  * 不正値（0・負・小数・非数・巨大値・未指定）は例外にせず既定ページへ倒す（URL 改変で 500 にしない）。
  * 同名クエリが重複して配列で届いたときは先頭の値を採る（`searchParams` の素の形をそのまま受ける）。
  */
-export function toGemListPage(
-  raw: string | readonly string[] | number | null | undefined,
-): number {
+export function toGemListPage(raw: string | readonly string[] | number | null | undefined): number {
   const value = Array.isArray(raw) ? raw[0] : (raw as string | number | null | undefined)
   if (value == null || value === '') {
     return DEFAULT_PAGE
