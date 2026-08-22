@@ -8,6 +8,7 @@
 | 原典リポジトリ | https://github.com/kai-kou/qiita-bash-lt-2026 |
 | 取得日 | 2026-08-22 |
 | 手順の正本 | `.claude/skills/slides/SKILL.md`（15 ステップ・必達原則 1〜8） |
+| Step 5 / 11 / 15 の読み替え | **解消**。`gws` CLI を導入して原典どおり Google スライドへ上げる（`google-slides-upload.md`） |
 | 併用スキル | `.claude/skills/doc-review/SKILL.md`（7 軸並列レビュー・本ディレクトリに `doc-review.SKILL.md` として取り込み） |
 | 画像生成 | `.claude/skills/gpt-image-2/references/GPT_IMAGE_2_API.md` |
 | 学び | `.claude/rules/lessons.md`（ストリームタイムアウト対策・画像プロンプトの注意） |
@@ -54,4 +55,8 @@
 |---|---|
 | Step 1 スライド構成作成 | 完了（`content/slides_content_gem-hunter.md`） |
 | Step 2 構成セルフレビュー | 実施（`step2-self-review.md`） |
-| Step 3 以降 | **Step 6 相当のユーザー承認を得てから着手する** |
+| Step 3 テキスト版作成 | 完了（`output/gem-hunter_text.pptx`・20 枚） |
+| Step 4 テキスト版セルフレビュー | 完了（`verify_text_pptx.py` で全文言の反映を機械照合・描き起こしで目視確認） |
+| Step 5 アップロード | 完了（Google スライド化。手順は `google-slides-upload.md`） |
+| Step 6 テキスト版ユーザーレビュー | **承認待ち** |
+| Step 9 以降（画像版） | Step 6 の承認後に着手する |
