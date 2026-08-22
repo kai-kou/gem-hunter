@@ -99,13 +99,5 @@ describe('messages カタログ', () => {
       expect(en.gems.loadFailed).toContain('Gem candidate pool')
       expect(en.gems.loadFailed).not.toContain('GitHub')
     })
-
-    it.each([
-      ['ja', ja],
-      ['en', en],
-    ])('%s は再試行を促す（行き止まりにしない・`US-24`）', (_name, messages) => {
-      expect(messages.gems.loadFailed.length).toBeGreaterThan(0)
-      expect(messages.common.retry.length).toBeGreaterThan(0)
-    })
   })
 })

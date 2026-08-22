@@ -81,8 +81,12 @@ const GEM_LIST_HEADING_ID = 'gems-heading'
 
 /**
  * 🔴 出典表示の期待値は **配信データそのもの**（`public/data/gem-index/index.json`）から作る。
- * ハードコードすると `parseMeta` を `return FALLBACK_META` に退化させても（＝配信データの帰属
- * 情報を一切読まなくても）E2E が緑のままになる（F-37）。
+ * ハードコードすると、配信データの帰属情報が変わったときに E2E が古い期待値のまま緑になる（F-37）。
+ *
+ * ⚠️ **これだけでは `parseMeta` の退化（`return FALLBACK_META`）は検出できない**: 現時点の実データと
+ * `FALLBACK_META` は描画されない `generatedAt` 以外が一致しているため、両者を画面越しに区別できない。
+ * その回帰点はインフラ層のユニットテスト（`generatedAt` の差で落ちる）が押さえており、E2E の役割は
+ * 「出典表示が読める」ことの確認に留める（検証のために本番の表示項目を増やさない・親裁定 2026-08-22）。
  */
 const poolMeta = JSON.parse(
   readFileSync(path.join(process.cwd(), 'public/data/gem-index/index.json'), 'utf8'),
