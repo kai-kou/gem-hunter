@@ -41,7 +41,18 @@ QUALITY = 78        # PPTX 全体を 5.0MB 未満に収めるための圧縮率�
 
 
 def to_jpeg(src: Path, dest: Path) -> Path:
-    """任意の画像を 1536x864 の JPEG（quality 88）へ正規化する。"""
+    """任意の画像を 1536x864 の JPEG へ正規化する。
+
+    すでに目標寸法の JPEG ならそのままコピーする。JPEG を開いて保存し直すと世代劣化が乗り、
+    デッキを組み直すたびに画質が落ちていくため（コミット済みの `images/*.jpg` を素材に戻して
+    再ビルドする経路がこれに当たる）。
+    """
+    with Image.open(src) as probe:
+        if probe.format == "JPEG" and probe.size == SIZE:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if src.resolve() != dest.resolve():
+                shutil.copyfile(src, dest)
+            return dest
     with Image.open(src) as im:
         im = im.convert("RGB")
         if im.size != SIZE:
@@ -57,9 +68,16 @@ def resolve(slide: dict) -> Path:
     new_id = re.search(r"(new-\d+)", visual)
     if new_id:
         raw = RAW_NEW / f"{new_id.group(1)}.png"
-        if not raw.exists():
-            raise FileNotFoundError(f"生成画像がない: {raw}")
-        return to_jpeg(raw, IMAGES / f"{new_id.group(1)}.jpg")
+        committed = IMAGES / f"{new_id.group(1)}.jpg"
+        if raw.exists():
+            return to_jpeg(raw, committed)
+        # 画像を生成し直さずにデッキだけ組み直す経路。コミット済みの JPEG をそのまま使う
+        # （再エンコードしないので世代劣化が乗らない）。
+        if committed.exists():
+            return committed
+        raise FileNotFoundError(
+            f"生成画像がない: {raw}（コミット済みの {committed} も無い）"
+        )
     shot_id = re.search(r"(shot-\d+)", visual)
     if shot_id:
         found = sorted(IMAGES.glob(f"{shot_id.group(1)}-*.png"))
