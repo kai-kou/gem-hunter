@@ -38,10 +38,12 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「star の多さは、使われている証拠ではない」
+「出発点は「自分が使うライブラリを選ぶとき、star 以外に判断材料がない」という不便だった」
+「star は「後で読む」ブックマーク代わりにも押されるので、利用実績とは意味が違う」
 「約 600 万個の偽 star が観測されている（He et al., ICSE 2026）」
 「debug_inspector は 25 star で 111,000 以上のプロジェクトから依存されている」
-「star 順に並べるほど「役立つが無名」なものは沈む」
-「被依存数に対して star が不釣り合いに小さいものを Gem と定義する」
+「被依存数なら実際に組み込まれた回数を近似できるが、それだけで並べると有名どころが上位を占める」
+「だから「実利用のわりに注目されていないもの」を測る指標が要る、というのが最初の仮説」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 左右 2 カラムの対比。左は星アイコンの山をグレーで、右はダイヤアイコン 1 つをコーラルで強調。中央に上下を分ける矢印記号

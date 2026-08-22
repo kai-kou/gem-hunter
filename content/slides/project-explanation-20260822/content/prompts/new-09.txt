@@ -34,13 +34,15 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「持ち帰れる 3 つの考え方」
+「持ち帰れる 4 つの考え方」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「持ち帰れる 3 つの考え方」
-「指標は絶対値ではなく残差で作ると、水増しに構造的に強くなる」
-「層を足す前に「どの規律を守るためか」を 1 行で言えるかを問う」
-「作った機能を実測で殺せるように、判断の根拠を記録に残しておく」
+「持ち帰れる 4 つの考え方」
+「注目度ではなく実利用を起点に測ると、既存の順位づけとは別のものが見えてくる」
+「指標は絶対値ではなく残差で作ると、数字の水増しに構造的に強くなる」
+「層を足す前に「どの規律を守るためか」を 1 行で言えるかを問う。言えないなら足さない」
+「作った機能を実測で殺せるように、判断の根拠と却下案を記録に残しておく」
+「どれも gem-hunter に固有ではなく、次に作るものにそのまま持ち込める」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 3 枚の角丸カードを横に並べる。各カードの上部に小さなアイコン（天秤・積み木・墓標）

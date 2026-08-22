@@ -38,15 +38,13 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「作った差別化機能を、実測で撤去した」
-「却下」
-「候補プールはユニーク 227 リポジトリ」
-「候補拡大はバンドル 3MB 上限を超える」
-「採用」
-「sort=gem-index を検索結果から撤去」
-「体感 3〜8 秒 → 0.5〜1 秒」
-「Gem Index は「今日の Gem」で継続」
-「ADR-0009」
-「D-33」
+「作る前は「被依存数で並べれば埋もれた良いものが出る」と考えていた」
+「却下: 候補プールはユニーク 227 リポジトリしかなく、検索上位 100 件との一致は一般語でほぼ 0 件」
+「却下: 候補を広げる案もあったが、バンドルが Workers Free の 3 MB 上限を超える」
+「採用: sort=gem-index を検索結果から撤去した（Gem Index の定義そのものは撤回しない）」
+「採用: 1 検索あたり最大 10 リクエスト（体感 3〜8 秒）だったものが、常に 1 回（0.5〜1 秒）になった」
+「採用: Gem Index は「今日の Gem」ダイジェストで使い続ける」
+「差別化の見せ場を自分で外す決定だったが、実測の数字の前では迷う余地がなかった」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）を並べる 2 カラム対比。下部にチップ 2 つ

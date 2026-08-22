@@ -79,7 +79,7 @@ content/discussions/project-slides-20260822/ ← whiteboard のみ
 
 ### 4.1 議論型 discussion-review が Step 2 を兼ねるか
 
-**部分的に兼ねる**: この Round 1 議論が（narrative_design 主導で）アウトライン 7 項目の**論理・MECE・異議反論**を行い、構成を磨いている。
+**部分的に兼ねる**: この Round 1 議論が（narrative_design 主導で）アウトライン 7 項目の **論理・MECE・異議反論** を行い、構成を磨いている。
 
 **ただし Step 2 は「ファクトチェック + 最新情報リサーチ」も必須** → **議論型では不完全**。
 
@@ -102,7 +102,7 @@ grep -A 50 "### Image text elements" slides_outline.md > expected_text.txt
 diff <(sort expected_text.txt) <(sort extracted_text.txt) || echo "Text mismatch detected"
 ```
 
-**利点**: 手動一文字照合の人力を削減。**制限**: OCR エラー（特殊文字・日本語フォント・背景色）で誤判定の可能性 → **最終確認は目視**が引き続き必須。手順は Step 10 で「OCR 照合 → 視覚的確認」の 2 段階に落とす。
+**利点**: 手動一文字照合の人力を削減。**制限**: OCR エラー（特殊文字・日本語フォント・背景色）で誤判定の可能性 → **最終確認は目視** が引き続き必須。手順は Step 10 で「OCR 照合 → 視覚的確認」の 2 段階に落とす。
 
 ---
 

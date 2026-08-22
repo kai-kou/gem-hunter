@@ -69,154 +69,178 @@
    "title": "star 順では出てこない OSS を、検索できる",
    "message": "まず動くものを見せる（アウトカム先出し）",
    "elements": [
-    "キーワードを入れると一覧が出て、カードから詳細ページへ進める",
-    "検索条件は URL に乗るので、共有しても戻っても同じ結果が出る",
-    "未ログインで全機能が使える（ログインで変わるのはレート枠だけ）"
+    "キーワードを入れると一覧が出て、カードから独立した URL の詳細ページへ進める",
+    "検索条件・並び順・ページ番号はすべて URL に載るので、共有しても戻っても同じ画面が再現する",
+    "並び替えは関連度・star 数・更新日時、表示件数は 20 / 50 / 100 件から選べる",
+    "詳細ページは README までサーバー側で描画するため、初回表示で JavaScript を待たない",
+    "未ログインでも全機能が使える。ログインで変わるのは GitHub API のレート枠だけ",
+    "この画面がこの発表のゴール。ここに至るまでの判断をこれから話す"
    ],
    "visual": "実 UI スクリーンショット shot-01（検索結果一覧）",
-   "source": "docs/02_requirements/user-story-map.md SP-1〜SP-11 / ADR 0012"
+   "source": "docs/02_requirements/user-story-map.md SP-1〜SP-11 / ADR 0012 / 実画面（スタブ API）"
   },
   {
    "no": 3,
    "title": "検索しなくても、その日の Gem が並ぶ",
    "message": "ゼロクエリの日次ダイジェストが独立した機能として存在する",
    "elements": [
-    "トップページの「今日の Gem」は日付をシードに決定論的に選ばれる",
-    "出典と鮮度を添えて出す",
+    "トップページの「今日の Gem」は、キーワードを 1 文字も入れなくても 5 件並ぶ",
+    "並びは日付をシードにした決定論的な選び方で、同じ日なら誰が見ても同じ顔ぶれになる",
+    "?date=YYYYMMDD を付ければ過去日を再現でき、翌日を待たずに入れ替わりを確認できる",
+    "利用パッケージ数と star 数を併記し、出典（Ecosyste.ms・CC BY-SA 4.0）と鮮度も出す",
+    "この並びに使う指標が Gem Index（被依存数と star の順位差。定義は後半で扱う）",
     "Gem Index を使うのはこのダイジェストだけで、検索結果の並び順には効かない"
    ],
    "visual": "実 UI スクリーンショット shot-02（今日の Gem ダイジェスト）",
-   "source": "ADR 0014 / open-questions.md D-33"
+   "source": "ADR 0014 §2.1 / §2.2 / open-questions.md D-33"
   },
   {
    "no": 4,
    "title": "star の多さは、使われている証拠ではない",
-   "message": "なぜ作ったのか（課題認識）",
+   "message": "なぜ作ったのか（作り手の動機 + 観測された事実）",
    "elements": [
+    "出発点は「自分が使うライブラリを選ぶとき、star 以外に判断材料がない」という不便だった",
+    "star は「後で読む」ブックマーク代わりにも押されるので、利用実績とは意味が違う",
     "約 600 万個の偽 star が観測されている（He et al., ICSE 2026）",
     "debug_inspector は 25 star で 111,000 以上のプロジェクトから依存されている",
-    "star 順に並べるほど「役立つが無名」なものは沈む",
-    "被依存数に対して star が不釣り合いに小さいものを Gem と定義する"
+    "被依存数なら実際に組み込まれた回数を近似できるが、それだけで並べると有名どころが上位を占める",
+    "だから「実利用のわりに注目されていないもの」を測る指標が要る、というのが最初の仮説"
    ],
    "visual": "新規生成 new-02（課題の対比図）",
-   "source": "docs/00_concept/lean-canvas.md P-1 / P-2 / docs/project-mission.md"
+   "source": "docs/00_concept/initial-concept.md / lean-canvas.md P-1・P-2 / ADR 0009 §2.1 / project-mission.md"
   },
   {
    "no": 5,
    "title": "構想を、辿れるドキュメントに分解した",
    "message": "どういう検討をして何を作ったか（全体像）",
    "elements": [
-    "初期コンセプト（IndieGems）が先にあり、外部与件の下限要件でスコープをくるみ直した",
-    "コンセプト → 要件（prd.md が正本）→ 設計 → 開発 の順に積み上げる",
-    "決定の経緯は open-questions.md に D-n として残す",
-    "技術的意思決定は ADR 15 本"
+    "初期コンセプト（IndieGems 構想）が先にあり、外部から与えられた要件でスコープを絞り直した",
+    "コンセプト → 要件 → 設計 → 開発の順に積み上げ、要件の正本は prd.md 1 本に決めた",
+    "「何を作るか」は PRD、「なぜその技術か」は ADR（Architecture Decision Record）と役割を分けた",
+    "決めきれない論点は open-questions.md に D-n 番号で残し、決まった分だけ PRD に反映する",
+    "先に書いたおかげで、実装中に「これは決めたはず」と辿れる状態になった",
+    "各ドキュメントは 16:9 のインフォグラフィック 1 枚に要約してあり、この発表でもそれを使っている"
    ],
    "visual": "既存流用 docs/infographics/08-doc-relations.webp",
-   "source": "docs/README.md / docs/00_concept/inception-deck.md Q1 / docs/02_requirements/minimum-requirements.md"
+   "source": "docs/README.md / inception-deck.md Q1 / minimum-requirements.md / docs/infographics/README.md"
   },
   {
    "no": 6,
-   "title": "層を分けるのは W-1〜W-3 を守るときだけ",
-   "message": "アーキテクチャの規律",
+   "title": "層を分けるのは、3 つの規律を守るときだけ",
+   "message": "アーキテクチャの規律（層を足す条件）",
    "elements": [
-    "W-1 データ源を差し替えられる",
-    "W-2 事業者（Cloudflare）固有 API をアプリ全体に染み出させない",
-    "W-3 ネットワークもフレームワークも要らずにテストできる",
-    "「クリーンアーキテクチャだから」は層を足す理由にならない",
-    "唯一の意図的な例外が TTL 付きキャッシュ層（ADR 0005）"
+    "W-1 データ源を差し替えられる（被依存数・健全性の取得先が変わっても UI を書き換えない）",
+    "W-2 事業者を差し替えられる（Cloudflare 固有の API をアプリ全体に染み出させない）",
+    "W-3 速く確実にテストできる（中核ロジックがネットワークもフレームワークも要らずに動く）",
+    "「クリーンアーキテクチャだから」は層を足す理由にならない。W-1〜W-3 のどれを守るかを 1 行で言えることが条件",
+    "層の依存方向は専用スクリプトで機械検査していて、レビューで見落としても check で落ちる",
+    "この規律に対する唯一の意図的な例外がキャッシュ層で、その中身は後半で扱う"
    ],
    "visual": "既存流用 docs/infographics/07-design.webp",
-   "source": "docs/03_design/architecture/application-architecture.md L20-24 / ADR 0005"
+   "source": "docs/03_design/architecture/application-architecture.md L20-24 / ADR 0005 / tools/check_architecture_boundaries.py"
   },
   {
    "no": 7,
-   "title": "Next.js 16 を Cloudflare Workers の上で動かす",
-   "message": "技術スタックの実体",
+   "title": "Next.js 16 を Workers の上で動かす",
+   "message": "技術スタックと、その選び方の制約",
    "elements": [
-    "Next.js 16（App Router・React Server Components）",
-    "Tailwind CSS v4 + shadcn/ui（Radix UI）",
-    "Cloudflare Workers（@opennextjs/cloudflare）",
-    "Vitest 4 + Testing Library + MSW 2（単体・結合）",
-    "Playwright + axe（E2E）"
+    "Next.js 16（App Router・React Server Components）で、クライアント JS を最小限に保つ",
+    "UI は Tailwind CSS v4 + shadcn/ui（Radix UI）。デザイントークンを 1 か所に集約する",
+    "実行環境は Cloudflare Workers。コールドスタートがほぼなく、無料枠で実用に足りる",
+    "Next.js を Workers に載せているのは OpenNext（@opennextjs/cloudflare）というアダプタ",
+    "テストは Vitest 4 + Testing Library + MSW 2（単体・結合）と Playwright + axe（E2E）",
+    "この組み合わせは「事業者固有の API をアプリコードへ持ち込まない」という制約から選んでいる"
    ],
    "visual": "既存流用 docs/infographics/12-cloudflare.webp",
-   "source": "README.md 技術スタック表 / ADR 0001 / ADR 0002 / ADR 0006"
+   "source": "README.md 技術スタック表 / ADR 0001 / ADR 0002 / ADR 0006 / NFR-21"
   },
   {
    "no": 8,
    "title": "同じコードでも、プレビューでだけ壊れる",
    "message": "実際に踏んだ罠（環境固有の破れ）",
    "elements": [
-    "redirects の destination に :path を書くとプレビューでだけ 500 になる（OpenNext が path-to-regexp を validate: true で呼ぶ）",
-    "拡張子付きパスは /repos/angular/angular.js が 404、/ja を付けると 200",
+    "redirects の destination に :path を書くと、プレビューでだけ 500 になる",
+    "原因は OpenNext が path-to-regexp を validate: true で呼ぶこと（Next.js 本体は false）",
+    "拡張子付きパスは /repos/angular/angular.js が 404、/ja を付けると 200 になる",
     "wrangler deploy がブロックされることがある（実測 5 回失敗・2 回成功の非決定的挙動）",
-    "ローカルの next start では再現しないので、プレビューで踏むまで気づけない"
+    "どれもローカルの next start では再現せず、プレビューに上げて初めて壊れた",
+    "以後「動いた」ではなく「どの環境で動いたか」で記録するようにした"
    ],
    "visual": "新規生成 new-03（罠の実測表）",
-   "source": "docs/rules/lessons/cloud-environment.md L-129 / L-130 / ADR 0002"
+   "source": "docs/rules/lessons/cloud-environment.md L-129 / L-130 / ADR 0002 決定 #6"
   },
   {
    "no": 9,
-   "title": "Gem Index ＝ 被依存数と star の残差",
-   "message": "差別化ロジックの中身",
-   "elements": [
-    "被依存数のパーセンタイル順位 − star のパーセンタイル順位",
-    "star を水増しすると値は下がるので、偽 star に構造的に頑健",
-    "健全性（criticality_score）は合算せず、足切りにだけ使う",
-    "合算すると「健全だが有名」が上位に戻り star 追随に退化する"
-   ],
-   "visual": "既存流用 docs/infographics/10-gem-score.webp",
-   "source": "ADR 0009 §2.1 / §3.1 / §3.2"
-  },
-  {
-   "no": 10,
    "title": "1 セッションを 1 スプリントとして回す",
    "message": "AI エージェントの自律運用（規範の記述であって効果の断定ではない）",
    "elements": [
-    "着手時に Issue を status:in-progress にして論理ロックを取る",
-    "スプリントゴールと編成を Issue に記録してから実装に入る",
-    "確認してよいのは A-1〜A-6 と、仕様解釈が 2 通り以上ある分岐だけ",
-    "それ以外は実装からマージまで確認なしで進む"
+    "着手したらまず Issue を status:in-progress にして論理ロックを取る",
+    "スプリントゴールと編成（どの役割を何人置くか）を Issue に記録してから実装に入る",
+    "確認を求めてよいのは A-1〜A-6（main への直接 push・課金設定など不可逆な操作）だけ",
+    "もう 1 つの例外は、仕様解釈が 2 通り以上あって選択で成果物が変わるとき",
+    "最初は各段階で確認を挟んでいたが、待ち時間がボトルネックになったので線引きを絞った",
+    "セッションが途中で切れても、Issue のラベルと記録から次のセッションが再開できる"
    ],
    "visual": "新規生成 new-04（セッション = スプリントの流れ）",
    "source": "docs/rules/session-sprint-rules.md §1-2 / user-confirmation-minimization.md §1 / sprint-development-rules.md SD-3"
   },
   {
-   "no": 11,
+   "no": 10,
    "title": "テストを先に書き、緑でなければ進めない",
    "message": "TDD と品質担保",
    "elements": [
-    "Red → Green → Refactor の順を崩さない",
-    "単体・結合は Vitest + MSW、E2E は Playwright + axe",
-    "操作レビューの手順をそのまま E2E テストに写す",
-    "テストのスキップ・無効化で緑にしない"
+    "Red → Green → Refactor の順を崩さない。テストを後から足す順序を取らない",
+    "単体・結合は Vitest + MSW でネットワークに触らず、E2E は Playwright + axe で実ブラウザを動かす",
+    "操作レビューの手順をそのまま E2E に写すので、手で確かめたことが以後は自動で守られる",
+    "テストのスキップ・無効化で緑にしない。落ちたまま次のタスクに進まない",
+    "外部 API はすべてモック化してあり、環境変数を 1 つも設定しなくてもテストが完走する",
+    "テストを後回しにした回は、動くものは早くできても後から直すコストの方が高くついた"
    ],
    "visual": "既存流用 docs/infographics/11-testing-strategy.webp",
-   "source": "docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2"
+   "source": "docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2 / README.md"
+  },
+  {
+   "no": 11,
+   "title": "20 項目の機械検証を通してからマージする",
+   "message": "PR 運用の自律化（実績値つき）",
+   "elements": [
+    "npm run check が 20 項目を検証する（lint・型・単体/結合・E2E・a11y・アーキテクチャ境界ほか）",
+    "機械で落とせる項目は人が見ないので、レビューは設計判断に集中できる",
+    "観点別のセルフレビュー → 行単位のインラインコメント → 対応 → squash マージ",
+    "同じ箇所の修正サイクルが 2 回を超えたら止めて報告する（2 回続くと設計判断が要るサイン）",
+    "この運用でマージ済みの PR は 90 件（2026-08-22 時点・GitHub 検索の実測）",
+    "速度の効果は測っていないので語らない。言えるのは「この手順で回っている」ことだけ"
+   ],
+   "visual": "新規生成 new-05（PR 自律フロー）",
+   "source": "docs/rules/pr-review-flow-summary.md / PR #361 本文の check 結果表 / GitHub 検索実測 2026-08-22"
   },
   {
    "no": 12,
-   "title": "PR 前に 20 項目を機械検証してからマージする",
-   "message": "PR 運用の自律化（実績値つき）",
+   "title": "Gem Index ＝ 被依存数と star の残差",
+   "message": "差別化ロジックの定義（直後の撤去話への助走）",
    "elements": [
-    "npm run check が lint・型・単体/結合・E2E・a11y・アーキテクチャ境界など 20 項目を検証する",
-    "観点別セルフレビュー → 行単位インラインコメント → 対応 → squash マージ",
-    "同じ箇所の修正サイクルが 2 回を超えたら止めて報告する",
-    "この運用でマージ済み PR は 90 件（2026-08-22 時点）"
+    "エコシステム内での「被依存数のパーセンタイル順位」から「star のパーセンタイル順位」を引く",
+    "パーセンタイル順位で比べるので、言語やエコシステムの規模が違っても同じ尺度に乗る",
+    "star を水増しすると値は下がる。偽 star に構造的に強い",
+    "健全性は criticality_score（OpenSSF の既存指標）をそのまま使い、自作しない",
+    "健全性は合算せず足切りにだけ使う。合算すると「健全だが有名」が上位に戻る",
+    "被依存数は Ecosyste.ms、star は GitHub API から取る"
    ],
-   "visual": "新規生成 new-05（PR 自律フロー）",
-   "source": "docs/rules/pr-review-flow-summary.md / PR #361 の check 結果表 / GitHub 検索実測 2026-08-22"
+   "visual": "既存流用 docs/infographics/10-gem-score.webp",
+   "source": "ADR 0009 §2.1 / §3.1 / §3.2 / §3.3"
   },
   {
    "no": 13,
    "title": "作った差別化機能を、実測で撤去した",
-   "message": "技術的課題 1: 測って自分で殺す",
+   "message": "技術的課題 1: 測って自分で殺す（この発表の主役・90〜100 秒）",
    "elements": [
-    "却下: 候補プールはユニーク 227 リポジトリ、検索上位 100 件との一致は一般語でほぼ 0 件",
-    "却下: 候補を拡大するとバンドルが Workers Free の 3MB 上限を超える",
-    "採用: sort=gem-index を検索結果から撤去した",
-    "採用: 1 検索あたり最大 10 リクエスト（体感 3〜8 秒）が常に 1 リクエスト（0.5〜1 秒）になった",
-    "採用: Gem Index の定義は撤回せず「今日の Gem」で使い続ける"
+    "作る前は「被依存数で並べれば埋もれた良いものが出る」と考えていた",
+    "却下: 候補プールはユニーク 227 リポジトリしかなく、検索上位 100 件との一致は一般語でほぼ 0 件",
+    "却下: 候補を広げる案もあったが、バンドルが Workers Free の 3 MB 上限を超える",
+    "採用: sort=gem-index を検索結果から撤去した（Gem Index の定義そのものは撤回しない）",
+    "採用: 1 検索あたり最大 10 リクエスト（体感 3〜8 秒）だったものが、常に 1 回（0.5〜1 秒）になった",
+    "採用: Gem Index は「今日の Gem」ダイジェストで使い続ける",
+    "差別化の見せ場を自分で外す決定だったが、実測の数字の前では迷う余地がなかった"
    ],
    "visual": "新規生成 new-06（採用 vs 却下）",
    "source": "ADR 0009 D-33 追記 / open-questions.md D-33"
@@ -226,14 +250,16 @@
    "title": "認証方式は 6 つの軸で選ぶ",
    "message": "技術的課題 2: 次に同じ選定をするときの判断軸",
    "elements": [
-    "却下: Fine-grained PAT（有効期限の更新が人手に残る）",
-    "却下: 未認証のまま叩く（レート枠が狭い）",
-    "採用: GitHub App の installation token",
-    "軸 2「トークン取得の往復コストを払えるか」と軸 4「実装コストを払えるか」が拒否権を持つ",
-    "決め手は軸 3（有効期限更新を人手でやらない）で、枠の拡大は付随した利点"
+    "最初は Fine-grained PAT で十分だと思っていた",
+    "却下: PAT は有効期限の更新が人手に残る（定常運用ゼロという要件と噛み合わない）",
+    "却下: 未認証のまま叩く（レート枠が狭く、利用者が増えるほど体感が落ちる）",
+    "採用: GitHub App の installation token（JWT 署名 → token 取得 → 失効前まで再利用）",
+    "軸 2「取得の往復コストを払えるか」と軸 4「実装コストを払えるか」が拒否権を持つ",
+    "決め手は軸 3（有効期限の更新を人手でやらない）。レート枠の拡大は付随して得られた利点",
+    "軸は「どれが効いたか」ではなく「どれが拒否権を持つか」で並べてある"
    ],
    "visual": "新規生成 new-07（採用 vs 却下）",
-   "source": "ADR 0003 §6.1 の 6 軸表 / §3.2"
+   "source": "ADR 0003 §3.2 / §6.1 の 6 軸表"
   },
   {
    "no": 15,
@@ -241,37 +267,43 @@
    "message": "技術的課題 3: 状態をどこに置くか",
    "elements": [
     "却下: 自前 ETL + DB（単一開発者 + AI の運用では定常運用コストが見合わない）",
-    "却下: お気に入りのサーバー保存（端末間同期の利便性より DB レス原則を優先）",
-    "採用: 検索状態は URL、ロケールはパス、セッションは暗号化 httpOnly Cookie、お気に入りは localStorage",
-    "唯一の例外は TTL 付きの CachePort（ADR 0005）"
+    "却下: お気に入りをサーバーに保存（端末間同期の利便性より DB レス原則を優先した）",
+    "採用: 検索状態は URL に、ロケールはパスに置く",
+    "採用: セッションは暗号化 httpOnly Cookie、お気に入りは localStorage に置く",
+    "唯一の例外が CachePort（アーキテクチャで触れた TTL 付きキャッシュ層のインターフェース）",
+    "DB を持たないので、バックアップもマイグレーションも運用から消えた",
+    "代わりに利用者ごとの状態は端末に閉じ、端末間で共有できない（受け入れた代償）"
    ],
    "visual": "新規生成 new-08（採用 vs 却下）",
-   "source": "ADR 0007 §2 / §6"
+   "source": "ADR 0007 §2 / §6 / ADR 0005"
   },
   {
    "no": 16,
-   "title": "持ち帰れる 3 つの考え方",
-   "message": "聴衆が自分の現場で使えるもの",
+   "title": "持ち帰れる 4 つの考え方",
+   "message": "聴衆が自分の現場で使えるもの（主題の回収）",
    "elements": [
-    "指標は絶対値ではなく残差で作ると、水増しに構造的に強くなる",
-    "層を足す前に「どの規律を守るためか」を 1 行で言えるかを問う",
-    "作った機能を実測で殺せるように、判断の根拠を記録に残しておく"
+    "注目度ではなく実利用を起点に測ると、既存の順位づけとは別のものが見えてくる",
+    "指標は絶対値ではなく残差で作ると、数字の水増しに構造的に強くなる",
+    "層を足す前に「どの規律を守るためか」を 1 行で言えるかを問う。言えないなら足さない",
+    "作った機能を実測で殺せるように、判断の根拠と却下案を記録に残しておく",
+    "どれも gem-hunter に固有ではなく、次に作るものにそのまま持ち込める"
    ],
    "visual": "新規生成 new-09（まとめ）",
-   "source": "ADR 0009 / application-architecture.md W-1〜W-3 / open-questions.md D-33"
+   "source": "ADR 0009 / application-architecture.md W-1〜W-3 / open-questions.md D-33 / project-mission.md"
   },
   {
    "no": 17,
    "title": "リポジトリとドキュメントの入口",
-   "message": "次に読むもの",
+   "message": "次に読むもの・触るもの",
    "elements": [
-    "github.com/kai-kou/gem-hunter",
+    "動くものを触るなら: github.com/kai-kou/gem-hunter",
     "要件の正本: docs/02_requirements/prd.md",
     "決定の経緯: docs/02_requirements/open-questions.md",
-    "技術的意思決定: docs/adr/（15 本）"
+    "技術的意思決定: docs/adr/（15 本）",
+    "この発表の構成・画像・生成スクリプトもリポジトリに入っている"
    ],
    "visual": "新規生成 new-10（クロージング）",
-   "source": "README.md / docs/README.md"
+   "source": "README.md / docs/README.md / content/slides/project-explanation-20260822/"
   }
  ],
  "new_images": [
@@ -279,142 +311,61 @@
    "id": "new-01",
    "slide_no": 1,
    "quality": "medium",
-   "motif": "表紙。中央にダイヤ + 虫眼鏡のシンプルなアイコン 1 つ、上部にバナー見出し。生成りの紙地・手書きグラレコ調",
-   "text_elements": [
-    "gem-hunter",
-    "star では埋もれる「実際に使われている OSS」を見つける",
-    "開発者向け解説 / 2026-08-22"
-   ]
+   "motif": "表紙。中央にダイヤ + 虫眼鏡のシンプルなアイコン 1 つ、上部にバナー見出し。生成りの紙地・手書きグラレコ調"
   },
   {
    "id": "new-02",
    "slide_no": 4,
    "quality": "medium",
-   "motif": "左右 2 カラムの対比。左は星アイコンの山をグレーで、右はダイヤアイコン 1 つをコーラルで強調。中央に上下を分ける矢印記号",
-   "text_elements": [
-    "star の多さは、使われている証拠ではない",
-    "約 600 万個の偽 star が観測されている（He et al., ICSE 2026）",
-    "debug_inspector は 25 star で 111,000 以上のプロジェクトから依存されている",
-    "star 順に並べるほど「役立つが無名」なものは沈む",
-    "被依存数に対して star が不釣り合いに小さいものを Gem と定義する"
-   ]
+   "motif": "左右 2 カラムの対比。左は星アイコンの山をグレーで、右はダイヤアイコン 1 つをコーラルで強調。中央に上下を分ける矢印記号"
   },
   {
    "id": "new-03",
    "slide_no": 8,
    "quality": "medium",
-   "motif": "4 行の表組み。各行の左に警告の三角アイコンだけを置く。右端に判定記号（チェックやバツ）を置かない（どの行も不具合の記録であり、良し悪しの判定ではないため）",
-   "text_elements": [
-    "同じコードでも、プレビューでだけ壊れる",
-    "redirects の destination に :path を書くとプレビューでだけ 500 になる",
-    "拡張子付きパスは /repos/angular/angular.js が 404、/ja を付けると 200",
-    "wrangler deploy がブロックされることがある（実測 5 回失敗・2 回成功）",
-    "ローカルの next start では再現しない"
-   ]
+   "motif": "4 行の表組み。各行の左に警告の三角アイコンだけを置く。右端に判定記号（チェックやバツ）を置かない（どの行も不具合の記録であり、良し悪しの判定ではないため）"
   },
   {
    "id": "new-04",
-   "slide_no": 10,
+   "slide_no": 9,
    "quality": "medium",
-   "motif": "左から右へ 4 つの角丸ボックスが矢印でつながる横型フロー。各ボックスに小さなアイコン（鍵・旗・分岐・チェック）",
-   "text_elements": [
-    "1 セッションを 1 スプリントとして回す",
-    "着手時に Issue を status:in-progress にして論理ロックを取る",
-    "スプリントゴールと編成を Issue に記録してから実装に入る",
-    "確認してよいのは A-1〜A-6 と、仕様解釈が 2 通り以上ある分岐だけ",
-    "それ以外は実装からマージまで確認なしで進む"
-   ]
+   "motif": "左から右へ 4 つの角丸ボックスが矢印でつながる横型フロー。各ボックスに小さなアイコン（鍵・旗・分岐・チェック）"
   },
   {
    "id": "new-05",
-   "slide_no": 12,
+   "slide_no": 11,
    "quality": "medium",
-   "motif": "円環状のフロー。4 つのノードを矢印でつなぎ、中央に大きな数字のバッジ 1 つ。ノードには歯車・虫眼鏡・吹き出し・マージ記号のアイコン",
-   "text_elements": [
-    "PR 前に 20 項目を機械検証してからマージする",
-    "npm run check が lint・型・単体/結合・E2E・a11y・アーキテクチャ境界など 20 項目を検証する",
-    "観点別セルフレビュー → 行単位インラインコメント → 対応 → squash マージ",
-    "同じ箇所の修正サイクルが 2 回を超えたら止めて報告する",
-    "この運用でマージ済み PR は 90 件（2026-08-22 時点）"
-   ]
+   "motif": "円環状のフロー。4 つのノードを矢印でつなぎ、中央に大きな数字のバッジ 1 つ。ノードには歯車・虫眼鏡・吹き出し・マージ記号のアイコン"
   },
   {
    "id": "new-06",
    "slide_no": 13,
    "quality": "medium",
-   "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）を並べる 2 カラム対比。下部にチップ 2 つ",
-   "text_elements": [
-    "作った差別化機能を、実測で撤去した",
-    "却下",
-    "候補プールはユニーク 227 リポジトリ",
-    "候補拡大はバンドル 3MB 上限を超える",
-    "採用",
-    "sort=gem-index を検索結果から撤去",
-    "体感 3〜8 秒 → 0.5〜1 秒",
-    "Gem Index は「今日の Gem」で継続",
-    "ADR-0009",
-    "D-33"
-   ]
+   "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）を並べる 2 カラム対比。下部にチップ 2 つ"
   },
   {
    "id": "new-07",
    "slide_no": 14,
    "quality": "medium",
-   "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右側に拒否権を示す盾アイコン 2 つ。下部にチップ 1 つ",
-   "text_elements": [
-    "認証方式は 6 つの軸で選ぶ",
-    "却下",
-    "Fine-grained PAT（有効期限の更新が人手に残る）",
-    "未認証のまま叩く（レート枠が狭い）",
-    "採用",
-    "GitHub App の installation token",
-    "軸 2 と軸 4 が拒否権を持つ",
-    "決め手は軸 3（有効期限更新を人手でやらない）",
-    "ADR-0003"
-   ]
+   "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右側に拒否権を示す盾アイコン 2 つ。下部にチップ 1 つ"
   },
   {
    "id": "new-08",
    "slide_no": 15,
    "quality": "medium",
-   "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右ボックス内は 4 つの小さな箱に分かれた図。下部にチップ 1 つ",
-   "text_elements": [
-    "Web アプリだが、DB を 1 つも持たない",
-    "却下",
-    "自前 ETL + DB（定常運用コストが見合わない）",
-    "お気に入りのサーバー保存",
-    "採用",
-    "検索状態は URL、ロケールはパス",
-    "セッションは暗号化 httpOnly Cookie",
-    "お気に入りは localStorage",
-    "唯一の例外は TTL 付きの CachePort",
-    "ADR-0007"
-   ]
+   "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右ボックス内は 4 つの小さな箱に分かれた図。下部にチップ 1 つ"
   },
   {
    "id": "new-09",
    "slide_no": 16,
    "quality": "medium",
-   "motif": "3 枚の角丸カードを横に並べる。各カードの上部に小さなアイコン（天秤・積み木・墓標）",
-   "text_elements": [
-    "持ち帰れる 3 つの考え方",
-    "指標は絶対値ではなく残差で作ると、水増しに構造的に強くなる",
-    "層を足す前に「どの規律を守るためか」を 1 行で言えるかを問う",
-    "作った機能を実測で殺せるように、判断の根拠を記録に残しておく"
-   ]
+   "motif": "3 枚の角丸カードを横に並べる。各カードの上部に小さなアイコン（天秤・積み木・墓標）"
   },
   {
    "id": "new-10",
    "slide_no": 17,
    "quality": "medium",
-   "motif": "中央に本とリンクのアイコン。下に 4 行のリスト。各行の左に小さな四角のマーカー",
-   "text_elements": [
-    "リポジトリとドキュメントの入口",
-    "github.com/kai-kou/gem-hunter",
-    "要件の正本: docs/02_requirements/prd.md",
-    "決定の経緯: docs/02_requirements/open-questions.md",
-    "技術的意思決定: docs/adr/（15 本）"
-   ]
+   "motif": "中央に本とリンクのアイコン。下に 4 行のリスト。各行の左に小さな四角のマーカー"
   }
  ],
  "screenshots": [
@@ -430,5 +381,13 @@
    "path": "/ja?date=20260820（e2e/sp-14.spec.ts と同じ固定日付・再現性あり）",
    "note": "今日の Gem 日次ダイジェスト"
   }
- ]
+ ],
+ "text_budget": {
+  "body_points": "5〜7 点",
+  "chars_per_point": "40〜60 字",
+  "body_total": "250〜300 字（スライド 13 のみ 300〜400 字）",
+  "heading_new_image": "24 字以内",
+  "heading_reused_image": "32 字以内",
+  "note": "ユーザー指示（2026-08-22）により旧基準（本文 150 字 / 4 点）の 2 倍に引き上げた"
+ }
 }

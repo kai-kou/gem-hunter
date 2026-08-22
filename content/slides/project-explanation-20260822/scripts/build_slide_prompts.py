@@ -44,8 +44,9 @@ Keep the whole composition readable when projected: few, large elements with gen
 """
 
 
-def build(image: dict) -> str:
-    elements = image["text_elements"]
+def build(image: dict, slide: dict) -> str:
+    # 焼き込むテキストの正本はスライド本体（タイトル + 本文）。画像側に複製を持たない。
+    elements = [slide["title"], *slide["elements"]]
     lines = [STYLE, VERBATIM_RULE, ""]
     lines.append(f'TITLE (top banner, largest text, drawn once):\n「{elements[0]}」')
     lines.append("")
@@ -64,12 +65,15 @@ def build(image: dict) -> str:
 
 def main() -> int:
     plan = json.loads(PLAN.read_text(encoding="utf-8"))
+    slides = {s["no"]: s for s in plan["slides"]}
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for image in plan["new_images"]:
+        slide = slides[image["slide_no"]]
         path = OUT_DIR / f'{image["id"]}.txt'
-        text = build(image)
+        text = build(image, slide)
         path.write_text(text, encoding="utf-8")
-        print(f'{path.name}: {len(text)} chars / {len(image["text_elements"])} text elements')
+        n = 1 + len(slide["elements"])
+        print(f'{path.name}: slide {image["slide_no"]} / {n} text elements / {len(text)} chars')
     return 0
 
 

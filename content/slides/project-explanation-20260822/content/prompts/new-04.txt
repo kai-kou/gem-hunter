@@ -38,10 +38,12 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「1 セッションを 1 スプリントとして回す」
-「着手時に Issue を status:in-progress にして論理ロックを取る」
-「スプリントゴールと編成を Issue に記録してから実装に入る」
-「確認してよいのは A-1〜A-6 と、仕様解釈が 2 通り以上ある分岐だけ」
-「それ以外は実装からマージまで確認なしで進む」
+「着手したらまず Issue を status:in-progress にして論理ロックを取る」
+「スプリントゴールと編成（どの役割を何人置くか）を Issue に記録してから実装に入る」
+「確認を求めてよいのは A-1〜A-6（main への直接 push・課金設定など不可逆な操作）だけ」
+「もう 1 つの例外は、仕様解釈が 2 通り以上あって選択で成果物が変わるとき」
+「最初は各段階で確認を挟んでいたが、待ち時間がボトルネックになったので線引きを絞った」
+「セッションが途中で切れても、Issue のラベルと記録から次のセッションが再開できる」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 左から右へ 4 つの角丸ボックスが矢印でつながる横型フロー。各ボックスに小さなアイコン（鍵・旗・分岐・チェック）

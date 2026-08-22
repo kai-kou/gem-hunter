@@ -38,14 +38,13 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「認証方式は 6 つの軸で選ぶ」
-「却下」
-「Fine-grained PAT（有効期限の更新が人手に残る）」
-「未認証のまま叩く（レート枠が狭い）」
-「採用」
-「GitHub App の installation token」
-「軸 2 と軸 4 が拒否権を持つ」
-「決め手は軸 3（有効期限更新を人手でやらない）」
-「ADR-0003」
+「最初は Fine-grained PAT で十分だと思っていた」
+「却下: PAT は有効期限の更新が人手に残る（定常運用ゼロという要件と噛み合わない）」
+「却下: 未認証のまま叩く（レート枠が狭く、利用者が増えるほど体感が落ちる）」
+「採用: GitHub App の installation token（JWT 署名 → token 取得 → 失効前まで再利用）」
+「軸 2「取得の往復コストを払えるか」と軸 4「実装コストを払えるか」が拒否権を持つ」
+「決め手は軸 3（有効期限の更新を人手でやらない）。レート枠の拡大は付随して得られた利点」
+「軸は「どれが効いたか」ではなく「どれが拒否権を持つか」で並べてある」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右側に拒否権を示す盾アイコン 2 つ。下部にチップ 1 つ

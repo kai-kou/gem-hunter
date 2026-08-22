@@ -38,10 +38,11 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「リポジトリとドキュメントの入口」
-「github.com/kai-kou/gem-hunter」
+「動くものを触るなら: github.com/kai-kou/gem-hunter」
 「要件の正本: docs/02_requirements/prd.md」
 「決定の経緯: docs/02_requirements/open-questions.md」
 「技術的意思決定: docs/adr/（15 本）」
+「この発表の構成・画像・生成スクリプトもリポジトリに入っている」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 中央に本とリンクのアイコン。下に 4 行のリスト。各行の左に小さな四角のマーカー
