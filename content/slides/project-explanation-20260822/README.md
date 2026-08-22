@@ -1,6 +1,6 @@
 # gem-hunter プロジェクト解説スライド（2026-08-22）
 
-開発者・エンジニア向けに gem-hunter を 15〜20 分で解説するスライド一式（17 枚）。
+開発者・エンジニア向けに gem-hunter を 20〜23 分で解説するスライド一式（20 枚）。
 
 作成手順は参照リポジトリ [kai-kou/qiita-bash-lt-2026](https://github.com/kai-kou/qiita-bash-lt-2026) の
 `slides` スキル（15 ステップワークフロー・取得日 2026-08-22）に沿う。環境差分の読み替えは下記「参照ワークフローとの差分」を参照。
@@ -17,13 +17,13 @@
 | `images/` | 画像版に貼った画像（実 UI スクリーンショット 2 枚 + 新規生成 10 枚） |
 | `scripts/` | 生成スクリプト一式 |
 
-## 画像の内訳（17 枚）
+## 画像の内訳（20 枚）
 
 | 系統 | 枚数 | 実体 |
 |---|---|---|
 | 実 UI スクリーンショット | 2 | `images/shot-01-search-results.png` / `images/shot-02-daily-digest.png` |
 | 既存インフォグラフィックの流用 | 5 | `docs/infographics/` の 07 / 08 / 10 / 11 / 12 |
-| `gpt-image-2` で新規生成 | 10 | `images/new-01.jpg` 〜 `new-10.jpg` |
+| `gpt-image-2` で新規生成 | 13 | `images/new-01.jpg` 〜 `new-13.jpg` |
 
 新規生成は **1536×864（完全な 16:9）・quality=medium**。既存 13 枚と同じ設定で、配色・筆致を揃えるため。
 プロンプトのスタイル文は `tools/infographic/build_prompt.py` の `STYLE` を import して共有している（複製しない）。

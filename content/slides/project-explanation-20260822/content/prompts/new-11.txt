@@ -34,16 +34,16 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「機械検証を通さないと PR を出せない」
+「層を足す条件を、3 つに決めてある」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「機械検証を通さないと PR を出せない」
-「GitHub Actions が使えないため、CI の代わりにセッション自身が npm run check を実行する」
-「内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）」
-「残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）」
-「結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする」
-「機械で落とせる項目は人が見ないので、レビューは設計判断に集中できる」
-「アーキテクチャの依存規則もここで落ちる。規律が文書だけで終わらない仕組みにしている」
+「層を足す条件を、3 つに決めてある」
+「W-1 データ源を差し替えられる（被依存数・健全性の取得先が変わっても UI を書き換えない）」
+「W-2 事業者を差し替えられる（Cloudflare 固有の API をアプリ全体に染み出させない）」
+「W-3 速く確実にテストできる（中核ロジックがネットワークもフレームワークも要らずに動く）」
+「「クリーンアーキテクチャだから」は層を足す理由にならない。W-n のどれを守るか 1 行で言えることが条件」
+「唯一の意図的な例外がキャッシュ層。面積を get / set / invalidate + TTL に限る歯止めつきで認めた」
+「ARCH-1〜ARCH-7 は専用スクリプトが機械検査する。ARCH-4・ARCH-5 は抑止コメントも効かない」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
-円環状のフロー。4 つのノードを矢印でつなぎ、中央に大きな数字のバッジ 1 つ。ノードには歯車・虫眼鏡・吹き出し・マージ記号のアイコン
+3 つの角丸ボックス（W-1 / W-2 / W-3）を横に並べ、各ボックスの上に小さなアイコン（差し替えプラグ・盾・ストップウォッチ）。下部に鍵アイコン付きの帯を 1 本

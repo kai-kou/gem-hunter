@@ -126,21 +126,36 @@
   },
   {
    "no": 6,
-   "title": "層を分けるのは、3 つの規律を守るときだけ",
-   "message": "アーキテクチャの規律（層を足す条件）",
+   "title": "依存は内側へ。中心のドメインは何も知らない",
+   "message": "クリーンアーキテクチャの実体（7 層と依存の向き）",
+   "elements": [
+    "7 層構成: domain / usecases / infrastructure / ui / composition / app（Next.js）/ shared",
+    "唯一絶対の規則は「内側は外側を知らない」。src/domain/ は next も react も zod も import しない",
+    "ユースケースは実装を import せず、ドメインが定義したポートを引数で受け取る（依存性逆転）",
+    "app/ と ui/ から infrastructure/ への直 import は禁止。実装を束ねてよいのは composition/ だけ",
+    "GitHub API と認証情報は infrastructure/github/、事業者固有 API は infrastructure/platform/ の中だけ",
+    "ポートは 5 つ（検索・キャッシュ・レート制限・時刻・認証）。表にないポートは実装しない"
+   ],
+   "visual": "既存流用 docs/infographics/07-design.webp",
+   "source": "docs/03_design/architecture/application-architecture.md §1.1-1.3 / §2 / docs/rules/architecture-rules.md §2"
+  },
+  {
+   "no": 7,
+   "title": "層を足す条件を、3 つに決めてある",
+   "message": "アーキテクチャの規律（増やさないための条件）",
    "elements": [
     "W-1 データ源を差し替えられる（被依存数・健全性の取得先が変わっても UI を書き換えない）",
     "W-2 事業者を差し替えられる（Cloudflare 固有の API をアプリ全体に染み出させない）",
     "W-3 速く確実にテストできる（中核ロジックがネットワークもフレームワークも要らずに動く）",
-    "「クリーンアーキテクチャだから」は層を足す理由にならない。W-1〜W-3 のどれを守るかを 1 行で言えることが条件",
-    "層の依存方向は専用スクリプトで機械検査していて、レビューで見落としても check で落ちる",
-    "この規律に対する唯一の意図的な例外がキャッシュ層で、その中身は後半で扱う"
+    "「クリーンアーキテクチャだから」は層を足す理由にならない。W-n のどれを守るか 1 行で言えることが条件",
+    "唯一の意図的な例外がキャッシュ層。面積を get / set / invalidate + TTL に限る歯止めつきで認めた",
+    "ARCH-1〜ARCH-7 は専用スクリプトが機械検査する。ARCH-4・ARCH-5 は抑止コメントも効かない"
    ],
-   "visual": "既存流用 docs/infographics/07-design.webp",
-   "source": "docs/03_design/architecture/application-architecture.md L20-24 / ADR 0005 / tools/check_architecture_boundaries.py"
+   "visual": "新規生成 new-11（層を足す条件）",
+   "source": "application-architecture.md §1.1 / architecture-rules.md §2 の ARCH 表 / ADR 0005 §3.1 / tools/check_architecture_boundaries.py"
   },
   {
-   "no": 7,
+   "no": 8,
    "title": "Next.js 16 を Workers の上で動かす",
    "message": "技術スタックと、その選び方の制約",
    "elements": [
@@ -155,7 +170,7 @@
    "source": "README.md 技術スタック表 / ADR 0001 / ADR 0002 / ADR 0006 / NFR-21"
   },
   {
-   "no": 8,
+   "no": 9,
    "title": "同じコードでも、プレビューでだけ壊れる",
    "message": "実際に踏んだ罠（環境固有の破れ）",
    "elements": [
@@ -170,7 +185,7 @@
    "source": "docs/rules/lessons/cloud-environment.md L-129 / L-130 / ADR 0002 決定 #6"
   },
   {
-   "no": 9,
+   "no": 10,
    "title": "1 セッションを 1 スプリントとして回す",
    "message": "AI エージェントの自律運用（規範の記述であって効果の断定ではない）",
    "elements": [
@@ -185,7 +200,7 @@
    "source": "docs/rules/session-sprint-rules.md §1-2 / user-confirmation-minimization.md §1 / sprint-development-rules.md SD-3"
   },
   {
-   "no": 10,
+   "no": 11,
    "title": "テストを先に書き、緑でなければ進めない",
    "message": "TDD と品質担保",
    "elements": [
@@ -200,22 +215,53 @@
    "source": "docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2 / README.md"
   },
   {
-   "no": 11,
-   "title": "20 項目の機械検証を通してからマージする",
-   "message": "PR 運用の自律化（実績値つき）",
+   "no": 12,
+   "title": "機械検証を通さないと PR を出せない",
+   "message": "Layer 0（機械ゲート）— 人が見る前に落ちる",
    "elements": [
-    "npm run check が 20 項目を検証する（lint・型・単体/結合・E2E・a11y・アーキテクチャ境界ほか）",
+    "GitHub Actions が使えないため、CI の代わりにセッション自身が npm run check を実行する",
+    "内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）",
+    "残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）",
+    "結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする",
     "機械で落とせる項目は人が見ないので、レビューは設計判断に集中できる",
-    "観点別のセルフレビュー → 行単位のインラインコメント → 対応 → squash マージ",
-    "同じ箇所の修正サイクルが 2 回を超えたら止めて報告する（2 回続くと設計判断が要るサイン）",
+    "アーキテクチャの依存規則もここで落ちる。規律が文書だけで終わらない仕組みにしている"
+   ],
+   "visual": "新規生成 new-05（機械検証ゲート）",
+   "source": "tools/run_checks.sh（実測 20 項目）/ pr-review-flow-summary.md / .claude/hooks/pre-pr-create-check.sh"
+  },
+  {
+   "no": 13,
+   "title": "レビューは、他人の PR として読み直す",
+   "message": "Layer 1（セルフレビューの徹底）— /code-review の 3 段構成",
+   "elements": [
+    "外部 AI レビュアー（Copilot・Gemini）は廃止。レビューは自前の /code-review で完結させる",
+    "第 1 段: 観点別に 5〜7 体のサブエージェントを並列起動し、事前文脈なしで差分を読ませる",
+    "自分が書いたコードを自分で読むと盲点が残るため、あえて文脈を持たない読み手を立てる",
+    "第 2 段: 指摘ごとに反証担当を立て、反証に耐えたものを CONFIRMED、疑いが残るものを PLAUSIBLE と明記する",
+    "第 3 段: 確度を問わず全件を行単位のインラインコメントに残す。指摘ゼロでもレビューを 1 件投稿する",
+    "対応しないと決めた指摘も、理由を返信してから Resolve する。黙って閉じない"
+   ],
+   "visual": "新規生成 new-12（レビューの 3 段）",
+   "source": ".claude/skills/code-review/SKILL.md Step 1-3 / docs/rules/ai-reviewer-strategy.md / pr-review-flow.md（#461）"
+  },
+  {
+   "no": 14,
+   "title": "実装からマージまで、確認なしで走り切る",
+   "message": "PR 運用の自律化（止まる条件を先に決めてある）",
+   "elements": [
+    "実装 → セルフレビュー → PR 作成 → 機械ゲート + セルフレビュー → 指摘対応 → squash マージまで一続きで進む",
+    "PR 本文には Sprint Goal・sp（見積もり）・Session-Id・Team（編成）を必ず書く",
+    "Session-Id があるので、セッションが切れても「自分が出した PR」を後から決定論的に回収できる",
+    "同じ箇所の修正サイクルが 2 回を超えたらサーキットブレーカーで止め、根本原因を分析して報告する",
+    "止める条件を先に決めておくことが、確認を挟まずに走らせるための前提になっている",
     "この運用でマージ済みの PR は 90 件（2026-08-22 時点・GitHub 検索の実測）",
     "速度の効果は測っていないので語らない。言えるのは「この手順で回っている」ことだけ"
    ],
-   "visual": "新規生成 new-05（PR 自律フロー）",
-   "source": "docs/rules/pr-review-flow-summary.md / PR #361 本文の check 結果表 / GitHub 検索実測 2026-08-22"
+   "visual": "新規生成 new-13（PR 自律フロー）",
+   "source": "docs/rules/pr-review-flow-summary.md / pr-review-flow.md（サーキットブレーカー）/ session-concurrency-rules.md / GitHub 検索実測 2026-08-22"
   },
   {
-   "no": 12,
+   "no": 15,
    "title": "Gem Index ＝ 被依存数と star の残差",
    "message": "差別化ロジックの定義（直後の撤去話への助走）",
    "elements": [
@@ -230,7 +276,7 @@
    "source": "ADR 0009 §2.1 / §3.1 / §3.2 / §3.3"
   },
   {
-   "no": 13,
+   "no": 16,
    "title": "作った差別化機能を、実測で撤去した",
    "message": "技術的課題 1: 測って自分で殺す（この発表の主役・90〜100 秒）",
    "elements": [
@@ -246,7 +292,7 @@
    "source": "ADR 0009 D-33 追記 / open-questions.md D-33"
   },
   {
-   "no": 14,
+   "no": 17,
    "title": "認証方式は 6 つの軸で選ぶ",
    "message": "技術的課題 2: 次に同じ選定をするときの判断軸",
    "elements": [
@@ -262,7 +308,7 @@
    "source": "ADR 0003 §3.2 / §6.1 の 6 軸表"
   },
   {
-   "no": 15,
+   "no": 18,
    "title": "Web アプリだが、DB を 1 つも持たない",
    "message": "技術的課題 3: 状態をどこに置くか",
    "elements": [
@@ -278,7 +324,7 @@
    "source": "ADR 0007 §2 / §6 / ADR 0005"
   },
   {
-   "no": 16,
+   "no": 19,
    "title": "持ち帰れる 4 つの考え方",
    "message": "聴衆が自分の現場で使えるもの（主題の回収）",
    "elements": [
@@ -292,7 +338,7 @@
    "source": "ADR 0009 / application-architecture.md W-1〜W-3 / open-questions.md D-33 / project-mission.md"
   },
   {
-   "no": 17,
+   "no": 20,
    "title": "リポジトリとドキュメントの入口",
    "message": "次に読むもの・触るもの",
    "elements": [
@@ -320,50 +366,68 @@
    "motif": "左右 2 カラムの対比。左は星アイコンの山をグレーで、右はダイヤアイコン 1 つをコーラルで強調。中央に上下を分ける矢印記号"
   },
   {
+   "id": "new-11",
+   "quality": "medium",
+   "motif": "3 つの角丸ボックス（W-1 / W-2 / W-3）を横に並べ、各ボックスの上に小さなアイコン（差し替えプラグ・盾・ストップウォッチ）。下部に鍵アイコン付きの帯を 1 本",
+   "slide_no": 7
+  },
+  {
    "id": "new-03",
-   "slide_no": 8,
+   "slide_no": 9,
    "quality": "medium",
    "motif": "4 行の表組み。各行の左に警告の三角アイコンだけを置く。右端に判定記号（チェックやバツ）を置かない（どの行も不具合の記録であり、良し悪しの判定ではないため）"
   },
   {
    "id": "new-04",
-   "slide_no": 9,
+   "slide_no": 10,
    "quality": "medium",
    "motif": "左から右へ 4 つの角丸ボックスが矢印でつながる横型フロー。各ボックスに小さなアイコン（鍵・旗・分岐・チェック）"
   },
   {
    "id": "new-05",
-   "slide_no": 11,
+   "slide_no": 12,
    "quality": "medium",
    "motif": "円環状のフロー。4 つのノードを矢印でつなぎ、中央に大きな数字のバッジ 1 つ。ノードには歯車・虫眼鏡・吹き出し・マージ記号のアイコン"
   },
   {
+   "id": "new-12",
+   "quality": "medium",
+   "motif": "左から右へ 3 つの段（並列に読む → 反証する → 記録する）を矢印でつなぐ。1 段目は複数の人型アイコンを扇状に、2 段目は盾とバツ印、3 段目は行番号付きの紙アイコン",
+   "slide_no": 13
+  },
+  {
+   "id": "new-13",
+   "quality": "medium",
+   "motif": "左から右へ 5 つのノードを矢印でつなぐ横型フロー。末尾にマージ記号、フローの下に赤い停止ボタンのアイコンを 1 つ置く",
+   "slide_no": 14
+  },
+  {
    "id": "new-06",
-   "slide_no": 13,
+   "slide_no": 16,
    "quality": "medium",
    "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）を並べる 2 カラム対比。下部にチップ 2 つ"
   },
   {
    "id": "new-07",
-   "slide_no": 14,
+   "slide_no": 17,
    "quality": "medium",
    "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右側に拒否権を示す盾アイコン 2 つ。下部にチップ 1 つ"
   },
   {
    "id": "new-08",
-   "slide_no": 15,
+   "slide_no": 18,
    "quality": "medium",
    "motif": "左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右ボックス内は 4 つの小さな箱に分かれた図。下部にチップ 1 つ"
   },
   {
    "id": "new-09",
-   "slide_no": 16,
+   "slide_no": 19,
    "quality": "medium",
    "motif": "3 枚の角丸カードを横に並べる。各カードの上部に小さなアイコン（天秤・積み木・墓標）"
   },
   {
    "id": "new-10",
-   "slide_no": 17,
+   "slide_no": 20,
    "quality": "medium",
    "motif": "中央に本とリンクのアイコン。下に 4 行のリスト。各行の左に小さな四角のマーカー"
   }

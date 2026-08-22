@@ -1,7 +1,7 @@
 # スライド構成: gem-hunter プロジェクト解説
 
 対象読者: 開発者・エンジニア
-想定尺: 15〜20 分（17 枚 / 1 枚あたり 60〜70 秒。スライド 13 のみ 90〜100 秒）
+想定尺: 20〜23 分（20 枚 / 1 枚あたり 60〜70 秒。スライド 16 のみ 90〜100 秒）
 作成日: 2026-08-22
 
 > 本ファイルは `content/slides_plan.json`（議論 `project-slides-20260822` の verdict）から
@@ -74,21 +74,35 @@
 - 伝えたい 1 メッセージ: どういう検討をして何を作ったか（全体像）
 - 出典: docs/README.md / inception-deck.md Q1 / minimum-requirements.md / docs/infographics/README.md
 
-## Slide 6: 層を分けるのは、3 つの規律を守るときだけ
+## Slide 6: 依存は内側へ。中心のドメインは何も知らない
 
-- 見出し: 層を分けるのは、3 つの規律を守るときだけ
+- 見出し: 依存は内側へ。中心のドメインは何も知らない
+- 本文:
+  - 7 層構成: domain / usecases / infrastructure / ui / composition / app（Next.js）/ shared
+  - 唯一絶対の規則は「内側は外側を知らない」。src/domain/ は next も react も zod も import しない
+  - ユースケースは実装を import せず、ドメインが定義したポートを引数で受け取る（依存性逆転）
+  - app/ と ui/ から infrastructure/ への直 import は禁止。実装を束ねてよいのは composition/ だけ
+  - GitHub API と認証情報は infrastructure/github/、事業者固有 API は infrastructure/platform/ の中だけ
+  - ポートは 5 つ（検索・キャッシュ・レート制限・時刻・認証）。表にないポートは実装しない
+- ビジュアル: 既存流用 docs/infographics/07-design.webp
+- 伝えたい 1 メッセージ: クリーンアーキテクチャの実体（7 層と依存の向き）
+- 出典: docs/03_design/architecture/application-architecture.md §1.1-1.3 / §2 / docs/rules/architecture-rules.md §2
+
+## Slide 7: 層を足す条件を、3 つに決めてある
+
+- 見出し: 層を足す条件を、3 つに決めてある
 - 本文:
   - W-1 データ源を差し替えられる（被依存数・健全性の取得先が変わっても UI を書き換えない）
   - W-2 事業者を差し替えられる（Cloudflare 固有の API をアプリ全体に染み出させない）
   - W-3 速く確実にテストできる（中核ロジックがネットワークもフレームワークも要らずに動く）
-  - 「クリーンアーキテクチャだから」は層を足す理由にならない。W-1〜W-3 のどれを守るかを 1 行で言えることが条件
-  - 層の依存方向は専用スクリプトで機械検査していて、レビューで見落としても check で落ちる
-  - この規律に対する唯一の意図的な例外がキャッシュ層で、その中身は後半で扱う
-- ビジュアル: 既存流用 docs/infographics/07-design.webp
-- 伝えたい 1 メッセージ: アーキテクチャの規律（層を足す条件）
-- 出典: docs/03_design/architecture/application-architecture.md L20-24 / ADR 0005 / tools/check_architecture_boundaries.py
+  - 「クリーンアーキテクチャだから」は層を足す理由にならない。W-n のどれを守るか 1 行で言えることが条件
+  - 唯一の意図的な例外がキャッシュ層。面積を get / set / invalidate + TTL に限る歯止めつきで認めた
+  - ARCH-1〜ARCH-7 は専用スクリプトが機械検査する。ARCH-4・ARCH-5 は抑止コメントも効かない
+- ビジュアル: 新規生成 new-11（層を足す条件）
+- 伝えたい 1 メッセージ: アーキテクチャの規律（増やさないための条件）
+- 出典: application-architecture.md §1.1 / architecture-rules.md §2 の ARCH 表 / ADR 0005 §3.1 / tools/check_architecture_boundaries.py
 
-## Slide 7: Next.js 16 を Workers の上で動かす
+## Slide 8: Next.js 16 を Workers の上で動かす
 
 - 見出し: Next.js 16 を Workers の上で動かす
 - 本文:
@@ -102,7 +116,7 @@
 - 伝えたい 1 メッセージ: 技術スタックと、その選び方の制約
 - 出典: README.md 技術スタック表 / ADR 0001 / ADR 0002 / ADR 0006 / NFR-21
 
-## Slide 8: 同じコードでも、プレビューでだけ壊れる
+## Slide 9: 同じコードでも、プレビューでだけ壊れる
 
 - 見出し: 同じコードでも、プレビューでだけ壊れる
 - 本文:
@@ -116,7 +130,7 @@
 - 伝えたい 1 メッセージ: 実際に踏んだ罠（環境固有の破れ）
 - 出典: docs/rules/lessons/cloud-environment.md L-129 / L-130 / ADR 0002 決定 #6
 
-## Slide 9: 1 セッションを 1 スプリントとして回す
+## Slide 10: 1 セッションを 1 スプリントとして回す
 
 - 見出し: 1 セッションを 1 スプリントとして回す
 - 本文:
@@ -130,7 +144,7 @@
 - 伝えたい 1 メッセージ: AI エージェントの自律運用（規範の記述であって効果の断定ではない）
 - 出典: docs/rules/session-sprint-rules.md §1-2 / user-confirmation-minimization.md §1 / sprint-development-rules.md SD-3
 
-## Slide 10: テストを先に書き、緑でなければ進めない
+## Slide 11: テストを先に書き、緑でなければ進めない
 
 - 見出し: テストを先に書き、緑でなければ進めない
 - 本文:
@@ -144,21 +158,50 @@
 - 伝えたい 1 メッセージ: TDD と品質担保
 - 出典: docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2 / README.md
 
-## Slide 11: 20 項目の機械検証を通してからマージする
+## Slide 12: 機械検証を通さないと PR を出せない
 
-- 見出し: 20 項目の機械検証を通してからマージする
+- 見出し: 機械検証を通さないと PR を出せない
 - 本文:
-  - npm run check が 20 項目を検証する（lint・型・単体/結合・E2E・a11y・アーキテクチャ境界ほか）
+  - GitHub Actions が使えないため、CI の代わりにセッション自身が npm run check を実行する
+  - 内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）
+  - 残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）
+  - 結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする
   - 機械で落とせる項目は人が見ないので、レビューは設計判断に集中できる
-  - 観点別のセルフレビュー → 行単位のインラインコメント → 対応 → squash マージ
-  - 同じ箇所の修正サイクルが 2 回を超えたら止めて報告する（2 回続くと設計判断が要るサイン）
+  - アーキテクチャの依存規則もここで落ちる。規律が文書だけで終わらない仕組みにしている
+- ビジュアル: 新規生成 new-05（機械検証ゲート）
+- 伝えたい 1 メッセージ: Layer 0（機械ゲート）— 人が見る前に落ちる
+- 出典: tools/run_checks.sh（実測 20 項目）/ pr-review-flow-summary.md / .claude/hooks/pre-pr-create-check.sh
+
+## Slide 13: レビューは、他人の PR として読み直す
+
+- 見出し: レビューは、他人の PR として読み直す
+- 本文:
+  - 外部 AI レビュアー（Copilot・Gemini）は廃止。レビューは自前の /code-review で完結させる
+  - 第 1 段: 観点別に 5〜7 体のサブエージェントを並列起動し、事前文脈なしで差分を読ませる
+  - 自分が書いたコードを自分で読むと盲点が残るため、あえて文脈を持たない読み手を立てる
+  - 第 2 段: 指摘ごとに反証担当を立て、反証に耐えたものを CONFIRMED、疑いが残るものを PLAUSIBLE と明記する
+  - 第 3 段: 確度を問わず全件を行単位のインラインコメントに残す。指摘ゼロでもレビューを 1 件投稿する
+  - 対応しないと決めた指摘も、理由を返信してから Resolve する。黙って閉じない
+- ビジュアル: 新規生成 new-12（レビューの 3 段）
+- 伝えたい 1 メッセージ: Layer 1（セルフレビューの徹底）— /code-review の 3 段構成
+- 出典: .claude/skills/code-review/SKILL.md Step 1-3 / docs/rules/ai-reviewer-strategy.md / pr-review-flow.md（#461）
+
+## Slide 14: 実装からマージまで、確認なしで走り切る
+
+- 見出し: 実装からマージまで、確認なしで走り切る
+- 本文:
+  - 実装 → セルフレビュー → PR 作成 → 機械ゲート + セルフレビュー → 指摘対応 → squash マージまで一続きで進む
+  - PR 本文には Sprint Goal・sp（見積もり）・Session-Id・Team（編成）を必ず書く
+  - Session-Id があるので、セッションが切れても「自分が出した PR」を後から決定論的に回収できる
+  - 同じ箇所の修正サイクルが 2 回を超えたらサーキットブレーカーで止め、根本原因を分析して報告する
+  - 止める条件を先に決めておくことが、確認を挟まずに走らせるための前提になっている
   - この運用でマージ済みの PR は 90 件（2026-08-22 時点・GitHub 検索の実測）
   - 速度の効果は測っていないので語らない。言えるのは「この手順で回っている」ことだけ
-- ビジュアル: 新規生成 new-05（PR 自律フロー）
-- 伝えたい 1 メッセージ: PR 運用の自律化（実績値つき）
-- 出典: docs/rules/pr-review-flow-summary.md / PR #361 本文の check 結果表 / GitHub 検索実測 2026-08-22
+- ビジュアル: 新規生成 new-13（PR 自律フロー）
+- 伝えたい 1 メッセージ: PR 運用の自律化（止まる条件を先に決めてある）
+- 出典: docs/rules/pr-review-flow-summary.md / pr-review-flow.md（サーキットブレーカー）/ session-concurrency-rules.md / GitHub 検索実測 2026-08-22
 
-## Slide 12: Gem Index ＝ 被依存数と star の残差
+## Slide 15: Gem Index ＝ 被依存数と star の残差
 
 - 見出し: Gem Index ＝ 被依存数と star の残差
 - 本文:
@@ -172,7 +215,7 @@
 - 伝えたい 1 メッセージ: 差別化ロジックの定義（直後の撤去話への助走）
 - 出典: ADR 0009 §2.1 / §3.1 / §3.2 / §3.3
 
-## Slide 13: 作った差別化機能を、実測で撤去した
+## Slide 16: 作った差別化機能を、実測で撤去した
 
 - 見出し: 作った差別化機能を、実測で撤去した
 - 本文:
@@ -187,7 +230,7 @@
 - 伝えたい 1 メッセージ: 技術的課題 1: 測って自分で殺す（この発表の主役・90〜100 秒）
 - 出典: ADR 0009 D-33 追記 / open-questions.md D-33
 
-## Slide 14: 認証方式は 6 つの軸で選ぶ
+## Slide 17: 認証方式は 6 つの軸で選ぶ
 
 - 見出し: 認証方式は 6 つの軸で選ぶ
 - 本文:
@@ -202,7 +245,7 @@
 - 伝えたい 1 メッセージ: 技術的課題 2: 次に同じ選定をするときの判断軸
 - 出典: ADR 0003 §3.2 / §6.1 の 6 軸表
 
-## Slide 15: Web アプリだが、DB を 1 つも持たない
+## Slide 18: Web アプリだが、DB を 1 つも持たない
 
 - 見出し: Web アプリだが、DB を 1 つも持たない
 - 本文:
@@ -217,7 +260,7 @@
 - 伝えたい 1 メッセージ: 技術的課題 3: 状態をどこに置くか
 - 出典: ADR 0007 §2 / §6 / ADR 0005
 
-## Slide 16: 持ち帰れる 4 つの考え方
+## Slide 19: 持ち帰れる 4 つの考え方
 
 - 見出し: 持ち帰れる 4 つの考え方
 - 本文:
@@ -230,7 +273,7 @@
 - 伝えたい 1 メッセージ: 聴衆が自分の現場で使えるもの（主題の回収）
 - 出典: ADR 0009 / application-architecture.md W-1〜W-3 / open-questions.md D-33 / project-mission.md
 
-## Slide 17: リポジトリとドキュメントの入口
+## Slide 20: リポジトリとドキュメントの入口
 
 - 見出し: リポジトリとドキュメントの入口
 - 本文:

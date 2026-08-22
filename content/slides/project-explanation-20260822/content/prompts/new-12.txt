@@ -34,16 +34,16 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「機械検証を通さないと PR を出せない」
+「レビューは、他人の PR として読み直す」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「機械検証を通さないと PR を出せない」
-「GitHub Actions が使えないため、CI の代わりにセッション自身が npm run check を実行する」
-「内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）」
-「残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）」
-「結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする」
-「機械で落とせる項目は人が見ないので、レビューは設計判断に集中できる」
-「アーキテクチャの依存規則もここで落ちる。規律が文書だけで終わらない仕組みにしている」
+「レビューは、他人の PR として読み直す」
+「外部 AI レビュアー（Copilot・Gemini）は廃止。レビューは自前の /code-review で完結させる」
+「第 1 段: 観点別に 5〜7 体のサブエージェントを並列起動し、事前文脈なしで差分を読ませる」
+「自分が書いたコードを自分で読むと盲点が残るため、あえて文脈を持たない読み手を立てる」
+「第 2 段: 指摘ごとに反証担当を立て、反証に耐えたものを CONFIRMED、疑いが残るものを PLAUSIBLE と明記する」
+「第 3 段: 確度を問わず全件を行単位のインラインコメントに残す。指摘ゼロでもレビューを 1 件投稿する」
+「対応しないと決めた指摘も、理由を返信してから Resolve する。黙って閉じない」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
-円環状のフロー。4 つのノードを矢印でつなぎ、中央に大きな数字のバッジ 1 つ。ノードには歯車・虫眼鏡・吹き出し・マージ記号のアイコン
+左から右へ 3 つの段（並列に読む → 反証する → 記録する）を矢印でつなぐ。1 段目は複数の人型アイコンを扇状に、2 段目は盾とバツ印、3 段目は行番号付きの紙アイコン

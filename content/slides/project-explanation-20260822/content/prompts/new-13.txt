@@ -34,16 +34,17 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「機械検証を通さないと PR を出せない」
+「実装からマージまで、確認なしで走り切る」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「機械検証を通さないと PR を出せない」
-「GitHub Actions が使えないため、CI の代わりにセッション自身が npm run check を実行する」
-「内訳は lint・型・単体/結合・E2E・Lighthouse の基本 5 点と、静的検査 6 点（依存規則・UI 寸法・コントラスト・Prose・ADR 記載・副作用 GET）」
-「残りは運用ツールの self-test（退役・デプロイゲート・Workers Builds・ダイジェスト鮮度・本番乖離・WIP 抑止）」
-「結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする」
-「機械で落とせる項目は人が見ないので、レビューは設計判断に集中できる」
-「アーキテクチャの依存規則もここで落ちる。規律が文書だけで終わらない仕組みにしている」
+「実装からマージまで、確認なしで走り切る」
+「実装 → セルフレビュー → PR 作成 → 機械ゲート + セルフレビュー → 指摘対応 → squash マージまで一続きで進む」
+「PR 本文には Sprint Goal・sp（見積もり）・Session-Id・Team（編成）を必ず書く」
+「Session-Id があるので、セッションが切れても「自分が出した PR」を後から決定論的に回収できる」
+「同じ箇所の修正サイクルが 2 回を超えたらサーキットブレーカーで止め、根本原因を分析して報告する」
+「止める条件を先に決めておくことが、確認を挟まずに走らせるための前提になっている」
+「この運用でマージ済みの PR は 90 件（2026-08-22 時点・GitHub 検索の実測）」
+「速度の効果は測っていないので語らない。言えるのは「この手順で回っている」ことだけ」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
-円環状のフロー。4 つのノードを矢印でつなぎ、中央に大きな数字のバッジ 1 つ。ノードには歯車・虫眼鏡・吹き出し・マージ記号のアイコン
+左から右へ 5 つのノードを矢印でつなぐ横型フロー。末尾にマージ記号、フローの下に赤い停止ボタンのアイコンを 1 つ置く

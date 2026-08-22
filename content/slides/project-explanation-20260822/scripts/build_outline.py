@@ -25,7 +25,7 @@ def main() -> int:
     lines.append("# スライド構成: gem-hunter プロジェクト解説")
     lines.append("")
     lines.append("対象読者: 開発者・エンジニア")
-    lines.append("想定尺: 15〜20 分（17 枚 / 1 枚あたり 60〜70 秒。スライド 13 のみ 90〜100 秒）")
+    lines.append("想定尺: 20〜23 分（20 枚 / 1 枚あたり 60〜70 秒。スライド 16 のみ 90〜100 秒）")
     lines.append("作成日: 2026-08-22")
     lines.append("")
     lines.append("> 本ファイルは `content/slides_plan.json`（議論 `project-slides-20260822` の verdict）から")
