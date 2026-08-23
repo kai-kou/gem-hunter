@@ -563,7 +563,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.
 
 実行結果（どちらの経路を使ったか・ゲート判定・デプロイ成功可否・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
 
-- 🔴 **`npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）。ただし上記のとおり **フォールバック経路でのみ使う**
+- 🔴 **フォールバック経路では `npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）。上記のとおり一次経路は `trigger_workers_build.py` であり、`npm run deploy` は **フォールバック経路でのみ使う**
 - 🔴 **`npm run deploy` は本番 version に `--tag "$(git rev-parse --short=12 HEAD)"` を付ける**（Issue #288）。このタグが `tools/check_prod_drift.py` の厳密判定（SHA 一致）の入力になるため、**`wrangler deploy` を手で叩いてタグを省略しない**（省略すると乖離検知が日時ベースの緩い判定へ後退する）。`git rev-parse` が失敗したときは空タグでデプロイせずコマンド全体が失敗する
 - 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) §3.3 がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替。上記のスプリントレビューゲートはこのテストゲートを **置き換えず拡張** する）
 - **失敗したら本番へ進まない**（fail-closed）。疎通確認が 5xx なら `npx wrangler rollback` を検討し、判断と結果を記録する
