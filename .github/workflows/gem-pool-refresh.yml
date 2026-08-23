@@ -1,0 +1,184 @@
+name: Gem Pool Refresh
+
+# Gem 候補プール（public/data/gem-index/ + public/data/daily-digest.json）を週次で再生成し、
+# 生成物のみを差分に持つ PR を作成するワークフロー（Issue #458・`D-40`）。
+#
+# 決定の正本: content/discussions/gem-pool-actions-schedule-20260823/whiteboard.md（round 3 lead 判定）。
+#
+# 🔴 このワークフローは以下を絶対に行わない:
+#   - main への直接 push（A-1・docs/rules/user-confirmation-minimization.md §1）
+#   - 自動マージ（PR を作るところまで。マージは Claude セッションが既存の回収経路で行う）
+#   - Cloudflare へのデプロイ・Workers Builds の再トリガー（PR #460 のレーンに委ねる。SSOT 二重化禁止）
+#   - node tools/generate_gem_digest.mjs への --allow-partial-write（孤児シャード削除が不可逆）
+#
+# 品質担保は本ワークフロー自身が持つ（.claude/hooks/pre-pr-create-check.sh は Actions 発の PR に効かない）。
+
+on:
+  schedule:
+    # UTC 日曜 21:17 = JST 月曜 06:17。毎時ちょうど（:00）は GitHub 側の高負荷でキュー投入が
+    # ドロップされうるため分をずらす。週次にする理由・cron の根拠は whiteboard round 3 参照。
+    - cron: '17 21 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: gem-pool-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 2 # git show HEAD:<path> で前回生成物と比較するために必要
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          # npm ci は実行しない: tools/gem-pool/*.mjs は Node 組み込みモジュールのみに依存し、
+          # 外部 npm パッケージへの依存はゼロ（whiteboard round 1 batch_ops が import 一覧で確認済み）。
+
+      - name: Generate gem pool
+        run: node tools/generate_gem_digest.mjs
+        # --allow-partial-write は絶対に付けない（孤児シャード削除が不可逆）。
+        # CLI は失敗時に非ゼロで終了し、部分書き込みは既定で拒否するため、ここで失敗すれば
+        # 以降のステップ（git add 相当）へは進まない。
+
+      - name: QA check (fail-closed)
+        run: |
+          set -e
+          node tools/gem_pool_qa.mjs --check --json > /tmp/gem_pool_qa.json
+          cat /tmp/gem_pool_qa.json
+        # 差分パス限定・レジストリのゼロ化/急減・totalCount の急減急増を検査する。
+        # 1 つでも違反すれば非ゼロ終了 → ジョブ失敗 → PR は作られない（壊れたデータで PR を開かない）。
+        # 🔴 JSON はここで 1 回だけ計算してファイルへ保存する（`set -e` はパイプを介さない単純な
+        # リダイレクトなので、node が非ゼロ終了すればこの行自体が失敗しジョブが止まる。標準出力は
+        # 失敗前に書き出し済みの内容がそのままファイルに残る）。コミット後に再計算すると HEAD が
+        # 新コミットを指してしまい「差分ゼロ・前回比 1.00」という無意味な値になるため、
+        # 後続の「Build PR body」ステップはこのファイルを読むだけにし、再計算しない。
+
+      - name: No-op check
+        id: noop
+        run: |
+          set -e
+          result="$(node tools/gem_pool_qa.mjs --no-op --json)"
+          echo "result=${result}"
+          no_op="$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).no_op))" "${result}")"
+          echo "no_op=${no_op}" >> "$GITHUB_OUTPUT"
+
+      - name: Discard no-op changes
+        if: steps.noop.outputs.no_op == 'true'
+        run: |
+          git checkout -- public/data/gem-index public/data/daily-digest.json
+          echo "no-op: 実質差分なし。以降のステップをスキップします。"
+
+      - name: Static shard check
+        if: steps.noop.outputs.no_op != 'true'
+        run: python3 tools/check_gem_shards.py
+
+      - name: Commit and push
+        if: steps.noop.outputs.no_op != 'true'
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -e
+          # 🔴 SSOT: このブランチ名は tools/check_pending_pr_reviews.py の AUTOMATION_PR_BRANCH と
+          # 同一でなければならない。どちらか片方を変更したら必ずもう片方も直すこと（Issue #458）。
+          BRANCH="automation/gem-pool-refresh"
+          git checkout -B "${BRANCH}"
+          git add public/data/gem-index public/data/daily-digest.json
+          git commit -m "data: Gem 候補プールを週次再生成（$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z')）"
+          git push --force origin "${BRANCH}"
+
+      - name: Build PR body
+        if: steps.noop.outputs.no_op != 'true'
+        id: prbody
+        run: |
+          set -e
+          # 🔴 ヒアドキュメントのデリミタは実行ごとに一意にする（Actions の既知の output
+          # injection 手口対策）。QA 出力に偶然固定文字列が現れて早期終端すると、以降の行が
+          # 任意の key=value として $GITHUB_OUTPUT へ注入されうるため。
+          DELIM="GEM_POOL_PR_BODY_EOF_$(openssl rand -hex 8)"
+          {
+            echo "body<<${DELIM}"
+            echo "## Gem 候補プール 週次再生成"
+            echo ""
+            echo "この PR は GitHub Actions（\`gem-pool-refresh.yml\`）が自動生成しました。マージは Claude セッションが行います。"
+            echo ""
+            echo "### QA 結果（生成直後・コミット前に計算したスナップショット）"
+            echo '```json'
+            cat /tmp/gem_pool_qa.json
+            echo '```'
+            echo ""
+            echo "### totalCount 前回比・レジストリ別件数"
+            # 🔴 上と同じ /tmp/gem_pool_qa.json（QA check ステップで 1 回だけ計算済み）の
+            # comparison フィールドを読むだけにする。ここで再計算しない
+            # （コミット後だと HEAD が新コミットを指し、前回比が消える）。
+            node -e "
+              const fs = require('node:fs');
+              const qa = JSON.parse(fs.readFileSync('/tmp/gem_pool_qa.json', 'utf8'));
+              const cmp = qa.comparison ?? { totalCount: {}, registries: [] };
+              const t = cmp.totalCount ?? {};
+              const ratioLabel = t.ratio != null ? \` （比率 \${t.ratio.toFixed(3)}）\` : '';
+              console.log(\`- totalCount: \${t.prev ?? '(初回)'} -> \${t.curr ?? '?'}\${ratioLabel}\`);
+              console.log('');
+              console.log('| registry | 前回 | 今回 |');
+              console.log('|---|---|---|');
+              for (const r of cmp.registries ?? []) {
+                console.log(\`| \${r.registry} | \${r.prevCount ?? '(新規)'} | \${r.currCount ?? '(消失)'} |\`);
+              }
+            "
+            echo ""
+            echo "### 実行時刻"
+            echo "$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z')"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or update pull request
+        if: steps.noop.outputs.no_op != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 🔴 PR 本文（レジストリ名などデータ由来の文字列を含む）を `run:` のシェル内へ
+          # `${{ }}` で直接展開しない（スクリプトインジェクションの経路になる・GitHub 公式ガイダンス）。
+          # env 経由で渡し、シェル側は変数展開だけで済ませる。
+          PR_BODY: ${{ steps.prbody.outputs.body }}
+        run: |
+          set -e
+          # 🔴 SSOT: このブランチ名は tools/check_pending_pr_reviews.py の AUTOMATION_PR_BRANCH と
+          # 同一でなければならない。どちらか片方を変更したら必ずもう片方も直すこと（Issue #458）。
+          BRANCH="automation/gem-pool-refresh"
+          BODY_FILE="$(mktemp)"
+          printf '%s' "$PR_BODY" > "${BODY_FILE}"
+
+          # 🔴 コマンド自体の失敗（レート制限・一時的な API エラー）と「0 件ヒット」を区別する。
+          # `|| true` で握り潰すと API 失敗を「既存 PR なし」と誤認し、既存 PR があるのに
+          # `gh pr create` へ進んで「同一 head/base の PR が既に存在する」で失敗する。
+          set +e
+          existing_pr="$(gh pr list --head "${BRANCH}" --base main --state open --json number --jq '.[0].number')"
+          gh_list_exit=$?
+          set -e
+          if [ "${gh_list_exit}" -ne 0 ]; then
+            echo "::error::gh pr list に失敗しました（exit ${gh_list_exit}）。次回のスケジュール実行に委ねます。" >&2
+            exit "${gh_list_exit}"
+          fi
+          if [ -n "${existing_pr}" ]; then
+            gh pr edit "${existing_pr}" --body-file "${BODY_FILE}"
+          else
+            gh pr create \
+              --title "data: Gem 候補プール週次再生成" \
+              --body-file "${BODY_FILE}" \
+              --base main \
+              --head "${BRANCH}" \
+              --label "type:improvement" \
+              --label "status:waiting-claude"
+          fi
