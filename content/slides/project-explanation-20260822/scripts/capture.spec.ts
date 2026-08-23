@@ -1,4 +1,4 @@
-import { test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 /**
  * スライド 2〜4 に貼る実 UI スクリーンショットを撮る。
@@ -16,12 +16,12 @@ import { test, type Page } from '@playwright/test'
  */
 const OUT = 'content/slides/project-explanation-20260822/images/raw'
 
-const AVATAR_PLACEHOLDER =
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">' +
-      '<rect width="64" height="64" rx="32" fill="#d4d4d8"/></svg>',
-  )
+// 実体は 1 つだけ持つ（DOM 差し替え側と `page.route()` 側で色が食い違うのを防ぐ）。
+const AVATAR_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">' +
+  '<rect width="64" height="64" rx="32" fill="#d4d4d8"/></svg>'
+
+const AVATAR_PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent(AVATAR_SVG)
 
 /**
  * Gem 一覧（`src/ui/gem-list.tsx`）の avatar は `https://github.com/{owner}.png` を **直接** 参照する
@@ -34,9 +34,7 @@ async function stubOwnerAvatars(page: Page): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'image/svg+xml',
-      body:
-        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">' +
-        '<rect width="64" height="64" rx="32" fill="#d4d4d8"/></svg>',
+      body: AVATAR_SVG,
     }),
   )
 }
@@ -82,6 +80,11 @@ test('shot-03: Gem 一覧', async ({ page }, testInfo) => {
   await stubOwnerAvatars(page)
   await page.goto('/ja/gems?q=strftime')
   await page.getByRole('heading', { name: '「strftime」の Gem' }).waitFor({ timeout: 60_000 })
+  // 🔴 見出しと出典表記は **0 件のときも描画される**（`src/ui/gem-list.tsx` の 0 件分岐の外側）。
+  // それだけを待つと、候補プールの再生成（日次・#458 / #482）で `strftime` が落ちたときに
+  // 「一致する Gem 候補はありませんでした」だけが写った 1 枚を、エラーも出さずに撮ってしまう。
+  // 件数表示は `totalCount > 0` のときだけ出るので、これを結果ありの証拠として待つ。
+  await expect(page.getByText(/^\d+ 件$/)).toBeVisible({ timeout: 60_000 })
   // 出典表記（一覧末尾）が描かれてから撮る。
   await page.getByRole('link', { name: 'Ecosyste.ms' }).waitFor()
   await page.waitForTimeout(300)

@@ -18,6 +18,8 @@ const stubPort = process.env.E2E_STUB_PORT ?? '8788'
 
 export default defineConfig({
   testDir: '.',
+  // 撮影のために張った `.open-next/assets` の symlink を実行後に外す（理由は teardown 側に記載）。
+  globalTeardown: './screenshots.teardown.ts',
   testMatch: 'capture.spec.ts',
   fullyParallel: false,
   workers: 1,
@@ -69,8 +71,14 @@ export default defineConfig({
           // Gem 一覧も出ない（`main` の E2E が赤い原因と同一。Issue #454 / #455 / #457）。
           // 配信元は `public/` そのものなので、そこへ向けたシンボリックリンクを張れば実データで撮れる。
           // ⚠️ **#454 / #455 / #457 が解決したらこの前段を外す**（既に実体があるときは何もしない）。
+          // 🔴 `;` で繋ぐと前段の失敗を握り潰し、`/data/gem-index/*` が 404 のまま撮影が始まる
+          // （壊れた symlink は `-e` が false を返すので `ln -s` が `File exists` で落ちる）。
+          // `-d` で判定し `ln -sfn` で上書き可能にしたうえで、**実データが読める状態か**を
+          // `test -e` で確かめてから起動する。撮影後の後始末は `globalTeardown` が行う。
           command:
-            '[ -e .open-next/assets ] || (mkdir -p .open-next && ln -s ../public .open-next/assets); npm run build && npm start -- --port 3100',
+            '([ -d .open-next/assets ] || { mkdir -p .open-next && ln -sfn ../public .open-next/assets; })' +
+            ' && test -e .open-next/assets/data/gem-index/index.json' +
+            ' && npm run build && npm start -- --port 3100',
           cwd: repoRoot,
           env: { ...buildDummyGitHubEnv({ stubPort, appUrl: baseURL }), PORT: '3100' },
           url: baseURL,

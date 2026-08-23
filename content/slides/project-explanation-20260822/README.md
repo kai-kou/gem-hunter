@@ -18,7 +18,7 @@
 | `output/gem-hunter.pptx` | 画像版（全 21 枚が 16:9 の画像 1 枚で構成される） |
 | `content/slides_plan.json` | **構成の正本**。議論 `project-slides-20260822` の verdict と同一内容 |
 | `content/slides_content_gem-hunter.md` | 構成マークダウン（`slides_plan.json` から生成） |
-| `content/prompts/*.txt` | 新規画像に投げた `gpt-image-2` プロンプト（実際に投げた内容の記録） |
+| `content/prompts/*.txt` | 新規画像に投げた `gpt-image-2` プロンプト（実際に投げた内容の記録。`build_slide_prompts.py` が `slides_plan.json` の `new_images` から書き出す） |
 | `images/` | 画像版に貼った画像（実 UI スクリーンショット 3 枚 + 新規生成 14 枚） |
 | `scripts/` | 生成スクリプト一式 |
 
@@ -52,6 +52,11 @@ python3 content/slides/project-explanation-20260822/scripts/build_outline.py
 # 2. 実 UI スクリーンショットを撮り直す（スタブ API + 本番ビルドを自動起動する）
 npx playwright test --config content/slides/project-explanation-20260822/scripts/screenshots.config.ts
 
+# 2.5 撮った素材（images/raw/）をスライド 1 枚へ合成する
+#     🔴 これを飛ばすと build_image_deck.py は合成済みの古い画像を読むだけで、
+#        撮り直した内容がデッキへ反映されない（エラーも出ない）
+python3 content/slides/project-explanation-20260822/scripts/compose_screenshots.py
+
 # 3. 画像プロンプトを組み立てて gpt-image-2 で生成する（OPENAI_API_KEY が必要）
 python3 content/slides/project-explanation-20260822/scripts/build_slide_prompts.py
 python3 tools/infographic/generate.py \
@@ -67,7 +72,7 @@ python3 content/slides/project-explanation-20260822/scripts/build_image_deck.py
 
 | 参照スキルのステップ | 本リポジトリでの扱い | 理由 |
 |---|---|---|
-| Step 5 / 11 / 15（Google ドライブへアップロード） | **リポジトリ内配置 + PR で受け渡し** | `gws`（Google Workspace CLI）がクラウド実行環境に無い。ユーザー確認済み |
+| Step 5 / 11 / 15（Google ドライブへアップロード） | **解消済み**。`gws` CLI で原典どおり Google スライドへ上げる（差し替えは `files update` で URL 据え置き） | 手順は [`references/google-slides-upload.md`](./references/google-slides-upload.md) |
 | Step 2（構成セルフレビュー） | 議論型レビュー `project-slides-20260822`（5 レンズ × 2 ラウンド）で実施済み | MECE・ファクトチェック・最新情報リサーチをこの議論が兼ねる |
 | Step 6 / 12（ユーザーレビュー） | チャットで直接依頼する | PR コメントを経由するより速く確実。明示承認まで次へ進まない原則は維持 |
 | 画像フォーマット | 生成 PNG は `/tmp` に置き、リポジトリには JPEG（quality 88）を置く | PNG は 1 枚約 2MB。`docs/infographics/README.md` の方針に合わせる。`python-pptx` は WebP を埋め込めない |
