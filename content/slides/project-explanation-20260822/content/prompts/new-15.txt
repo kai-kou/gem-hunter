@@ -21,6 +21,13 @@ Do NOT add furigana (ruby annotations).
 Preserve letter case EXACTLY: a word written in lowercase in the list (for example "star",
 "sort=gem-index", "gem-hunter") must stay lowercase — never capitalize the first letter,
 even at the start of a title or a line.
+Do NOT draw medals, rosettes, award ribbons, seals, or circular badges anywhere in the image.
+Never truncate an element: every element must be drawn to its final character, including short
+trailing clauses after a full stop (。). Shrink the font rather than dropping the tail of a sentence.
+Do NOT draw any digit, number, or numeral that is not part of a listed text element —
+no counters, no step totals, no badges showing a count. Numbers appear ONLY inside listed elements.
+Each listed element must appear EXACTLY ONCE. Before finishing, check the whole canvas for any
+sentence that appears twice (for example the same line in a box and again in a bottom banner) and remove the repeat.
 The 「 」 around each listed element are delimiters marking where the element starts and ends —
 they are NOT part of the text. Do not draw them. Only 「 」 that appear INSIDE an element
 (for example 「今日の Gem」 within a longer sentence) are drawn.
@@ -34,15 +41,17 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「リポジトリとドキュメントの入口」
+「Gem Index は順位の残差で作る」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「リポジトリとドキュメントの入口」
-「動くものを触るなら: github.com/kai-kou/gem-hunter」
-「要件の正本: docs/02_requirements/prd.md」
-「決定の経緯: docs/02_requirements/open-questions.md」
-「技術的意思決定: docs/adr/（15 本）」
-「この発表の構成・画像・生成スクリプトもリポジトリに入っている」
+「Gem Index は順位の残差で作る」
+「エコシステム内での「被依存数のパーセンタイル順位」から「star のパーセンタイル順位」を引く」
+「パーセンタイル順位で比べるので、言語やエコシステムの規模が違っても同じ尺度に乗る」
+「star を水増しすると値は下がる。偽 star に構造的に強い」
+「健全性は criticality_score（OpenSSF の既存指標）をそのまま使い、自作しないと決めてある」
+「ただし今効いている足切りは star 下限 5 の汚染フィルタで、健全性の指標はまだ入れていない」
+「被依存数は Ecosyste.ms の 12 レジストリ、star は GitHub API から取る」
+「Ecosyste.ms のデータは CC BY-SA 4.0。画面に出典・ライセンス・生成時刻を明記している」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
-中央に本とリンクのアイコン。下に 4 行のリスト。各行の左に小さな四角のマーカー
+左から右への 3 段。1 段目に高さの違う 2 本の棒、2 段目に引き算の記号を丸で囲んだもの、3 段目に順位リストのアイコン。下部に注意の三角アイコンを 1 つ付けた帯を 1 本

@@ -58,13 +58,39 @@ URL は `https://docs.google.com/presentation/d/<FILE_ID>/edit`。
 
 ## 差し替え（フィードバック反映時）
 
-同名で作り直すと重複するので、`gws drive files delete` で既存を消してから作り直す（参照ワークフロー Step 7 / 13 と同じ）。
+🔴 **`files update` で中身だけ差し替える。`delete` → `create` はしない**（2026-08-23 に実機確認）。
+同じ `fileId` へ PPTX をアップロードすると、**ファイル ID も URL も変わらないまま**
+Google スライドとして再変換される（`mimeType` は `application/vnd.google-apps.presentation` のまま）。
+`slide-guide.md` など他のドキュメントがこの URL を指しているため、ID が変わると全部を書き換える羽目になる。
 
 ```bash
-gws drive files delete --params '{"fileId":"<OLD_FILE_ID>"}'
+gws drive files update \
+  --params '{"fileId":"<FILE_ID>"}' \
+  --upload content/slides/project-explanation-20260822/output/gem-hunter_text.pptx \
+  --upload-content-type application/vnd.openxmlformats-officedocument.presentationml.presentation
 ```
 
-⚠️ `files delete` は成功時にレスポンス本体が空で、`gws` が **カレントディレクトリに `download.html` を書き出す**（`"saved_file": "download.html"`）。実害はないが作業ツリーが汚れるので、実行後に消す。
+**アップロード後は必ず往復で検証する**（レスポンスだけで成否を判断しない・L-113）。
+Google スライド側を PPTX へ書き出し直して、枚数と見出しを手元の成果物と突き合わせる。
+
+```bash
+# -o は「カレントディレクトリの外」を拒否するので、リポジトリ内へ出してから消す
+gws drive files export \
+  --params '{"fileId":"<FILE_ID>","mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"}' \
+  -o roundtrip-check.pptx
+python3 -c "from pptx import Presentation; p=Presentation('roundtrip-check.pptx'); print(len(p.slides._sldIdLst))"
+rm -f roundtrip-check.pptx
+```
+
+<details>
+<summary>旧手順（delete → create）を使わない理由</summary>
+
+当初は「同名で作り直すと重複するので `gws drive files delete` で消してから作り直す」としていたが、
+これだと差し替えのたびに URL が変わる。`files update` なら重複も起きず URL も保たれるため、
+**旧手順は使わない**。`files delete` は成功時にレスポンス本体が空で、`gws` が
+カレントディレクトリに `download.html` を書き出す副作用もある。
+
+</details>
 
 ## 現在の成果物
 

@@ -4,6 +4,9 @@
 飼い主の指示（2026-08-22）により **スマホ表示を主役、PC 表示を添え** として並べる。
 素材は `capture.spec.ts` が `images/raw/` に撮った端末別の PNG。
 
+`shot-03`（Gem 一覧）だけは素材が `fullPage` で、他の 2 枚（ファーストビュー）より縦に長い。
+高さを基準に縮めるレイアウトなので、長い素材はそのぶん横幅が細くなるだけで破綻はしない。
+
 レイアウトは「奥に PC の画面、手前に大きくスマホの画面」。スマホを前面かつ縦いっぱいに
 置くことで視線が先にスマホへ行き、PC は文脈（同じ画面が広い幅でも成立すること）を示す添えになる。
 背景・枠線の色は既存インフォグラフィックのパレット（生成りの紙地 + ネイビー）に合わせる。
@@ -83,6 +86,7 @@ def compose(shot_id: str, dest_name: str) -> Path:
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     compose("shot-01", "shot-01-search-results.png")
+    compose("shot-03", "shot-03-gem-list.png")
     compose("shot-02", "shot-02-daily-digest.png")
     return 0
 

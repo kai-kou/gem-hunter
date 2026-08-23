@@ -50,7 +50,7 @@ Text elements (exhaustive — render ALL of these VERBATIM, character for charac
 「Session-Id があるので、セッションが切れても「自分が出した PR」を後から決定論的に回収できる」
 「同じ箇所の修正サイクルが 2 回を超えたらサーキットブレーカーで止め、根本原因を分析して報告する」
 「止める条件を先に決めておくことが、確認を挟まずに走らせるための前提になっている」
-「この運用でマージ済みの PR は 90 件（2026-08-22 時点・GitHub 検索の実測）」
+「この運用でマージ済みの PR は 120 件（2026-08-23 時点・GitHub API の実測）」
 「速度の効果は測っていないので語らない。言えるのは「この手順で回っている」ことだけ」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):

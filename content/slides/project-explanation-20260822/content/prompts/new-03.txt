@@ -48,9 +48,10 @@ Text elements (exhaustive — render ALL of these VERBATIM, character for charac
 「redirects の destination に :path を書くと、プレビューでだけ 500 になる」
 「原因は OpenNext が path-to-regexp を validate: true で呼ぶこと（Next.js 本体は false）」
 「拡張子付きパスは /repos/angular/angular.js が 404、/ja を付けると 200 になる」
+「本番ビルドの npm は依存の install スクリプトを既定で止めるので、そこでだけ落ちた」
 「wrangler deploy がブロックされることがある（実測 5 回失敗・2 回成功の非決定的挙動）」
-「どれもローカルの next start では再現せず、プレビューに上げて初めて壊れた」
-「以後「動いた」ではなく「どの環境で動いたか」で記録するようにした」
+「どれもローカルの next start では再現せず、上げて初めて壊れた」
+「以後「動いた」ではなく「どの環境で、どこまで見たか」で記録するようにした」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 4 行の表組み。各行の左に警告の三角アイコンだけを置く。右端に判定記号（チェックやバツ）を置かない（どの行も不具合の記録であり、良し悪しの判定ではないため）

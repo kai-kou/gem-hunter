@@ -18,6 +18,8 @@ const stubPort = process.env.E2E_STUB_PORT ?? '8788'
 
 export default defineConfig({
   testDir: '.',
+  // 撮影のために張った `.open-next/assets` の symlink を実行後に外す（理由は teardown 側に記載）。
+  globalTeardown: './screenshots.teardown.ts',
   testMatch: 'capture.spec.ts',
   fullyParallel: false,
   workers: 1,
@@ -62,7 +64,21 @@ export default defineConfig({
           timeout: 30_000,
         },
         {
-          command: 'npm run build && npm start -- --port 3100',
+          // 🔴 `.open-next/assets` を先に用意する（**撮影のための細工ではなく、既知の不具合の回避**）。
+          // `next start` でも `@opennextjs/cloudflare` の platform proxy が `wrangler.jsonc` の
+          // `assets.directory`（`.open-next/assets`）を見る ASSETS binding を作るため、OpenNext ビルドを
+          // 挟まないと Gem 候補プール（`/data/gem-index/*`）が **HTTP 404** になり、Gem バッジも
+          // Gem 一覧も出ない（`main` の E2E が赤い原因と同一。Issue #454 / #455 / #457）。
+          // 配信元は `public/` そのものなので、そこへ向けたシンボリックリンクを張れば実データで撮れる。
+          // ⚠️ **#454 / #455 / #457 が解決したらこの前段を外す**（既に実体があるときは何もしない）。
+          // 🔴 `;` で繋ぐと前段の失敗を握り潰し、`/data/gem-index/*` が 404 のまま撮影が始まる
+          // （壊れた symlink は `-e` が false を返すので `ln -s` が `File exists` で落ちる）。
+          // `-d` で判定し `ln -sfn` で上書き可能にしたうえで、**実データが読める状態か**を
+          // `test -e` で確かめてから起動する。撮影後の後始末は `globalTeardown` が行う。
+          command:
+            '([ -d .open-next/assets ] || { mkdir -p .open-next && ln -sfn ../public .open-next/assets; })' +
+            ' && test -e .open-next/assets/data/gem-index/index.json' +
+            ' && npm run build && npm start -- --port 3100',
           cwd: repoRoot,
           env: { ...buildDummyGitHubEnv({ stubPort, appUrl: baseURL }), PORT: '3100' },
           url: baseURL,

@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "content" / "slides_plan.json"
 OUT = ROOT / "content" / "slides_content_gem-hunter.md"
 
+# 長尺スライドの目印。`slides_plan.json` の `message` に含める逐語で、ここが唯一の定義。
+# 表記を変えるときは JSON 側と本定数を同時に直す（片方だけ変えると尺が静かにズレる）。
+LONG_SPAN_MARKER = "90〜100 秒"
+
 
 def visual_line(slide: dict) -> str:
     return slide.get("visual", "none")
@@ -27,12 +31,22 @@ def main() -> int:
     lines.append("対象読者: 開発者・エンジニア")
     # 枚数と尺は構成そのものから導出する（ハードコードするとスライドを増減したときに取り残される）。
     count = len(plan["slides"])
-    long_slide = next(
-        (s["no"] for s in plan["slides"] if "90〜100 秒" in s.get("message", "")), None
-    )
-    note = f"。スライド {long_slide} のみ 90〜100 秒" if long_slide else ""
-    lines.append(f"想定尺: {count}〜{count + 3} 分（{count} 枚 / 1 枚あたり 60〜70 秒{note}）")
-    lines.append("作成日: 2026-08-22")
+    # 長尺スライドは 1 枚とは限らないので全件走査する（next() で先頭だけ拾うと、
+    # 2 枚目以降のぶん尺が短く出たうえ注記が「〜のみ」と誤記になる）。
+    longs = [s["no"] for s in plan["slides"] if LONG_SPAN_MARKER in s.get("message", "")]
+    if len(longs) == 1:
+        note = f"。スライド {longs[0]} のみ {LONG_SPAN_MARKER}"
+    elif longs:
+        note = "。スライド " + " / ".join(str(n) for n in longs) + f" は {LONG_SPAN_MARKER}"
+    else:
+        note = ""
+    # 秒から積み上げて分に直す（枚数 + 3 という当てずっぽうだと長尺スライドのぶんが落ちる）。
+    low_sec = count * 60 + (90 - 60) * len(longs)
+    high_sec = count * 70 + (100 - 70) * len(longs)
+    low_min = -(-low_sec // 60)
+    high_min = -(-high_sec // 60)
+    lines.append(f"想定尺: {low_min}〜{high_min} 分（{count} 枚 / 1 枚あたり 60〜70 秒{note}）")
+    lines.append("作成日: 2026-08-22（2026-08-23 改訂）")
     lines.append("")
     lines.append("> 本ファイルは `content/slides_plan.json`（議論 `project-slides-20260822` の verdict）から")
     lines.append("> `scripts/build_outline.py` が生成する。**構成を変えるときは JSON 側を直して再生成する。**")
