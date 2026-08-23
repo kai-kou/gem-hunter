@@ -8,8 +8,8 @@
 
 【オーケストレーターが実測した事実（2026-08-23 セッション）】next 16.3.1 / react 19.2.8 / TypeScript strict / pages ディレクトリ不在。src は domain(model,ports) / usecases / infrastructure(github,platform) / ui / composition / shared の層構成、アプリコードは約 8,832 行（テスト除く）。ユニット/結合テストファイル 75 本、E2E spec 21 本（e2e/）。npm scripts: dev/build/start/lint/format/format:check/test/test:watch/test:e2e/check/preview:build/preview:upload/deploy/deploy:ci/cf-typegen。`.github/workflows` は存在しない（GitHub Actions がプラットフォーム制限で使えず撤去・D-23）。`npx prettier --check .` は 125 ファイルで FAIL（tsconfig.json / wrangler.jsonc を含む）で、tools/run_checks.sh にも未接続。ADR は docs/adr/0001〜0015 の 15 本。README は 151 行で、セットアップ・環境変数 8 件の表・技術スタッ
 - 参加者: `senior_req`, `senior_arch`, `senior_prod`
-- 投稿数: 8
-- 更新: 2026-08-23T09:44:10+09:00
+- 投稿数: 9
+- 更新: 2026-08-23T10:01:04+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -437,3 +437,45 @@ round 1 の自分の提案（C -4〜5、D/F のどちらかで -2）は曖昧で
     "A 軸の水準: senior_arch のみ 27（他 2 名は 28〜29）。round 1 で最も慎重に評価し、他 2 名の独立検証との一致を受けて 26→27 へ微増したが同水準までは寄せなかった"
   ]
 }
+
+## ラウンド 4
+
+### `lead` — メモ
+<sub>2026-08-23T10:01:04+09:00</sub>
+
+## 判定後の追加検証（lead・確定スコアの改定）
+
+合議の締めとして、lead が **`main` の実際の品質ゲートを自分で回した**（`npm run check` = `tools/run_checks.sh` の全 31 チェック）。結果、議論中は誰も観測していなかった事実が出た。
+
+### 観測（実行結果）
+
+| チェック | 結果 |
+|---|---|
+| Lint (eslint) | PASS |
+| 型チェック (tsc --noEmit) | PASS |
+| テスト (vitest run) | PASS（79 files / 908 tests） |
+| **E2E (playwright test)** | 🔴 **FAIL（9 failed / 94 passed）** |
+| Lighthouse (Accessibility gate) | PASS |
+| 依存規則・ADR 記載検査ほか 26 チェック | PASS |
+
+**単独実行で切り分けた結果、以下は再現する実失敗だった**（`main` = `a621fea`。本セッションの変更は議論記録の追加のみでアプリコード非改変のため、**既存の失敗**）:
+
+- `e2e/sp-18.spec.ts:214` / `:244` — 候補プール実在のカードに Gem バッジが出ない（`[false, true]` 期待に対し `[false, false]`）。単独実行で 2 件とも再現。
+- `e2e/sp-19.spec.ts:213` — Gem 一覧の `<h2>` に検索語 `kafka` が入らず「Gem 一覧」のまま。
+- `e2e/sp-19.spec.ts` を単独実行すると 9 件全滅するが、2 件目以降は `ERR_CONNECTION_REFUSED`（先頭の失敗でプロセスが落ちた二次被害）。**1 件の失敗が後続 spec を全滅させるという基盤の脆さ** も同時に露呈した。
+- `e2e/a11y.spec.ts:16` は通し実行でのみ失敗し単独では PASS（並走干渉）。
+
+Issue #457 として起票済み（本 PR には混ぜない・`CP-1` の解決規則）。
+
+### 採点への反映
+
+3 名は C 軸を「テストの中身は厚いが、自動で回る仕組みが無い」という **予測された危険** として 15/20 に置いた。今回の観測は、その危険が **実際に発現していた** ことの直接証拠である。
+
+- `SP-18`（#435）・`SP-19`（#440）はいずれも「`npm run check` の結果表を PR 本文へ貼る」運用で通ってマージされているにもかかわらず、**マージ後の `main` で同じチェックが赤い**。つまり貼られた証跡と現在の実行結果が食い違っており、**唯一の機械的証跡が実効を持っていない**。
+- これは「CI が無い」という構成上の欠落（既に減点済み）とは別に、**現に赤い `main` が放置されていた** という結果の欠陥であり、追加減点に値する。
+
+**C 軸: 15 → 13**（-2）。他軸は変更しない（A 軸は与件 11 項目の充足判定であり、今回の失敗は与件外機能 `SP-18` / `SP-19` の回帰であるため A には波及させない）。
+
+**合計: 87 → 85 / 100。判定バンドは Hire のまま変わらない**（75〜89）。
+
+この追加検証は 3 名の議論の結論を覆すものではなく、**3 名が一致して指摘した「品質ゲートの実効性」という懸念を実証したもの** である。強み・面接確認事項の内容は変更しない。
