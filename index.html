@@ -150,12 +150,13 @@
                   height="1280"
                   fetchpriority="high"
                   decoding="async"
-                  alt="スマートフォンで表示した gem-hunter の検索結果画面。「react」で検索し、検索欄の下に関連度・star 数・更新日時の並び替えと 20 / 50 / 100 件の表示件数の切り替えが並び、その下にリポジトリ名・説明・主要言語・star 数・最終更新日・トピックが縦に積み重なっている。"
+                  alt="スマートフォンで表示した gem-hunter の検索結果画面。「react」で検索し、検索欄の下に関連度・star 数・更新日時の並び替えと 20 / 50 / 100 件の表示件数の切り替えが並び、その下に「この検索語の Gem 候補を一覧で見る」導線がある。react/react のカードにはオーナーのアバター画像と Gem バッジが付き、リポジトリ名・説明・主要言語・star 数・最終更新日・トピックが縦に積み重なっている。"
                 />
               </div>
             </figure>
             <p class="shot-caption">
               スマートフォンで「react」を検索した実際の画面です（検索結果は GitHub API から取得しています）。
+              一部のカードに付いている Gem の印については<a href="#how">「仕組み」</a>で説明しています。
             </p>
           </div>
 
@@ -199,7 +200,7 @@
                   height="1025"
                   loading="lazy"
                   decoding="async"
-                  alt="PC の画面幅で表示した gem-hunter の検索結果画面。「react」で検索し、リポジトリ名・説明・主要言語・star 数・最終更新日・トピックが一覧で並んでいる。上部には関連度・star 数・更新日時の並び替えと、20 / 50 / 100 件の表示件数の切り替えがある。"
+                  alt="PC の画面幅で表示した gem-hunter の検索結果画面。「react」で検索し、各カードにオーナーのアバター画像とリポジトリ名が並び、react/react のカードに Gem バッジが付いている。上部には関連度・star 数・更新日時の並び替え、20 / 50 / 100 件の表示件数の切り替え、「この検索語の Gem 候補を一覧で見る」導線がある。"
                 />
               </div>
             </figure>
@@ -270,6 +271,16 @@
             >（ICSE 2026）ほかの調査まとめ。実例に挙げた <code>debug_inspector</code> は RubyGems の
             パッケージで、25 star に対し 111,000 以上の OSS プロジェクトから依存されています。
           </p>
+
+          <img
+            class="why-divider reveal"
+            src="./assets/img/why-divider.webp"
+            width="640"
+            height="179"
+            loading="lazy"
+            decoding="async"
+            alt=""
+          />
         </div>
       </section>
 
@@ -309,7 +320,7 @@
           </ol>
 
           <div class="formula reveal">
-            <h3 class="formula-heading">「今日の Gem」の並び順</h3>
+            <h3 class="formula-heading">Gem Index の並び順</h3>
             <p class="formula-expr">Gem Index = 被依存数の順位 − star の順位</p>
             <p>
               どちらも <a href="https://ecosyste.ms/">Ecosyste.ms</a> の
@@ -319,8 +330,12 @@
               Gem Index は −6.9。実際のデータでもこのあたりが最上位帯です。
             </p>
             <p>
-              この値が小さい上位 60 件を母集団に、日付から決まる順序で毎日 5 件を選び、
-              その 5 件をこの値の順に並べています。同じ日なら、誰が見ても同じ 5 件です。
+              この値は 3 つの場所で使っています。「今日の Gem」では、この値が小さい上位 60 件を
+              母集団に、日付から決まる順序で毎日 5 件を選び、その 5 件をこの値の順に並べています。
+              検索結果では、この候補プールに載っているカードに Gem バッジを付けます
+              （検索結果の並び順は変えません）。検索語から開ける「Gem 候補を一覧で見る」画面では、
+              集まった候補をこの値の順に並べます（一覧の中身は全件が Gem 候補なので、
+              キーワード検索と違って順位が意味を持ちます）。
             </p>
             <p>
               健全性スコア（OpenSSF criticality_score など）は
@@ -393,6 +408,36 @@
               </ul>
             </div>
 
+            <div class="tile span-2 tile-wide">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M20.6 12.3 12 20.9a1.5 1.5 0 0 1-2.1 0l-7-7A1.5 1.5 0 0 1 3 12.8V5.5A2.5 2.5 0 0 1 5.5 3h7.3c.4 0 .8.2 1 .4l6.8 6.8a1.5 1.5 0 0 1 0 2.1Z" stroke-linejoin="round" />
+                  <circle cx="8" cy="8.5" r="1.3" />
+                </svg>
+                検索結果でも Gem に気づける
+              </h3>
+              <p>
+                キーワード検索の結果のうち、被依存数のわりに star が少ないカードには
+                Gem バッジが付きます。<strong>並び順は変わりません</strong>。
+                バッジが付かないことは低評価を意味しません。
+              </p>
+              <p class="tile-datum">
+                検索結果の上にある「この検索語の Gem 候補を一覧で見る」から、
+                その検索語に合う Gem 候補だけを Gem Index 順に見られます
+                <span class="tile-datum-note">（対象は 12 のパッケージレジストリ・約 6.2 万リポジトリ）</span>
+              </p>
+              <figure class="tile-figure">
+                <img
+                  src="./assets/img/shot-gems.webp"
+                  width="1100"
+                  height="550"
+                  loading="lazy"
+                  decoding="async"
+                  alt="gem-hunter の Gem 候補一覧画面の上部。見出し「「react」の Gem」と「669 件」の下に、Gem Index が小さい順（過小評価されている順）で上位 4 件のカードが並び、各カードにオーナーのアバター画像・リポジトリ名・パッケージ名・レジストリ名・star 数・利用パッケージ数・Gem Index の数値が表示されている。"
+                />
+              </figure>
+            </div>
+
             <div class="tile">
               <h3>
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -404,6 +449,25 @@
                 star / watcher / fork / open issue と README 本文を同じ画面で読めます。
                 独立した URL なので、共有もブラウザバックも素直に動きます。
               </p>
+            </div>
+
+            <div class="tile span-3 tile-wide">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 3l7 3v5c0 4.2-2.9 7.6-7 8.7-4.1-1.1-7-4.5-7-8.7V6l7-3Z" stroke-linejoin="round" />
+                </svg>
+                渡すものが何もない
+              </h3>
+              <p>
+                アカウント登録は要りません。広告も、アクセス解析のトラッキングも入れていません。
+                検索したキーワードをサーバーに保存する仕組みも持っていません
+                （データベースを 1 つも接続していないので、保存しようがない、が正確です）。
+              </p>
+              <ul class="tag-list">
+                <li>登録なし</li>
+                <li>トラッキングなし</li>
+                <li>保存なし</li>
+              </ul>
             </div>
 
             <div class="tile">
@@ -437,25 +501,6 @@
               </p>
             </div>
 
-            <div class="tile span-3 tile-wide">
-              <h3>
-                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M12 3l7 3v5c0 4.2-2.9 7.6-7 8.7-4.1-1.1-7-4.5-7-8.7V6l7-3Z" stroke-linejoin="round" />
-                </svg>
-                渡すものが何もない
-              </h3>
-              <p>
-                アカウント登録は要りません。広告も、アクセス解析のトラッキングも入れていません。
-                検索したキーワードをサーバーに保存する仕組みも持っていません
-                （データベースを 1 つも接続していないので、保存しようがない、が正確です）。
-              </p>
-              <ul class="tag-list">
-                <li>登録なし</li>
-                <li>トラッキングなし</li>
-                <li>保存なし</li>
-              </ul>
-            </div>
-
           </div>
         </div>
       </section>
@@ -474,9 +519,9 @@
 
           <div class="facts reveal">
             <div class="fact">
-              <b>682 ケース</b>
+              <b>1,061 ケース</b>
               <span>
-                ユニット・結合 593 / E2E 89。<a
+                ユニット・結合 954 / E2E 107。<a
                   href="https://github.com/kai-kou/gem-hunter/blob/main/docs/04_development/testing-strategy.md"
                   >テスト戦略</a
                 >
@@ -521,8 +566,10 @@
                 あります。少し時間をおいてから試してください。
               </li>
               <li>
-                Gem Index は「今日の Gem」の並び順にだけ使っています。
-                キーワード検索の結果は GitHub の検索結果をそのまま並べています。
+                Gem Index は「今日の Gem」と「Gem 候補の一覧」（検索結果から開けます）の並び順、
+                それに検索結果カードの Gem バッジの判定に使っています。キーワード検索の結果自体は
+                GitHub の検索結果をそのまま並べており、バッジが付いても並び順は変わりません。
+                Gem の印は限られたデータにもとづく参考値なので、優劣の評価ではありません。
               </li>
             </ul>
           </div>
@@ -541,9 +588,20 @@
             <details open>
               <summary>GitHub の検索と何が違いますか？</summary>
               <div class="answer">
-                キーワード検索そのものは GitHub の検索結果です。違うのは「今日の Gem」で、
-                <code>stars:</code> のような条件では書けない
-                「使われ方に対して star が少ない」という観点を足しています。
+                キーワード検索の並び順そのものは GitHub の検索結果です。足しているのは
+                <code>stars:</code> のような条件では書けない「使われ方に対して star が少ない」
+                という観点で、検索結果カードの Gem の印、キーワードなしで開く「今日の Gem」、
+                検索語から絞り込む「Gem 候補の一覧」の 3 か所に出します。並び順を変えるのは
+                「今日の Gem」と「Gem 候補の一覧」だけで、キーワード検索結果の並び順は変えません。
+              </div>
+            </details>
+            <details>
+              <summary>検索結果に付いている Gem の印は何ですか？</summary>
+              <div class="answer">
+                被依存数のわりに star が少ないリポジトリの目印です。12 のパッケージレジストリから
+                集めた候補プールに載っているカードに付き、検索結果の並び順は変えません。
+                限られたデータにもとづく参考値なので、付いていないことが低評価という意味には
+                なりません。
               </div>
             </details>
             <details>
@@ -559,8 +617,9 @@
               <summary>対応しているエコシステムは何ですか？</summary>
               <div class="answer">
                 キーワード検索は GitHub 全体が対象で、言語もエコシステムも問いません。
-                一方「今日の Gem」の被依存数は、いまのところ
-                <strong>npm（npmjs.org）のパッケージだけ</strong>を対象にしています。
+                一方「今日の Gem」と Gem の印が使う被依存数は、
+                npm・PyPI・crates.io・RubyGems・Packagist・Go Modules・Maven・CRAN・Hex・CPAN・NuGet・pub.dev の
+                <strong>12 のパッケージレジストリ（約 6.2 万リポジトリ）</strong>を対象にしています。
               </div>
             </details>
             <details>

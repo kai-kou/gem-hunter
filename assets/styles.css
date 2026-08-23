@@ -583,6 +583,16 @@ summary {
   margin-bottom: 10px;
 }
 
+/* ---- why セクションの区切り装飾（文字なし・alt=""） ---- */
+
+.why-divider {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  margin: clamp(20px, 4vw, 32px) auto;
+}
+
 /* ---- 対比（star vs 被依存数） ---- */
 
 .compare {
