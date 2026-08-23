@@ -1,50 +1,64 @@
 {
-  "architecture-overview": {
-    "title": "アーキテクチャ全体像",
-    "subtitle": "論理層×物理配置×日次バッチを1枚で見る",
+  "architecture-flow": {
+    "title": "アーキテクチャの流れ",
+    "subtitle": "リクエストが返るまでと、候補プールができるまで",
     "sections": [
       {
-        "heading": "論理層",
+        "heading": "①ブラウザ",
         "items": [
-          "app→usecases→domain",
-          "依存は常に内向きのみ",
-          "domainは依存ゼロの中心",
-          "ui/appはinfra直接不可",
-          "compositionでDI合成",
-          "GitHub ACLはinfra/github/"
+          "URL/Cookieに状態を持つ",
+          "静的アセットを取得"
         ]
       },
       {
-        "heading": "物理配置",
+        "heading": "②Workersキャッシュ",
         "items": [
-          "SA:JS/CSS/フォント配信",
-          "Worker:RSC/API実行",
-          "MISS時→Worker実行",
+          "Cache-Controlに従う",
+          "MISS時→Worker実行"
+        ]
+      },
+      {
+        "heading": "③Worker(OpenNext)",
+        "items": [
+          "Server Components実行",
+          "Route Handlers実行",
           "L1:リクエスト内メモ化",
           "L2:InMemoryCacheが主役",
           "RATE_LIMITER:60/60s"
         ]
       },
       {
-        "heading": "日次バッチ",
+        "heading": "④composition",
+        "items": [
+          "ポート実装を束ねる",
+          "依存は内向きにだけ流す"
+        ]
+      },
+      {
+        "heading": "⑤usecases/domain",
+        "items": [
+          "検索・詳細のユースケース",
+          "domainは依存ゼロの中心"
+        ]
+      },
+      {
+        "heading": "⑥データ源",
+        "items": [
+          "Gem判定:静的プール",
+          "詳細/README:GitHub API",
+          "gem-index:ASSETS経由",
+          "取得失敗でも検索は継続"
+        ]
+      },
+      {
+        "heading": "⑦日次バッチ",
         "items": [
           "毎日1回cronで起動",
           "収集:Ecosyste.ms API",
           "12レジストリ順次取得",
           "汚染フィルタ+dedupe",
           "レジストリ別に順位付け",
-          "機械QAはfail-closed"
-        ]
-      },
-      {
-        "heading": "2系統のデータ源",
-        "items": [
-          "出力:シャード12+索引1",
-          "gem-index:ASSETS経由",
-          "digest:importで内蔵",
-          "Gem判定:静的プール",
-          "詳細/README:GitHub API",
-          "取得失敗でも検索は継続"
+          "出力:シャード12+索引1"
         ]
       }
     ],
@@ -54,11 +68,6 @@
       "Gem Index=順位差で算出",
       "main反映は7日ごと"
     ],
-    "edges": [
-      ["日次バッチ", "2系統のデータ源"],
-      ["2系統のデータ源", "論理層"],
-      ["論理層", "物理配置"]
-    ],
-    "layout_hint": "4層の積み上げ図（論理層/物理配置/日次バッチ/2系統のデータ源を縦に重ねる）"
+    "layout_hint": "左→右の主線（ブラウザ→エッジ→Worker→composition→usecases/domain→データ源）と、下段の日次バッチレーンがデータ源へ合流する 2 レーン構成"
   }
 }

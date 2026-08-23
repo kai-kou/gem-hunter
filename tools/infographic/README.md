@@ -72,7 +72,7 @@ python3 tools/infographic/build_grid_prompt.py --out tools/infographic/prompts/0
 | `11-testing-strategy.txt` | `specs/extra2.json` | `testing` | `layouts/testing.txt` |
 | `12-cloudflare.txt` | `specs/extra2.json` | `cloudflare` | `layouts/cloudflare.txt` |
 | `13-ops-rules.txt` | `specs/extra3.json` | `ops-rules` | `layouts/ops-rules.txt` |
-| `14-architecture-overview.txt` | `specs/extra4.json` | `architecture-overview` | `layouts/architecture-overview.txt` |
+| `14-architecture-flow.txt` | `specs/extra4.json` | `architecture-flow` | `layouts/architecture-flow.txt` |
 
 全 14 枚のプロンプトをまとめて組み立て直すには `build_all_prompts.sh` を使う。
 

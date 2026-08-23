@@ -21,4 +21,4 @@ build extra1.json       gem-score        gem-score.txt        10-gem-score.txt
 build extra2.json       testing          testing.txt          11-testing-strategy.txt
 build extra2.json       cloudflare       cloudflare.txt       12-cloudflare.txt
 build extra3.json       ops-rules        ops-rules.txt        13-ops-rules.txt
-build extra4.json       architecture-overview architecture-overview.txt 14-architecture-overview.txt
+build extra4.json       architecture-flow architecture-flow.txt 14-architecture-flow.txt

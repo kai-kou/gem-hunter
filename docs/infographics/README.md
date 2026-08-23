@@ -105,18 +105,18 @@
 
 ## 全体像
 
-### 14. アーキテクチャ全体像
+### 14. アーキテクチャの流れ
 
-![アーキテクチャ全体像](./14-architecture-overview.webp)
+![アーキテクチャの流れ](./14-architecture-flow.webp)
 
 元ドキュメント: [アプリケーションアーキテクチャ](../03_design/architecture/application-architecture.md) /
 [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) /
 [`.github/workflows/gem-pool-refresh.yml`](../../.github/workflows/gem-pool-refresh.yml) /
 [`tools/gem-pool/`](../../tools/gem-pool)
 
-7 の「設計サマリー」が箇条書きで示す層構造と、12 の「Cloudflare 構成」が示す実行時の経路に対して、
-本図は **Gem 候補プールの日次バッチ** と **2 系統のデータ源**（静的シャードと GitHub API）を加えて
-1 枚に統合する。層の依存が内向きだけであることも図中の矢印で示す。
+7 の「設計サマリー」が層構造を、12 の「Cloudflare 構成」が実行時の経路を、それぞれ静的に示すのに対し、
+本図は **リクエストが返るまで**（①〜⑥の主線と、⑥から①へ戻る応答）と **候補プールができるまで**（⑦の日次バッチが
+⑥へ合流する下段レーン）を 1 本の流れとして描く。層の依存が内向きだけであることは④に現れる。
 
 ## 仕様
 
