@@ -179,6 +179,7 @@ async function SearchBody({
           retryAfter: state.retryAfter,
           retryAfterSeconds: state.retryAfterSeconds,
           isLoggedIn,
+          isAuthConfigured: showAuthLink,
         })}
         // 再試行手段（US-24）: いま失敗した検索 URL をそのまま開き直す。素の <a> なので
         // クライアント JS を持たない（NFR-3）。

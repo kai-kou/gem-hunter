@@ -262,11 +262,14 @@ export default async function GemListPage({
         kind: error.kind,
         // 文言・秒数のローカライズは `toErrorPresentation` に委ねる（`NFR-9`: 例外の
         // 内部文言は画面へ運ばない）。ログイン導線は二次レート制限では出ない
-        // （`loginHint` が付くのは一次レート制限のみ）ため、この面では渡さない。
+        // （`loginHint` が付くのは一次レート制限のみ）ため、`isAuthConfigured` の値は
+        // 結果に影響しない。`renderErrorBody` が `loginHref`/`loginLabel` を渡さない
+        // こととも一致させるため固定で `false` を渡す（`showAuthLink` は渡さない）。
         presentation: toErrorPresentation(error.kind, messages, {
           locale,
           retryAfterSeconds: error.retryAfterSeconds,
           isLoggedIn: accessToken !== null,
+          isAuthConfigured: false,
         }),
         // 再試行先は、いま弾かれた一覧 URL そのもの（上の `requestedPath` のコメント参照）。
         retryHref: requestedPath,

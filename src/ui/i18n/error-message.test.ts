@@ -38,7 +38,11 @@ describe.each([
   const locale = toLocale(tag)
 
   it('ネットワーク到達不可はカタログの文言をそのまま返し、ログイン導線は付けない（US-24）', () => {
-    const result = toErrorPresentation('network', messages, { locale, isLoggedIn: false })
+    const result = toErrorPresentation('network', messages, {
+      locale,
+      isLoggedIn: false,
+      isAuthConfigured: true,
+    })
 
     expect(result.message).toBe(messages.common.errors.network)
     expect(result.loginHint).toBeUndefined()
@@ -50,17 +54,22 @@ describe.each([
     ['notFound', (m: typeof ja) => m.common.errors.notFound],
     ['upstream', (m: typeof ja) => m.common.errors.upstream],
   ] as const)('%s はカタログの文言をそのまま返す（prd.md §7）', (kind, pick) => {
-    const result = toErrorPresentation(kind as ErrorKind, messages, { locale, isLoggedIn: false })
+    const result = toErrorPresentation(kind as ErrorKind, messages, {
+      locale,
+      isLoggedIn: false,
+      isAuthConfigured: true,
+    })
 
     expect(result.message).toBe(pick(messages))
     expect(result.loginHint).toBeUndefined()
   })
 
-  it('一次レート制限は復帰時刻を補間し、未ログインならログイン導線を添える（US-25 / AR-5）', () => {
+  it('一次レート制限は復帰時刻を補間し、未ログイン かつ OAuth 設定済みならログイン導線を添える（US-25 / AR-5）', () => {
     const result = toErrorPresentation('rateLimitPrimary', messages, {
       locale,
       retryAfter: RESET_AT,
       isLoggedIn: false,
+      isAuthConfigured: true,
     })
 
     expect(result.message).not.toContain('{resetAt}')
@@ -72,13 +81,29 @@ describe.each([
       locale,
       retryAfter: RESET_AT,
       isLoggedIn: true,
+      isAuthConfigured: true,
+    })
+
+    expect(result.loginHint).toBeUndefined()
+  })
+
+  it('一次レート制限でも OAuth が本番未設定ならログイン導線を出さない（Issue #365）', () => {
+    const result = toErrorPresentation('rateLimitPrimary', messages, {
+      locale,
+      retryAfter: RESET_AT,
+      isLoggedIn: false,
+      isAuthConfigured: false,
     })
 
     expect(result.loginHint).toBeUndefined()
   })
 
   it('一次レート制限で復帰時刻が取れないときは UnknownReset 文言へフォールバックする', () => {
-    const result = toErrorPresentation('rateLimitPrimary', messages, { locale, isLoggedIn: false })
+    const result = toErrorPresentation('rateLimitPrimary', messages, {
+      locale,
+      isLoggedIn: false,
+      isAuthConfigured: true,
+    })
 
     expect(result.message).toBe(messages.common.errors.rateLimitPrimaryUnknownReset)
     expect(result.loginHint).toBe(messages.common.errors.rateLimitPrimaryLoginHint)
@@ -89,6 +114,7 @@ describe.each([
       locale,
       retryAfterSeconds: 30,
       isLoggedIn: false,
+      isAuthConfigured: true,
     })
 
     expect(result.message).toContain('30')
@@ -100,6 +126,7 @@ describe.each([
     const result = toErrorPresentation('rateLimitSecondary', messages, {
       locale,
       isLoggedIn: false,
+      isAuthConfigured: true,
     })
 
     expect(result.message).toBe(messages.common.errors.rateLimitSecondaryUnknownRetry)
@@ -122,6 +149,7 @@ describe.each([
         retryAfter: RESET_AT,
         retryAfterSeconds: 30,
         isLoggedIn: false,
+        isAuthConfigured: true,
       })
 
       expect(result.message).not.toMatch(/\{\w+\}/)
@@ -145,6 +173,7 @@ describe('復帰時刻の表示（US-25 / datetime-rules.md）', () => {
       locale: toLocale('ja'),
       retryAfter: RESET_AT,
       isLoggedIn: true,
+      isAuthConfigured: true,
     })
 
     expect(result.message).toContain('18:30')
@@ -156,6 +185,7 @@ describe('復帰時刻の表示（US-25 / datetime-rules.md）', () => {
       locale: toLocale('en'),
       retryAfter: RESET_AT,
       isLoggedIn: true,
+      isAuthConfigured: true,
     })
 
     expect(result.message).toContain('06:30')

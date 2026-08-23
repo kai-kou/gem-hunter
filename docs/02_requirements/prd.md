@@ -513,6 +513,8 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 🔵 **レート制限エラーがログイン導線になる。** `AR-5` の存在価値がエラー体験の中で自然に伝わる設計とする。
 
+🔴 **OAuth が本番未設定（`isAuthConfigured()` が false）の場合はログイン導線を出さない**（Issue #365）。存在しない導線を案内すると行き止まりになるため、`isLoggedIn` に関わらず案内自体を抑制する。
+
 ---
 
 ## 8. 画面要件
