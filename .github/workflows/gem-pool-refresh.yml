@@ -1,9 +1,17 @@
 name: Gem Pool Refresh
 
-# Gem 候補プール（public/data/gem-index/ + public/data/daily-digest.json）を週次で再生成し、
-# 生成物のみを差分に持つ PR を作成するワークフロー（Issue #458・`D-40`）。
+# Gem 候補プール（public/data/gem-index/ + public/data/daily-digest.json）を
+# **日次生成・週次目安反映**するワークフロー（Issue #458・#482・`D-40`）。
 #
-# 決定の正本: content/discussions/gem-pool-actions-schedule-20260823/whiteboard.md（round 3 lead 判定）。
+# 🔴 なぜ「日次実行 / 週次反映」か: 生成物 3.6MB（gzip 1.23MB）は反映（コミット）のたびに
+# リポジトリ履歴へ積まれる。Actions 自体の課金はゼロだが、日次で反映するとクローンが年
+# +110〜450MB 太りクラウドセッションの clone を重くする。コストの実体は実行頻度ではなく
+# 反映頻度にあるため、生成・QA（パイプラインの健全性検証）は毎日行い、実際に main へ反映
+# するのは直近の反映コミットから 7 日以上経過した回だけに絞る（`tools/gem_pool_qa.mjs
+# --should-publish` が判定・詳細は同ファイルの docstring）。
+#
+# 決定の正本: content/discussions/gem-pool-actions-schedule-20260823/whiteboard.md（round 3 lead 判定）
+# + Issue #482（日次実行・週次反映への変更）。
 #
 # 🔴 このワークフローは以下を絶対に行わない:
 #   - main への直接 push（A-1・docs/rules/user-confirmation-minimization.md §1）
@@ -15,10 +23,17 @@ name: Gem Pool Refresh
 
 on:
   schedule:
-    # UTC 日曜 21:17 = JST 月曜 06:17。毎時ちょうど（:00）は GitHub 側の高負荷でキュー投入が
-    # ドロップされうるため分をずらす。週次にする理由・cron の根拠は whiteboard round 3 参照。
-    - cron: '17 21 * * 0'
+    # UTC 21:17 = JST 06:17。毎日実行する（反映するかどうかは should-publish 判定が別途決める）。
+    # 毎時ちょうど（:00）は GitHub 側の高負荷でキュー投入がドロップされうるため分をずらす
+    # （理由・cron の根拠は whiteboard round 3 参照）。
+    - cron: '17 21 * * *'
   workflow_dispatch:
+    inputs:
+      force_publish:
+        description: '⚠️ 経過日数に関わらず今すぐ main へ反映する（手動デバッグ・緊急更新用）'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -36,7 +51,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 2 # git show HEAD:<path> で前回生成物と比較するために必要
+          # 🔴 fetch-depth: 0（全履歴）にする。`tools/gem_pool_qa.mjs --should-publish` が
+          # `git log -- public/data/gem-index/index.json` で「直近の反映コミット」を辿るため、
+          # 浅いクローンだと反映コミットが取得範囲の外にあった場合に誤って「反映コミットなし」
+          # （= 初回相当・反映する）と判定してしまう。日次実行で毎回このパスを触るわけではない
+          # ため、浅い固定深度では安全に判定できない。
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
