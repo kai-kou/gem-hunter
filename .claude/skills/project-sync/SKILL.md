@@ -162,7 +162,9 @@ Step 3.7: Abandoned ブランチ検出（月曜 07:00 のみ）— CP-3 準拠
   └─ 削除候補リストをログ出力（自動削除はしない。ユーザー判断に委ねる）
 
 Step 3.85: 配信データ鮮度チェック（全実行時）— E-25 / NFR-8
-  ├─ python3 tools/check_digest_freshness.py --json を実行
+  ├─ python3 tools/check_digest_freshness.py --json --max-age-hours 192 を実行
+  │     （192h = 週次スケジュール 168h + 遅延の余裕。一次経路は Actions の週次スケジュールで、
+  │      `--heal` はワークフローが 1 週間以上失敗し続けたときだけ動く真のフォールバック）
   │     → fresh（0）: 何もしない
   │     → stale（1）: python3 tools/check_digest_freshness.py --heal で自己修復を試行
   │          → 成功: ログのみ（次回配信で新しい generatedAt になる）
