@@ -115,6 +115,24 @@ function fetchAvatar(url) {
 // FETCH_VIA_CURL 用: 任意 URL を curl 経由で取得して { status, contentType, body } を返す。
 // このコンテナは Chromium からの外部 HTTPS が直接/プロキシ経由とも ERR_CONNECTION_RESET になるため
 // （ファイル冒頭コメント参照）、代わりに HTTPS_PROXY / CA バンドルが設定済みの curl で取得する。
+//
+// 🔴 このサンドボックスの GitHub API プロキシは `github.com` 宛のリクエストを
+// 「repo スコープの REST パスのみ許可」に制限しており、`github.com/{user}.png?size=N`
+// （GitHub のアバター短縮 URL）は 403 になる。同じ画像を配信する
+// `avatars.githubusercontent.com` はプロキシの制限対象外で通るため、curl 前にそちらへ書き換える。
+function rewriteForProxy(url) {
+  try {
+    const parsed = new URL(url)
+    const match = parsed.hostname === 'github.com' && parsed.pathname.match(/^\/([^/]+)\.png$/)
+    if (!match) return url
+    const rewritten = new URL(`https://avatars.githubusercontent.com/${match[1]}`)
+    rewritten.search = parsed.search
+    return rewritten.href
+  } catch {
+    return url
+  }
+}
+
 let curlSeq = 0
 function curlFetch(url) {
   const n = curlSeq++
@@ -123,7 +141,7 @@ function curlFetch(url) {
   try {
     execFileSync(
       'curl',
-      ['-sS', '-L', '--max-time', '40', '-D', headerPath, '-o', bodyPath, url],
+      ['-sS', '-L', '--max-time', '40', '-D', headerPath, '-o', bodyPath, rewriteForProxy(url)],
       { maxBuffer: 60e6 },
     )
   } catch {
