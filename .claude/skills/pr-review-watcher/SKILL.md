@@ -118,12 +118,16 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 | 3 | 指摘への自動対応（修正コミット or スキップ → スレッド返信 → **Resolve 必須**） |
 | 4 | Layer 0（機械ゲート）+ Layer 1 通過の確認 |
 | 5 | 自動マージ（squash・外部レビュアー応答待ちなし） |
-| 6 | **公開リポジトリへの反映（`publish-sync`）は常に実行**。**本番デプロイはゲート判定を経由**: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は `tools/check_deploy_gate.py` が 0（デプロイ可）を返したときのみ実行（fail-closed）。詳細は下記 |
+| 6 | **公開リポジトリへの反映（`publish-sync`）は常に実行**。**本番デプロイはゲート判定を経由し、一次経路は Workers Builds の再トリガー**（`tools/trigger_workers_build.py`。`npm run deploy` の直叩きはフォールバック）: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は同スクリプトが内部でゲートを確認し、開いているときだけトリガーする（fail-closed）。詳細は下記 |
 | 7 | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）ならデプロイ → 疎通確認 → プレビュー環境の退役（`tools/retire_preview_aliases.py`）まで実行。詳細は下記 |
 | 8 | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102） |
 | 9 | マージ後フィードバックループ → `docs/rules/lessons/pr-review.md` に教訓追記（必須・`lessons-management.md` に従う） |
 
 ### Step 6: マージ直後の公開反映とデプロイゲート（#449・`sprint-env-lifecycle-20260820` 決定）
+
+🔵 **一次経路を `wrangler deploy` の直叩きから Workers Builds の再トリガーへ変更**（Issue #451）:
+`D-31` の理念（マージ＝本番反映・セッションが `wrangler deploy` を打たない）に戻す変更であり、
+`npm run deploy` の手動実行は L-130（auto mode classifier ブロック）対策のフォールバックに降格する。
 
 マージした瞬間が、公開リポジトリとのドリフトが生まれる瞬間である。**反映をセッション終了時や次回の
 定期ルーティンに先送りしない**（先送りが実際に 13〜17 時間の滞留を生んだ・#449）。
@@ -131,12 +135,17 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 - `post-merge-publish-check.sh`（PostToolUse・matcher `mcp__github__merge_pull_request`）が
   マージ成功を検知してドリフトを判定し、反映が要るときだけ指示を注入する。指示が来たら
   `publish-sync` スキルに従って **push まで完遂する**（ユーザー確認は不要・PR 種別によらず常に実行）。
-- 🔴 **本番デプロイ（`npm run deploy`）の発火点は PR 種別で分岐する**（`sprint-env-lifecycle-20260820`
+- 🔴 **本番デプロイの発火点は PR 種別で分岐する**（`sprint-env-lifecycle-20260820`
   議論・lead 判定「B: 本番デプロイの発火点」・飼い主の明示指示 2026-08-19・`D-23`。`permissions.allow` に登録済み）:
   - **スプリント PR（`Sprint Goal:` 行あり）**: このステップではデプロイしない。判定は Step 7 の
     スプリントレビュー結果に委ねる（下記）。push（公開反映）だけ完遂して Step 7 へ進む。
-  - **非スプリント PR**（改善 Issue・retro-try・docs 等）: `python3 tools/check_deploy_gate.py` を実行し、
-    **デプロイ可のときだけ** デプロイする。デプロイしない場合はコマンド出力をそのまま PR/Issue
+  - **非スプリント PR**（改善 Issue・retro-try・docs 等）: 🔴 **一次経路は `python3
+    tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部で `tools/check_deploy_gate.py`
+    を確認し、ゲートが開いているときだけトリガーする）。終了コード 0 = トリガー成功 / 1 = ゲート待機中
+    （異常ではない・保留のまま次回に持ち越す）/ 2 = 判定不能（fail-closed）。スクリプトが存在しない、
+    または 2 を返した場合に限り、フォールバックとして `python3 tools/check_deploy_gate.py` を直接実行し
+    デプロイ可のときだけ `npm run deploy` する（L-130: `npm run deploy` は auto mode classifier に
+    ブロックされることがあるため一次経路にしない）。デプロイしない場合はコマンド出力をそのまま PR/Issue
     コメントに記録する（次に該当 PR が再チェックされるまでデプロイは保留のまま）。🔴 **終了コード
     （0/1/2）の意味は `cloudflare-infrastructure.md` §8.2 の記載が SSOT**（本項では再掲しない）。
   - このゲートの目的: レビュー待ちのスプリント成果物が `main` 経由で本番へ漏れる穴を塞ぐ（release_eng が
@@ -200,8 +209,13 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 
 3.5. **デプロイ・疎通確認・退役**（`デプロイ: yes` のときのみ実行。`rejected` または `deploy: no` は
    本項を丸ごとスキップして 4 へ進む・fail-closed）:
-   - Step 6 のデプロイ手順（`main` HEAD で `npm run check` 再実行 → `npm run deploy` → 本番 URL 疎通確認。
-     **手順の実体は `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。
+   - 🔴 **一次経路は `python3 tools/trigger_workers_build.py`**（Workers Builds の再トリガー・#451。
+     終了コード 0 = トリガー成功 / 1 = デプロイゲート待機中・異常ではない / 2 = 判定不能・fail-closed）。
+     スクリプトが存在しない、または 2 を返した場合に限り Step 6 のフォールバック手順（`main` HEAD で
+     `npm run check` 再実行 → `npm run deploy` → 本番 URL 疎通確認。**手順の実体は
+     `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。1（ゲート待機中）の場合は
+     デプロイを実行せず、`進捗:` を「デプロイ未完了」のまま更新しない（下記の失敗時と同じ扱い。
+     次回 firing は `sprint-cycle-router` Step 0.2 が拾う）。
    - デプロイ成功後、**そのスプリント PR の preview alias を退役する**:
      `python3 tools/retire_preview_aliases.py --alias pr-<N>`（`<N>` は対象 PR 番号。本番と同一ビルドへ
      張り替える＝「削除」ではなく「上書き」。削除 API が存在しないことは

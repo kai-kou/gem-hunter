@@ -10,7 +10,7 @@
   → Layer 0 機械ゲート + Layer 1 観点別フレッシュ文脈セルフレビュー（主軸・全 PR 必須・自己実行）
   → 指摘対応（修正コミット or スキップ + 返信 + Resolve）→ Layer 0+1 通過で自動マージ（squash）
   → **公開反映（publish-sync・マージした同一セッションで完遂）**
-  → 🔴 **本番デプロイはゲート判定を経由**（`npm run deploy` を無条件では呼ばない。発火条件・終了コードの意味は `cloudflare-infrastructure.md` §8.2 が SSOT）
+  → 🔴 **本番デプロイはゲート判定を経由**（一次経路 `trigger_workers_build.py`・フォールバック `npm run deploy` とも無条件では呼ばない。発火条件・終了コードの意味は `cloudflare-infrastructure.md` §8.2 が SSOT）
   → Slack 完了通知
 ```
 
