@@ -153,36 +153,45 @@ fi
 #    Actions が復帰しワークフローが CI を担うようになったら本ブロックは撤去する（cloudflare-infrastructure.md §8.4）。
 if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
-  # 許容する見出しパターン（Issue #405・複数表記を等価に扱う。見出しレベルは `##` 固定
-  # ＝ docs/rules/pr-review-flow-summary.md の例示と一致させる）:
-  #   - ## run_checks 結果
-  #   - ## `npm run check` 結果
-  #   - ## npm run check 結果
-  # 見出し行を検出したら、その「セクション内」（次の `##` 見出しに到達するか本文末尾まで）に
-  # Markdown 表（| 区切り行）があるかまで確認する。見出しだけ書いて表を貼り忘れる・無関係な
-  # 別セクションの表で素通りする、の両方のすり抜けを防ぐ（検証担当の敵対的検証で実測・#405）。
-  # 末尾に `|| true` が必要（set -e 環境下で grep 不一致 [exit 1] のままだと
-  # 代入コマンド自体の失敗としてスクリプトが即終了してしまうため）。
-  heading_lineno=$(printf '%s\n' "$pr_body" | grep -nE '^##[[:space:]]*`?(run_checks|npm run check)`?[[:space:]]*結果' | head -1 | cut -d: -f1) || true
-  has_run_checks_result=0
-  if [ -n "$heading_lineno" ]; then
-    # 見出し行の「次の行」から、次の `##` 見出しに到達する直前まで（到達しなければ本文末尾まで）
-    # を抽出し、その範囲内だけで表の有無を判定する。
-    section=$(printf '%s\n' "$pr_body" | tail -n +"$((heading_lineno + 1))" | awk '/^##[[:space:]]/{exit} {print}') || true
-    if printf '%s\n' "$section" | grep -qE '^[[:space:]]*\|'; then
-      has_run_checks_result=1
-    fi
-  fi
+  # 許容する見出しパターン（Issue #405・PR #456 Layer 1 指摘で強化）: 見出しレベルは `##` 固定
+  # ＝ docs/rules/pr-review-flow-summary.md の例示と一致させる。キーワードは run_checks /
+  # npm run check のどちらでもよく、各キーワードはバッククォートで囲んでも囲まなくても良い
+  # （SSOT は本ファイルの実装を正とし、docs 側はそれに合わせて記述する）。
+  #   - ## run_checks 結果         ── `## `run_checks` 結果`
+  #   - ## npm run check 結果  ── `## `npm run check` 結果`
+  #
+  # 判定は awk で単一パスで行い、以下 3 点のすり抜けを塞ぐ（PR #456 敵対的検証で実測）:
+  #   1. 見出しが複数回出現する場合、最初の 1 個だけでなく全見出しを走査し、
+  #      いずれか 1 つのセクションに表があれば合格にする（1 個目だけ見ると
+  #      「後から正しく貼り直した」PR が誤ブロックされていた）
+  #   2. フェンスドコードブロック（``` / ~~~）内の見出し・表は判定対象から除外する
+  #      （手順書やテンプレートの例示だけで素通りしていた）
+  #   3. 全角スペース（U+3000）を半角に正規化してから判定する（IME 由来の全角スペース
+  #      1 つで見出しが認識できず、理由不明のままブロックされていた）
+  # awk の POSIX 文字クラス依存を避けるため半角スペース/タブのみを空白として扱う。
+  pr_body_norm=$(printf '%s\n' "$pr_body" | sed 's/　/ /g')
+  has_run_checks_result=$(printf '%s\n' "$pr_body_norm" | awk '
+    {
+      line = $0
+      stripped = line
+      sub(/^[ \t]+/, "", stripped)
+      if (stripped ~ /^(```+|~~~+)/) { infence = !infence; next }
+      if (infence) next
+      if (line ~ /^##[ \t]*`?(run_checks|npm run check)`?[ \t]*結果/) { trying = 1; next }
+      if (trying) {
+        if (line ~ /^[ \t]*\|/) { found = 1; exit }
+        if (line ~ /^##[ \t]/) { trying = 0 }
+      }
+    }
+    END { print found + 0 }
+  ') || true
   if [ "$has_run_checks_result" -ne 1 ]; then
     hook_block "[pre-pr-create-check] PR 作成をブロックしました。PR 本文に run_checks の結果表が見つかりません。
 
 GitHub Actions が制限中で CI が無いため、\`npm run check\`（= tools/run_checks.sh）の結果が唯一の機械的証跡です。
 1. \`npm run check\` を実行する
-2. 出力末尾の Markdown サマリー表を、次のいずれかの見出しを付けて PR 本文に貼る（このいずれかの表記のみ検出対象。表記ゆれ・意訳は不可）:
-   - ## run_checks 結果
-   - ## \`npm run check\` 結果
-   - ## npm run check 結果
-3. 見出しから次の見出し（##）までの間に表（| 区切りの行）を置く（無関係な別セクションの表は不可）
+2. 出力末尾の Markdown サマリー表を、\`## run_checks 結果\` または \`## npm run check 結果\` という見出しを付けて PR 本文に貼る（run_checks / npm run check の部分はバッククォートで囲んでも囲まなくても可。表記ゆれ・意訳は不可）
+3. 見出しから次の見出し（##）までの間に表（| 区切りの行）を置く（無関係な別セクションの表・コードフェンス内の例示は不可）
 4. PR 作成を再実行する
 
 手順の正本: docs/rules/pr-review-flow-summary.md「PR 作成時の必須事項」項目 0"
