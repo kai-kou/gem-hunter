@@ -12,6 +12,8 @@ export type SiteHeaderProps = {
   showAuthLink: boolean
   /** `showAuthLink=true` のときだけ必須（呼び出し側で保証）。 */
   authLabels?: LoginLinkLabels
+  /** スキップリンクの可視テキスト（Issue #354）。 */
+  skipLinkLabel: string
 }
 
 /**
@@ -26,6 +28,8 @@ export type SiteHeaderProps = {
  * `next/image` は使わない（INF-11）。
  *
  * ARCH-6: `src/ui/` は `src/usecases/` を import しない（本コンポーネントは表示のみ）。
+ *
+ * スキップリンク（`#main-content` へのショートカット・Issue #354）を `<header>` の直前に置く。
  */
 export function SiteHeader({
   locale,
@@ -35,9 +39,17 @@ export function SiteHeader({
   isLoggedIn,
   showAuthLink,
   authLabels,
+  skipLinkLabel,
 }: SiteHeaderProps) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
+    <>
+      <a
+        href="#main-content"
+        className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:rounded-sm focus-visible:bg-background focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:font-semibold focus-visible:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
+      >
+        {skipLinkLabel}
+      </a>
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
       <h1 className="text-base font-semibold">
         <Link
           href={`/${locale}`}
@@ -60,6 +72,7 @@ export function SiteHeader({
         <LocaleSwitcher currentLocale={locale} currentPath={currentPath} labels={localeSwitcherLabels} />
         {showAuthLink && authLabels ? <LoginLink isLoggedIn={isLoggedIn} labels={authLabels} /> : null}
       </div>
-    </header>
+      </header>
+    </>
   )
 }

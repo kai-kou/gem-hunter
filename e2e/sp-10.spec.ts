@@ -82,6 +82,24 @@ test.describe('SP-10: 誰でも操作できる', () => {
     await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toHaveValue(keyword)
   })
 
+  test('手順0: 最初の Tab でスキップリンクへフォーカスが当たり、実行すると本文へ移動する（Issue #354）', async ({
+    page,
+  }) => {
+    await page.goto('/ja')
+
+    const skipLink = page.getByRole('link', { name: '本文へスキップ' })
+    // 🔴 最初の Tab 1 回で到達すること自体を検証する（Bypass Blocks の要件は
+    // 「本文より前にヘッダーのリンク群を Tab で通過させられない」こと）。
+    await page.keyboard.press('Tab')
+    await expect(skipLink).toBeFocused()
+
+    await page.keyboard.press('Enter')
+    await expect(page).toHaveURL(/#main-content$/)
+
+    const focusedId = await page.evaluate(() => document.activeElement?.id ?? null)
+    expect(focusedId).toBe('main-content')
+  })
+
   test('フォーカス喪失の検知: ページ送り後もフォーカスが body へ落ちない', async ({ page }) => {
     const keyword = uniqueManyHitsKeyword()
     await page.goto('/ja')

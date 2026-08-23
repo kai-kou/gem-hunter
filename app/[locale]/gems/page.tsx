@@ -126,6 +126,7 @@ export default async function GemListPage({
       isLoggedIn={accessToken !== null}
       showAuthLink={showAuthLink}
       authLabels={showAuthLink ? messages.common.auth : undefined}
+      skipLinkLabel={messages.common.skipLink}
     />
   )
   const backToSearch = (
@@ -163,7 +164,7 @@ export default async function GemListPage({
   const renderPage = (currentPath: string, body: ReactNode) => (
     <>
       {renderHeader(currentPath)}
-      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-10">
         {body}
         {/* `watch` はページ送り・分岐の切り替わりのたびに値が変わる（`currentPath`）。 */}
         <FocusOnNavigate watch={currentPath} targetId={GEM_LIST_HEADING_ID} />

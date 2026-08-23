@@ -45,8 +45,9 @@ export default async function NotFound() {
         isLoggedIn={isLoggedIn}
         showAuthLink={showAuthLink}
         authLabels={showAuthLink ? messages.common.auth : undefined}
+        skipLinkLabel={messages.common.skipLink}
       />
-      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-10">
         {/* `generateMetadata` だけではハイドレーション後に title が巻き戻る（下記コメント参照）ため、
             クライアント側で確実に上書きする */}
         <SetDocumentTitle title={messages.detail.notFound} />

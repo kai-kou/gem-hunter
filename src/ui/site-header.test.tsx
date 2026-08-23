@@ -22,6 +22,7 @@ describe('SiteHeader', () => {
         localeSwitcherLabels={localeSwitcherLabels}
         isLoggedIn={false}
         showAuthLink={false}
+        skipLinkLabel="本文へスキップ"
       />,
     )
 
@@ -46,6 +47,7 @@ describe('SiteHeader', () => {
         localeSwitcherLabels={localeSwitcherLabels}
         isLoggedIn={false}
         showAuthLink={false}
+        skipLinkLabel="本文へスキップ"
       />,
     )
 
@@ -64,6 +66,7 @@ describe('SiteHeader', () => {
         isLoggedIn={false}
         showAuthLink={true}
         authLabels={authLabels}
+        skipLinkLabel="本文へスキップ"
       />,
     )
 
@@ -82,6 +85,7 @@ describe('SiteHeader', () => {
         localeSwitcherLabels={localeSwitcherLabels}
         isLoggedIn={false}
         showAuthLink={false}
+        skipLinkLabel="本文へスキップ"
       />,
     )
 
@@ -99,9 +103,31 @@ describe('SiteHeader', () => {
         isLoggedIn={true}
         showAuthLink={true}
         authLabels={authLabels}
+        skipLinkLabel="本文へスキップ"
       />,
     )
 
     expect(screen.getByRole('button', { name: 'ログアウト' })).toBeInTheDocument()
+  })
+
+  it('header の直前にスキップリンクを描画し、#main-content を指す（Issue #354）', () => {
+    render(
+      <SiteHeader
+        locale={locale('ja')}
+        currentPath="/ja"
+        title="gem-hunter"
+        localeSwitcherLabels={localeSwitcherLabels}
+        isLoggedIn={false}
+        showAuthLink={false}
+        skipLinkLabel="本文へスキップ"
+      />,
+    )
+
+    const skipLink = screen.getByRole('link', { name: '本文へスキップ' })
+    expect(skipLink).toHaveAttribute('href', '#main-content')
+    expect(skipLink).toHaveClass('sr-only')
+
+    const header = screen.getByRole('banner')
+    expect(skipLink.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
