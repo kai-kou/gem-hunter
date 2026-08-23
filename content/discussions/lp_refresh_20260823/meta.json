@@ -1,0 +1,14 @@
+{
+  "id": "lp_refresh_20260823",
+  "topic": "GitHub Pages の LP（site/）を最新のドキュメント・仕様・実画面へ追随させ、画像素材の刷新方針まで確定する",
+  "brief": "ユーザー指示: 『最新のドキュメント、仕様、画面を事実確認して、GitHub Pages の LP に反映してください。画面キャプチャなど最新化してください。画像があったほうが視認性・注目度などの向上につながるのであれば gpt-image-2 を利用して画像素材を作成してください。既存のインフォグラフィック画像を活用できるのであれば活用してください。』。現状: site/index.html は 2026-08-22 の SP-19 マージ時点で更新が止まっており、その後 PR #467 / #481 / #504（Gem 一覧のレート制限配線・検索結果への Gem 印の同伴と説明・Gem 導線の視認性向上と一覧カードの avatar 追加と件数説明の整合）が入っている。既知の陳腐化候補: ① FAQ『対応しているエコシステムは何ですか？』が『今日の Gem の被依存数は npm だけ』と書いているが、D-36 / SP-17 でEcosyste.ms の 12 レジストリ・ユニーク 109,469 リポジトリ級へ拡大済み（public/data/gem-index/ に 12 レジストリ分のシャード + index.json が存在する） ② 『できること』セクションに SP-18（検索結果の Gem バッジ）と SP-19（検索語を引き継ぐ Gem 一覧）が独立した機能として載っていない（『先に言っておく制約』に一行だけ言及がある） ③ 『仕組み』の 3 ステップが Gem 一覧導線を含んでいない ④ 『682 ケース』『ADR 15 本』などの数値が現在値と一致するか未検証 ⑤ ヒーロー / 検索 / ダイジェストのスクリーンショット（site/assets/img/shot-*.webp）が Gem バッジ・avatar・件数説明の追加前の画面である。使える素材: docs/infographics/*.webp 全 14 点（01-initial-concept / 02-lean-canvas / 03-inception-deck / 04-prd / 05-user-story-map / 06-roadmap / 07-design / 08-doc-relations / 09-adr-map / 10-gem-score / 11-testing-strategy / 12-cloudflare / 13-ops-rules / 14-architecture-flow・16:9・日本語の文字が焼き込まれている）、public/images/*.webp（アプリ内の装飾イラスト。gpt-image-2 生成・透過・文字なし）、tools/infographic/generate.py（gpt-image-2 CLI・OPENAI_API_KEY 供給済み）、tools/ui-assets/to_web_assets.mjs（透過 WebP 変換）。制約: ADR 0015（画像内に文字を焼き込まない・装飾イラストはロケール非依存の 1 枚）、site/README.md の設計上の約束（外部 CDN 非依存・ページ内 JavaScript ゼロ・相対パス・掲載する機能は実装済みのものだけ・本番で無効な機能を『使える』と書かない・opacity アニメ禁止・prettier 対象外）、tools/check_site.py の機械検査（img の width/height と実寸の一致・ADR 本数など）。参考スクリーンショット（フルページ PNG）はスクラッチ領域 /tmp/claude-0/-home-user-gem-hunter/e341a277-9634-5cf6-a9d7-170cb78ffa7f/scratchpad/lp/ に lp-desktop.png / lp-mobile.png（現行 LP）がある。争点は次の 5 つ: A) 事実の追随（LP の記述と現行仕様・実装・ドキュメントの差分を全件洗い出し、直す文言まで確定する） B) 情報設計（Gem バッジと Gem 一覧という 2 つの新機能を、既存のセクション構成のどこにどう入れるか。セクションを増やすのか既存を書き換えるのか。ヒーローのメッセージを変えるべきか） C) 画像戦略（どのスクリーンショットを撮り直すか・どの画面を新たに撮るか・既存インフォグラフィックを LP に載せる価値があるか（文字焼き込み済みで ADR 0015 の方針や a11y とどう折り合うか）・gpt-image-2 で新規生成すべき素材はあるか、あるならどこに何を） D) 技術品質と a11y（追加する画像の LCP / CLS / 総重量への影響、alt テキスト、WCAG 2.2 AA、tools/check_site.py の検査との整合、GitHub Pages サブパス配信） E) 誇張の抑制（新機能を書き足すことで『実装済みのものだけ』の約束が破られないか、Gem 印の限界の説明が薄まらないか）。",
+  "participants": [
+    "fact_sync",
+    "info_arch",
+    "visual_assets",
+    "web_quality",
+    "en_parity"
+  ],
+  "created_at": "2026-08-23T13:58:19+09:00",
+  "updated_at": "2026-08-23T13:58:19+09:00"
+}

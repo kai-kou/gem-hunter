@@ -1,0 +1,59 @@
+{
+  "topic": "GitHub Pages の LP（site/）を最新のドキュメント・仕様・実画面へ追随させ、画像素材の刷新方針まで確定する",
+  "brief": "ユーザー指示: 『最新のドキュメント、仕様、画面を事実確認して、GitHub Pages の LP に反映してください。画面キャプチャなど最新化してください。画像があったほうが視認性・注目度などの向上につながるのであれば gpt-image-2 を利用して画像素材を作成してください。既存のインフォグラフィック画像を活用できるのであれば活用してください。』。現状: site/index.html は 2026-08-22 の SP-19 マージ時点で更新が止まっており、その後 PR #467 / #481 / #504（Gem 一覧のレート制限配線・検索結果への Gem 印の同伴と説明・Gem 導線の視認性向上と一覧カードの avatar 追加と件数説明の整合）が入っている。既知の陳腐化候補: ① FAQ『対応しているエコシステムは何ですか？』が『今日の Gem の被依存数は npm だけ』と書いているが、D-36 / SP-17 でEcosyste.ms の 12 レジストリ・ユニーク 109,469 リポジトリ級へ拡大済み（public/data/gem-index/ に 12 レジストリ分のシャード + index.json が存在する） ② 『できること』セクションに SP-18（検索結果の Gem バッジ）と SP-19（検索語を引き継ぐ Gem 一覧）が独立した機能として載っていない（『先に言っておく制約』に一行だけ言及がある） ③ 『仕組み』の 3 ステップが Gem 一覧導線を含んでいない ④ 『682 ケース』『ADR 15 本』などの数値が現在値と一致するか未検証 ⑤ ヒーロー / 検索 / ダイジェストのスクリーンショット（site/assets/img/shot-*.webp）が Gem バッジ・avatar・件数説明の追加前の画面である。使える素材: docs/infographics/*.webp 全 14 点（01-initial-concept / 02-lean-canvas / 03-inception-deck / 04-prd / 05-user-story-map / 06-roadmap / 07-design / 08-doc-relations / 09-adr-map / 10-gem-score / 11-testing-strategy / 12-cloudflare / 13-ops-rules / 14-architecture-flow・16:9・日本語の文字が焼き込まれている）、public/images/*.webp（アプリ内の装飾イラスト。gpt-image-2 生成・透過・文字なし）、tools/infographic/generate.py（gpt-image-2 CLI・OPENAI_API_KEY 供給済み）、tools/ui-assets/to_web_assets.mjs（透過 WebP 変換）。制約: ADR 0015（画像内に文字を焼き込まない・装飾イラストはロケール非依存の 1 枚）、site/README.md の設計上の約束（外部 CDN 非依存・ページ内 JavaScript ゼロ・相対パス・掲載する機能は実装済みのものだけ・本番で無効な機能を『使える』と書かない・opacity アニメ禁止・prettier 対象外）、tools/check_site.py の機械検査（img の width/height と実寸の一致・ADR 本数など）。参考スクリーンショット（フルページ PNG）はスクラッチ領域 /tmp/claude-0/-home-user-gem-hunter/e341a277-9634-5cf6-a9d7-170cb78ffa7f/scratchpad/lp/ に lp-desktop.png / lp-mobile.png（現行 LP）がある。争点は次の 5 つ: A) 事実の追随（LP の記述と現行仕様・実装・ドキュメントの差分を全件洗い出し、直す文言まで確定する） B) 情報設計（Gem バッジと Gem 一覧という 2 つの新機能を、既存のセクション構成のどこにどう入れるか。セクションを増やすのか既存を書き換えるのか。ヒーローのメッセージを変えるべきか） C) 画像戦略（どのスクリーンショットを撮り直すか・どの画面を新たに撮るか・既存インフォグラフィックを LP に載せる価値があるか（文字焼き込み済みで ADR 0015 の方針や a11y とどう折り合うか）・gpt-image-2 で新規生成すべき素材はあるか、あるならどこに何を） D) 技術品質と a11y（追加する画像の LCP / CLS / 総重量への影響、alt テキスト、WCAG 2.2 AA、tools/check_site.py の検査との整合、GitHub Pages サブパス配信） E) 誇張の抑制（新機能を書き足すことで『実装済みのものだけ』の約束が破られないか、Gem 印の限界の説明が薄まらないか）。",
+  "participants": [
+    {
+      "name": "fact_sync",
+      "model": "sonnet",
+      "lens": "事実の追随（争点 A 主担当）。site/index.html の主張を 1 文ずつ、現行の実装（src/ app/ public/data/）・ドキュメント（docs/02_requirements/user-story-map.md §5.3 の SP-14〜SP-19・docs/02_requirements/open-questions.md の D-33〜D-38・docs/adr/）・実データ（public/data/gem-index/index.json と各シャード・public/data/daily-digest.json）で裏取りする。特に『今日の Gem は npm だけ』『Gem Index は 60 件の母集団から毎日 5 件』『682 ケース（ユニット 593 / E2E 89）』『ADR 15 本』『Accessibility 100 がゲート』『詳細画面の 4 指標』『ソートと表示件数の選択肢』『新着バッジの挙動』を実測で確認する（npx vitest run --reporter=dot と npx playwright test --list と ls docs/adr/[0-9]*.md | wc -l を実際に走らせて数字を取る）。裏が取れないものは『裏が取れない』と明言する。出力は『現行の記述 → 事実 → 直す文言案』の表形式で、直す文言は日本語のまま確定形で書く"
+    },
+    {
+      "name": "info_arch",
+      "model": "sonnet",
+      "lens": "情報設計とコピー（争点 B・E 主担当）。site/index.html の現行セクション構成（ヒーロー → PC でも使える → なぜ star では足りないか → 仕組み → できること → つくり → FAQ → 最終 CTA）を読み、SP-18（検索結果の Gem バッジ）と SP-19（検索語を引き継ぐ Gem 一覧・/ja/gems?q=）という 2 つの新機能をどこに入れるかを決める。セクション追加 / 既存書き換え / ヒーローのメッセージ変更の是非を、開発者向け LP としての説得力と離脱率の観点で判断する。同時に『実装済みのものだけを載せる』『Gem 印は参考値で優劣評価ではない』という既存の約束が薄まらないかを見張る（争点 E）。docs/02_requirements/user-story-map.md §5.3 の SP-18 / SP-19 の操作レビュー手順と docs/02_requirements/prd.md を読んで、ユーザーが実際にできることを正確に言い換える。出力はセクション単位の『残す / 直す / 足す』の判断と、足すなら見出しと本文の日本語ドラフトまで"
+    },
+    {
+      "name": "visual_assets",
+      "model": "sonnet",
+      "lens": "画像戦略（争点 C 主担当）。/tmp/claude-0/-home-user-gem-hunter/e341a277-9634-5cf6-a9d7-170cb78ffa7f/scratchpad/lp/lp-desktop.png と lp-mobile.png を Read して現行 LP の視覚を評価し、docs/infographics/ の 14 点（特に 10-gem-score.webp / 14-architecture-flow.webp / 06-roadmap.webp / 11-testing-strategy.webp）を Read して LP に載せる価値があるかを 1 点ずつ判定する。判定基準は ① LP の読者（gem-hunter を初めて見る個人開発者）にとって意味があるか ② 文字が焼き込まれているため a11y（WCAG 1.4.5 Images of Text）と ADR 0015 の方針にどう抵触するか、代替テキストで救えるか ③ 縮小表示で文字が読めるか（インフォグラフィックは 16:9 の高密度）。あわせて、撮り直すべきスクリーンショットの一覧（画面・ロケール・ビューポート・クリップ範囲）と、gpt-image-2 で新規生成すべき素材があるならその用途とプロンプト方針（tools/ui-assets/prompts/*.txt と docs/03_design/ui-ux/ui-ux-guidelines.md §7.4 / §8.6 のトーンに合わせる）を出す。『載せない』という判断も正当な結論として扱う"
+    },
+    {
+      "name": "web_quality",
+      "model": "sonnet",
+      "lens": "技術品質と a11y（争点 D 主担当）。site/index.html・site/assets/styles.css・tools/check_site.py を精読し、画像を足したときに壊れるものを先回りで洗い出す。Core Web Vitals（LCP 要素が変わらないか・width/height 指定による CLS 防止・loading=lazy と fetchpriority の配置・総転送量）、インフォグラフィック（16:9・文字焼き込み）を載せる場合の alt テキスト設計と WCAG 1.4.5 / 1.1.1 の扱い、拡大表示（400% ズーム Reflow）、GitHub Pages サブパス配信での相対パス、tools/check_site.py が新しい記述・画像で落ちないか（ADR 本数・テスト数・img の width/height 照合など検査項目を実際に読んで列挙する）を判定する。site/README.md の『設計上の約束』（外部 CDN 非依存・ページ内 JavaScript ゼロ・opacity アニメ禁止・prettier 対象外）に違反する提案が他レンズから出たら round 2 で必ず指摘する"
+    },
+    {
+      "name": "en_parity",
+      "model": "haiku",
+      "lens": "機械的整合（LP は日本語単一ページだが、内部リンク・アンカー・footer のリンク先・JSON-LD・OGP・canonical・meta description が変更後も整合するかを機械的に検査する。具体的には ① ヘッダーナビとフッターのアンカー（#why #how #features #trust #faq）が実在するセクション id と一致するか ② 外部リンク（GitHub の blob / tree パス・Ecosyste.ms・本番 Worker の URL とパス）が 404 でないか（curl -sSI で実際に叩く。本番 Worker には /ja /en /ja/gems?q=react を含める） ③ JSON-LD の SoftwareApplication の記述が本文と矛盾しないか ④ og:description と meta description に書かれた数値（『star 111 なのに 26,633 個』『毎日 5 件』）が現行データと一致するか。判定は『一致 / 不一致 / 未確認』の 3 値で、不一致は現行値を添える）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "5 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて『今回の PR で反映すること』を確定する。指摘は must（今回必須）/ should（今回のうちに直す）/ later（別 Issue に回す）の 3 段階に分類し、must と should は必ず『どのファイルのどこを、どう直すか（日本語の確定文言まで）』に落とす。画像については『撮り直すスクリーンショットの一覧』『インフォグラフィックを載せるか否かと載せる場合の配置と alt』『gpt-image-2 で新規生成する素材の一覧と用途』を確定する。相互検証で否定された指摘は採用しない。ユーザー確認が要る仕様分岐（成果物が変わるもの）は open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "fixes": [
+      {
+        "id": "F-n",
+        "severity": "must | should | later",
+        "issue": "争点 A〜E のいずれか",
+        "problem": "問題の要約",
+        "fix": "どのファイルのどこをどう直すか（確定文言まで）",
+        "file": "site/index.html 等"
+      }
+    ],
+    "screenshots": [
+      { "name": "shot-*", "screen": "撮る画面と URL", "viewport": "幅x高", "reason": "なぜ撮り直すか" }
+    ],
+    "infographics": [
+      { "file": "docs/infographics/*.webp", "use": "yes | no", "placement": "載せる場合の配置", "alt": "代替テキスト案", "reason": "判断理由" }
+    ],
+    "generated_assets": [
+      { "name": "素材名", "purpose": "用途と配置", "prompt_direction": "プロンプト方針", "reason": "なぜ必要か" }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐"]
+  }
+}
