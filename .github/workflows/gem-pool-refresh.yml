@@ -92,6 +92,8 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -e
+          # 🔴 SSOT: このブランチ名は tools/check_pending_pr_reviews.py の AUTOMATION_PR_BRANCH と
+          # 同一でなければならない。どちらか片方を変更したら必ずもう片方も直すこと（Issue #458）。
           BRANCH="automation/gem-pool-refresh"
           git checkout -B "${BRANCH}"
           git add public/data/gem-index public/data/daily-digest.json
@@ -152,11 +154,23 @@ jobs:
           PR_BODY: ${{ steps.prbody.outputs.body }}
         run: |
           set -e
+          # 🔴 SSOT: このブランチ名は tools/check_pending_pr_reviews.py の AUTOMATION_PR_BRANCH と
+          # 同一でなければならない。どちらか片方を変更したら必ずもう片方も直すこと（Issue #458）。
           BRANCH="automation/gem-pool-refresh"
           BODY_FILE="$(mktemp)"
           printf '%s' "$PR_BODY" > "${BODY_FILE}"
 
-          existing_pr="$(gh pr list --head "${BRANCH}" --base main --state open --json number --jq '.[0].number' || true)"
+          # 🔴 コマンド自体の失敗（レート制限・一時的な API エラー）と「0 件ヒット」を区別する。
+          # `|| true` で握り潰すと API 失敗を「既存 PR なし」と誤認し、既存 PR があるのに
+          # `gh pr create` へ進んで「同一 head/base の PR が既に存在する」で失敗する。
+          set +e
+          existing_pr="$(gh pr list --head "${BRANCH}" --base main --state open --json number --jq '.[0].number')"
+          gh_list_exit=$?
+          set -e
+          if [ "${gh_list_exit}" -ne 0 ]; then
+            echo "::error::gh pr list に失敗しました（exit ${gh_list_exit}）。次回のスケジュール実行に委ねます。" >&2
+            exit "${gh_list_exit}"
+          fi
           if [ -n "${existing_pr}" ]; then
             gh pr edit "${existing_pr}" --body-file "${BODY_FILE}"
           else

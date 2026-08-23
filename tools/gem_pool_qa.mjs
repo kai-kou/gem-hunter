@@ -707,6 +707,57 @@ function selfTest() {
     )
   }
 
+  // --- evaluateNoOp: シャード本体（public/data/gem-index/*.json）を含めたケース（CRITICAL 再発防止） ---
+  // 「index.json / daily-digest.json の集計値は前回と同じまま、シャードの長尾エントリだけが
+  // 変わった週」を no_op=true と誤判定しないことを固定する（実インシデントの再現）。
+  {
+    const shardA = `${SHARD_DIR}/registry-a.json`
+    const shardB = `${SHARD_DIR}/registry-b.json`
+    const baseFiles = () => [
+      { path: INDEX_PATH, prevDoc: { meta: { generatedAt: 'a' }, totalCount: 2 }, currDoc: { meta: { generatedAt: 'b' }, totalCount: 2 } },
+      { path: DIGEST_PATH, prevDoc: { date: '20260822', meta: { generatedAt: 'a' }, candidates: [] }, currDoc: { date: '20260829', meta: { generatedAt: 'b' }, candidates: [] } },
+      {
+        path: shardA,
+        prevDoc: { registry: 'registry-a', meta: { generatedAt: 'a' }, entries: [['owner/repo', 'pkg', 100, 5, 1]] },
+        currDoc: { registry: 'registry-a', meta: { generatedAt: 'b' }, entries: [['owner/repo', 'pkg', 100, 5, 1]] },
+      },
+    ]
+
+    const unchangedShard = evaluateNoOp(baseFiles())
+    assert('evaluateNoOp: シャードも timestamp だけ違えば no_op=true（回帰しないことの確認）', unchangedShard.noOp === true)
+
+    // 1) シャード 1 件だけ中身（entries の長尾エントリ）が変わった → no_op=false
+    const filesShardChanged = baseFiles()
+    filesShardChanged[2].currDoc.entries = [['owner/repo', 'pkg', 101, 6, 1]]
+    const shardChanged = evaluateNoOp(filesShardChanged)
+    assert('evaluateNoOp: シャード本体の entries だけが変わっても no_op=false（CRITICAL 再発防止の核心）', shardChanged.noOp === false)
+    assert('evaluateNoOp: changedFiles にシャードのパスが載る', shardChanged.changedFiles.includes(shardA))
+
+    // 2) シャードが新規追加された（HEAD に無く作業ツリーにだけ存在）→ no_op=false
+    const filesShardAdded = [...baseFiles(), { path: shardB, prevDoc: null, currDoc: { registry: 'registry-b', meta: { generatedAt: 'b' }, entries: [] } }]
+    const shardAdded = evaluateNoOp(filesShardAdded)
+    assert('evaluateNoOp: シャードの新規追加は no_op=false', shardAdded.noOp === false)
+    assert('evaluateNoOp: 新規シャードのパスが changedFiles に載る', shardAdded.changedFiles.includes(shardB))
+
+    // 3) シャードが消失した（HEAD にはあったが作業ツリーに無い＝ currDoc=null）→ no_op=false
+    const filesShardRemoved = [...baseFiles(), { path: shardB, prevDoc: { registry: 'registry-b', meta: { generatedAt: 'a' }, entries: [] }, currDoc: null }]
+    const shardRemoved = evaluateNoOp(filesShardRemoved)
+    assert('evaluateNoOp: シャードの消失は no_op=false', shardRemoved.noOp === false)
+  }
+
+  // --- buildNoOpTargetPaths ---
+  {
+    const worktree = [`${SHARD_DIR}/a.json`, `${SHARD_DIR}/index.json`]
+    const head = [`${SHARD_DIR}/a.json`, `${SHARD_DIR}/removed.json`]
+    const union = buildNoOpTargetPaths(worktree, head)
+    assert(
+      'buildNoOpTargetPaths: 作業ツリー ∪ HEAD の和集合・重複排除・ソート済み',
+      union.join(',') === `${SHARD_DIR}/a.json,${SHARD_DIR}/index.json,${SHARD_DIR}/removed.json`,
+    )
+    assert('buildNoOpTargetPaths: 両方空なら空配列', buildNoOpTargetPaths([], []).length === 0)
+    assert('buildNoOpTargetPaths: 片方 undefined でも例外を投げない', buildNoOpTargetPaths(undefined, [`${SHARD_DIR}/x.json`]).length === 1)
+  }
+
   // --- listShardFileNames（純関数として export はしていないが、内部ロジックの健全性を index 経由で確認） ---
   assert(
     'listShardFileNames 相当: shards[].fileName を列挙できる',
