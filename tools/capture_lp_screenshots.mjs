@@ -10,7 +10,7 @@
  *
  * 別ポートで起動した場合は `LP_SHOT_BASE=http://localhost:PORT node tools/capture_lp_screenshots.mjs`。
  *
- * 出力: site/assets/img/shot-search.webp / shot-digest.webp / shot-mobile.webp
+ * 出力: site/assets/img/shot-search.webp / shot-digest.webp / shot-mobile.webp / shot-gems.webp
  * 出力後に site/index.html の該当 <img> の width / height と実寸を突き合わせ、
  * 食い違っていれば非ゼロ終了する（撮り直し後の属性更新漏れ = CLS の原因を機械で止める）。
  *
@@ -19,6 +19,14 @@
  *   （壊れた画像のまま LP に載せないため）。取得は `curl` 経由なので HTTPS プロキシ配下でも動く。
  * - 日本語グリフを持たない Geist のフォールバックが明朝になる環境があるため、
  *   撮影時だけサンセリフの CJK フォールバックを注入する（表示は実利用環境と同等）。
+ *
+ * 🔴 `LP_SHOT_FETCH_VIA_CURL=1`（既定 off）はこのクラウドサンドボックス固有の回避策であり、
+ * 恒久のベストプラクティスではない。このコンテナの Chromium は外部 HTTPS への直接接続・
+ * プロキシ経由の両方が `ERR_CONNECTION_RESET` になる（`--ssl-version-max=tls1.2`（L-126）を
+ * 足しても解消しない）。一方 `curl` は `HTTPS_PROXY` と CA バンドルが設定済みで通るため、
+ * on にすると全リクエストを `curl` 経由で取得して差し替える。既定を本番直叩きにしない理由:
+ * ① 本番の共有 API レート枠を実ユーザーと食い合う ② コードとデータの両方が撮影のたびに
+ * 変わり再現性が壊れる。
  */
 import { chromium } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
@@ -31,6 +39,8 @@ const BASE = process.env.LP_SHOT_BASE ?? 'http://localhost:3100'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const IMG_DIR = join(ROOT, 'site/assets/img')
 const AVATAR_HOST = 'avatars.githubusercontent.com'
+// このサンドボックス固有の回避策（ファイル冒頭コメント参照）。既定 off。
+const FETCH_VIA_CURL = process.env.LP_SHOT_FETCH_VIA_CURL === '1'
 
 const FONT_FIX = `
   body, body * { font-family: var(--font-geist-sans), "IPAPGothic", "IPAGothic", "Noto Sans JP", sans-serif !important; }
@@ -78,6 +88,28 @@ const SHOTS = [
     viewport: { width: 390, height: 780 },
     width: 640,
   },
+  {
+    // bento タイル内（span-2・表示幅は概ね 640px 前後）では俯瞰のままだと文字が実効 5px 程度に
+    // なり読めない（`shot-digest` と同じ理由）。見出し〜上位カードまで拡大トリミングする
+    name: 'shot-gems',
+    path: '/ja/gems?q=react',
+    viewport: { width: 1280, height: 820 },
+    width: 1100,
+    clipFrom: () => {
+      const heading = document.getElementById('gems-heading')
+      const items = document.querySelectorAll('li[data-repository-full-name]')
+      if (!heading || items.length < 4) return null
+      const top = heading.getBoundingClientRect().top + window.scrollY - 18
+      const bottom = items[3].getBoundingClientRect().bottom + window.scrollY + 10
+      const main = document.querySelector('main').getBoundingClientRect()
+      return {
+        x: Math.round(main.left - 16),
+        y: Math.round(top),
+        width: Math.round(main.width + 32),
+        height: Math.round(bottom - top),
+      }
+    },
+  },
 ]
 
 const avatarCache = new Map()
@@ -96,8 +128,90 @@ function fetchAvatar(url) {
   }
 }
 
+// FETCH_VIA_CURL 用: 任意 URL を curl 経由で取得して { status, contentType, body } を返す。
+// このコンテナは Chromium からの外部 HTTPS が直接/プロキシ経由とも ERR_CONNECTION_RESET になるため
+// （ファイル冒頭コメント参照）、代わりに HTTPS_PROXY / CA バンドルが設定済みの curl で取得する。
+//
+// 🔴 このサンドボックスの GitHub API プロキシは `github.com` 宛のリクエストを
+// 「repo スコープの REST パスのみ許可」に制限しており、`github.com/{user}.png?size=N`
+// （GitHub のアバター短縮 URL）は 403 になる。同じ画像を配信する
+// `avatars.githubusercontent.com` はプロキシの制限対象外で通るため、curl 前にそちらへ書き換える。
+function rewriteForProxy(url) {
+  try {
+    const parsed = new URL(url)
+    const match = parsed.hostname === 'github.com' && parsed.pathname.match(/^\/([^/]+)\.png$/)
+    if (!match) return url
+    const rewritten = new URL(`https://avatars.githubusercontent.com/${match[1]}`)
+    rewritten.search = parsed.search
+    return rewritten.href
+  } catch {
+    return url
+  }
+}
+
+// localhost 宛かどうかをホスト名で厳密判定する（data: は呼び出し側で別途判定済み）。
+// 文字列前方一致（`startsWith('http://localhost')` 等）だと `127.1` / `0.0.0.0` /
+// 10 進 IP 表記のような「ローカルを指すが文字列としては一致しない」ホストを取りこぼす一方、
+// `http://localhost.evil.example` のような紛らわしいホストを誤って通す方向にも倒れうるため、
+// `new URL()` でホスト名を取り出したうえで既知の 3 値と完全一致させる。
+function isLocalRequestUrl(url) {
+  try {
+    const { hostname } = new URL(url)
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  } catch {
+    return false
+  }
+}
+
+let curlSeq = 0
+function curlFetch(url) {
+  const n = curlSeq++
+  const headerPath = join(tempDir, `curl-h-${n}`)
+  const bodyPath = join(tempDir, `curl-b-${n}`)
+  try {
+    execFileSync(
+      'curl',
+      [
+        '-sS',
+        '-L',
+        // `fetchAvatar()` と同じスキーム制限（リダイレクト先を含め https のみを許可する）。
+        // localhost 宛は isLocalRequestUrl() で呼び出し前に弾かれるため、ここに来る URL は
+        // 外部ホスト宛のみで、http へのダウングレードを許す理由がない。
+        '--proto',
+        '=https',
+        '--proto-redir',
+        '=https',
+        '--max-redirs',
+        '3',
+        '--max-time',
+        '40',
+        '-D',
+        headerPath,
+        '-o',
+        bodyPath,
+        rewriteForProxy(url),
+      ],
+      { maxBuffer: 60e6 },
+    )
+  } catch {
+    return null
+  }
+  const blocks = readFileSync(headerPath, 'utf8').split(/\r?\n\r?\n/).filter((block) => block.trim())
+  const last = blocks[blocks.length - 1]
+  // exit 0 でもヘッダーファイルが空になりうる（例: 接続はしたが応答ヘッダーを 1 つも書けなかった場合）。
+  // その場合 last は undefined になり、続く last.match(...) が TypeError で route ハンドラごと落ちる。
+  if (last === undefined) return null
+  return {
+    status: Number(last.match(/HTTP\/[\d.]+ (\d+)/)?.[1] ?? 200),
+    contentType: last.match(/^content-type:\s*(.+)$/im)?.[1]?.trim() ?? 'application/octet-stream',
+    body: readFileSync(bodyPath),
+  }
+}
+
 const tempDir = mkdtempSync(join(tmpdir(), 'lp-shot-'))
-const browser = await chromium.launch()
+// `--ssl-version-max=tls1.2`: このサンドボックスの Chromium は既定の TLS 設定だと外部 HTTPS への
+// 接続が ERR_CONNECTION_RESET になるための回避策（L-126・`playwright.config.ts` と同じ理由）。
+const browser = await chromium.launch({ args: ['--ssl-version-max=tls1.2'] })
 const written = []
 
 try {
@@ -107,17 +221,37 @@ try {
       deviceScaleFactor: 2,
       locale: 'ja-JP',
     })
-    // glob だけではホスト名を保証できない（部分一致で任意ホストが通る）ため URL で厳密に判定する
-    await context.route(`**://${AVATAR_HOST}/**`, async (route) => {
-      const requested = new URL(route.request().url())
-      if (requested.protocol !== 'https:' || requested.hostname !== AVATAR_HOST) {
-        await route.abort()
-        return
-      }
-      const body = fetchAvatar(requested.href)
-      if (body) await route.fulfill({ status: 200, contentType: 'image/png', body })
-      else await route.abort()
-    })
+    if (FETCH_VIA_CURL) {
+      // 全リクエストを curl 経由で取得する（ファイル冒頭コメント参照）。data: と localhost 宛は
+      // Chromium にそのまま任せる（アプリ自身への同一プロセス内リクエストは接続リセットの対象外）。
+      // ホスト名は `new URL()` で厳密に取り出して比較する（文字列前方一致だと `127.1` /
+      // `0.0.0.0` / 10 進 IP 表記などローカル扱いになりうる別ホストを誤って通してしまうため）。
+      await context.route('**', async (route) => {
+        const requested = route.request().url()
+        if (requested.startsWith('data:') || isLocalRequestUrl(requested)) {
+          await route.continue()
+          return
+        }
+        const fetched = curlFetch(requested)
+        if (fetched === null) {
+          await route.abort()
+          return
+        }
+        await route.fulfill({ status: fetched.status, contentType: fetched.contentType, body: fetched.body })
+      })
+    } else {
+      // glob だけではホスト名を保証できない（部分一致で任意ホストが通る）ため URL で厳密に判定する
+      await context.route(`**://${AVATAR_HOST}/**`, async (route) => {
+        const requested = new URL(route.request().url())
+        if (requested.protocol !== 'https:' || requested.hostname !== AVATAR_HOST) {
+          await route.abort()
+          return
+        }
+        const body = fetchAvatar(requested.href)
+        if (body) await route.fulfill({ status: 200, contentType: 'image/png', body })
+        else await route.abort()
+      })
+    }
 
     const page = await context.newPage()
     const response = await page.goto(BASE + shot.path, { waitUntil: 'load', timeout: 60_000 })

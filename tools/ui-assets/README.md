@@ -20,6 +20,7 @@ Issue #364）を `gpt-image-2` で生成し、配信用ファイルへ変換す�
 | `prompts/error-rate-limit.txt` | エラー種別: レート制限（待てば回復）の完成プロンプト |
 | `prompts/error-upstream.txt` | エラー種別: 上流（GitHub 等）障害の完成プロンプト |
 | `prompts/error-validation.txt` | エラー種別: 入力バリデーション不通過の完成プロンプト |
+| `prompts/why-divider.txt` | `why` セクション（比較カード間）の文字なし装飾区切り画像の完成プロンプト |
 | `to_web_assets.mjs` | 原寸 PNG → 配信用 WebP/PNG への変換スクリプト（`sharp` 使用） |
 | `build_favicon_ico.mjs` | `app/icon.png` → `app/favicon.ico`（複数サイズ内包）への変換スクリプト（`sharp` で PNG 化 + 自前 ICO コンテナ組み立て） |
 
@@ -98,6 +99,21 @@ for name in error-network error-rate-limit error-upstream error-validation; do
   node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/$name.png \
     --out public/images/$name.webp --width 256 --format webp
 done
+
+# why-divider（LP `why` セクション・比較カード間の文字なし装飾区切り。site/ 配下・Issue #452 F-11）
+python3 tools/infographic/generate.py --prompt-file tools/ui-assets/prompts/why-divider.txt \
+  --out /tmp/assets/why-divider.png --size 1024x1024 --quality medium \
+  --background transparent --timeout 900
+# 原寸は正方形キャンバスの中央に横長の帯として描かせているため、上下の余白を trim してから
+# 表示寸法（横 320px 相当 = 2 倍の 640px 幅）へ縮小する（trim は to_web_assets.mjs に無いため
+# 一時ファイルへ sharp .trim() を直接かける）。
+node -e "
+const sharp = require('sharp');
+sharp('/tmp/assets/why-divider.png').trim({ threshold: 10 })
+  .toFile('/tmp/assets/why-divider-trimmed.png');
+"
+node tools/ui-assets/to_web_assets.mjs --in /tmp/assets/why-divider-trimmed.png \
+  --out site/assets/img/why-divider.webp --width 640 --format webp
 ```
 
 `--format png` で `--colors` を付けるとパレット（インデックスカラー）PNG になる。`gpt-image-2` は
@@ -125,6 +141,7 @@ done
 | error-rate-limit | 1024×1024・透過 | medium | `public/images/error-rate-limit.webp` | 256px |
 | error-upstream | 1024×1024・透過 | medium | `public/images/error-upstream.webp` | 256px |
 | error-validation | 1024×1024・透過 | medium | `public/images/error-validation.webp` | 256px |
+| why-divider | 1024×1024・透過（trim 後 640×179 相当） | medium | `site/assets/img/why-divider.webp`（`public/images/` ではなく LP 用の `site/` 配下） | 320px |
 
 ## OG 画像背景の埋め込み（`app/[locale]/opengraph-image.tsx` 用・追加タスク・Issue #347）
 
