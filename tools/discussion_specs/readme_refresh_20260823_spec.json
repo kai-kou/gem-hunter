@@ -1,0 +1,52 @@
+{
+  "topic": "README 改稿（最新性の事実確認・与件 §6 充足・スマホ実画面の掲載）を、マージ前に敵対的相互レビューで検証する",
+  "brief": "ユーザー指示（Issue #513）: 「最新のドキュメント、仕様、画面を事実確認して、リポジトリの README に反映してください。/ 画面のキャプチャ（スマホ）がある方が分かりやすくなるのであればキャプチャを追加してください。/ 最低限の要件を満たす記載となっているかセルフレビューしてください。/ 過去に対応した認証に関する記載は含めないままにしてください。/ ドキュメントのみの変更であればテスト実測は不要です」。本レビューはマージ前の最終ゲートであり、対象は作業ブランチ claude/readme-documentation-update-hrjq14 の差分（`git diff origin/main...HEAD`。README.md +112/-14 行、docs/adr/0004-release-cycle-trunk-based.md に 1 行追記、docs/images/readme/ にスマホ実画面 4 枚を新規追加）。改稿後の README は 228 行。\n\n【この改稿で実際に入れた変更（レビュー対象）】(1) 冒頭のプロダクト説明に SP-18 の Gem バッジと SP-19 の Gem 一覧（/{locale}/gems）を反映 (2) 新設『画面』節: 本番稼働中の実画面をスマホ幅で 4 枚（今日の Gem / 検索結果 / Gem 一覧 / リポジトリ詳細）2x2 の表で掲載。各画像は <img width=\"300\"> と説明的な alt 付き。画像の実寸は 786x1660〜2500 px (3) 開発コマンドに build/start/test:watch/format:check と Cloudflare 系 4 本（preview:build / preview:upload / deploy / cf-typegen）を追加 (4) `npm run check` の実態（Lighthouse Accessibility=100 の blocking ゲート + 機械検査 30 本超）を明記 (5) 新設『デプロイ経路』節: 本番=Workers Builds（D-31）+ trigger_workers_build.py・PR プレビュー=wrangler versions upload・LP=gh-pages（D-35）の 3 行表 (6) 環境変数節の是正: 秘匿情報は src/infrastructure、非秘匿の RATE_LIMIT_SALT と SITE_URL は src/composition が読むという実態へ訂正（旧記述は『いずれも src/infrastructure が読む・1 ファイルに限定』で誤り）。SITE_URL に空文字で起動失敗する注意、RATE_LIMIT_SALT に Workers 上で警告ログが出る旨を追記 (7) 技術スタック表に React 19 / 主要ライブラリ（zod・sanitize-html・jose）/ データ層（永続ストアなし）の行を追加 (8) 『設計上の判断』節を 2 項目から 8 項目へ拡充（追加した 6 本: DB を持たない設計 ADR 0007 / エラー 7 種の判別 prd §7 / Gem Index の母集団と配信 D-37・D-38 / next-image を使わない画像最適化 INF-11 / 機械ゲートは a11y だけ D-25 / i18n 自前実装 ADR 0011）(9) D-21 節から実在しない『CI ゲート』の記述を除去し、セッションが main HEAD で npm run check を再実行し check_deploy_gate.py を通す実態へ差し替え。同じ齟齬が残る ADR 0004 のリスク表にも 2026-08-23 追記を 1 行入れた (10) Hidden Gem 節の数値の因果を訂正（62,483 は D-36 の実測値ではなく D-37 の汚染フィルタ + repo 単位 dedupe 適用後の配信プール実数。D-36 の実測母集団は約 11 万リポジトリ）。\n\n【事前に fan-out で確認済みの事実（前提として扱ってよい）】README 内の相対リンク 34 本はすべて実在（リンク切れゼロ）。ADR 索引表 15 本は docs/adr/ の実見出しと完全一致し 16 番以降は存在しない（check_adr_coverage.py は PASS）。アプリ本体の環境変数は 9 個で .env.example と 1:1。技術スタック表のバージョンは package.json と一致（next 16.3.1 / react 19.2.8 / vitest 4.1.11 / @playwright/test 1.56.1 / wrangler ^4.124.0 / @opennextjs/cloudflare ^1.20.2）。GitHub Actions のワークフローは gem-pool-refresh.yml の 1 本のみで日次実行 + 7 日経過時のみ PR 作成（D-40）。Gem 候補プールは 12 シャード・totalCount 62483（public/data/gem-index/index.json）。SP-1〜SP-11 完了（MVP 達成）・SP-14/15/17/18/19 完了・SP-16 は D-33 で撤去済み・SP-12 以降は未着手。check_cjk_markdown.py / check_adr_coverage.py / check_architecture_boundaries.py / check_lane_reachability.py / self_review_check.py はいずれも改稿後に PASS 済み。\n\n【認証の扱い（重要な制約）】ユーザーは『過去に対応した認証に関する記載は含めないままにしてください』と明示した。これは #469（PR）で README から『AR-5: 与件が対象外とした認証を上乗せした理由』の節を取り除いた決定（D-39）を維持せよという指示と解釈した。D-39 は『認証機能を本番へ公開していない（OAuth の 4 変数を供給しておらずログイン導線が表示されない）ため、使えない機能の上乗せ理由を README の設計上の判断に置くと読み手が本番で使えると誤解する』ことを理由に、記録先を ADR 0012 と prd.md §4.2 に一本化している。今回の改稿では認証に関する設計判断の節を新設していない。ただし環境変数表には GITHUB_OAUTH_* と SESSION_ENCRYPTION_KEY の 4 行が既存のまま残っており（セットアップ手順としての事実記載）、その直後に『本番には OAuth の 4 変数を供給していないため現在ログイン導線は表示されない』という 1 行も残っている。\n\n【争点】A) 与件充足: docs/02_requirements/minimum-requirements.md §6 は README に『セットアップ手順（依存インストール・必要な環境変数・起動/テスト実行コマンド）』『設計上の判断、工夫した点、こだわったポイント』『AI を利用した場合の利用方法と範囲』の 3 点を求め、§7 の受け入れ基準にも『README にセットアップ手順と設計上の判断が記載されている』がある。PRD の NFR-29〜NFR-32 / AC-11 も対応する。拡充後の 8 項目は『工夫した点・こだわったポイント』として過不足ないか。逆に多すぎて要点が埋もれていないか。落ちている重要な判断（ADR 0008 ページネーション / ADR 0005 キャッシュ Port / ADR 0014 日次ダイジェスト / ADR 0015 AI 生成アセット / ADR 0002 Cloudflare / ADR 0006 Next.js 16）を昇格すべきか、ADR 索引で足りるか。B) 事実整合: 今回の改稿で新しく書いた記述（デプロイ経路表・npm run check の説明・環境変数の層の説明・設計上の判断 6 本・Hidden Gem の数値の書き分け）が実物と食い違っていないか。特に『機械検査 30 本超』『Lighthouse Accessibility=100 が blocking』『Workers Builds が本番の一次経路』『ErrorKind が 7 種』『レジストリ別に既定 15,000 件の固定枠』は実ファイルで裏を取ること。C) 認証の再混入: 上記の制約に照らして、今回の改稿が『認証に関する記載』を実質的に増やしていないか。環境変数表の OAuth 4 行と『本番では表示されない』の 1 行を残す判断は妥当か（消すと .env.example との 1:1 対応が崩れ、セットアップ手順としての完全性を欠く。残すと使えない機能の説明が残る）。ADR 索引の 0012 の行はどう扱うべきか。D) 画面キャプチャの採否と量: 4 枚は多すぎないか / 少なすぎないか。スマホ幅だけで PC 幅が無いことは妥当か（LP が PC 幅を持つ）。2x2 の表という配置と width=300 は適切か。画像が縦に長い（786x1660〜2500 px）ことが README の可読性を損なわないか。alt の記述量は適切か。docs/images/readme/ という保存先は妥当か（site/assets/img/ の LP 用ショットと二重管理にならないか）。画像は本番の実データを写しており、実在する GitHub ユーザーのアバターと氏名が写り込んでいる点に問題はないか。E) 構成と分量: 228 行になった README の並び順（タイトル → 画面 → 開発（ローカル）→ デプロイ経路 → 環境変数 → 技術スタック → ドキュメント → 設計上の判断 → AI 利用 → ADR → ライセンス）は読者の関心順か。冒頭の『この README で分かること』の目次行は現状のままでよいか。F) スコープ: ADR 0004 への 1 行追記はスコープ内か（README の記述と ADR の記述が矛盾していたため権威順の解決として入れた）。他に同じ齟齬を抱えたドキュメント（docs/02_requirements/roadmap.md の M-6 が SP-17〜SP-19 を含んでいない、minimum-requirements-checklist.md が『.github/workflows/ は存在しない』と書いている等）は本 PR で直すべきか、別 Issue に回すべきか。",
+  "participants": [
+    {
+      "name": "req_gate",
+      "model": "sonnet",
+      "lens": "与件・要件充足レンズ（争点 A・C を主担当）。docs/02_requirements/minimum-requirements.md §6 §7 と docs/02_requirements/prd.md の NFR-29〜NFR-32 / AC-11 に対し、改稿後の README が 1 項目ずつ答えられているかを突合する。『書いてあるが第三者に追えない』箇所を名指しする。拡充した 8 項目の設計判断が『工夫した点・こだわったポイント』として妥当か、埋没・冗長になっていないかを評価し、昇格すべき/降格すべき項目を具体名で示す。与件本文は第三者に権利が帰属するため引用せず、要件 ID と要約だけを使う（NOTICE の権利表示）。指摘は README の節名を名指しし、要求する加筆/削除を 1 文で書くこと。"
+    },
+    {
+      "name": "fact_check",
+      "model": "sonnet",
+      "lens": "事実整合レンズ（争点 B・F を主担当）。今回の改稿で新しく書いた記述を、実ファイル（package.json / tools/run_checks.sh / tools/check_deploy_gate.py / tools/trigger_workers_build.py / src/domain/errors.ts / src/composition/*.ts / src/infrastructure/**/*.ts / docs/03_design/infrastructure/cloudflare-infrastructure.md / docs/02_requirements/open-questions.md / public/data/gem-index/index.json / tools/generate_gem_digest.mjs）に当たって 1 件ずつ検証する。特に『機械検査 30 本超』『Lighthouse Accessibility=100 が blocking』『Workers Builds が本番の一次経路で trigger_workers_build.py が再トリガーする』『ErrorKind が 7 種』『レジストリ別に既定 15,000 件の固定枠』『62,483 は D-37 適用後の配信プール実数で D-36 の実測母集団は約 11 万』を裏取りする。推測で断定せず、根拠のファイルパスと行番号を必ず添える。ADR 0004 への追記が事実として正しいかも確認する。"
+    },
+    {
+      "name": "scope_guard",
+      "model": "sonnet",
+      "lens": "スコープ・整合レンズ（争点 C・F を主担当）。① ユーザーの『過去に対応した認証に関する記載は含めないままにして』という制約に照らし、今回の改稿が認証の記載を実質的に増やしていないかを差分ベースで判定する。D-39（open-questions.md）と PR #469 の決定内容を実際に読んで、環境変数表の OAuth 4 行・『本番では表示されない』の 1 行・ADR 索引の 0012 行それぞれについて『残す/消す』の判断と理由を出す。② README と他ドキュメント（docs/README.md / minimum-requirements-checklist.md / open-questions.md / roadmap.md / site/README.md / NOTICE / LICENSE）の間に新たな矛盾・SSOT 重複を作っていないかを洗い出す。③ README 内の相対リンクが改稿後もすべて実在するかを実際に確認する。④ ADR 0004 への追記が『スコープ外の改善を同じ PR に混ぜた』にあたるか、それとも『README の記述の裏付けとして必要な矛盾解消』かを判定する。新しい主張はせず既存記述との突合に徹する。"
+    },
+    {
+      "name": "reader_flow",
+      "model": "sonnet",
+      "lens": "読者導線・ビジュアルレンズ（争点 D・E を主担当）。README を初めて開く 3 読者（与件の提出物として読むレビュアー / OSS として来た第三者 / コントリビュータ）に対し、冒頭 15 行で『これは何か・どこで触れるか・何を見れば設計判断が分かるか』が伝わるかを評価する。新設した『画面』節について、枚数・配置（2x2 の表）・表示幅 300px・画像の縦の長さ（786x1660〜2500 px）・alt の記述量・保存先（docs/images/readme/ と site/assets/img/ の二重管理）・実在ユーザーのアバターが写り込む点を 1 つずつ判断する。実際に docs/images/readme/*.webp を Read ツールで開いて中身を見てから評価すること（見ずに論じない）。228 行になった節の並び順と目次行の過不足も具体的に提案する。site/index.html と site/README.md（LP 側の規律）を読み、README と LP の役割が重複していないかも見る。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜F それぞれについて『マージ前に何を直すか』を 1 つに決める。決定は必ず『README（または該当ファイル）のどの節を・どう変える（新設/加筆/削除/移動/現状維持）』まで落とす。相互検証で否定された指摘は採用しない。critical には『議論を経ても残った真の問題（事実誤り・与件の未充足・ユーザー制約の違反）』だけを入れる。スコープは README.md + docs/adr/0004 の追記 + docs/images/readme/ に限定し、それ以外のドキュメント修正・アプリコードの変更は out_of_scope（別 Issue 候補）に回す。機械ゲート（check_adr_coverage.py / check_cjk_markdown.py / self_review_check.py）を壊す変更は採用しない。ユーザー確認が要る仕様分岐（SD-3 第 2 系統）があれば open_questions に列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜F のいずれか",
+        "decision": "何をどう直すか（ファイル + 節名 + 新設/加筆/削除/移動/現状維持）",
+        "rationale": "採用理由（議論での検証結果）",
+        "rejected": "否定された代替案と理由"
+      }
+    ],
+    "edits": [
+      {
+        "file": "README.md 等",
+        "section": "節名",
+        "action": "add|update|remove|move|keep",
+        "detail": "具体的な変更内容"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題（事実誤り・与件の未充足・ユーザー制約の違反）"],
+    "out_of_scope": ["別 Issue 候補（本 PR では扱わない）"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統）"]
+  }
+}
