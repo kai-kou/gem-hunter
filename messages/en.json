@@ -12,6 +12,7 @@
       "login": "Log in with GitHub",
       "logout": "Log out"
     },
+    "skipLink": "Skip to main content",
     "loading": "Loading",
     "retry": "Try again",
     "errors": {

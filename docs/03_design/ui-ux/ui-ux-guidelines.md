@@ -441,6 +441,11 @@ Next.js の route announcer は **document title が変化しないと何もア�
 - 🔴 **透明度は CSS 変数側に埋め込み、Tailwind ユーティリティ側の `/NN` サフィックスを `ring`/`outline` に使わない**（例: `focus-visible:ring-ring/50` は禁止。半透明にしたいなら `--ring: oklch(L C H / A%)` のように変数の宣言値へ alpha を埋め込む）。`tools/check_contrast.py` は CSS 変数の宣言値しか読まないため、ユーティリティ側 opacity を使うと機械検査が値を読めなくなる
 - sticky ヘッダーを置くなら、フォーカス移動先に **`scroll-margin-top`** をヘッダー高さ分設定する（WCAG 2.2 の 2.4.11）
 
+### 7.3a. スキップリンク（WCAG 2.4.1 Bypass Blocks・Issue #354）
+
+- 共通ヘッダー（`site-header.tsx`）の `<header>` **直前** に `#main-content` へ飛ぶスキップリンクを置く。`sr-only`（既定は非表示）+ `focus-visible:not-sr-only`（キーボードフォーカス時のみ可視化）とし、可視化時は他要素と同じ `focus-visible:ring-*` の枠を使う（§7.3）
+- 各ページの `<main>` に `id="main-content"` と `tabIndex={-1}` を付け、リンク先へ実際にフォーカスが移るようにする（`href="#main-content"` だけではフォーカス移動を保証しない）
+
 ### 7.4. 画像の代替テキスト（`NFR-14` の方針確定）
 
 | 文脈 | 指示 |

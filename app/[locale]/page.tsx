@@ -383,8 +383,9 @@ export default async function LocaleHome({
         isLoggedIn={accessToken !== null}
         showAuthLink={showAuthLink}
         authLabels={showAuthLink ? messages.common.auth : undefined}
+        skipLinkLabel={messages.common.skipLink}
       />
-      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-10">
       {hasKeyword ? null : (
         // eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image の最適化は使わない
         <img

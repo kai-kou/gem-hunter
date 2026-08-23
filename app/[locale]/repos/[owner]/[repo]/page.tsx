@@ -134,6 +134,7 @@ export default async function RepositoryDetailPage({
       isLoggedIn={accessToken !== null}
       showAuthLink={showAuthLink}
       authLabels={showAuthLink ? messages.common.auth : undefined}
+      skipLinkLabel={messages.common.skipLink}
     />
   )
 
@@ -149,7 +150,7 @@ export default async function RepositoryDetailPage({
       return (
         <>
           {header}
-          <main className="mx-auto w-full max-w-3xl px-4 py-10">
+          <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-10">
             {/*
               🔴 エラー時も見出しを失わない（`NFR-12` / `US-26`）。見出しが 1 つも無い文書になると
               スクリーンリーダーの見出しナビゲーションで到達できない。また `role="alert"` は
@@ -204,7 +205,7 @@ export default async function RepositoryDetailPage({
   return (
     <>
       {header}
-      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-10">
         {/* `generateMetadata`（下記）は URL セグメントから SSR 時点の <title> を出すが、
             ハイドレーション後に document.title が親レイアウトの既定値へ巻き戻らないことまでは
             保証しないため、クライアント側でも確実に設定する（not-found.tsx / PR #127 と同じパターン）。
