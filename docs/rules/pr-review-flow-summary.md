@@ -24,7 +24,7 @@
 > 代わりに **セッション（Claude）が `bash tools/run_checks.sh` を実行して品質を担保し、`wrangler` を直接叩いて**
 > プレビュー・本番へデプロイする。CI という機構自体が現在存在しない前提でこのファイルを読む。
 
-0. **PR 作成前チェック（唯一の機械的証跡）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）。**見出しは次のいずれかにする（`pre-pr-create-check.sh` が検出する表記はこの 3 つのみ・Issue #405）**: `## run_checks 結果` / `` ## `npm run check` 結果 `` / `## npm run check 結果 ` のいずれか。いずれの見出しでも、直後に表（`|` 区切り行）が続いていること
+0. **PR 作成前チェック（唯一の機械的証跡）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）。**見出しは次のいずれかにする（`pre-pr-create-check.sh` が検出する表記はこの 3 つのみ・Issue #405）**: `## run_checks 結果` / `## npm run check 結果`（`npm run check` 部分をバッククォートで囲んだ表記も可）のいずれか。いずれの見出しでも、直後に表（`|` 区切り行）が続いていること
 0.5. **プレビュー URL の取得**: GitHub Actions は使わず、**セッションが `npx opennextjs-cloudflare build` → `npx wrangler versions upload --preview-alias pr-<N>` を実行** して取得したプレビュー URL を PR 本文へ貼る（`sprint-development-rules.md` `SD-1` の「開けるプレビュー URL」要件をこの経路で満たす）
 1. `mcp__github__create_pull_request`（`head`={作業ブランチ} / `base`=main）。本文に **`Session-Id: $CLAUDE_CODE_SESSION_ID`**・`Sprint Goal:` 1 行・`sp:N`・**`Team:` トレーラー**（例 `Team: fan-out(3)`・Issue の `編成` 欄の同期コピー）を必ず含める（`--mine` 所有判定と done_sp 計測の前提）。🔴 **`SP-n` のスプリント PR には `Closes #N` を書かない**（Issue のクローズは `pr-review-watcher` Step 7 の最終アクション）
 2. **PR 存在確認（必須・L-050）**: `mcp__github__list_pull_requests` で `head` を指定して実在を確認する（作成の成否をレスポンスだけで判断しない）
