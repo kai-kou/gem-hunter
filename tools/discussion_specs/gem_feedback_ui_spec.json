@@ -1,0 +1,46 @@
+{
+  "topic": "Gem 機能フィードバック 3 件（一覧導線の視認性 / Gem 一覧カードの表示項目 / 件数と説明文の不一致）の設計を確定する",
+  "brief": "飼い主フィードバック（実機スクリーンショット付き・2026-08-23）: (F-1) 検索結果上部の「この検索語の Gem 候補を一覧で見る」導線がテキストリンクのままで埋もれている。ボタン風にするか、アプリタイトルで使っているアイコン（public/images/logo.webp）を文言の頭に添えるなどして目立たせてほしい。(F-2) Gem 一覧（/{locale}/gems）の各カードに、検索結果一覧（RepositoryList）で表示している項目も含めてほしい。(F-3) Gem 一覧の件数表示（例「5 件」）と説明文（「検索結果で Gem の印が付いていた候補 4 件を、名前が一致しないものも含めてこの一覧に加えています。」）の件数が一致しておらず、利用者が矛盾と受け取る。\n\n現行実装（すべてリポジトリ絶対パスで実在）: 導線は src/ui/gem-list-link.tsx（text-primary の素のテキストリンク・className は back-link.tsx / repository-list.tsx と同じ意匠）で、呼び出しは app/[locale]/page.tsx の 240〜280 行付近（messages.home.gemBadge.intro の 1 文の直後・結果一覧より前・0 件では出さない）。Gem 一覧カードは src/ui/gem-list.tsx が描画し、1 件あたり repositoryFullName（詳細へのリンク）/ packageName / registry / stars / dependentCount / gemIndex を出す。検索結果カードは src/ui/repository-list.tsx で、avatar 画像 / fullName / Gem バッジ / description / primaryLanguage / stars / lastPushedAt / topics（先頭 5 件）を出す。Gem 一覧のデータ源は静的アセット public/data/gem-index/（src/infrastructure/platform/static-gem-index.ts が読む）で、型は src/domain/model/gem.ts の GemPoolEntry = { packageName, repositoryFullName, dependentCount, stars, gemIndex, registry } のみ。description / 言語 / topics / 最終更新日 / avatar は候補プールに存在しない。件数の算出は src/infrastructure/platform/static-gem-index.ts の mergeIncludedRecords（includedCount = 名前照合 AND に一致しなかったが badged 同伴で新規追加された件数）で、UI 文言は messages/ja.json・messages/en.json の gems.totalCount / gems.includedFromSearch。ページ配線は app/[locale]/gems/page.tsx。\n\nF-3 の実測（スクリーンショット）: 検索語 next.js で総件数 5 件・注記 4 件。tokenizeQuery('next.js') = ['next','js'] の AND に一致したのは vercel/next.js の 1 件のみで、残り 4 件は検索結果でバッジが付いていた候補の同伴（badged・Issue #453 の案3'）による追加。vercel/next.js も badged に含まれるが名前照合で既に一致しているため includedCount には数えない。つまり数値としては破綻していないが、文言が「検索結果で Gem の印が付いていた候補 4 件を…加えています」と読め、実際に印が付いていたのは 5 件なので **説明が事実と食い違う**。\n\n制約: (a) D-29 — Ecosyste.ms の生テキスト（description 等）は再配信しない。候補プールに数値・識別子・自作派生値しか持たないのはこの決定に由来する。(b) クリーンアーキテクチャ依存規則（docs/rules/architecture-rules.md・docs/03_design/architecture/application-architecture.md）: src/ui/ は表示のみ・app/ は infrastructure を直接 import しない・GitHub API に触れてよいのは src/infrastructure/github/ の ACL だけ（NFR-16 / TR-4）。データソースは GET /search/repositories と GET /repos/{owner}/{repo}（+ SP-16 で足した README）に限定という E-2 の宣言がある。(c) INF-2 / NFR-7 — Cloudflare Workers Free の CPU・サブリクエスト上限と低コスト維持。Gem 一覧は GitHub API を 1 回も呼ばずに描ける現行設計が SPOF 回避（D-28）にもなっている。(d) NFR-3 クライアント JS を増やさない。(e) NFR-12 / NFR-13 a11y（ライブリージョンは 1 つ・フォーカスリング太さ・見出し階層・タッチターゲット）と docs/03_design/ui-ux/ui-ux-guidelines.md のデザイントークン（ボタンは src/ui/button.tsx が既存）。(f) D-36 — Gem Index を並び替え軸にしない・印が付かないことは低評価を意味しない注記が必須。(g) SD-2 TDD 主体（テストを先に書く・操作レビュー手順は e2e/sp-19.spec.ts へ写す）。\n\n争点は少なくとも次の 5 つ: A) F-1 の実装形（既存 button.tsx の意匠を流用した「ボタン風リンク」にするのか、リンクのままアイコン + 強調に留めるのか。logo.webp をアイコンとして流用してよいか（ロゴの意味が『アプリ』から『Gem 一覧』へ二重化しないか・alt/装飾扱いの妥当性・24px 以下での視認性・webp 1 枚の再利用 vs 新規アセット生成 vs インライン SVG）。gemBadge.intro の説明文との位置関係・視覚的階層。タッチターゲット 44px・フォーカスリング・ダークモード。検索結果 0 件で出さない現行仕様を維持するか） B) F-2 でカードに足せる項目は何か（候補プールに実在するのは registry / packageName / dependentCount / stars / gemIndex のみ。検索結果と揃えるには description・言語・topics・最終更新日・avatar が要るが、これらは D-29 か GitHub API 追加呼び出しに抵触する。avatar だけは https://github.com/{owner}.png で API を使わず出せるが外部画像リクエストが 20 件増える。GitHub API を最大 20 件分呼ぶ案（GET /repos/{owner}/{repo} × N もしくは GraphQL 一括）は E-2・NFR-7・INF-2・D-28 の SPOF 回避とどう衝突するか。『通常の一覧で表示している項目も含める』という指示を、どこまでが仕様として満たされたと言えるか） C) F-2 を満たす際のカードの構造（検索結果カードと同じレイアウトへ寄せるのか、Gem 一覧固有の項目（Gem Index・レジストリ・利用パッケージ数）を主役に据えたまま不足項目だけ足すのか。共通コンポーネント化すべきか（repository-list.tsx と gem-list.tsx を 1 本にすると型と責務が混ざる懸念）。a11y（リンク領域拡張の ::after とバッジ・画像の関係）） D) F-3 の正しい仕様（① 文言だけ直す＝「この一覧の N 件のうち M 件は、検索結果で Gem の印が付いていた候補です」の形にする ② includedCount の意味を『同伴指定のうち一覧に載っている総数』へ変える＝ポート契約 GemPoolSearchResult.includedCount の意味変更 ③ 両方の数を返して文言で使い分ける。どれがユーザーの誤読を最も減らすか。ポート契約を動かす場合の影響範囲（src/domain/ports/gem-index-port.ts・static-gem-index.test.ts の既存 10 ケース・search-gems.ts・gem-list.tsx・messages 2 言語）。総件数 role=status とのライブリージョン重複規律を壊さないか） E) 上記 3 件を 1 PR にまとめるか分けるか、E2E（e2e/sp-19.spec.ts・e2e/sp-18.spec.ts）と単体テスト（src/ui/*.test.tsx）の追加範囲、docs（docs/02_requirements/user-story-map.md §5.3 SP-19 の操作レビュー手順・prd.md の AC・docs/02_requirements/open-questions.md の D-36/D-37 追補）の更新要否。",
+  "participants": [
+    {
+      "name": "ux_entry",
+      "model": "sonnet",
+      "lens": "導線と視覚階層（F-1）。docs/03_design/ui-ux/ui-ux-guidelines.md と src/ui/button.tsx / src/ui/gem-list-link.tsx / app/[locale]/page.tsx を実際に読み、ボタン化とアイコン装飾のどちらが埋没を解くか、両方やると過剰かを判定する。ロゴ画像 public/images/logo.webp の流用が意味の二重化・a11y（装飾 alt）・小サイズ視認性の観点で妥当かを具体的に述べ、代替（インライン SVG・絵文字・新規アセット）と比較する。タッチターゲット・フォーカスリング・ダークモード・既存意匠との一貫性を必ず検証する。"
+    },
+    {
+      "name": "data_scope",
+      "model": "sonnet",
+      "lens": "データ制約とアーキテクチャ（F-2）。src/domain/model/gem.ts / src/infrastructure/platform/static-gem-index.ts / public/data/gem-index/ の実データ（実際にファイルを開いて列を確認する）と src/infrastructure/github/ の ACL、docs/02_requirements/prd.md の E-2・NFR-7・NFR-16、docs/02_requirements/open-questions.md の D-28 / D-29 を突き合わせ、『検索結果カードと同じ項目を Gem 一覧に出す』が技術的・規約的にどこまで可能かを断定する。GitHub API を追加で呼ぶ案のコスト（レート枠・CPU・SPOF・キャッシュ）を定量で述べ、採否を主張する。avatar の github.com/{owner}.png 経路の可否も検証する。"
+    },
+    {
+      "name": "count_truth",
+      "model": "sonnet",
+      "lens": "件数の意味論（F-3）。src/infrastructure/platform/static-gem-index.ts の mergeIncludedRecords・src/domain/ports/gem-index-port.ts・src/usecases/search-gems.ts・src/ui/gem-list.tsx・messages/ja.json / messages/en.json を読み、利用者がどう誤読したかを再現したうえで、文言修正・契約変更・両方のどれを採るべきかを主張する。ポート契約を変える場合は影響ファイルと既存テストを列挙し、変えない場合は文言案を日英両方で具体的に書く。role=status のライブリージョン規律（ui-ux-guidelines.md §7.2）を壊さないことを確認する。"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合。docs/02_requirements/user-story-map.md §5.3 SP-19 / docs/02_requirements/prd.md（US-34・AC-n・NFR-n・E-2）/ docs/02_requirements/open-questions.md（D-28 / D-29 / D-36 / D-37 と Issue #453 の追補）を機械的に洗い、3 件の変更がどの記述と矛盾するか・どのファイルのどの節を更新する必要があるかだけを列挙する。新しい設計を主張せず既存記述との突合に徹する。SSOT を増やす提案があれば矛盾として指摘する。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれで『採用する設計』を 1 つに決める。決定は必ず『どのファイルに何を書くか（新規/改修）』まで落とす。D-29 と E-2 と NFR-7 は動かせない前提として扱い、これらに触れる案は根拠を示せない限り採らない。議論で否定された案は採用しない。ユーザー確認が要る仕様分岐（SD-3 第 2 系統＝解釈が 2 通り以上あり選択で成果物が変わるもの）は open_questions に、推奨案を先頭にして最大 2 択で列挙する。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "tasks": [
+      { "id": "T-n", "title": "実行タスク", "actor": "claude | user", "depends_on": ["T-n"], "sp": "sp:1|2|3|5|8" }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）。推奨案を先頭に最大 2 択"]
+  }
+}

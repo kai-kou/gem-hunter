@@ -97,6 +97,27 @@ const poolMeta = JSON.parse(
   sourceLicenseUrl: string
 }
 
+/**
+ * 1x1 の透明 PNG（base64）。`AR-11` の avatar が実際に `https://github.com/{owner}.png` へ
+ * リクエストする分を `page.route()` でスタブし、このスペック冒頭の「ネットワークは踏まない」
+ * 方針（`NFR-24`）との矛盾を解消する。
+ */
+const STUB_AVATAR_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
+test.beforeEach(async ({ page }) => {
+  // Gem 一覧カードの avatar（`src/ui/gem-list.tsx`）は `https://github.com/{owner}.png` を直接
+  // 参照する（`AR-11` の詳細: 候補プールのシャードに avatar_url 相当の列が無いため）。実ネットワークを
+  // 踏ませず、常に同じ 1x1 PNG を返す。
+  await page.route('https://github.com/**.png**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(STUB_AVATAR_PNG_BASE64, 'base64'),
+    }),
+  )
+})
+
 /** Gem 一覧（ページ内で唯一の list ロール。ヘッダー・ページネーションは `nav`）。 */
 function gemList(page: Page): Locator {
   return page.getByRole('list')
@@ -217,6 +238,19 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
 
     firstPageIndexes = await readGemIndexes(page)
     expectAscending(firstPageIndexes)
+  })
+
+  await test.step('11. 各カードにオーナーの avatar が表示されている（AR-11）', async () => {
+    const cards = page.locator('li[data-repository-full-name]')
+    const cardCount = await cards.count()
+    expect(cardCount).toBeGreaterThan(0)
+    for (let i = 0; i < cardCount; i++) {
+      // 🔴 カード内の `img` を素数で数えない（将来カードへ別の画像が増えても実装が正しければ
+      // 落ちないよう、avatar だけを一意に特定できるセレクタで見る）。
+      const avatar = cards.nth(i).locator('img[src*="github.com"]')
+      await expect(avatar).toHaveCount(1)
+      await expect(avatar).toHaveAttribute('alt', '')
+    }
   })
 
   await test.step('6. 出典表示（配信データの帰属情報）が読める（GR-6 / D-29）', async () => {
@@ -563,10 +597,22 @@ test('SP-19: 検索結果でバッジが付いた候補が、名前が一致し�
     expect(await readRepositoryFullNames(page)).toContain(badgedFullName)
   })
 
-  await test.step('4. 「名前が一致しないものも含めて加えている」注記が件数付きで読める', async () => {
-    await expect(
-      page.getByText(ja.gems.includedFromSearch.replace('{count}', '1'), { exact: true }),
-    ).toBeVisible()
+  await test.step('4. 内訳文言（全 N 件のうち M 件が一致）に総件数と一致件数が含まれる', async () => {
+    // 🔴 F-3（Issue #453）: `gems.includedFromSearch` は「全 {total} 件のうち、検索語に一致
+    // したのは {matchedCount} 件です。残り {count} 件は…」の加算構文へ改訂される（実装は並行
+    // 作業中）。文言の完全一致ではなく、`totalCount = matchedCount + includedCount` の関係が
+    // 画面上の 1 文に現れることだけを頑健に検証する（`includedCount` 自体はこの一件のみ = 1）。
+    const totalCount = await readTotalCount(page)
+    const matchedCount = totalCount - 1
+
+    const notice = page.getByText(/全\s*[\d,]+\s*件のうち/).first()
+    await expect(notice).toBeVisible()
+    const text = await notice.innerText()
+    // 画面は `Intl.NumberFormat` の桁区切り（例: `1,631`）で描画するため、比較前にカンマを除去する
+    // （4 桁以上の件数で `toContain(String(totalCount))` が恒常的に落ちるのを防ぐ）。
+    const normalized = text.replace(/,/g, '')
+    expect(normalized, '総件数が内訳文言に含まれていない').toContain(String(totalCount))
+    expect(normalized, '一致件数が内訳文言に含まれていない').toContain(String(matchedCount))
   })
 })
 
