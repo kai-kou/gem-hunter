@@ -15,13 +15,13 @@ star の多さでは埋もれてしまう「実際に使われている OSS」�
 
 スマートフォン幅（本番環境・日本語ロケール）の実画面。PC 幅を含む紹介は[紹介ページ](https://kai-kou.github.io/gem-hunter/)を参照。
 
-| 今日の Gem（キーワード未入力） | 検索結果 |
+| 今日の Gem（キーワード未入力のトップ） | 検索結果（`yaml` で検索） |
 |---|---|
-| <img src="./docs/images/readme/mobile-digest.webp" width="320" alt="スマートフォンで開いたトップページ。ヘッダーに gem-hunter のロゴと日本語 / English の言語切替があり、その下に虫眼鏡で石の中から宝石を見つけるイラスト、キーワード検索欄、「今日の Gem」の見出しと、利用パッケージ数と star 数を添えたリポジトリが順位付きで並んでいる。"> | <img src="./docs/images/readme/mobile-search.webp" width="320" alt="スマートフォンで開いた検索結果画面。検索欄に入力したキーワードの下に、関連度 / star 数 / 更新日時の並び替えと 20 / 50 / 100 件の表示件数の切り替えが並び、総件数と「Gem の印は star 数のわりに多くのパッケージから使われている候補に付く」旨の説明、Gem 候補の一覧へ移動するリンク、そしてリポジトリ名・説明・star 数・最終更新日・トピックを持つカードが縦に並んでいる。"> |
+| <img src="./docs/images/readme/mobile-digest.webp" width="300" alt="スマートフォンで開いたトップページ。ヘッダーの下に、石の山から宝石を虫眼鏡で見つけるイラストと「star は少ないのに、実はたくさんのパッケージから使われている GitHub リポジトリを見つけます。」というキャッチコピー、キーワード検索欄が並ぶ。その下の「今日の Gem」には、利用パッケージ数と star 数を添えたリポジトリが 1 位から 5 位まで順位付きで並び、末尾に Ecosyste.ms を出典とする注記がある。"> | <img src="./docs/images/readme/mobile-search.webp" width="300" alt="スマートフォンで開いた検索結果画面。検索欄に yaml と入力されており、関連度 / star 数 / 更新日時の並び替えと 20 / 50 / 100 件の表示件数の切り替えが並ぶ。「61,909 件中 20 件を表示」の下に Gem の印の説明と「この検索語の Gem 候補を一覧で見る」リンクがあり、オーナーアイコン・リポジトリ名・説明・主要言語・star 数・最終更新日・トピックを持つカードが並ぶ。一部のカードにはリポジトリ名の右に青い Gem バッジが付いている。"> |
 
 | 検索語を引き継いだ Gem 一覧 | リポジトリ詳細 |
 |---|---|
-| <img src="./docs/images/readme/mobile-gems.webp" width="320" alt="スマートフォンで開いた Gem 一覧画面。「markdown」の Gem という見出しと件数の下に、リポジトリ名・パッケージ名・レジストリ名・star 数・利用パッケージ数・Gem Index を持つカードが Gem Index の降順で並んでいる。"> | <img src="./docs/images/readme/mobile-detail.webp" width="320" alt="スマートフォンで開いたリポジトリ詳細画面。検索結果へ戻るリンクの下にオーナーアイコン・リポジトリ名・主要言語・説明があり、star 数 / watcher 数 / fork 数 / issue 数 / 最終更新日のタイルが並び、その下に README の本文が表示されている。"> |
+| <img src="./docs/images/readme/mobile-gems.webp" width="300" alt="スマートフォンで開いた Gem 一覧画面。「「yaml」の Gem」という見出しと 74 件という件数の下に、オーナーアイコン・リポジトリ名・パッケージ名・レジストリ名・star 数・利用パッケージ数・Gem Index を持つカードが Gem Index の降順で並んでいる。レジストリは pub.dev・npmjs.org・rubygems.org・packagist.org・pypi.org・metacpan.org・hex.pm・proxy.golang.org と多岐にわたる。"> | <img src="./docs/images/readme/mobile-detail.webp" width="300" alt="スマートフォンで開いたリポジトリ詳細画面。「一覧へ戻る」リンクの下にオーナーアイコン・nodeca/js-yaml・TypeScript・説明文があり、star 数 6,626 / watcher 数 77 / fork 数 846 / issue 数 9 / 最終更新 2026/08/22 のタイルが並ぶ。その下に README の見出しと、対象リポジトリの README 本文が描画されている。"> |
 
 ## 開発（ローカル）
 
