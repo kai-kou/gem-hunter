@@ -34,7 +34,9 @@ export class InMemoryCache implements CachePort {
 
   async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
     if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
-      throw new RangeError(`ttlSeconds は正の有限数である必要があります（受け取った値: ${ttlSeconds}）`)
+      throw new RangeError(
+        `ttlSeconds は正の有限数である必要があります（受け取った値: ${ttlSeconds}）`,
+      )
     }
     this.store.set(key, { value, expiresAt: this.clock.now().getTime() + ttlSeconds * 1000 })
   }

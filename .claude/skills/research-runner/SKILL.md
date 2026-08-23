@@ -11,7 +11,6 @@ disallowed-tools: AskUserQuestion
 > クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
 > ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
 
-
 # research-runner スキル
 
 Deep Research の完全自動化スキル。ユーザーの手動ディープリサーチを不要にし、
@@ -34,10 +33,10 @@ Deep Research の完全自動化スキル。ユーザーの手動ディープリ
 **このスキル（`research-runner`）が既定の起動先である**。明示しないと
 ほぼ同名のビルトイン `deep-research` や素の `WebSearch` に倒れるため（Issue #73 の再発防止）、以下を厳守する。
 
-| 候補 | 実体 | いつ使うか |
-|------|------|-----------|
+| 候補                              | 実体                                                                                                                                                                                                                                                                                           | いつ使うか                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | **`research-runner`（本スキル）** | ネイティブ `/deep-research`（公式分類は **Workflow**・adversarial 多票検証）を、対話起動時は **`Workflow` ツールで直接呼び出し**（Step 3a・`Skill` ツール経由は v2.1.218 以降不可）、自律・バッチ起動時は `tools/run_deep_research_workflow.py`（`claude -p` サブプロセス経由・Step 3b）で実行 | **既定**。ユーザーが「ディープリサーチ」を求めたら必ずこれを最初に起動する |
-| 素の `WebSearch` / `WebFetch` | メインセッションの単発検索 | ディープリサーチの **既定にしない**。軽い事実確認のみ |
+| 素の `WebSearch` / `WebFetch`     | メインセッションの単発検索                                                                                                                                                                                                                                                                     | ディープリサーチの **既定にしない**。軽い事実確認のみ                      |
 
 > **注意**: ツール一覧の `deep-research` は本スキルの DIY フォールバックではなく、**ネイティブ `/deep-research`（Workflow）そのもの**（`code.claude.com/docs/en/commands` で `[Workflow]` 分類・§0 の実体列を参照）。DIY フォールバック（Step 4）は名称のみで専用ツールは存在しない。
 
@@ -48,15 +47,15 @@ Deep Research の完全自動化スキル。ユーザーの手動ディープリ
 
 ## 採用方針
 
-| 項目 | 内容 |
-|---|---|
-| **主エンジン** | **ネイティブ `/deep-research`（公式分類=Workflow・adversarial 多票検証）**。対話起動（Step 3a）は本セッションから **`Workflow` ツール**（`Workflow({name: 'deep-research', args: ...})`）で直接呼び出す（`claude -p` 不要・実機検証 2026-07-29 / CLI v2.1.220・`docs/rules/dynamic-workflows-rules.md` 参照）。**`Skill` ツール経由は v2.1.218 以降 `disable-model-invocation` で不可**。正確性が最高で **必ず最初に実行する** |
-| 第2エンジン | **`claude -p` サブプロセス経由の `/deep-research`** — `tools/run_deep_research_workflow.py`（`claude -p` サブプロセス + Opus 明示指定）。自律・バッチ起動（Step 3b）ではこちらが最初の経路。対話起動では Step 3a（直接呼び出し）が失敗したときのフォールバック |
-| フォールバック | **DIY（ウェブリサーチ）**（Sonnet 5 + WebSearch + WebFetch）（上記2つが失敗時の最終手段） |
-| 禁止 | **外部 LLM API（Gemini 等）によるディープリサーチは行わない**（飼い主決定・2026-07-16・Issue #260）。旧 Gemini Deep Research Max 経路は廃止済み |
-| コスト | **既定=サブスク週次枠経路（追加 $ ゼロ）**: セッション認証（Claude Code Max サブスク）をそのまま使用し（`DEEP_RESEARCH_USE_SUBSCRIPTION=1` 既定）、`/deep-research` は週次クォータの枠内で実行され追加課金なし。`DEEP_RESEARCH_USE_SUBSCRIPTION=0` で従来の API 従量経路（1本上限 `--max-budget-usd`・当月累計 `$40` 超で DIY フォールバック・月 `$50` ブレーカー）に戻せる（Step 3a の直接呼び出しはセッションの既存認証をそのまま使うため、この課金分岐自体が発生しない） |
-| モデル | 公式仕様は「ワークフロー内の各エージェントはセッションのモデルを使用（スクリプトが明示的に別モデルへ routing しない限り）」。**Opus 固定は本プロジェクトの選択**（Step 3b が `--model opus` を明示指定・エイリアス）であり、Anthropic 側が `/deep-research` を Opus に固定している仕様ではない。Step 3a（直接呼び出し）はそのときのセッションモデルに従う点に注意 |
-| 想定時間 | 本番では 30〜50分/本（wall-clock）。Step 3a はネイティブの Workflow バックグラウンド実行 + 完了通知に従う。Step 3b は必ず `run_in_background` + heartbeat で監視する |
+| 項目           | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **主エンジン** | **ネイティブ `/deep-research`（公式分類=Workflow・adversarial 多票検証）**。対話起動（Step 3a）は本セッションから **`Workflow` ツール**（`Workflow({name: 'deep-research', args: ...})`）で直接呼び出す（`claude -p` 不要・実機検証 2026-07-29 / CLI v2.1.220・`docs/rules/dynamic-workflows-rules.md` 参照）。**`Skill` ツール経由は v2.1.218 以降 `disable-model-invocation` で不可**。正確性が最高で **必ず最初に実行する**                                                         |
+| 第2エンジン    | **`claude -p` サブプロセス経由の `/deep-research`** — `tools/run_deep_research_workflow.py`（`claude -p` サブプロセス + Opus 明示指定）。自律・バッチ起動（Step 3b）ではこちらが最初の経路。対話起動では Step 3a（直接呼び出し）が失敗したときのフォールバック                                                                                                                                                                                                                         |
+| フォールバック | **DIY（ウェブリサーチ）**（Sonnet 5 + WebSearch + WebFetch）（上記2つが失敗時の最終手段）                                                                                                                                                                                                                                                                                                                                                                                              |
+| 禁止           | **外部 LLM API（Gemini 等）によるディープリサーチは行わない**（飼い主決定・2026-07-16・Issue #260）。旧 Gemini Deep Research Max 経路は廃止済み                                                                                                                                                                                                                                                                                                                                        |
+| コスト         | **既定=サブスク週次枠経路（追加 $ ゼロ）**: セッション認証（Claude Code Max サブスク）をそのまま使用し（`DEEP_RESEARCH_USE_SUBSCRIPTION=1` 既定）、`/deep-research` は週次クォータの枠内で実行され追加課金なし。`DEEP_RESEARCH_USE_SUBSCRIPTION=0` で従来の API 従量経路（1本上限 `--max-budget-usd`・当月累計が `$40` を超えたら DIY フォールバック・`$50` で月次ブレーカー）に戻せる（Step 3a の直接呼び出しはセッションの既存認証をそのまま使うため、この課金分岐自体が発生しない） |
+| モデル         | 公式仕様は「ワークフロー内の各エージェントはセッションのモデルを使用（スクリプトが明示的に別モデルへ routing しない限り）」。**Opus 固定は本プロジェクトの選択**（Step 3b が `--model opus` を明示指定・エイリアス）であり、Anthropic 側が `/deep-research` を Opus に固定している仕様ではない。Step 3a（直接呼び出し）はそのときのセッションモデルに従う点に注意                                                                                                                      |
+| 想定時間       | 本番では 30〜50分/本（wall-clock）。Step 3a はネイティブの Workflow バックグラウンド実行 + 完了通知に従う。Step 3b は必ず `run_in_background` + heartbeat で監視する                                                                                                                                                                                                                                                                                                                   |
 
 > **claude -p の位置づけ**: Step 3b の `claude -p` は Web ギャップ代替ではなく、コンテキスト隔離・90 分タイムアウト・レート枠検出（EXIT=6）が本質的に必要な **設計上の一次経路**（`isolation-by-design`）。分類とフォールバック標準形の SSOT は `docs/rules/native-fallback-rules.md`。
 
@@ -76,6 +75,7 @@ Deep Research の完全自動化スキル。ユーザーの手動ディープリ
 ## 必読ドキュメント
 
 作業前に以下を Read する:
+
 - `docs/rules/research-rules.md` — リサーチ品質基準（情報ランク A/B/C・正式名称・必須セクション・fact_check 閾値）
 - `tools/research_schema.json` — 出力スキーマ
 
@@ -90,6 +90,7 @@ Deep Research の完全自動化スキル。ユーザーの手動ディープリ
 ### Step 1: 対象 Issue のロック取得（CP-4）
 
 MCP（クラウド・一次経路。`labels` は全置換のため現在のラベルを取得してフルリストを渡す・§2.2）:
+
 ```
 mcp__github__issue_read(method="get_labels", issue_number={ISSUE_NUM})
 mcp__github__issue_write(method="update", issue_number={ISSUE_NUM},
@@ -97,6 +98,7 @@ mcp__github__issue_write(method="update", issue_number={ISSUE_NUM},
 ```
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 gh issue edit {ISSUE_NUM} -R kai-kou/gem-hunter \
   --remove-label "status:waiting-claude" \
@@ -146,17 +148,17 @@ EOF
 
 **どちらを使うか（起動条件で自動分岐・§0 参照）**:
 
-| 起動条件 | 使う経路 |
-|---|---|
-| 対話起動（起動条件 3・ユーザーが今この対話でディープリサーチを依頼） | **Step 3a（直接呼び出し）** |
+| 起動条件                                                             | 使う経路                                             |
+| -------------------------------------------------------------------- | ---------------------------------------------------- |
+| 対話起動（起動条件 3・ユーザーが今この対話でディープリサーチを依頼） | **Step 3a（直接呼び出し）**                          |
 | 自律起動（起動条件 1・2・Issue ラベル駆動 / 他セッションからの再開） | **Step 3b（`tools/run_deep_research_workflow.py`）** |
 
 #### Step 3a: 対話起動時 — `Workflow` ツールで直接呼び出し（`claude -p` 不要）
 
 > 🔴 **起動手段は `Workflow` ツール。`Skill` ツール経由は使えない**（実機検証 2026-07-29・CLI v2.1.220）。
 > `/deep-research` は **bundled workflow** であり、**v2.1.218 で `disable-model-invocation` 相当が適用され
-> モデル側からの Skill 起動が塞がれた**（公式: *"`/deep-research` runs only when you invoke it.
-> Before v2.1.218, Claude could also start it on its own."*）。`Skill(skill="deep-research")` は
+> モデル側からの Skill 起動が塞がれた**（公式: _"`/deep-research` runs only when you invoke it.
+> Before v2.1.218, Claude could also start it on its own."_）。`Skill(skill="deep-research")` は
 > `cannot be used with Skill tool due to disable-model-invocation` で即失敗する。
 > 一方 **`Workflow` ツールの `name` 指定は現在も通る**（実測で run 起動を確認）。
 > 検証記録は `docs/rules/dynamic-workflows-rules.md`。
@@ -248,14 +250,14 @@ sub-agent 起動フォーマット・統合手順は `reference.md`「Step 4: �
 
 判定基準:
 
-| 条件 | アクション |
-|---|---|
-| `fact_check_flags >= 5 件` | 主エンジン（Step 3）で 1回だけ再リサーチ |
-| `rank C >= 1 件` | 同上 |
-| `sections < 5` | Step 4 で不足項目だけ追加実行 |
-| `sources < 8` | 同上 |
-| 上記すべてクリア | Step 6 へ |
-| 再リサーチ後も基準未達 | `status:waiting-user` に戻す + 通知（境界外） |
+| 条件                       | アクション                                    |
+| -------------------------- | --------------------------------------------- |
+| `fact_check_flags >= 5 件` | 主エンジン（Step 3）で 1回だけ再リサーチ      |
+| `rank C >= 1 件`           | 同上                                          |
+| `sections < 5`             | Step 4 で不足項目だけ追加実行                 |
+| `sources < 8`              | 同上                                          |
+| 上記すべてクリア           | Step 6 へ                                     |
+| 再リサーチ後も基準未達     | `status:waiting-user` に戻す + 通知（境界外） |
 
 ### Step 6: コミット & PR
 
@@ -267,6 +269,7 @@ git push -u origin claude/{ID}-deep-research-{timestamp}
 ```
 
 PR 作成（`docs/rules/pr-review-flow-summary.md` の標準フローに従う）:
+
 - タイトル: `[{ID}] research: Deep Research 自動実行`
 - 本文: `engine` / `cost_usd` / `search_count` / `rank_distribution` / `fact_check_flags` 件数を明記
 - `Closes #{ISSUE_NUM}`

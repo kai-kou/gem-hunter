@@ -9,7 +9,10 @@ const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]'])
  * 送信するオリジンをこの env 変数ひとつで任意ホストへ切り替えられてしまう
  * （誤設定・混入がそのまま認証情報の流出経路になる）のを防ぐ。
  */
-export function resolveLoopbackOverridableOrigin(envVarName: string, defaultOrigin: string): string {
+export function resolveLoopbackOverridableOrigin(
+  envVarName: string,
+  defaultOrigin: string,
+): string {
   const configured = process.env[envVarName]
   if (configured === undefined) {
     return defaultOrigin

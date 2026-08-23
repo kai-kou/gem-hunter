@@ -164,7 +164,6 @@ describe('GemList', () => {
     // 検索語をそのまま埋め込む見出し（任意長のユーザー入力）
     expect(screen.getByRole('heading', { level: 2 }).className).toContain('break-words')
 
-
     // 🔴 パッケージ名の `<span>` は `p.flex.flex-wrap` の flex アイテムなので、継承した
     //    `break-word` では min-content の floor が残る。`wrap-anywhere` の直付けが要る。
     expect(screen.getByText('left-pad').className).toContain('wrap-anywhere')

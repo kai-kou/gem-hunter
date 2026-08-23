@@ -34,12 +34,8 @@
         "issue": "争点 A〜D のいずれか",
         "decision": "採用する結論",
         "rationale": "根拠（一次情報のポインタ）",
-        "files": [
-          "変更するファイルと変更内容"
-        ],
-        "tools": [
-          "新規・改修するスクリプトとコマンド仕様"
-        ]
+        "files": ["変更するファイルと変更内容"],
+        "tools": ["新規・改修するスクリプトとコマンド仕様"]
       }
     ],
     "user_actions": [
@@ -51,20 +47,12 @@
         "on_failure": "失敗時に Claude へ伝えること"
       }
     ],
-    "rejected": [
-      "議論で否定された案と理由"
-    ],
-    "unknowns": [
-      "確定できず、実装時に実機で確かめる必要がある事項"
-    ],
+    "rejected": ["議論で否定された案と理由"],
+    "unknowns": ["確定できず、実装時に実機で確かめる必要がある事項"],
     "follow_up_issues": [
       {
         "title": "Issue タイトル",
-        "labels": [
-          "type:*",
-          "sp:*",
-          "priority:*"
-        ],
+        "labels": ["type:*", "sp:*", "priority:*"],
         "done_criteria": "完了条件"
       }
     ]

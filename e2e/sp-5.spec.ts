@@ -63,7 +63,9 @@ function detailRepoForAttempt(retry: number): string {
 async function readStubStats(): Promise<StubStats> {
   const res = await fetch(`${STUB_ORIGIN}/__stats`)
   if (!res.ok) {
-    throw new Error(`stub の /__stats が応答しない（status=${res.status}）。E2E スタブサーバー（e2e/stub/server.mjs）が起動しているか確認してほしい`)
+    throw new Error(
+      `stub の /__stats が応答しない（status=${res.status}）。E2E スタブサーバー（e2e/stub/server.mjs）が起動しているか確認してほしい`,
+    )
   }
   return (await res.json()) as StubStats
 }
@@ -72,7 +74,9 @@ async function readStubStats(): Promise<StubStats> {
 async function resetStubStats(): Promise<void> {
   const res = await fetch(`${STUB_ORIGIN}/__stats/reset`, { method: 'POST' })
   if (!res.ok) {
-    throw new Error(`stub の /__stats/reset が応答しない（status=${res.status}）。E2E スタブサーバー（e2e/stub/server.mjs）が起動しているか確認してほしい`)
+    throw new Error(
+      `stub の /__stats/reset が応答しない（status=${res.status}）。E2E スタブサーバー（e2e/stub/server.mjs）が起動しているか確認してほしい`,
+    )
   }
 }
 

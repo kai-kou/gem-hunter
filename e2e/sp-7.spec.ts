@@ -42,9 +42,7 @@ test('SP-7: 並び替え・表示件数・ページネーションを操作し�
     await expect(page.getByRole('list').first().locator(':scope > li')).toHaveCount(20)
     // 関連度（既定 = 挿入順）: 先頭は挿入順で最初の要素（many-01・star 最小）
     await expect(page.getByRole('link', { name: 'octostub/many-01' })).toBeVisible()
-    await expect(
-      page.getByText('60 件中 20 件を表示', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText('60 件中 20 件を表示', { exact: true })).toBeVisible()
   })
 
   await test.step('1. 2 ページ目へ移動する → URL に現在ページが乗る', async () => {
@@ -76,9 +74,7 @@ test('SP-7: 並び替え・表示件数・ページネーションを操作し�
     await expect(items.first().getByRole('link')).toHaveText('octostub/many-60')
 
     await expect(
-      page
-        .getByRole('navigation', { name: '並び順' })
-        .getByRole('link', { name: 'star 数' }),
+      page.getByRole('navigation', { name: '並び順' }).getByRole('link', { name: 'star 数' }),
     ).toHaveAttribute('aria-current', 'true')
 
     // star 順で 20 件目までには入らない要素（many-15・star 順位 46 位）はまだ見えない
@@ -97,16 +93,12 @@ test('SP-7: 並び替え・表示件数・ページネーションを操作し�
     // 件数が実際に変わったことの検証: 一覧の項目数が 20 → 50 に増える
     const items = page.getByRole('list').first().locator(':scope > li')
     await expect(items).toHaveCount(50)
-    await expect(
-      page.getByText('60 件中 50 件を表示', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText('60 件中 50 件を表示', { exact: true })).toBeVisible()
     // 20 件のときは見えなかった要素（many-15）が 50 件表示では見える
     await expect(page.getByRole('link', { name: 'octostub/many-15' })).toBeVisible()
 
     await expect(
-      page
-        .getByRole('navigation', { name: '表示件数' })
-        .getByRole('link', { name: '50 件' }),
+      page.getByRole('navigation', { name: '表示件数' }).getByRole('link', { name: '50 件' }),
     ).toHaveAttribute('aria-current', 'true')
   })
 
@@ -140,14 +132,10 @@ test('SP-7: 並び替え・表示件数・ページネーションを操作し�
     await expect(page.getByRole('searchbox', { name: '検索キーワード' })).toHaveValue(keyword)
     await expect(page.getByText('2 ページ目', { exact: true })).toBeVisible()
     await expect(
-      page
-        .getByRole('navigation', { name: '並び順' })
-        .getByRole('link', { name: 'star 数' }),
+      page.getByRole('navigation', { name: '並び順' }).getByRole('link', { name: 'star 数' }),
     ).toHaveAttribute('aria-current', 'true')
     await expect(
-      page
-        .getByRole('navigation', { name: '表示件数' })
-        .getByRole('link', { name: '50 件' }),
+      page.getByRole('navigation', { name: '表示件数' }).getByRole('link', { name: '50 件' }),
     ).toHaveAttribute('aria-current', 'true')
     await expect(page.getByRole('link', { name: 'octostub/many-10' })).toBeVisible()
   })

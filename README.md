@@ -15,12 +15,12 @@ star の多さでは埋もれてしまう「実際に使われている OSS」�
 
 スマートフォン幅（本番環境・日本語ロケール）の実画面。PC 幅を含む紹介は[紹介ページ](https://kai-kou.github.io/gem-hunter/)を参照。
 
-| 今日の Gem（キーワード未入力のトップ） | 検索結果（`yaml` で検索） |
-|---|---|
+| 今日の Gem（キーワード未入力のトップ）                                                                                                                                                                                                                                                                                                                                                                                                                                   | 検索結果（`yaml` で検索）                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <img src="./docs/images/readme/mobile-digest.webp" width="300" alt="スマートフォンで開いたトップページ。ヘッダーの下に、石の山から宝石を虫眼鏡で見つけるイラストと「star は少ないのに、実はたくさんのパッケージから使われている GitHub リポジトリを見つけます。」というキャッチコピー、キーワード検索欄が並ぶ。その下の「今日の Gem」には、利用パッケージ数と star 数を添えたリポジトリが 1 位から 5 位まで順位付きで並び、末尾に Ecosyste.ms を出典とする注記がある。"> | <img src="./docs/images/readme/mobile-search.webp" width="300" alt="スマートフォンで開いた検索結果画面。検索欄に yaml と入力されており、関連度 / star 数 / 更新日時の並び替えと 20 / 50 / 100 件の表示件数の切り替えが並ぶ。「61,909 件中 20 件を表示」の下に Gem の印の説明と「この検索語の Gem 候補を一覧で見る」リンクがあり、オーナーアイコン・リポジトリ名・説明・主要言語・star 数・最終更新日・トピックを持つカードが並ぶ。一部のカードにはリポジトリ名の右に青い Gem バッジが付いている。"> |
 
-| 検索語を引き継いだ Gem 一覧 | リポジトリ詳細 |
-|---|---|
+| 検索語を引き継いだ Gem 一覧                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | リポジトリ詳細                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <img src="./docs/images/readme/mobile-gems.webp" width="300" alt="スマートフォンで開いた Gem 一覧画面。「「yaml」の Gem」という見出しと 74 件という件数の下に、オーナーアイコン・リポジトリ名・パッケージ名・レジストリ名・star 数・利用パッケージ数・Gem Index を持つカードが Gem Index の昇順（値が小さい＝ star の数に対して使われ方が大きいものほど上位）で並んでいる。レジストリは pub.dev・npmjs.org・rubygems.org・packagist.org・pypi.org・metacpan.org・hex.pm・proxy.golang.org と多岐にわたる。"> | <img src="./docs/images/readme/mobile-detail.webp" width="300" alt="スマートフォンで開いたリポジトリ詳細画面。「一覧へ戻る」リンクの下にオーナーアイコン・nodeca/js-yaml・TypeScript・説明文があり、star 数 6,626 / watcher 数 77 / fork 数 846 / issue 数 9 / 最終更新 2026/08/22 のタイルが並ぶ。その下に README の見出しと、対象リポジトリの README 本文が描画されている。"> |
 
 ## 開発（ローカル）
@@ -57,11 +57,11 @@ npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する�
 
 ### デプロイ経路
 
-| 対象 | 経路 |
-|---|---|
+| 対象                                                         | 経路                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **本番**（`https://gem-hunter.kinamocchi-tech.workers.dev`） | `main` への push を Cloudflare の **Workers Builds**（Git 連携）が拾ってビルド・デプロイする（[`D-31`](./docs/02_requirements/open-questions.md)）。デプロイゲートが閉じていた分は自動で再試行されないため、ゲート通過を契機に [`tools/trigger_workers_build.py`](./tools/trigger_workers_build.py) で明示的に再ビルドを起こす。セッションからの `npm run deploy` はフォールバック |
-| **PR プレビュー** | `npm run preview:upload` 相当（`wrangler versions upload --preview-alias pr-<N>`）で PR ごとの URL を作り、PR 本文に貼る（`SD-1`）。スプリントレビューの受け入れ後に退役させる |
-| **紹介ページ（LP）** | `site/` を `gh-pages` ブランチのルートへ同期して GitHub Pages で配信する（[`D-35`](./docs/02_requirements/open-questions.md)・手順の正本は [`site/README.md`](./site/README.md)）。アプリ本体とは別レーンにして、LP の更新が本番アプリのデプロイゲートに影響しないようにしている |
+| **PR プレビュー**                                            | `npm run preview:upload` 相当（`wrangler versions upload --preview-alias pr-<N>`）で PR ごとの URL を作り、PR 本文に貼る（`SD-1`）。スプリントレビューの受け入れ後に退役させる                                                                                                                                                                                                     |
+| **紹介ページ（LP）**                                         | `site/` を `gh-pages` ブランチのルートへ同期して GitHub Pages で配信する（[`D-35`](./docs/02_requirements/open-questions.md)・手順の正本は [`site/README.md`](./site/README.md)）。アプリ本体とは別レーンにして、LP の更新が本番アプリのデプロイゲートに影響しないようにしている                                                                                                   |
 
 本番と PR プレビューの手順・ゲート判定の正本は [Cloudflare インフラ設計](./docs/03_design/infrastructure/cloudflare-infrastructure.md) §8.2（LP の同期手順は上表のとおり [`site/README.md`](./site/README.md) が持つ）。
 
@@ -69,17 +69,17 @@ npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する�
 
 すべて **任意**。1 つも設定しなくても `npm run dev` は起動し、検索・詳細表示は動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。リポジトリ直下の `.env.example` に全変数のひな形（実値なし）を置いてあるので、`cp .env.example .env.local` してから以下の表を参照して必要な分だけ値を入れる（`.env.local` は Next.js の規約どおり追跡対象外）。`SITE_URL` の行だけは **コメントアウトした状態** で置いてある（空文字を入れると起動時に落ちるため。下表を参照）。
 
-| 変数 | 用途 | 未設定時の挙動 |
-|---|---|---|
-| `GITHUB_APP_CLIENT_ID` | GitHub App の installation token 取得（[ADR 0003](./docs/adr/0003-github-app-authentication.md)） | 3 変数が揃わない限り未認証で GitHub API を叩く（レート枠が狭い） |
-| `GITHUB_APP_INSTALLATION_ID` | 同上 | 同上 |
-| `GITHUB_APP_PRIVATE_KEY_PKCS8` | 同上（**PKCS#8 形式** で注入する必要がある） | 同上 |
-| `GITHUB_OAUTH_CLIENT_ID` | 任意ログイン（[ADR 0012](./docs/adr/0012-optional-github-oauth.md)） | 下記 `SESSION_ENCRYPTION_KEY` を含む **4 変数が揃わない限り** ログイン導線が静かに無効化される（未ログイン相当の機能はすべて動く） |
-| `GITHUB_OAUTH_CLIENT_SECRET` | 同上 | 同上 |
-| `GITHUB_OAUTH_CALLBACK_URL` | 同上（デプロイ先ごとに異なる。オープンリダイレクト対策の検証にも使う） | 同上 |
-| `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | 同上（**本行だけが欠けても** ログイン導線ごと無効化される。表示可否は `src/composition/auth.ts` の `isAuthConfigured()` が 4 変数の AND で判定する） |
-| `RATE_LIMIT_SALT` | 自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt。適用範囲は検索（`/{locale}` / `GET /api/search`）と Gem 一覧（`/{locale}/gems`）。適用経路の正本は [Cloudflare インフラ設計](./docs/03_design/infrastructure/cloudflare-infrastructure.md) §3.3 の表 | **適用経路すべてで** 間引きをしない（フェイルオープン。エラーにも `429` にもならず通す）。ローカル実行は Workers の `RATE_LIMITER` binding が無いため完全に無音、Workers 上で binding があるのに salt だけ無い場合は設定不備として警告ログを 1 行だけ残す |
-| `SITE_URL` | OG 画像の相対 URL を絶対 URL へ解決するサイトの正準オリジン（`app/[locale]/layout.tsx` の `metadataBase`） | 本番 URL へフォールバックするため通常は設定不要。🔴 **ビルド時変数** であり、ビルド後にランタイム側で変えても反映されない。🔴 **空文字（`SITE_URL=`）を設定すると起動に失敗する**（未設定時のフォールバックは `??` 判定なので空文字には効かず、`new URL('')` が `TypeError` になる）。使わないなら行ごと消すかコメントアウトしておく |
+| 変数                           | 用途                                                                                                                                                                                                                                                                         | 未設定時の挙動                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GITHUB_APP_CLIENT_ID`         | GitHub App の installation token 取得（[ADR 0003](./docs/adr/0003-github-app-authentication.md)）                                                                                                                                                                            | 3 変数が揃わない限り未認証で GitHub API を叩く（レート枠が狭い）                                                                                                                                                                                                                                                                     |
+| `GITHUB_APP_INSTALLATION_ID`   | 同上                                                                                                                                                                                                                                                                         | 同上                                                                                                                                                                                                                                                                                                                                 |
+| `GITHUB_APP_PRIVATE_KEY_PKCS8` | 同上（**PKCS#8 形式** で注入する必要がある）                                                                                                                                                                                                                                 | 同上                                                                                                                                                                                                                                                                                                                                 |
+| `GITHUB_OAUTH_CLIENT_ID`       | 任意ログイン（[ADR 0012](./docs/adr/0012-optional-github-oauth.md)）                                                                                                                                                                                                         | 下記 `SESSION_ENCRYPTION_KEY` を含む **4 変数が揃わない限り** ログイン導線が静かに無効化される（未ログイン相当の機能はすべて動く）                                                                                                                                                                                                   |
+| `GITHUB_OAUTH_CLIENT_SECRET`   | 同上                                                                                                                                                                                                                                                                         | 同上                                                                                                                                                                                                                                                                                                                                 |
+| `GITHUB_OAUTH_CALLBACK_URL`    | 同上（デプロイ先ごとに異なる。オープンリダイレクト対策の検証にも使う）                                                                                                                                                                                                       | 同上                                                                                                                                                                                                                                                                                                                                 |
+| `SESSION_ENCRYPTION_KEY`       | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値）                                                                                                                                                                                             | 同上（**本行だけが欠けても** ログイン導線ごと無効化される。表示可否は `src/composition/auth.ts` の `isAuthConfigured()` が 4 変数の AND で判定する）                                                                                                                                                                                 |
+| `RATE_LIMIT_SALT`              | 自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt。適用範囲は検索（`/{locale}` / `GET /api/search`）と Gem 一覧（`/{locale}/gems`）。適用経路の正本は [Cloudflare インフラ設計](./docs/03_design/infrastructure/cloudflare-infrastructure.md) §3.3 の表 | **適用経路すべてで** 間引きをしない（フェイルオープン。エラーにも `429` にもならず通す）。ローカル実行は Workers の `RATE_LIMITER` binding が無いため完全に無音、Workers 上で binding があるのに salt だけ無い場合は設定不備として警告ログを 1 行だけ残す                                                                            |
+| `SITE_URL`                     | OG 画像の相対 URL を絶対 URL へ解決するサイトの正準オリジン（`app/[locale]/layout.tsx` の `metadataBase`）                                                                                                                                                                   | 本番 URL へフォールバックするため通常は設定不要。🔴 **ビルド時変数** であり、ビルド後にランタイム側で変えても反映されない。🔴 **空文字（`SITE_URL=`）を設定すると起動に失敗する**（未設定時のフォールバックは `??` 判定なので空文字には効かず、`new URL('')` が `TypeError` になる）。使わないなら行ごと消すかコメントアウトしておく |
 
 🔵 公開中の本番環境には OAuth の 4 変数を供給していないため、現在ログイン導線は表示されない（未ログインで全機能が使える状態）。
 
@@ -87,14 +87,14 @@ npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する�
 
 ### 技術スタック
 
-| 領域 | 採用 |
-|---|---|
-| フレームワーク | Next.js 16（App Router・React Server Components・[ADR 0006](./docs/adr/0006-nextjs16-app-router.md)）と、それが要求する React 19 |
-| UI | Tailwind CSS v4 + shadcn/ui（Radix UI・[ADR 0001](./docs/adr/0001-ui-stack.md)） |
-| 実行環境 | Cloudflare Workers（`@opennextjs/cloudflare`。本番・プレビュー配信の詳細は [ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)） |
-| テスト | Vitest 4 + Testing Library + MSW 2（ユニット・結合）/ Playwright + axe（E2E）（[テスト戦略](./docs/04_development/testing-strategy.md)） |
-| 主要ライブラリ | `zod`（外部レスポンスと入力の検証）/ `sanitize-html`（README の HTML を描画する前の無害化）/ `jose`（セッション Cookie の暗号化） |
-| データ | 永続ストアなし。GitHub REST / Search API を直参照し、Gem Index だけ静的 JSON を配信（[ADR 0007](./docs/adr/0007-no-database-client-side-state.md)） |
+| 領域           | 採用                                                                                                                                                |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| フレームワーク | Next.js 16（App Router・React Server Components・[ADR 0006](./docs/adr/0006-nextjs16-app-router.md)）と、それが要求する React 19                    |
+| UI             | Tailwind CSS v4 + shadcn/ui（Radix UI・[ADR 0001](./docs/adr/0001-ui-stack.md)）                                                                    |
+| 実行環境       | Cloudflare Workers（`@opennextjs/cloudflare`。本番・プレビュー配信の詳細は [ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)）       |
+| テスト         | Vitest 4 + Testing Library + MSW 2（ユニット・結合）/ Playwright + axe（E2E）（[テスト戦略](./docs/04_development/testing-strategy.md)）            |
+| 主要ライブラリ | `zod`（外部レスポンスと入力の検証）/ `sanitize-html`（README の HTML を描画する前の無害化）/ `jose`（セッション Cookie の暗号化）                   |
+| データ         | 永続ストアなし。GitHub REST / Search API を直参照し、Gem Index だけ静的 JSON を配信（[ADR 0007](./docs/adr/0007-no-database-client-side-state.md)） |
 
 層と依存規則は [アプリケーションアーキテクチャ](./docs/03_design/architecture/application-architecture.md) が正本（`python3 tools/check_architecture_boundaries.py` で機械検証する）。ドメインの用語（ユビキタス言語）は [ドメインモデル](./docs/03_design/data-model/domain-model.md) が正本。
 
@@ -203,23 +203,23 @@ Gem Index が「説明できる指標」であるためには、順位の母集�
 
 `NFR-32` に対応。技術的意思決定は「なぜその選択をしたか / 何を捨てたか」を [`docs/adr/`](./docs/adr) に ADR として記録する。記録すべき主題の一覧は [PRD §12](./docs/02_requirements/prd.md#12-記録すべき-adr) が正本であり、下表はそこへの索引として、各 ADR の見出しから `ADR NNNN: ` を除いたタイトルを転記したもの（転記漏れ・言い換えによる食い違いは `tools/check_adr_coverage.py` が機械検査する）。
 
-| ADR | タイトル（各 ADR の見出しから `ADR NNNN: ` を除いて転記） |
-|---|---|
-| [0001](./docs/adr/0001-ui-stack.md) | UI スタックに Tailwind CSS v4 + shadcn/ui（Radix UI 明示指定）を採用する |
-| [0002](./docs/adr/0002-cloudflare-workers-infrastructure.md) | インフラを Cloudflare Workers（`@opennextjs/cloudflare`）に確定し、wrangler CLI を運用の一次経路にする |
-| [0003](./docs/adr/0003-github-app-authentication.md) | サーバー側の GitHub 認証を GitHub App の installation token にする |
-| [0004](./docs/adr/0004-release-cycle-trunk-based.md) | リリースサイクルを trunk-based（PR プレビュー + `main` = 本番）に確定し、常設の dev 環境を持たない |
-| [0005](./docs/adr/0005-cache-port-yagni-exception-and-ttl.md) | Cache Port を YAGNI の意図的な例外として維持し、TTL 暫定値を確定する |
-| [0006](./docs/adr/0006-nextjs16-app-router.md) | Next.js 16 + App Router を採用する |
-| [0007](./docs/adr/0007-no-database-client-side-state.md) | DB を持たない設計原則と、状態をクライアント側へ寄せる判断 |
-| [0008](./docs/adr/0008-pagination-over-infinite-scroll.md) | `FR-7` でページネーションを選び、無限スクロールを採らない |
-| [0009](./docs/adr/0009-hidden-gem-score-definition.md) | Hidden Gem を「被依存数に対する star の残差」と定義し、既存スコアを再実装しない |
-| [0010](./docs/adr/0010-no-token-rotation.md) | 複数トークンのローテーションを採用しない |
-| [0011](./docs/adr/0011-i18n-routing-and-default-locale.md) | i18n のルーティング設計と既定ロケールを、`next-intl` を不採用として自前実装で確定する |
-| [0012](./docs/adr/0012-optional-github-oauth.md) | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする |
-| [0013](./docs/adr/0013-public-operation-under-github-terms.md) | 第三者へ公開して運用する際の GitHub 利用規約上の立場を確定する |
-| [0014](./docs/adr/0014-zero-query-daily-digest.md) | キーワード非依存の発見面を日次の有限ダイジェストとして実装する |
-| [0015](./docs/adr/0015-ai-generated-visual-assets.md) | AI 生成ビジュアルアセットを透過 WebP のまま配信する |
+| ADR                                                            | タイトル（各 ADR の見出しから `ADR NNNN: ` を除いて転記）                                              |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [0001](./docs/adr/0001-ui-stack.md)                            | UI スタックに Tailwind CSS v4 + shadcn/ui（Radix UI 明示指定）を採用する                               |
+| [0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)   | インフラを Cloudflare Workers（`@opennextjs/cloudflare`）に確定し、wrangler CLI を運用の一次経路にする |
+| [0003](./docs/adr/0003-github-app-authentication.md)           | サーバー側の GitHub 認証を GitHub App の installation token にする                                     |
+| [0004](./docs/adr/0004-release-cycle-trunk-based.md)           | リリースサイクルを trunk-based（PR プレビュー + `main` = 本番）に確定し、常設の dev 環境を持たない     |
+| [0005](./docs/adr/0005-cache-port-yagni-exception-and-ttl.md)  | Cache Port を YAGNI の意図的な例外として維持し、TTL 暫定値を確定する                                   |
+| [0006](./docs/adr/0006-nextjs16-app-router.md)                 | Next.js 16 + App Router を採用する                                                                     |
+| [0007](./docs/adr/0007-no-database-client-side-state.md)       | DB を持たない設計原則と、状態をクライアント側へ寄せる判断                                              |
+| [0008](./docs/adr/0008-pagination-over-infinite-scroll.md)     | `FR-7` でページネーションを選び、無限スクロールを採らない                                              |
+| [0009](./docs/adr/0009-hidden-gem-score-definition.md)         | Hidden Gem を「被依存数に対する star の残差」と定義し、既存スコアを再実装しない                        |
+| [0010](./docs/adr/0010-no-token-rotation.md)                   | 複数トークンのローテーションを採用しない                                                               |
+| [0011](./docs/adr/0011-i18n-routing-and-default-locale.md)     | i18n のルーティング設計と既定ロケールを、`next-intl` を不採用として自前実装で確定する                  |
+| [0012](./docs/adr/0012-optional-github-oauth.md)               | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする                                     |
+| [0013](./docs/adr/0013-public-operation-under-github-terms.md) | 第三者へ公開して運用する際の GitHub 利用規約上の立場を確定する                                         |
+| [0014](./docs/adr/0014-zero-query-daily-digest.md)             | キーワード非依存の発見面を日次の有限ダイジェストとして実装する                                         |
+| [0015](./docs/adr/0015-ai-generated-visual-assets.md)          | AI 生成ビジュアルアセットを透過 WebP のまま配信する                                                    |
 
 ## ライセンスと権利表示
 
@@ -227,9 +227,9 @@ Gem Index が「説明できる指標」であるためには、順位の母集�
 
 ただし以下は **第三者に権利が帰属し、MIT License の対象外** である（詳細は [`NOTICE`](./NOTICE)）。
 
-| 対象 | 帰属 |
-|---|---|
+| 対象                                                                                             | 帰属                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`docs/02_requirements/minimum-requirements.md`](./docs/02_requirements/minimum-requirements.md) | 本プロジェクトの **与件（要件定義）**。第三者が作成・提供したもので、設計判断の追跡のために原文のまま収録している。再利用・改変・再配布の許諾は与えていない |
-| [`.claude/skills/skill-creator/`](./.claude/skills/skill-creator) | Apache License 2.0（`LICENSE.txt` を同梱） |
+| [`.claude/skills/skill-creator/`](./.claude/skills/skill-creator)                                | Apache License 2.0（`LICENSE.txt` を同梱）                                                                                                                  |
 
 `package.json` の `"private": true` は npm レジストリへの誤公開を防ぐためのもので、本リポジトリの公開範囲とは無関係である（本プロダクトはアプリケーションであり、npm パッケージとして配布しない）。

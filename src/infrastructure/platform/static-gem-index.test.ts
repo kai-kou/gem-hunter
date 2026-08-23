@@ -420,7 +420,11 @@ describe('StaticGemIndex#search', () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
     // image=1 件 / client=2 件 → 件数の少ない image が選ばれる。
-    const result = await port.search({ tokens: ['image', 'client'], page: 1, perPage: perPageOf(10) })
+    const result = await port.search({
+      tokens: ['image', 'client'],
+      page: 1,
+      perPage: perPageOf(10),
+    })
 
     expect(result.relaxed).toBe(true)
     expect(result.usedTokens).toEqual(['image'])
@@ -522,9 +526,9 @@ describe('StaticGemIndex#search', () => {
       expect(names(result.items)).toEqual(['acme/orm-core', 'acme/http-client'])
     }
     // 非整数は切り捨て（2.7 → 2 ページ目）。
-    expect((await port.search({ tokens: [], page: 2.7, perPage: perPageOf(2) })).effectivePage).toBe(
-      2,
-    )
+    expect(
+      (await port.search({ tokens: [], page: 2.7, perPage: perPageOf(2) })).effectivePage,
+    ).toBe(2)
   })
 
   it('0 件のときの effectivePage は 1', async () => {
@@ -577,16 +581,18 @@ describe('StaticGemIndex#search', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const reader = stubReader({
       [INDEX_PATH]: indexJsonWithMeta(['ok.json', 'noRegistry.json']),
-      '/data/gem-index/ok.json': registryShardJson('npmjs.org', [
-        ['acme/keep', 'keep', 1, 1, -1],
-      ]),
+      '/data/gem-index/ok.json': registryShardJson('npmjs.org', [['acme/keep', 'keep', 1, 1, -1]]),
       '/data/gem-index/noRegistry.json': JSON.stringify({
         columns: ['repositoryFullName', 'packageName', 'dependentCount', 'stars', 'gemIndex'],
         entries: [['acme/drop', 'drop', 1, 1, -2]],
       }),
     })
 
-    const result = await new StaticGemIndex(reader).search({ tokens: [], page: 1, perPage: perPageOf(10) })
+    const result = await new StaticGemIndex(reader).search({
+      tokens: [],
+      page: 1,
+      perPage: perPageOf(10),
+    })
 
     expect(names(result.items)).toEqual(['acme/keep'])
     expect(warn).toHaveBeenCalled()
@@ -603,7 +609,11 @@ describe('StaticGemIndex#search', () => {
       ]),
     })
 
-    const result = await new StaticGemIndex(reader).search({ tokens: ['dup'], page: 1, perPage: perPageOf(10) })
+    const result = await new StaticGemIndex(reader).search({
+      tokens: ['dup'],
+      page: 1,
+      perPage: perPageOf(10),
+    })
 
     expect(result.totalCount).toBe(1)
     expect(gemIndexValue(result.items[0]!.gemIndex)).toBe(-90)

@@ -94,6 +94,13 @@ else
   skip_check "Lint (eslint)" "package.json が無い（アプリコード導入前）"
 fi
 
+# 1.5. フォーマッタ
+if [ "$HAS_NODE_PROJECT" -eq 1 ]; then
+  run_check "Format (prettier --check)" npx prettier --check .
+else
+  skip_check "Format (prettier --check)" "package.json が無い（アプリコード導入前）"
+fi
+
 # 2. 型チェック
 if [ "$HAS_NODE_PROJECT" -eq 1 ]; then
   run_check "型チェック (tsc --noEmit)" npx tsc --noEmit

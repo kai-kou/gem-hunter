@@ -47,7 +47,11 @@ afterEach(() => {
  * 片側だけ更新した瞬間に「両経路を独立に検証している」という見かけと実態が乖離するため、
  * 共通仕様は表駆動でまとめて回す（接頭辞だけをパラメータ化する）。
  */
-type EnforceCase = [name: string, enforce: (headers: Headers) => Promise<void>, expectedPrefix: string]
+type EnforceCase = [
+  name: string,
+  enforce: (headers: Headers) => Promise<void>,
+  expectedPrefix: string,
+]
 
 const ENFORCE_CASES: EnforceCase[] = [
   ['enforceSearchRateLimit', enforceSearchRateLimit, 'search:'],

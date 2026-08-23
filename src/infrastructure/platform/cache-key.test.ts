@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { searchQuery } from '../../domain/model/search-query'
-import { CACHE_SCHEMA_VERSION, readmeCacheKey, repositoryCacheKey, searchResultCacheKey } from './cache-key'
+import {
+  CACHE_SCHEMA_VERSION,
+  readmeCacheKey,
+  repositoryCacheKey,
+  searchResultCacheKey,
+} from './cache-key'
 
 describe('searchResultCacheKey', () => {
   it('検索結果は search 名前空間になる', () => {

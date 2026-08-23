@@ -45,13 +45,29 @@
       }
     ],
     "screenshots": [
-      { "name": "shot-*", "screen": "撮る画面と URL", "viewport": "幅x高", "reason": "なぜ撮り直すか" }
+      {
+        "name": "shot-*",
+        "screen": "撮る画面と URL",
+        "viewport": "幅x高",
+        "reason": "なぜ撮り直すか"
+      }
     ],
     "infographics": [
-      { "file": "docs/infographics/*.webp", "use": "yes | no", "placement": "載せる場合の配置", "alt": "代替テキスト案", "reason": "判断理由" }
+      {
+        "file": "docs/infographics/*.webp",
+        "use": "yes | no",
+        "placement": "載せる場合の配置",
+        "alt": "代替テキスト案",
+        "reason": "判断理由"
+      }
     ],
     "generated_assets": [
-      { "name": "素材名", "purpose": "用途と配置", "prompt_direction": "プロンプト方針", "reason": "なぜ必要か" }
+      {
+        "name": "素材名",
+        "purpose": "用途と配置",
+        "prompt_direction": "プロンプト方針",
+        "reason": "なぜ必要か"
+      }
     ],
     "critical": ["議論を経ても残った真の問題"],
     "open_questions": ["ユーザー確認が要る仕様分岐"]

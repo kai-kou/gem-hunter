@@ -251,7 +251,9 @@ async function main() {
       const result = await runLighthouse(target.url)
       if (!result.ok) {
         hasInfraFail = true
-        console.error(`[run_lighthouse] INFRA_FAIL: ${target.page} の Lighthouse 実行に失敗しました（JSON が生成されませんでした）`)
+        console.error(
+          `[run_lighthouse] INFRA_FAIL: ${target.page} の Lighthouse 実行に失敗しました（JSON が生成されませんでした）`,
+        )
         if (result.stderr) {
           console.error(result.stderr)
         }
@@ -261,14 +263,18 @@ async function main() {
       const perfScore = result.report?.categories?.performance?.score
       if (typeof a11yScore !== 'number' || typeof perfScore !== 'number') {
         hasInfraFail = true
-        console.error(`[run_lighthouse] INFRA_FAIL: ${target.page} のレポートに categories.accessibility/performance が含まれていません`)
+        console.error(
+          `[run_lighthouse] INFRA_FAIL: ${target.page} のレポートに categories.accessibility/performance が含まれていません`,
+        )
         continue
       }
       const perf100 = Math.round(perfScore * 100)
       const gate = evaluateAccessibilityGate(a11yScore)
       if (gate.status !== 'PASS') {
         hasGateFail = true
-        console.error(`[run_lighthouse] GATE_FAIL: ${target.page} Accessibility ${gate.rounded}/100（しきい値 100） (perf=${perf100})`)
+        console.error(
+          `[run_lighthouse] GATE_FAIL: ${target.page} Accessibility ${gate.rounded}/100（しきい値 100） (perf=${perf100})`,
+        )
       } else {
         summaryLines.push(`${target.page}: Accessibility ${gate.rounded}/100 (perf=${perf100})`)
       }
@@ -290,7 +296,9 @@ async function main() {
     log('PASS: 全対象画面で Accessibility = 100/100 です')
     process.exitCode = 0
   } catch (err) {
-    console.error(`[run_lighthouse] INFRA_FAIL: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(
+      `[run_lighthouse] INFRA_FAIL: ${err instanceof Error ? err.message : String(err)}`,
+    )
     process.exitCode = 1
   } finally {
     if (!stubReady) {

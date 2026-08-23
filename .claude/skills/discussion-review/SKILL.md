@@ -15,10 +15,10 @@ effort: high
 メインセッション（あなた）が lead 進行役を兼ね、参加者を **name 付き background Agent** で起動する。
 チーム作成手続きは不要（1 セッションに単一の暗黙チーム）。通信は次の 2 チャネルに限定する:
 
-| チャネル | 用途 | 制約 |
-|---------|------|------|
-| **ホワイトボード**（`tools/discussion_whiteboard.py`） | 議論内容の SSOT（claim/rebuttal/consensus/verdict）。git 永続化 | 投稿は必ず `post`（直接 Write/Edit 禁止） |
-| **SendMessage**（名前宛て） | ラウンド進行の合図（完了済み参加者の再開）のみ | **受信側がターン終了済みだとサブ発メッセージは消失する**（実測・V-5）。ラウンドを跨ぐ伝達に使わない。参加者同士の直接往復は同時稼働中のみ |
+| チャネル                                               | 用途                                                            | 制約                                                                                                                                      |
+| ------------------------------------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **ホワイトボード**（`tools/discussion_whiteboard.py`） | 議論内容の SSOT（claim/rebuttal/consensus/verdict）。git 永続化 | 投稿は必ず `post`（直接 Write/Edit 禁止）                                                                                                 |
+| **SendMessage**（名前宛て）                            | ラウンド進行の合図（完了済み参加者の再開）のみ                  | **受信側がターン終了済みだとサブ発メッセージは消失する**（実測・V-5）。ラウンドを跨ぐ伝達に使わない。参加者同士の直接往復は同時稼働中のみ |
 
 **禁止**: 共有タスクボード（TaskCreate 等）を参加者に使わせる設計（サブエージェント側から利用不可・V-6）。
 
@@ -113,12 +113,12 @@ verdict JSON を呼び出し元（スキル・ユーザー報告）へ返す。
 
 ## 5. 参照
 
-| ドキュメント | 関係 |
-|------------|------|
-| `docs/rules/discussion-whiteboard-rules.md` | ホワイトボード規約・model mix・ガードレールの SSOT |
-| `docs/rules/agent-team-summary.md` | 協調モード振り分け（議論型 vs fan-out）の SSOT |
-| `tools/discussion_whiteboard.py` | ホワイトボード基盤（init/post/render/list/show） |
-| `tools/run_discussion_review.py` | 旧経路（claude -p）・フォールバック |
-| `tools/discussion_review_trigger.py` | Layer 2 自動起動の判定（pr-review-watcher から呼ばれる） |
+| ドキュメント                                | 関係                                                     |
+| ------------------------------------------- | -------------------------------------------------------- |
+| `docs/rules/discussion-whiteboard-rules.md` | ホワイトボード規約・model mix・ガードレールの SSOT       |
+| `docs/rules/agent-team-summary.md`          | 協調モード振り分け（議論型 vs fan-out）の SSOT           |
+| `tools/discussion_whiteboard.py`            | ホワイトボード基盤（init/post/render/list/show）         |
+| `tools/run_discussion_review.py`            | 旧経路（claude -p）・フォールバック                      |
+| `tools/discussion_review_trigger.py`        | Layer 2 自動起動の判定（pr-review-watcher から呼ばれる） |
 
 > 移行の経緯・実機検証（V-1〜V-6）・制約の根拠は開発リポジトリの提案記録として保持している。

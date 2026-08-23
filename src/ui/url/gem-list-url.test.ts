@@ -24,11 +24,9 @@ describe('buildGemListUrl', () => {
   })
 
   it('既存クエリ（q / page）と共存する', () => {
-    const url = buildGemListUrl(
-      '/ja/gems',
-      { ...DEFAULTS, keyword: 'left pad', page: 3 },
-      ['stevemao/left-pad'],
-    )
+    const url = buildGemListUrl('/ja/gems', { ...DEFAULTS, keyword: 'left pad', page: 3 }, [
+      'stevemao/left-pad',
+    ])
 
     const params = new URLSearchParams(url.split('?')[1])
     expect(params.get('q')).toBe('left pad')

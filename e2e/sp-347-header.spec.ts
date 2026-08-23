@@ -74,9 +74,11 @@ test.describe('Issue #347: 全ルートで header/h1 がちょうど1つ・404 �
       header.getByRole('navigation', { name: ja.common.localeSwitcher.navLabel }),
     ).toBeVisible()
     await expect(
-      header.getByRole('navigation', { name: ja.common.localeSwitcher.navLabel }).getByRole('link', {
-        name: en.common.localeSwitcher.localeNames.en,
-      }),
+      header
+        .getByRole('navigation', { name: ja.common.localeSwitcher.navLabel })
+        .getByRole('link', {
+          name: en.common.localeSwitcher.localeNames.en,
+        }),
     ).toBeVisible()
     // ログイン導線（既存の抜け漏れの回帰防止・タスク指示の明示要件）
     await expect(header.getByRole('link', { name: ja.common.auth.login })).toBeVisible()

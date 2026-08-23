@@ -267,8 +267,6 @@ describe('sanitizeReadmeHtml — 通常の README コンテンツはそのまま
   it('parseStyleAttributes を有効にしない（postcss 経路を切る）', () => {
     // 壊れた style 属性値でも例外を投げずに処理できること（postcss を通していれば
     // パースエラーが起きうる入力）。
-    expect(() =>
-      sanitizeReadmeHtml('<p style="not: valid; css{{{">text</p>', BASE),
-    ).not.toThrow()
+    expect(() => sanitizeReadmeHtml('<p style="not: valid; css{{{">text</p>', BASE)).not.toThrow()
   })
 })

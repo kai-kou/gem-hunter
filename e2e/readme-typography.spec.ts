@@ -52,9 +52,9 @@ test.describe('Issue #339: README の書式反映（typography トークン回�
     await test.step('README を含む詳細ページを開く', async () => {
       await page.goto(README_RICH_PATH)
       // 🔴 `getByRole('heading', { name: 'README' })` は部分一致のため、フィクスチャの
-    //    リポジトリ名 `octo-readme-rich` 自体が「readme」を含み誤ヒットする（大文字小文字を
-    //    区別しないロール名照合の既知の落とし穴）。セクション見出しは id で一意に掴む。
-    await expect(page.locator('#readme-heading')).toBeVisible()
+      //    リポジトリ名 `octo-readme-rich` 自体が「readme」を含み誤ヒットする（大文字小文字を
+      //    区別しないロール名照合の既知の落とし穴）。セクション見出しは id で一意に掴む。
+      await expect(page.locator('#readme-heading')).toBeVisible()
     })
 
     const sectionHeading = page.locator('#readme-heading')
@@ -152,9 +152,10 @@ test.describe('Issue #339: README の書式反映（typography トークン回�
       pageColor: getComputedStyle(document.body).color,
     }))
 
-    expect(readmeColor, `README 本文の色（${readmeColor}）がページ本文の色（${pageColor}）と一致`).toBe(
-      pageColor,
-    )
+    expect(
+      readmeColor,
+      `README 本文の色（${readmeColor}）がページ本文の色（${pageColor}）と一致`,
+    ).toBe(pageColor)
   })
 
   // 🟡 WARNING 指摘対応: `--tw-prose-*`（18 項目）のうち本文色（--tw-prose-body）以外は

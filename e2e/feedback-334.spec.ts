@@ -57,7 +57,9 @@ test.describe('Issue #334: ツールタイトル導線 / 詳細画面の概要�
     // フィクスチャ（octo-widgets）: description / pushed_at=2026-08-09T09:00:00Z
     await expect(page.getByText('Reusable UI widgets for octostub demos.')).toBeVisible()
 
-    const updatedTerm = page.getByText('最終更新', { exact: true }).locator('xpath=ancestor::div[1]')
+    const updatedTerm = page
+      .getByText('最終更新', { exact: true })
+      .locator('xpath=ancestor::div[1]')
     await expect(updatedTerm.locator('dd')).toHaveText('2026/08/09')
   })
 
@@ -65,9 +67,7 @@ test.describe('Issue #334: ツールタイトル導線 / 詳細画面の概要�
     await page.goto('/ja/repos/octostub/octo-widgets')
 
     await expect(page.getByRole('heading', { name: 'README' })).toBeVisible()
-    await expect(
-      page.getByText('README-STUB-CONTENT for octostub/octo-widgets.'),
-    ).toBeVisible()
+    await expect(page.getByText('README-STUB-CONTENT for octostub/octo-widgets.')).toBeVisible()
   })
 
   test('F-4: README が無いリポジトリでは代替リンクにフォールバックする（NFR-9: 内部エラーを出さない）', async ({

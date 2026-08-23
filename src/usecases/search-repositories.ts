@@ -15,9 +15,7 @@ export type SearchRepositories = (input: SearchRepositoriesInput) => Promise<Sea
  * キーワードでリポジトリを検索する（US-6）。
  * 入力を値オブジェクト（`SearchQuery`）へ変換し、`RepositoryQueryPort` へそのまま委譲する薄い層。
  */
-export function makeSearchRepositories(deps: {
-  repos: RepositoryQueryPort
-}): SearchRepositories {
+export function makeSearchRepositories(deps: { repos: RepositoryQueryPort }): SearchRepositories {
   return async (input) => {
     const query = searchQuery(input)
     return deps.repos.search(query)

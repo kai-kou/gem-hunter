@@ -60,7 +60,7 @@
           },
           "source_ids": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": { "type": "string" },
             "description": "本文で参照した sources[].id の一覧"
           }
         }
@@ -73,10 +73,10 @@
         "type": "object",
         "required": ["term", "official", "source_id"],
         "properties": {
-          "term": {"type": "string", "description": "確認対象（製品・人物・企業）"},
-          "official": {"type": "string", "description": "公式の正式表記"},
-          "japanese": {"type": "string", "description": "日本語表記（任意）"},
-          "source_id": {"type": "string", "description": "sources[].id 参照"}
+          "term": { "type": "string", "description": "確認対象（製品・人物・企業）" },
+          "official": { "type": "string", "description": "公式の正式表記" },
+          "japanese": { "type": "string", "description": "日本語表記（任意）" },
+          "source_id": { "type": "string", "description": "sources[].id 参照" }
         }
       }
     },
@@ -88,23 +88,23 @@
         "type": "object",
         "required": ["id", "url", "title", "rank"],
         "properties": {
-          "id": {"type": "string", "description": "セクション内参照キー（例: s001, s002）"},
-          "url": {"type": "string", "format": "uri"},
-          "title": {"type": "string"},
-          "publisher": {"type": "string"},
-          "published_at": {"type": "string", "description": "公開日（任意・ISO 8601）"},
+          "id": { "type": "string", "description": "セクション内参照キー（例: s001, s002）" },
+          "url": { "type": "string", "format": "uri" },
+          "title": { "type": "string" },
+          "publisher": { "type": "string" },
+          "published_at": { "type": "string", "description": "公開日（任意・ISO 8601）" },
           "rank": {
             "type": "string",
             "enum": ["A", "B", "C"],
             "description": "research-rules.md の情報ランク"
           },
-          "language": {"type": "string", "enum": ["en", "ja", "other"]},
+          "language": { "type": "string", "enum": ["en", "ja", "other"] },
           "alive_check": {
             "type": "object",
             "description": "URL 死活チェック結果（lint_research_files.py 拡張）",
             "properties": {
-              "status_code": {"type": "integer"},
-              "checked_at": {"type": "string", "format": "date-time"}
+              "status_code": { "type": "integer" },
+              "checked_at": { "type": "string", "format": "date-time" }
             }
           }
         }
@@ -117,10 +117,10 @@
         "type": "object",
         "required": ["claim", "rank", "reason"],
         "properties": {
-          "claim": {"type": "string", "description": "確認すべき主張（例: ARR $25億ペース）"},
-          "rank": {"type": "string", "enum": ["A", "B", "C"]},
-          "reason": {"type": "string", "description": "フラグを立てた理由"},
-          "source_id": {"type": "string"}
+          "claim": { "type": "string", "description": "確認すべき主張（例: ARR $25億ペース）" },
+          "rank": { "type": "string", "enum": ["A", "B", "C"] },
+          "reason": { "type": "string", "description": "フラグを立てた理由" },
+          "source_id": { "type": "string" }
         }
       }
     },
@@ -129,17 +129,20 @@
       "description": "観測層用メトリクス。Slack Canvas 週次レポートで集計",
       "required": ["duration_seconds", "cost_usd"],
       "properties": {
-        "duration_seconds": {"type": "number"},
-        "cost_usd": {"type": "number", "description": "本タスクの実コスト USD"},
-        "search_count": {"type": "integer", "description": "実行検索回数（DR Max は ~160、DIY は 5〜15）"},
-        "input_tokens": {"type": "integer"},
-        "output_tokens": {"type": "integer"},
+        "duration_seconds": { "type": "number" },
+        "cost_usd": { "type": "number", "description": "本タスクの実コスト USD" },
+        "search_count": {
+          "type": "integer",
+          "description": "実行検索回数（DR Max は ~160、DIY は 5〜15）"
+        },
+        "input_tokens": { "type": "integer" },
+        "output_tokens": { "type": "integer" },
         "rank_distribution": {
           "type": "object",
           "properties": {
-            "A": {"type": "integer"},
-            "B": {"type": "integer"},
-            "C": {"type": "integer"}
+            "A": { "type": "integer" },
+            "B": { "type": "integer" },
+            "C": { "type": "integer" }
           }
         }
       }

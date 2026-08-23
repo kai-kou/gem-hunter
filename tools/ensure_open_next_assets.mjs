@@ -131,7 +131,10 @@ function selfTest() {
     }
   }
 
-  const workDir = path.join(tmpdir(), `ensure-open-next-assets-selftest-${process.pid}-${Date.now()}`)
+  const workDir = path.join(
+    tmpdir(),
+    `ensure-open-next-assets-selftest-${process.pid}-${Date.now()}`,
+  )
   const publicDir = path.join(workDir, 'public')
   const markerDir = path.join(workDir, '.open-next', 'assets', 'data', 'gem-index')
   const markerPath = path.join(markerDir, 'index.json')

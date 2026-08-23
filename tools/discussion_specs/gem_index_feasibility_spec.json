@@ -23,10 +23,31 @@
     "instruction": "3 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれに結論を出したうえで、飼い主へ提示する『推奨案 1 つ + 対案 1 つ』に収束させる。各案は (1) 何を作るか (2) スプリント何本ぶんか (3) 何を捨てるか (4) 失敗と判定する条件、まで書く。議論で否定された案は採用しない。実測で確かめていないことは断定せず『実装時に潰す』として残す。飼い主に判断を仰ぐべき仕様分岐（選択で成果物が変わるもの）は open_questions に最大 2 件だけ挙げる。"
   },
   "verdict_schema": {
-    "decisions": [{ "issue": "争点 A〜E のいずれか", "conclusion": "結論", "rationale": "根拠（実測値を引く）", "rejected": "却下した案と理由" }],
-    "recommendation": { "name": "推奨案の名前", "what": "作るもの", "sprints": "スプリント数の目安", "drops": "捨てるもの", "fail_criteria": "失敗判定の条件" },
-    "alternative": { "name": "対案の名前", "what": "", "sprints": "", "drops": "", "fail_criteria": "" },
-    "open_questions": [{ "question": "飼い主に聞くこと", "options": ["A", "B"], "recommended": "A" }],
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "conclusion": "結論",
+        "rationale": "根拠（実測値を引く）",
+        "rejected": "却下した案と理由"
+      }
+    ],
+    "recommendation": {
+      "name": "推奨案の名前",
+      "what": "作るもの",
+      "sprints": "スプリント数の目安",
+      "drops": "捨てるもの",
+      "fail_criteria": "失敗判定の条件"
+    },
+    "alternative": {
+      "name": "対案の名前",
+      "what": "",
+      "sprints": "",
+      "drops": "",
+      "fail_criteria": ""
+    },
+    "open_questions": [
+      { "question": "飼い主に聞くこと", "options": ["A", "B"], "recommended": "A" }
+    ],
     "critical": ["議論を経ても残った真の問題"]
   }
 }

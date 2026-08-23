@@ -125,9 +125,7 @@ describe('RepositoryDetail', () => {
   })
 
   it('タイトルが GitHub の該当リポジトリページへの外部リンクになる（新しいタブで開く・Issue #148）', () => {
-    render(
-      <RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />,
-    )
+    render(<RepositoryDetail repository={repository} labels={labels} locale={locale('ja')} />)
 
     // sr-only の「新しいタブで開きます」は <a> の内側に置くため、リンク自体の
     // アクセシブルネームにも含まれる（リンク一覧で読み上げても新しいタブで開くことが伝わる）。

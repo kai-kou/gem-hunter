@@ -257,9 +257,9 @@ describe('GithubRepositoryQuery#findReadme', () => {
       ),
     )
 
-    await expect(
-      makeQuery().findReadme(repositoryFullName('facebook', 'react')),
-    ).rejects.toThrow(RateLimitExceededError)
+    await expect(makeQuery().findReadme(repositoryFullName('facebook', 'react'))).rejects.toThrow(
+      RateLimitExceededError,
+    )
   })
 })
 

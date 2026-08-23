@@ -52,7 +52,12 @@ export function RepositoryDetail({
     { key: 'stars', label: labels.starCount, value: repository.stars, Icon: Star },
     { key: 'watchers', label: labels.watcherCount, value: repository.watcherCount, Icon: Eye },
     { key: 'forks', label: labels.forkCount, value: repository.forkCount, Icon: GitFork },
-    { key: 'openIssues', label: labels.openIssueCount, value: repository.openIssueCount, Icon: CircleDot },
+    {
+      key: 'openIssues',
+      label: labels.openIssueCount,
+      value: repository.openIssueCount,
+      Icon: CircleDot,
+    },
   ] as const
 
   return (

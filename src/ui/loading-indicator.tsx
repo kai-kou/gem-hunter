@@ -46,9 +46,7 @@ export function LoadingIndicator({ label }: { label: string }) {
         decoding="async"
         className="mx-auto mb-2 h-16 w-16"
       />
-      <p className="text-muted-foreground text-sm">
-        {label}
-      </p>
+      <p className="text-muted-foreground text-sm">{label}</p>
     </div>
   )
 }

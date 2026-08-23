@@ -38,12 +38,12 @@ disallowed-tools: AskUserQuestion
 
 ## 設定（起動プロンプト or 環境変数で上書き可能）
 
-| 項目 | 既定値 | 上書き方法 |
-|------|--------|-----------|
-| プロトコル URL | `https://raw.githubusercontent.com/FlorianBruniaux/claude-code-ultimate-guide/main/tools/audit-prompt.md` | 環境変数 `AUDIT_PROTOCOL_URL` / 起動プロンプトで明示 |
-| 成果物の保存先 | `content/audits/<YYYY-MM-DD>/` | 環境変数 `AUDIT_OUTPUT_DIR` |
-| 議論ラウンド数 | 2 | 起動プロンプトで明示 |
-| 実装まで進むか | 進む（採用分のみ） | 起動プロンプトに「監査のみ」と書けば Step 4 以降をスキップ |
+| 項目           | 既定値                                                                                                    | 上書き方法                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| プロトコル URL | `https://raw.githubusercontent.com/FlorianBruniaux/claude-code-ultimate-guide/main/tools/audit-prompt.md` | 環境変数 `AUDIT_PROTOCOL_URL` / 起動プロンプトで明示       |
+| 成果物の保存先 | `content/audits/<YYYY-MM-DD>/`                                                                            | 環境変数 `AUDIT_OUTPUT_DIR`                                |
+| 議論ラウンド数 | 2                                                                                                         | 起動プロンプトで明示                                       |
+| 実装まで進むか | 進む（採用分のみ）                                                                                        | 起動プロンプトに「監査のみ」と書けば Step 4 以降をスキップ |
 
 複数のプロトコルを回したい場合は、URL を変えて本スキルを複数回起動する（1 実行 = 1 プロトコル）。
 
@@ -121,14 +121,15 @@ print("spec written:", sys.argv[2])
 ' "$SPEC_SRC" "$SPEC_OUT"
 ```
 
-   `before.md` の内容に加え、監査に対する一次的な疑問点（どの次元の採点が実態と合っていないと
-   感じるか）を `before.md` 末尾に追記してから生成すると、議論の起点が明確になる。
-3. `discussion-review` スキルを起動する（ネイティブ Agent Teams が既定。失敗時のみ
-   `tools/run_discussion_review.py` へ退避し、退避理由を 1 行ログに残す）。渡すもの:
-   - `--spec` = `$SPEC_OUT`
-   - `targets` = **リポジトリルートの絶対パス**（監査対象は構成全体）。
-     監査結果そのものは brief に埋め込み済みなので `before.md` を targets に含める必要はない
-   - `rounds` = 2（既定）／議題 ID = `audit-<プロトコル識別子>-<YYYY-MM-DD>` 形式
+`before.md` の内容に加え、監査に対する一次的な疑問点（どの次元の採点が実態と合っていないと
+感じるか）を `before.md` 末尾に追記してから生成すると、議論の起点が明確になる。3. `discussion-review` スキルを起動する（ネイティブ Agent Teams が既定。失敗時のみ
+`tools/run_discussion_review.py` へ退避し、退避理由を 1 行ログに残す）。渡すもの:
+
+- `--spec` = `$SPEC_OUT`
+- `targets` = **リポジトリルートの絶対パス**（監査対象は構成全体）。
+  監査結果そのものは brief に埋め込み済みなので `before.md` を targets に含める必要はない
+- `rounds` = 2（既定）／議題 ID = `audit-<プロトコル識別子>-<YYYY-MM-DD>` 形式
+
 4. verdict JSON（`adopt` / `defer` / `reject` / `critical`）を受け取る。
 
 4 レンズの既定構成（テンプレート同梱）: 仕様準拠 / 設計整合 / セキュリティ / コスト対効果。
@@ -169,8 +170,8 @@ Issue 本文には必ず **監査プロトコルの URL と実行日**、およ�
 - `$OUT/diff.md` に **スコア差分表** と、**スコアに現れない実態の変化** を対比して書く:
 
 ```markdown
-| # | 次元 | before | after | 差 | 実態の変化 |
-|---|------|--------|-------|-----|-----------|
+| #   | 次元 | before | after | 差  | 実態の変化 |
+| --- | ---- | ------ | ----- | --- | ---------- |
 ```
 
 **スコアが動かなかった改善を必ず明示する**（監査の測定範囲外で何が良くなったか）。逆に
@@ -229,12 +230,12 @@ Issue 本文には必ず **監査プロトコルの URL と実行日**、およ�
 
 ## 関連ファイル
 
-| ファイル | 役割 |
-|---------|------|
-| `.claude/skills/audit-runner/discussion_review_spec.json` | 議論スペックのテンプレート（4 レンズ・置換前の状態を保つ） |
-| `docs/rules/discussion-whiteboard-rules.md` | 議論ホワイトボード規約の SSOT（Step 2 で Read） |
-| `docs/rules/pr-review-flow-summary.md` | PR 作成 → Layer 1 レビュー → 自動マージ（Step 4） |
-| `docs/rules/user-confirmation-minimization.md` | A-1〜A-6 既約境界外（ガードレール 5） |
-| `docs/rules/completion-report-rules.md` | 完了報告の構造（Step 6） |
-| `docs/rules/improvement-lane-map.md` | 改善・監査レーンの責務境界（本スキルは単発オペレーション扱い） |
-| `docs/rules/problem-investigation-protocol.md` | 取得失敗時の自己解決（Step 0） |
+| ファイル                                                  | 役割                                                           |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| `.claude/skills/audit-runner/discussion_review_spec.json` | 議論スペックのテンプレート（4 レンズ・置換前の状態を保つ）     |
+| `docs/rules/discussion-whiteboard-rules.md`               | 議論ホワイトボード規約の SSOT（Step 2 で Read）                |
+| `docs/rules/pr-review-flow-summary.md`                    | PR 作成 → Layer 1 レビュー → 自動マージ（Step 4）              |
+| `docs/rules/user-confirmation-minimization.md`            | A-1〜A-6 既約境界外（ガードレール 5）                          |
+| `docs/rules/completion-report-rules.md`                   | 完了報告の構造（Step 6）                                       |
+| `docs/rules/improvement-lane-map.md`                      | 改善・監査レーンの責務境界（本スキルは単発オペレーション扱い） |
+| `docs/rules/problem-investigation-protocol.md`            | 取得失敗時の自己解決（Step 0）                                 |

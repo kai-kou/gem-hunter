@@ -5,7 +5,6 @@
 > クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
 > ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
 
-
 > `SKILL.md` は日次の軽量版（Step 1〜2）を中心に構成している。本ファイルは
 > **完全版限定の Step 3〜6・週次レポート雛形・実行コマンド例** を保持する
 > （完全版として起動された時のみ Read する）。
@@ -145,13 +144,14 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
 ```
 
 > **`/doctor` の実測仕様（2026-07-26・Claude Code v2.1.220 で確認）**:
+>
 > - **CLI 版 `claude doctor`** が返すのは **インストール健全性のみ**（native/npm の併存・パス破損・自動更新チャネル等）。
 >   スキルや CLAUDE.md のサイズ適正化は **含まれない**。`claude doctor --help` の実出力（逐語）:
 >   `Check the health of your Claude Code installation. Reads settings files in the current directory without a trust prompt. For a full checkup that can also fix issues, run /doctor in a session.`
 > - **セッション内 `/doctor`** が設定・スキル・CLAUDE.md を含むフルチェックアップと修正を担当する。
 >   公式ドキュメント（[memory](https://code.claude.com/docs/en/memory)）によれば、**checked-in の CLAUDE.md に対して
->   trim を提案する**（v2.1.206 以降）: *コードベースから導出できる内容（ディレクトリ構成・依存リスト・
->   アーキテクチャ概要）を削り、落とし穴・根拠・ツール既定と異なる規約を残す*。これは 6-b の判定軸と同方向。
+>   trim を提案する**（v2.1.206 以降）: _コードベースから導出できる内容（ディレクトリ構成・依存リスト・
+>   アーキテクチャ概要）を削り、落とし穴・根拠・ツール既定と異なる規約を残す_。これは 6-b の判定軸と同方向。
 >   自律セッション（非対話）では起動できないことがあるため、その場合は 6-a〜6-d の機械チェックで代替し、
 >   「`/doctor` 未実行」をレポートに明記する（実行していないものを実行したと書かない・L-113）
 >
@@ -223,6 +223,7 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
 ### 実行コマンド例
 
 MCP（クラウド・一次経路。repo スコープの `gh` はクラウドで 403・L-114。SSOT: `docs/rules/github-mcp-fallback-patterns.md`）:
+
 ```
 # PR 健全性確認（ベースブランチ・マージ可能性）
 mcp__github__list_pull_requests(owner, repo, state="open")
@@ -240,6 +241,7 @@ mcp__github__actions_list(method="list_workflows", owner, repo)
 ```
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 # PR 健全性確認（ベースブランチ・マージ可能性）
 gh pr list -R kai-kou/gem-hunter \

@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 /* README 本文（第三者 HTML）の書式付与に使う。Tailwind v4 は tailwind.config.js を
    持たないため CSS 側の @plugin ディレクティブでプラグインを読み込む（Issue #339）。 */
 @plugin "@tailwindcss/typography";

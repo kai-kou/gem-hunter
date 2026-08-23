@@ -15,9 +15,9 @@
 
 events:
   published:
-    emoji: "🎉"
-    header: "公開完了"
-    message: "{mention}公開が完了しました。"
+    emoji: '🎉'
+    header: '公開完了'
+    message: '{mention}公開が完了しました。'
     action_label: null
     action_url: null
     fyi: false

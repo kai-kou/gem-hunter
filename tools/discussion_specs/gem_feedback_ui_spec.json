@@ -38,9 +38,17 @@
       }
     ],
     "tasks": [
-      { "id": "T-n", "title": "実行タスク", "actor": "claude | user", "depends_on": ["T-n"], "sp": "sp:1|2|3|5|8" }
+      {
+        "id": "T-n",
+        "title": "実行タスク",
+        "actor": "claude | user",
+        "depends_on": ["T-n"],
+        "sp": "sp:1|2|3|5|8"
+      }
     ],
     "critical": ["議論を経ても残った真の問題"],
-    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）。推奨案を先頭に最大 2 択"]
+    "open_questions": [
+      "ユーザー確認が要る仕様分岐（SD-3 第 2 系統 / A-6）。推奨案を先頭に最大 2 択"
+    ]
   }
 }

@@ -111,17 +111,17 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 
 ## ステップ概要（詳細は reference.md）
 
-| Step | 内容 |
-|------|------|
-| 1 | Layer 1 セルフレビュー実行（自前 `code-review` スキル・`Skill(code-review)`）+ 既存レビュー状態の取得。**指摘は全件 PR の行単位インラインコメントで記録し、指摘ゼロでも `event="COMMENT"` のレビューを 1 件投稿する**（#461・手順は code-review スキル Step 3-A） |
-| 2 | 指摘の分類（修正対象 / スキップ）。CI 失敗・人手コメントの有無を確認 |
-| 3 | 指摘への自動対応（修正コミット or スキップ → スレッド返信 → **Resolve 必須**） |
-| 4 | Layer 0（機械ゲート）+ Layer 1 通過の確認 |
-| 5 | 自動マージ（squash・外部レビュアー応答待ちなし） |
-| 6 | **公開リポジトリへの反映（`publish-sync`）は常に実行**。**本番デプロイはゲート判定を経由し、一次経路は Workers Builds の再トリガー**（`tools/trigger_workers_build.py`。`npm run deploy` の直叩きはフォールバック）: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は同スクリプトが内部でゲートを確認し、開いているときだけトリガーする（fail-closed）。詳細は下記 |
-| 7 | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）ならデプロイ → 疎通確認 → プレビュー環境の退役（`tools/retire_preview_aliases.py`）まで実行。詳細は下記 |
-| 8 | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102） |
-| 9 | マージ後フィードバックループ → `docs/rules/lessons/pr-review.md` に教訓追記（必須・`lessons-management.md` に従う） |
+| Step | 内容                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Layer 1 セルフレビュー実行（自前 `code-review` スキル・`Skill(code-review)`）+ 既存レビュー状態の取得。**指摘は全件 PR の行単位インラインコメントで記録し、指摘ゼロでも `event="COMMENT"` のレビューを 1 件投稿する**（#461・手順は code-review スキル Step 3-A）                                                                                                                                                    |
+| 2    | 指摘の分類（修正対象 / スキップ）。CI 失敗・人手コメントの有無を確認                                                                                                                                                                                                                                                                                                                                                 |
+| 3    | 指摘への自動対応（修正コミット or スキップ → スレッド返信 → **Resolve 必須**）                                                                                                                                                                                                                                                                                                                                       |
+| 4    | Layer 0（機械ゲート）+ Layer 1 通過の確認                                                                                                                                                                                                                                                                                                                                                                            |
+| 5    | 自動マージ（squash・外部レビュアー応答待ちなし）                                                                                                                                                                                                                                                                                                                                                                     |
+| 6    | **公開リポジトリへの反映（`publish-sync`）は常に実行**。**本番デプロイはゲート判定を経由し、一次経路は Workers Builds の再トリガー**（`tools/trigger_workers_build.py`。`npm run deploy` の直叩きはフォールバック）: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は同スクリプトが内部でゲートを確認し、開いているときだけトリガーする（fail-closed）。詳細は下記 |
+| 7    | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）ならデプロイ → 疎通確認 → プレビュー環境の退役（`tools/retire_preview_aliases.py`）まで実行。詳細は下記                                                                                                                             |
+| 8    | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102）                                                                                                                                                                                                                                                                                                                                               |
+| 9    | マージ後フィードバックループ → `docs/rules/lessons/pr-review.md` に教訓追記（必須・`lessons-management.md` に従う）                                                                                                                                                                                                                                                                                                  |
 
 ### Step 6: マージ直後の公開反映とデプロイゲート（#449・`sprint-env-lifecycle-20260820` 決定）
 
@@ -140,7 +140,7 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
   - **スプリント PR（`Sprint Goal:` 行あり）**: このステップではデプロイしない。判定は Step 7 の
     スプリントレビュー結果に委ねる（下記）。push（公開反映）だけ完遂して Step 7 へ進む。
   - **非スプリント PR**（改善 Issue・retro-try・docs 等）: 🔴 **一次経路は `python3
-    tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部で `tools/check_deploy_gate.py`
+tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部で `tools/check_deploy_gate.py`
     を確認し、ゲートが開いているときだけトリガーする）。終了コード 0 = トリガー成功 / 1 = ゲート待機中
     （異常ではない・保留のまま次回に持ち越す）/ 2 = 判定不能（fail-closed）。スクリプトが存在しない、
     または 2 を返した場合に限り、フォールバックとして `python3 tools/check_deploy_gate.py` を直接実行し
@@ -199,6 +199,7 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 
    ```markdown
    ## 🔍 Sprint Review 判定
+
    **結果**: accepted | accepted_with_conditions | rejected
    **デプロイ**: yes | no
    **次 firing 必須**: {条件付き受け入れのときだけ・無ければ「なし」}
@@ -208,23 +209,25 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
    ```
 
 3.5. **デプロイ・疎通確認・退役**（`デプロイ: yes` のときのみ実行。`rejected` または `deploy: no` は
-   本項を丸ごとスキップして 4 へ進む・fail-closed）:
-   - 🔴 **一次経路は `python3 tools/trigger_workers_build.py`**（Workers Builds の再トリガー・#451。
-     終了コード 0 = トリガー成功 / 1 = デプロイゲート待機中・異常ではない / 2 = 判定不能・fail-closed）。
-     スクリプトが存在しない、または 2 を返した場合に限り Step 6 のフォールバック手順（`main` HEAD で
-     `npm run check` 再実行 → `npm run deploy` → 本番 URL 疎通確認。**手順の実体は
-     `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。1（ゲート待機中）の場合は
-     デプロイを実行せず、`進捗:` を「デプロイ未完了」のまま更新しない（下記の失敗時と同じ扱い。
-     次回 firing は `sprint-cycle-router` Step 0.2 が拾う）。
-   - デプロイ成功後、**そのスプリント PR の preview alias を退役する**:
-     `python3 tools/retire_preview_aliases.py --alias pr-<N>`（`<N>` は対象 PR 番号。本番と同一ビルドへ
-     張り替える＝「削除」ではなく「上書き」。削除 API が存在しないことは
-     `sprint-env-lifecycle-20260820` 争点 A/E で確定済み）。
-   - 完了したら **追加コメント** で `進捗:` を更新する（判定コメントを書き換えない・追記のみ):
-     `進捗: デプロイ完了（tag: <merge commit SHA>）・退役完了（alias: pr-<N>）。次は retrospective スキル起動`
-   - デプロイ・退役のいずれかが失敗した場合は、失敗段階とエラー全文を同じ追加コメントに記録し、
-     `進捗:` は「デプロイ未完了」または「退役未完了」のまま更新しない（次 firing の Step 3 再開が
-     正しく再試行できるようにするため・下記 §「Step 3 の再開」参照）。
+本項を丸ごとスキップして 4 へ進む・fail-closed）:
+
+- 🔴 **一次経路は `python3 tools/trigger_workers_build.py`**（Workers Builds の再トリガー・#451。
+  終了コード 0 = トリガー成功 / 1 = デプロイゲート待機中・異常ではない / 2 = 判定不能・fail-closed）。
+  スクリプトが存在しない、または 2 を返した場合に限り Step 6 のフォールバック手順（`main` HEAD で
+  `npm run check` 再実行 → `npm run deploy` → 本番 URL 疎通確認。**手順の実体は
+  `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。1（ゲート待機中）の場合は
+  デプロイを実行せず、`進捗:` を「デプロイ未完了」のまま更新しない（下記の失敗時と同じ扱い。
+  次回 firing は `sprint-cycle-router` Step 0.2 が拾う）。
+- デプロイ成功後、**そのスプリント PR の preview alias を退役する**:
+  `python3 tools/retire_preview_aliases.py --alias pr-<N>`（`<N>` は対象 PR 番号。本番と同一ビルドへ
+  張り替える＝「削除」ではなく「上書き」。削除 API が存在しないことは
+  `sprint-env-lifecycle-20260820` 争点 A/E で確定済み）。
+- 完了したら **追加コメント** で `進捗:` を更新する（判定コメントを書き換えない・追記のみ):
+  `進捗: デプロイ完了（tag: <merge commit SHA>）・退役完了（alias: pr-<N>）。次は retrospective スキル起動`
+- デプロイ・退役のいずれかが失敗した場合は、失敗段階とエラー全文を同じ追加コメントに記録し、
+  `進捗:` は「デプロイ未完了」または「退役未完了」のまま更新しない（次 firing の Step 3 再開が
+  正しく再試行できるようにするため・下記 §「Step 3 の再開」参照）。
+
 4. 続けて **`retrospective` スキルを起動** する（KPT 生成と Try の Issue 化。既存仕様のまま）。
 5. **対象 Issue をクローズする**（本ステップの最終アクション）。判定が `rejected` / `accepted_with_conditions` で
    次 firing に持ち越すものがある場合は **open のまま残す**（`status:in-progress` も維持）。

@@ -34,20 +34,14 @@
         "issue": "争点 A〜E のいずれか",
         "decision": "採用する結論",
         "rationale": "根拠（一次情報・コードのポインタ）",
-        "files": [
-          "変更するファイルと変更内容"
-        ]
+        "files": ["変更するファイルと変更内容"]
       }
     ],
     "workflow_spec": {
       "cron": "UTC の cron 式",
       "jst": "JST 換算",
-      "steps": [
-        "ワークフローの各ステップ"
-      ],
-      "permissions": [
-        "GITHUB_TOKEN に与える権限"
-      ]
+      "steps": ["ワークフローの各ステップ"],
+      "permissions": ["GITHUB_TOKEN に与える権限"]
     },
     "user_actions": [
       {
@@ -57,19 +51,12 @@
         "verify": "成功の確認方法"
       }
     ],
-    "rejected": [
-      "議論で否定された案と理由"
-    ],
-    "unknowns": [
-      "確定できず実装時に実機で確かめる事項"
-    ],
+    "rejected": ["議論で否定された案と理由"],
+    "unknowns": ["確定できず実装時に実機で確かめる事項"],
     "follow_up_issues": [
       {
         "title": "Issue タイトル",
-        "labels": [
-          "type:*",
-          "sp:*"
-        ],
+        "labels": ["type:*", "sp:*"],
         "done_criteria": "完了条件"
       }
     ]

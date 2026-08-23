@@ -43,12 +43,14 @@ gem-hunter
 
 ```markdown
 ## ✅ 完了報告
+
 **ご依頼**: {セッション開始時の指示を1文で再掲}
 **できるようになったこと**: {アウトカム1〜2文＝何ができるようになったか}
 （任意）**主な変更**: {要点1〜3行}
 
 ---
-[PR #{N}]({URL}) / ブランチ `{branch}`   ← 末尾の補足1行。見出しにしない（bare URL 禁止・L-112）
+
+[PR #{N}]({URL}) / ブランチ `{branch}` ← 末尾の補足1行。見出しにしない（bare URL 禁止・L-112）
 ```
 
 冒頭の「ご依頼」再掲が **最重要**（ユーザーがチャット先頭まで遡らずに文脈を取り戻せる）。プロセス詳細（マージ手順・レビュー往復）は書かない（記録は PR スレッド・Issue コメント・L-102）。例外・良い例/悪い例・Slack `--outcome` との関係は `docs/rules/completion-report-rules.md`（SSOT）。
@@ -70,22 +72,22 @@ gem-hunter
 
 ## 必読ルール（`.claude/rules/` 常駐・自動読み込み）
 
-| ファイル | 役割 |
-|---------|------|
-| `core-principles.md` | 大原則 CP-1〜6 の詳細 |
-| `user-confirmation-minimization.md` | 既約境界外リスト A-1〜A-6（確認要否の SSOT） |
-| `user-notification-triage.md` | 通知の @mention 厳選（A 区分のみ発火） |
-| `session-safety-rules.md` | ユーザー確認前コミット・タイムアウト対策（要点サマリー） |
-| `session-compression-rules.md` | 圧縮後の挙動・symlink 同期 |
-| `session-sprint-rules.md` | 1 セッション = 1 スプリント運用・SP 付与（要点サマリー） |
-| `sprint-development-rules.md` | スプリント開発の 4 規律（動作確認 URL・TDD 主体・確認の発火ライン・ドキュメント自律参照） |
-| `user-instruction-issue-rules.md` | ユーザー指示の Issue 化基準 |
-| `pr-review-flow-summary.md` | PR 作成 → AI レビュー → 自動マージのフロー |
-| `completion-report-rules.md` | セッション完了報告の構造（初回指示の再掲 + アウトカム中心） |
-| `datetime-rules.md` | 日時表記の JST 統一（表示・記録は JST / API・内部計算用 UTC は維持） |
-| `lessons-core.md` | クラウド環境のクリティカル教訓（Hot 層） |
-| `agent-team-summary.md` | サブエージェント・Agent Teams 活用 |
-| `session-concurrency-rules.md` | マルチセッション競合防止（本リポジトリは R-1 ルーティン稼働のため Hot 化済み・E-B #20・PR #176。下記参照） |
+| ファイル                            | 役割                                                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `core-principles.md`                | 大原則 CP-1〜6 の詳細                                                                                      |
+| `user-confirmation-minimization.md` | 既約境界外リスト A-1〜A-6（確認要否の SSOT）                                                               |
+| `user-notification-triage.md`       | 通知の @mention 厳選（A 区分のみ発火）                                                                     |
+| `session-safety-rules.md`           | ユーザー確認前コミット・タイムアウト対策（要点サマリー）                                                   |
+| `session-compression-rules.md`      | 圧縮後の挙動・symlink 同期                                                                                 |
+| `session-sprint-rules.md`           | 1 セッション = 1 スプリント運用・SP 付与（要点サマリー）                                                   |
+| `sprint-development-rules.md`       | スプリント開発の 4 規律（動作確認 URL・TDD 主体・確認の発火ライン・ドキュメント自律参照）                  |
+| `user-instruction-issue-rules.md`   | ユーザー指示の Issue 化基準                                                                                |
+| `pr-review-flow-summary.md`         | PR 作成 → AI レビュー → 自動マージのフロー                                                                 |
+| `completion-report-rules.md`        | セッション完了報告の構造（初回指示の再掲 + アウトカム中心）                                                |
+| `datetime-rules.md`                 | 日時表記の JST 統一（表示・記録は JST / API・内部計算用 UTC は維持）                                       |
+| `lessons-core.md`                   | クラウド環境のクリティカル教訓（Hot 層）                                                                   |
+| `agent-team-summary.md`             | サブエージェント・Agent Teams 活用                                                                         |
+| `session-concurrency-rules.md`      | マルチセッション競合防止（本リポジトリは R-1 ルーティン稼働のため Hot 化済み・E-B #20・PR #176。下記参照） |
 
 上記のうち 7 ファイル（`core-principles` / `datetime-rules` / `session-compression-rules` /
 `session-concurrency-rules` / `user-confirmation-minimization` / `user-instruction-issue-rules` /
@@ -194,9 +196,9 @@ gem-hunter
 frontmatter は公式仕様（`name` / `description` 必須・`model` / `tools` / `memory` 等は任意・
 [公式](https://code.claude.com/docs/en/sub-agents)）に従う。
 
-| エージェント | 役割 |
-|------------|------|
-| `owner` | プロダクトオーナー（PO）ロール。バックログ優先順位（`priority:*`）と見積もり妥当性（`sp:*`）を判定・実行する。ラベル操作は `sp:*` / `priority:*` のみ許可（`status:*` 操作・Issue クローズ・本文書き換え・A-1〜A-6 自動承認は禁止）。詳細は `docs/rules/session-sprint-rules.md` §4 |
+| エージェント | 役割                                                                                                                                                                                                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `owner`      | プロダクトオーナー（PO）ロール。バックログ優先順位（`priority:*`）と見積もり妥当性（`sp:*`）を判定・実行する。ラベル操作は `sp:*` / `priority:*` のみ許可（`status:*` 操作・Issue クローズ・本文書き換え・A-1〜A-6 自動承認は禁止）。詳細は `docs/rules/session-sprint-rules.md` §4 |
 
 プロジェクト固有のレビュー役・監修役（例: 技術正確性レビュー役・初心者目線チェック役）も
 `.claude/agents/<name>.md` に追加してよい（参加レベル Lv1/Lv2/Lv3 は `agent-team-summary.md` 参照）。
@@ -206,13 +208,13 @@ frontmatter は公式仕様（`name` / `description` 必須・`model` / `tools` 
 配線は `.claude/settings.json`、実体は `.claude/hooks/*.sh`（全 19 スクリプト）。
 役割グループのみ記す（各スクリプトの詳細・トグル環境変数は当該ファイル冒頭のコメントを参照）。
 
-| グループ | スクリプト | 役割 |
-|---|---|---|
-| 起動・復帰 | `session-start.sh` / `post-compact.sh` / `pre-compact.sh` | env 伝搬・gh 準備・作業ツリー整備・状態注入・圧縮前後の未コミット自動保存（L-100 防御）・symlink 同期 |
-| 入力ガード | `user-prompt-submit-guard.sh` / `prompt-structuring.sh` / `orchestrator-directive.sh` | 高リスク入力の助言注入・生指示の作業スペック展開・高コストモデル時のチーム組成指示（いずれも非ブロッキング） |
-| 実行ガード | `pre-tool-use-router.sh` → `pre-git-push-check.sh` / `pre-pr-create-check.sh`、`permission-request-auto-allow.sh` | main 直 push ブロック・PR 作成前チェック・.env アクセスブロック・`.claude/` 配下の編集自動許可 |
-| 事後検証 | `post-tool-use-validate.sh` / `post-merge-publish-check.sh` / `post-tool-use-failure.sh` / `subagent-stop.sh` | 成果物バリデーション拡張点（既定 no-op）・main マージ直後の公開反映起動・gh プロキシ起因エラーの案内・サブエージェント異常終了の自己修正 |
-| 終了時 | `stop-router.sh` → `stop-git-check.sh` / `stop-pr-check.sh` / `stop-slack-notify.sh` / `stop-completion-report-check.sh` | 未コミット/未 PR 検知・WIP 自動コミット・Slack 完了通知・完了報告フォーマットの是正リマインド |
+| グループ   | スクリプト                                                                                                               | 役割                                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 起動・復帰 | `session-start.sh` / `post-compact.sh` / `pre-compact.sh`                                                                | env 伝搬・gh 準備・作業ツリー整備・状態注入・圧縮前後の未コミット自動保存（L-100 防御）・symlink 同期                                    |
+| 入力ガード | `user-prompt-submit-guard.sh` / `prompt-structuring.sh` / `orchestrator-directive.sh`                                    | 高リスク入力の助言注入・生指示の作業スペック展開・高コストモデル時のチーム組成指示（いずれも非ブロッキング）                             |
+| 実行ガード | `pre-tool-use-router.sh` → `pre-git-push-check.sh` / `pre-pr-create-check.sh`、`permission-request-auto-allow.sh`        | main 直 push ブロック・PR 作成前チェック・.env アクセスブロック・`.claude/` 配下の編集自動許可                                           |
+| 事後検証   | `post-tool-use-validate.sh` / `post-merge-publish-check.sh` / `post-tool-use-failure.sh` / `subagent-stop.sh`            | 成果物バリデーション拡張点（既定 no-op）・main マージ直後の公開反映起動・gh プロキシ起因エラーの案内・サブエージェント異常終了の自己修正 |
+| 終了時     | `stop-router.sh` → `stop-git-check.sh` / `stop-pr-check.sh` / `stop-slack-notify.sh` / `stop-completion-report-check.sh` | 未コミット/未 PR 検知・WIP 自動コミット・Slack 完了通知・完了報告フォーマットの是正リマインド                                            |
 
 フックイベント名の実在性と採否決定の SSOT は `docs/rules/hook-events-reference.md`（公式 31 イベントの検証済み一覧・Warm 層）。
 

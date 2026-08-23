@@ -4,7 +4,12 @@ import type { SearchQuery } from '../../domain/model/search-query'
 import type { CachePort } from '../../domain/ports/cache-port'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
 import { ownerOf, repoOf } from '../../domain/model/repository-full-name'
-import { type CacheKey, readmeCacheKey, repositoryCacheKey, searchResultCacheKey } from './cache-key'
+import {
+  type CacheKey,
+  readmeCacheKey,
+  repositoryCacheKey,
+  searchResultCacheKey,
+} from './cache-key'
 
 /**
  * `RepositoryQueryPort` をキャッシュ付きで包むデコレータ（SP-5・NFR-5 / NFR-17 / NFR-18）。

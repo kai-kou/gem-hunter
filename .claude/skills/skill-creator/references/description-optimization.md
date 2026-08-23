@@ -8,8 +8,8 @@ Create 20 eval queries — a mix of should-trigger and should-not-trigger. Save 
 
 ```json
 [
-  {"query": "the user prompt", "should_trigger": true},
-  {"query": "another prompt", "should_trigger": false}
+  { "query": "the user prompt", "should_trigger": true },
+  { "query": "another prompt", "should_trigger": false }
 ]
 ```
 

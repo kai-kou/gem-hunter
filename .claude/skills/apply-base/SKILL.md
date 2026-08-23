@@ -9,7 +9,6 @@ effort: medium
 > クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
 > ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
 
-
 # claude-code-base 適用スキル（apply-base）
 
 現在のリポジトリ（カレントの作業リポジトリ）に、`kai-kou/claude-code-repository-base`（公開ベース）の
@@ -20,6 +19,7 @@ effort: medium
 ## 0. 前提と方針
 
 > 🔶 **取得元**: `apply-base` の取得元は **公開リポジトリ `kai-kou/claude-code-repository-base` を正とする**（§1・§2 参照）。公開リポジトリからの取得になるため、アクセス権を持たない第三者も本スキルをそのまま使える。
+
 - ベースは **public**（`kai-kou/claude-code-repository-base`）の想定。取得は **git clone（`https://github.com/...`）を一次経路** にする（public のため認証不要。プロキシ/トークンが付与されていても支障はない）。
 - 🔴 **クラウド実行環境（`CLAUDE_CODE_REMOTE=true`）では `gh api repos/.../contents`・`gh repo clone` が egress プロキシに 403 でブロックされる**（L-114・`github-mcp-fallback-patterns.md`）。よってベース取得に `gh api contents` を使わない。クラウドで生存するのは `git clone https://...` と公式 MCP（`mcp__github__get_file_contents`）のみ。
 - 適用は **冪等**。初回適用にも、ベース更新後の再同期にも同じ手順を使う。

@@ -18,17 +18,16 @@
 | 3. 機能要件（FR-1〜FR-7） | 7 | 0 | 0 |
 | 3.1 画面構成 | 8 | 0 | 0 |
 | 3.2 状態ごとの表示 | 4 | 1 | 0 |
-| 4. 非機能要件 | 11 | 2 | 0 |
+| 4. 非機能要件 | 12 | 1 | 0 |
 | 5. テスト要件 | 3 | 1 | 0 |
 | 6. ドキュメント要件 | 4 | 0 | 0 |
-| **合計** | **42** | **4** | **0** |
+| **合計** | **43** | **3** | **0** |
 
-**結論: 与件の機能要件・技術要件は全件充足しており、未充足（❌）はゼロ。** ただし以下 4 件に注記がある（詳細は各項）。
+**結論: 与件の機能要件・技術要件は全件充足しており、未充足（❌）はゼロ。** ただし以下 3 件に注記がある（詳細は各項）。
 
 1. ⚠️ **初期状態（未検索）の文言**: 「検索を促す」明示文言は撤去済みで、プレースホルダ + 説明文 + ヒーロー画像が担う（与件 §3.1.1 の「プレースホルダで入力を促す」は満たす）
-2. ⚠️ **Prettier の機械検証が現状 red**: `npm run format:check` が 110 ファイル（うち `src` 26 / `app` 10 / `e2e` 11）で失敗し、`npm run check` にも未接続
-3. ⚠️ **画像最適化は `next/image` を使わない**（`INF-11` の意図的判断。GitHub の `?s=N` + 明示寸法 + `loading="lazy"` で代替）
-4. ⚠️ **CI でのテスト自動実行が現状ない**: GitHub Actions が制限中で撤去済み（`D-23`）。テスト自体はコマンド 1 つで実行でき環境変数に依存しないため「CI で自動実行できる状態」ではある
+2. ⚠️ **画像最適化は `next/image` を使わない**（`INF-11` の意図的判断。GitHub の `?s=N` + 明示寸法 + `loading="lazy"` で代替）
+3. ⚠️ **CI でのテスト自動実行が現状ない**: GitHub Actions が制限中で撤去済み（`D-23`）。テスト自体はコマンド 1 つで実行でき環境変数に依存しないため「CI で自動実行できる状態」ではある
 
 ---
 
@@ -114,7 +113,7 @@
 |---|---|---|---|
 | N-11 | ディレクトリ構成・命名・責務分割の一貫性（API 呼び出し / 表示ロジック / UI の分離） | ✅ | `src/domain`（モデル・ポート）→ `src/usecases` → `src/infrastructure`（GitHub ACL・プラットフォーム）→ `src/ui` / `app`、配線は `src/composition`。依存規則は `python3 tools/check_architecture_boundaries.py` が機械検証し `npm run check` に組み込み済み（**PASS**） |
 | N-12 | API レスポンスの型定義と型安全な取り扱い | ✅ | `src/infrastructure/github/dto.ts` が **zod スキーマ** で上流レスポンスを検証し、`mapper.ts` がドメインモデルへ変換（スキーマ不一致は `upstream` エラーへ）。`tsc --noEmit` **PASS** |
-| N-13 | Lint / フォーマッタを導入し機械的に検証できる状態 | ⚠️ | **Lint は充足**（`eslint.config.mjs` + `npm run lint`、`npm run check` の 1 番目で **PASS**）。**フォーマッタは導入済みだが検証が red**: `npm run format:check`（`prettier --check .`）が **110 ファイルで失敗**（内訳: `.claude` 33 / `src` 26 / `tools` 19 / `e2e` 11 / `app` 10 ほか）。実差分も確認済み（例: `src/ui/repository-detail.tsx:55` が `printWidth: 100` 超過）。さらに `tools/run_checks.sh` に Prettier のチェックが **含まれていない** ため、PR ゲートでも検出されない |
+| N-13 | Lint / フォーマッタを導入し機械的に検証できる状態 | ✅ | **Lint・フォーマッタとも充足**（`eslint.config.mjs` + `npm run lint`、`npm run check` の 1 番目で **PASS**）。`npm run format:check`（`prettier --check .`）が **PASS** し、`tools/run_checks.sh` に Prettier チェックが配線され PR ゲートで検出される（#402） |
 
 ---
 
@@ -170,8 +169,8 @@
 | `npx eslint`（`npm run check` 内） | **PASS**（8 秒） |
 | `npx tsc --noEmit`（同上） | **PASS**（8 秒） |
 | `python3 tools/check_architecture_boundaries.py`（同上） | **PASS** |
-| `npm run check`（`tools/run_checks.sh`・全 20 チェック） | **全 PASS**（上記に加え Lighthouse a11y ゲート・ADR 記載検査・配色コントラスト検査・CJK Markdown 検査・各 self-test を含む） |
-| `npm run format:check` | **FAIL**（110 ファイル。`src` 26 / `app` 10 / `e2e` 11 を含む） |
+| `npm run check`（`tools/run_checks.sh`・全チェック） | **全 PASS**（上記に加え Lighthouse a11y ゲート・ADR 記載検査・配色コントラスト検査・CJK Markdown 検査・Format (prettier --check) 検査・各 self-test を含む） |
+| `npm run format:check` | **PASS**（#402 で `prettier --write .` により全ファイルを整形済み） |
 | `grep -rn "NEXT_PUBLIC" src app next.config.ts wrangler.jsonc` | **0 件**（秘匿情報のクライアント露出なし） |
 | `ls .github/workflows` | **存在しない**（`D-23` により撤去済み） |
 
@@ -181,6 +180,6 @@
 
 いずれも与件の ❌ ではないが、注記 ⚠️ の解消として Issue 化を検討する。
 
-1. **Prettier の是正と PR ゲートへの接続**: `npx prettier --write .` で 110 ファイルを整形し、`tools/run_checks.sh` に `prettier --check` を 1 チェックとして追加する（`N-13`）
+1. ~~**Prettier の是正と PR ゲートへの接続**~~: 対応済み（`N-13`・#402）。`prettier --write .` で全ファイルを整形し `npm run format:check` が PASS、`tools/run_checks.sh` に `prettier --check` を配線済み
 2. **CI でのテスト自動実行の回復**: GitHub Actions の制限解除時に撤去済みワークフローを復帰させる（復帰手順は `cloudflare-infrastructure.md` §8.4）。それまでの間、Workers Builds のビルドコマンド側でテストを走らせられるかを検証する（`TS-4`）
 3. **初期状態の文言**: 「検索を促す」意図を文言でも明示するか、現状（プレースホルダ + 説明文 + ビジュアル）で十分とするかを判断し、決定ログへ残す（§3.2）

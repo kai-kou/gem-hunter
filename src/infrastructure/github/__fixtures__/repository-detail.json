@@ -13,10 +13,7 @@
   "updated_at": "2026-08-18T09:00:00Z",
   "pushed_at": "2026-08-15T03:00:00Z",
   "private": false,
-  "topics": [
-    "javascript",
-    "react"
-  ],
+  "topics": ["javascript", "react"],
   "owner": {
     "login": "facebook",
     "avatar_url": "https://avatars.githubusercontent.com/u/69631?v=4"

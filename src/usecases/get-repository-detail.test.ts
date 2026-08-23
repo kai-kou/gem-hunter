@@ -21,7 +21,10 @@ const detail: RepositoryDetail = {
   htmlUrl: 'https://github.com/facebook/react',
 }
 
-function fakePort(received: RepositoryFullName[], result: RepositoryDetail | null): RepositoryQueryPort {
+function fakePort(
+  received: RepositoryFullName[],
+  result: RepositoryDetail | null,
+): RepositoryQueryPort {
   return {
     async search() {
       throw new Error('unused in this test')

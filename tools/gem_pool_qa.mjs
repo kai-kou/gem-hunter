@@ -182,8 +182,11 @@ export function buildComparison(prevIndex, currIndex) {
 
   const prevTotal =
     prevIndex && Number.isFinite(Number(prevIndex.totalCount)) ? Number(prevIndex.totalCount) : null
-  const currTotal = Number.isFinite(Number(currIndex?.totalCount)) ? Number(currIndex.totalCount) : null
-  const ratio = prevTotal !== null && prevTotal > 0 && currTotal !== null ? currTotal / prevTotal : null
+  const currTotal = Number.isFinite(Number(currIndex?.totalCount))
+    ? Number(currIndex.totalCount)
+    : null
+  const ratio =
+    prevTotal !== null && prevTotal > 0 && currTotal !== null ? currTotal / prevTotal : null
 
   return { totalCount: { prev: prevTotal, curr: currTotal, ratio }, registries }
 }
@@ -349,7 +352,11 @@ function getLastPublishedInfo() {
   } catch (err) {
     // git log 自体が失敗（非ゼロ終了・コマンド不在等）。fetch-depth 不足・git の一時的な異常等。
     const stderrText =
-      typeof err?.stderr === 'string' ? err.stderr : Buffer.isBuffer(err?.stderr) ? err.stderr.toString('utf8') : ''
+      typeof err?.stderr === 'string'
+        ? err.stderr
+        : Buffer.isBuffer(err?.stderr)
+          ? err.stderr.toString('utf8')
+          : ''
     const reason = (stderrText || err?.message || 'unknown error').trim().slice(0, 300)
     return {
       epochSec: null,
@@ -396,11 +403,10 @@ function listChangedPaths() {
   })
     .split('\n')
     .filter((l) => l.trim().length > 0)
-  const untracked = execFileSync(
-    'git',
-    ['ls-files', '--others', '--exclude-standard'],
-    { cwd: REPO_ROOT, encoding: 'utf8' },
-  )
+  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  })
     .split('\n')
     .filter((l) => l.trim().length > 0)
   return [...tracked, ...untracked]
@@ -484,10 +490,17 @@ function runNoOpMode({ json }) {
   // 🔴 index.json / daily-digest.json の 2 つだけでなく、12 シャード本体（public/data/gem-index/*.json）
   // も比較対象に含める（長尾エントリだけが動いた週を no_op=true と誤判定しないため）。
   // 作業ツリー側の一覧だけでなく HEAD 側にしか無いファイル（今回消えたシャード）も拾う。
-  const shardPaths = buildNoOpTargetPaths(listWorktreeJsonFiles(SHARD_DIR), listHeadJsonFiles(SHARD_DIR))
+  const shardPaths = buildNoOpTargetPaths(
+    listWorktreeJsonFiles(SHARD_DIR),
+    listHeadJsonFiles(SHARD_DIR),
+  )
 
   const evaluation = evaluateNoOp([
-    ...shardPaths.map((path) => ({ path, prevDoc: readHeadJson(path), currDoc: readWorktreeJson(path) })),
+    ...shardPaths.map((path) => ({
+      path,
+      prevDoc: readHeadJson(path),
+      currDoc: readWorktreeJson(path),
+    })),
     { path: DIGEST_PATH, prevDoc: readHeadJson(DIGEST_PATH), currDoc: currDigest },
   ])
 
@@ -509,7 +522,9 @@ function runShouldPublishMode({ json, force }) {
   const nowEpochSec = Math.floor(Date.now() / 1000)
   const publish = shouldPublish(lastPublishedEpochSec, nowEpochSec, force)
   const daysElapsed =
-    lastPublishedEpochSec === null ? null : Number(((nowEpochSec - lastPublishedEpochSec) / 86400).toFixed(2))
+    lastPublishedEpochSec === null
+      ? null
+      : Number(((nowEpochSec - lastPublishedEpochSec) / 86400).toFixed(2))
 
   const result = {
     should_publish: publish,
@@ -584,12 +599,16 @@ function selfTest() {
     'normalizeSpaces: 連続する空白は 1 個にまとめる（g フラグが効いている）',
     normalizeSpaces('a\u202F\u202Fb   c') === 'a b c',
   )
-  assert('normalizeSpaces: 通常の半角スペースはそのまま', normalizeSpaces('2026-08-23 10:38') === '2026-08-23 10:38')
+  assert(
+    'normalizeSpaces: 通常の半角スペースはそのまま',
+    normalizeSpaces('2026-08-23 10:38') === '2026-08-23 10:38',
+  )
 
   // --- checkDiffScope ---
   assert(
     'checkDiffScope: 許可パスのみなら ok',
-    checkDiffScope([`${SHARD_DIR}/registry-a.json`, DIGEST_PATH, `${SHARD_DIR}/index.json`]).ok === true,
+    checkDiffScope([`${SHARD_DIR}/registry-a.json`, DIGEST_PATH, `${SHARD_DIR}/index.json`]).ok ===
+      true,
   )
   assert(
     'checkDiffScope: 許可外パスがあれば ok=false',
@@ -604,7 +623,8 @@ function selfTest() {
   // --- checkRegistryCounts ---
   assert(
     'checkRegistryCounts: prevIndex が null なら PASS（初回実行）',
-    checkRegistryCounts(null, { totalCount: 100, shards: [{ registry: 'registry-a', count: 100 }] }).ok === true,
+    checkRegistryCounts(null, { totalCount: 100, shards: [{ registry: 'registry-a', count: 100 }] })
+      .ok === true,
   )
   {
     const prev = {
@@ -675,47 +695,115 @@ function selfTest() {
     }
     assert(
       'checkRegistryCounts: 前回時点で既に 0 件だったレジストリの消失は対象外',
-      checkRegistryCounts(prevWithZero, { totalCount: 600, shards: [{ registry: 'registry-a', count: 600 }] }).ok ===
-        true,
+      checkRegistryCounts(prevWithZero, {
+        totalCount: 600,
+        shards: [{ registry: 'registry-a', count: 600 }],
+      }).ok === true,
     )
   }
 
   // --- checkRegistryCounts: 閾値の境界値（REGISTRY_MIN_RATIO / TOTAL_MIN_RATIO / TOTAL_MAX_RATIO） ---
   {
     // REGISTRY_MIN_RATIO(0.7) ちょうど: PASS（`<` であって `<=` ではない）。他方を補って totalCount は 1.0 に保つ。
-    const prevReg = { totalCount: 2000, shards: [{ registry: 'registry-a', count: 1000 }, { registry: 'registry-b', count: 1000 }] }
-    const currRegAtBoundary = { totalCount: 2000, shards: [{ registry: 'registry-a', count: 700 }, { registry: 'registry-b', count: 1300 }] }
+    const prevReg = {
+      totalCount: 2000,
+      shards: [
+        { registry: 'registry-a', count: 1000 },
+        { registry: 'registry-b', count: 1000 },
+      ],
+    }
+    const currRegAtBoundary = {
+      totalCount: 2000,
+      shards: [
+        { registry: 'registry-a', count: 700 },
+        { registry: 'registry-b', count: 1300 },
+      ],
+    }
     const atBoundary = checkRegistryCounts(prevReg, currRegAtBoundary)
-    assert('checkRegistryCounts: レジストリ比率がちょうど 0.7 は PASS（境界値）', atBoundary.ok === true && atBoundary.violations.length === 0)
+    assert(
+      'checkRegistryCounts: レジストリ比率がちょうど 0.7 は PASS（境界値）',
+      atBoundary.ok === true && atBoundary.violations.length === 0,
+    )
 
     // 境界のわずか下（0.699）: FAIL
-    const currRegBelowBoundary = { totalCount: 2000, shards: [{ registry: 'registry-a', count: 699 }, { registry: 'registry-b', count: 1301 }] }
+    const currRegBelowBoundary = {
+      totalCount: 2000,
+      shards: [
+        { registry: 'registry-a', count: 699 },
+        { registry: 'registry-b', count: 1301 },
+      ],
+    }
     const belowBoundary = checkRegistryCounts(prevReg, currRegBelowBoundary)
-    assert('checkRegistryCounts: レジストリ比率が 0.7 をわずかに下回ると violation（境界値）', belowBoundary.ok === false && belowBoundary.violations.length === 1)
+    assert(
+      'checkRegistryCounts: レジストリ比率が 0.7 をわずかに下回ると violation（境界値）',
+      belowBoundary.ok === false && belowBoundary.violations.length === 1,
+    )
 
     // TOTAL_MIN_RATIO(0.85) ちょうど: PASS。各レジストリは 0.85（>=0.7）で個別 violation を踏まない。
-    const prevTotalLow = { totalCount: 1000, shards: [{ registry: 'registry-a', count: 500 }, { registry: 'registry-b', count: 500 }] }
-    const currTotalAtLowBoundary = { totalCount: 850, shards: [{ registry: 'registry-a', count: 425 }, { registry: 'registry-b', count: 425 }] }
+    const prevTotalLow = {
+      totalCount: 1000,
+      shards: [
+        { registry: 'registry-a', count: 500 },
+        { registry: 'registry-b', count: 500 },
+      ],
+    }
+    const currTotalAtLowBoundary = {
+      totalCount: 850,
+      shards: [
+        { registry: 'registry-a', count: 425 },
+        { registry: 'registry-b', count: 425 },
+      ],
+    }
     const totalLowBoundary = checkRegistryCounts(prevTotalLow, currTotalAtLowBoundary)
-    assert('checkRegistryCounts: totalCount 比率がちょうど 0.85 は PASS（境界値）', totalLowBoundary.ok === true && totalLowBoundary.violations.length === 0)
+    assert(
+      'checkRegistryCounts: totalCount 比率がちょうど 0.85 は PASS（境界値）',
+      totalLowBoundary.ok === true && totalLowBoundary.violations.length === 0,
+    )
 
     // 【項目4】各レジストリは 0.7 以上を保ったまま、totalCount だけが 0.85 をわずかに下回る（単独発火の確認）。
-    const currTotalOnlyDrop = { totalCount: 824, shards: [{ registry: 'registry-a', count: 400 }, { registry: 'registry-b', count: 424 }] } // 0.8 / 0.848 はいずれも >= 0.7
+    const currTotalOnlyDrop = {
+      totalCount: 824,
+      shards: [
+        { registry: 'registry-a', count: 400 },
+        { registry: 'registry-b', count: 424 },
+      ],
+    } // 0.8 / 0.848 はいずれも >= 0.7
     const totalOnlyDrop = checkRegistryCounts(prevTotalLow, currTotalOnlyDrop)
-    assert('checkRegistryCounts: 各レジストリが 0.7 以上でも totalCount 単独で < 0.85 なら violation', totalOnlyDrop.ok === false)
-    assert('checkRegistryCounts: totalCount 単独違反は violations が 1 件だけ（レジストリ単位は無傷）', totalOnlyDrop.violations.length === 1)
-    assert('checkRegistryCounts: totalCount 単独違反のメッセージに totalCount を含む', totalOnlyDrop.violations[0].includes('totalCount'))
+    assert(
+      'checkRegistryCounts: 各レジストリが 0.7 以上でも totalCount 単独で < 0.85 なら violation',
+      totalOnlyDrop.ok === false,
+    )
+    assert(
+      'checkRegistryCounts: totalCount 単独違反は violations が 1 件だけ（レジストリ単位は無傷）',
+      totalOnlyDrop.violations.length === 1,
+    )
+    assert(
+      'checkRegistryCounts: totalCount 単独違反のメッセージに totalCount を含む',
+      totalOnlyDrop.violations[0].includes('totalCount'),
+    )
 
     // TOTAL_MAX_RATIO(1.15) ちょうど: PASS
     const prevTotalHigh = { totalCount: 1000, shards: [{ registry: 'registry-a', count: 1000 }] }
-    const currTotalAtHighBoundary = { totalCount: 1150, shards: [{ registry: 'registry-a', count: 1150 }] }
+    const currTotalAtHighBoundary = {
+      totalCount: 1150,
+      shards: [{ registry: 'registry-a', count: 1150 }],
+    }
     const totalHighBoundary = checkRegistryCounts(prevTotalHigh, currTotalAtHighBoundary)
-    assert('checkRegistryCounts: totalCount 比率がちょうど 1.15 は PASS（境界値）', totalHighBoundary.ok === true && totalHighBoundary.violations.length === 0)
+    assert(
+      'checkRegistryCounts: totalCount 比率がちょうど 1.15 は PASS（境界値）',
+      totalHighBoundary.ok === true && totalHighBoundary.violations.length === 0,
+    )
 
     // 境界のわずか上（1.151）: FAIL
-    const currTotalAboveHighBoundary = { totalCount: 1151, shards: [{ registry: 'registry-a', count: 1151 }] }
+    const currTotalAboveHighBoundary = {
+      totalCount: 1151,
+      shards: [{ registry: 'registry-a', count: 1151 }],
+    }
     const totalAboveHighBoundary = checkRegistryCounts(prevTotalHigh, currTotalAboveHighBoundary)
-    assert('checkRegistryCounts: totalCount 比率が 1.15 をわずかに超えると violation（境界値）', totalAboveHighBoundary.ok === false)
+    assert(
+      'checkRegistryCounts: totalCount 比率が 1.15 をわずかに超えると violation（境界値）',
+      totalAboveHighBoundary.ok === false,
+    )
   }
 
   // --- buildComparison ---
@@ -735,7 +823,10 @@ function selfTest() {
       ],
     }
     const cmp = buildComparison(prev, curr)
-    assert('buildComparison: totalCount.prev/curr が入る', cmp.totalCount.prev === 1000 && cmp.totalCount.curr === 950)
+    assert(
+      'buildComparison: totalCount.prev/curr が入る',
+      cmp.totalCount.prev === 1000 && cmp.totalCount.curr === 950,
+    )
     assert('buildComparison: ratio が計算される', Math.abs(cmp.totalCount.ratio - 0.95) < 1e-9)
     assert(
       'buildComparison: 消失レジストリは currCount=null',
@@ -751,7 +842,10 @@ function selfTest() {
     )
 
     const cmpFirstRun = buildComparison(null, curr)
-    assert('buildComparison: 初回実行（prevIndex=null）は totalCount.prev/ratio が null', cmpFirstRun.totalCount.prev === null && cmpFirstRun.totalCount.ratio === null)
+    assert(
+      'buildComparison: 初回実行（prevIndex=null）は totalCount.prev/ratio が null',
+      cmpFirstRun.totalCount.prev === null && cmpFirstRun.totalCount.ratio === null,
+    )
   }
 
   // --- runCheck 統合 ---
@@ -781,16 +875,28 @@ function selfTest() {
       'docsEqualIgnoringTimestamps: generatedAt だけ違えば同一扱い',
       docsEqualIgnoringTimestamps(a, b) === true,
     )
-    assert('normalizeForDiff: 元オブジェクトを変更しない', a.meta.generatedAt === '2026-08-22T06:00:00.000Z')
+    assert(
+      'normalizeForDiff: 元オブジェクトを変更しない',
+      a.meta.generatedAt === '2026-08-22T06:00:00.000Z',
+    )
 
     const c = { date: '20260822', meta: { generatedAt: 'x' }, candidates: [1, 2] }
     const d = { date: '20260829', meta: { generatedAt: 'y' }, candidates: [1, 2] }
-    assert('docsEqualIgnoringTimestamps: date だけ違えば同一扱い（digest）', docsEqualIgnoringTimestamps(c, d) === true)
+    assert(
+      'docsEqualIgnoringTimestamps: date だけ違えば同一扱い（digest）',
+      docsEqualIgnoringTimestamps(c, d) === true,
+    )
 
     const e = { date: '20260829', meta: { generatedAt: 'y' }, candidates: [1, 2, 3] }
-    assert('docsEqualIgnoringTimestamps: candidates が違えば実差分', docsEqualIgnoringTimestamps(c, e) === false)
+    assert(
+      'docsEqualIgnoringTimestamps: candidates が違えば実差分',
+      docsEqualIgnoringTimestamps(c, e) === false,
+    )
 
-    assert('docsEqualIgnoringTimestamps: prevDoc が null なら実差分（新規ファイル）', docsEqualIgnoringTimestamps(null, c) === false)
+    assert(
+      'docsEqualIgnoringTimestamps: prevDoc が null なら実差分（新規ファイル）',
+      docsEqualIgnoringTimestamps(null, c) === false,
+    )
   }
 
   // --- evaluateNoOp ---
@@ -815,7 +921,8 @@ function selfTest() {
     assert('evaluateNoOp: 片方に実差分があれば no_op=false', evalChanged.noOp === false)
     assert(
       'evaluateNoOp: changedFiles に対象パスが載る',
-      evalChanged.changedFiles.includes(DIGEST_PATH) && !evalChanged.changedFiles.includes(INDEX_PATH),
+      evalChanged.changedFiles.includes(DIGEST_PATH) &&
+        !evalChanged.changedFiles.includes(INDEX_PATH),
     )
   }
 
@@ -826,33 +933,75 @@ function selfTest() {
     const shardA = `${SHARD_DIR}/registry-a.json`
     const shardB = `${SHARD_DIR}/registry-b.json`
     const baseFiles = () => [
-      { path: INDEX_PATH, prevDoc: { meta: { generatedAt: 'a' }, totalCount: 2 }, currDoc: { meta: { generatedAt: 'b' }, totalCount: 2 } },
-      { path: DIGEST_PATH, prevDoc: { date: '20260822', meta: { generatedAt: 'a' }, candidates: [] }, currDoc: { date: '20260829', meta: { generatedAt: 'b' }, candidates: [] } },
+      {
+        path: INDEX_PATH,
+        prevDoc: { meta: { generatedAt: 'a' }, totalCount: 2 },
+        currDoc: { meta: { generatedAt: 'b' }, totalCount: 2 },
+      },
+      {
+        path: DIGEST_PATH,
+        prevDoc: { date: '20260822', meta: { generatedAt: 'a' }, candidates: [] },
+        currDoc: { date: '20260829', meta: { generatedAt: 'b' }, candidates: [] },
+      },
       {
         path: shardA,
-        prevDoc: { registry: 'registry-a', meta: { generatedAt: 'a' }, entries: [['owner/repo', 'pkg', 100, 5, 1]] },
-        currDoc: { registry: 'registry-a', meta: { generatedAt: 'b' }, entries: [['owner/repo', 'pkg', 100, 5, 1]] },
+        prevDoc: {
+          registry: 'registry-a',
+          meta: { generatedAt: 'a' },
+          entries: [['owner/repo', 'pkg', 100, 5, 1]],
+        },
+        currDoc: {
+          registry: 'registry-a',
+          meta: { generatedAt: 'b' },
+          entries: [['owner/repo', 'pkg', 100, 5, 1]],
+        },
       },
     ]
 
     const unchangedShard = evaluateNoOp(baseFiles())
-    assert('evaluateNoOp: シャードも timestamp だけ違えば no_op=true（回帰しないことの確認）', unchangedShard.noOp === true)
+    assert(
+      'evaluateNoOp: シャードも timestamp だけ違えば no_op=true（回帰しないことの確認）',
+      unchangedShard.noOp === true,
+    )
 
     // 1) シャード 1 件だけ中身（entries の長尾エントリ）が変わった → no_op=false
     const filesShardChanged = baseFiles()
     filesShardChanged[2].currDoc.entries = [['owner/repo', 'pkg', 101, 6, 1]]
     const shardChanged = evaluateNoOp(filesShardChanged)
-    assert('evaluateNoOp: シャード本体の entries だけが変わっても no_op=false（CRITICAL 再発防止の核心）', shardChanged.noOp === false)
-    assert('evaluateNoOp: changedFiles にシャードのパスが載る', shardChanged.changedFiles.includes(shardA))
+    assert(
+      'evaluateNoOp: シャード本体の entries だけが変わっても no_op=false（CRITICAL 再発防止の核心）',
+      shardChanged.noOp === false,
+    )
+    assert(
+      'evaluateNoOp: changedFiles にシャードのパスが載る',
+      shardChanged.changedFiles.includes(shardA),
+    )
 
     // 2) シャードが新規追加された（HEAD に無く作業ツリーにだけ存在）→ no_op=false
-    const filesShardAdded = [...baseFiles(), { path: shardB, prevDoc: null, currDoc: { registry: 'registry-b', meta: { generatedAt: 'b' }, entries: [] } }]
+    const filesShardAdded = [
+      ...baseFiles(),
+      {
+        path: shardB,
+        prevDoc: null,
+        currDoc: { registry: 'registry-b', meta: { generatedAt: 'b' }, entries: [] },
+      },
+    ]
     const shardAdded = evaluateNoOp(filesShardAdded)
     assert('evaluateNoOp: シャードの新規追加は no_op=false', shardAdded.noOp === false)
-    assert('evaluateNoOp: 新規シャードのパスが changedFiles に載る', shardAdded.changedFiles.includes(shardB))
+    assert(
+      'evaluateNoOp: 新規シャードのパスが changedFiles に載る',
+      shardAdded.changedFiles.includes(shardB),
+    )
 
     // 3) シャードが消失した（HEAD にはあったが作業ツリーに無い＝ currDoc=null）→ no_op=false
-    const filesShardRemoved = [...baseFiles(), { path: shardB, prevDoc: { registry: 'registry-b', meta: { generatedAt: 'a' }, entries: [] }, currDoc: null }]
+    const filesShardRemoved = [
+      ...baseFiles(),
+      {
+        path: shardB,
+        prevDoc: { registry: 'registry-b', meta: { generatedAt: 'a' }, entries: [] },
+        currDoc: null,
+      },
+    ]
     const shardRemoved = evaluateNoOp(filesShardRemoved)
     assert('evaluateNoOp: シャードの消失は no_op=false', shardRemoved.noOp === false)
   }
@@ -867,7 +1016,10 @@ function selfTest() {
       union.join(',') === `${SHARD_DIR}/a.json,${SHARD_DIR}/index.json,${SHARD_DIR}/removed.json`,
     )
     assert('buildNoOpTargetPaths: 両方空なら空配列', buildNoOpTargetPaths([], []).length === 0)
-    assert('buildNoOpTargetPaths: 片方 undefined でも例外を投げない', buildNoOpTargetPaths(undefined, [`${SHARD_DIR}/x.json`]).length === 1)
+    assert(
+      'buildNoOpTargetPaths: 片方 undefined でも例外を投げない',
+      buildNoOpTargetPaths(undefined, [`${SHARD_DIR}/x.json`]).length === 1,
+    )
   }
 
   // --- shouldPublish（Issue #482: 日次生成・週次目安反映） ---
@@ -885,8 +1037,14 @@ function selfTest() {
       shouldPublish(justUnderSevenDays, now, false) === false,
     )
 
-    assert('shouldPublish: 経過日数が null（初回・取得不能）なら反映する', shouldPublish(null, now, false) === true)
-    assert('shouldPublish: 経過日数が undefined でも反映する', shouldPublish(undefined, now, false) === true)
+    assert(
+      'shouldPublish: 経過日数が null（初回・取得不能）なら反映する',
+      shouldPublish(null, now, false) === true,
+    )
+    assert(
+      'shouldPublish: 経過日数が undefined でも反映する',
+      shouldPublish(undefined, now, false) === true,
+    )
 
     assert(
       'shouldPublish: force_publish=true なら経過日数 0 でも反映する',
@@ -918,7 +1076,8 @@ function selfTest() {
   // --- listShardFileNames（純関数として export はしていないが、内部ロジックの健全性を index 経由で確認） ---
   assert(
     'listShardFileNames 相当: shards[].fileName を列挙できる',
-    listShardFileNames({ shards: [{ fileName: 'a.json' }, { fileName: 'b.json' }] }).join(',') === 'a.json,b.json',
+    listShardFileNames({ shards: [{ fileName: 'a.json' }, { fileName: 'b.json' }] }).join(',') ===
+      'a.json,b.json',
   )
 
   if (failures.length > 0) {
@@ -955,12 +1114,15 @@ function main() {
     return
   }
 
-  console.error('使い方: node tools/gem_pool_qa.mjs [--check|--no-op|--should-publish [--force]|--self-test] [--json]')
+  console.error(
+    '使い方: node tools/gem_pool_qa.mjs [--check|--no-op|--should-publish [--force]|--self-test] [--json]',
+  )
   process.exit(2)
 }
 
 const isMain =
-  typeof process.argv[1] === 'string' && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
+  typeof process.argv[1] === 'string' &&
+  resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
 if (isMain) {
   main()
 }

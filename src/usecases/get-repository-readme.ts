@@ -17,9 +17,7 @@ export type GetRepositoryReadme = (input: GetRepositoryReadmeInput) => Promise<s
  * `null` なら `findReadme` を **呼ばずに** null を返す。呼び出し元の順序に依存させないため、
  * このゲートは usecase 内に埋め込む（`get-repository-detail.ts` を先に呼ぶ規約に頼らない）。
  */
-export function makeGetRepositoryReadme(deps: {
-  repos: RepositoryQueryPort
-}): GetRepositoryReadme {
+export function makeGetRepositoryReadme(deps: { repos: RepositoryQueryPort }): GetRepositoryReadme {
   return async (input) => {
     const name = tryRepositoryFullName(input.owner, input.repo)
     if (name === null) {
