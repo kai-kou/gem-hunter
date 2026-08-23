@@ -1,0 +1,77 @@
+{
+  "topic": "Gem 候補プール再生成（tools/generate_gem_digest.mjs）を GitHub Actions で定期実行する設計を確定する（Issue #458）",
+  "brief": "飼い主の指示（原文）: 『リポジトリをパブリック化したことで、GitHub Actionsの利用制限が解除されました。本セッションでIssue作成して定期的に実行されるように専門チームを組成して対応してください』\n\n【オーケストレーターが本セッションで実測・確認した事実（推測ではない）】\n\n1. Issue #458 を起票済み（type:improvement / status:in-progress / sp:5）。\n\n2. バッチの実体は `node tools/generate_gem_digest.mjs`（Node 22+ / ESM）。CLI 冒頭の docstring に処理段が書かれている: 収集 collectAll（12 レジストリ × 被依存数降順 15,000 件）→ 整形 projectPackage → 順位 buildPool（汚染フィルタ + repo 単位 dedupe + レジストリ別再ランク）→ 出力 output.*。既定実行で **約 10 分・180 リクエスト**。オプション: `--dry-run` / `--registries` / `--quota` / `--allow-partial-write`。⚠️ 部分実行 + `--allow-partial-write` は **孤児シャードを削除する**。\n\n3. 🔴 同 CLI の冒頭に『⚠️ CI での自動実行はしない（更新は `D-28` どおり Cloudflare の外で回して git commit → デプロイ）』と明記されている。これは Actions が使えなかった時期の制約に由来する記述であり、本 Issue で実態に合わせて直す対象。\n\n4. 生成物は `public/data/gem-index/*.json`（12 シャード）+ `public/data/gem-index/index.json` + `public/data/daily-digest.json`。**合計 3.6MB**。git 追跡済み（`.gitignore` されていない）。過去にこのディレクトリを変更したコミットは 2 つだけ（6488e01 / 74ea0b4）。現行 `index.json` の `generatedAt` は **2026-08-22 15:04 JST**、`totalCount` 62,483。\n\n5. 反映経路の制約: 🔴 `main` への直接 push は本プロジェクトの既約境界外 **A-1**（`docs/rules/user-confirmation-minimization.md` §1）。PR 経由・自動マージのみ。\n\n6. 本番デプロイは **Workers Builds**（Cloudflare native の Git 連携・`D-31` / `D-32`）が main への push をトリガーに動き、Deploy command が `tools/workers_build_deploy.sh` を呼ぶ。同スクリプトは `tools/check_deploy_gate.py` を実行し、**ゲートが閉じているときは非ゼロで終了する（fail-closed）**。`check_deploy_gate.py --json` の終了コードは 0=デプロイ可 / 1=待機 / 2=判定不能。判定は『open かつ status:in-progress の Issue のうち、タイトルに SP-\\d+ を含むか本文コメントに `## 🏃 Session Sprint Planning` があるもの』をスプリント対象とし、`## 🔍 Sprint Review 判定` の `**結果**:` 行の最新値で決まる。\n\n7. `D-28`（`docs/02_requirements/open-questions.md`）: バッチ集計は **Cloudflare の外** で回し、生成した静的 JSON を git commit → デプロイで Static Assets として丸ごと差し替える。SPOF（バッチ停止時に更新が止まる）は無害化 + 検知して自己修復で対処し、**配信自体は止めず鮮度のみ劣化させる**。\n\n8. `docs/rules/pr-review-flow-summary.md` に『🔴 GitHub Actions は制限中で使えない（ジョブが数秒・ログ 0 バイトで失敗）。ワークフロー 2 本は撤去済み』とあり、`docs/rules/harness-escalation.md` / `docs/rules/lessons-management.md` にも Actions を運用に使わない旨の記述がある。`.github/workflows/` は現在 **存在しない**。\n\n9. Gem Index は母集団依存の相対指標であり、再生成のたびに **全銘柄の値が変わりうる**（`src/domain/model/gem-index.ts` の JSDoc が明示）。日次ダイジェストの日替わりは date シードによる選定であって、値の再計算ではない。\n\n【この議論で決めること（争点）】\n\nA. 🔴 **実行間隔（cron 式まで確定させる）**。判断材料: Ecosyste.ms 側のデータ更新頻度と本バッチの負荷（180 リクエスト・10 分）、Gem Index が相対指標であること（頻繁に回すと同じリポジトリのバッジが付いたり消えたりする）、3.6MB の生成物を毎回コミットすることによる git 履歴の増加、Actions の無料枠（パブリックリポジトリでの扱いを一次情報で確認すること）。**『毎日』『毎週』を感覚で選ばず、上記のどれが効いて何時（JST）に回すのかまで書くこと**。schedule cron は UTC で書く点に注意。\n\nB. 🔴 **生成物の反映経路**。`main` 直 push は A-1 で不可。PR を自動作成する場合: どのアクション/コマンドで作るか（サードパーティアクションの是非も含む）、GITHUB_TOKEN の permissions は何が要るか、**workflow が GITHUB_TOKEN で作った PR は他の workflow をトリガーしない** という GitHub の仕様が本プロジェクトに影響するか、自動マージしてよいか（するなら誰が品質を担保するのか / しないなら誰がいつマージするのか・放置される PR が増えないか）。差分が実質ゼロだった回に空 PR を作らない仕組みも決める。\n\nC. 🔴 **マージ後の Workers Builds デプロイゲートとの整合**。データ PR がマージされたとき `check_deploy_gate.py` は何を返すか（そのとき in-progress のスプリント Issue があれば **待機（exit 1）で fail-closed** になり、データだけ main に入ってデプロイされない状態が生まれないか）。生まれるなら許容するのか、対処するのか。**ゲートを迂回する案は採らない**（`workers_build_deploy.sh` 冒頭が禁じている）。\n\nD. 🔴 **失敗時の扱い**（`D-28` の SPOF 方針に沿うこと）。途中でネットワーク失敗したとき部分的な生成物をコミットしてしまわないか（`--allow-partial-write` の孤児シャード削除に注意）、リトライするか、失敗を誰にどう通知するか（Issue 起票 / Slack / Actions の失敗通知のどれか。既存の `tools/slack_notify.py` を使えるか、シークレットが要るなら誰が設定するのか）、**60 日間コミットが無いとスケジュール実行が自動停止する** GitHub の仕様への対処。\n\nE. 🔴 **更新すべき既存記述の洗い出し**（実ファイルを読んで、パスと節・行の粒度で）。最低限: `tools/generate_gem_digest.mjs` 冒頭コメント、`docs/rules/pr-review-flow-summary.md`、`docs/rules/harness-escalation.md`、`docs/rules/lessons-management.md`、`docs/02_requirements/open-questions.md`（`D-23` / `D-28` / `D-31` / `D-32`）、`docs/03_design/infrastructure/cloudflare-infrastructure.md`、`CLAUDE.md`。**Actions が使えるようになったからといって、飼い主が別途決めた『Actions を品質ゲートには使わない』方針まで勝手に覆さないこと**（本 Issue のスコープはバッチの定期実行に限る。方針変更が要ると判断したら follow_up_issues に落とす）。",
+  "participants": [
+    {
+      "name": "actions_facts",
+      "model": "sonnet",
+      "lens": "GitHub Actions の一次情報レンズ（争点 A / B / D 担当）。**『できるはず』で書かない**のが役割。公式ドキュメントを WebFetch で直接読み（https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows の schedule 節、https://docs.github.com/en/actions/reference/limits 、https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows 、https://docs.github.com/en/actions/tutorials/manage-your-work/use-github_token-in-workflows 相当の GITHUB_TOKEN 権限ドキュメント、https://docs.github.com/en/billing/managing-billing-for-your-products/about-billing-for-github-actions ）、次を一次情報で確定させる: (1) **パブリックリポジトリでの Actions の無料枠**（標準ランナーは無償か・分数上限はあるか） (2) `schedule` の **最短間隔と実行遅延**（混雑時にどれだけ遅れるか・スキップされうるか）、cron が **UTC** であること (3) **60 日間コミットが無いとスケジュールが自動停止する**仕様の正確な条件と、再有効化の方法・回避策 (4) `GITHUB_TOKEN` の既定権限と `permissions:` で必要な最小指定（ブランチ push / PR 作成にそれぞれ何が要るか） (5) 🔴 **GITHUB_TOKEN で作成・更新した PR は他の workflow をトリガーしない**という仕様の正確な範囲（何がトリガーされず、何は動くのか。Cloudflare Workers Builds のような **GitHub 外のインテグレーション** はこの制限の対象か） (6) ジョブの実行時間上限・`timeout-minutes` の既定 (7) `concurrency` で多重起動を防ぐ書き方 (8) `workflow_dispatch` の入力定義。🔴 **ワークフローを実際に作成・実行しない**（設計材料の収集のみ）。確認できなかった項目は『未確認』と明記する。"
+    },
+    {
+      "name": "batch_ops",
+      "model": "sonnet",
+      "lens": "バッチ実行特性レンズ（争点 A / D 担当）。`tools/generate_gem_digest.mjs`・`tools/gem-pool/collect.mjs`・`tools/gem-pool/pipeline.mjs`・`tools/gem-pool/output.mjs` を **実際に読んで** 判断する。(1) 失敗モードを列挙する: ネットワーク断・レジストリ 1 つだけ失敗・レート制限・部分書き込み。**途中で落ちたときに壊れた生成物が残るのか、それとも全段成功時にのみ書き出すのか**をコードで確認する（`--allow-partial-write` と孤児シャード削除の挙動を含む）。(2) 冪等性: 同じ入力なら同じ出力になるか。**入力が変わらなくても出力の差分が出る要素**（generatedAt タイムスタンプ等）があるか。あるなら『実質差分ゼロなのにコミットが生える』問題になるので、差分判定をどう書くべきか具体案を出す。(3) Ecosyste.ms への負荷とレート制限の扱い（`collect.mjs` の実装から: リトライ・待機・User-Agent・認証の有無）。**公開 API を毎日 180 リクエスト叩くことの妥当性**を、`docs/rules/` の外部 API 利用方針や Ecosyste.ms 側の記載（あれば WebFetch で確認）に照らして評価する。(4) 実行間隔の推奨値を **理由付きで 1 つ** 出す（Gem Index が相対指標であり値が毎回動くこと、3.6MB を毎回コミットすること、データの実際の変化速度を材料に）。(5) Actions ランナー上で動かすために必要な前提（Node バージョン・依存インストールの要否・実行時間の見積もり）。🔴 **バッチ本体を実行しない**（10 分・180 リクエストかかる。実行はオーケストレーターが判断する）。"
+    },
+    {
+      "name": "deploy_gate",
+      "model": "sonnet",
+      "lens": "反映経路・デプロイゲートレンズ（争点 B / C 担当）。`tools/workers_build_deploy.sh`・`tools/check_deploy_gate.py`・`docs/03_design/infrastructure/cloudflare-infrastructure.md` §8.2 系・`.claude/skills/pr-review-watcher/SKILL.md` Step 6/7・`docs/rules/user-confirmation-minimization.md` §1（A-1）を **実際に読んで** 判断する。(1) データ更新 PR がマージされたとき `check_deploy_gate.py` が返す値を、コードのロジックから **場合分けして** 示す（in-progress のスプリント Issue が有る / 無い、Sprint Review 判定コメントが有る / 無い）。`python3 tools/check_deploy_gate.py --json` を実行して現時点の実際の出力も添える（読み取り専用なので実行してよい）。(2) 『データだけ main に入ったのにデプロイされない』状態が生まれるか。生まれるなら **鮮度の劣化として許容する**（`D-28` の SPOF 方針に沿う）のか、それとも対処するのか。対処案を出す場合も **ゲートを迂回する案は禁止**（`workers_build_deploy.sh` 冒頭の設計意図）。Workers Builds の build watch paths でデータのみの変更を扱えるかも検討する。(3) 反映経路の結論を出す: 自動 PR + 自動マージか、自動 PR + 人/セッションのマージか。**自動マージを推すなら『データしか変わらない PR を機械が通してよい根拠』を、推さないなら『放置される PR が増えない仕組み』を** それぞれ具体的に書く。判断は本プロジェクトの既存規律（A-1・CP-6・`pr-review-watcher` の自動マージ運用）と整合させる。(4) PR 本文に何を書かせるか（`Session-Id:` は無い・`Sprint Goal:` は無い。既存の PR 作成前チェックフック `pre-pr-create-check.sh` が Actions 経由の PR にも効くのか、効かないなら品質担保はどうするのか）。🔴 **デプロイ・push・PR 作成を自分で実行しない**。"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "ドキュメント整合レンズ（争点 E 担当）。新しい設計を主張せず、既存記述との突合に徹する。『GitHub Actions は使えない / CI で自動実行しない』という前提で書かれた記述を機械的に洗い出し、**パス・節番号・「現在の記述 → 必要な変更の要旨」の表形式**で列挙する。最低限確認する対象: `tools/generate_gem_digest.mjs` 冒頭コメント、`docs/rules/pr-review-flow-summary.md`、`docs/rules/harness-escalation.md`、`docs/rules/lessons-management.md`、`docs/rules/core-principles-detail.md`、`docs/02_requirements/open-questions.md`（`D-23` / `D-28` / `D-31` / `D-32` を grep で特定して読む）、`docs/03_design/infrastructure/cloudflare-infrastructure.md`、`CLAUDE.md`、`docs/rules/env-vars.md`（Actions variables/secrets がプロキシで 403 になる記述）、`docs/rules/github-mcp-fallback-patterns.md` §2.4。🔴 **飼い主が別途決めた方針（Actions を品質ゲート・CI には使わない・#298 / harness-escalation.md Lv4）は本 Issue のスコープ外**。その種の記述は『変更対象ではない』と明記して区別する（勝手に覆さない）。🔴 ファイルを実際に Read してから書く（存在しない節番号・存在しない文言を書かない・L-113）。出力は表 1 つと、変更対象外として除外した記述のリスト。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれ結論を 1 つに決める。決定は『どのファイルに何を書くか』『cron 式は何か』『ワークフローの各ステップは何をするか』まで落とす。とくに: (1) 争点 A は cron 式（UTC）と JST 換算を明記し、選ばなかった間隔の最強の論拠への反駁を 1 段落で書く。(2) 争点 B は自動マージの是非を白黒つける。(3) 争点 C は『デプロイされない状態が生まれるか』にコードの根拠で答える。(4) 争点 E は変更対象と変更対象外（飼い主方針）を分けて列挙する。一次情報で否定された案は採用しない。未確認事項は unknowns に落とし、実装時に実機で確かめる手順を書く。飼い主の操作が要るもの（シークレット設定・Actions の設定変更等）は user_actions に落とす。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "decision": "採用する結論",
+        "rationale": "根拠（一次情報・コードのポインタ）",
+        "files": [
+          "変更するファイルと変更内容"
+        ]
+      }
+    ],
+    "workflow_spec": {
+      "cron": "UTC の cron 式",
+      "jst": "JST 換算",
+      "steps": [
+        "ワークフローの各ステップ"
+      ],
+      "permissions": [
+        "GITHUB_TOKEN に与える権限"
+      ]
+    },
+    "user_actions": [
+      {
+        "step": "飼い主が行う操作",
+        "where": "画面・場所",
+        "input": "入力値",
+        "verify": "成功の確認方法"
+      }
+    ],
+    "rejected": [
+      "議論で否定された案と理由"
+    ],
+    "unknowns": [
+      "確定できず実装時に実機で確かめる事項"
+    ],
+    "follow_up_issues": [
+      {
+        "title": "Issue タイトル",
+        "labels": [
+          "type:*",
+          "sp:*"
+        ],
+        "done_criteria": "完了条件"
+      }
+    ]
+  }
+}
