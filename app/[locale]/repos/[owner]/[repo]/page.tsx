@@ -167,6 +167,7 @@ export default async function RepositoryDetailPage({
                 retryAfter: rateLimit?.retryAfter,
                 retryAfterSeconds: rateLimit?.retryAfterSeconds,
                 isLoggedIn: accessToken !== null,
+                isAuthConfigured: showAuthLink,
               })}
               // 再試行手段（US-24）: いま失敗した詳細 URL をそのまま開き直す。
               retryHref={currentPath}

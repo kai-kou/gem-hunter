@@ -267,6 +267,7 @@ export default async function GemListPage({
           locale,
           retryAfterSeconds: error.retryAfterSeconds,
           isLoggedIn: accessToken !== null,
+          isAuthConfigured: showAuthLink,
         }),
         // 再試行先は、いま弾かれた一覧 URL そのもの（上の `requestedPath` のコメント参照）。
         retryHref: requestedPath,

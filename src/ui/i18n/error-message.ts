@@ -22,6 +22,12 @@ type ErrorPresentationParams = {
   retryAfterSeconds?: number
   /** ログイン済みならログイン導線を出さない（枠は既に増えているため）。 */
   isLoggedIn: boolean
+  /**
+   * OAuth が本番で設定されているか（`isAuthConfigured()`・`src/composition/auth.ts`）。
+   * false のときは `isLoggedIn` の値に関わらずログイン導線を出さない — 未設定の環境では
+   * ログイン自体ができないため、案内文だけを表示すると行き止まりの導線になる（Issue #365）。
+   */
+  isAuthConfigured: boolean
 }
 
 /**
@@ -65,7 +71,7 @@ export function toErrorPresentation(
           })
         : errors.rateLimitPrimaryUnknownReset
 
-      return params.isLoggedIn
+      return params.isLoggedIn || !params.isAuthConfigured
         ? { message }
         : { message, loginHint: errors.rateLimitPrimaryLoginHint }
     }
