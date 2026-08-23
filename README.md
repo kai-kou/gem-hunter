@@ -77,10 +77,12 @@ npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する�
 
 | 領域 | 採用 |
 |---|---|
-| フレームワーク | Next.js 16（App Router・React Server Components） |
+| フレームワーク | Next.js 16（App Router・React Server Components）+ React 19（[ADR 0006](./docs/adr/0006-nextjs16-app-router.md)） |
 | UI | Tailwind CSS v4 + shadcn/ui（Radix UI・[ADR 0001](./docs/adr/0001-ui-stack.md)） |
 | 実行環境 | Cloudflare Workers（`@opennextjs/cloudflare`。本番・プレビュー配信の詳細は [ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)） |
 | テスト | Vitest 4 + Testing Library + MSW 2（ユニット・結合）/ Playwright + axe（E2E）（[テスト戦略](./docs/04_development/testing-strategy.md)） |
+| 主要ライブラリ | `zod`（外部レスポンスと入力の検証）/ `sanitize-html`（README の HTML を描画する前の無害化）/ `jose`（セッション Cookie の暗号化） |
+| データ | 永続ストアなし。GitHub REST / Search API を直参照し、Gem Index だけ静的 JSON を配信（[ADR 0007](./docs/adr/0007-no-database-client-side-state.md)） |
 
 層と依存規則は [アプリケーションアーキテクチャ](./docs/03_design/architecture/application-architecture.md) が正本（`python3 tools/check_architecture_boundaries.py` で機械検証する）。ドメインの用語（ユビキタス言語）は [ドメインモデル](./docs/03_design/data-model/domain-model.md) が正本。
 
