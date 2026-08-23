@@ -28,6 +28,8 @@ node_modules/
 # Secrets / env
 .env
 .env.*
+# .env.example はテンプレートで秘密情報を含まないため追跡対象に戻す
+!.env.example
 *.pem
 *.key
 .claude/worktrees/

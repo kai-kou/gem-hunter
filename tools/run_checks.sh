@@ -363,6 +363,16 @@ else
   skip_check "WIP 抑止ガード回帰テスト (test_wip_commit_guard.sh)" "スクリプトが見つかりません"
 fi
 
+# ファイルツール経由の .env アクセスガード self-test（Issue #401 / PR #487）。
+# permissions.deny をひな形（.env.example）のために具体名の列挙へ狭めた分、列挙外の変種名
+# （.env.prod / .env.ci 等）を本フックが塞いでいることを判定関数の単位で実測する。
+if [ -f "$REPO_ROOT/.claude/hooks/pre-file-tool-env-guard.sh" ]; then
+  run_check "env ファイルツールガード self-test (pre-file-tool-env-guard.sh --self-test)" \
+    bash .claude/hooks/pre-file-tool-env-guard.sh --self-test
+else
+  skip_check "env ファイルツールガード self-test (pre-file-tool-env-guard.sh --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="
