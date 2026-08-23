@@ -36,6 +36,7 @@ git push origin gh-pages
 | `assets/styles.css` | スタイル。トークンは `app/globals.css` のセマンティックトークンと同値 |
 | `assets/fonts/geist-latin.woff2` | 本文フォント Geist（latin サブセット・SIL OFL 1.1。`Geist-OFL.txt` を同梱） |
 | `assets/img/shot-*.webp` | アプリの実画面のスクリーンショット |
+| `assets/img/why-divider.webp` | `why` セクションの装飾区切り画像（gpt-image-2 生成・実画面ではない。生成手順は `tools/ui-assets/README.md`） |
 | `assets/img/ogp.png` | OGP 画像（1200×630） |
 | `.nojekyll` | Jekyll ビルドを止める（`_` 始まりのパスが消えるのを防ぐ） |
 
@@ -79,10 +80,10 @@ python3 -m http.server 8098 --directory site
 # 1. 標準ゲート（PR 前の唯一の機械的証跡。LP 静的検査 check_site.py もここに含まれる）
 npm run check
 
-# 2. 数値の裏取り（LP に焼いてある「682 ケース」の内訳）
-npx vitest run              # → `Tests  593 passed` であること
-npx playwright test --list  # → 末尾 `Total: 89 tests` であること
-                            #    593 + 89 = 682 が index.html の「682 ケース」と一致する
+# 2. 数値の裏取り（LP に焼いてある「1,061 ケース」の内訳）
+npx vitest run              # → `Tests  954 passed` であること
+npx playwright test --list  # → 末尾 `Total: 107 tests` であること
+                            #    954 + 107 = 1,061 が index.html の「1,061 ケース」と一致する
 ls docs/adr/[0-9]*.md | wc -l   # → 15（index.html の「ADR 15 本」と一致。check_site.py も検査する）
 ```
 
@@ -130,3 +131,10 @@ node tools/capture_lp_screenshots.mjs
   🔴 **本番直叩きは共有 API レート枠を消費する副作用があるため、乱用しない**
 - 🔴 `LP_SHOT_FETCH_VIA_CURL=1`（既定 off）は **直接 HTTPS が通らないサンドボックスでの回避策**
   （恒久のベストプラクティスではない）。on にすると全リクエストを `curl` 経由で取得して差し替える
+- 🔴 **撮影スクリプトは `SHOTS` 全件を撮り直す** ため、1 枚だけ更新したいときも `shot-digest.webp`
+  （「今日の Gem」＝日替わりで中身が変わるカード）まで巻き込んで撮り直してしまう。
+  `shot-digest` を撮り直した場合は、**`index.html` の `tile-datum` の数値（1 位 / 2 位のパッケージ名・
+  利用パッケージ数・star 数）と `alt` を実データに合わせて更新すること**（撮影スクリプトは寸法しか
+  照合しないため、本文・alt と画像の中身が食い違っても機械では止まらない）。逆に他のショットだけを
+  更新したく `shot-digest` の日替わりデータを巻き込みたくない場合は、撮影後に
+  `git checkout origin/main -- site/assets/img/shot-digest.webp` で当該ファイルだけ戻す

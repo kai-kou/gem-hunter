@@ -10,7 +10,7 @@
  *
  * 別ポートで起動した場合は `LP_SHOT_BASE=http://localhost:PORT node tools/capture_lp_screenshots.mjs`。
  *
- * 出力: site/assets/img/shot-search.webp / shot-digest.webp / shot-mobile.webp
+ * 出力: site/assets/img/shot-search.webp / shot-digest.webp / shot-mobile.webp / shot-gems.webp
  * 出力後に site/index.html の該当 <img> の width / height と実寸を突き合わせ、
  * 食い違っていれば非ゼロ終了する（撮り直し後の属性更新漏れ = CLS の原因を機械で止める）。
  *
@@ -149,6 +149,20 @@ function rewriteForProxy(url) {
   }
 }
 
+// localhost 宛かどうかをホスト名で厳密判定する（data: は呼び出し側で別途判定済み）。
+// 文字列前方一致（`startsWith('http://localhost')` 等）だと `127.1` / `0.0.0.0` /
+// 10 進 IP 表記のような「ローカルを指すが文字列としては一致しない」ホストを取りこぼす一方、
+// `http://localhost.evil.example` のような紛らわしいホストを誤って通す方向にも倒れうるため、
+// `new URL()` でホスト名を取り出したうえで既知の 3 値と完全一致させる。
+function isLocalRequestUrl(url) {
+  try {
+    const { hostname } = new URL(url)
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  } catch {
+    return false
+  }
+}
+
 let curlSeq = 0
 function curlFetch(url) {
   const n = curlSeq++
@@ -157,7 +171,26 @@ function curlFetch(url) {
   try {
     execFileSync(
       'curl',
-      ['-sS', '-L', '--max-time', '40', '-D', headerPath, '-o', bodyPath, rewriteForProxy(url)],
+      [
+        '-sS',
+        '-L',
+        // `fetchAvatar()` と同じスキーム制限（リダイレクト先を含め https のみを許可する）。
+        // localhost 宛は isLocalRequestUrl() で呼び出し前に弾かれるため、ここに来る URL は
+        // 外部ホスト宛のみで、http へのダウングレードを許す理由がない。
+        '--proto',
+        '=https',
+        '--proto-redir',
+        '=https',
+        '--max-redirs',
+        '3',
+        '--max-time',
+        '40',
+        '-D',
+        headerPath,
+        '-o',
+        bodyPath,
+        rewriteForProxy(url),
+      ],
       { maxBuffer: 60e6 },
     )
   } catch {
@@ -165,6 +198,9 @@ function curlFetch(url) {
   }
   const blocks = readFileSync(headerPath, 'utf8').split(/\r?\n\r?\n/).filter((block) => block.trim())
   const last = blocks[blocks.length - 1]
+  // exit 0 でもヘッダーファイルが空になりうる（例: 接続はしたが応答ヘッダーを 1 つも書けなかった場合）。
+  // その場合 last は undefined になり、続く last.match(...) が TypeError で route ハンドラごと落ちる。
+  if (last === undefined) return null
   return {
     status: Number(last.match(/HTTP\/[\d.]+ (\d+)/)?.[1] ?? 200),
     contentType: last.match(/^content-type:\s*(.+)$/im)?.[1]?.trim() ?? 'application/octet-stream',
@@ -188,13 +224,11 @@ try {
     if (FETCH_VIA_CURL) {
       // 全リクエストを curl 経由で取得する（ファイル冒頭コメント参照）。data: と localhost 宛は
       // Chromium にそのまま任せる（アプリ自身への同一プロセス内リクエストは接続リセットの対象外）。
+      // ホスト名は `new URL()` で厳密に取り出して比較する（文字列前方一致だと `127.1` /
+      // `0.0.0.0` / 10 進 IP 表記などローカル扱いになりうる別ホストを誤って通してしまうため）。
       await context.route('**', async (route) => {
         const requested = route.request().url()
-        if (
-          requested.startsWith('data:') ||
-          requested.startsWith('http://localhost') ||
-          requested.startsWith('http://127.0.0.1')
-        ) {
+        if (requested.startsWith('data:') || isLocalRequestUrl(requested)) {
           await route.continue()
           return
         }
