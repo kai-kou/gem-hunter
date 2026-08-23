@@ -2,7 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { notFound } from 'next/navigation'
 import { getSiteUrl } from '@/src/composition/site-url'
-import { isLocale, locale as toLocale, LOCALES } from '@/src/domain/model/locale'
+import { isLocale, locale as toLocale, tryLocale, LOCALES } from '@/src/domain/model/locale'
+import { getMessages } from '@/src/shared/i18n/messages'
 import '../globals.css'
 
 const geistSans = Geist({
@@ -15,14 +16,28 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
-export const metadata: Metadata = {
-  // 🔴 `metadataBase` 未設定だと `opengraph-image` 等の相対 URL 解決が既定の
-  // `http://localhost:3000` にフォールバックし、SNS クローラーが OG 画像を取得できなくなる
-  // （実デプロイの curl で確認済み・Issue #347 追加タスク）。`getSiteUrl()` は `headers()` を
-  // 使わない（`src/composition/site-url.ts` のコメント参照・lead 裁定）。
-  metadataBase: new URL(getSiteUrl()),
-  title: 'gem-hunter',
-  description: 'GitHub から埋もれた良質なリポジトリを見つける',
+/**
+ * 🔴 `description` はロケール依存（Issue #352）なので静的な `metadata` ではなく
+ * `generateMetadata` にする（両方は同一ルートセグメントで共存できない・Next.js 仕様）。
+ * 不正なロケールは `LocaleLayout` 本体側が `notFound()` を返すため、ここでは
+ * 既定ロケールへ倒すだけでよい（`tryLocale`・`app/[locale]/gems/page.tsx` と同じ流儀）。
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params
+  const messages = getMessages(tryLocale(rawLocale))
+  return {
+    // 🔴 `metadataBase` 未設定だと `opengraph-image` 等の相対 URL 解決が既定の
+    // `http://localhost:3000` にフォールバックし、SNS クローラーが OG 画像を取得できなくなる
+    // （実デプロイの curl で確認済み・Issue #347 追加タスク）。`getSiteUrl()` は `headers()` を
+    // 使わない（`src/composition/site-url.ts` のコメント参照・lead 裁定）。
+    metadataBase: new URL(getSiteUrl()),
+    title: 'gem-hunter',
+    description: messages.home.description,
+  }
 }
 
 /**
