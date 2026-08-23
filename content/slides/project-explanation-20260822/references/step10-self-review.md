@@ -79,7 +79,7 @@
 
 `docs/infographics/10-gem-score.webp` の全面貼りをやめ、`new-15` として新規生成した。
 
-この図は **「健全性フィルタで足切り済み」「健全性 score → 足切り」「健全性 = OpenSSF criticality_score」** と描いているが、実装では `criticality_score` は使われておらず（`src/` にあるのは JSDoc の言及のみ）、実際に効いている足切りは **star 下限 5 の汚染フィルタ**（`tools/generate_gem_digest.mjs` の `DEFAULT_MIN_STARS`）である。本文にこれを正直に書くと、**同じスライドの中で画と話が矛盾する**（聴衆は読んだ側を信じる）。図そのものの更新は本デッキのスコープ外なので Issue #521 へ回した。
+この図は **「健全性フィルタで足切り済み」「健全性 score → 足切り」「健全性 = OpenSSF criticality_score」** と描いているが、実装では `criticality_score` は使われておらず（`src/` にあるのは JSDoc の言及のみ）、実際に効いている足切りは **star 下限 5 の汚染フィルタ**（`tools/generate_gem_digest.mjs` の `DEFAULT_MIN_STARS`）である。本文にこれを正直に書くと、**同じスライドの中で画と話が矛盾する**（聴衆は読んだ側を信じる）。図そのものの更新は本デッキのスコープ外なので Issue #521（項目 5 として追記）へ回した。
 
 これに伴い既存流用は 5 枚 → **4 枚**（`08-doc-relations` / `07-design` / `12-cloudflare` / `11-testing-strategy`）になった。
 

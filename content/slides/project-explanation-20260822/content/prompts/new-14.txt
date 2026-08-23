@@ -50,7 +50,7 @@ Text elements (exhaustive — render ALL of these VERBATIM, character for charac
 「汚染と重複を落として残ったのはユニーク 62,483 リポジトリ。最大の npm でも 15.5% にとどまる」
 「一般語 24 語で測り直すと、検索上位 100 件の平均 34.5% に Gem Index が付いた」
 「3 MB のバンドル上限も、静的アセットとして配る方式に変えたことで当たらなくなった」
-「それでも sort=gem-index は戻さない。100 件中 68 件に値が無く、主ソートには使えない」
+「それでも sort=gem-index は戻さない。上位 100 件の 3 分の 2 前後に値が無く、主ソートにできない」
 「実測で殺した判断を、自分の実測でひっくり返す作業だった。記録が残っていたから測り直せた」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
