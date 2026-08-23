@@ -42,7 +42,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 | `GITHUB_OAUTH_CLIENT_SECRET` | 同上 | 同上 |
 | `GITHUB_OAUTH_CALLBACK_URL` | 同上（デプロイ先ごとに異なる。オープンリダイレクト対策の検証にも使う） | 同上 |
 | `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | 同上（**本行だけが欠けても** ログイン導線ごと無効化される。表示可否は `src/composition/auth.ts` の `isAuthConfigured()` が 4 変数の AND で判定する） |
-| `RATE_LIMIT_SALT` | 検索経路の自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt | レート制限の間引きをしない（フェイルオープン） |
+| `RATE_LIMIT_SALT` | 自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt。適用範囲は検索（`/{locale}` / `GET /api/search`）と Gem 一覧（`/{locale}/gems`）。適用経路の正本は [Cloudflare インフラ設計](./docs/03_design/infrastructure/cloudflare-infrastructure.md) §3.3 の表 | **適用経路すべてで** 間引きをしない（フェイルオープン。エラーにも `429` にもならず黙って通る） |
 
 🔵 公開中の本番環境には OAuth の 4 変数を供給していないため、現在ログイン導線は表示されない（未ログインで全機能が使える状態）。
 
