@@ -67,9 +67,10 @@ jobs:
 
       - name: Generate gem pool
         run: node tools/generate_gem_digest.mjs
-        # --allow-partial-write は絶対に付けない（孤児シャード削除が不可逆）。
-        # CLI は失敗時に非ゼロで終了し、部分書き込みは既定で拒否するため、ここで失敗すれば
-        # 以降のステップ（git add 相当）へは進まない。
+        # 反映するかどうかに関わらず **毎日** 実行する（パイプラインの健全性を毎日検証するのが
+        # この日次実行の目的そのもの）。--allow-partial-write は絶対に付けない（孤児シャード
+        # 削除が不可逆）。CLI は失敗時に非ゼロで終了し、部分書き込みは既定で拒否するため、
+        # ここで失敗すれば以降のステップ（git add 相当）へは進まない。
 
       - name: QA check (fail-closed)
         run: |
