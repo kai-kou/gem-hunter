@@ -2,7 +2,7 @@
 
 - **状態**: **承認**
 - **日付**: 2026-08-20 JST
-- **対応要件**: `AR-5` / `D-6` / `D-20` / `NFR-30` / `AC-11` / `NFR-33`
+- **対応要件**: `AR-5` / `D-6` / `D-20` / `AC-11` / `NFR-33`
 - **関連**: [PRD](../02_requirements/prd.md) §0.3 / §3.2（エラー種別） / §12 / [決定ログ](../02_requirements/open-questions.md) `D-6`「D-6 の決定から従属的に確定する事項」 / [ADR 0003](./0003-github-app-authentication.md)（サーバー側の GitHub App 認証・`D-6` 6 で本 ADR の前提を変更しないと確認済み） / `src/infrastructure/github/oauth.ts`
 
 ---
@@ -93,7 +93,7 @@
 
 | 代償 | 緩和策 |
 |---|---|
-| 与件の対象外項目に手を入れたことの説明責任が生じる | README・PRD・本 ADR の複数箇所に上乗せ理由を明記する（`NFR-30` / `AC-11`。本節が完了条件） |
+| 与件の対象外項目に手を入れたことの説明責任が生じる | PRD（§4.2 `AR-5` の詳細）と本 ADR に上乗せ理由を明記する（本節が完了条件）。🔵 README への記載は `D-39` により取り下げた |
 | OAuth 資格情報（3 環境変数）が実行環境に必要になる | 未設定でも機能を静かに無効化し（`oauthCredentialsConfigured()`）、未ログイン体験を壊さない設計にする |
 | **認証を追加した以上、データの可視範囲（プライベートリポジトリの混入）を明示的に評価する責務を負う** | [ADR 0003](./0003-github-app-authentication.md) §5.4 が定めた 4 層の公開限定強制（`NFR-33` / `AC-12`）をアプリ側に実装する。認証を上乗せする決定は、レート枠・実装コストだけでなく可視範囲の変化も同じ表で評価すべきという教訓（`L-128`）は本 ADR の対象領域にも当てはまる |
 
@@ -112,7 +112,7 @@
 
 | ドキュメント | 関係 |
 |---|---|
-| [`prd.md`](../02_requirements/prd.md) `AR-5` / `NFR-30` / `AC-11` | 要件の正本（未ログインで全機能・機能差を作らない・README への記載義務） |
+| [`prd.md`](../02_requirements/prd.md) `AR-5` / `AC-11` | 要件の正本（未ログインで全機能・機能差を作らない）。🔵 上乗せ理由の記録先は本 ADR であり、README への記載義務は課さない（#461） |
 | [`open-questions.md`](../02_requirements/open-questions.md) `D-6` | 任意 OAuth ログインの決定ログ（本 ADR が記録として補完する対象） |
 | [ADR 0003](./0003-github-app-authentication.md) | サーバー側の GitHub API 認証方式（GitHub App installation token）の決定。§2 決定 6 が `D-6` のログイン設計を変更しないことを明記し、§5.4 が可視範囲の強制責務を定める |
 | `src/infrastructure/github/oauth.ts` | 実装（authorize URL 組み立て・token 交換・資格情報ゲート） |

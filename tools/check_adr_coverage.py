@@ -3,15 +3,16 @@
 
 SSOT: `docs/02_requirements/prd.md` §12（記録すべき ADR の一覧）と
       `docs/02_requirements/minimum-requirements.md` §6（README に書くこと）。
-対応要件: `NFR-29`（セットアップ手順）/ `NFR-31`（AI 利用の範囲と方法）/
-          `NFR-32`（ADR の記録）/ `AC-11`。
+対応要件: `NFR-29`（セットアップ手順）/ `NFR-30`（設計上の判断・工夫した点）/
+          `NFR-31`（AI 利用の範囲と方法）/ `NFR-32`（ADR の記録）/ `AC-11`。
 
 検査（Error・`run_checks.sh` を止める）:
   1. `prd.md` §12 の表に「未作成」の行が残っていないこと
   2. §12 の表から張られた ADR リンクの実ファイルが存在すること（リンク切れ検出）
   3. README にセットアップ手順の必須コマンド（`npm ci` / 起動 / テスト）が載っていること
-  4. README に AI 利用の範囲と方法の節があること
-  5. `docs/adr/` に存在する ADR が README の ADR 一覧から漏れていないこと
+  4. README に設計上の判断の節があること
+  5. README に AI 利用の範囲と方法の節があること
+  6. `docs/adr/` に存在する ADR が README の ADR 一覧から漏れていないこと
 
 🔴 このスクリプトは「何本の ADR が要るか」を自分では持たない。主題の一覧は `prd.md` §12 が
    唯一の正本であり、本スクリプトはその表を読んで欠落を検出するだけにゃ（表を増やせば検査も増える）。
@@ -74,6 +75,9 @@ def check_readme(readme: str, errors: list[str]) -> None:
     for command in REQUIRED_README_COMMANDS:
         if command not in readme:
             errors.append(f"README にセットアップ手順のコマンドが無い（NFR-29）: {command}")
+
+    if not re.search(r"^#{2,3} .*設計上の判断", readme, flags=re.MULTILINE):
+        errors.append("README に設計上の判断の節が無い（NFR-30）")
 
     if not re.search(r"^#{2,3} .*AI", readme, flags=re.MULTILINE):
         errors.append("README に AI 利用の範囲と方法の節が無い（NFR-31）")
@@ -162,13 +166,14 @@ def self_test() -> int:
     errors = []
     check_readme("# repo\n何も無い\n", errors)
     expect(
-        len(errors) == len(REQUIRED_README_COMMANDS) + 1,
+        len(errors) == len(REQUIRED_README_COMMANDS) + 2,
         f"README の欠落検出数が想定と違う: {errors}",
     )
 
     errors = []
     check_readme(
-        "# repo\n`npm ci` `npm run dev` `npm test`\n## AI を利用した範囲と方法\n",
+        "# repo\n`npm ci` `npm run dev` `npm test`\n"
+        "## 設計上の判断\n## AI を利用した範囲と方法\n",
         errors,
     )
     expect(errors == [], f"満たしている README を誤検出している: {errors}")
@@ -193,7 +198,8 @@ def self_test() -> int:
             readme.write_text(readme_body, encoding="utf-8")
 
         ok_readme = (
-            "`npm ci` `npm run dev` `npm test`\n## AI を利用した範囲と方法\n"
+            "`npm ci` `npm run dev` `npm test`\n"
+            "## 設計上の判断\n## AI を利用した範囲と方法\n"
             "| [0001](./adr/0001-alpha.md) | アルファを採用する |\n"
             "| [0002](./adr/0002-beta.md) | ベータを採用する |\n"
         )

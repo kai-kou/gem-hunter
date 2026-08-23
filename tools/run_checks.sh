@@ -191,6 +191,7 @@ fi
 # 4.7. ADR 記録と README 必須記載のゲート（E-18 / E-19 / NFR-29〜NFR-32 / AC-11）
 if [ -f "$REPO_ROOT/tools/check_adr_coverage.py" ]; then
   run_check "ADR / README 記載検査 (check_adr_coverage.py)" python3 tools/check_adr_coverage.py
+  run_check "ADR / README 記載検査 self-test (check_adr_coverage.py --self-test)" python3 tools/check_adr_coverage.py --self-test
 else
   skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
 fi

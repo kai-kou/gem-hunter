@@ -38,11 +38,13 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 | `GITHUB_APP_CLIENT_ID` | GitHub App の installation token 取得（[ADR 0003](./docs/adr/0003-github-app-authentication.md)） | 3 変数が揃わない限り未認証で GitHub API を叩く（レート枠が狭い） |
 | `GITHUB_APP_INSTALLATION_ID` | 同上 | 同上 |
 | `GITHUB_APP_PRIVATE_KEY_PKCS8` | 同上（**PKCS#8 形式** で注入する必要がある） | 同上 |
-| `GITHUB_OAUTH_CLIENT_ID` | 任意ログイン（`AR-5`・[ADR 0012](./docs/adr/0012-optional-github-oauth.md)） | 下記 `SESSION_ENCRYPTION_KEY` を含む **4 変数が揃わない限り** ログイン導線が静かに無効化される（未ログイン相当の機能はすべて動く） |
+| `GITHUB_OAUTH_CLIENT_ID` | 任意ログイン（[ADR 0012](./docs/adr/0012-optional-github-oauth.md)） | 下記 `SESSION_ENCRYPTION_KEY` を含む **4 変数が揃わない限り** ログイン導線が静かに無効化される（未ログイン相当の機能はすべて動く） |
 | `GITHUB_OAUTH_CLIENT_SECRET` | 同上 | 同上 |
 | `GITHUB_OAUTH_CALLBACK_URL` | 同上（デプロイ先ごとに異なる。オープンリダイレクト対策の検証にも使う） | 同上 |
 | `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | 同上（**本行だけが欠けても** ログイン導線ごと無効化される。表示可否は `src/composition/auth.ts` の `isAuthConfigured()` が 4 変数の AND で判定する） |
 | `RATE_LIMIT_SALT` | 検索経路の自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt | レート制限の間引きをしない（フェイルオープン） |
+
+🔵 公開中の本番環境には OAuth の 4 変数を供給していないため、現在ログイン導線は表示されない（未ログインで全機能が使える状態）。
 
 上記はいずれも `src/infrastructure/` 配下の各ファイルが `process.env` から直接読む（秘匿情報を読んでよい層を 1 ファイルに限定する設計・`ARCH-5` / `NFR-22`）。`GITHUB_API_ORIGIN` と `GITHUB_OAUTH_ORIGIN` はテスト専用のスタブ切替であり（ループバック宛てのみ有効）、アプリの実行時には使わない。
 
