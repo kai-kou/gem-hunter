@@ -34,12 +34,12 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 2 # git show HEAD:<path> で前回生成物と比較するために必要
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           # npm ci は実行しない: tools/gem-pool/*.mjs は Node 組み込みモジュールのみに依存し、
@@ -103,8 +103,12 @@ jobs:
         id: prbody
         run: |
           set -e
+          # 🔴 ヒアドキュメントのデリミタは実行ごとに一意にする（Actions の既知の output
+          # injection 手口対策）。QA 出力に偶然固定文字列が現れて早期終端すると、以降の行が
+          # 任意の key=value として $GITHUB_OUTPUT へ注入されうるため。
+          DELIM="GEM_POOL_PR_BODY_EOF_$(openssl rand -hex 8)"
           {
-            echo "body<<GEM_POOL_PR_BODY_EOF"
+            echo "body<<${DELIM}"
             echo "## Gem 候補プール 週次再生成"
             echo ""
             echo "この PR は GitHub Actions（\`gem-pool-refresh.yml\`）が自動生成しました。マージは Claude セッションが行います。"
@@ -135,7 +139,7 @@ jobs:
             echo ""
             echo "### 実行時刻"
             echo "$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z')"
-            echo "GEM_POOL_PR_BODY_EOF"
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create or update pull request
