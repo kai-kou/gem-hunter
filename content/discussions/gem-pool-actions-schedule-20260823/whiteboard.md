@@ -36,8 +36,8 @@ D. 🔴 **失敗時の扱い**（`D-28` の SPOF 方針に沿うこと）。途�
 
 E. 🔴 **更新すべき既存記述の洗い出し**（実ファイルを読んで、パスと節・行の粒度で）。最低限: `tools/generate_gem_digest.mjs` 冒頭コメント、`docs/rules/pr-review-flow-summary.md`、`docs/rules/harness-escalation.md`、`docs/rules/lessons-management.md`、`docs/02_requirements/open-questions.md`（`D-23` / `D-28` / `D-31` / `D-32`）、`docs/03_design/infrastructure/cloudflare-infrastructure.md`、`CLAUDE.md`。**Actions が使えるようになったからといって、飼い主が別途決めた『Actions を品質ゲートには使わない』方針まで勝手に覆さないこと**（本 Issue のスコープはバッチの定期実行に限る。方針変更が要ると判断したら follow_up_issues に落とす）。
 - 参加者: `actions_facts`, `batch_ops`, `deploy_gate`, `docs_trace`
-- 投稿数: 6
-- 更新: 2026-08-23T10:09:12+09:00
+- 投稿数: 12
+- 更新: 2026-08-23T10:17:03+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -361,3 +361,373 @@ Workers Builds のデプロイ発火は main への push を webhook で直接�
 - 専用ラベル（例 `type:automation` / `source:actions-bot`）を Actions 側で付与し、既存のスプリント/Issue トリアージ系スクリプト（`check_deploy_gate.py` の `is_sprint_issue`・`check_pending_pr_reviews.py` 等）が Actions 発 PR を人間/Claude 主導の PR と混同しないようにする。
 
 以上、post 済み。
+
+## ラウンド 2
+
+### `docs_trace` — 反論
+<sub>2026-08-23T10:11:24+09:00</sub>
+
+# Round 2 反論：衝突回避と新規決定ログの方針
+
+## 1. ファイル衝突の回避（PR #460 と本 Issue の分岐）
+
+| 重複ファイル | round 1 での位置づけ | 本 Issue での対応方針 |
+|-----------|------------------|------------|
+| `docs/02_requirements/open-questions.md` | 既存決定の「注釈追加（オプション）」「実装時注記（オプション）」| **本 Issue では触らない**。PR #460 での変更を優先させ、Gem digest の決定ログ（D-39 相当）は Issue #458 着手時に **別途追記** |
+| `docs/03_design/infrastructure/cloudflare-infrastructure.md` | 既存記述への「注記追加（オプション）」「明確化推奨」| **本 Issue では触らない**。PR #460 での変更を優先させ、Gem digest の位置づけは同 PR の「ただし Gem digest 定期実行は除く」等の書き換えで足りる |
+
+**結論**: round 1 で挙げた変更対象のうち、上記 2 ファイルは「実装時に Issue #458 側で別途対応」として外す。必須変更は `tools/generate_gem_digest.mjs` と `docs/rules/pr-review-flow-summary.md` の 2 ファイルのみに絞る。
+
+## 2. 新規決定ログの追記方法（D-39 の位置づけ）
+
+PR #460 が「`D-31` / `D-32` の決定から従属的に確定する事項」という **新規節** を追加する予定なら、Gem digest の決定（争点 A〜E）も同じ構造（新規節）で実装時に追加するのが自然。
+
+**追記案**:
+```
+### D-31 / D-32 の決定から従属的に確定する事項
+
+[既存の従属事項...]
+
+🔴 **Gem digest 定期実行（Issue #458・`D-39` 相当）の実装時決定**
+  - 実行間隔: [争点 A で決定]
+  - 生成物の反映経路: [争点 B で決定]
+  - Workers Builds ゲート（`check_deploy_gate.py`）との整合: [争点 C で決定]
+  - 失敗時の扱い: [争点 D で決定]
+  - 更新すべきドキュメント: [争点 E で決定]
+```
+
+**衝突回避**: PR #460 の新規節の直後に上記を足すだけで、PR #460 と本 Issue の変更境界が明確になり、衝突のリスクが下がる。
+
+## 3. `docs/rules/pr-review-flow-summary.md` 23 行目の書き換え文案（逐語）
+
+現行:
+```
+🔴 **GitHub Actions は制限中で使えない**（ジョブが数秒・ログ 0 バイトで失敗）。ワークフロー 2 本は撤去済み。
+```
+
+提案:
+```
+🔴 **GitHub Actions は制限中から復帰した**（Issue #458 で Gem digest 定期実行用の schedule workflow が実装済み）。
+ただし **品質チェック（`npm run check`）と本番デプロイ（Workers Builds）には引き続き使わない**（飼い主決定・Issue #298・`harness-escalation.md` Lv4）。
+```
+
+**理由**: Actions の状態変化（「制限中」→「復帰」）を事実で反映しながら、飼い主の「品質ゲートに使わない」方針は維持。Gem digest の schedule workflow は「別用途」と明確に分岐される。
+
+### `actions_facts` — 反論
+<sub>2026-08-23T10:11:32+09:00</sub>
+
+## actions_facts — Round 2（rebuttal）
+
+対象: `deploy_gate` の自動マージ設計・Workers Builds への影響、`batch_ops` の週次推奨。round 1 で「未確認」とした核心 2 点について WebSearch で 2 本だけ追加確認した（`.github/workflows/` 等の対象ファイル自体は再読していない）。
+
+---
+
+### 1. 🔴 `GITHUB_TOKEN` の「他 workflow を起動しない」制約は、`deploy_gate` の「同一ジョブ内で PR 作成 → マージまで完結」設計を **壊さない**
+
+**結論から言うと deploy_gate の設計は成立する。** ただし理由の説明が round 1 の私の書き方だと誤解を招くので訂正しておく。
+
+round 1 で確認した制約は「GITHUB_TOKEN が起こした *イベント*（push・PR opened 等）が **別の workflow run** を新規に起動しない」という話であって、「GITHUB_TOKEN で API 呼び出し（マージ操作）ができない」という話ではない。マージは `gh pr merge` / REST `PUT /pulls/{number}/merge` を **同じジョブの同じステップ内で能動的に呼ぶだけ**であり、`pull_request` イベントの発火を待つ受動的な仕組みではない。したがって「PR 作成 → 機械チェック → 同じ job 内で `gh pr merge --squash`」という 1 本の workflow は GITHUB_TOKEN のイベント抑制と無関係に動く。**deploy_gate の設計案（自動 PR + 同一ワークフローでの自動マージ）は技術的に妥当**。
+
+必要な `permissions:` は round 1 の #3 のとおり最低限:
+```yaml
+permissions:
+  contents: write        # push・マージ
+  pull-requests: write   # PR 作成・マージ
+```
+
+**ただし deploy_gate に 1 点、伝えていなかった落とし穴がある（ブランチ保護との相互作用・追加確認済み）**:
+GitHub には「Actions が生成した GITHUB_TOKEN で PR を承認できてしまう」ことを悪用したブランチ保護バイパスの既知パターンがあり、これに対する防御機能が存在する。
+- Organization/Repository 設定に **「Allow GitHub Actions to create and approve pull requests」** というスイッチがあり、既定でこれが無効な組織では **GITHUB_TOKEN で作成した PR を GITHUB_TOKEN 自身が承認できない**。
+- さらにブランチ保護に **「Require approval of the most recent reviewable push」** を有効化している場合、「直近の push をした主体 ≠ 承認者」が強制されるため、**PR 作成者とマージ実行者が同じ GITHUB_TOKEN だと承認要件を満たせず詰む**構成になりうる。
+
+**本リポジトリへの影響（要確認事項として deploy_gate/lead に申し送り）**: 本 Issue の設計は「レビュー承認（approve）」を経由せず、**squash マージを直接 API で叩く**方式なので、上記の「approve できない」制約そのものには引っかからない可能性が高い（GitHub の必須レビュー数が 0 に設定されていれば approve は不要でマージ API が素通りする）。ただし **本リポジトリの `main` に GitHub 側のブランチ保護ルール（必須レビュー数・必須ステータスチェック）が実際に設定されているかどうかは、この議論の中の誰も一次情報で確認していない**（Claude セッションは `mcp__github__merge_pull_request` で日常的に自己マージしているので、少なくとも「レビュー必須」は設定されていない可能性が高いが、これは推測であり確認事項として残す)。**実装 Issue の Done Criteria に「対象リポジトリのブランチ保護設定を `mcp__github__` 系ツールか GitHub UI で 1 回確認する」を入れることを推奨する**。
+
+---
+
+### 2. 🔴 Workers Builds への影響 — `deploy_gate` の推論に **同意（concession)**。ただし一次情報では依然「未確認」
+
+deploy_gate の round 1 主張:
+> 「GITHUB_TOKEN で作られた push/PR は他の Actions ワークフローをトリガーしない」という GitHub の制約は Workers Builds には影響しない（Actions workflow_run 連鎖の話であって、外部 GitHub App の webhook 購読とは別軸）
+
+これは round 1 で私が示した理解（community discussion ベース）と同じ結論であり、**追加で 2 本 WebSearch した限りでも矛盾する情報は出てこなかった**。具体的には:
+- GitHub 公式ドキュメントの「GITHUB_TOKEN は他 workflow を起動しない」の記述は、対象を一貫して **「a new workflow run」**（= Actions の実行）に限定しており、「リポジトリに他の GitHub App がインストールされている場合の webhook 配信」には一言も触れていない（round 1 で確認済み・再確認せず）。
+- Cloudflare 側のドキュメント（`developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/` 等）を今回検索したが、**Workers Builds のネイティブ Git 連携が GITHUB_TOKEN 由来の push を区別するかどうかに触れた記述は見つからなかった**（`wrangler-action` を使う「Actions 経由でデプロイする」方式のドキュメントはヒットしたが、これは本設計と無関係な別方式）。
+
+**結論**: 「Workers Builds は Actions の workflow-trigger 抑制の対象外である」という deploy_gate の推論は **理屈としては筋が通っており、私も同意する（concede）**。しかし **Cloudflare 公式ドキュメントによる一次情報の裏付けは、この議論全体を通じてまだ誰も取れていない**。
+
+**実装前の検証手順（未確認のまま進めないための具体策・争点 D の Done Criteria に追加すべき）**:
+1. Gem digest ワークフローを `workflow_dispatch` で 1 回手動起動する（round 1 #7 の `inputs` で `--dry-run` を渡せるようにしておけば安全に試せる）。
+2. 実データで 1 回だけ PR 作成 → 同一 job で squash マージまで通す（本番相当の 1 回）。
+3. マージ直後、Cloudflare 側のダッシュボード or `mcp__Cloudflare_Developer_Platform__workers_list` 等で **新しいビルドが実際にキューされたか**を確認する。
+4. トリガーされていなければ、Workers Builds は GITHUB_TOKEN 発の push を無視している疑いが濃厚 → `trigger_workers_build.py`（PR #460・lead 追加事実 2）が持つ「ゲート通過後の再トリガー」経路を **Gem digest PR のマージ後にも明示的に呼ぶ**フォールバックが必須になる。
+この 1 往復さえ実施すれば「未確認」が「確認済み」に変わる。**本 Issue のスコープ内で十分に実施可能な検証**であり、別 Issue に切り出す必要はない。
+
+---
+
+### 3. `batch_ops` の週次推奨（`0 21 * * 0` UTC = 月曜 06:00 JST）について — Actions 側制約とは **矛盾しない**。ただし 1 点リスクを追加する
+
+round 1 で確認した Actions 側の制約と週次推奨を突き合わせる:
+
+- **UTC 表記**: `0 21 * * 0` は UTC 日曜 21:00 = JST 月曜 06:00 で合っている（cron は UTC 基準という round 1 の確認と整合）。
+- **毎時 0 分の混雑**: 週次であっても `21:00`（UTC の毎時 0 分）に固定しているため、round 1 で挙げた「高負荷時は分単位でずれる／ドロップされうる」リスクはそのまま残る。**分をわずかにずらす（例 `17 21 * * 0`）ことを推奨**（頻度を下げても「ちょうど 0 分」を避けるコストはゼロなので、直す理由がある）。
+- **60 日無活動での自動停止**: 週次実行（52 回/年）自体は「リポジトリの活動」としてカウントされる対象ではない（fact: 判定条件は「リポジトリの活動」であり、schedule workflow 自身の実行が activity としてカウントされるかは round 1 で確認できていない・未確認のまま）。ただし本プロジェクトは PR マージが常時走っている（fact 3〜4 の並行 PR、`session-sprint-rules` の稼働実績）ため、**60 日間 commit が無い状態は現実的にまず起こらない**。週次頻度を理由にこの停止条件を心配する必要はない。
+- **⚠️ 追加すべきリスク（round 1 では触れていなかった点）**: 週次のように **実行頻度が低い schedule は、1 回のドロップ（round 1 #2 の "some queued jobs may be dropped"）が与える影響が日次より大きい**。日次でドロップされても翌日に追いつくが、週次でドロップされると **鮮度劣化が最大 2 週間分に伸びる**。`batch_ops` の週次案自体には反対しないが、**「実行されたはずの週に実際に実行されたか」を検知する仕組み**（例: 直近の `index.json` の `generatedAt` が想定より 10 日以上古ければ `[gem-pool-stale]` Issue を起票する定期チェック、または既存の `sprint-cycle-router` の巡回に軽い鮮度チェックを 1 行足す）を D-28 の SPOF 方針（「鮮度のみ劣化させる」を"検知可能な形で"劣化させる）に沿って争点 D に加えることを提案する。
+
+---
+以上、post 済み。deploy_gate の設計（自動マージ）は成立を確認（ブランチ保護の一次確認だけ Done Criteria に追加を推奨）。Workers Builds への非影響は concede するが一次情報未確認のため実装前検証手順を明示。batch_ops の週次案は妥当だが、低頻度ゆえの「ドロップ時の鮮度劣化拡大」を新規リスクとして提起。
+
+### `batch_ops` — 反論
+<sub>2026-08-23T10:12:52+09:00</sub>
+
+## batch_ops round 2 — rebuttal / concession（round 1 の自分の分析＋ホワイトボードのみで回答。対象ファイルは再読していない）
+
+### 1. 週次推奨を `actions_facts` の制約で再検証 → 確定 cron
+
+`actions_facts` の3点（UTC 基準・毎時 `:00` 混雑・60日無活動で自動停止）と自分の週次推奨は **矛盾しない**。むしろ強化材料がある:
+
+- **60日無活動の自動停止との関係**: 停止条件は「ワークフローの実行有無」ではなく「**リポジトリの活動**」（`actions_facts` #2）。逆に言えば、週次実行が §2（round 1）で述べた「実質ゼロ差分は稀（被依存数はほぼ毎回どこか動く）」の通りほぼ毎回 PR → マージを生むなら、**このバッチ自身が週次の repo activity を生成し、60日しきい値に一度も近づかない**（52 回/年 ≫ 60日に最低1回で足りる水準）。日次にする動機（60日対策）は不要——週次で十分すぎる余裕がある。逆に「実質ゼロ差分の回は PR を作らない」設計（round 1 §2）を厳格に運用しすぎて **何週も連続でゼロ差分が続く**と自己矛盾的にリスクが生まれるが、被依存数の自然変動を考えるとその可能性は低いと見る。念のため「N 週連続で no-op が続いたら Issue 化」を D の監視項目に追加する。
+- **毎時 `:00` 混雑の回避**: 分をずらす。
+- **確定**: **毎週月曜 06:17 JST**（`:00` から 17 分ずらし、深夜バッチ帯を避けて朝一の枠）。
+  ```yaml
+  on:
+    schedule:
+      - cron: '17 21 * * 0'   # UTC 日曜 21:17 = JST 月曜 06:17
+  ```
+  cron の曜日フィールドは GitHub 仕様上 `0=日曜`。UTC 日曜 21:17 + 9h = 月曜 06:17 JST で計算済み。
+
+### 2. `deploy_gate` の機械マージ案への危険指摘（round1未回答分・核心）
+
+`index.json` について **確実に分かっているキー**（`output.mjs` を全文読んだ範囲）は `shards[].{registry, ecosystem, fileName, count}` と `totalCount` と `stats`（中身は未読・`pipeline.mjs` 本体は round1 で import 一覧しか見ていない）。**`stats` 配下の除外理由別キー名は断定しない**（L-113: 読んでいないものを埋めない）。したがって閾値提案は **確実なキーだけ**で組む:
+
+- **危険 1: 収集失敗（レジストリ 1 つ丸ごと）は既にコード側でブロック済み**——`collectAll` が失敗を記録すると `decideOutputWrite` が `partial=true` → 既定で `write=false`・exit 1（round1 §1）。**ワークフローが exit code を尊重してさえいれば、この経路は最初から PR すら作られない**（`git diff` する対象がない）。したがって `deploy_gate` が懸念する「収集失敗で構成比が崩れた回」は、機械 QA を足すまでもなく **CLI 自身の fail-closed 設計で既に塞がれている**——ここは deploy_gate の懸念が半分は杞憂（危険ではなく安全）だと指摘したい。
+- **危険 2（本物の隙間）: 収集は "成功" 扱いだが、フィルタ・dedupe が効きすぎて特定レジストリ or 全体が激減する回**。これは `failures` に乗らないため上記のブロックを素通りし、`write=true` のまま PR が作られる。ここに機械 QA が要る。**具体的閾値（`shards[].count` / `totalCount` のみを使う）**:
+  1. **レジストリ単位のゼロ化検知**: 直前コミットの `index.json.shards[]` に存在した `registry` が、今回の `shards[]` から**消えている**、または `count === 0` になっている → 自動マージ **禁止**。（`shards` に載らない＝配列から要素ごと消える点に注意。round1 で確認済みの `buildRegistryShards` の実装〔`byRegistry` を持つレジストリだけ配列化〕からそう読める。）
+  2. **レジストリ単位の急減**: 各レジストリについて `count_今回 / count_前回 < 0.7`（30% 超の減少）→ 自動マージ禁止。
+  3. **全体の急減**: `totalCount_今回 / totalCount_前回` が **0.85〜1.15 の範囲外**（±15%）→ 自動マージ禁止。根拠: `generate_gem_digest.mjs` の docstring に載っていた実測テーブル（round1 で読んだ範囲）では `minStars` を 1→5 に変えると 88,981→62,565（**約 30% 減**）——これは「意図的な閾値変更」の regime であり、週次の同一設定運転でここまで動くのは異常と判定してよい。±15% は初期値の仮置きで、実運転数回のログで較正し直す前提（ラボ実測ではなく初期ヒューリスティックであることを明記）。
+  4. **CLI 自身のフラグを最優先で信じる**: `--report` の JSON（`generate_gem_digest.mjs` の `buildSummary` を round1 で全文読んだ範囲、確実なキー）`partial` / `wroteOutputs` / `blocked` / `removedFiles` を先にチェックし、**`partial !== false` または `removedFiles.length > 0` なら問答無用で自動マージ禁止**（孤児シャード削除が起きた回を機械 QA で二重に弾く）。これは stats の中身を推測するより堅牢——CLI がすでに構造化して吐いている値を再利用するだけで済む。
+- **危険 3（deploy_gate 提案への追加指摘）**: 「差分パスを `public/data/**` に機械限定」だけでは①②のような **パスは正しいが中身がおかしい PR** を通してしまう。`git diff --name-only` のパス限定チェックと、上記①〜④の内容チェックは **別の防御層**として両方必須。
+
+### 3. 冪等性チェックの実装形（jq 依存を外す）
+
+`actions_facts` は Actions ランナーの jq プリインストールを一次情報で確認していない（未確認リストに無いが、明言もされていない）。**Node は Actions ワークフローが `setup-node` で確実に用意する**（バッチ本体が Node 22 必須のため）ので、jq には依存せず Node スクリプトで統一する:
+
+```js
+// tools/gem-pool/scripts/normalize_for_diff.mjs（新規・提案）
+import { readFileSync } from 'node:fs'
+const doc = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+if (doc?.meta?.generatedAt !== undefined) doc.meta.generatedAt = 'NORMALIZED'
+if (doc?.date !== undefined) doc.date = 'NORMALIZED'
+process.stdout.write(JSON.stringify(doc, null, 2) + '\n')
+```
+
+```bash
+changed=0
+for f in public/data/gem-index/*.json public/data/daily-digest.json; do
+  if ! git show "HEAD:$f" > /tmp/old.json 2>/dev/null; then changed=1; break; fi  # 新規ファイル＝実差分
+  node tools/gem-pool/scripts/normalize_for_diff.mjs /tmp/old.json > /tmp/old.norm.json
+  node tools/gem-pool/scripts/normalize_for_diff.mjs "$f"       > /tmp/new.norm.json
+  diff -q /tmp/old.norm.json /tmp/new.norm.json > /dev/null || { changed=1; break; }
+done
+if [ "$changed" = "0" ]; then
+  git checkout -- public/data/gem-index public/data/daily-digest.json
+  echo "no-op: 実質差分なし。PR を作らない"
+fi
+```
+`git diff` 単体では済まない（`generatedAt`/`date` は毎回変わるため生の `git diff` は常に非空になる）。正規化前処理が必須で、それを jq でなく Node で書くのがこのリポジトリの前提（Node 22 セットアップ）に最も素直。
+
+### 4. `--allow-partial-write` はワークフローで使うか
+
+**round1 の結論を維持: 定期実行（`schedule` トリガー）では絶対に使わない。** 孤児シャード削除（`removeOrphanShards`）は取り返しのつかない破壊的操作であり、無人実行と組み合わせるべきではない。
+
+使ってよい場面は **1 つだけ**: `workflow_dispatch`（手動起動）かつ人が明示的に「特定レジストリだけ緊急再生成したい」と判断したとき（CLI コメント自身が「緊急除外・部分再生成用」と明記——round1 では未言及だったが `generate_gem_digest.mjs` の `parseRegistryList` 直上のコメントで確認済み）。`actions_facts` #7 の `workflow_dispatch.inputs` 案に乗せる場合は:
+- 既定 `false`、`description` に「⚠️ 索引に載らない孤児シャードを削除します」を明記（`actions_facts` も同じ注意を出している・一致）。
+- **このフラグが `true` で実行された回は、§2 で提案した自動マージ QA を無条件でスキップし人手レビュー待ちにする**（自己判断で緊急操作した結果をさらに機械マージするのは二重に危険）。
+
+---
+以上、1（cron 確定・60日条件は週次で無問題）、2（deploy_gate の危険指摘の核心に回答・確実なキーのみで閾値提案・危険1は実は安全という訂正込み）、3（Node ベースの実装形）、4（`--allow-partial-write` は schedule では不使用・workflow_dispatch限定＋自動マージ対象外）。
+
+### `deploy_gate` — 反論
+<sub>2026-08-23T10:13:08+09:00</sub>
+
+## deploy_gate round 2: lead evidence 2 への応答 + 自己検証 + 決定
+
+### 1. lead evidence 2（PR #460）を受けた round 1 結論の更新 — **一部譲歩（concession）**
+
+**譲歩する**: round 1 の結論「ゲートが閉じて `main` にデータだけ入って本番へ出ない状態は `D-28` の SPOF 方針どおり *許容*」は、**結論（許容してよい）自体は変わらないが、根拠が「受動的放置」から「能動的自己修復が別レーンで既に存在する」に差し替わる**。round 1 では「そのうち別の理由で誰かがデプロイすれば追いつく」という消極的な許容だったが、PR #460 の `trigger_workers_build.py` + `sprint-cycle-router` §1.5 Step 0.2 は **毎 firing** `check_prod_drift.py` で main↔本番の乖離を検査し、ゲートが開いていれば **即座に再トリガー**、開いていなければ `[prod-drift]` Issue で可視化する。これは「gem-pool のデータだけが特別に滞留する」問題ではなく、**あらゆる原因で main が本番より先行した状態を汎用的に検知・解消する**設計であり、gem-pool のデータ PR もこの汎用機構の対象に自動的に含まれる（`check_prod_drift.py` は main HEAD と本番の SHA/内容を比較するだけで、直前にマージされたのがコードかデータかを区別しない）。
+
+**同意する（🔴 の前提）**: 「本 Issue のワークフロー側でデプロイ発火・再トリガーを自前実装しない」に同意する。理由:
+- SSOT 二重化のコストが実測で裏付けられている。`open-questions.md` 追記が示す通り、`D-31`/`D-32` は「発火点を移せば直る」という設計だったが実際には「ゲート再オープン後の再トリガー」という **1 つの穴**だけで 3 スプリント分の滞留が起きた。同じ穴を gem-pool 用ワークフローが独自に埋めようとすると、`trigger_workers_build.py` と機能重複する 2 本目の再トリガー実装が生まれ、どちらが正で片方が古くなったときにどちらを信じるかという新しい問題を作る。
+- gem-pool ワークフロー側が持つべきなのは「PR を作る（→ マージされれば push が発生する）」ことだけで、**push 後にそれが本番へ届くかどうかは `sprint-cycle-router` Step 0.2 の責務**として完全に切り離してよい。これは責務分離としても妥当（gem-pool ワークフローが Cloudflare API トークンを持つ必要すら無くなる ── 権限最小化の副次効果もある）。
+
+**round 1 からの実務上の変更点**: round 1 で「鮮度劣化の監視を別 Issue に切り出すことを検討」と書いたが、**その別 Issue は既に PR #460 として存在する**ので、本 Issue #458 では何もしない（フォローアップ起票が不要になった）。
+
+### 2. 「ワークフロー自身が squash マージする」への自己検証
+
+**PR を経由する意味 = ブランチ保護が『PR 必須』を GitHub 側で構造的に強制しているかどうかに懸かっている。** 同一 run 内で PR 作成 → マージまで完結させる設計（round 1 案）は、`actions_facts` round 1 §4 の実測（GITHUB_TOKEN 発の `pull_request` イベントは他 workflow を起動しないが、**同一 run 内で `create_pull_request` → `merge_pull_request` を順に呼ぶこと自体は妨げられない**）と矛盾しない。しかし「1 ジョブが自分で作って自分でマージする」だけなら、`main` への直接 push と実質的に何が違うのかは正面から答える必要がある。
+
+答え: **もし `main` のブランチ保護に「PR を必須とする」設定が入っていれば、実質的な差は大きい**（`git push origin main` そのものが GitHub API レベルで拒否される。`GITHUB_TOKEN` に `contents: write` があっても、保護ルールはトークン権限より上位で効く）。この場合、PR 経由は「A-1 の文言だけを満たす形式」ではなく、**ワークフローのコードが将来どう書き換わっても main への直接書き込みが物理的に不可能である**という、`workers_build_deploy.sh` 冒頭が環境変数越しのゲート迂回を禁じたのと同じ思想の「構造的強制」になる。逆に **ブランチ保護が入っていなければ**、この設計は「PR オブジェクトを経由する」という儀式以上の意味を持たず、ワークフローのバグ 1 つで直接 push と同じ結果（レビュー 0 回でコードが main に載る）になりうる。**これは私が未確認の事実であり、`batch_ops`/`actions_facts` に `main` のブランチ保護設定（`require pull request before merging` の有無）を確認してもらう必要がある**（読み取り専用で確認可能なはず）。
+
+結論: **ブランチ保護が「PR 必須」を強制している前提でのみ、round 1 の「自動 PR + 自動マージ」を維持する**。強制されていないなら、①（推奨）**先にブランチ保護を有効化してから**自動マージ経路を組む、または② 保護を入れられない事情があるなら、マージだけは人間/セッションを挟む設計に落とす。①を推す理由は、保護を入れるコストがほぼゼロ（設定 1 行）である一方、②は「放置される PR が増えない仕組み」を別途 §2 で作り込む必要がある（waiting-claude 経路の定期回収に依存する分だけ、放置リスクが構造的に残る）ため。**「同一 run 内マージ」という設計そのものは維持しつつ、その安全性の根拠を『A-1 の文言遵守』ではなく『ブランチ保護による構造的強制』に置き直す**、というのが自己検証の結論。
+
+### 3. 「差分ゼロなら PR を作らない」判定の位置 — **生成直後（コミット・ブランチ作成の前）に置く**
+
+`batch_ops` の正規化 diff スクリプトは、すでに「生成直後・`git add` の前」に置く設計になっている（`git show HEAD:<path>` と比較するだけで、その時点の checkout は `main` のままでよく、新しいブランチも要らない）。この位置が正しい理由:
+
+- **PR 作成直前**（ブランチを切ってコミットした後）まで判定を遅らせると、実質差分ゼロの回でも「ブランチ作成 → コミット → push → PR オープン → クローズ」という無駄な GitHub API 呼び出しと Issue/PR トラッカーへのノイズが発生する（`check_deploy_gate.py` の `is_sprint_issue` のような他ツールが不要な PR を誤って処理対象に含めるリスクもゼロではない）。
+- 生成直後の判定なら、**ブランチを切ることも push することもなく** `git checkout -- public/data/gem-index public/data/daily-digest.json && exit 0` で完全に無害に終われる。
+
+したがって決定: ワークフローの段は `node tools/generate_gem_digest.mjs`（生成）→ `batch_ops` の正規化 diff no-op 判定（この場で `git checkout --` して抜けるか続行するかを決める）→（続行時のみ）ブランチ作成・コミット・push・PR 作成、の順に固定する。
+
+### 4. 決定論的データ QA を実行可能なコマンド粒度へ — **既存資産で大部分足りる（新規スクリプト最小限）**
+
+既存 `tools/` を確認した結果（YAGNI 確認）:
+
+| 検査項目 | 既存資産で足りるか | コマンド |
+|---|---|---|
+| シャード⇔索引の整合・件数整合・列定義・行の型・サイズ予算・決定論（ソート順） | ✅ **既存で完全に足りる**。`tools/check_gem_shards.py` がまさにこれを検査するために書かれている（docstring に検査項目 1〜6 が明記済み・`run_checks.sh` に配線済み） | `python3 tools/check_gem_shards.py` / `python3 tools/check_gem_shards.py --self-test` |
+| 生成コマンド自体の成否（部分書き込み拒否・全滅時 throw） | ✅ **新規チェック不要**。`generate_gem_digest.mjs` 自身が fail-closed（`batch_ops` round1 §1 で確認済み）。ワークフロー側は終了コードを尊重して非ゼロなら後続（`git add`）へ進まないだけでよい | `node tools/generate_gem_digest.mjs; rc=$?; [ "$rc" -eq 0 ] || exit "$rc"` |
+| 差分パスが `public/data/gem-index/**` + `daily-digest.json` に限定されている | ❌ 既存資産なし。ただし **1 行の `git diff --name-only` 判定で足り、新規スクリプトは不要** | `git diff --name-only \| grep -vE '^public/data/(gem-index/\|daily-digest\.json$)' \| grep -q . && exit 1 \|\| true`（＝許可外パスに差分があれば非ゼロ） |
+| `totalCount` の前回比 delta 閾値 | ❌ 既存資産なし。`check_gem_shards.py` は「シャード合計とindexのtotalCountが一致するか」という**内部整合**は見るが、「前回の値と比べて妥当か」という**時系列比較**はしない（別の検査軸）。ただし `jq` 1 行 + 算術判定で足り、新規スクリプトは不要 | `old=$(git show HEAD:public/data/gem-index/index.json \| jq .totalCount); new=$(jq .totalCount public/data/gem-index/index.json); python3 -c "import sys; o,n=int('$old'),int('$new'); sys.exit(0 if abs(n-o)/max(o,1)<0.15 else 1)"` |
+| `--allow-partial-write` を使っていないこと | ✅ **検査不要**。ワークフローのコマンド行に固定でこのフラグを含めない、という**著者側の規律**で足りる（`workers_build_deploy.sh` が `GATE_CMD`/`DEPLOY_CMD` を配列でハードコードして環境変数からの上書きを禁じたのと同じ考え方を踏襲すればよく、QA スクリプト側で「使われていないか」を後追い検査する必要はない） |
+
+**新規に増やすものはゼロ**（Python/Node の新規ファイルは不要）。既存 `check_gem_shards.py` をそのまま使い、残り 2 項目（diff スコープ・totalCount delta）はワークフロー YAML 内のシェル/jq ワンライナーで完結する。`batch_ops` の正規化 diff スクリプトも同様に新規ファイル化せず、ワークフローのステップとして埋め込めば足りる。
+
+**副次的な発見（lead/docs_trace への申し送り）**: `tools/check_digest_freshness.py --heal` が `node tools/generate_gem_digest.mjs` を自前で subprocess 実行する自己修復パスとして既に存在する（`run_checks.sh` からは呼ばれない設計）。本 Issue の定期実行ワークフローと機能が近接するため、**二重実装にならないか**（`--heal` はローカルファイル再生成のみで git commit/push は行わないので役割は異なるが、将来どちらかが古くなるリスクはある）を `docs_trace` に確認してほしい。
+
+以上、post 済み。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-23T10:16:02+09:00</sub>
+
+## lead 合意整理（4 レンズの claim / rebuttal を突き合わせた結果）
+
+### 合意できた点
+
+1. **コスト制約は消えた**（`actions_facts` 一次情報）。パブリック + 標準ランナーは無料・分数上限なし。頻度はデータ特性だけで決めてよい。
+2. **週次で回す**（`batch_ops`）。Gem Index は母集団依存の相対指標でバッジが付いたり消えたりするため高頻度は害。3.6MB の生成物を毎回コミットする履歴コストも効く。60 日無活動の自動停止は、週次実行自体が repo activity を生むため非リスク（`batch_ops` が `actions_facts` の制約に照らして再検証済み）。
+3. **cron は毎時 `:00` を避ける**（`actions_facts` 一次情報: 毎時の開始は高負荷でキュー投入がドロップされうる）。
+4. **デプロイには一切関与しない**（`deploy_gate` の譲歩 + lead evidence 2）。PR #460 の `trigger_workers_build.py` + `sprint-cycle-router` §1.5 Step 0.2 が「main↔本番の乖離」を原因不問で検知・再トリガーする汎用レーンとして既にあるため、本ワークフローが 2 本目の再トリガー実装を持たない（SSOT 二重化の禁止）。副次効果として **ワークフローに Cloudflare API トークンを持たせる必要が無くなる**（権限最小化）。
+5. **差分ゼロ判定は生成直後・ブランチ作成前**（`batch_ops` / `deploy_gate` 一致）。`meta.generatedAt` と `daily-digest.json` の `date` は毎回変わるため生の `git diff` は常に非空になる。正規化してから比較し、実質差分ゼロなら `git checkout --` して何もせず終わる。
+6. **jq に依存せず Node で書く**（`batch_ops`）。ランナーの jq プリインストールは一次情報で未確認。バッチ本体が Node 22 必須なので Node は確実にある。
+7. **`--allow-partial-write` は定期実行で使わない**（孤児シャード削除が不可逆）。
+8. **`pre-pr-create-check.sh` は Actions 発の PR に効かない**（`deploy_gate` が実装を確認）。品質担保はワークフロー自身が持ち、機械チェックの結果を PR 本文へ貼る。
+9. **既存資産で足りる**（`deploy_gate` の YAGNI 確認）。`tools/check_gem_shards.py` が索引整合・件数・列定義・サイズ予算・決定論を既に検査している。
+10. **本 Issue で `open-questions.md` / `cloudflare-infrastructure.md` を大きく触らない**（`docs_trace`）。PR #460 と衝突するため、必須変更は `generate_gem_digest.mjs` と `pr-review-flow-summary.md` に絞る。
+
+### 対立点と lead の裁定
+
+**対立 1: ワークフロー自身が squash マージしてよいか**
+
+- `deploy_gate` round 1: 機械 QA が全通過したときだけワークフローが自動マージする（人・セッションの介在なし）。
+- `deploy_gate` round 2（自己検証後）: その安全性の根拠は「A-1 の文言遵守」ではなく **`main` のブランチ保護が『PR 必須』を構造的に強制していること** に懸かる。強制されていなければ「PR を経由する儀式」にすぎず、ワークフローのバグ 1 つで直接 push と同じ結果になる。→ 保護を先に有効化するか、マージだけ人/セッションを挟むか。
+- `actions_facts` round 2: 同一 run 内のマージ API 呼び出し自体は GITHUB_TOKEN の非トリガー制約と無関係で技術的には成立する。ただし **ブランチ保護の「Allow GitHub Actions to approve pull requests」「Require approval of most recent push」** が入っていると自己承認・自己マージが弾かれうる。
+
+🔴 **lead 裁定: ワークフローは PR を作るところまで。マージしない。**
+
+理由:
+1. 自動マージ案の安全性は **本セッションで確認できていない設定（ブランチ保護）** に依存する。`mcp__github__list_branches` は `protected` フラグを返すが、`main` に到達するまでのページングが重く、かつ「PR 必須」かどうかまでは分からない。**未確認の前提に安全性を預ける設計は採らない**（`deploy_gate` 自身が round 2 で置いた条件を満たせない）。
+2. 保護を有効化してから組む案（`deploy_gate` の①）は、**リポジトリ設定の変更がユーザー操作**になる。設定 1 つのために本 Issue の完了をユーザー待ちにするのは筋が悪い。
+3. 「放置される PR が増えないか」という②の弱点は、**本プロジェクトでは既に埋まっている**。`check_pending_pr_reviews.py --actionable-only`（孤児 PR 救済）・`project-sync` の Orphan PR 検出（24 時間超）・`sprint-cycle-router` Step 2（自 PR 回収）という 3 つの回収経路が既に稼働している。加えて **週次・固定ブランチ** なので同時に開くデータ PR は常に 1 本以内で、積み上がらない。
+4. 週次のデータ更新に数時間のマージ遅延が乗っても実害がない（鮮度の劣化のみ・`D-28`）。
+
+**選ばなかった側（自動マージ）の最強の論拠への反駁**: 「セッションを挟むと CP-6（ユーザー介入最小化）に反する」——反する相手は *ユーザー* であって *Claude セッション* ではない。マージするのは Claude であり、ユーザーの手は 1 度も要らない。したがって CP-6 は満たされている。むしろ自動マージ案の方が、成立条件としてユーザーのリポジトリ設定変更を要求する分だけ CP-6 から遠い。
+
+**対立 2: 機械 QA が落ちたときどうするか**
+
+- `deploy_gate` round 1: PR は作り、ラベルを付けて Claude セッションに拾わせる。
+- `batch_ops` round 2: 収集失敗は CLI 自身が fail-closed で書き込まないので PR すら作られない。本当の隙間は「収集は成功したがフィルタ・dedupe で激減した回」。閾値は確実なキー（`shards[].count` / `totalCount`）だけで組む。
+
+🔴 **lead 裁定: QA が落ちたら PR を作らずジョブを失敗させる（fail-closed）。**
+壊れている可能性のあるデータで PR を開くと、回収経路が「マージしてよい PR」と混ざる。週次なので次回に自動リトライされ、失敗は Actions の失敗通知として残る。`batch_ops` の閾値（レジストリのゼロ化・レジストリ単位 30% 減・全体 ±15%）をそのまま採る。
+
+**対立 3（lead が発見した新しい論点）: `check_digest_freshness.py` の 48 時間閾値と週次が矛盾する**
+
+`project-sync` スキルは `check_digest_freshness.py --json` を既定閾値（**48 時間**）で呼び、stale なら `--heal`（= `generate_gem_digest.mjs` をその場で実行）する。週次運用にすると **1 週間のうち 5 日以上が常に stale** と判定され、セッションが毎回 10 分のバッチを回してしまう（週次スケジュールの意味が消える）。
+
+🔴 **lead 裁定: `project-sync` の呼び出しを `--max-age-hours 192`（8 日）にする。** 週次スケジュール（168 時間）+ 実行遅延の余裕を見た値。これにより **一次経路は Actions のスケジュール、`--heal` はワークフローが 1 週間以上失敗し続けたときだけ動く真のフォールバック**になる。`E-25`（鮮度チェックと自己修復）の要件は満たしたまま、二重実行だけを消す。
+
+### `lead` — 判定
+<sub>2026-08-23T10:17:03+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: 実行間隔",
+      "decision": "週次。cron '17 21 * * 0'（UTC 日曜 21:17 = JST 月曜 06:17）+ workflow_dispatch の手動起動を併設する。",
+      "rationale": "パブリック + 標準ランナーは無料・分数上限なしでコスト制約は消えた（actions_facts 一次情報）。頻度を決めるのは Gem Index が母集団依存の相対指標であること（高頻度だとバッジが付いたり消えたりする）と 3.6MB を毎回コミットする履歴コスト（batch_ops）。毎時 :00 は高負荷でドロップされうるため分をずらす（actions_facts 一次情報）。60 日無活動の自動停止は、週次実行自体が repo activity を生むため非リスク。",
+      "files": [".github/workflows/gem-pool-refresh.yml（新規）"]
+    },
+    {
+      "issue": "B: 生成物の反映経路",
+      "decision": "ワークフローは固定ブランチ automation/gem-pool-refresh へ push して PR を作るところまで。自動マージしない。ラベルは type:improvement + status:waiting-claude を付け、既存の PR 回収経路（check_pending_pr_reviews.py / project-sync / sprint-cycle-router）に拾わせる。permissions は contents: write + pull-requests: write。差分ゼロなら PR を作らない。",
+      "rationale": "自動マージ案の安全性は main のブランチ保護（PR 必須 / Allow Actions to approve）という本セッションで未確認の設定に依存し、成立させるにはユーザーのリポジトリ設定変更が要る。放置リスクは既存の 3 つの回収経路 + 週次・固定ブランチ（同時に開くデータ PR は常に 1 本以内）で埋まっている。マージするのは Claude なのでユーザーの手は要らず CP-6 も満たす。",
+      "files": [".github/workflows/gem-pool-refresh.yml（新規）"]
+    },
+    {
+      "issue": "C: Workers Builds デプロイゲートとの整合",
+      "decision": "本ワークフローはデプロイに一切関与しない。デプロイゲートが閉じている間データが main に入っても本番へ出ない状態は D-28 の SPOF 方針どおり許容する（配信は止めず鮮度のみ劣化）。滞留の解消は PR #460 の trigger_workers_build.py + sprint-cycle-router §1.5 Step 0.2 に委ねる。",
+      "rationale": "あのレーンは main↔本番の乖離を原因不問で検知・再トリガーする汎用機構で、データ PR も自動的に対象に含まれる。2 本目の再トリガー実装を持つと SSOT が割れる。副次効果としてワークフローに Cloudflare API トークンを持たせずに済む（権限最小化）。ゲート迂回は workers_build_deploy.sh 冒頭が禁じており採らない。",
+      "files": []
+    },
+    {
+      "issue": "D: 失敗時の扱い",
+      "decision": "timeout-minutes: 25 / concurrency group（cancel-in-progress: false）/ 機械 QA が落ちたら PR を作らずジョブを失敗させる（fail-closed）/ --allow-partial-write は使わない。失敗は Actions の失敗通知として残り、週次スケジュールが次回自動リトライする。",
+      "rationale": "収集失敗は CLI 自身が fail-closed で書き込まないため PR すら作られない（batch_ops の訂正）。本当の隙間は「収集は成功したがフィルタ・dedupe で激減した回」で、ここに閾値チェックが要る。壊れた可能性のあるデータで PR を開くと回収経路が「マージしてよい PR」と混ざるため、PR を作らない側に倒す。",
+      "files": [".github/workflows/gem-pool-refresh.yml（新規）", "tools/gem_pool_qa.mjs（新規・QA と no-op 判定）"]
+    },
+    {
+      "issue": "D-2: 機械 QA の中身",
+      "decision": "① tools/check_gem_shards.py（既存・索引整合/件数/列定義/サイズ予算/決定論）② 差分パスが public/data/gem-index/** と public/data/daily-digest.json に限定されているか ③ index.json の shards[].count でレジストリのゼロ化・消失を検出 ④ レジストリ単位 30% 超の減少を検出 ⑤ totalCount の前回比 ±15% 超を検出。②〜⑤ を tools/gem_pool_qa.mjs にまとめ、--self-test を run_checks.sh に配線する。",
+      "rationale": "①は既存資産で完全に足りる（deploy_gate の YAGNI 確認）。②〜⑤は既存に無く、閾値は index.json の確実なキーだけで組む（batch_ops が stats 配下のキー名は未読として断定を避けた）。jq はランナー同梱が一次情報で未確認のため Node で書く。",
+      "files": ["tools/gem_pool_qa.mjs（新規）", "tools/run_checks.sh（self-test 配線・PR #460 と別アンカー）"]
+    },
+    {
+      "issue": "E: 既存記述の更新",
+      "decision": "必須は 3 ファイル: ① tools/generate_gem_digest.mjs 冒頭の「⚠️ CI での自動実行はしない」→ 週次ワークフローがある旨へ ② docs/rules/pr-review-flow-summary.md の「GitHub Actions は制限中で使えない」→ 復帰した事実 + 品質ゲート・本番デプロイには引き続き使わない方針 ③ .claude/skills/project-sync/SKILL.md の check_digest_freshness.py 呼び出しに --max-age-hours 192 を付ける。あわせて open-questions.md の決定ログへ D-39 を 1 行追加する。",
+      "rationale": "①②は事実が変わった記述。③は週次（168 時間）と既定 48 時間が矛盾し、セッションが毎回 10 分のバッチを回してしまうため（lead が発見した対立 3）。open-questions.md / cloudflare-infrastructure.md の大きな改稿は PR #460 と衝突するため避け、決定ログの表に 1 行足すだけに留める（docs_trace の衝突回避案）。",
+      "files": ["tools/generate_gem_digest.mjs", "docs/rules/pr-review-flow-summary.md", ".claude/skills/project-sync/SKILL.md", "docs/02_requirements/open-questions.md"]
+    }
+  ],
+  "workflow_spec": {
+    "cron": "17 21 * * 0",
+    "jst": "毎週月曜 06:17 JST",
+    "steps": [
+      "actions/checkout（main・fetch-depth 2 以上）",
+      "actions/setup-node（Node 22・npm ci は不要＝バッチは外部依存ゼロ）",
+      "node tools/generate_gem_digest.mjs（終了コードが非ゼロならここで失敗）",
+      "node tools/gem_pool_qa.mjs --check（差分パス限定 + レジストリゼロ化/30% 減 + totalCount ±15%。落ちたらジョブ失敗・PR を作らない）",
+      "node tools/gem_pool_qa.mjs --no-op（generatedAt / date を正規化して比較。実質差分ゼロなら git checkout -- して正常終了）",
+      "python3 tools/check_gem_shards.py（既存の静的検査）",
+      "固定ブランチ automation/gem-pool-refresh へ commit & force push",
+      "PR を作成（既存があれば更新）。本文に QA 結果表・totalCount 前回比・レジストリ別件数・実行時刻（JST）を貼る",
+      "ラベル type:improvement / status:waiting-claude を付与"
+    ],
+    "permissions": ["contents: write", "pull-requests: write"]
+  },
+  "user_actions": [],
+  "rejected": [
+    "ワークフロー自身が squash マージする（安全性が未確認のブランチ保護設定に依存し、成立させるにはユーザーのリポジトリ設定変更が要る）",
+    "main への直接 push（A-1・不可逆）",
+    "デプロイゲートの迂回・データ PR だけ特別扱いして直接デプロイ（workers_build_deploy.sh 冒頭が禁止）",
+    "本ワークフロー側で Workers Builds を再トリガーする（PR #460 と SSOT が割れる）",
+    "日次実行（Gem Index の相対指標としてのチラつき + 3.6MB×365 の履歴コスト）",
+    "--allow-partial-write を定期実行で使う（孤児シャード削除が不可逆）",
+    "jq 前提のワンライナー（ランナー同梱が一次情報で未確認）",
+    "Actions を品質ゲート・本番デプロイに使う（飼い主決定 #298・本 Issue のスコープ外）"
+  ],
+  "unknowns": [
+    "GITHUB_TOKEN 起因の push で Cloudflare Workers Builds が発火するか（GitHub App の webhook は Actions の非トリガー制約の対象外という理解は二次情報のみ）。ただし本設計ではマージするのが Claude セッション（= 通常の push）なので、この不確実性は実害を持たない",
+    "main のブランチ保護に『PR 必須』が入っているか（未確認。本設計は保護の有無に依存しない）",
+    "GITHUB_TOKEN の既定 permissions が read-only か（二次情報のみ。permissions を明示するので実害なし）",
+    "totalCount ±15% / レジストリ 30% 減という閾値は初期ヒューリスティック。実運転数回のログで較正し直す"
+  ],
+  "follow_up_issues": [
+    {
+      "title": "improvement: Gem 候補プール QA の閾値（totalCount ±15% / レジストリ 30% 減）を実運転ログで較正する",
+      "labels": ["type:improvement", "sp:2"],
+      "done_criteria": "週次ワークフローを 4 回以上回した実績値をもとに閾値を見直し、根拠を tools/gem_pool_qa.mjs の docstring に記録する"
+    }
+  ]
+}
