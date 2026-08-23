@@ -1004,6 +1004,11 @@ def main() -> None:
     if args.self_test:
         sys.exit(run_self_test())
 
+    # 0 以下を許すと待機ループが API を叩き続ける（`--poll-interval 0`）ため、入口で弾く。
+    if args.wait and (args.wait_timeout <= 0 or args.poll_interval <= 0):
+        _emit_error("--wait-timeout / --poll-interval は正の数で指定してください", args.json)
+        sys.exit(exit_code_for("error"))
+
     gate_outcome = "proceed"
     gate_returncode: int | None = None
     if not args.skip_gate_check:
@@ -1071,10 +1076,14 @@ def main() -> None:
         "commit_hash": args.commit_hash,
         "checked_at": now_jst_str(),
     }
-    _emit_success(result, args.json)
-
     if not args.wait:
+        _emit_success(result, args.json)
         sys.exit(exit_code_for("proceed"))
+
+    # `--wait --json` で JSON 文書を 2 本吐くと呼び出し側のパースが壊れるため、
+    # JSON 出力時は最終結果（_emit_wait_result）1 本にまとめる。
+    if not args.json:
+        _emit_success(result, False)
 
     # 🔴 トリガー成功 ≠ ビルド成功（Issue #497）。--wait はここで終端まで見届け、
     #    success 以外はすべて非ゼロで終わる（呼び出し側が「本番へ反映された」と誤認しないため）。
