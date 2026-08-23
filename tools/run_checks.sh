@@ -217,6 +217,15 @@ else
 fi
 
 # 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
+
+# wrangler.jsonc 共有パーサ self-test（Layer 1 セルフレビュー WARNING-6・PR #460）。
+# trigger_workers_build.py / retire_preview_aliases.py が共有する Worker 名パースの実体。
+if [ -f "$REPO_ROOT/tools/wrangler_config.py" ]; then
+  run_check "wrangler 設定パーサ self-test (wrangler_config.py --self-test)" python3 tools/wrangler_config.py --self-test
+else
+  skip_check "wrangler 設定パーサ self-test (wrangler_config.py --self-test)" "スクリプトが見つかりません"
+fi
+
 if [ -f "$REPO_ROOT/tools/retire_preview_aliases.py" ]; then
   run_check "退役スクリプト self-test (retire_preview_aliases.py --self-test)" python3 tools/retire_preview_aliases.py --self-test
 else
