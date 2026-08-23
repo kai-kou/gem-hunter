@@ -27,7 +27,7 @@ F-3 の実測（スクリーンショット）: 検索語 next.js で総件数 5
 「検索結果一覧と同じ項目を Gem 一覧カードにも含める」は **一部しか満たせない**。
 
 - **足せる（コスト実質ゼロ）**: avatar 画像（`https://github.com/{owner}.png` を `repositoryFullName` の owner から組み立て。GitHub API 呼び出し不要・認証不要・D-29 の対象外）
-- **足せる（既に静的データにある列の見せ方の話）**: stars・dependentCount は既に出ている。primaryLanguage・topics・lastPushedAt・description は **候補プールのシャードに列自体が存在しない**ため、静的データからは一切出せない
+- **足せる（既に静的データにある列の見せ方の話）**: stars・dependentCount は既に出ている。primaryLanguage・topics・lastPushedAt・description は **候補プールのシャードに列自体が存在しない** ため、静的データからは一切出せない
 - **足せない（D-29 で禁止）**: description（Ecosyste.ms の生テキスト）は仮に取得できたとしても再配信禁止
 - **足せない（アーキテクチャ・コスト上不可）**: primaryLanguage・topics・lastPushedAt を GitHub API 1 ページ (20 件) 呼び出しで補う案は、レイテンシ・ACL 層・SPOF 設計のいずれの観点からも却下すべき
 
@@ -43,15 +43,15 @@ F-3 の実測（スクリーンショット）: 検索語 next.js で総件数 5
 
 | 項目 | 出所 | Gem 一覧への追加可否 |
 |---|---|---|
-| avatar 画像 | `item.owner.avatarUrl`（GitHub API `search/repositories` の `owner.avatar_url`） | **可**。ただし Gem 一覧にはこの値自体が無い。`https://github.com/{owner}.png`（`repositoryFullName.split('/')[0]`）という **GitHub 公式の慣例 URL パターン**で組み立てれば API 呼び出し・認証・ACL 通過が一切不要（`<img>` の `src` に直接 URL を置くだけ。詳細ページ `repository-detail.tsx` も同じ `owner.avatarUrl` を使っているだけで特別な API 呼び出しはしていない）。ただし GitHub 側の非公式仕様への依存（プライベート運用時にレート制限/変更の可能性）は Issue 化して明示すべき |
+| avatar 画像 | `item.owner.avatarUrl`（GitHub API `search/repositories` の `owner.avatar_url`） | **可**。ただし Gem 一覧にはこの値自体が無い。`https://github.com/{owner}.png`（`repositoryFullName.split('/')[0]`）という **GitHub 公式の慣例 URL パターン** で組み立てれば API 呼び出し・認証・ACL 通過が一切不要（`<img>` の `src` に直接 URL を置くだけ。詳細ページ `repository-detail.tsx` も同じ `owner.avatarUrl` を使っているだけで特別な API 呼び出しはしていない）。ただし GitHub 側の非公式仕様への依存（プライベート運用時にレート制限/変更の可能性）は Issue 化して明示すべき |
 | description | Ecosyste.ms 由来の生テキスト（Gem の場合）or GitHub API 由来（検索結果の場合） | **不可**。仮に GitHub API から取得しても D-29 の対象外だが、そもそも今回の論点は「候補プールの静的データに無い列を足す」ことなので、取得には GitHub API 呼び出しが要る（下記 3 参照）。かつ Ecosyste.ms 側にも該当データがあるなら D-29「生テキスト再配信禁止」に抵触する |
 | primaryLanguage / topics / lastPushedAt | GitHub API 由来（検索結果 API のフィールド） | **静的データに無い。GitHub API 追加呼び出しが必須**（下記 3 参照） |
 | stars / (dependentCount 相当) | 両方の一覧に既にある | 追加不要（Gem 一覧は既に stars を表示済み） |
 
 ### 3. GitHub API 1 ページ (最大20件) 呼び出し案の定量評価 — **却下すべき**
 
-- **ACL 違反ではない**が層違反リスクが高い: `TR-4`/`NFR-16` は「GitHub API に触れてよいのは `src/infrastructure/github/`（`GithubRepositoryQuery`）だけ」であり、これ自体は守れる（`GithubRepositoryQuery` 経由で呼べば ACL は通る）。しかし現在の `search-gems.ts`（`makeSearchGems`）は `GemIndexPort` にしか依存しておらず、Gem 一覧の描画パスに GitHub API 依存を新規に持ち込むことになる。
-- **許可エンドポイント表（prd.md §4.3）に無い**: 表は `GET /search/repositories`・`GET /repos/{owner}/{repo}`・`GET /repos/{owner}/{repo}/readme` の 3 つに **限定**しており「新規エンドポイントの追加は本表への追記を伴う」。20 件分の詳細を 1 回で返すバルクエンドポイントは存在しない（`GET /repos/{owner}/{repo}` は単体取得のみ）ため、20 件を埋めるには **20 回の個別リクエスト**が必要（`GET /search/repositories` を `repo:owner/name` の OR 検索にまとめる手も GitHub 側の検索クエリ長制限とレート枠を別途消費し、実質的にエンドポイント追加相当の設計変更になる）。
+- **ACL 違反ではない** が層違反リスクが高い: `TR-4`/`NFR-16` は「GitHub API に触れてよいのは `src/infrastructure/github/`（`GithubRepositoryQuery`）だけ」であり、これ自体は守れる（`GithubRepositoryQuery` 経由で呼べば ACL は通る）。しかし現在の `search-gems.ts`（`makeSearchGems`）は `GemIndexPort` にしか依存しておらず、Gem 一覧の描画パスに GitHub API 依存を新規に持ち込むことになる。
+- **許可エンドポイント表（prd.md §4.3）に無い**: 表は `GET /search/repositories`・`GET /repos/{owner}/{repo}`・`GET /repos/{owner}/{repo}/readme` の 3 つに **限定** しており「新規エンドポイントの追加は本表への追記を伴う」。20 件分の詳細を 1 回で返すバルクエンドポイントは存在しない（`GET /repos/{owner}/{repo}` は単体取得のみ）ため、20 件を埋めるには **20 回の個別リクエスト** が必要（`GET /search/repositories` を `repo:owner/name` の OR 検索にまとめる手も GitHub 側の検索クエリ長制限とレート枠を別途消費し、実質的にエンドポイント追加相当の設計変更になる）。
 - **レート枠 (NFR-7)**: 検索は 30 req/分、詳細取得（Core API）は 5,000 req/h。Gem 一覧はキーワード検索を経由しないページなので Search API の 30 req/分枠を消費する理由がなく、詳細取得 20 回/ページ表示は Core API 枠を 1 ページ表示あたり 20 消費する。同時アクセスが数人でもすぐ律速に達し、`NFR-7` の request coalescing / キャッシュ前提が崩れる。
 - **Workers CPU 予算 (D-38 実測)**: 現状 Gem 一覧の初回リクエストは静的アセット処理だけで **237〜277ms**（`limits.cpu_ms=400` に対し実測最大の 44% しか余裕なし、と `D-38` が明記）。ここに 20 件の外部 fetch（ネットワーク I/O は CPU time にはあまり乗らないが、レスポンスの JSON パース・マッピングは乗る）を直列化（`NFR-7`③ が並行実行を非推奨と明記）で足すと、レイテンシは数百 ms〜数秒に跳ね上がる。CPU ms の天井というより **ユーザー体感レイテンシ（NFR-1 LCP 2.5 秒）** を壊す。
 - **サブリクエスト上限**: Cloudflare Workers の subrequest 上限は Free 50/invocation・Paid 1000/invocation。20 回程度は数値上は収まるが、`D-38` の shard 取得 (12 subrequests) と合算すると余裕は減る。数値上「収まる」ことと「妥当」は別で、後述のキャッシュ不能・SPOF 問題の方が本質的な却下理由。
@@ -62,7 +62,7 @@ F-3 の実測（スクリーンショット）: 検索語 next.js で総件数 5
 ## 採る案
 
 1. **avatar のみ追加**: `https://github.com/{owner}.png` を `repositoryFullName` から組み立てて `<img>` で表示。GitHub API 呼び出し・ACL 変更・SPOF リスクいずれも無し。実装コストは `GemList` に 1 行足すだけ
-2. **description / primaryLanguage / topics / lastPushedAt は今回追加しない**: 静的候補プールに列が存在しないため、追加には (a) バッチ生成 (D-28/D-38 のシャード生成パイプライン) 側で GitHub API から新規列を収集して静的 JSON に焼き込む、(b) 実行時に GitHub API を追加呼び出しする、の 2 択しかない。(b) は上記理由で却下。(a) は将来検討に値するが、シャード生成バッチ（Cloudflare 外の cron）・シャードスキーマ・`index.json`/`columns` 契約・型定義（`Gem`/`GemPoolEntry`）・D-29 のライセンス精査を要する **別 Issue 相当の設計変更**であり、今回のフィードバック対応の範囲を超える
+2. **description / primaryLanguage / topics / lastPushedAt は今回追加しない**: 静的候補プールに列が存在しないため、追加には (a) バッチ生成 (D-28/D-38 のシャード生成パイプライン) 側で GitHub API から新規列を収集して静的 JSON に焼き込む、(b) 実行時に GitHub API を追加呼び出しする、の 2 択しかない。(b) は上記理由で却下。(a) は将来検討に値するが、シャード生成バッチ（Cloudflare 外の cron）・シャードスキーマ・`index.json`/`columns` 契約・型定義（`Gem`/`GemPoolEntry`）・D-29 のライセンス精査を要する **別 Issue 相当の設計変更** であり、今回のフィードバック対応の範囲を超える
 
 ## 却下する案と理由
 
@@ -100,9 +100,9 @@ F-3 の実測（スクリーンショット）: 検索語 next.js で総件数 5
 
 | 記述場所 | 現状の記述 | 問題 | 必要な対応 |
 |---------|----------|------|-----------|
-| `prd.md` §4.2 `AR-1` | 「一覧カードに説明文・主要言語・star 数・最終更新日・topics を表示する」 | `AR-1` は**検索結果**カードを対象としており、Gem 一覧（`/gems`）カードの仕様が記述されていない | Gem 一覧用の新規 `AR-n` を追加するか、既存 `AR-1` に「Gem 一覧でも検索結果と同じ項目を表示」という追記が要る |
+| `prd.md` §4.2 `AR-1` | 「一覧カードに説明文・主要言語・star 数・最終更新日・topics を表示する」 | `AR-1` は **検索結果** カードを対象としており、Gem 一覧（`/gems`）カードの仕様が記述されていない | Gem 一覧用の新規 `AR-n` を追加するか、既存 `AR-1` に「Gem 一覧でも検索結果と同じ項目を表示」という追記が要る |
 | `ui-ux-guidelines.md` §4.2 | 「結果カードの情報設計」として検索結果のみ定義 | Gem 一覧のカード表示設計が記述されていない | Gem 一覧のカード設計を§に追加する（検索結果と同一か異なるか明確化） |
-| `user-story-map.md` §5.3 `SP-19` | 手順書に Gem 一覧の**カード表示項目**に関する記述がない | `SP-19` の操作レビューが「一覧の有無・ページングのみ」で、カード内容について触れていない | 手順書または手順の注記に「検索結果と同じ表示項目を含むこと」を明示する必要があるか検討 |
+| `user-story-map.md` §5.3 `SP-19` | 手順書に Gem 一覧の **カード表示項目** に関する記述がない | `SP-19` の操作レビューが「一覧の有無・ページングのみ」で、カード内容について触れていない | 手順書または手順の注記に「検索結果と同じ表示項目を含むこと」を明示する必要があるか検討 |
 
 **判定**: F-2 の変更（Gem 一覧にカード項目を足す）は実装上必要だが、その根拠・要件が既存ドキュメントに明記されていない。
 
@@ -363,7 +363,7 @@ because they were marked as Gem in your search results."
 
 ### ロゴ画像流用は却下（意味の二重化・技術的不整合）
 - `site-header.tsx` L41-58 のロゴは **サイトブランド（アプリのトップページ）を表す紋章** として `<h1><Link href={`/${locale}`}>` の中に置かれている。ここに同じ画像を「Gem 一覧へ行く」リンクの頭に付けると、ユーザーは「これもトップページ（ホーム）へのリンクでは」と誤読しかねない——**アイコンは隣接ラベルの行き先を表すべきで、ブランドマークの使い回しはリンクの行き先を誤認させる**。これは飼い主フィードバックが問う「意味の二重化」そのもの。
-- `tools/ui-assets/README.md` L13, L114-118: `logo.webp` は `gpt-image-2` で生成した **固定色のラスター画像**（透過 96px→24px 配信）で、`currentColor` に追従する SVG ではない。ダーク/ライト両テーマで同一ファイルを使う設計はヘッダーという特定の背景文脈でのみ検証されている（`ui-ux-guidelines.md` §7.4 の装飾イラスト規定 L431 も「logo / hero-idle / empty-result / not-found の 4 点」に**用途を限定**しており、ghost ボタンの hover 背景（`bg-muted`）上での視認性は未検証)。16-24px 帯での可読性を新たに保証し直す必要が生じる。
+- `tools/ui-assets/README.md` L13, L114-118: `logo.webp` は `gpt-image-2` で生成した **固定色のラスター画像**（透過 96px→24px 配信）で、`currentColor` に追従する SVG ではない。ダーク/ライト両テーマで同一ファイルを使う設計はヘッダーという特定の背景文脈でのみ検証されている（`ui-ux-guidelines.md` §7.4 の装飾イラスト規定 L431 も「logo / hero-idle / empty-result / not-found の 4 点」に **用途を限定** しており、ghost ボタンの hover 背景（`bg-muted`）上での視認性は未検証)。16-24px 帯での可読性を新たに保証し直す必要が生じる。
 - lucide アイコンは `stroke="currentColor"` ベースの SVG で、ライト/ダークどちらのテーマトークンにも自動追従し、追加のネットワーク往復・decode コストも無い（既にバンドル済みの依存）。ロゴ画像の流用はこの利点を放棄して装飾ラスター画像の追加参照を増やすだけで、メリットが無い。
 
 ### 却下する代替案
@@ -494,7 +494,7 @@ if p.suffix.lower() not in (".md", ".markdown"):
 
 ### (c) `messages.test.ts` は ja/en の同型性・プレースホルダ整合を検査していないか → **一部訂正が要る（軽微・自分の主張は補強される方向）**
 
-全文読了。`describe('messages カタログ')` は **`D-36`/`D-37`/`D-29` が明示要求する要素だけ**を
+全文読了。`describe('messages カタログ')` は **`D-36`/`D-37`/`D-29` が明示要求する要素だけ** を
 個別に `toContain` で固定する設計（コメントで「意思決定が要求している要素に限る」と明言）。
 `gems.attribution` / `home.digest.attribution` にはプレースホルダの存在チェックがあるが
 （64-81 行目）、**`gems.includedFromSearch` に対する `{count}` の存在チェックも、ja/en の
@@ -574,7 +574,7 @@ const matchedCount = view.totalCount - view.includedCount // 名前照合で直�
   matchedCount: numberFormat.format(matchedCount),
 })}
 ```
-`matchedCount` も `totalCount` と `includedCount` という **既存の 2 値からの引き算だけ**で
+`matchedCount` も `totalCount` と `includedCount` という **既存の 2 値からの引き算だけ** で
 出せるため、round 1 の結論（②③の契約変更は不要）は変わらない。影響ファイルも round 1 の
 2 ファイル（`messages/ja.json` `messages/en.json` `src/ui/gem-list.tsx`）のまま増えない。
 
@@ -625,11 +625,11 @@ const matchedCount = view.totalCount - view.includedCount // 名前照合で直�
 
 ### 「対応済み」の定義（具体・検証可能な形）
 
-1. **`prd.md` に Gem 一覧カード専用の新規 `AR-n`（例 `AR-9`）を追加**し、表示項目を確定させる: `repositoryFullName`（リンク）/ `packageName` / `registry` / `stars` / `dependentCount` / `gemIndex` / **avatar（新規）**。「検索結果と同一にする」ではなく「候補プールが持つ列 + avatar」を正本として明記する
+1. **`prd.md` に Gem 一覧カード専用の新規 `AR-n`（例 `AR-9`）を追加** し、表示項目を確定させる: `repositoryFullName`（リンク）/ `packageName` / `registry` / `stars` / `dependentCount` / `gemIndex` / **avatar（新規）**。「検索結果と同一にする」ではなく「候補プールが持つ列 + avatar」を正本として明記する
 2. **除外した項目とその理由を同じ `AR-9` に明記**: description（`D-29` 生テキスト再配信禁止）/ primaryLanguage・topics・lastPushedAt（候補プールに列が無く、追加は §2 で判定するとおり別 Issue 相当）
 3. `ui-ux-guidelines.md` §4.2 に Gem 一覧カードの節を追加し、検索結果カードとの **意図的な差分**（Gem Index・レジストリを主役に保つ、`D-36` の注記位置）を明記
 4. `user-story-map.md` §5.3 `SP-19` 操作レビュー手順に「カードに avatar が表示されること」の 1 行を足し、`e2e/sp-19.spec.ts` に対応するアサーションを追加
-5. 飼い主フィードバック原文「通常の一覧で表示している項目も含める」に対しては、**avatar 追加 + 上記ドキュメント整備 + UI 上での除外理由の明示**をもって「技術的・規約的に可能な範囲で対応した」と report する。全項目を検索結果と揃えることは今回のスコープでは技術的に不可能（§2 のとおり）なので、それを隠さず Issue #(新規) として起票し、飼い主に見える形で残す
+5. 飼い主フィードバック原文「通常の一覧で表示している項目も含める」に対しては、**avatar 追加 + 上記ドキュメント整備 + UI 上での除外理由の明示** をもって「技術的・規約的に可能な範囲で対応した」と report する。全項目を検索結果と揃えることは今回のスコープでは技術的に不可能（§2 のとおり）なので、それを隠さず Issue #(新規) として起票し、飼い主に見える形で残す
 
 これで「ドキュメントに根拠が無いまま実装した」という状態を作らず、かつ `docs_trace` が指摘した欠落 3 箇所（`prd.md` / `ui-ux-guidelines.md` / `user-story-map.md`）を同じ PR で埋められる。
 
@@ -655,7 +655,7 @@ const matchedCount = view.totalCount - view.includedCount // 名前照合で直�
 
 合計増分 **1 件あたり約 65〜100 byte**。62,483 件では **約 4.06〜6.25 MiB の増加**。現行 3.47 MiB に加算すると **合計 約 7.5〜9.7 MiB**。
 
-`tools/check_gem_shards.py` の `TOTAL_SIZE_BUDGET_BYTES = 8 * 1024 * 1024`（8 MiB）は、見積りレンジの中央〜上振れで **既に超過**する。このチェックはコメントで「超えたら PR を落として再検討する（黙って上限だけ引き上げない）」と明記された意図的なゲートであり、`D-38` の `limits.cpu_ms` 実測（シャード合計サイズが cold start の JSON.parse / Map 構築コストに直結し、`SP-19` で 400ms まで引き上げ済み）とも直結する。3 列追加は cold start コストの再実測・`limits.cpu_ms` の再チューニングを要求する規模の変更であり、UI フィードバック対応 1 件の作業ではない。
+`tools/check_gem_shards.py` の `TOTAL_SIZE_BUDGET_BYTES = 8 * 1024 * 1024`（8 MiB）は、見積りレンジの中央〜上振れで **既に超過** する。このチェックはコメントで「超えたら PR を落として再検討する（黙って上限だけ引き上げない）」と明記された意図的なゲートであり、`D-38` の `limits.cpu_ms` 実測（シャード合計サイズが cold start の JSON.parse / Map 構築コストに直結し、`SP-19` で 400ms まで引き上げ済み）とも直結する。3 列追加は cold start コストの再実測・`limits.cpu_ms` の再チューニングを要求する規模の変更であり、UI フィードバック対応 1 件の作業ではない。
 
 ### (iii) 契約変更の範囲
 
@@ -669,26 +669,26 @@ const matchedCount = view.totalCount - view.includedCount // 名前照合で直�
 - `src/infrastructure/platform/static-gem-index.test.ts`・`tools/gem-pool/pipeline.test.mjs`・`tools/check_gem_shards.py --self-test` 相当のテスト全面更新
 - 12 シャード全件の再生成（cron バッチの臨時実行が要る。実行時間は未計測）
 
-これは 1 PR・1 スプリントの範囲を超える設計変更（型契約 6 箇所 + テスト複数 + バッチ再実行 + サイズ予算超過の再検討）であり、**別 Issue（`sp:5` 相当、Dynamic 補正 +1〜2 込みで `sp:8` もありうる）にすべき**と判定する。
+これは 1 PR・1 スプリントの範囲を超える設計変更（型契約 6 箇所 + テスト複数 + バッチ再実行 + サイズ予算超過の再検討）であり、**別 Issue（`sp:5` 相当、Dynamic 補正 +1〜2 込みで `sp:8` もありうる）にすべき** と判定する。
 
 ### D-29 抵触の判定（description 以外も対象か）
 
 - **description**: 明確に禁止（`D-29` の名指し対象・自然文の生テキスト）
-- **topics**: **抵触リスクが高い**と判定する。GitHub topics はリポジトリ管理者が任意に付与する自由記述タグ列で、`packages.ecosyste.ms` 経由で取得する限り Ecosyste.ms が配信する CC BY-SA 4.0 データの一部（`D-29` が対象にする母体そのもの）。`gem.ts` 冒頭コメントの判定基準（「識別子か生テキストか」）に照らすと、topics は description ほど連続的な文章ではないが、複数の任意語の列挙という点で「識別子」より「記述内容」に近い。**採用するなら D-29 の R-8（GitHub 利用規約の一次確認）と同じタイミングで法務的な最終判断を待つべき**で、今回のスコープには入れない
-- **primaryLanguage**: topics より抵触リスクは低い（GitHub の linguist が機械判定する単一のカテゴリ値で、著作性のある創作テキストではない）が、**Ecosyste.ms 経由で取得する限り同じ CC BY-SA 母体に属する値**である点は topics と同じ。「識別子に近い」という整理はできるが「識別子そのもの」と言い切るには一次情報（`R-8`）の確認を経ていない。安全側に倒すなら、これも今回のスコープには含めず別 Issue の調査対象に含める
+- **topics**: **抵触リスクが高い** と判定する。GitHub topics はリポジトリ管理者が任意に付与する自由記述タグ列で、`packages.ecosyste.ms` 経由で取得する限り Ecosyste.ms が配信する CC BY-SA 4.0 データの一部（`D-29` が対象にする母体そのもの）。`gem.ts` 冒頭コメントの判定基準（「識別子か生テキストか」）に照らすと、topics は description ほど連続的な文章ではないが、複数の任意語の列挙という点で「識別子」より「記述内容」に近い。**採用するなら D-29 の R-8（GitHub 利用規約の一次確認）と同じタイミングで法務的な最終判断を待つべき** で、今回のスコープには入れない
+- **primaryLanguage**: topics より抵触リスクは低い（GitHub の linguist が機械判定する単一のカテゴリ値で、著作性のある創作テキストではない）が、**Ecosyste.ms 経由で取得する限り同じ CC BY-SA 母体に属する値** である点は topics と同じ。「識別子に近い」という整理はできるが「識別子そのもの」と言い切るには一次情報（`R-8`）の確認を経ていない。安全側に倒すなら、これも今回のスコープには含めず別 Issue の調査対象に含める
 - **lastPushedAt**: 数値由来の事実（日時）であり、`stars`/`dependentCount` と同じ「自作の派生値」に近い性質。D-29 の懸念（生テキストの再配信）には該当しない。3 項目の中では最も抵触リスクが低い
 
-**結論**: 「description だけが D-29 対象で language/topics は自由」という単純な切り分けはできない。3 者とも取得元が同じ Ecosyste.ms API である以上、`R-8` の一次確認前に language/topics を配信物へ混ぜるのはリスクを取りすぎている。lastPushedAt のみは数値的事実として D-29 のリスクが低いが、それでも上記 (i)〜(iii) のコスト構造から **今回は追加しない**という Round 1 の結論を維持する。
+**結論**: 「description だけが D-29 対象で language/topics は自由」という単純な切り分けはできない。3 者とも取得元が同じ Ecosyste.ms API である以上、`R-8` の一次確認前に language/topics を配信物へ混ぜるのはリスクを取りすぎている。lastPushedAt のみは数値的事実として D-29 のリスクが低いが、それでも上記 (i)〜(iii) のコスト構造から **今回は追加しない** という Round 1 の結論を維持する。
 
 ---
 
 ## 3. カード構造（`ux_entry` の F-1 提案とは独立の論点・F-2 の構造）
 
-**Gem 一覧固有の項目（Gem Index・レジストリ・利用パッケージ数）を主役に保ったまま avatar だけ足す**べきで、検索結果カードの 2 カラムレイアウトへ全面的に寄せることには反対する。
+**Gem 一覧固有の項目（Gem Index・レジストリ・利用パッケージ数）を主役に保ったまま avatar だけ足す** べきで、検索結果カードの 2 カラムレイアウトへ全面的に寄せることには反対する。
 
 - `D-36` はこの一覧の存在意義を「Gem Index という母集団相対の指標を見せること」に置いており、`gem-list.tsx` 冒頭のコメントも「並び順は `gemIndex` 昇順のまま・ここで並べ替えない」と明記している。検索結果カードと同じ情報設計（description 主体・メタ情報は補助的な 1 行）に寄せると、**Gem Index がその他の指標に埋もれる**——これは飼い主フィードバックが問題にした「埋もれ」を、今度は Gem 一覧側で再発させることになる
 - 実務的にも `repository-list.tsx` と `gem-list.tsx` を共通コンポーネント化するのは、`GemListViewModel` 冒頭のコメントが明記する「ポートの契約型を props に採らない」設計判断と同じ理由で避けるべき: 2 つの一覧は表示するドメイン概念が違う（`RepositorySummary` vs `GemPoolEntry`）ため、共通化すると型と責務が混ざる
-- **採る形**: `gem-list.tsx` の各カードの先頭に avatar（`size-10` 程度、`repository-list.tsx` と揃えた寸法）を追加し、`repositoryFullName` をその隣に置く。Gem Index・レジストリ・利用パッケージ数・stars は現行どおり同じ行に並べたメタ情報として維持し、レイアウトの主従関係（Gem Index が主役）は変えない。avatar は「このカードがどのリポジトリか」を視覚的に一目で分かるようにする **補助**であって、情報設計全体を検索結果カードに合わせ直す話ではない
+- **採る形**: `gem-list.tsx` の各カードの先頭に avatar（`size-10` 程度、`repository-list.tsx` と揃えた寸法）を追加し、`repositoryFullName` をその隣に置く。Gem Index・レジストリ・利用パッケージ数・stars は現行どおり同じ行に並べたメタ情報として維持し、レイアウトの主従関係（Gem Index が主役）は変えない。avatar は「このカードがどのリポジトリか」を視覚的に一目で分かるようにする **補助** であって、情報設計全体を検索結果カードに合わせ直す話ではない
 
 ## ラウンド 3
 

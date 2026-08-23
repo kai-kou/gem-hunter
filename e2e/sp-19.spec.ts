@@ -219,6 +219,17 @@ test('SP-19: 検索 → Gem 一覧 → 詳細 → 戻る（ja・操作レビュ�
     expectAscending(firstPageIndexes)
   })
 
+  await test.step('11. 各カードにオーナーの avatar が表示されている（AR-11）', async () => {
+    const cards = page.locator('li[data-repository-full-name]')
+    const cardCount = await cards.count()
+    expect(cardCount).toBeGreaterThan(0)
+    for (let i = 0; i < cardCount; i++) {
+      const avatar = cards.nth(i).locator('img')
+      await expect(avatar).toHaveCount(1)
+      await expect(avatar).toHaveAttribute('alt', '')
+    }
+  })
+
   await test.step('6. 出典表示（配信データの帰属情報）が読める（GR-6 / D-29）', async () => {
     // 帰属表示は `GemList` 末尾の 1 段落。出典名とライセンス名がリンクとして読める。
     await expectAttributionFromPoolData(page)
@@ -563,10 +574,19 @@ test('SP-19: 検索結果でバッジが付いた候補が、名前が一致し�
     expect(await readRepositoryFullNames(page)).toContain(badgedFullName)
   })
 
-  await test.step('4. 「名前が一致しないものも含めて加えている」注記が件数付きで読める', async () => {
-    await expect(
-      page.getByText(ja.gems.includedFromSearch.replace('{count}', '1'), { exact: true }),
-    ).toBeVisible()
+  await test.step('4. 内訳文言（全 N 件のうち M 件が一致）に総件数と一致件数が含まれる', async () => {
+    // 🔴 F-3（Issue #453）: `gems.includedFromSearch` は「全 {total} 件のうち、検索語に一致
+    // したのは {matchedCount} 件です。残り {count} 件は…」の加算構文へ改訂される（実装は並行
+    // 作業中）。文言の完全一致ではなく、`totalCount = matchedCount + includedCount` の関係が
+    // 画面上の 1 文に現れることだけを頑健に検証する（`includedCount` 自体はこの一件のみ = 1）。
+    const totalCount = await readTotalCount(page)
+    const matchedCount = totalCount - 1
+
+    const notice = page.getByText(/全\s*[\d,]+\s*件のうち/).first()
+    await expect(notice).toBeVisible()
+    const text = await notice.innerText()
+    expect(text, '総件数が内訳文言に含まれていない').toContain(String(totalCount))
+    expect(text, '一致件数が内訳文言に含まれていない').toContain(String(matchedCount))
   })
 })
 
