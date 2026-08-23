@@ -1,0 +1,20 @@
+<!-- discussion_whiteboard:auto -->
+# 🧑‍🏫 議論ホワイトボード: Gem 候補一覧が検索結果のバッジ付き候補を取りこぼす問題の対応方針
+
+- 議題ID: `gem-list-match-20260823`
+- 論点: 飼い主フィードバック（Issue #453）: (F-1)『この検索語の Gem 候補を一覧で見る』を押すと、検索結果には Gem マークが複数付いているのに一覧は 1 件しか出ない。(F-2) 検索結果タイトルの下に Gem マークの説明を端的に含めてほしい。
+
+【一次調査で判明した事実（実データ計測済み）】検索結果のバッジは GemIndexPort#lookup（= 候補プールへの所属照会のみ・検索語と無関係）で付く。一方 Gem 一覧は GemIndexPort#search（= repositoryFullName と packageName を単語境界で割ったトークン列に対する全語 AND 一致・D-37）で絞る。q=next.js は tokenizeQuery で ['next','js'] に割れ、npmjs-org シャードでの AND 一致は vercel/next.js の 1 件だけ（'next' 単独なら 19 件）。緩和（selectMostSelectiveToken）は『全語 AND が 0 件のとき』にしか発火しないため、1 件ヒットしたこのケースでは効かない。さらに chimurai/http-proxy-middleware は GitHub 側が description（'…for connect, express, next.js and more'）でヒットさせたもので、名前照合では原理的に一覧へ出ない（プールには載っているのでバッジは付く）。
+
+【関連実装】app/[locale]/page.tsx（検索結果・GemListLink を結果一覧の上に置く / lookupGemIndexes を検索結果 fullName に対して引く）、app/[locale]/gems/page.tsx（一覧・searchGemsUseCase）、src/usecases/search-gems.ts、src/domain/model/gem-keyword.ts（照合規則の正本）、src/infrastructure/platform/static-gem-index.ts（2 段遅延構築: プール約 82ms / 検索インデックス追加 122ms・cold 実測 2.78s）、src/ui/repository-list.tsx（gemBadgeNote は一覧の末尾に 1 回だけ描画）、src/ui/gem-badge.tsx、messages/{ja,en}.json（home.gemBadge.label/srHint/note・home.gemListLink.label・gems.*）。
+
+【制約】D-36（バッジは並び順を変えない注釈・sort=gem-index は復活させない / 印が付かないことが低評価を意味しない旨の注記は必須）、D-37（絞り込みの照合は repo 名・パッケージ名の単語境界一致のみ・部分一致は入れない / 緩和は 1 段だけ・あいまい一致に広げない）、D-38（レジストリ別静的シャード + isolate 内メモリ索引・DB を持たない）、F-01（クエリ語数上限 16・CPU 枯渇防止）、F-02（Gem 一覧に GitHub 検索 API の 50 ページ上限を適用しない）、F-05（取得失敗を 0 件に潰さない）、F-14（照合不能クエリはポート呼び出し前に 0 件へ倒す）、NFR-3（クライアント JS を増やさない）、NFR-12/13（a11y・見出し階層・色だけで意味を伝えない）、INF-2（Cloudflare Workers の CPU/コスト制約）、ARCH（ドメイン層はフレームワークに依存しない・app は infrastructure を直接 import しない）、GitHub 検索 API は認証済みで 30 req/min・1 クエリ最大 1000 件。
+
+【争点】A) 一覧の母集団をどう定義し直すか — 案1『今の検索結果（GitHub Search）のうちプールに載っているものを Gem Index 順に並べる』= バッジと定義が完全一致するがプール全体からの発見力を失い GitHub API 依存とレート枠消費が増える / 案2『プールベースのまま緩和条件を見直す（AND のヒット数が閾値未満なら 1 語緩和へ倒す等）』= 既存設計と D-37 を保つが chimurai/http-proxy-middleware のような description ヒット分は依然出ない / 案3『ハイブリッド（検索結果の Gem を必ず含めつつプール名照合の結果も出す）』= 期待に最も近いが 2 系統のマージ・並び順・ページングの整合が要る。どれを採るか、成果物がどう変わるかを比較し、ユーザー確認に出す 2 択（推奨つき）まで落とす。B) 緩和規則を変える場合の具体（発火条件・段数・注記文言・D-37 の書き換えが要るか / next.js のような『.js 付き製品名』を特別扱いせず一般規則で救えるか）。C) 期待のズレを UI 側で埋める手当（導線ラベル・一覧の見出し・注記で『この一覧はパッケージ名/リポジトリ名の一致で絞っている』ことをどう伝えるか / 0 件・少数件のときの導線）。D) F-2 の設計（検索結果見出し直下に置く説明文の文言（ja/en）・既存 home.gemBadge.note との関係＝重複を作らないか・末尾注記を残すか移すか・描画条件（バッジが 1 件も無いときも出すか）・a11y と見出し構造・E2E での固定方法）。E) パフォーマンスとリスク（採用案が cold start・CPU・レート枠に与える影響 / 既存 E2E・単体テストのどれが壊れるか / SP-18 で出荷済みのバッジ経路を回帰させないか）。
+- 参加者: `search_semantics`, `arch_perf`, `ux_writer`, `docs_trace`
+- 投稿数: 0
+- 更新: 2026-08-23T09:59:39+09:00
+
+> このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
+
+_（まだ投稿がありません）_
