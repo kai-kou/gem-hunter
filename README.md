@@ -31,7 +31,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 
 ### 環境変数
 
-すべて **任意**。1 つも設定しなくても `npm run dev` は起動し、検索・詳細表示は動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。本リポジトリに `.env.example` は用意していない。以下の表を参照して `.env.local`（Next.js の規約どおり）に必要な分だけ設定する。
+すべて **任意**。1 つも設定しなくても `npm run dev` は起動し、検索・詳細表示は動作する（その場合 GitHub API を未認証で叩くためレート枠が狭くなる）。リポジトリ直下の `.env.example` に全変数のひな形（実値なし）を置いてあるので、`cp .env.example .env.local` してから以下の表を参照して必要な分だけ値を入れる（`.env.local` は Next.js の規約どおり追跡対象外）。
 
 | 変数 | 用途 | 未設定時の挙動 |
 |---|---|---|
@@ -43,6 +43,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 | `GITHUB_OAUTH_CALLBACK_URL` | 同上（デプロイ先ごとに異なる。オープンリダイレクト対策の検証にも使う） | 同上 |
 | `SESSION_ENCRYPTION_KEY` | ログイン後のセッション Cookie 暗号化鍵（32 バイトを base64url エンコードした値） | 同上（**本行だけが欠けても** ログイン導線ごと無効化される。表示可否は `src/composition/auth.ts` の `isAuthConfigured()` が 4 変数の AND で判定する） |
 | `RATE_LIMIT_SALT` | 検索経路の自リクエスト間引き（`NFR-7`）でクライアント IP を HMAC 化する際の salt | レート制限の間引きをしない（フェイルオープン） |
+| `SITE_URL` | OG 画像の相対 URL を絶対 URL へ解決するサイトの正準オリジン（`app/[locale]/layout.tsx` の `metadataBase`） | 本番 URL へフォールバックするため通常は設定不要。🔴 **ビルド時変数** であり、ビルド後にランタイム側で変えても反映されない |
 
 🔵 公開中の本番環境には OAuth の 4 変数を供給していないため、現在ログイン導線は表示されない（未ログインで全機能が使える状態）。
 
