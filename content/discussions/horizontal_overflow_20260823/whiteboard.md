@@ -4,8 +4,8 @@
 - 議題ID: `horizontal_overflow_20260823`
 - 論点: 飼い主報告（スクリーンショット添付）: 本番 https://gem-hunter.kinamocchi-tech.workers.dev の検索結果一覧を狭い画面幅（実測でおよそ 430 CSS px 相当のモバイル幅）で開くと、カード内テキストが折り返されずページ全体に横スクロールが発生する。再現データは GitHub の実リポジトリ Asabeneh/30-Days-Of-React の description（末尾に 'https://www.youtube.com/channel/UC7PNRuno1rzYPb1x…' という長い URL を含む）。現行実装の事実（必ず自分で該当ファイルを読んで裏取りすること）: (1) src/ui/repository-list.tsx は <li className="relative flex gap-3 py-4"> の中に avatar(img.shrink-0) と <div className="min-w-0 flex-1"> を置き、その中に Link(item.fullName) / <p className="text-muted-foreground mt-1 text-sm">{item.description}</p> / メタ情報 <p className="flex flex-wrap"> / topics の <ul className="flex flex-wrap"> を描画する。overflow-wrap / word-break 系のユーティリティは 1 つも当たっていない。(2) src/ui/daily-digest.tsx も同じ構造（min-w-0 flex-1 の中に Link(gem.packageName) と <p>{gem.repositoryFullName}</p>）で、やはり折り返し指定が無い。(3) src/ui/repository-detail.tsx は h2 にだけ break-words があり、description の <p> には無い。(4) src/ui/readme-section.tsx は既に break-words + overflow-x-auto を持ち、README 本文についてはガイドライン §2 の『横溢れは領域内スクロールに閉じ込め body に出さない』を実装済み。(5) app/globals.css には折り返しに関する既定は無い。(6) app/[locale]/gems/page.tsx は max-w-3xl のコンテナで RepositoryList を再利用する。制約: docs/03_design/ui-ux/ui-ux-guidelines.md §2『横溢れは領域内スクロールに閉じ込め、body に出さない（NFR-15）』/ §3『固定幅を使わない・200% 拡大で横スクロールが発生しない』、NFR-15（スマホ〜デスクトップ対応・200% 拡大で破綻しない）、NFR-12/NFR-13（a11y）、WCAG 2.2 の 1.4.10 Reflow（320 CSS px 相当で二方向スクロールを強制しない）と 1.4.4 Resize text、NFR-3（クライアント JS を増やさない）、Tailwind CSS v4（tailwind.config.js を持たず @theme / CSS 側で拡張する）、SD-2（TDD 主体・操作レビュー手順を E2E に写す・テストのスキップ禁止）、e2e/sp-10.spec.ts に既に expectNoHorizontalScroll(page)（document.scrollingElement の scrollWidth <= clientWidth + 1）という述語があるが現行スタブデータ（e2e/stub/server.mjs）には長い URL を含む description も長い fullName も無いため今回の退行を検知できなかった、YAGNI（1 箇所しか使わない抽象化を足さない）。争点は少なくとも次の 5 つ: A) 折り返しの実装手段を何にするか（Tailwind v4 の break-words = overflow-wrap:break-word か、wrap-anywhere = overflow-wrap:anywhere か、break-all = word-break:break-all か、hyphens か、min-width:0 の追加か）。overflow-wrap:break-word は要素の min-content 寄与を変えないため flex/grid の親側に min-w-0 が無いと効かない一方、overflow-wrap:anywhere は min-content を変える——この差が本件の各要素（min-w-0 flex-1 配下の <p>、flex-wrap の <p>/<ul> 配下の <span>/<li>）でどう効くかを具体的に判定し、どの要素にどのクラスを当てるかを 1 つに決めること。日本語・CJK と英単語の可読性トレードオフ（break-all は英単語を無意味に切る）も判定材料にすること。B) 適用範囲をどこまで広げるか（repository-list の description だけか、fullName リンク・topics・メタ情報・daily-digest・repository-detail の description・gems ページまで含めるか）。取りこぼすと同じ報告がまた来る一方、無関係な要素に一括で当てると意図しない折り返しが出る。C) 個別要素へのユーティリティ付与 vs グローバルな安全網（globals.css の @layer base で第三者テキストを載せる要素に overflow-wrap を既定適用する、あるいは body/html に overflow-x:clip を当てる）のどちらを採るか。overflow-x:clip/hidden は『症状を隠して原因を残す』band-aid であり position:sticky を壊す等の副作用がある点、しかし多層防御として価値がある点の両方を評価し、採否を理由付きで 1 つに決めること。D) 退行を二度と通さないテストをどの層に置くか（E2E で狭い viewport × 病的データを実際に描画して document.scrollingElement.scrollWidth を検証するか、vitest のコンポーネントテストで className を検証するか、両方か）。E2E にするならスタブ（e2e/stub/server.mjs）へ病的データ（長い URL 入り description・長い fullName・長い topic）をどう足すか、既存 E2E（getByRole('list').first() 等の脆いセレクタ・件数依存アサーション）を壊さない足し方は何か、viewport は何 px にするか（320 / 375 / 430）を具体的に決めること。className 検証テストは実装の写経になりがちで価値が薄い可能性も評価すること。E) ドキュメントに何を書き足すか（ui-ux-guidelines.md §2 or §3 に『第三者由来テキストには必ず折り返し指定を当てる』という規律を追記するか、しないか）。SSOT を増やさず、既存の該当節に足すこと。
 - 参加者: `css_wrap`, `a11y_reflow`, `test_guard`, `scope_docs`
-- 投稿数: 4
-- 更新: 2026-08-23T13:32:05+09:00
+- 投稿数: 10
+- 更新: 2026-08-23T13:42:04+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -324,3 +324,463 @@ viewport テストの合否に影響しない。
 であることを確認**してからコミットする。css_wrap の決定（争点 A/B の適用クラス・適用範囲）を
 実装したら同じテストが Green になることで retrogression 修正を証明する。テストのみのコミットを
 先に切ってから実装コミットを積む（Red→Green の履歴を残す）。
+
+## ラウンド 2
+
+### `scope_docs` — 反論
+<sub>2026-08-23T13:34:36+09:00</sub>
+
+# scope_docs ラウンド 2：lead 名指し 3 問への回答
+
+## 問 1: gem-list.tsx の 4 箇所の正確なパスと min-w-0 有無
+
+**結論：gem-list.tsx は min-w-0 flex-1 コンテナを持たない。css_wrap 提案の射程外。**
+
+### 検査結果
+
+`src/ui/gem-list.tsx` の `<li>` 構造（L210–262）:
+
+```tsx
+<li
+  key={entry.repositoryFullName}
+  className="relative py-4"   // ← min-w-0 なし、flex-1 なし（通常ブロックレイアウト）
+>
+  {repo ? (
+    <Link className="...">
+      {entry.repositoryFullName}  // L234: リンク内テキスト
+    </Link>
+  ) : (
+    <span className="font-medium">{entry.repositoryFullName}</span>  // L237: フォールバック
+  )}
+  <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+    <span>{entry.packageName}</span>  // L240
+    <span>{labels.registryLabel} {entry.registry}</span>  // L242: registry
+  </p>
+</li>
+```
+
+**親構造**（L206–266）:
+
+```tsx
+<ul className="divide-border mt-2 divide-y">  // ← flex ではなく li の積み重ね
+  {view.items.map((entry) => {
+    // ...
+    return <li ...> ...
+```
+
+### 問題の性質
+
+- `<ul>` は `flex` ではなく通常のブロックレイアウト（list スタイル）
+- `<li>` は flex アイテムではなく、ブロック要素
+- →「flex 子要素の automatic minimum size 問題（`min-w-0` で解決する問題）」は発生しない
+- したがって css_wrap の「`min-w-0 flex-1` コンテナに `break-words` を継承」スキームを直接適用できない
+
+### 適用方法（修正対象）
+
+gem-list.tsx では折り返し指定を **個別要素に直接付与** する必要がある：
+- L234 の `<Link>`：`className` へ `break-words` を追加
+- L237 の `<span>`（フォールバック）：同様に `break-words` を追加
+- L240 / L242 の `<span>` メタ情報：`flex flex-wrap` の親 `<p>` の `className` へ `break-words` を追加すれば継承でカバー
+
+---
+
+## 問 2: ユーザー入力・第三者テキストが表示される他の箇所
+
+**結論：gem-list.tsx の見出しにユーザー検索語が埋め込まれるのが追加対象。他は見当たらず。**
+
+### 検査対象と結果
+
+| ファイル | 箇所 | 内容 | 判定 |
+|---------|------|------|------|
+| `src/ui/error-notice.tsx` | — | エラーメッセージのみ（第三者テキスト無） | ✅ |
+| `src/ui/attribution-notice.tsx` | — | 帰属表示（短い固定文言 + ライセンス名） | ✅ |
+| `src/ui/search-form.tsx` | L34 | `defaultValue={keyword}` | ⚠️ 入力欄のみ（画面に入力内容は表示されない） |
+| `app/[locale]/page.tsx` | L276+ | `RepositoryList` 呼び出し（見出しなし） | ✅ |
+| `src/ui/gem-list.tsx` | **L156** | `formatMessage(labels.heading, { query })` | ❌ **ユーザー検索語が見出しに埋め込まれる** |
+
+### 問題の詳細：gem-list.tsx L156
+
+```tsx
+<h2 id={GEM_LIST_HEADING_ID} ...>
+  {formatMessage(labels.heading, { query })}  // ← query は第三者由来ではなく「ユーザー入力」
+</h2>
+```
+
+- `query` は「Gem 一覧」（`/{locale}/gems?q={query}`）の検索キーワード
+- ユーザーが `very_long_keyword_without_space` のような長い単語を入力した場合、見出しが横溢れするリスク
+- 第三者テキスト（GitHub 由来）ではなく、ユーザー入力の折り返し問題
+
+**修正方法**：`h2` に `break-words` を追加（repository-detail.tsx の h2 と同じ解）
+
+---
+
+## 問 3: ドキュメント更新先は §2.5 か §3 か（実ファイル確認後の断定）
+
+**結論：§3「レイアウトと i18n 耐性」が適切。§2.5 は README 限定。**
+
+### 実ファイル構成確認
+
+| 節 | 主題 | 対象コンポーネント | 内容例 |
+|---|------|------------------|--------|
+| **§2** | デザイントークン（色・サイズ・タイポグラフィ） | 全般 | カラーパレット・フォントサイズ・スペーシング |
+| **§2.5** | **README 本文のみ** | `readme-section.tsx` のみ | 第三者 HTML の着色・見出しサイズ・**領域内スクロール** |
+| **§3** | **レイアウト全般・i18n 耐性** | 全ページ共通 | 「固定幅を使わない」「200% 拡大で横スクロール禁止」 |
+
+### 根拠
+
+- §2.5 L185–214 は `dangerouslySetInnerHTML` を使う README セクション **のみ** の規律
+  - 「領域内スクロール（`overflow-x: auto`）に閉じ込める」は README の表・コード向け（構造化コンテンツ）
+  - **自サイト製マークアップ（検索結果カード）には適用されない**
+
+- 本件の検索結果カード / Gem 一覧は「自サイト製マークアップ」
+  - README のように「領域内スクロール」に閉じ込めるのは不適切（説明文が小さいスクロール領域に閉じこもる）
+  - **テキスト側の折り返しで解決すべき**
+
+- §3 L218–225 には既に関連規律がある：
+  - L220：「固定幅を使わない」
+  - L223：「200% 拡大で横スクロールが発生しないこと（NFR-15）」
+  - L224：「高さが可変になる箇所は `min-height` で下限だけ固定」
+
+→ **本件は §3 に 1 段落追加するのが整合的**。内容例：
+「第三者由来の長いテキスト（リポジトリ説明・URL・パッケージ名）を表示する要素には `overflow-wrap: break-word` 等の折り返し指定を必須とする（WCAG 2.2 SC 1.4.10 Reflow）」
+
+### `css_wrap` — 反論
+<sub>2026-08-23T13:36:28+09:00</sub>
+
+## css_wrap round2: lead の 3 問への回答（`break-word` vs `anywhere` の決着 + 要素単位の確定）
+
+### 1. 決着: `break-word` と `anywhere` は**併用**が正しい。全面 `anywhere` 化には反対、全面 `break-word` 一本槍だった round1 の私の主張は**一部撤回（concession）**する
+
+round1 で「div に `break-words` を 1 回足せば継承で全部片付く」と書いたが、**topics の `<li>` と `<span>`（flex-wrap の子）には効かない**。lead の指摘どおりで、以下が根拠。
+
+### 2. min-content 寄与の実害検証（CSS Flexbox §4.5「automatic minimum size」+ CSS Text 3 `overflow-wrap` 定義に基づく）
+
+CSS Flexbox の automatic minimum size は「`overflow` が `visible` な flex アイテムは、明示 `min-width` が無ければ自身の **content-based minimum size（= min-content）** を下限として持つ」という規則で、**`flex-wrap` の有無とは無関係**（wrap は「行を折り返すか」の話、floor は「アイテム自身がどこまで縮めるか」の話で別軸）。
+
+CSS Text Module Level 3 は `overflow-wrap: break-word` を「行が実際にオーバーフローする場合の最終手段」と定義した上で、明示的に **min-content サイズの計算には影響しない（`normal` として扱う）** と規定している。対照的に `overflow-wrap: anywhere` と `word-break: break-all` は min-content サイズ自体を縮小する（文字単位の最小幅まで下げる）——これが round1 で私が書いた差分そのもの。
+
+これを `repository-list.tsx` L170-177 の topics `<li>` に当てはめると:
+- `<li>` は `<ul className="mt-2 flex flex-wrap gap-1">`（L170）の **flex アイテム自身**（`<ul>` に直接ぶら下がる）。
+- 親 `<div className="min-w-0 flex-1 break-words">`（L126、round1 案）の `min-w-0` は **その div 自身の floor** を外すだけで、内部にネストした別の flex コンテナ（`<ul>`）の子（`<li>`）が持つ **自分自身の automatic minimum size** には一切効かない（別レイヤーの flex アイテム）。
+- `break-words` は継承されるので `<li>` にも `overflow-wrap: break-word` は届くが、上記の仕様どおり **`break-word` は min-content 計算に不参入**。よって GitHub の 1 語（スペース・ハイフンなし、GitHub の topic 命名規約は最大 50 文字・小文字・ハイフン区切りだが単一トークンで 50 文字も許容される）が来た場合、`<li>` の min-content = その 50 文字分の描画幅のまま、これがそのままアイテムの floor になり、コンテナ幅（320〜430px）を超えれば `<li>` 自体がボックスごとはみ出す。**「継承された `break-word` だけでは収まらない」= lead の疑いは正しい**。
+- `<p className="... flex flex-wrap gap-x-4 gap-y-1 ...">`（L158）配下の `<span>` も構造は同一（span 自身が flex アイテム）。ただし中身（`item.primaryLanguage` = GitHub Linguist の統制語彙で最長でも "Jupyter Notebook" 程度・star 数と日付は自前の `Intl` 整形）は実質的に無制限長の第三者テキストではないため、**この行が実際にはみ出すリスクは topics よりずっと低い**（が仕組みとしての穴は同じ）。
+
+### 対処の選択: **`anywhere` へ切り替えるのではなく、該当 flex アイテムへ `min-w-0` を足す**
+
+3 択のうち「min-w-0 を足す」を採る。理由:
+
+- 一度ボックスに確定幅が与えられた後の**視覚的な折り返し位置は `break-word` と `anywhere` で差が出ない**（両者の違いは min-content 計算だけで、定幅ボックスの line-breaking アルゴリズム自体は同じ最終手段の途中改行を行う）。つまり `min-w-0` で floor を 0 にしてやれば、既に継承されている `break-word` がそのまま機能し、`<li>` は行内の残り幅（このケースでは行を独占するので `<ul>` の利用可能幅いっぱい）まで縮み、そこで最終手段の途中改行が起きる。**`anywhere` に替える必要は無い**。
+- サイト全体で「折り返しルールは `overflow-wrap: break-word` の 1 種類だけ」に統一できる（`anywhere` を局所導入すると、なぜここだけ違う値かの理由を将来の読者が探すコストが生まれる）。`min-w-0` は本コードベースが既に多用している既存イディオム（`min-w-0 flex-1`）の再利用でしかない。
+- 実害ゼロの箇所（primaryLanguage/star/date の `<span>`）に `min-w-0` を足しても副作用は無い（floor を下げるだけで、行に十分な余白がある限り実際の縮小は起きない）。ただし YAGNI の観点で「変更必須」と「保険として足してよい」を区別する。
+
+**確定クラス（要素単位）**:
+
+| ファイル:行 | 要素 | 変更 | 必須度 |
+|---|---|---|---|
+| `repository-list.tsx` L172-174 | topics `<li>` | `className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs min-w-0"` | **必須**（GitHub topic は空白なし単一トークンで最大 50 文字、実害あり） |
+| `repository-list.tsx` L159 | primaryLanguage `<span>` | `min-w-0` 追加 | 任意（統制語彙で実害ほぼ無いが無コストの保険） |
+| `daily-digest.tsx` L129-137 | 各 `<span>`（dependentCount / star） | 変更なし | 不要（自前フォーマットの数値、第三者テキストでない） |
+
+### 3. `fullName` の `<Link>`（`repository-list.tsx` L134-142）は継承だけで確実に折り返る — 追加対応不要
+
+根拠は 2 点重なる:
+
+1. **この `<a>` はそもそも flex アイテムではない**。親 `<div className="min-w-0 flex-1 break-words">`（L126）は `display: flex` を持たない（このコンポーネントで `flex` は `<li>` 自身と、内部の meta `<p>`/topics `<ul>` にしか付いていない）。したがって `<a>` は通常のブロック内インライン要素として、div の確定済み content width（＝ L126 の `min-w-0` により既に floor が外れて縮んでいる）の中でレイアウトされるだけで、automatic-minimum-size の対象にすらならない。
+2. CSS 2.1 §10.3.1 は **`min-width` / `max-width` は非置換インライン要素には適用されない**と規定している。`<a>` はテキストのみを含む非置換インライン要素なので、そもそも「floor を持つ／持たない」という争点自体が発生しない。
+
+以上 2 点により、`<div>` の `break-words` を継承した時点で `<a>` 内のテキストは div の確定幅に合わせて最終手段改行される。**`min-w-0` も `anywhere` も `<a>` には不要**——round1 の結論を維持する。
+
+### 追加確認: `scope_docs` が挙げた `gem-list.tsx`（round1 で私は未読、今回読んだ）
+
+`gem-list.tsx` L210 `<li className="relative py-4">` は `<ul>`（L206 `className="divide-border mt-2 divide-y"`。flex なし）の**子ではあるが、その `<ul>` 自体が flex コンテナではない**ため、`<li>` は plain block（automatic-minimum-size の対象外）。よって:
+
+- L210 `<li className="relative py-4">` → `break-words` を**この `<li>` に 1 回**追加すれば、配下の L229-235 `<Link>`／L237 フォールバック `<span>`／L239 の `<p className="flex flex-wrap ...">` 内の全 `<span>` まで継承で一括カバーできる（`repository-list.tsx` と同型パターン。ここは flex アイテムではないので `min-w-0` は不要——上の `<a>` の議論と同じ理由）。
+- ただし L239 `<p className="... flex flex-wrap gap-x-4 gap-y-1 ...">` 配下の **L240 `packageName` の `<span>`** は、その `<p>` の flex アイテムであり、`packageName`（npm/pip 等のパッケージ名）は topics 同様**第三者・可変長・ハイフンなしもあり得る文字列**なので、topics と同じ実害がある。→ **L240 `<span>` にも `min-w-0` が必須**。L242 `registry` の `<span>`（"npm"/"pypi" 等の統制小語彙）は任意（低優先）。
+
+post します。
+
+### `a11y_reflow` — 反論
+<sub>2026-08-23T13:36:31+09:00</sub>
+
+# a11y_reflow round2: 名指し 3 問への回答
+
+## Q1（`css_wrap` との対立）: 決着 — **要素ごとに判定が割れる。`break-words` だけでは不足する箇所が 1 つある**
+
+一次情報で裏取り済み（MDN `overflow-wrap`、逐語）:
+
+> `anywhere`: "Soft wrap opportunities introduced by the word break **are** considered when calculating min-content intrinsic sizes."
+> `break-word`: "soft wrap opportunities introduced by the word break are **NOT** considered when calculating min-content intrinsic sizes."
+
+この 1 文が争点 A の核心で、`css_wrap` の主張の射程を分ける。
+
+### `css_wrap` が正しい箇所（同意する）
+`repository-list.tsx` L156 の description `<p>` と L141 の fullName `Link` は、**それ自身が flex アイテムではない**（親 `<div className="min-w-0 flex-1">` L126 が flex アイテムで、`<p>`/`Link` はその中の通常のブロック/インライン子）。この `<div>` は既に `min-w-0` で自動最小サイズ問題を解いており、`<p>` の幅は「自身の min-content」ではなく「親の確定済み幅」で決まる。したがって `break-word` の「min-content には効かない」という弱点はここでは無関係——確定幅の行内に収まらない語を最終手段で割れれば十分。**`css_wrap` の L126/L138 の結論（`break-words` を div に 1 個）に同意する。**
+
+### `css_wrap` が見落としている箇所（反証）
+`repository-list.tsx` L170-179 の topics `<ul className="mt-2 flex flex-wrap gap-1">` の子 `<li>`（L172-177）は事情が違う。この `<li>` **自身が** `ul.flex.flex-wrap` の flex アイテムであり、`min-w-0` は付いていない。GitHub の topic 文字列はハイフンを含まない単一トークンになり得る第三者由来の文字列で、改行機会（空白・ハイフン）がゼロの語が来ると、`<li>` の自動最小サイズ＝その語の min-content 幅になる。ここで:
+- 継承された `overflow-wrap: break-word`（`div` からの継承）は **min-content を縮めない**（上記引用のとおり）。したがって `<li>` の自動最小サイズは変わらず、その語が行の残り幅より広ければ `<li>` はその行に収まらず、次の行へ送っても（`flex-wrap: wrap` の性質上）単独行でもなお `<ul>`/カード幅を超えて視覚オーバーフローする——**`break-words` の継承だけではこの `<li>` の溢れを閉じられない**。
+- `overflow-wrap: anywhere` を **この `<li>` に直接**当てれば、min-content 自体が改行機会込みで縮むため、flex-wrap のアルゴリズムが正しく縮小・折返しできる。
+
+### 裁定
+「どちらか一方が正しい」ではなく **両方採用**（css_wrap の判定を上書きしない・追加する）:
+- `src/ui/repository-list.tsx` L126: `<div className="min-w-0 flex-1">` → `break-words` 追加（`css_wrap` 案のまま）
+- `src/ui/repository-list.tsx` L172-175: `<li className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs">` → **`wrap-anywhere` を直接追加**（継承に頼らない。ここだけ min-content 計算に効く値が要る）
+- `daily-digest.tsx` / `gem-list.tsx` は `scope_docs` の洗い出し（topics 相当の flex-wrap リストが無い）を信じる限りこの追加パターンの対象外——ただし `scope_docs` に「flex-wrap の子要素で min-w-0 が無い箇所」を横断確認するよう申し送る。
+
+**「意図しない箇所でレイアウトが痩せる」副作用について**: `wrap-anywhere` を当てるのは topics の `<li>` 1 箇所（独立した `ul.flex.flex-wrap` の中）に限定するため、L113 の avatar/本文 flex 行の幅配分（`w-6 shrink-0` 等）には一切波及しない——影響範囲は topic pill 自身の中だけ。CSS 実装は個別要素粒度で決まる（`css_wrap` の「継承で一括」という設計方針自体は正しいが、継承だけで全箇所が閉じるという結論は誤り）。
+
+## Q2（`overflow-x:hidden/clip` の採否）: **不採用（二択で断定）**
+
+round1 の「多層防御として条件付き許容」を撤回する。理由は a11y の情報欠落リスクだけでなく、**`test_guard` が設計した回帰テストそのものを無効化する** という決定的な技術的事実に気づいたため（round1 では見落としていた）。
+
+`body { overflow-x: hidden }`（または `clip`）を指定すると、`<body>` 自身がその軸のスクロールコンテナになり、子孫のインク オーバーフローは `<body>` の外（`<html>`/viewport）へ伝播しなくなる（CSS Overflow の「body の overflow が viewport へ伝播する」規則は、body 自身が `overflow` を明示指定した時点で適用対象外になる——これは "body 全体に横スクロールバーを出さない" ための定番ハックとして広く知られる挙動）。結果として `document.scrollingElement`（＝ `documentElement`）の `scrollWidth` は `clientWidth` に収まり、**`test_guard` が設計した `expectNoHorizontalScroll`（`document.scrollingElement.scrollWidth <= clientWidth + 1`）は、実際にはコンテンツが `<body>` 内でクリップ／見えなくなっていても green になる**。
+
+つまり「根本修正 + 最終防御としての hidden」を同じ PR に入れると、その PR が同時に追加する退行検知テスト（争点 D）の検出力をゼロにする——将来誰かが第三者テキストの折り返し指定を書き忘れても、E2E は永久に検知できなくなる。これは「症状を隠す」どころか「回帰テストの目を潰す」ため、band-aid の中でも最悪の選択肢。
+
+→ **本 PR では `overflow-x:hidden`/`clip` を `body`/`html` に一切追加しない（断定）**。将来 sticky ヘッダー等の副作用（round1 で述べた）を持ち出すまでもなく、この 1 点だけで不採用が確定する。
+
+## Q3（viewport 選定）: **320px 単独で a11y 要件上も必要十分（`test_guard` に同意・補強）**
+
+- 320 CSS px は WCAG 2.2 SC 1.4.10 の達成基準文言に **名指しで明記された数値**（「1280px 幅 ×400% ズームと等価」）であり、375/430 は業界的に一般的なデバイス幅ではあるが基準文言上の閾値ではない。a11y 適合判定の基準点は 320px 以外にない。
+- `test_guard` の単調性の主張（固定長の改行不能文字列に対し、必要幅は viewport 幅に依存せず一定 → 狭いほど厳しい判定になる）は、本プロジェクトの `ui-ux-guidelines.md` §3「固定幅を使わない。`min-width` + padding + Flex/Grid で可変にする」という制約があって初めて成立する。もし仮にどこかで固定 px 幅のブレークポイントが使われていて、広い viewport でカードの利用可能幅がかえって狭くなるような実装があれば単調性は崩れるが、`repository-list.tsx` にはそのような固定幅指定は無い（`min-w-0 flex-1` のみ）ため前提は成立している。
+- したがって a11y レンズからも **320px 単独で十分**、375/430 を病的データ用に追加する意味はない（費用対効果が悪いだけでなく、320 を通過すれば論理的に導ける結果を重ねて検証するだけ）。既存の 375px・640×360px（200% 拡大相当）の通常データ用テストはそのまま残してよい（別の関心事）。
+
+以上、post します。
+
+### `test_guard` — 反論
+<sub>2026-08-23T13:39:07+09:00</sub>
+
+# test_guard round2: lead 名指し 4 点への回答
+
+## 1（css_wrap vs a11y_reflow: break-word で `<li>`/`<span>` 自体が溢れないか）
+**concede**: round1 の私のテストは検出できない。理由を実コードで裏取りした。
+
+`repository-list.tsx:158` の `<p className="... flex flex-wrap ...">` と `:170` の
+`<ul className="mt-2 flex flex-wrap gap-1">` は、L126 の外側 `<div className="min-w-0 flex-1">`
+とは**別の flex コンテナ**。その子（primaryLanguage の `<span>`・topics の `<li>`, L173-176）は
+**この内側コンテナ自身の flex アイテム**であり、`min-w-0` を個別に持たない。
+
+css_wrap が指摘した「`overflow-wrap: break-word` は min-content 寄与を変えない」という事実は、
+外側 div では `min-w-0` によって別解決済みだが、**この内側の `<li>`/`<span>` には min-w-0 も
+overflow!=visible も無い**ため、automatic minimum size（flexbug #1）がそのまま残る。継承された
+`break-words` は「箱の中でテキストをどう折り返すか」しか変えず、「箱自体（`<li>`）がどこまで
+縮んでよいか」には無関係——つまり**空白もハイフンも持たない 1 個の topic 文字列が来ると、
+`<li>` 自体がその文字列の全幅を要求し、flex-wrap で行送りされても行内で親幅を超えて溢れる**。
+これは description の `<p>`（通常のブロック子で、独自の flex コンテナではない）とは構造が違う
+ため、round1 の「長い URL 入り description」データでは踏めない経路。
+
+**round1 の gap を埋めるスタブ変更**（`overflow-guard` マーカーの既存 1 件に追記。新マーカーは
+不要）:
+
+```js
+topics: ['x'.repeat(48)], // 空白・ハイフン無しの単一トークン（GitHub 側の文字数上限は
+                           // アプリが信頼してよい保証ではない——brief 自身が『長さも内容も
+                           // 制御できない』と定義しているため、上限値の当否は問わず作る）
+```
+
+`toSearchItem`（`server.mjs:534-564`）は `topics` を素通しするので追加フィールドだけで足りる。
+`repository-list.tsx:169` は `item.topics.length > 0` のときだけ `<ul>` を描画するため、この
+1 行追加で `<li>` 経路が確実に踏まれる。
+
+この 1 行を足すと、私の `expectNoHorizontalScroll` は **css_wrap 案（外側 div へ break-words
+1 箇所）だけでは Red のまま**になる（`<li>` は inherited break-words では救えないため）。
+Green にするには **`<li>`（L173-176）と `<span>`（primaryLanguage, L159 内）にも min-w-0
+相当の対策**（`min-w-0` 追加、または `overflow-wrap: anywhere` — anywhere は min-content
+そのものを縮めるため min-w-0 が無くても効く、と css_wrap が round1 で述べた通り）が要る。
+**この 1 テストが争点 A（break-word か anywhere か）の実地裁定者になる**: 外側 div は
+break-word で足りるが、`<li>`/`<span>` のような「自身が flex アイテムで min-w-0 を持たない
+子」には anywhere（または個別 min-w-0 追加）が要る、という **要素ごとに手段が変わる可能性**を
+テストが機械的に炙り出す。
+
+## 2（daily-digest / gems ページは誰が守るか）
+**断定: E2E では守らない。理由を明示する。**
+
+- `daily-digest.tsx` のデータ源は `public/data/daily-digest.json`（`static-gem-digest.ts:5`
+  で `import` されるバンドル取り込み）。`gem-list.tsx` のデータ源は `public/data/gem-index/`
+  （シャード分割・`static-gem-index.ts`。`e2e/stub/server.mjs:329` 付近のコメントと一致）。
+  どちらも **HTTP スタブ（`server.mjs`）を経由しない**、Next サーバープロセスが直接ファイル
+  システムから読む実データ。E2E の `webServer` は `npm run build && npm start`（
+  `playwright.config.ts:50`）で本物のファイルをそのままバンドルするため、`server.mjs` のような
+  マーカー分岐を差し込む注入点が無い。
+- 唯一の差し替え口は `StaticGemDigest` のコンストラクタ引数（`static-gem-digest.ts:69`
+  「テスト用にソースを注入」）だが、これは **vitest（unit）専用**の DI で、E2E（実ブラウザ→
+  ビルド済みアプリ）には届かない。
+- 実データファイルを直接書き換えて注入する案は却下する: `daily-digest.json`（294 件・
+  `sp-14.spec.ts:31` コメント）と `gem-index` シャード（`kafka` 33 件等、`sp-19.spec.ts` 冒頭
+  JSDoc）は `sp-14` / `sp-15` / `sp-18` / `sp-19` が **実データの統計的性質**（重複排除・
+  シャッフルの分散・実件数）に依拠しており、しかも `tools/generate_gem_digest.mjs` の定期再生成
+  で上書きされる（恒久的な仕込みにならない・`server.mjs:319` の既存コメント「プール側の
+  リポジトリ名をハードコードしない」と同じ理由）。
+- したがって **E2E での退行検知は repository-list（一覧・検索結果）と repository-detail に
+  限定する**（実バグの再現経路そのもの）。
+
+**それでも「守らない」で終わらせない代替策（次善のセーフティネット）**:
+- css_wrap には **争点 B の適用範囲に `daily-digest.tsx` と `gem-list.tsx` を明示的に含める**
+  ことを要求する（scope_docs の 4 ファイル 10 箇所指摘どおり。css_wrap round1 は
+  `daily-digest.tsx` は直したが **`gem-list.tsx` に触れていない** — これは取りこぼし）。
+- E2E が届かないこの 2 ファイルに限り、`daily-digest.test.tsx` / `gem-list.tsx` 用の新規 vitest
+  に「E2E で実証済みのクラス（`min-w-0 flex-1 break-words` 等、必要なら `<li>`/`<span>` 側の
+  対策も含む）が同じ箇所に当たっているか」を確認する **横展開漏れ検知**を追加する。§5 で述べた
+  「className 検証は横スクロールの発生自体を証明しない」という限界は変わらないが、ここでの
+  役割は「同じ構造バグを 4 箇所目・5 箇所目で再導入していないか」の確認に限定するため、
+  「実装の写経で価値が薄い」という批判は repository-list には当たるがここでは当たらない
+  （repository-list は E2E で実証済み・ここは E2E が構造的に届かない代替経路）。
+- 恒久対応: `E2E_STUB_PORT` と同じ発想で `daily-digest.json` / `gem-index` の読み込みパスを
+  環境変数で差し替え可能にする改修は価値があるが、本争点のスコープ外（CP-1: 起票はするが
+  本スプリントのコード変更には含めない・YAGNI）。実装 Issue として起票することを提案する。
+
+## 3（viewport 320px 単独の再判定）
+再判定した上で **320px 単独を維持する**。
+
+根拠（単調性の精査）: 本件の破綻条件は「分割不可能なトークンの必要幅 > コンテナ幅」。
+トークンの必要幅は viewport 幅に依存せず一定なので、コンテナ幅が広いほど破綻しにくい
+（狭いほど厳しい）。`repository-list.tsx` / `repository-detail.tsx` に `sm:`/`md:`/`lg:` 系の
+レスポンシブ prefix が無いか実際に grep して確認した結果、唯一の例外は
+`repository-detail.tsx:111` の `<dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">`
+（stats グリッドが 640px で 2 列→4 列に変わる）。ここは **description・topics とは無関係な
+別要素**なので、単調性の前提（同一構造のまま幅だけ変わる）を崩さない。したがって
+「320px で fail しない」ことを確認すれば、375px・430px・640px でも同じデータに対して
+fail しないことが論理的に導ける——320px 単独で十分（追加 viewport は冗長）。
+
+なお 1.4.4（200% 拡大・sp-10 の 640×360 テスト）は **別の懸念**（通常データでのレイアウト
+崩れ）を見ており、本退行クラスとは無関係。既存のまま維持すればよく、`overflow-guard` 用に
+640 を増設する必要はない。
+
+## 4（既存 E2E への影響のより厳密な検証）
+
+**マーカー衝突なしの再確認**（`server.mjs` の分岐一覧を実際に洗った）:
+`SP9_NETWORK_DOWN_MARKER='sp9-network-down'`(l.106) / `SP9_SECONDARY_RATE_LIMIT_MARKER`(l.107)
+/ `SP9_SLOW_MARKER`(l.108) / `SP9_FORBIDDEN_MARKER`(l.113) / `'zero-hits'`(l.661) /
+`'upstream-error'`(l.664) / `'rate-limit'`(l.667) / `PRIVATE_MIXED_MARKER='private-mixed'`(l.122)
+/ `GEM_BADGE_MARKER='gem-badge'`(l.326) / `MANY_HITS_MARKER='many-hits'`(l.71) /
+`'not-found'`(l.749 detail 側)。`overflow-guard` はこのいずれの部分文字列でもなく、
+いずれも `overflow-guard` の部分文字列でもない（10 個全部を文字列比較で確認済み）。
+
+**件数・totalCount への非干渉**: 新マーカーの分岐は `PRIVATE_MIXED_MARKER`（l.672-678）や
+`GEM_BADGE_MARKER`（l.682-688）と同じ形で `{ total_count: 自分の配列.length, ... }` を
+**独自に返す**（グローバル `TOTAL_COUNT`定数 l.64 や `searchResponse()` ヘルパー l.566 を
+使わない）。既定フィクスチャ（`react` 等）の分岐（l.707 のフォールバック）は if-chain を
+一切通過しないため無傷。
+
+**stats（`/__stats`）への影響**: `stats.searchCount += 1`（l.625）・`stats.detailCount += 1`
+（l.743）はマーカー判定より **前**で無条件に走るため、`overflow-guard` の検索・詳細アクセスも
+カウントされる。ただし `sp-5.spec.ts` は測定直前に必ず `resetStubStats()`（l.72-76、呼び出しは
+`beforeEach` 相当 l.85 と l.141）で `stats` をゼロに戻してから比較しており、
+`playwright.config.ts:19-21`（`fullyParallel: false` / `workers: 1`）で全 spec が直列実行される
+ため、他ファイルの実行順に関わらず sp-5 は自分のリセット後の増分だけを見る。**干渉なし**。
+
+**axe（`a11y.spec.ts`）への影響**: 全 6 テスト（l.17-90 実測）は `'react'` 検索
+（`octo-widgets` 固定フィクスチャ）・`octo-readme-rich`・`/ja` 未検索・404 の**固定ページのみ**
+を対象にしており、任意クエリをクロールする処理は無い。新マーカーへ axe が触れる経路が
+そもそも存在しないため、**新規違反が出ようがない**（`a11y.spec.ts` 側のテストは無傷）。
+逆に言うと **`overflow-guard.spec.ts` 自体には axe 検査が無い**——望むなら
+`createAxeBuilder(page).analyze()`（`e2e/axe.ts`）を追加できるが、これは Q4 の「壊さないか」
+への回答としては不要（既存スイートは無関係で無傷、が新規スイートへの axe 追加自体は
+別途のプラス提案として css_wrap/a11y_reflow に投げる）。
+
+以上、post します。
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-23T13:41:06+09:00</sub>
+
+# lead 合意整理（round 3）
+
+## 合意された事実（4 レンズが round 2 で一致した点）
+
+1. **根本原因**: 第三者由来テキスト（GitHub の `description` に含まれる空白なしの長い URL 等）に折り返し指定が無く、`overflow-wrap` の既定 `normal` では改行機会が無い語を割れないため、カードからはみ出して `body` に横スクロールが伝播する。`ui-ux-guidelines.md` §2 の「横溢れは領域内スクロールに閉じ込め body に出さない（`NFR-15`）」と WCAG 2.2 SC 1.4.10 Reflow（320 CSS px 相当で二方向スクロールを強制しない）に違反している。
+
+2. **`overflow-wrap: break-word` と `anywhere` の差は min-content 寄与だけ**（MDN / CSS Text 3 の逐語で裏取り済み）。`break-word` は min-content を縮めず、`anywhere` は縮める。**定幅が確定したボックスの中での折り返し位置は両者で差が出ない。**
+
+3. **したがって要素の性質で必要な値が変わる**（css_wrap の round1「継承 1 回で全部片付く」は本人が一部撤回、a11y_reflow の round1「全面 `anywhere`」も撤回）:
+   - **flex アイテムでない要素**（`min-w-0` 済みコンテナ配下の `<p>` / 非置換インライン `<a>`・`<span>`）→ 親の確定幅に従うので、継承された `break-word` で足りる。`<a>` は CSS 2.1 §10.3.1 により `min-width` が適用対象外なので floor 問題自体が起きない。
+   - **それ自身が flex アイテムの要素**（`ul.flex.flex-wrap` 直下の topics `<li>`、`p.flex.flex-wrap` 直下の `<span>`）→ automatic minimum size（自身の min-content）が floor として残るため、継承された `break-word` **だけでは閉じない**。GitHub の topic は空白・ハイフンなしの単一トークンで最大 50 文字あり得るので実害がある。
+
+4. **`overflow-x: hidden` / `clip` を `body`/`html` に足すのは不採用**（a11y_reflow が round1 の条件付き許容を撤回し断定・全員が受諾）。情報欠落（1.4.10）だけでなく、**`body` が `overflow` を明示した時点で viewport への伝播が止まり、本 PR が同時に追加する退行検知テスト（`document.scrollingElement.scrollWidth <= clientWidth`）の検出力を永久にゼロにする** ため。band-aid の中でも最悪の選択肢。
+
+5. **E2E の viewport は 320px 単独で必要十分**（test_guard の単調性論 + a11y_reflow の「320 は SC 1.4.10 の基準文言に名指しされた唯一の閾値」で一致）。375 / 430 を病的データ用に足す価値はない。
+
+6. **既存 E2E が今回を検知できなかった理由**: `e2e/stub/server.mjs` の既定データは最長 39 字・空白入りで、改行機会ゼロの連続長文字列が 1 つも無い。`e2e/sp-10.spec.ts` の `expectNoHorizontalScroll` という述語は正しかったが、**食わせるデータが健全すぎた**。
+
+7. **適用漏れ**: css_wrap の round1 案は 3 ファイルだったが、scope_docs の機械洗い出しで `src/ui/gem-list.tsx`（4 箇所 + 検索語を埋め込む見出し 1 箇所）が抜けていた。`gem-list.tsx` の `<ul>` は flex ではないため `<li>` は plain block で、`min-w-0` 不要・`break-words` 1 回で配下を継承カバーできる。ただし `p.flex.flex-wrap` 直下の `packageName` の `<span>` は flex アイテムなので上記 3 と同じ扱いが要る。
+
+8. **ドキュメントの追記先は §3「レイアウトと i18n 耐性」**（§2.5 は README typography 限定・scope_docs が自らの round1 を訂正）。
+
+## 残った唯一の対立と lead 裁定
+
+**topics `<li>` 等「flex アイテムかつ第三者テキスト」への対処**を、css_wrap は `min-w-0` 追加、a11y_reflow は `wrap-anywhere` 直付けとした。両者とも技術的には成立する（floor を外すか、min-content を縮めるかの違いで、結果の折り返しは同じ）。
+
+**lead 裁定: `wrap-anywhere` を採る（a11y_reflow 案）。**
+
+理由は「サイト全体で折り返しルールを 1 種類に統一したい」（css_wrap）よりも **結合の弱さ** を優先したため:
+
+- `min-w-0` 案が成立する前提は「祖先の `break-words` が継承されてくること」。将来この `break-words` を誰かが外す・要素を別の親へ移すと、`min-w-0` だけが残って**静かに折り返さなくなる**（`min-w-0` 単独では折り返し指定が無いので、floor が外れた分かえって溢れる）。
+- `wrap-anywhere` は**その要素だけで自己完結**する（min-content の縮小と折り返し機会の導入を 1 つの宣言が両方担う）。祖先の状態に依存しない。
+- 副作用は topic pill / package 名の内側に閉じ、`w-6 shrink-0` 等の兄弟との幅配分には波及しない（a11y_reflow の指摘どおり）。
+
+「値が 2 種類になる理由が将来の読者に分からない」という css_wrap の懸念は、**コード側のコメントと `ui-ux-guidelines.md` §3 の追記で判定規則（flex アイテムか否か）を明文化する**ことで解消する。
+
+### `lead` — 判定
+<sub>2026-08-23T13:42:04+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: 折り返しの実装手段",
+      "design": "要素の性質で 2 値を使い分ける。(1) flex アイテムでない要素（min-w-0 済みコンテナ配下のブロック・非置換インライン）は祖先コンテナへ `break-words`（overflow-wrap: break-word）を 1 回当てて継承でカバーする。(2) それ自身が flex アイテムで、かつ長さを制御できない第三者テキストを載せる要素には `wrap-anywhere`（overflow-wrap: anywhere）を直付けする（automatic minimum size の floor を min-content ごと縮めるため、祖先の状態に依存せず自己完結する）。判定規則は『その要素自身が flex コンテナの直接の子か？』の一点。",
+      "artifacts": [
+        "src/ui/repository-list.tsx（改修）: L126 `<div className=\"min-w-0 flex-1\">` に `break-words` を追加 / topics の `<li>`（L172 付近）に `wrap-anywhere` を追加",
+        "src/ui/daily-digest.tsx（改修）: L115 `<div className=\"min-w-0 flex-1\">` に `break-words` を追加",
+        "src/ui/repository-detail.tsx（改修）: description の `<p>`（L108 付近）に `break-words` を追加",
+        "src/ui/gem-list.tsx（改修）: `<li className=\"relative py-4\">` に `break-words` を追加 / `p.flex.flex-wrap` 直下の packageName `<span>` に `wrap-anywhere` を追加 / 検索語を埋め込む見出しに `break-words` を追加"
+      ],
+      "rejected": "全面 `break-word` 一本槍（css_wrap round1・本人が撤回）= flex アイテムの floor が残り topics `<li>` が閉じない。全面 `anywhere`（a11y_reflow round1・本人が撤回）= 不要な箇所まで min-content を縮める。`word-break: break-all`= 英単語を無意味に切り可読性を損なう。`hyphens`= URL に効かない。flex アイテムへの `min-w-0`（css_wrap round2）= 祖先の `break-words` 継承に依存する結合の強さゆえ却下（祖先の変更で静かに壊れる）。"
+    },
+    {
+      "issue": "B: 適用範囲",
+      "design": "第三者由来テキスト（GitHub / Ecosyste.ms 由来で長さも内容も制御できない文字列）とユーザー入力の再表示を描画する全箇所を対象にする。scope_docs の機械洗い出しに基づき 4 ファイル（repository-list / daily-digest / repository-detail / gem-list）。統制語彙（primaryLanguage の Linguist 語彙・registry 名）と自前 Intl 整形の数値・日付は対象外（YAGNI）。",
+      "artifacts": [
+        "上記 4 ファイル（改修）"
+      ],
+      "rejected": "repository-list.tsx の description だけを直す最小修正 = 同じ報告が topics・gem 一覧から再発する。primaryLanguage / registry / star 数 / 日付にも保険で当てる案 = 実害ゼロの箇所を触る YAGNI 違反。"
+    },
+    {
+      "issue": "C: 個別要素 vs グローバル安全網",
+      "design": "個別要素（+ コンテナからの継承）のみ。globals.css への @layer base 一括適用も、body/html への overflow-x:hidden/clip も採らない。",
+      "artifacts": [],
+      "rejected": "body/html への `overflow-x: hidden`/`clip` = ① WCAG 1.4.10 の『情報や機能を失わない』に反しうる ② position:sticky を壊す ③ 決定的な理由として、body が overflow を明示した時点で viewport への伝播が止まり、本 PR が同時に追加する退行検知テスト（document.scrollingElement.scrollWidth <= clientWidth）を永久に green にしてしまい検出力をゼロにする。globals.css の @layer base による一括適用 = 対象を『第三者テキストを載せる要素』に絞れず、意図しない折り返しを広範囲に生む。"
+    },
+    {
+      "issue": "D: 退行検知テスト",
+      "design": "E2E を主とする。専用スペック `e2e/overflow-guard.spec.ts` を新設し、viewport 320px 単独で、スタブに新設する病的データセット（マーカー `overflow-guard`）を検索して一覧ページと詳細ページの双方で document.scrollingElement.scrollWidth <= clientWidth + 1 を検証する。病的データは 3 種すべてを含める: (a) 空白を一切含まない長い URL 入り description（本件の再現データ）(b) 空白・ハイフンなしの長い単一 topic（flex アイテム floor の再現）(c) 長い full_name。E2E で注入口を持たない daily-digest / gem-list は、vitest のコンポーネントテストで折り返しクラスの存在を検証する（弱いが、この 2 つに対する唯一の回帰網）。TDD 順序: 先にスタブ拡張 + E2E を書いて Red を確認してから実装する。",
+      "artifacts": [
+        "e2e/stub/server.mjs（改修）: マーカー `overflow-guard` の病的データセットを追加",
+        "e2e/overflow-guard.spec.ts（新規）: 320px viewport・一覧 + 詳細の横スクロール検証",
+        "src/ui/daily-digest.test.tsx / src/ui/gem-list.test.tsx（改修 or 新規）: 折り返しクラスの存在検証"
+      ],
+      "rejected": "375 / 430px の追加 viewport = 320 を通れば論理的に導ける（改行不能文字列の必要幅は viewport 幅に依存せず一定・固定幅ブレークポイントが無いため単調）。playwright.config.ts へ狭い viewport のプロジェクトを追加 = 全スペックが二重実行されコストに見合わない。全コンポーネントへの className 写経テスト = jsdom はレイアウト計算を持たず実際の溢れを検証できないため、E2E で守れる箇所には価値がない。"
+    },
+    {
+      "issue": "E: ドキュメント",
+      "design": "ui-ux-guidelines.md §3「レイアウトと i18n 耐性」に規律を 1 項追記する。内容は『長さも内容も制御できない第三者由来テキスト（description・topic・fullName・packageName・ユーザー入力の再表示）を描画する要素には必ず折り返し指定を当てる。その要素自身が flex コンテナの直接の子なら `wrap-anywhere`、そうでなければ祖先コンテナの `break-words` の継承でよい』という判定規則。SSOT を増やさず既存節に足す。",
+      "artifacts": [
+        "docs/03_design/ui-ux/ui-ux-guidelines.md（改修・§3 に 1 項追記）"
+      ],
+      "rejected": "§2.5 への追記（scope_docs round1・本人が訂正）= §2 は README typography 限定の節。prd.md / user-story-map.md の改訂 = NFR-15 / AC-9 の要件文言自体は変わっておらず、違反していたのは実装なので要件側を触る必要はない。新規ルールファイルの作成 = SSOT を増やす。"
+    }
+  ],
+  "tasks": [
+    { "id": "T-1", "title": "e2e/stub/server.mjs に病的データセット（マーカー overflow-guard）を追加する", "actor": "claude", "depends_on": [], "sp": "sp:1" },
+    { "id": "T-2", "title": "e2e/overflow-guard.spec.ts を新設し 320px で Red を確認する", "actor": "claude", "depends_on": ["T-1"], "sp": "sp:1" },
+    { "id": "T-3", "title": "4 ファイルへ折り返しクラスを適用し Green にする", "actor": "claude", "depends_on": ["T-2"], "sp": "sp:2" },
+    { "id": "T-4", "title": "daily-digest / gem-list の折り返しクラス検証を vitest に追加する", "actor": "claude", "depends_on": ["T-3"], "sp": "sp:1" },
+    { "id": "T-5", "title": "ui-ux-guidelines.md §3 へ判定規則を追記する", "actor": "claude", "depends_on": ["T-3"], "sp": "sp:1" },
+    { "id": "T-6", "title": "npm run check を通し、プレビュー URL 付きで PR を作成する", "actor": "claude", "depends_on": ["T-3", "T-4", "T-5"], "sp": "sp:1" }
+  ],
+  "critical": [
+    "body/html への overflow-x:hidden/clip は、同 PR で追加する退行検知テストの検出力を恒久的にゼロにするため絶対に入れない（誤って入れるとテストは green のまま溢れが復活する）",
+    "flex アイテムへの対処を祖先の break-words 継承に依存させると、将来祖先を触ったときに静かに壊れる（wrap-anywhere で自己完結させること）"
+  ],
+  "open_questions": []
+}
