@@ -27,7 +27,7 @@ npm run check        # Lint/型/vitest/E2E 等をまとめて実行（tools/run_
 
 `npm test` / `npm run test:e2e` は環境変数を一切設定しなくても通る（外部 API はモック化されている）。
 
-本リポジトリでは品質チェック・デプロイに GitHub Actions を使わない（[`D-23`](./docs/02_requirements/open-questions.md)）ため、上記を走らせる CI は動いていない。代わりに `npm run check` を実行し、出力される結果表を PR 本文に貼ることが PR 前の唯一の機械的証跡になっている。GitHub Actions は Gem 候補プールの週次再生成（[`.github/workflows/gem-pool-refresh.yml`](./.github/workflows/gem-pool-refresh.yml)）にのみ使う。
+本リポジトリでは品質チェック・デプロイに GitHub Actions を使わない（[`D-23`](./docs/02_requirements/open-questions.md)）ため、上記を走らせる CI は動いていない。代わりに `npm run check` を実行し、出力される結果表を PR 本文に貼ることが PR 前の唯一の機械的証跡になっている。GitHub Actions は Gem 候補プールの **日次実行 + 週次反映**（[`.github/workflows/gem-pool-refresh.yml`](./.github/workflows/gem-pool-refresh.yml)）にのみ使う。毎日生成・機械 QA まで走らせてパイプラインの健全性を検証し、`main` への反映（PR 作成）は生成物が 7 日以上前のときだけ行う（マージ頻度を抑えて git 履歴コストを避けるため）。
 
 ### 環境変数
 

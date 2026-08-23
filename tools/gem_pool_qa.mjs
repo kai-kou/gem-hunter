@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 /**
- * gem_pool_qa.mjs — Gem 候補プール生成物の QA と no-op 判定を行う CLI（Issue #458・`D-40`）。
+ * gem_pool_qa.mjs — Gem 候補プール生成物の QA・no-op 判定・反映可否判定を行う CLI
+ * （Issue #458・#482・`D-40`）。
  *
- * `.github/workflows/gem-pool-refresh.yml`（週次バッチ）が `node tools/generate_gem_digest.mjs`
- * を実行した **直後**、コミット・ブランチ作成の前に呼ぶ。決めることは 2 つだけ:
- *   1. `--check`  … 生成物が壊れていないか（壊れていれば PR を作らせない・fail-closed）
- *   2. `--no-op`  … 前回コミットと実質同じ内容なら、無駄な PR を作らせない
+ * `.github/workflows/gem-pool-refresh.yml`（**日次生成・週次目安反映**）が
+ * `node tools/generate_gem_digest.mjs` を実行した **直後**、コミット・ブランチ作成の前に呼ぶ。
+ * 決めることは 3 つ:
+ *   1. `--check`          … 生成物が壊れていないか（壊れていれば PR を作らせない・fail-closed）
+ *   2. `--no-op`          … 前回コミットと実質同じ内容なら、無駄な PR を作らせない
+ *   3. `--should-publish` … 反映（コミット・push・PR 作成）まで進めてよいか（Issue #482）。
+ *      生成物 3.6MB は反映のたびにリポジトリ履歴へ積まれるため、コストの実体は実行頻度ではなく
+ *      反映頻度にある。日次実行でパイプラインの健全性（生成・QA）を毎日検証しつつ、直近の反映
+ *      コミットから 7 日以上経過した回だけ実際に反映することで、履歴コストは週次相当に抑える。
  *
  * 【なぜ jq に依存しないか】
  * GitHub-hosted runner に jq がプリインストールされているかは一次情報で確認できていない
@@ -50,11 +56,14 @@
  * （`docs/rules/datetime-rules.md`）。
  *
  * 使い方:
- *   node tools/gem_pool_qa.mjs --check             # 生成物の QA（違反があれば exit 1）
- *   node tools/gem_pool_qa.mjs --check --json       # 機械可読な JSON で結果を出力
- *   node tools/gem_pool_qa.mjs --no-op              # 実質差分ゼロ判定（結果に関わらず exit 0）
- *   node tools/gem_pool_qa.mjs --no-op --json       # 機械可読な JSON で結果を出力
- *   node tools/gem_pool_qa.mjs --self-test          # ネットワーク・実データ不要のユニットテスト
+ *   node tools/gem_pool_qa.mjs --check                    # 生成物の QA（違反があれば exit 1）
+ *   node tools/gem_pool_qa.mjs --check --json              # 機械可読な JSON で結果を出力
+ *   node tools/gem_pool_qa.mjs --no-op                    # 実質差分ゼロ判定（結果に関わらず exit 0）
+ *   node tools/gem_pool_qa.mjs --no-op --json              # 機械可読な JSON で結果を出力
+ *   node tools/gem_pool_qa.mjs --should-publish            # 反映可否判定（結果に関わらず exit 0）
+ *   node tools/gem_pool_qa.mjs --should-publish --force    # workflow_dispatch の force_publish 相当
+ *   node tools/gem_pool_qa.mjs --should-publish --json     # 機械可読な JSON で結果を出力
+ *   node tools/gem_pool_qa.mjs --self-test                # ネットワーク・実データ不要のユニットテスト
  */
 
 import { execFileSync } from 'node:child_process'
@@ -253,6 +262,32 @@ export function buildNoOpTargetPaths(worktreePaths, headPaths) {
   return [...new Set([...(worktreePaths ?? []), ...(headPaths ?? [])])].sort()
 }
 
+// 🔴 反映（コミット・push・PR 作成）間隔（Issue #482・日次生成 + 週次目安反映）。
+// 生成物 3.6MB は反映のたびにリポジトリ履歴へ積まれるため、コストの実体は実行頻度ではなく
+// 反映頻度にある。日次でパイプラインの健全性（生成・QA）を毎日検証しつつ、履歴コストは
+// 週次相当に抑える。曜日固定にしないのは、`schedule` がドロップされた回に丸ごと飛ぶのを防ぐため
+// （経過日数判定なら翌日に自己回復する）。
+export const PUBLISH_INTERVAL_DAYS = 7
+export const PUBLISH_INTERVAL_SEC = PUBLISH_INTERVAL_DAYS * 24 * 60 * 60
+
+/**
+ * 反映すべきかどうかを判定する（純関数・I/O から分離）。
+ *
+ * @param {number|null|undefined} lastPublishedEpochSec 直近の反映コミットの時刻（UNIX epoch 秒）。
+ *   取得できない場合（生成物が main に無い＝初回、または `git log` が引けなかった）は null/undefined
+ * @param {number} nowEpochSec 現在時刻（UNIX epoch 秒）
+ * @param {boolean} [forcePublish=false] `workflow_dispatch` の `force_publish` 入力
+ * @returns {boolean}
+ */
+export function shouldPublish(lastPublishedEpochSec, nowEpochSec, forcePublish = false) {
+  if (forcePublish) return true
+  // 🔴 取得できなかった（初回・git log が引けなかった）場合は「反映する」側に倒す。
+  // 週次反映が丸ごと飛ぶより、初回相当として反映される方が安全（D-28 の SPOF 方針と同じ考え方）。
+  if (lastPublishedEpochSec === null || lastPublishedEpochSec === undefined) return true
+  if (!Number.isFinite(lastPublishedEpochSec) || !Number.isFinite(nowEpochSec)) return true
+  return nowEpochSec - lastPublishedEpochSec >= PUBLISH_INTERVAL_SEC
+}
+
 // ============================================================
 // I/O ヘルパー（git show / ファイル読み込み）
 // ============================================================
@@ -277,6 +312,49 @@ function readWorktreeJson(relPath) {
     return JSON.parse(readFileSync(resolve(REPO_ROOT, relPath), 'utf8'))
   } catch {
     return null
+  }
+}
+
+/**
+ * `INDEX_PATH` を最後に変更したコミット（HEAD から辿れる範囲）の時刻を調べる。
+ *
+ * 🔴 「履歴に該当コミットが無い（＝初回・正常）」と「`git log` 自体が失敗した（＝異常。
+ * 浅いクローン・git の一時的な異常終了等）」を **区別する**。どちらも `epochSec: null` を返し
+ * `shouldPublish()` は変わらず反映側に倒す（fail-open は維持。反映しない側に倒すと週次反映が
+ * 永久に止まりうるため）が、後者だけ `warning` に理由を積む。これにより「取得が壊れていて
+ * 毎日反映へ静かに後退している」事態を `--should-publish --json` の出力・ワークフローの
+ * ログから検知できるようにする（本関数を呼ぶ限り、失敗が沈黙しない）。
+ *
+ * @returns {{epochSec: number|null, warning: string|null}}
+ */
+function getLastPublishedInfo() {
+  try {
+    const text = execFileSync('git', ['log', '-1', '--format=%ct', 'HEAD', '--', INDEX_PATH], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'], // 🔴 stderr は握り潰さず拾う（異常時の可視化に使う）
+    }).trim()
+    if (text.length === 0) {
+      // git log 自体は正常終了したが、該当パスの変更履歴が無い（初回。正常系）。
+      return { epochSec: null, warning: null }
+    }
+    const epoch = Number(text)
+    if (!Number.isFinite(epoch)) {
+      return {
+        epochSec: null,
+        warning: `git log の出力を時刻として解釈できませんでした（異常終了ではない・出力: ${JSON.stringify(text).slice(0, 200)}）`,
+      }
+    }
+    return { epochSec: epoch, warning: null }
+  } catch (err) {
+    // git log 自体が失敗（非ゼロ終了・コマンド不在等）。fetch-depth 不足・git の一時的な異常等。
+    const stderrText =
+      typeof err?.stderr === 'string' ? err.stderr : Buffer.isBuffer(err?.stderr) ? err.stderr.toString('utf8') : ''
+    const reason = (stderrText || err?.message || 'unknown error').trim().slice(0, 300)
+    return {
+      epochSec: null,
+      warning: `git log が失敗しました（反映側へフォールバックしています。要調査）: ${reason}`,
+    }
   }
 }
 
@@ -422,6 +500,32 @@ function runNoOpMode({ json }) {
   process.exit(0)
 }
 
+/**
+ * 反映（コミット・push・PR 作成）すべきかどうかを判定する（Issue #482）。
+ * ワークフロー側は本モードの `should_publish` を読むだけにし、日数計算を YAML に書かない。
+ */
+function runShouldPublishMode({ json, force }) {
+  const { epochSec: lastPublishedEpochSec, warning } = getLastPublishedInfo()
+  const nowEpochSec = Math.floor(Date.now() / 1000)
+  const publish = shouldPublish(lastPublishedEpochSec, nowEpochSec, force)
+  const daysElapsed =
+    lastPublishedEpochSec === null ? null : Number(((nowEpochSec - lastPublishedEpochSec) / 86400).toFixed(2))
+
+  const result = {
+    should_publish: publish,
+    lastPublishedEpochSec,
+    nowEpochSec,
+    forcePublish: Boolean(force),
+    daysElapsed,
+    checkedAt: nowJstLabel(),
+    // 🔴 正常系（初回・force）ではキー自体を出さない。異常系（git log 失敗）のときだけ載せ、
+    // ワークフロー側のログ・PR 本文で「静かな fail-open」を検知できるようにする。
+    ...(warning ? { warning } : {}),
+  }
+  printResult(result, json)
+  process.exit(0) // 判定モード自体は失敗ではないので exit 0（判定は呼び出し側が読む）
+}
+
 function printResult(result, json) {
   if (json) {
     process.stdout.write(`${JSON.stringify(result)}\n`)
@@ -433,6 +537,14 @@ function printResult(result, json) {
     } else {
       console.log(`差分あり: ${(result.changedFiles ?? []).join(', ')}（${result.checkedAt}）`)
     }
+    return
+  }
+  if ('should_publish' in result) {
+    const elapsed = result.daysElapsed === null ? '(初回/不明)' : `${result.daysElapsed}日`
+    console.log(
+      `should_publish=${result.should_publish}（経過 ${elapsed}・force=${result.forcePublish}・${result.checkedAt}）`,
+    )
+    if (result.warning) console.log(`  - WARNING: ${result.warning}`)
     return
   }
   if (result.ok) {
@@ -758,6 +870,51 @@ function selfTest() {
     assert('buildNoOpTargetPaths: 片方 undefined でも例外を投げない', buildNoOpTargetPaths(undefined, [`${SHARD_DIR}/x.json`]).length === 1)
   }
 
+  // --- shouldPublish（Issue #482: 日次生成・週次目安反映） ---
+  {
+    const now = 1_700_000_000 // 適当な基準時刻（UNIX epoch 秒）
+    const sevenDaysAgo = now - PUBLISH_INTERVAL_SEC
+    assert(
+      'shouldPublish: ちょうど 7 日経過は反映する（境界値・>= であって > ではない）',
+      shouldPublish(sevenDaysAgo, now, false) === true,
+    )
+
+    const justUnderSevenDays = now - (PUBLISH_INTERVAL_SEC - 1) // 7 日に 1 秒足りない ≒ 6.99...日
+    assert(
+      'shouldPublish: 7 日にわずかに満たない場合は反映しない（境界値）',
+      shouldPublish(justUnderSevenDays, now, false) === false,
+    )
+
+    assert('shouldPublish: 経過日数が null（初回・取得不能）なら反映する', shouldPublish(null, now, false) === true)
+    assert('shouldPublish: 経過日数が undefined でも反映する', shouldPublish(undefined, now, false) === true)
+
+    assert(
+      'shouldPublish: force_publish=true なら経過日数 0 でも反映する',
+      shouldPublish(now, now, true) === true,
+    )
+    assert(
+      'shouldPublish: force_publish=false・経過日数 0 は反映しない',
+      shouldPublish(now, now, false) === false,
+    )
+    assert(
+      'shouldPublish: NaN 等の不正な数値は安全側（反映する）に倒す',
+      shouldPublish(Number.NaN, now, false) === true,
+    )
+
+    // クロックずれ（前回反映のコミット時刻が実行時計より進んでいる）: 無闇に反映しない。
+    const futureEpoch = now + 3600 // 1 時間先の未来
+    assert(
+      'shouldPublish: 前回反映が未来時刻（クロックずれ）なら反映しない',
+      shouldPublish(futureEpoch, now, false) === false,
+    )
+    // ただし十分時間が経てば自己回復する（未来時刻 + 8 日後の now なら反映する）。
+    const eightDaysAfterFuture = futureEpoch + 8 * 24 * 60 * 60
+    assert(
+      'shouldPublish: 未来時刻でも 8 日後には自己回復して反映する',
+      shouldPublish(futureEpoch, eightDaysAfterFuture, false) === true,
+    )
+  }
+
   // --- listShardFileNames（純関数として export はしていないが、内部ロジックの健全性を index 経由で確認） ---
   assert(
     'listShardFileNames 相当: shards[].fileName を列挙できる',
@@ -793,8 +950,12 @@ function main() {
     runNoOpMode({ json })
     return
   }
+  if (argv.includes('--should-publish')) {
+    runShouldPublishMode({ json, force: argv.includes('--force') })
+    return
+  }
 
-  console.error('使い方: node tools/gem_pool_qa.mjs [--check|--no-op|--self-test] [--json]')
+  console.error('使い方: node tools/gem_pool_qa.mjs [--check|--no-op|--should-publish [--force]|--self-test] [--json]')
   process.exit(2)
 }
 
