@@ -32,7 +32,7 @@ def main() -> int:
     )
     note = f"。スライド {long_slide} のみ 90〜100 秒" if long_slide else ""
     lines.append(f"想定尺: {count}〜{count + 3} 分（{count} 枚 / 1 枚あたり 60〜70 秒{note}）")
-    lines.append("作成日: 2026-08-22")
+    lines.append("作成日: 2026-08-22（2026-08-23 改訂）")
     lines.append("")
     lines.append("> 本ファイルは `content/slides_plan.json`（議論 `project-slides-20260822` の verdict）から")
     lines.append("> `scripts/build_outline.py` が生成する。**構成を変えるときは JSON 側を直して再生成する。**")
