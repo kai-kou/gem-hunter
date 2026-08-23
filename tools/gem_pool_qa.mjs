@@ -58,7 +58,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -236,6 +236,23 @@ export function evaluateNoOp(files) {
   return { noOp: changedFiles.length === 0, changedFiles }
 }
 
+/**
+ * no-op 比較対象のパス一覧を組み立てる（作業ツリー ∪ HEAD 側の和集合。決定論的にソート）。
+ *
+ * 🔴 これが分離されている理由: `--no-op` の比較対象を「index.json / daily-digest.json の 2 つ
+ * だけ」に固定すると、12 シャード本体（`public/data/gem-index/*.json`）の中身が変わった週でも
+ * no_op=true と誤判定し、ワークフローが `git checkout --` でディレクトリごと巻き戻してしまう
+ * （実害インシデント）。作業ツリー側の一覧だけでなく HEAD 側にしか無いファイル（今回消えた
+ * シャード）も拾うため、両方の列挙結果を渡して和集合を取る。
+ *
+ * @param {string[]} worktreePaths 作業ツリー側の列挙結果
+ * @param {string[]} headPaths HEAD 側の列挙結果
+ * @returns {string[]}
+ */
+export function buildNoOpTargetPaths(worktreePaths, headPaths) {
+  return [...new Set([...(worktreePaths ?? []), ...(headPaths ?? [])])].sort()
+}
+
 // ============================================================
 // I/O ヘルパー（git show / ファイル読み込み）
 // ============================================================
@@ -260,6 +277,36 @@ function readWorktreeJson(relPath) {
     return JSON.parse(readFileSync(resolve(REPO_ROOT, relPath), 'utf8'))
   } catch {
     return null
+  }
+}
+
+/** 作業ツリー側の `dirRelPath` 配下にある `*.json` の相対パス一覧（ソート済み）。無ければ空配列。 */
+function listWorktreeJsonFiles(dirRelPath) {
+  try {
+    return readdirSync(resolve(REPO_ROOT, dirRelPath))
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => `${dirRelPath}/${f}`)
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+/** HEAD 側の `dirRelPath` 配下にある `*.json` の相対パス一覧（ソート済み）。無ければ空配列。 */
+function listHeadJsonFiles(dirRelPath) {
+  try {
+    const text = execFileSync('git', ['ls-tree', '-r', '--name-only', 'HEAD', '--', dirRelPath], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return text
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.endsWith('.json'))
+      .sort()
+  } catch {
+    return []
   }
 }
 
@@ -356,12 +403,14 @@ function runNoOpMode({ json }) {
     process.exit(0) // no-op 判定モード自体は失敗ではないので exit 0（判定は呼び出し側が読む）
   }
 
-  const prevIndex = readHeadJson(INDEX_PATH)
-  const prevDigest = readHeadJson(DIGEST_PATH)
+  // 🔴 index.json / daily-digest.json の 2 つだけでなく、12 シャード本体（public/data/gem-index/*.json）
+  // も比較対象に含める（長尾エントリだけが動いた週を no_op=true と誤判定しないため）。
+  // 作業ツリー側の一覧だけでなく HEAD 側にしか無いファイル（今回消えたシャード）も拾う。
+  const shardPaths = buildNoOpTargetPaths(listWorktreeJsonFiles(SHARD_DIR), listHeadJsonFiles(SHARD_DIR))
 
   const evaluation = evaluateNoOp([
-    { path: INDEX_PATH, prevDoc: prevIndex, currDoc: currIndex },
-    { path: DIGEST_PATH, prevDoc: prevDigest, currDoc: currDigest },
+    ...shardPaths.map((path) => ({ path, prevDoc: readHeadJson(path), currDoc: readWorktreeJson(path) })),
+    { path: DIGEST_PATH, prevDoc: readHeadJson(DIGEST_PATH), currDoc: currDigest },
   ])
 
   const result = {
@@ -517,6 +566,44 @@ function selfTest() {
       checkRegistryCounts(prevWithZero, { totalCount: 600, shards: [{ registry: 'registry-a', count: 600 }] }).ok ===
         true,
     )
+  }
+
+  // --- checkRegistryCounts: 閾値の境界値（REGISTRY_MIN_RATIO / TOTAL_MIN_RATIO / TOTAL_MAX_RATIO） ---
+  {
+    // REGISTRY_MIN_RATIO(0.7) ちょうど: PASS（`<` であって `<=` ではない）。他方を補って totalCount は 1.0 に保つ。
+    const prevReg = { totalCount: 2000, shards: [{ registry: 'registry-a', count: 1000 }, { registry: 'registry-b', count: 1000 }] }
+    const currRegAtBoundary = { totalCount: 2000, shards: [{ registry: 'registry-a', count: 700 }, { registry: 'registry-b', count: 1300 }] }
+    const atBoundary = checkRegistryCounts(prevReg, currRegAtBoundary)
+    assert('checkRegistryCounts: レジストリ比率がちょうど 0.7 は PASS（境界値）', atBoundary.ok === true && atBoundary.violations.length === 0)
+
+    // 境界のわずか下（0.699）: FAIL
+    const currRegBelowBoundary = { totalCount: 2000, shards: [{ registry: 'registry-a', count: 699 }, { registry: 'registry-b', count: 1301 }] }
+    const belowBoundary = checkRegistryCounts(prevReg, currRegBelowBoundary)
+    assert('checkRegistryCounts: レジストリ比率が 0.7 をわずかに下回ると violation（境界値）', belowBoundary.ok === false && belowBoundary.violations.length === 1)
+
+    // TOTAL_MIN_RATIO(0.85) ちょうど: PASS。各レジストリは 0.85（>=0.7）で個別 violation を踏まない。
+    const prevTotalLow = { totalCount: 1000, shards: [{ registry: 'registry-a', count: 500 }, { registry: 'registry-b', count: 500 }] }
+    const currTotalAtLowBoundary = { totalCount: 850, shards: [{ registry: 'registry-a', count: 425 }, { registry: 'registry-b', count: 425 }] }
+    const totalLowBoundary = checkRegistryCounts(prevTotalLow, currTotalAtLowBoundary)
+    assert('checkRegistryCounts: totalCount 比率がちょうど 0.85 は PASS（境界値）', totalLowBoundary.ok === true && totalLowBoundary.violations.length === 0)
+
+    // 【項目4】各レジストリは 0.7 以上を保ったまま、totalCount だけが 0.85 をわずかに下回る（単独発火の確認）。
+    const currTotalOnlyDrop = { totalCount: 824, shards: [{ registry: 'registry-a', count: 400 }, { registry: 'registry-b', count: 424 }] } // 0.8 / 0.848 はいずれも >= 0.7
+    const totalOnlyDrop = checkRegistryCounts(prevTotalLow, currTotalOnlyDrop)
+    assert('checkRegistryCounts: 各レジストリが 0.7 以上でも totalCount 単独で < 0.85 なら violation', totalOnlyDrop.ok === false)
+    assert('checkRegistryCounts: totalCount 単独違反は violations が 1 件だけ（レジストリ単位は無傷）', totalOnlyDrop.violations.length === 1)
+    assert('checkRegistryCounts: totalCount 単独違反のメッセージに totalCount を含む', totalOnlyDrop.violations[0].includes('totalCount'))
+
+    // TOTAL_MAX_RATIO(1.15) ちょうど: PASS
+    const prevTotalHigh = { totalCount: 1000, shards: [{ registry: 'registry-a', count: 1000 }] }
+    const currTotalAtHighBoundary = { totalCount: 1150, shards: [{ registry: 'registry-a', count: 1150 }] }
+    const totalHighBoundary = checkRegistryCounts(prevTotalHigh, currTotalAtHighBoundary)
+    assert('checkRegistryCounts: totalCount 比率がちょうど 1.15 は PASS（境界値）', totalHighBoundary.ok === true && totalHighBoundary.violations.length === 0)
+
+    // 境界のわずか上（1.151）: FAIL
+    const currTotalAboveHighBoundary = { totalCount: 1151, shards: [{ registry: 'registry-a', count: 1151 }] }
+    const totalAboveHighBoundary = checkRegistryCounts(prevTotalHigh, currTotalAboveHighBoundary)
+    assert('checkRegistryCounts: totalCount 比率が 1.15 をわずかに超えると violation（境界値）', totalAboveHighBoundary.ok === false)
   }
 
   // --- buildComparison ---
