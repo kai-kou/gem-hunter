@@ -77,16 +77,36 @@ jobs:
           set -e
           node tools/gem_pool_qa.mjs --check --json > /tmp/gem_pool_qa.json
           cat /tmp/gem_pool_qa.json
-        # 差分パス限定・レジストリのゼロ化/急減・totalCount の急減急増を検査する。
-        # 1 つでも違反すれば非ゼロ終了 → ジョブ失敗 → PR は作られない（壊れたデータで PR を開かない）。
+        # 差分パス限定・レジストリのゼロ化/急減・totalCount の急減急増を検査する。これも
+        # 反映するかどうかに関わらず毎日実行する（健全性検証）。1 つでも違反すれば非ゼロ終了 →
+        # ジョブ失敗 → 反映されない（壊れたデータで PR を開かない）。
         # 🔴 JSON はここで 1 回だけ計算してファイルへ保存する（`set -e` はパイプを介さない単純な
         # リダイレクトなので、node が非ゼロ終了すればこの行自体が失敗しジョブが止まる。標準出力は
         # 失敗前に書き出し済みの内容がそのままファイルに残る）。コミット後に再計算すると HEAD が
         # 新コミットを指してしまい「差分ゼロ・前回比 1.00」という無意味な値になるため、
         # 後続の「Build PR body」ステップはこのファイルを読むだけにし、再計算しない。
 
+      - name: Determine publish decision
+        id: publish
+        env:
+          # workflow_dispatch 以外（schedule）では inputs コンテキストは空になる（force なし扱い）。
+          FORCE_PUBLISH: ${{ inputs.force_publish }}
+        run: |
+          set -e
+          FORCE_FLAG=""
+          if [ "${FORCE_PUBLISH}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          # 🔴 日数計算はここに書かない。tools/gem_pool_qa.mjs --should-publish を呼ぶだけにする
+          # （YAML 側に判定ロジックの複製を作らない）。
+          node tools/gem_pool_qa.mjs --should-publish ${FORCE_FLAG} --json > /tmp/gem_pool_publish.json
+          cat /tmp/gem_pool_publish.json
+          should_publish="$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).should_publish))" "$(cat /tmp/gem_pool_publish.json)")"
+          echo "should_publish=${should_publish}" >> "$GITHUB_OUTPUT"
+
       - name: No-op check
         id: noop
+        if: steps.publish.outputs.should_publish == 'true'
         run: |
           set -e
           result="$(node tools/gem_pool_qa.mjs --no-op --json)"
@@ -94,18 +114,24 @@ jobs:
           no_op="$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).no_op))" "${result}")"
           echo "no_op=${no_op}" >> "$GITHUB_OUTPUT"
 
+      - name: Discard changes (not a publish day)
+        if: steps.publish.outputs.should_publish != 'true'
+        run: |
+          git checkout -- public/data/gem-index public/data/daily-digest.json
+          echo "反映しない日（前回の反映から 7 日未満・force_publish なし）。生成・QA の健全性検証のみ実施し、生成物は破棄します。"
+
       - name: Discard no-op changes
-        if: steps.noop.outputs.no_op == 'true'
+        if: steps.publish.outputs.should_publish == 'true' && steps.noop.outputs.no_op == 'true'
         run: |
           git checkout -- public/data/gem-index public/data/daily-digest.json
           echo "no-op: 実質差分なし。以降のステップをスキップします。"
 
       - name: Static shard check
-        if: steps.noop.outputs.no_op != 'true'
+        if: steps.publish.outputs.should_publish == 'true' && steps.noop.outputs.no_op != 'true'
         run: python3 tools/check_gem_shards.py
 
       - name: Commit and push
-        if: steps.noop.outputs.no_op != 'true'
+        if: steps.publish.outputs.should_publish == 'true' && steps.noop.outputs.no_op != 'true'
         env:
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
@@ -118,11 +144,11 @@ jobs:
           BRANCH="automation/gem-pool-refresh"
           git checkout -B "${BRANCH}"
           git add public/data/gem-index public/data/daily-digest.json
-          git commit -m "data: Gem 候補プールを週次再生成（$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z')）"
+          git commit -m "data: Gem 候補プールを反映（$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z')）"
           git push --force origin "${BRANCH}"
 
       - name: Build PR body
-        if: steps.noop.outputs.no_op != 'true'
+        if: steps.publish.outputs.should_publish == 'true' && steps.noop.outputs.no_op != 'true'
         id: prbody
         run: |
           set -e
@@ -132,9 +158,14 @@ jobs:
           DELIM="GEM_POOL_PR_BODY_EOF_$(openssl rand -hex 8)"
           {
             echo "body<<${DELIM}"
-            echo "## Gem 候補プール 週次再生成"
+            echo "## Gem 候補プール 定期反映（日次生成・週次目安反映）"
             echo ""
             echo "この PR は GitHub Actions（\`gem-pool-refresh.yml\`）が自動生成しました。マージは Claude セッションが行います。"
+            echo ""
+            echo "### 反映判定（生成直後に計算したスナップショット）"
+            echo '```json'
+            cat /tmp/gem_pool_publish.json
+            echo '```'
             echo ""
             echo "### QA 結果（生成直後・コミット前に計算したスナップショット）"
             echo '```json'
@@ -166,7 +197,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create or update pull request
-        if: steps.noop.outputs.no_op != 'true'
+        if: steps.publish.outputs.should_publish == 'true' && steps.noop.outputs.no_op != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 🔴 PR 本文（レジストリ名などデータ由来の文字列を含む）を `run:` のシェル内へ
@@ -196,7 +227,7 @@ jobs:
             gh pr edit "${existing_pr}" --body-file "${BODY_FILE}"
           else
             gh pr create \
-              --title "data: Gem 候補プール週次再生成" \
+              --title "data: Gem 候補プール定期反映" \
               --body-file "${BODY_FILE}" \
               --base main \
               --head "${BRANCH}" \
