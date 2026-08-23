@@ -13,12 +13,29 @@ describe('GemListLink', () => {
     )
   })
 
-  it('フォーカスリングは ring-3 パターンに揃える（ui-ux-guidelines §7.3）', () => {
+  it('フォーカスリングは ring-3 パターンに揃える（ui-ux-guidelines §7.3・ghost ボタン由来）', () => {
     render(<GemListLink href="/ja/gems" label="Gem 一覧" />)
 
     const link = screen.getByRole('link', { name: 'Gem 一覧' })
     // outline-none は必ず focus-visible:ring-* と対で書く（§7.3）
     expect(link.className).toContain('focus-visible:ring-3')
     expect(link.className).toContain('focus-visible:ring-ring')
+  })
+
+  it('ghost ボタンのクラスが当たっている（data-variant/data-size で判定）', () => {
+    render(<GemListLink href="/ja/gems" label="Gem 一覧" />)
+
+    const link = screen.getByRole('link', { name: 'Gem 一覧' })
+    expect(link.className).toContain('hover:bg-muted')
+    expect(link.className).toContain('h-(--size-control-md)')
+  })
+
+  it('アイコンは装飾として描画され、アクセシブルネームは label のみになる', () => {
+    render(<GemListLink href="/ja/gems" label="Gem 一覧" />)
+
+    const link = screen.getByRole('link', { name: 'Gem 一覧' })
+    const icon = link.querySelector('svg')
+    expect(icon).not.toBeNull()
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
   })
 })
