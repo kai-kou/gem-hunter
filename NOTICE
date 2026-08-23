@@ -38,6 +38,33 @@ Apache License 2.0 のもとで収録している。ライセンス全文は
 .claude/skills/skill-creator/LICENSE.txt に同梱している。
 
 ---------------------------------------------------------------------------
+3. Ecosyste.ms data
+---------------------------------------------------------------------------
+
+Gem candidate data (package popularity percentiles, dependent repository
+counts, etc.) used to compute the "Gem" ranking and daily digest is sourced
+from Ecosyste.ms and licensed under CC BY-SA 4.0
+(https://creativecommons.org/licenses/by-sa/4.0/). This repository re-derives
+a display ranking from that data and discloses the modification in the
+attribution notice shown alongside the ranked results.
+
+「Gem」判定・日次ダイジェストの算出に用いる候補データ（パッケージの人気パーセンタイル・
+被依存リポジトリ数等）は Ecosyste.ms（https://ecosyste.ms/）由来で、CC BY-SA 4.0
+（https://creativecommons.org/licenses/by-sa/4.0/）のもとに提供されている。本リポジトリは
+このデータをもとに独自の表示順位を再算出しており、その改変は結果画面の帰属表示で明示している。
+
+---------------------------------------------------------------------------
+4. site/assets/fonts/geist-latin.woff2
+---------------------------------------------------------------------------
+
+Licensed under the SIL Open Font License, Version 1.1.
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font).
+The full license text is included at site/assets/fonts/Geist-OFL.txt.
+
+SIL Open Font License, Version 1.1 のもとで収録している。ライセンス全文は
+site/assets/fonts/Geist-OFL.txt に同梱している。
+
+---------------------------------------------------------------------------
 Dependencies / 依存パッケージ
 ---------------------------------------------------------------------------
 
