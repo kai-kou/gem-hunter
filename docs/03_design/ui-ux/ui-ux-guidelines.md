@@ -221,6 +221,28 @@ GitHub が書いた第三者 HTML であり、自サイトの UI コンポーネ
 - 🔴 **ボタン・ラベルに `white-space: nowrap` を使わない。** 日英で文字列長が 1.5〜2 倍変わる
 - 🔴 **ソート切替・表示件数切替を固定幅のセグメントコントロールにしない**（「関連度」vs "Best match"）。ドロップダウンか可変幅ボタンにする
 - **200% 拡大で横スクロールが発生しないこと**（`NFR-15`）。確認は実ブラウザのズームで行う
+- 🔴 **長さも内容も制御できない第三者由来テキストを描画する要素には、必ず折り返し指定を当てる。**
+  対象は GitHub / Ecosyste.ms 由来の `description` ・ `topic` ・ `fullName` ・ `packageName` と、
+  **画面へ再表示するユーザー入力**（検索語を埋め込む見出し等）。既定の `overflow-wrap: normal` は
+  空白・ハイフンを 1 つも含まない長い文字列（`description` 末尾の URL 等）を割れないため、
+  指定が無いと要素からはみ出し `body` に横スクロールが伝播する（WCAG 2.2 SC 1.4.10 Reflow 違反）。
+  統制語彙（Linguist の言語名・レジストリ名）と自前 `Intl` 整形の数値・日付は対象外。
+
+  **どちらを当てるかは「その要素自身が flex コンテナの直接の子か」で決める**:
+
+  | 要素 | 当てるもの | 理由 |
+  |---|---|---|
+  | flex アイテム **でない**（ブロック・非置換インライン） | 祖先コンテナに `break-words` を 1 回（継承で届く） | 幅は親が確定させるので、行が溢れたときに割れれば足りる |
+  | それ自身が flex アイテム（`ul.flex.flex-wrap` 直下の `<li>` 等） | その要素に `wrap-anywhere` を直付け | `overflow-wrap: break-word` は min-content の計算に参入しない（CSS Text 3）ため、automatic minimum size が floor として残り、継承だけでは要素ごとはみ出す |
+
+  🔴 **`body` / `html` に `overflow-x: hidden` / `clip` を足して塞がない。** 情報が失われうるだけでなく、
+  `body` が `overflow` を明示した時点で viewport への伝播が止まり、退行検知テスト
+  （`e2e/overflow-guard.spec.ts` の `document.scrollingElement.scrollWidth <= clientWidth`）が
+  **恒久的に green** になる（溢れが復活しても検知できなくなる）。
+
+  退行検知は `e2e/overflow-guard.spec.ts`（320px 幅 × 改行機会ゼロの文字列）。E2E スタブから
+  データを注入できない Gem 一覧・日次ダイジェストは、コンポーネントテストでクラスの存在を守る。
+  経緯は `content/discussions/horizontal_overflow_20260823/whiteboard.md`。
 - 高さが可変になる箇所は **`min-height` で下限だけ固定** する（上限を固定して文字を溢れさせない）
 
 ---

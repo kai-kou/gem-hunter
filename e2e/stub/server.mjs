@@ -405,6 +405,77 @@ const gemBadgeRepos = [
       ]),
 ]
 
+// 横スクロール退行ガード専用データセット（`e2e/overflow-guard.spec.ts`）。
+//
+// 🔴 既存 5 データセットが今回の退行（第三者テキストが折り返されず body に横スクロールが出る）を
+//    検知できなかった原因は述語ではなく **データ** にある: 既定フィクスチャの文字列はどれも短く、
+//    空白やハイフンで改行機会が入るため、折り返し指定が無くてもたまたま収まっていた。
+//    ここでは「改行機会がゼロの連続長文字列」を 3 種類（description の URL / 単一 topic /
+//    リポジトリ名）そろえて、320px 幅で必ず溢れる入力を用意する。
+// 🔴 マーカーは既存マーカーのいずれとも部分一致しない（`rate-limit` 等を含まない）。
+const OVERFLOW_GUARD_MARKER = 'overflow-guard'
+const OVERFLOW_GUARD_AVATAR =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
+/**
+ * 実運用で観測された破綻パターンをそのまま写した description。
+ * 末尾の YouTube チャンネル URL は空白・ハイフンを含まない連続 60 字超で、
+ * `overflow-wrap` の既定（`normal`）では 1 文字も割れない。
+ */
+const OVERFLOW_GUARD_LONG_URL_DESCRIPTION =
+  '30 Days of React challenge is a step by step guide to learn React in 30 days. ' +
+  'These videos may help too: https://www.youtube.com/channel/UC7PNRuno1rzYPb1xQEDDNBgAAAAAAAA'
+
+/** GitHub の topic は空白なしの単一トークンで最大 50 文字まで許容される（改行機会ゼロ）。 */
+const OVERFLOW_GUARD_LONG_TOPIC = 'a'.repeat(50)
+
+function overflowGuardRepo({ id, name, description, topics }) {
+  return {
+    id,
+    name,
+    full_name: `octostub/${name}`,
+    html_url: `https://github.com/octostub/${name}`,
+    description,
+    language: 'JavaScript',
+    stargazers_count: 27475,
+    watchers_count: 27475,
+    subscribers_count: 900,
+    forks_count: 6000,
+    open_issues_count: 3,
+    updated_at: '2026-08-01T00:00:00Z',
+    pushed_at: '2026-08-01T00:00:00Z',
+    private: false,
+    topics,
+    owner: { login: 'octostub', avatar_url: OVERFLOW_GUARD_AVATAR },
+  }
+}
+
+const overflowGuardRepos = [
+  // (a) description に改行機会ゼロの長い URL（本件の再現データ）。
+  overflowGuardRepo({
+    id: 980001,
+    name: 'overflow-guard-description',
+    description: OVERFLOW_GUARD_LONG_URL_DESCRIPTION,
+    topics: [],
+  }),
+  // (b) 空白・ハイフンなしの長い単一 topic。topic の `<li>` は `ul.flex.flex-wrap` の
+  //     flex アイテムなので、祖先から継承した `overflow-wrap: break-word` では
+  //     automatic minimum size（自身の min-content）が floor として残り閉じない。
+  overflowGuardRepo({
+    id: 980002,
+    name: 'overflow-guard-topic',
+    description: 'Repository whose topic is a single unbreakable token (overflow guard E2E).',
+    topics: [OVERFLOW_GUARD_LONG_TOPIC],
+  }),
+  // (c) リポジトリ名自体が長い連続文字列。
+  overflowGuardRepo({
+    id: 980003,
+    name: `overflow-guard-${'n'.repeat(48)}`,
+    description: 'Repository whose name is a single unbreakable token (overflow guard E2E).',
+    topics: [],
+  }),
+]
+
 // SP-19 E2E 追記: Gem 一覧（`/{locale}/gems`）から詳細へ入る経路を通せるようにする。
 //
 // Gem 一覧に並ぶのは **候補プール（`public/data/gem-index/`）の実在リポジトリ** であり、
@@ -687,6 +758,16 @@ const server = http.createServer((req, res) => {
       })
     }
 
+    // 横スクロール退行ガード（`e2e/overflow-guard.spec.ts`）。3 件とも 1 ページに収まるため
+    // `page` / `sort` は反映しない（`GEM_BADGE_MARKER` と同じ扱い）。
+    if (q.includes(OVERFLOW_GUARD_MARKER)) {
+      return sendJson(res, 200, {
+        total_count: overflowGuardRepos.length,
+        incomplete_results: false,
+        items: overflowGuardRepos.map(toSearchItem),
+      })
+    }
+
     if (q.includes(MANY_HITS_MARKER)) {
       const pageNum = Math.max(1, Number.parseInt(page, 10) || 1)
       const perPage = Math.max(
@@ -768,6 +849,8 @@ const server = http.createServer((req, res) => {
       readmeRichExtraRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       // SP-18: Gem バッジ経路の 2 件（詳細へ遷移しても 404 にならないようにする）
       gemBadgeRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
+      // 横スクロール退行ガードの 3 件（一覧 → 詳細の経路も 320px で検証するため）
+      overflowGuardRepos.find((repo) => repo.owner.login === owner && repo.name === repoName) ??
       // SP-19: 候補プール実在のリポジトリ（Gem 一覧 → 詳細の経路）。上記のどれにも当たらず、
       // かつプールに載っている名前のときだけ 200 を合成する（上記の追記コメント参照）。
       (gemPoolFullNames.has(`${owner}/${repoName}`.toLowerCase())

@@ -105,7 +105,7 @@ export function RepositoryDetail({
       {/* Issue #334 F-3: 一覧（repository-list.tsx）にあるのに詳細に無かった概要を補う。
           一覧と同じ作法でラベルなしの <p>（description が null の場合は出さない）。 */}
       {repository.description ? (
-        <p className="text-muted-foreground mt-1 text-sm">{repository.description}</p>
+        <p className="text-muted-foreground mt-1 text-sm break-words">{repository.description}</p>
       ) : null}
 
       <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

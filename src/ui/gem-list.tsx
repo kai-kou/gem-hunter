@@ -151,7 +151,8 @@ export function GemList({
       <h2
         id={GEM_LIST_HEADING_ID}
         tabIndex={-1}
-        className="rounded-sm text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring"
+        // `query` は利用者が入力した任意長の文字列がそのまま入るため折り返し指定が要る（§3）。
+        className="rounded-sm text-lg font-semibold break-words outline-none focus-visible:ring-3 focus-visible:ring-ring"
       >
         {formatMessage(labels.heading, { query })}
       </h2>
@@ -212,7 +213,10 @@ export function GemList({
                     // 一意性が構造的に保証されている）。`registry/packageName` は
                     // `packageName` 欠損時に空文字で埋まる仕様のため同一ページ内で衝突する。
                     key={entry.repositoryFullName}
-                    className="relative py-4"
+                    // 第三者由来テキスト（`repositoryFullName` / `packageName`）の折り返し。
+                    // この `<li>` は flex アイテムではない（親 `<ul>` が flex ではない）ため、
+                    // ここに 1 回当てれば配下へ継承で届く（判定規則は `ui-ux-guidelines.md` §3）。
+                    className="relative py-4 break-words"
                     // E2E（`e2e/sp-19.spec.ts`）が並び順を機械的に検証するための値。可視テキストは
                     // ロケール桁区切り・丸めで表記が変わるため、生値を `data-` 属性で出す。
                     data-gem-index={String(gemIndexValue(entry.gemIndex))}
@@ -237,7 +241,11 @@ export function GemList({
                       <span className="font-medium">{entry.repositoryFullName}</span>
                     )}
                     <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                      <span>{entry.packageName}</span>
+                      {/* 🔴 この `<span>` は `p.flex.flex-wrap` の flex アイテムなので、継承した
+                          `break-words` では min-content の floor が残る。パッケージ名は第三者由来で
+                          区切りのない長い文字列があり得るため `wrap-anywhere` を直付けする
+                          （`repository-list.tsx` の topics `<li>` と同じ理由）。 */}
+                      <span className="wrap-anywhere">{entry.packageName}</span>
                       <span>
                         {labels.registryLabel} {entry.registry}
                       </span>

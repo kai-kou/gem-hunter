@@ -12,8 +12,8 @@ ts: 2026-08-23T13:39:07+09:00
 
 `repository-list.tsx:158` の `<p className="... flex flex-wrap ...">` と `:170` の
 `<ul className="mt-2 flex flex-wrap gap-1">` は、L126 の外側 `<div className="min-w-0 flex-1">`
-とは**別の flex コンテナ**。その子（primaryLanguage の `<span>`・topics の `<li>`, L173-176）は
-**この内側コンテナ自身の flex アイテム**であり、`min-w-0` を個別に持たない。
+とは **別の flex コンテナ**。その子（primaryLanguage の `<span>`・topics の `<li>`, L173-176）は
+**この内側コンテナ自身の flex アイテム** であり、`min-w-0` を個別に持たない。
 
 css_wrap が指摘した「`overflow-wrap: break-word` は min-content 寄与を変えない」という事実は、
 外側 div では `min-w-0` によって別解決済みだが、**この内側の `<li>`/`<span>` には min-w-0 も
@@ -44,7 +44,7 @@ Green にするには **`<li>`（L173-176）と `<span>`（primaryLanguage, L159
 そのものを縮めるため min-w-0 が無くても効く、と css_wrap が round1 で述べた通り）が要る。
 **この 1 テストが争点 A（break-word か anywhere か）の実地裁定者になる**: 外側 div は
 break-word で足りるが、`<li>`/`<span>` のような「自身が flex アイテムで min-w-0 を持たない
-子」には anywhere（または個別 min-w-0 追加）が要る、という **要素ごとに手段が変わる可能性**を
+子」には anywhere（または個別 min-w-0 追加）が要る、という **要素ごとに手段が変わる可能性** を
 テストが機械的に炙り出す。
 
 ## 2（daily-digest / gems ページは誰が守るか）
@@ -58,7 +58,7 @@ break-word で足りるが、`<li>`/`<span>` のような「自身が flex ア�
   `playwright.config.ts:50`）で本物のファイルをそのままバンドルするため、`server.mjs` のような
   マーカー分岐を差し込む注入点が無い。
 - 唯一の差し替え口は `StaticGemDigest` のコンストラクタ引数（`static-gem-digest.ts:69`
-  「テスト用にソースを注入」）だが、これは **vitest（unit）専用**の DI で、E2E（実ブラウザ→
+  「テスト用にソースを注入」）だが、これは **vitest（unit）専用** の DI で、E2E（実ブラウザ→
   ビルド済みアプリ）には届かない。
 - 実データファイルを直接書き換えて注入する案は却下する: `daily-digest.json`（294 件・
   `sp-14.spec.ts:31` コメント）と `gem-index` シャード（`kafka` 33 件等、`sp-19.spec.ts` 冒頭
@@ -75,7 +75,7 @@ break-word で足りるが、`<li>`/`<span>` のような「自身が flex ア�
   `daily-digest.tsx` は直したが **`gem-list.tsx` に触れていない** — これは取りこぼし）。
 - E2E が届かないこの 2 ファイルに限り、`daily-digest.test.tsx` / `gem-list.tsx` 用の新規 vitest
   に「E2E で実証済みのクラス（`min-w-0 flex-1 break-words` 等、必要なら `<li>`/`<span>` 側の
-  対策も含む）が同じ箇所に当たっているか」を確認する **横展開漏れ検知**を追加する。§5 で述べた
+  対策も含む）が同じ箇所に当たっているか」を確認する **横展開漏れ検知** を追加する。§5 で述べた
   「className 検証は横スクロールの発生自体を証明しない」という限界は変わらないが、ここでの
   役割は「同じ構造バグを 4 箇所目・5 箇所目で再導入していないか」の確認に限定するため、
   「実装の写経で価値が薄い」という批判は repository-list には当たるがここでは当たらない
@@ -113,19 +113,19 @@ fail しないことが論理的に導ける——320px 単独で十分（追加
 
 **件数・totalCount への非干渉**: 新マーカーの分岐は `PRIVATE_MIXED_MARKER`（l.672-678）や
 `GEM_BADGE_MARKER`（l.682-688）と同じ形で `{ total_count: 自分の配列.length, ... }` を
-**独自に返す**（グローバル `TOTAL_COUNT`定数 l.64 や `searchResponse()` ヘルパー l.566 を
+**独自に返す**（グローバル `TOTAL_COUNT` 定数 l.64 や `searchResponse()` ヘルパー l.566 を
 使わない）。既定フィクスチャ（`react` 等）の分岐（l.707 のフォールバック）は if-chain を
 一切通過しないため無傷。
 
 **stats（`/__stats`）への影響**: `stats.searchCount += 1`（l.625）・`stats.detailCount += 1`
-（l.743）はマーカー判定より **前**で無条件に走るため、`overflow-guard` の検索・詳細アクセスも
+（l.743）はマーカー判定より **前** で無条件に走るため、`overflow-guard` の検索・詳細アクセスも
 カウントされる。ただし `sp-5.spec.ts` は測定直前に必ず `resetStubStats()`（l.72-76、呼び出しは
 `beforeEach` 相当 l.85 と l.141）で `stats` をゼロに戻してから比較しており、
 `playwright.config.ts:19-21`（`fullyParallel: false` / `workers: 1`）で全 spec が直列実行される
 ため、他ファイルの実行順に関わらず sp-5 は自分のリセット後の増分だけを見る。**干渉なし**。
 
 **axe（`a11y.spec.ts`）への影響**: 全 6 テスト（l.17-90 実測）は `'react'` 検索
-（`octo-widgets` 固定フィクスチャ）・`octo-readme-rich`・`/ja` 未検索・404 の**固定ページのみ**
+（`octo-widgets` 固定フィクスチャ）・`octo-readme-rich`・`/ja` 未検索・404 の **固定ページのみ**
 を対象にしており、任意クエリをクロールする処理は無い。新マーカーへ axe が触れる経路が
 そもそも存在しないため、**新規違反が出ようがない**（`a11y.spec.ts` 側のテストは無傷）。
 逆に言うと **`overflow-guard.spec.ts` 自体には axe 検査が無い**——望むなら

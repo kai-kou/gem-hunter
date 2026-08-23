@@ -112,7 +112,9 @@ export function DailyDigest({
                   >
                     {index + 1}.
                   </span>
-                  <div className="min-w-0 flex-1">
+                  {/* 第三者由来テキスト（`packageName` / `repositoryFullName`）の折り返し。
+                      判定規則は `ui-ux-guidelines.md` §3（`repository-list.tsx` と同型）。 */}
+                  <div className="min-w-0 flex-1 break-words">
                     {/*
                       詳細ページへの遷移（AC-4・独立 URL・モーダルではない）。
                       カード全体を tap 領域にするため ::after でクリック領域を拡張する

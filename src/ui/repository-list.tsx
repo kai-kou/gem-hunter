@@ -123,7 +123,15 @@ export function RepositoryList({
               className="size-10 shrink-0 rounded-full"
               loading="lazy"
             />
-            <div className="min-w-0 flex-1">
+            {/*
+              🔴 `break-words`（`overflow-wrap: break-word`）は **第三者由来テキストの折り返し**
+              （`NFR-15` / WCAG 2.2 SC 1.4.10 Reflow）。GitHub の `description` には改行機会
+              （空白・ハイフン）を 1 つも持たない長い URL が入りうる。既定の `overflow-wrap: normal`
+              では 1 文字も割れず、カードから溢れて `body` に横スクロールが伝播する。
+              ここに 1 回当てれば配下の `<a>` / `<p>`（いずれも flex アイテムではない）まで継承で届く。
+              判定規則は `ui-ux-guidelines.md` §3。退行検知は `e2e/overflow-guard.spec.ts`。
+            */}
+            <div className="min-w-0 flex-1 break-words">
               {/*
               独立 URL の詳細ページへの遷移（AC-4・モーダルではない）。
               カード全体をクリック可能にするが、<a> でカード全体を包むと
@@ -171,7 +179,16 @@ export function RepositoryList({
                   {item.topics.slice(0, 5).map((topic) => (
                     <li
                       key={topic}
-                      className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs"
+                      /*
+                        🔴 ここは `break-words` の継承では閉じない。この `<li>` 自身が
+                        `ul.flex.flex-wrap` の flex アイテムであり、`overflow-wrap: break-word` は
+                        min-content サイズの計算に参入しない（CSS Text 3）ため、automatic minimum
+                        size（自身の min-content）が floor として残る。GitHub の topic は空白・
+                        ハイフンなしの単一トークンで最大 50 文字あり得るので実害がある。
+                        min-content ごと縮める `wrap-anywhere`（`overflow-wrap: anywhere`）を
+                        **この要素に直付け** する（祖先の `break-words` に依存させない）。
+                      */
+                      className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs wrap-anywhere"
                     >
                       {topic}
                     </li>
