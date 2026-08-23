@@ -1,0 +1,16 @@
+<!-- discussion_whiteboard:auto -->
+# 🧑‍🏫 議論ホワイトボード: gem-hunter を採用課題の提出物としてシニア 3 名で精査し、スコア付け・合否判定する
+
+- 議題ID: `recruitment-review-2026-08-23`
+- 論点: ユーザー指示: 「本リポジトリの最低要件を企業からの採用課題として扱い、実装や PR などを詳細に精査して企業の優秀なシニアエンジニア 3 名による合否判定をチームを組成して行なってください。議論のうえでスコア付けして判定して、本判定結果をユーザーに分かりやすくフィードバックしてください」。
+
+【前提】docs/02_requirements/minimum-requirements.md が『企業から出された課題（与件）』の原文である（第三者著作物。引用せず要件 ID と要約のみ使うこと・NOTICE 参照）。与件の骨子: Next.js v16 以降 + App Router / GitHub API GET /search/repositories / FR-1 キーワード検索・FR-2 一覧（オーナーアイコン + リポジトリ名）・FR-3 詳細遷移・FR-4 詳細に 名前/アイコン/言語/Star/Watcher/Fork/Issue 数・FR-5 詳細はモーダルでなく独立 URL のページ・FR-6 一覧へ戻る導線・FR-7 ページネーション or 無限スクロール / 状態表示（初期・読み込み中・0 件・エラー（通信/API/レート制限を区別 + 再試行手段）・詳細の Not Found） / 非機能（エラー握りつぶし禁止・レート制限考慮・秘匿情報をクライアントへ出さない・打鍵ごとに API を呼ばない・RSC とキャッシュ活用・画像最適化・レスポンシブ・キーボード操作・ラベル/代替テキスト・検索条件を URL に反映・責務分割・API レスポンスの型定義・Lint/フォーマッタ導入） / テスト要件（主要フローのテスト・外部 API モック化・コマンド 1 つで実行・CI で自動実行できる状態） / ドキュメント要件（README にセットアップ手順・設計上の判断/工夫・AI 利用の方法と範囲、重要な意思決定を docs/adr/ に ADR 記録）。
+
+【オーケストレーターが実測した事実（2026-08-23 セッション）】next 16.3.1 / react 19.2.8 / TypeScript strict / pages ディレクトリ不在。src は domain(model,ports) / usecases / infrastructure(github,platform) / ui / composition / shared の層構成、アプリコードは約 8,832 行（テスト除く）。ユニット/結合テストファイル 75 本、E2E spec 21 本（e2e/）。npm scripts: dev/build/start/lint/format/format:check/test/test:watch/test:e2e/check/preview:build/preview:upload/deploy/deploy:ci/cf-typegen。`.github/workflows` は存在しない（GitHub Actions がプラットフォーム制限で使えず撤去・D-23）。`npx prettier --check .` は 125 ファイルで FAIL（tsconfig.json / wrangler.jsonc を含む）で、tools/run_checks.sh にも未接続。ADR は docs/adr/0001〜0015 の 15 本。README は 151 行で、セットアップ・環境変数 8 件の表・技術スタッ
+- 参加者: `senior_req`, `senior_arch`, `senior_prod`
+- 投稿数: 0
+- 更新: 2026-08-23T09:32:05+09:00
+
+> このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
+
+_（まだ投稿がありません）_
