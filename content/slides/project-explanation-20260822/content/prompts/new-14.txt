@@ -41,13 +41,17 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「gem-hunter」
+「母集団を広げたら、撤去の根拠が消えた」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「gem-hunter」
-「gem-hunter」
-「star では埋もれる「実際に使われている OSS」を見つける」
-「開発者向け解説 / 2026-08-23」
+「母集団を広げたら、撤去の根拠が消えた」
+「当時は「npm 限定だから広げても非 JS 系には効かない」と構造的な限界だと書いた。そこが間違っていた」
+「集める先を 12 レジストリへ広げ、被依存数の多い順に最大 15,000 件ずつ集め直した」
+「汚染と重複を落として残ったのはユニーク 62,483 リポジトリ。最大の npm でも 15.5% にとどまる」
+「一般語 24 語で測り直すと、検索上位 100 件の平均 34.5% に Gem Index が付いた」
+「3 MB のバンドル上限も、静的アセットとして配る方式に変えたことで当たらなくなった」
+「それでも sort=gem-index は戻さない。100 件中 68 件に値が無く、主ソートには使えない」
+「実測で殺した判断を、自分の実測でひっくり返す作業だった。記録が残っていたから測り直せた」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
-表紙。中央にダイヤ + 虫眼鏡のシンプルなアイコン 1 つ、上部にバナー見出し。生成りの紙地・手書きグラレコ調
+左右 2 カラムの対比。左は小さな円が少しだけ集まった図をグレーで、右は同じ円が画面いっぱいに広がった図をティールで。中央に左から右への太い矢印を 1 本

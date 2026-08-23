@@ -45,10 +45,10 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「持ち帰れる 4 つの考え方」
-「注目度ではなく実利用を起点に測ると、既存の順位づけとは別のものが見えてくる」
-「指標は絶対値ではなく残差で作ると、数字の水増しに構造的に強くなる」
+「注目度ではなく実利用を起点に測ると、同じ対象でも既存の順位づけとは違うものが見えてくる」
+「指標は絶対値ではなく順位の残差で作ると、数字を水増しされても構造的に崩れにくい」
 「層を足す前に「どの規律を守るためか」を 1 行で言えるかを問う。言えないなら足さない」
-「作った機能を実測で殺せるように、判断の根拠と却下案を記録に残しておく」
+「判断の根拠と却下案を残しておくと、前提が変わったときに測り直して、戻すこともできる」
 「どれも gem-hunter に固有ではなく、次に作るものにそのまま持ち込める」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):

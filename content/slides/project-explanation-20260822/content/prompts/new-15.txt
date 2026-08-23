@@ -41,13 +41,17 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「gem-hunter」
+「Gem Index は順位の残差で作る」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「gem-hunter」
-「gem-hunter」
-「star では埋もれる「実際に使われている OSS」を見つける」
-「開発者向け解説 / 2026-08-23」
+「Gem Index は順位の残差で作る」
+「エコシステム内での「被依存数のパーセンタイル順位」から「star のパーセンタイル順位」を引く」
+「パーセンタイル順位で比べるので、言語やエコシステムの規模が違っても同じ尺度に乗る」
+「star を水増しすると値は下がる。偽 star に構造的に強い」
+「健全性は criticality_score（OpenSSF の既存指標）をそのまま使い、自作しないと決めてある」
+「ただし今効いている足切りは star 下限 5 の汚染フィルタで、健全性の指標はまだ入れていない」
+「被依存数は Ecosyste.ms の 12 レジストリ、star は GitHub API から取る」
+「Ecosyste.ms のデータは CC BY-SA 4.0。画面に出典・ライセンス・生成時刻を明記している」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
-表紙。中央にダイヤ + 虫眼鏡のシンプルなアイコン 1 つ、上部にバナー見出し。生成りの紙地・手書きグラレコ調
+左から右への 3 段。1 段目に高さの違う 2 本の棒、2 段目に引き算の記号を丸で囲んだもの、3 段目に順位リストのアイコン。下部に注意の三角アイコンを 1 つ付けた帯を 1 本

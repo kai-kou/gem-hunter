@@ -49,9 +49,9 @@ Text elements (exhaustive — render ALL of these VERBATIM, character for charac
 「却下: お気に入りをサーバーに保存（端末間同期の利便性より DB レス原則を優先した）」
 「採用: 検索状態は URL に、ロケールはパスに置く」
 「採用: セッションは暗号化 httpOnly Cookie、お気に入りは localStorage に置く」
+「採用: Gem のデータも日次バッチが作る静的 JSON で、サーバー側に状態を持たない点は他と同じ」
 「唯一の例外が CachePort（アーキテクチャで触れた TTL 付きキャッシュ層のインターフェース）」
-「DB を持たないので、バックアップもマイグレーションも運用から消えた」
-「代わりに利用者ごとの状態は端末に閉じ、端末間で共有できない（受け入れた代償）」
+「DB を持たないのでバックアップもマイグレーションも消えた。代わりに状態は端末に閉じる」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 左に却下ボックス（グレー・バツ印アイコン）、右に採用ボックス（コーラル・チェック印アイコン）。右ボックス内は 4 つの小さな箱に分かれた図。下部にチップ 1 つ

@@ -219,9 +219,9 @@
 - 伝えたい 1 メッセージ: PR 運用の自律化（止まる条件を先に決めてある）
 - 出典: docs/rules/pr-review-flow-summary.md / pr-review-flow.md（サーキットブレーカー）/ session-concurrency-rules.md / GitHub API 実測 2026-08-23
 
-## Slide 16: Gem Index ＝ 被依存数と star の残差
+## Slide 16: Gem Index は順位の残差で作る
 
-- 見出し: Gem Index ＝ 被依存数と star の残差
+- 見出し: Gem Index は順位の残差で作る
 - 本文:
   - エコシステム内での「被依存数のパーセンタイル順位」から「star のパーセンタイル順位」を引く
   - パーセンタイル順位で比べるので、言語やエコシステムの規模が違っても同じ尺度に乗る
@@ -230,7 +230,7 @@
   - ただし今効いている足切りは star 下限 5 の汚染フィルタで、健全性の指標はまだ入れていない
   - 被依存数は Ecosyste.ms の 12 レジストリ、star は GitHub API から取る
   - Ecosyste.ms のデータは CC BY-SA 4.0。画面に出典・ライセンス・生成時刻を明記している
-- ビジュアル: 既存流用 docs/infographics/10-gem-score.webp
+- ビジュアル: 新規生成 new-15（残差の作り方と、いま効いている足切り）
 - 伝えたい 1 メッセージ: 差別化ロジックの定義（直後の撤去話への助走）
 - 出典: ADR 0009 §2.1 / §2.2 / §3.1〜3.3 / open-questions.md D-37 / tools/generate_gem_digest.mjs（minStars=5）
 
