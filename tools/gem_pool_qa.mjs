@@ -316,22 +316,45 @@ function readWorktreeJson(relPath) {
 }
 
 /**
- * `INDEX_PATH` を最後に変更したコミット（HEAD から辿れる範囲）の時刻を UNIX epoch 秒で返す。
- * 変更履歴が無い（初回・浅いクローンで辿れない）ときは null（`shouldPublish()` が安全側＝
- * 反映する側に倒す）。
+ * `INDEX_PATH` を最後に変更したコミット（HEAD から辿れる範囲）の時刻を調べる。
+ *
+ * 🔴 「履歴に該当コミットが無い（＝初回・正常）」と「`git log` 自体が失敗した（＝異常。
+ * 浅いクローン・git の一時的な異常終了等）」を **区別する**。どちらも `epochSec: null` を返し
+ * `shouldPublish()` は変わらず反映側に倒す（fail-open は維持。反映しない側に倒すと週次反映が
+ * 永久に止まりうるため）が、後者だけ `warning` に理由を積む。これにより「取得が壊れていて
+ * 毎日反映へ静かに後退している」事態を `--should-publish --json` の出力・ワークフローの
+ * ログから検知できるようにする（本関数を呼ぶ限り、失敗が沈黙しない）。
+ *
+ * @returns {{epochSec: number|null, warning: string|null}}
  */
-function getLastPublishedEpochSec() {
+function getLastPublishedInfo() {
   try {
     const text = execFileSync('git', ['log', '-1', '--format=%ct', 'HEAD', '--', INDEX_PATH], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'], // 🔴 stderr は握り潰さず拾う（異常時の可視化に使う）
     }).trim()
-    if (text.length === 0) return null
+    if (text.length === 0) {
+      // git log 自体は正常終了したが、該当パスの変更履歴が無い（初回。正常系）。
+      return { epochSec: null, warning: null }
+    }
     const epoch = Number(text)
-    return Number.isFinite(epoch) ? epoch : null
-  } catch {
-    return null
+    if (!Number.isFinite(epoch)) {
+      return {
+        epochSec: null,
+        warning: `git log の出力を時刻として解釈できませんでした（異常終了ではない・出力: ${JSON.stringify(text).slice(0, 200)}）`,
+      }
+    }
+    return { epochSec: epoch, warning: null }
+  } catch (err) {
+    // git log 自体が失敗（非ゼロ終了・コマンド不在等）。fetch-depth 不足・git の一時的な異常等。
+    const stderrText =
+      typeof err?.stderr === 'string' ? err.stderr : Buffer.isBuffer(err?.stderr) ? err.stderr.toString('utf8') : ''
+    const reason = (stderrText || err?.message || 'unknown error').trim().slice(0, 300)
+    return {
+      epochSec: null,
+      warning: `git log が失敗しました（反映側へフォールバックしています。要調査）: ${reason}`,
+    }
   }
 }
 
@@ -482,7 +505,7 @@ function runNoOpMode({ json }) {
  * ワークフロー側は本モードの `should_publish` を読むだけにし、日数計算を YAML に書かない。
  */
 function runShouldPublishMode({ json, force }) {
-  const lastPublishedEpochSec = getLastPublishedEpochSec()
+  const { epochSec: lastPublishedEpochSec, warning } = getLastPublishedInfo()
   const nowEpochSec = Math.floor(Date.now() / 1000)
   const publish = shouldPublish(lastPublishedEpochSec, nowEpochSec, force)
   const daysElapsed =
@@ -495,6 +518,9 @@ function runShouldPublishMode({ json, force }) {
     forcePublish: Boolean(force),
     daysElapsed,
     checkedAt: nowJstLabel(),
+    // 🔴 正常系（初回・force）ではキー自体を出さない。異常系（git log 失敗）のときだけ載せ、
+    // ワークフロー側のログ・PR 本文で「静かな fail-open」を検知できるようにする。
+    ...(warning ? { warning } : {}),
   }
   printResult(result, json)
   process.exit(0) // 判定モード自体は失敗ではないので exit 0（判定は呼び出し側が読む）
@@ -518,6 +544,7 @@ function printResult(result, json) {
     console.log(
       `should_publish=${result.should_publish}（経過 ${elapsed}・force=${result.forcePublish}・${result.checkedAt}）`,
     )
+    if (result.warning) console.log(`  - WARNING: ${result.warning}`)
     return
   }
   if (result.ok) {
@@ -872,6 +899,19 @@ function selfTest() {
     assert(
       'shouldPublish: NaN 等の不正な数値は安全側（反映する）に倒す',
       shouldPublish(Number.NaN, now, false) === true,
+    )
+
+    // クロックずれ（前回反映のコミット時刻が実行時計より進んでいる）: 無闇に反映しない。
+    const futureEpoch = now + 3600 // 1 時間先の未来
+    assert(
+      'shouldPublish: 前回反映が未来時刻（クロックずれ）なら反映しない',
+      shouldPublish(futureEpoch, now, false) === false,
+    )
+    // ただし十分時間が経てば自己回復する（未来時刻 + 8 日後の now なら反映する）。
+    const eightDaysAfterFuture = futureEpoch + 8 * 24 * 60 * 60
+    assert(
+      'shouldPublish: 未来時刻でも 8 日後には自己回復して反映する',
+      shouldPublish(futureEpoch, eightDaysAfterFuture, false) === true,
     )
   }
 

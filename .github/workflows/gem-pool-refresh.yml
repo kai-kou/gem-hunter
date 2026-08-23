@@ -103,6 +103,12 @@ jobs:
           cat /tmp/gem_pool_publish.json
           should_publish="$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).should_publish))" "$(cat /tmp/gem_pool_publish.json)")"
           echo "should_publish=${should_publish}" >> "$GITHUB_OUTPUT"
+          # 🔴 判定が異常系（git log 失敗）にフォールバックしていたら、ログ上で必ず可視化する
+          # （黙って毎日反映へ後退する事態を検知するため。`warning` キーは正常時は存在しない）。
+          publish_warning="$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).warning || ''))" "$(cat /tmp/gem_pool_publish.json)")"
+          if [ -n "${publish_warning}" ]; then
+            echo "::warning::gem-pool-refresh 反映判定が異常系にフォールバックしました: ${publish_warning}"
+          fi
 
       - name: No-op check
         id: noop
