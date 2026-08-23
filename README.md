@@ -21,7 +21,7 @@ star の多さでは埋もれてしまう「実際に使われている OSS」�
 
 | 検索語を引き継いだ Gem 一覧 | リポジトリ詳細 |
 |---|---|
-| <img src="./docs/images/readme/mobile-gems.webp" width="300" alt="スマートフォンで開いた Gem 一覧画面。「「yaml」の Gem」という見出しと 74 件という件数の下に、オーナーアイコン・リポジトリ名・パッケージ名・レジストリ名・star 数・利用パッケージ数・Gem Index を持つカードが Gem Index の降順で並んでいる。レジストリは pub.dev・npmjs.org・rubygems.org・packagist.org・pypi.org・metacpan.org・hex.pm・proxy.golang.org と多岐にわたる。"> | <img src="./docs/images/readme/mobile-detail.webp" width="300" alt="スマートフォンで開いたリポジトリ詳細画面。「一覧へ戻る」リンクの下にオーナーアイコン・nodeca/js-yaml・TypeScript・説明文があり、star 数 6,626 / watcher 数 77 / fork 数 846 / issue 数 9 / 最終更新 2026/08/22 のタイルが並ぶ。その下に README の見出しと、対象リポジトリの README 本文が描画されている。"> |
+| <img src="./docs/images/readme/mobile-gems.webp" width="300" alt="スマートフォンで開いた Gem 一覧画面。「「yaml」の Gem」という見出しと 74 件という件数の下に、オーナーアイコン・リポジトリ名・パッケージ名・レジストリ名・star 数・利用パッケージ数・Gem Index を持つカードが Gem Index の昇順（値が小さい＝ star の数に対して使われ方が大きいものほど上位）で並んでいる。レジストリは pub.dev・npmjs.org・rubygems.org・packagist.org・pypi.org・metacpan.org・hex.pm・proxy.golang.org と多岐にわたる。"> | <img src="./docs/images/readme/mobile-detail.webp" width="300" alt="スマートフォンで開いたリポジトリ詳細画面。「一覧へ戻る」リンクの下にオーナーアイコン・nodeca/js-yaml・TypeScript・説明文があり、star 数 6,626 / watcher 数 77 / fork 数 846 / issue 数 9 / 最終更新 2026/08/22 のタイルが並ぶ。その下に README の見出しと、対象リポジトリの README 本文が描画されている。"> |
 
 ## 開発（ローカル）
 
@@ -44,7 +44,7 @@ Cloudflare Workers 向けのビルドとデプロイは別系統のコマンド�
 
 ```bash
 npm run preview:build    # Workers 向けビルド（opennextjs-cloudflare build）
-npm run preview:upload   # ビルドして wrangler versions upload（PR プレビュー用の version を作る）
+npm run preview:upload   # ビルドして wrangler versions upload（PR 用の固定 URL には --preview-alias pr-<N> が要る。下の「デプロイ経路」を参照）
 npm run deploy           # ビルドして wrangler deploy（本番。コミット SHA を --tag に付ける）
 npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する）
 ```
@@ -61,9 +61,9 @@ npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する�
 |---|---|
 | **本番**（`https://gem-hunter.kinamocchi-tech.workers.dev`） | `main` への push を Cloudflare の **Workers Builds**（Git 連携）が拾ってビルド・デプロイする（[`D-31`](./docs/02_requirements/open-questions.md)）。デプロイゲートが閉じていた分は自動で再試行されないため、ゲート通過を契機に [`tools/trigger_workers_build.py`](./tools/trigger_workers_build.py) で明示的に再ビルドを起こす。セッションからの `npm run deploy` はフォールバック |
 | **PR プレビュー** | `npm run preview:upload` 相当（`wrangler versions upload --preview-alias pr-<N>`）で PR ごとの URL を作り、PR 本文に貼る（`SD-1`）。スプリントレビューの受け入れ後に退役させる |
-| **紹介ページ（LP）** | `site/` を `gh-pages` ブランチのルートへ同期して GitHub Pages で配信する（[`D-35`](./docs/02_requirements/open-questions.md)）。アプリ本体とは別レーンにして、LP の更新が本番アプリのデプロイゲートに影響しないようにしている |
+| **紹介ページ（LP）** | `site/` を `gh-pages` ブランチのルートへ同期して GitHub Pages で配信する（[`D-35`](./docs/02_requirements/open-questions.md)・手順の正本は [`site/README.md`](./site/README.md)）。アプリ本体とは別レーンにして、LP の更新が本番アプリのデプロイゲートに影響しないようにしている |
 
-手順とゲート判定の正本は [Cloudflare インフラ設計](./docs/03_design/infrastructure/cloudflare-infrastructure.md) §8.2。
+本番と PR プレビューの手順・ゲート判定の正本は [Cloudflare インフラ設計](./docs/03_design/infrastructure/cloudflare-infrastructure.md) §8.2（LP の同期手順は上表のとおり [`site/README.md`](./site/README.md) が持つ）。
 
 ### 環境変数
 
@@ -89,7 +89,7 @@ npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する�
 
 | 領域 | 採用 |
 |---|---|
-| フレームワーク | Next.js 16（App Router・React Server Components）+ React 19（[ADR 0006](./docs/adr/0006-nextjs16-app-router.md)） |
+| フレームワーク | Next.js 16（App Router・React Server Components・[ADR 0006](./docs/adr/0006-nextjs16-app-router.md)）と、それが要求する React 19 |
 | UI | Tailwind CSS v4 + shadcn/ui（Radix UI・[ADR 0001](./docs/adr/0001-ui-stack.md)） |
 | 実行環境 | Cloudflare Workers（`@opennextjs/cloudflare`。本番・プレビュー配信の詳細は [ADR 0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)） |
 | テスト | Vitest 4 + Testing Library + MSW 2（ユニット・結合）/ Playwright + axe（E2E）（[テスト戦略](./docs/04_development/testing-strategy.md)） |
