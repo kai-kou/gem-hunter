@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * gem_pool_qa.mjs — Gem 候補プール生成物の QA と no-op 判定を行う CLI（Issue #458・`D-39`）。
+ * gem_pool_qa.mjs — Gem 候補プール生成物の QA と no-op 判定を行う CLI（Issue #458・`D-40`）。
  *
  * `.github/workflows/gem-pool-refresh.yml`（週次バッチ）が `node tools/generate_gem_digest.mjs`
  * を実行した **直後**、コミット・ブランチ作成の前に呼ぶ。決めることは 2 つだけ:

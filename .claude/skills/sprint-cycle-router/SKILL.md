@@ -45,6 +45,8 @@ effort: medium
   コミット）だけ**。日次・毎 firing の判定に新規 state ファイルを作らない（§9 の週次ゲートのみ既存パターンを流用可）。
 - 早期リターン（§2）を安く済ませることで、cron を短い間隔で回しても空振りコストを抑える
   （実際の間隔は `docs/routines/sprint-cycle-routine.md` が正本・可変）。
+- **§1.5（Step 0.2・本番ドリフト検査）は早期リターンではない**。§2 以降のどのブランチが選ばれるかに
+  かかわらず毎 firing 必ず 1 回通る前置チェックとして、§2 より前に評価する（#451）。
   **N（cron 間隔）は完了保証の単位ではなく健全性チェックの再訪頻度**。
 
 ---
@@ -77,6 +79,51 @@ effort: medium
 
 ---
 
+## §1.5 Step 0.2: 本番ドリフト検査（毎 firing 必須・全ブランチより先に評価）
+
+Cloudflare Workers Builds は `main` への push ごとに発火するが、Deploy command 側のデプロイゲート
+（`tools/check_deploy_gate.py`）が閉じているとビルド自体が exit 1 で終わり、**ゲートが後から開いても
+その push を再ビルドする経路が存在しない**（Issue #451・実測: SP-17〜SP-19 の 3 スプリント分が本番
+未反映のまま気づかれずに滞留）。本ステップはその滞留を毎 firing 検知し、可能なら自己解決し、
+できなければ可視化する。
+
+🔴 **評価順の注意（このリポジトリは過去に到達不能な分岐を作った事故がある）**: 本ステップは
+**§1（Step 0.0 チャネル判定）の直後・§2（Step 0.1 早期リターン）より前** に評価する。早期リターンや
+Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回通る位置に置くことで「条件は書いたが
+評価順で到達しない」再発を防ぐ。1 firing 1 ブランチの原則（§0）の対象外の **前置チェック** であり、
+早期リターンではない（本ステップの実行後、通常どおり §2 以降の判定を続ける）。
+
+```
+1. §1 のチャネル判定が MCP/gh/curl のいずれかで成立している場合のみ実行する
+   （§1 手順 4「全滅」の場合は本ステップも実行せず安全側 no-op のまま Step 0.1 以降へ進まない）。
+2. python3 tools/check_prod_drift.py を実行する（引数なし・本判定）。
+   終了コード: 0 = ドリフト無し / 1 = ドリフトあり / 2 = 判定不能（fail-closed）。
+3. 0（ドリフト無し）→ 何もせず §2 へ進む。
+4. 1（ドリフトあり）→ python3 tools/trigger_workers_build.py を実行する（既定でデプロイゲートを
+   内部で再確認するため、ここでの `check_deploy_gate.py` の二重実行はしない）。
+   - 0（トリガー成功）→ 自己解決。`[prod-drift]` の open Issue があれば
+     `進捗: Workers Builds 再トリガー成功（build_uuid: <値>）` を追記コメントしてクローズする
+     （無ければ起票不要・「気づかれず滞留」した形跡が無いため）。
+   - 1（デプロイゲート待機中・異常ではない）→ **滞留を可視化する**:
+     `[prod-drift]` の open Issue が既に無いか確認する（重複起票防止・§9 の `[Milestone] M-3 到達`
+     と同じ作法）。無ければ 1 件だけ起票し、本文に「本番と main HEAD が乖離しています。
+     デプロイゲートが閉じているため Workers Builds の再トリガーは待機中です」と、乖離を検知した
+     コミット SHA・検知日時（JST）を記録する。既にあれば「まだ乖離継続中（前回検知から N 回目の
+     firing）」を追記コメントする（新規 Issue を毎回作らない）。**このステップでは @mention しない**
+     （A-1〜A-6 に該当しない・`user-notification-triage.md`）。
+   - 2（判定不能）→ fail-closed。`type:bug` Issue（`lane:cloudflare-deploy` 等の既存ラベル体系が
+     あれば流用）に判定不能の事実とエラー内容を記録し、握り潰さずに §2 へ進む。
+5. 2（`check_prod_drift.py` 自体が判定不能）→ 4 の「2（判定不能）」と同じ扱いで fail-closed 記録し、
+   §2 へ進む。
+6. `trigger_workers_build.py` が存在しない場合（未デプロイ環境等）はスキップし、記録も起票もせず
+   §2 へ進む（本ステップは #451 対策の一部であり、存在しない前提で決定木全体を止めない）。
+```
+
+新規ラベル・新規 state ファイルは作らない（`[prod-drift]` Issue の open/closed 状態だけで滞留を判定する。
+`[publish-sync]` Issue と同じ作法・`pr-review-flow-summary.md` 参照）。
+
+---
+
 ## §2 Step 0.1: 早期リターン判定
 
 数クエリで「今回やることが無い」を判定して安く抜ける。**a〜d のいずれかが該当した時点で該当ステップに
@@ -86,7 +133,7 @@ effort: medium
 a) [CC-Sync 破壊的変更] `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue の存在チェック（1 クエリ）
 b) 自分の in-progress Issue / open PR の存在チェック（`check_pending_pr_reviews.py --mine --actionable-only`
    相当・1 クエリ。§1 のチャネルに応じて MCP/gh/curl 手動実装のいずれかで実行）
-c) `status:waiting-claude` の **非 `SP-n`** Issue の在庫チェック（1 クエリ・`type` は問わない）
+c) `status:waiting-claude` の **非 `SP-n`** Issue の在庫チェック（1 クエリ・`type` は問わない。`release:deferred` は在庫に数えない＝Step 5 の対象外のため・`docs/05_release/pre-release-gate.md` §3）
 d) 当日の衛生スロット実施済みか（`project-sync` のログ相当・当日の Issue コメント日付や
    `workflow-health-check` 実行痕跡から判定・1 クエリ。新規 state ファイルは作らない）
 ```
@@ -107,8 +154,8 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名 **または Sprint Review 判定済み（結果 / デプロイ要否）・デプロイ完了・退役完了**}まで完了。次は {次にやること}」1 行）から続きを判定し再開（手順は §7 の中断条件と対。**Sprint Review 判定済みでデプロイ・退役が未完了のケースは下記「Step 3 の再開: デプロイ・退役未完了の検出」を先に見る**）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
-| **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
-| **5.5** | ① `status:in-progress` かつ `type:retro-try` の Issue が **4 時間超 stale**（着手して中断したものの再開。Step 3 は Sprint Planning コメントを持つ `SP-n` しか拾わないためここで拾う）、または ② `status:waiting-claude` かつ `type:retro-try` の Issue が存在し **直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5）。① は ② より優先する | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
+| **5** | ① `status:in-progress` かつ `SP-n` 規約にも `type:retro-try` にも該当しない Issue が **4 時間超 stale**（前回 firing が着手だけして力尽きた形跡。Step 3 は Sprint Planning コメントを持つ `SP-n` しか拾わず、Step 5.5 ① は `type:retro-try` 限定のため、**この 2 つの隙間に落ちる非 `SP-n` Issue をここで再開する**・#452）、または ② `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**）。① は ② より優先する。**`release:deferred` はどちらの対象にもしない**（提出後に回すと決めたもの・`docs/05_release/pre-release-gate.md` §3） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい）。🔴 **提出前ゲートが稼働中は `docs/05_release/pre-release-gate.md` §5 の上書き（対象スコープ・同 priority 内のタイブレーク順・件数上限の 3 項目のみ）を読み、`release:required` を §2 の表の順に 1 件だけ処理する**（上書きが許される根拠と射程は `self-improvement-loop` SKILL.md 消化モード冒頭。**priority ラベルの大小順は上書きしない**。ゲート終了後は本行の参照ごと撤去する・#466） | `self-improvement-loop` 消化モード |
+| **5.5** | ① `status:in-progress` かつ `type:retro-try` の Issue が **4 時間超 stale**（着手して中断したものの再開。Step 3 は Sprint Planning コメントを持つ `SP-n` しか拾わないためここで拾う）、または ② `status:waiting-claude` かつ `type:retro-try` の Issue が存在し **直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5）。① は ② より優先する。🔴 **提出前ゲート稼働中（`release:required` の open Issue が 1 件以上）は ① の Step 5 に対する優先を停止し、retro-try の再開は 1 日 1 回までに制限する**（2 時間 cron のスロットが retro-try に吸われてゲートが進まなくなるため・`docs/05_release/pre-release-gate.md` §5・#452。ゲート終了後は本文を撤去する・#466） | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
 | **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
 | **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
 | **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
@@ -127,8 +174,8 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
    デプロイ・退役は不要。そのまま retrospective 起動へ進む（`pr-review-watcher` Step 7-4 から再開）
 3. **デプロイ: yes** かつ後続に「デプロイ完了」コメントが無い →
    retrospective 起動より **先に** `pr-review-watcher` Step 7-3.5（デプロイ → 疎通確認 → 退役）を
-   実行してから 4（retrospective）へ進む（`npm run deploy` と `retire_preview_aliases.py` は
-   いずれも idempotent なので再実行しても安全）
+   実行してから 4（retrospective）へ進む（`trigger_workers_build.py` / `npm run deploy`（フォールバック）/
+   `retire_preview_aliases.py` はいずれも idempotent なので再実行しても安全）
 4. **デプロイ: yes** かつ後続に「デプロイ完了」コメントが既にある →
    デプロイ・退役は完了済み。retrospective 未実行なら Step 7-4 から再開
 ```
@@ -161,6 +208,12 @@ Step 3 の対象は「**Sprint Planning コメントがある** Issue」で、�
 retro-try Issue は Step 3 では再開されない。**その再開は Step 5.5 の条件 ① が担う**
 （`status:in-progress` かつ 4 時間超 stale）。Step 3 の条件は変更しない（他ファイルから
 Step 番号と条件を名指しで参照されているため）。
+
+🔴 **同じ隙間が「非 `SP-n` かつ非 `type:retro-try`」の Issue にも空いていた**（#452 で実測: `status:in-progress`
+のまま滞留する非 `SP-n` Issue が 7 件）。Step 3（`SP-n` 限定）も Step 5.5 ①（`type:retro-try` 限定）も拾わず、
+Step 5 は `status:waiting-claude` しか見ていなかったため、**着手だけして力尽きた Issue が二度と再開されなかった**。
+その再開は **Step 5 の条件 ①** が担う。1 firing 1 件で逐次処理する運用（提出前ゲート）はこの穴を直撃するため、
+ゲートの有無にかかわらず恒久の条件として置く。
 
 ### エージング（Step 4 の飢餓防止・§5 で詳述）
 
@@ -404,6 +457,8 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 
 - [ ] 1 firing で決定木の該当ブランチが正しく特定でき、上位ステップを飛ばして実行していない
 - [ ] Step 0.0 のチャネル判定を毎 firing 実施している（前回の判定結果を恒久前提にしていない）
+- [ ] Step 0.2（本番ドリフト検査）を Step 0.1 以降のどのブランチよりも先に評価している（#451。
+      到達不能な分岐を作っていないか評価順を確認する）
 - [ ] Step 4 着手時、`SD-1`〜`SD-4` を省略していない（プレビュー URL・TDD・縦切り・ドキュメント参照）
 - [ ] 無人 firing で `AskUserQuestion` を使っていない（§6 の 3 条件判定で代替している）
 - [ ] `status:blocked` の Issue/PR が Step 3 / Step 4 / Step 5 の対象から除外されている
@@ -433,6 +488,8 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 | `.claude/skills/self-improvement-loop/SKILL.md` | Step 5（消化モード）/ Step 7（整理モード）の委譲先 |
 | `.claude/skills/retro-try-handler/SKILL.md` | Step 5.5（`type:retro-try` の消化）の委譲先（#377） |
 | `tools/check_lane_reachability.py` | レーン定義のスキルが決定木・他スキル・hooks から到達可能かの機械検査（#377 の再発検知） |
+| `tools/check_prod_drift.py` | Step 0.2 が呼ぶ本番乖離判定（本判定は本番疎通に依存するため `run_checks.sh` には `--self-test` のみ配線） |
+| `tools/trigger_workers_build.py` | Step 0.2 が呼ぶ Workers Builds 再トリガー（内部でデプロイゲートを再確認・#451） |
 | `.claude/skills/workflow-health-check/SKILL.md` / `.claude/skills/project-sync/SKILL.md` | Step 6（衛生）の委譲先 |
 | `tools/sprint_backlog_sync.py` | Step 3.5 の SP→Issue 同期スクリプト（本スキルは呼び出し方のみ持ち、パース・判定ロジックは持たない） |
 | `tools/check_parallel_safety.py` | Step 4-1.5 の並行安全性判定スクリプト（CLI 契約・判定思想の詳細は `docs/rules/session-concurrency-rules-detail.md`「レイヤー 1 補強」） |

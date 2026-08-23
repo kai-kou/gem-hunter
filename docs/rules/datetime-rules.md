@@ -26,11 +26,15 @@ Python は表示・記録用に `datetime.now(timezone(timedelta(hours=9)))`、�
 
 日時テンプレートに時刻を含めるときは必ず ` JST` を付ける（`{YYYY-MM-DD HH:MM JST}`）。日付のみのテンプレートは `$(TZ=Asia/Tokyo date +%Y-%m-%d)` で生成し、コンテナ TZ に依存させない。
 
+**レビュー済みの例外（`# tz-ok`）**: `tools/check_datetime_tz.py` が誤検出する、あるいは意図的に naive datetime を使う正当な理由がある場合、該当する呼び出しの **開始行〜終了行のいずれかの行** に `# tz-ok` を書くと検査から除外できる。複数行にまたがる呼び出しなら閉じ括弧の行に書いても抑制される（同じ行に書かないと効かない、という制約ではない・Issue #445）。乱用しない（レビュー済みの正当な例外のみ）。
+
 ## 3. 完了・成功の定義
 
 - [ ] ユーザーに伝える日時・表示/記録系コードの日時が JST 基準（API 用 UTC を除く）
 - [ ] ハーネス（hooks）の既定 TZ が `Asia/Tokyo`、シェル `date` が `%Z`（リテラル直書きでない）
 - [ ] 機械処理用 UTC（API・内部計算）は維持されている
 - [ ] `python3 tools/check_datetime_tz.py` が PASS（表示・記録系の TZ 未指定 `datetime` 残存ゼロ・#80）
+
+> **新しい失敗モード（Issue #445）**: `python3 tools/check_datetime_tz.py` は、対象 `.py` が構文解析・読み込みできない場合（構文エラー・非 UTF-8・NUL バイト混入・病的に深いネスト等）も「違反なし」として黙殺せず **非ゼロ終了** にする（stderr に `⚠️` 付きで対象ファイルを明示）。この exit 1 は「TZ 違反が残っている」（`❌`）とは限らない — stderr の先頭記号で区別する（`❌` = TZ 違反 / `⚠️` = 解析不能）。運用者は明示されたファイル自体（無関係な `.py` の構文エラー等）を直すか、意図的に検査対象外とする場合は理由をコミットメッセージか Issue に残す。
 
 > 関連: `tools/check_datetime_tz.py`（機械チェック）/ `tools/generate_project_context.py`（スナップショット時刻）/ `datetime-rules-detail.md`（実装パターン全文）/ `session-safety-rules.md`（JST 明示の模範テンプレート）

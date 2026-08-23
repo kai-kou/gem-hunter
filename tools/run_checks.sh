@@ -191,6 +191,7 @@ fi
 # 4.7. ADR 記録と README 必須記載のゲート（E-18 / E-19 / NFR-29〜NFR-32 / AC-11）
 if [ -f "$REPO_ROOT/tools/check_adr_coverage.py" ]; then
   run_check "ADR / README 記載検査 (check_adr_coverage.py)" python3 tools/check_adr_coverage.py
+  run_check "ADR / README 記載検査 self-test (check_adr_coverage.py --self-test)" python3 tools/check_adr_coverage.py --self-test
 else
   skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
 fi
@@ -217,6 +218,15 @@ else
 fi
 
 # 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
+
+# wrangler.jsonc 共有パーサ self-test（Layer 1 セルフレビュー WARNING-6・PR #460）。
+# trigger_workers_build.py / retire_preview_aliases.py が共有する Worker 名パースの実体。
+if [ -f "$REPO_ROOT/tools/wrangler_config.py" ]; then
+  run_check "wrangler 設定パーサ self-test (wrangler_config.py --self-test)" python3 tools/wrangler_config.py --self-test
+else
+  skip_check "wrangler 設定パーサ self-test (wrangler_config.py --self-test)" "スクリプトが見つかりません"
+fi
+
 if [ -f "$REPO_ROOT/tools/retire_preview_aliases.py" ]; then
   run_check "退役スクリプト self-test (retire_preview_aliases.py --self-test)" python3 tools/retire_preview_aliases.py --self-test
 else
@@ -303,6 +313,14 @@ if [ -f "$REPO_ROOT/tools/check_prod_drift.py" ]; then
   run_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" python3 tools/check_prod_drift.py --self-test
 else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# Workers Builds 再トリガーの self-test（Issue #451）。本判定（引数なし実行）は Cloudflare API への
+# 実疎通とデプロイゲート判定に依存するため配線しない（本番乖離検知 self-test と同じ理由・Issue #288）。
+if [ -f "$REPO_ROOT/tools/trigger_workers_build.py" ]; then
+  run_check "Workers Builds 再トリガー self-test (trigger_workers_build.py --self-test)" python3 tools/trigger_workers_build.py --self-test
+else
+  skip_check "Workers Builds 再トリガー self-test (trigger_workers_build.py --self-test)" "スクリプトが見つかりません"
 fi
 
 # レーン定義のスキルが実装（決定木・他スキルの手順・hooks）から到達可能かの検査（Issue #377）。

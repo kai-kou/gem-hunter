@@ -1,7 +1,7 @@
 name: Gem Pool Refresh
 
 # Gem 候補プール（public/data/gem-index/ + public/data/daily-digest.json）を週次で再生成し、
-# 生成物のみを差分に持つ PR を作成するワークフロー（Issue #458・`D-39`）。
+# 生成物のみを差分に持つ PR を作成するワークフロー（Issue #458・`D-40`）。
 #
 # 決定の正本: content/discussions/gem-pool-actions-schedule-20260823/whiteboard.md（round 3 lead 判定）。
 #
