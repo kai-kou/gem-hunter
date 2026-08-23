@@ -20,8 +20,9 @@
  *                                                           # 部分実行で書き換える（孤児シャードは削除される）
  *
  * 実行環境: Node 22+（ESM・fetch はグローバル）。
- * ⚠️ 定期実行は GitHub Actions の週次スケジュール（`.github/workflows/gem-pool-refresh.yml`）が本 CLI を
- * 既定オプションで呼び出し、生成物は PR 経由で main へ入る（`D-28` の「Cloudflare の外で回す」を Actions が担う）。
+ * ⚠️ 定期実行は GitHub Actions の日次スケジュール（`.github/workflows/gem-pool-refresh.yml`）が本 CLI を
+ * 既定オプションで毎日呼び出す。`main` への反映（PR 作成）は生成物が 7 日以上前のときだけ行う（日次実行 + 週次反映・
+ * `D-28` の「Cloudflare の外で回す」を Actions が担う。マージ頻度を抑えて git 履歴コストを避けるため）。
  * `--allow-partial-write` は孤児シャードを削除するため定期実行では使わない（手動の部分再実行専用）。
  */
 
