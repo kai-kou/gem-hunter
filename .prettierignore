@@ -11,3 +11,7 @@ site/
 # gem-pool-refresh.yml の週次再生成のたびに format:check が red になる（Issue #402 レビュー指摘）
 public/data/gem-index/
 public/data/daily-digest.json
+# tools/wrangler_config.py の parse_worker_name() は「コメント除去 → json.loads」の単純パーサーで
+# trailing comma を許容しない。prettier（trailingComma: "all"）に整形させると
+# tools/trigger_workers_build.py の Workers Builds 再トリガーが JSONDecodeError で fail-closed する
+wrangler.jsonc
