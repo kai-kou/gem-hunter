@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import ja from '../messages/ja.json'
 import en from '../messages/en.json'
 import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
-import { searchFor } from './helpers'
+import { searchFor, uniqueGemBadgeKeyword } from './helpers'
 
 /**
  * SP-18: 検索結果カードに Gem バッジが出る（`D-36` / `D-38`）。
@@ -52,14 +52,6 @@ const FIRST_RESULT_TIMEOUT_MS = 30_000
 /** 他ファイル・retry 試行との衝突を避けるため、実行のたびに一意なキーワードを生成する（`sp-7` と同じ方針）。 */
 function uniqueManyHitsKeyword(): string {
   return `many-hits-${randomBytes(4).toString('hex')}`
-}
-
-/**
- * `gem-badge` データセット用の一意キーワード（マーカーは部分一致なので接尾辞を足してよい）。
- * `many-hits` 側と同じく、他ファイル・retry 試行とのキャッシュ衝突を避けるために毎回変える。
- */
-function uniqueGemBadgeKeyword(): string {
-  return `gem-badge-${randomBytes(4).toString('hex')}`
 }
 
 /** `gem-badge` データセットでバッジが付かない側（候補プールに載っていない架空のリポジトリ）。 */

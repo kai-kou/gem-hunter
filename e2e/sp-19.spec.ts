@@ -6,7 +6,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import ja from '../messages/ja.json'
 import en from '../messages/en.json'
 import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
-import { searchFor } from './helpers'
+import { searchFor, uniqueGemBadgeKeyword } from './helpers'
 
 /**
  * SP-19: 検索語を引き継いで Gem だけを一覧できる（`US-34` / `GR-4` / `D-37`）。
