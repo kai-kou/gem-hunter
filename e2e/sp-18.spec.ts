@@ -262,3 +262,57 @@ test('SP-18: 英語 UI でもプール実在のカードにだけバッジが出
     await expect(page.getByText(ja.home.gemBadge.note, { exact: true })).toHaveCount(0)
   })
 })
+
+/**
+ * Issue #453（F-2）: 検索結果の見出し直下に Gem 印の説明文（`home.gemBadge.intro`）を出す。
+ * `content/discussions/gem-list-match-20260823/whiteboard.md` lead 判定「争点 D」で確定。
+ *
+ * 🔴 **`home.gemBadge.note`（バッジが付かないことは低評価ではない旨・一覧末尾）とは役割が違う**
+ * ので、本テストは `note` とは別の文言（`intro`）が **別に** 読めることだけを見る（重複させない）。
+ * 描画条件は「検索結果が 1 件以上あるとき」（バッジの有無では条件分岐しない）。
+ */
+test('SP-18: 検索結果の見出し直下に Gem 印の説明文が出る（ja）', async ({ page }) => {
+  const keyword = uniqueManyHitsKeyword()
+
+  await test.step('1. キーワード検索する', async () => {
+    await page.goto('/ja')
+    await searchFor(page, keyword)
+    await expect(resultCards(page)).toHaveCount(20, { timeout: FIRST_RESULT_TIMEOUT_MS })
+  })
+
+  await test.step('2. Gem 印の説明文が読める（home.gemBadge.note とは別の文言）', async () => {
+    await expect(page.getByText(ja.home.gemBadge.intro, { exact: true })).toBeVisible()
+  })
+
+  await test.step('3. 説明文は Gem 一覧導線（GemListLink）より前にある', async () => {
+    const introIsBeforeLink = await page.evaluate(
+      ({ intro, linkLabel }) => {
+        const introEl = [...document.querySelectorAll('main p')].find(
+          (p) => p.textContent?.trim() === intro,
+        )
+        const anchor = [...document.querySelectorAll('a')].find(
+          (a) => a.textContent?.trim() === linkLabel,
+        )
+        if (!introEl || !anchor) return null
+        // Node.DOCUMENT_POSITION_FOLLOWING = 4（introEl から見て anchor が後ろにある）
+        return (introEl.compareDocumentPosition(anchor) & 4) !== 0
+      },
+      { intro: ja.home.gemBadge.intro, linkLabel: ja.home.gemListLink.label },
+    )
+    expect(introIsBeforeLink, '説明文が Gem 一覧導線より前に無い').toBe(true)
+  })
+})
+
+test('SP-18: 検索結果の見出し直下の Gem 印の説明文が英語でも読める（en）', async ({ page }) => {
+  const keyword = uniqueManyHitsKeyword()
+
+  await test.step('1. 英語 UI でキーワード検索する', async () => {
+    await page.goto(`/en?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(keyword)}`)
+    await expect(resultCards(page)).toHaveCount(20, { timeout: FIRST_RESULT_TIMEOUT_MS })
+  })
+
+  await test.step('2. 説明文が英語で読める（日本語文言は混ざらない）', async () => {
+    await expect(page.getByText(en.home.gemBadge.intro, { exact: true })).toBeVisible()
+    await expect(page.getByText(ja.home.gemBadge.intro, { exact: true })).toHaveCount(0)
+  })
+})

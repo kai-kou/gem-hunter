@@ -22,6 +22,7 @@ import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
 import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
+import { buildGemListUrl } from '@/src/ui/url/gem-list-url'
 import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
 import { AttributionNotice } from '@/src/ui/attribution-notice'
 import { DailyDigest } from '@/src/ui/daily-digest'
@@ -216,6 +217,18 @@ async function SearchBody({
         )
       : undefined
 
+  /**
+   * Issue #453（案3' scoped hybrid）: 実際にバッジが付いた `fullName`（= `gemIndexes` に
+   * 載っているもの）を Gem 一覧へ URL で同伴させる。GitHub API の追加呼び出しはしない。
+   * 🔴 `gemIndexes` が `undefined`（取得失敗）なら同伴しない（空配列を渡すと `badged` 自体が
+   * 付かない・`buildGemListUrl` の契約）。AND 不一致かどうかの判定はここでは行わず、渡した名前の
+   * うち実際に不足していた分だけを足すのはユースケース（`makeSearchGems`）の責務。
+   */
+  const badgedFullNames =
+    gemIndexes !== undefined
+      ? state.result.items.filter((item) => gemIndexes.has(item.fullName)).map((item) => item.fullName)
+      : []
+
   return (
     <>
       {/*
@@ -225,17 +238,28 @@ async function SearchBody({
         🔵 行き先の URL は既定値（1 ページ目・既定ソート・既定表示件数）で組み立てる。いまの検索の
         `page` / `sort` / `per_page` を持ち込むと、Gem 一覧が解釈しない条件が URL に載るため。
         0 件のときは引き継ぐ意味がないので出さない。
+
+        F-2（Issue #453）: Gem 印の意味の説明（`gemBadge.intro`）を導線の直前に 1 文で出す。
+        新しい見出しは作らない（`NFR-12`）。バッジが 1 件も付かなくても、検索結果が 1 件以上
+        あれば出す（説明そのものはバッジの有無に依存しない）。
       */}
       {state.result.items.length > 0 ? (
-        <GemListLink
-          href={buildSearchUrl(`/${locale}/gems`, {
-            keyword: searchState.keyword,
-            page: DEFAULT_PAGE,
-            sort: DEFAULT_SORT_ORDER,
-            perPage: DEFAULT_PER_PAGE,
-          })}
-          label={messages.home.gemListLink.label}
-        />
+        <>
+          <p className="text-muted-foreground mt-2 text-sm">{messages.home.gemBadge.intro}</p>
+          <GemListLink
+            href={buildGemListUrl(
+              `/${locale}/gems`,
+              {
+                keyword: searchState.keyword,
+                page: DEFAULT_PAGE,
+                sort: DEFAULT_SORT_ORDER,
+                perPage: DEFAULT_PER_PAGE,
+              },
+              badgedFullNames,
+            )}
+            label={messages.home.gemListLink.label}
+          />
+        </>
       ) : null}
       <RepositoryList
         items={state.result.items}

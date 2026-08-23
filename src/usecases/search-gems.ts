@@ -14,6 +14,12 @@ export type SearchGemsInput = {
   readonly page?: string | readonly string[] | number | null
   /** 1 ページの表示件数の生値。未指定・不正値は既定表示件数へ倒す。 */
   readonly perPage?: string | number | null
+  /**
+   * 検索結果ページでバッジが付いた候補を一覧へ同伴させる `repositoryFullName` 群の **生値**
+   * （URL の `include`・`SP-19` 追補・`案3'`・Issue #453）。`searchParams` の素の形（文字列 1 本・
+   * カンマ区切り・配列いずれも来うる）をそのまま受け、正規化は `normalizeIncludeFullNames` が行う。
+   */
+  readonly includeFullNames?: string | readonly string[] | null
 }
 
 /**
@@ -71,6 +77,76 @@ export function toGemListPage(raw: string | readonly string[] | number | null | 
     return DEFAULT_PAGE
   }
   return parsed
+}
+
+/**
+ * `includeFullNames`（`案3'` 同伴指定）として受理する最大件数（`SP-19` 追補・Issue #453）。
+ *
+ * `page` と同じ思想: 上限が無いと URL 長で isolate の CPU（配列走査・照合）を圧迫できるため、
+ * 検索結果ページで実際にバッジが付く現実的な件数（1 ページ数十件程度）を大きく超えない値で
+ * 有界にする。超過分は例外にせず切り捨てる。
+ */
+export const MAX_INCLUDE_FULL_NAMES = 20
+
+/** `includeFullNames` の 1 件あたりの最大文字数（超過は捨てる）。 */
+const MAX_INCLUDE_FULL_NAME_LENGTH = 200
+
+/**
+ * `owner/repo` 形式の判定（同伴指定の入口ガード）。
+ *
+ * 🔴 `static-gem-index.ts` の `isSafeRepositoryFullName` より **厳しい**（1 スラッシュのみ許可）。
+ * こちらは URL から届く利用者入力の防御が目的で、インフラ側は配信データ（信頼できる自社バッチ
+ * 出力）の防御が目的という前提が違うため、共有モジュール化はしない（別 Issue）。
+ */
+const INCLUDE_FULL_NAME_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+
+/**
+ * URL の `include` 生値を、`GemIndexPort#search` へ渡す `repositoryFullName` の集合へ
+ * 正規化する（`SP-19` 追補・`案3'`・Issue #453）。
+ *
+ * - カンマ区切りで分割し、前後の空白を落とす（配列で届いた要素それぞれにも同じ分割を適用する。
+ *   `searchParams` は同名クエリを配列で返すことがあり、各要素がカンマ区切りを含むこともある）
+ * - `owner/repo` 形式（`INCLUDE_FULL_NAME_PATTERN`）に一致しないもの・200 文字超は捨てる
+ * - 大文字小文字を無視して重複を畳む（**最初に現れた綴りを残す**）
+ * - 先頭 `MAX_INCLUDE_FULL_NAMES` 件まで（超過分は切り捨て。例外を投げない）
+ *
+ * 不正値は例外にせず無視する（URL 改変で 500 にしない・他の生値変換と同じ方針）。
+ */
+export function normalizeIncludeFullNames(
+  raw: string | readonly string[] | null | undefined,
+): readonly string[] {
+  if (raw == null) {
+    return []
+  }
+  const parts = Array.isArray(raw) ? raw : [raw]
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const part of parts) {
+    if (typeof part !== 'string') {
+      continue
+    }
+    for (const candidate of part.split(',')) {
+      const trimmed = candidate.trim()
+      if (
+        trimmed.length === 0 ||
+        trimmed.length > MAX_INCLUDE_FULL_NAME_LENGTH ||
+        !INCLUDE_FULL_NAME_PATTERN.test(trimmed)
+      ) {
+        continue
+      }
+      const lower = trimmed.toLowerCase()
+      if (seen.has(lower)) {
+        continue
+      }
+      seen.add(lower)
+      result.push(trimmed)
+      if (result.length >= MAX_INCLUDE_FULL_NAMES) {
+        return result
+      }
+    }
+  }
+  return result
 }
 
 /**
@@ -134,10 +210,14 @@ export function makeSearchGems(deps: { gems: GemIndexPort }): SearchGems {
         }
       }
 
+      // 🔴 `SP-19` 追補（`案3'`）: 同伴指定は照合不能クエリ（上の分岐）では渡さない
+      //    （絞り込みなしの 0 件案内と、同伴で 1 件以上出ることが矛盾するため）。
+      const includeFullNames = normalizeIncludeFullNames(input.includeFullNames)
       const result = await deps.gems.search({
         tokens,
         page: toGemListPage(input.page),
         perPage,
+        ...(includeFullNames.length > 0 ? { includeFullNames } : {}),
       })
       if (result.totalCount === 0 && (await isPoolUnavailable(deps.gems, perPage))) {
         return { status: 'failed' }

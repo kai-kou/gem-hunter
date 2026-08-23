@@ -13,6 +13,13 @@ export const SEARCH_PARAM_KEYS = {
   page: 'page',
   sort: 'sort',
   perPage: 'per_page',
+  /**
+   * Gem 一覧（`/{locale}/gems`）へ、検索結果でバッジが付いた `fullName` を同伴させるための
+   * キー（Issue #453・案3'）。値は `owner/repo` をカンマ区切りにした文字列（`src/ui/url/gem-list-url.ts`
+   * が組み立て/解析を持つ）。他の 4 キーと違い検索 4 条件そのものではないが、`GEM_LIST_SOURCE_PARAM_KEY`
+   * のような独立定数にはせず本オブジェクトへ寄せる（URL パラメータ名の正本を 1 箇所に保つ）。
+   */
+  badged: 'badged',
 } as const
 
 /**

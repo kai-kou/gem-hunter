@@ -291,18 +291,25 @@ export class StaticGemIndex implements GemIndexPort {
 
     // `records` は検索インデックス構築時に並べ替え済みなので、絞り込み結果は既に
     // 「`gemIndex` 昇順・同値は `repositoryFullName` 昇順」を保っている（ここで並べ替えない）。
+
+    // 🔵 `SP-19` 追補（`案3'`・Issue #453）: 同伴指定のマージ。`relaxed` / `usedTokens` は
+    //    上で確定済み（名前照合＝AND だけで判定）なので、ここから下では一切触らない。
+    const { merged, includedCount } = mergeIncludedRecords(matched, records, input.includeFullNames)
+
     const perPage = positiveIntOr(input.perPage, DEFAULT_PER_PAGE)
     // 🔵 範囲外のページは **最終ページへクランプ**（`F-02`）。1 ページ目へ倒すと、`?page=999` を
     //    直打ちした利用者に「最後のページ」ではなく「先頭」が返り、総件数表示と食い違う。
-    const effectivePage = clampPage(input.page, matched.length, perPage)
+    //    クランプの母数は **マージ後** の件数（同伴分もページングに参加する）。
+    const effectivePage = clampPage(input.page, merged.length, perPage)
     const start = (effectivePage - 1) * perPage
 
     return {
-      items: matched.slice(start, start + perPage).map((record) => toEntry(record.entry)),
-      totalCount: matched.length,
+      items: merged.slice(start, start + perPage).map((record) => toEntry(record.entry)),
+      totalCount: merged.length,
       effectivePage,
       usedTokens,
       relaxed,
+      includedCount,
       meta: pool.meta,
     }
   }
@@ -401,8 +408,60 @@ function emptyResult(meta: DigestMeta): GemPoolSearchResult {
     effectivePage: DEFAULT_PAGE,
     usedTokens: [],
     relaxed: false,
+    includedCount: 0,
     meta,
   }
+}
+
+/**
+ * 同伴指定（`includeFullNames`）を名前照合の結果（`matched`）へマージする
+ * （`SP-19` 追補・`案3'`・Issue #453）。
+ *
+ * 🔴 **`records`（検索インデックス）を引くだけ**（新しいアセット読み込み・2 回目の parse・
+ * トークン再計算はしない）。`records` は既に `listable` なレコードだけを持つため、一覧に
+ * 出せないレコード（欠損列を埋めたもの）は素通しで無視される（`records` に無い＝候補にならない）。
+ *
+ * 🔵 マージ後は `compareRecords`（`gemIndex` 昇順・同値は `repositoryFullName` 昇順）で
+ * 並べ直す（同伴分を先頭に固定しない）。`includeFullNames` が空・未指定なら `matched` を
+ * そのまま返す（余計なソート・配列複製をしない）。
+ */
+function mergeIncludedRecords(
+  matched: readonly SearchRecord[],
+  records: readonly SearchRecord[],
+  includeFullNames: readonly string[] | undefined,
+): { readonly merged: readonly SearchRecord[]; readonly includedCount: number } {
+  if (includeFullNames === undefined || includeFullNames.length === 0) {
+    return { merged: matched, includedCount: 0 }
+  }
+
+  const matchedLower = new Set(matched.map((record) => record.entry.lowerName))
+  const recordByLowerName = new Map(records.map((record) => [record.entry.lowerName, record]))
+
+  const additions: SearchRecord[] = []
+  for (const name of includeFullNames) {
+    if (typeof name !== 'string' || name.length === 0) {
+      continue
+    }
+    const lowerName = name.toLowerCase()
+    if (matchedLower.has(lowerName)) {
+      // 名前照合（AND）に既に一致している、または同伴指定内の重複。
+      continue
+    }
+    const record = recordByLowerName.get(lowerName)
+    if (record === undefined) {
+      // プールに載っていない、または listable=false（一覧の母集団に無い）。
+      continue
+    }
+    additions.push(record)
+    matchedLower.add(lowerName)
+  }
+
+  if (additions.length === 0) {
+    return { merged: matched, includedCount: 0 }
+  }
+
+  const merged = [...matched, ...additions].sort(compareRecords)
+  return { merged, includedCount: additions.length }
 }
 
 /**

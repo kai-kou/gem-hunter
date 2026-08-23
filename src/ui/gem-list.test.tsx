@@ -19,6 +19,7 @@ const labels: GemListLabels = {
   gemIndexLabel: 'Gem Index',
   registryLabel: 'レジストリ',
   attribution: 'このデータについて: {source}（{license}）のオープンデータをもとにしています。',
+  includedFromSearch: 'うち {count} 件は検索結果の Gem 印から同伴されました。',
 }
 
 const meta: DigestMeta = {
@@ -47,6 +48,7 @@ function viewOf(overrides: Partial<GemListViewModel> = {}): GemListViewModel {
     effectivePage: 1,
     relaxedToken: null,
     unmatchableQuery: false,
+    includedCount: 0,
     meta,
     ...overrides,
   }
@@ -329,6 +331,38 @@ describe('GemList', () => {
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
     // 総件数は事実なので出し続ける（ページネーションは `app/` 側が描く）。
     expect(screen.getByText('669 件')).toBeInTheDocument()
+  })
+
+  /**
+   * 🔴 Issue #453（案3'）: 検索結果でバッジが付いたが AND 不一致で一覧から漏れていた fullName を
+   * URL 経由で同伴させたときの注記。`includedCount > 0` のときだけ出し、0 のときは出さない
+   * （既存の 0 件・件数表示の `role="status"` と同時に読み上げられる二重ライブリージョンを
+   * 作らないため、`relaxedNotice` と同じくこの注記自体には role を付けない）。
+   */
+  it('includedCount が 1 件以上のとき同伴の注記を出す', () => {
+    render(
+      <GemList
+        view={viewOf({ includedCount: 2 })}
+        query="next.js"
+        locale={locale('ja')}
+        labels={labels}
+      />,
+    )
+
+    expect(screen.getByText('うち 2 件は検索結果の Gem 印から同伴されました。')).toBeInTheDocument()
+  })
+
+  it('includedCount が 0 のとき同伴の注記を出さない', () => {
+    render(
+      <GemList
+        view={viewOf({ includedCount: 0 })}
+        query="next.js"
+        locale={locale('ja')}
+        labels={labels}
+      />,
+    )
+
+    expect(screen.queryByText(/同伴されました/)).not.toBeInTheDocument()
   })
 
   it('relaxedToken が入っているとき緩和の注記を出し、null のときは出さない', () => {

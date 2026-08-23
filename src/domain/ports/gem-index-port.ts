@@ -25,6 +25,21 @@ export type GemPoolSearchInput = {
    * `perPage: 100000` が型検査を素通りし、1 リクエストで 10 万件のスライスと写経が走る（`F-13`）。
    */
   readonly perPage: PerPage
+  /**
+   * 検索語の照合とは独立に、一覧へ必ず含める `repositoryFullName` 群（`SP-19` 追補・`案3'`・
+   * Issue #453）。
+   *
+   * 検索結果ページ（`GemIndexPort#lookup`・プール所属照会）でバッジが付いた候補のうち、
+   * 一覧側の名前照合（AND・単語境界一致）には一致しないもの（例: `q=next.js` は
+   * `['next','js']` の AND で `vercel/next.js` 以外へ落ちる）を、URL で明示的に一覧へ
+   * 同伴させるための口（scoped hybrid）。GitHub API の追加呼び出しは要らない。
+   *
+   * - 大文字小文字は無視する（`lookup()` と同じ規則）
+   * - プールに載っていない名前・一覧用の列が欠けたレコード（`listable=false`）は
+   *   **黙って無視する**（例外にしない・一覧に出せない事情は `search()` 本体の JSDoc と同じ）
+   * - 名前照合（AND）に既に一致しているものは重複させない
+   */
+  readonly includeFullNames?: readonly string[]
 }
 
 /**
@@ -49,6 +64,12 @@ export type GemPoolSearchResult = {
   readonly relaxed: boolean
   /** 出典メタデータ（`D-29` / `GR-6`）。一覧にも帰属表示を出すため返す。 */
   readonly meta: DigestMeta
+  /**
+   * 同伴指定（`includeFullNames`）によって名前照合の結果へ **追加された** 件数
+   * （`SP-19` 追補・`案3'`）。UI が「検索語には一致しないが同伴で表示している」ことを
+   * 注記するために返す。同伴指定が無い・全て無視された場合は `0`。
+   */
+  readonly includedCount: number
 }
 
 /**
@@ -94,8 +115,12 @@ export interface GemIndexPort {
    * - 🔴 **`gemIndex` の閾値では絞らない**。一覧に載るのは **プールに載っているもの全部** で、
    *   `gemIndex` は **順序** にだけ使う（値は母集団相対なので、閾値の意味が母集団ごとに変わる）
    * - 🔴 読み込みに失敗しても **例外を投げず空の結果を返す**（`items: []` / `totalCount: 0` /
-   *   `effectivePage: 1` / `usedTokens: []` / `relaxed: false` / `meta` は既定値）。一覧が空になるだけで
-   *   アプリは動き続ける（`lookup()` と同じ `D-28` の SPOF 方針）
+   *   `effectivePage: 1` / `usedTokens: []` / `relaxed: false` / `includedCount: 0` / `meta` は既定値）。
+   *   一覧が空になるだけでアプリは動き続ける（`lookup()` と同じ `D-28` の SPOF 方針）
+   * - 🔵 `includeFullNames` を渡すと、名前照合の結果へその候補をマージしてから
+   *   `gemIndex` 昇順（同値は `repositoryFullName` 昇順）で並べ直す（`includeFullNames` の
+   *   JSDoc を参照）。`relaxed` / `usedTokens` の判定には影響しない（名前照合＝AND の結果
+   *   だけで決める）
    */
   search(input: GemPoolSearchInput): Promise<GemPoolSearchResult>
 }

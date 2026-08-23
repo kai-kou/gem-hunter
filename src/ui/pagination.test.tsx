@@ -103,6 +103,44 @@ describe('Pagination', () => {
     expect(params.get('q')).toBe('react')
   })
 
+  /**
+   * 🔴 Gem 一覧で `badged`（同伴 fullName・Issue #453）を維持したままページ送りできることの回帰。
+   * `extraParams` は `buildSearchUrl` 自身の付帯パラメータ機構をそのまま再利用する（`SearchUrlState`
+   * に混ぜない理由: `badged` は検索 4 条件ではなく、Pagination を Gem 一覧専用の概念に染めたくない）。
+   */
+  describe('extraParams（badged 等の付帯パラメータを引き継ぐ）', () => {
+    it('前後ページのリンクへ extraParams をそのまま引き継ぐ', () => {
+      render(
+        <Pagination
+          basePath="/ja/gems"
+          current={{ keyword: 'next.js', page: 2, sort: 'relevance', perPage: 20 }}
+          totalCount={500}
+          labels={labels}
+          extraParams={{ badged: 'vercel/next.js' }}
+        />,
+      )
+
+      const prevHref = screen.getByRole('link', { name: '前のページへ' }).getAttribute('href') ?? ''
+      const nextHref = screen.getByRole('link', { name: '次のページへ' }).getAttribute('href') ?? ''
+      expect(new URLSearchParams(prevHref.split('?')[1]).get('badged')).toBe('vercel/next.js')
+      expect(new URLSearchParams(nextHref.split('?')[1]).get('badged')).toBe('vercel/next.js')
+    })
+
+    it('extraParams を省略した既存の呼び出しは従来どおり付帯パラメータなしで動く', () => {
+      render(
+        <Pagination
+          basePath="/ja"
+          current={{ keyword: 'react', page: 2, sort: 'relevance', perPage: 20 }}
+          totalCount={500}
+          labels={labels}
+        />,
+      )
+
+      const nextHref = screen.getByRole('link', { name: '次のページへ' }).getAttribute('href') ?? ''
+      expect(new URLSearchParams(nextHref.split('?')[1]).has('badged')).toBe(false)
+    })
+  })
+
   it('現在ページはリンクではなく aria-current="page" のテキストで表示する（ui-ux-guidelines §4.5）', () => {
     render(
       <Pagination

@@ -514,3 +514,81 @@ test('SP-19: 検索結果が 0 件のときは Gem 一覧への導線を出さ�
   })
   await expect(page.getByRole('link', { name: ja.home.gemListLink.label })).toHaveCount(0)
 })
+
+/**
+ * Issue #453（F-1）: 案3'（scoped hybrid）の中核挙動。検索結果ページで Gem バッジが付いた候補は、
+ * 名前照合（`D-37` の全語 AND 単語境界一致）に一致しなくても、`GemListLink` の導線を押した先の
+ * Gem 一覧に同伴して現れる。`content/discussions/gem-list-match-20260823/whiteboard.md` lead 判定
+ * （issue A・案3' 採用）を固定する。`user-story-map.md` `SP-19` 操作レビュー手順 10。
+ *
+ * 🔴 **`e2e/sp-18.spec.ts` の `gem-badge` データセットを流用する**: キーワードは実行のたびに
+ * 変わるランダム値（`gm-badge-xxxx` 相当）なので、名前照合（AND）には通常一致しない。
+ * 一方バッジが付く側のカードは候補プール実在の 1 件（`GemIndexPort#lookup` が返す）で、
+ * 「バッジは付くが名前は一致しない」という F-1 の症状をそのまま再現できる。
+ */
+test('SP-19: 検索結果でバッジが付いた候補が、名前が一致しなくても Gem 一覧に現れる（ja・scoped hybrid）', async ({
+  page,
+}) => {
+  const keyword = uniqueGemBadgeKeyword()
+  let badgedFullName = ''
+
+  await test.step('1. キーワード検索する（プール実在 1 件にバッジが付く）', async () => {
+    await page.goto('/ja')
+    await searchFor(page, keyword)
+    await expect(page.getByRole('list').first().locator(':scope > li')).toHaveCount(2, {
+      timeout: FIRST_RESULT_TIMEOUT_MS,
+    })
+
+    const cards = page.getByRole('list').first().locator(':scope > li')
+    const names: string[] = []
+    const flags: boolean[] = []
+    for (let i = 0; i < 2; i++) {
+      names.push((await cards.nth(i).getByRole('link').first().innerText()).trim())
+      flags.push((await cards.nth(i).getByText(ja.home.gemBadge.srHint, { exact: true }).count()) > 0)
+    }
+    expect(flags).toEqual([false, true])
+    badgedFullName = names[1]
+    expect(badgedFullName).not.toBe('')
+  })
+
+  await test.step('2. 「この検索語の Gem 候補を一覧で見る」導線を押す（同伴パラメータ badged を積む）', async () => {
+    const link = page.getByRole('link', { name: ja.home.gemListLink.label })
+    await link.click()
+    await expect(page).toHaveURL(new RegExp(`/ja/gems\\?.*${SEARCH_PARAM_KEYS.keyword}=`))
+    expect(page.url(), '同伴パラメータ badged が href に積まれていない').toContain('badged=')
+  })
+
+  await test.step('3. バッジが付いていた候補（名前は不一致）が一覧に現れる', async () => {
+    await expect(gemList(page)).toBeVisible({ timeout: FIRST_RESULT_TIMEOUT_MS })
+    expect(await readRepositoryFullNames(page)).toContain(badgedFullName)
+  })
+
+  await test.step('4. 「名前が一致しないものも含めて加えている」注記が件数付きで読める', async () => {
+    await expect(
+      page.getByText(ja.gems.includedFromSearch.replace('{count}', '1'), { exact: true }),
+    ).toBeVisible()
+  })
+})
+
+/**
+ * 直接 `/gems?q=...` を開いた場合（検索結果ページ経由でない）は同伴パラメータが無いため、
+ * 名前不一致のバッジ付き候補は一覧に現れない（lead 判定が明示した残る限界・`D-36` 追記）。
+ * 同じキーワードでも「検索結果から来たか直接開いたか」で結果が変わることの回帰点。
+ */
+test('SP-19: 検索結果ページを経由せず /gems を直接開くと、名前不一致のバッジ付き候補は同伴しない（ja）', async ({
+  page,
+}) => {
+  const keyword = uniqueGemBadgeKeyword()
+
+  // 直接 /gems を開く（badged パラメータなし）。名前照合が AND=0 になる想定のランダム語なので
+  // 通常は空状態（gems.empty）になる。
+  await page.goto(`/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(keyword)}`)
+
+  await expect(page.getByText(ja.gems.empty, { exact: true })).toBeVisible({
+    timeout: FIRST_RESULT_TIMEOUT_MS,
+  })
+  await expect(gemList(page)).toHaveCount(0)
+  await expect(page.getByText(ja.gems.includedFromSearch.replace('{count}', '1'), { exact: false })).toHaveCount(
+    0,
+  )
+})
