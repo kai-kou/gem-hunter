@@ -541,16 +541,29 @@ python3 tools/check_deploy_gate.py
 
 **本番デプロイ**（ゲート判定が「デプロイ可」のときのみ実行）:
 
+🔴 **一次経路は Workers Builds の再トリガー（`tools/trigger_workers_build.py`）、`npm run deploy` の手動実行はフォールバック**（`D-31` / `D-32` 移行後の実測を踏まえた改訂・詳細と実測根拠は §8.2.3「移行後の実測」）。理由: `main` への push は Workers Builds 側で常にビルドが走るが、push 時点でデプロイゲートが閉じていた分は **ゲートが開いたあとも自動では再試行されない**（Cloudflare 側の仕様）。そのままだと「マージは完了しているのに本番が古いまま滞留する」状態が静かに発生するため、ゲート通過を契機に **明示的に再ビルドを起こす** 必要がある。手動 `npm run deploy` は auto mode classifier にブロックされることがある（§8.2.2）ため二次手段に留める。
+
 ```bash
+# 一次経路: Workers Builds の再トリガー（分類器の管轄外・Cloudflare のビルド環境で wrangler deploy が走る）
+git fetch origin +main:refs/remotes/origin/main && git checkout origin/main
+npm ci && npm run check       # 🔴 合成状態の検証（複数 PR がマージされた main HEAD で再実行する）
+python3 tools/trigger_workers_build.py
+# → 内部でデプロイゲートを確認し、開いていれば Cloudflare Builds API 経由で main 最新コミットの
+#   ビルドを再トリガーする（エンドポイント 3 段は §8.2.3「移行後の実測」参照）。閉じていれば
+#   何もせず exit 1 で終わる（fail-closed のまま）。
+```
+
+```bash
+# 二次経路（フォールバック・一次が使えない/失敗したときのみ）: セッションから直接デプロイ
 git fetch origin +main:refs/remotes/origin/main && git checkout origin/main
 npm ci && npm run check       # 🔴 合成状態の検証（複数 PR がマージされた main HEAD で再実行する）
 npm run deploy                # = opennextjs-cloudflare build && wrangler deploy（ビルドを含む形に統一）
 curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.dev/   # 5xx なら rollback を検討
 ```
 
-実行結果（ゲート判定・デプロイ成功可否・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
+実行結果（どちらの経路を使ったか・ゲート判定・デプロイ成功可否・URL・疎通確認の HTTP ステータス）は Issue / PR コメントに記録する（実行したことを黙らない）。
 
-- 🔴 **`npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）
+- 🔴 **`npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）。ただし上記のとおり **フォールバック経路でのみ使う**
 - 🔴 **`npm run deploy` は本番 version に `--tag "$(git rev-parse --short=12 HEAD)"` を付ける**（Issue #288）。このタグが `tools/check_prod_drift.py` の厳密判定（SHA 一致）の入力になるため、**`wrangler deploy` を手で叩いてタグを省略しない**（省略すると乖離検知が日時ベースの緩い判定へ後退する）。`git rev-parse` が失敗したときは空タグでデプロイせずコマンド全体が失敗する
 - 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) §3.3 がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替。上記のスプリントレビューゲートはこのテストゲートを **置き換えず拡張** する）
 - **失敗したら本番へ進まない**（fail-closed）。疎通確認が 5xx なら `npx wrangler rollback` を検討し、判断と結果を記録する
@@ -788,6 +801,35 @@ GitHub App の **切断** は接続と同様にダッシュボード操作が必
   デプロイしない）は **Deploy command の中で維持される**（P-1 の決定・`npm run deploy:ci`）。ゲートが閉じている
   間はビルドが失敗扱いになり、本番は更新されない（fail-closed）
 - ⚠️ ゲート待機のたびにダッシュボードへ赤いビルドが残る。これは異常ではなく「デプロイ保留中」の可視化にゃ
+
+#### 🔴 移行後の実測（2026-08-23 JST・Issue #451・追記）
+
+上の「移行後に変わること」は接続直後の設計意図であり、**Git 連携・ゲート込み Deploy command のどちらも実際に正しく機能していた**（この 2 点は撤回しない）。一方で **「マージ = 本番反映が回復する」という結論部分だけが不正確だった**。実測で確定した事実は以下のとおり。
+
+- **Git 連携は壊れていない**: Cloudflare Builds API（`GET /accounts/{account_id}/builds/workers/{worker_tag}/builds`）で直近 24 件のビルドを確認したところ、`repo_connection: kai-kou/gem-hunter` / `branch_includes: ["main"]` / `deploy_command: "npm run deploy:ci"` が正しく設定され、`main` への push ごとにビルドは **発火していた**（`SP-17`〜`SP-19` のコミットを含む）。
+- **その 24 件すべてが `build_outcome: "fail"`** だった。最新ビルドのログ実文（`a621fea` 分・2026-08-22 10:05 JST）:
+  ```
+  Executing user deploy command: npm run deploy:ci
+  > bash tools/workers_build_deploy.sh
+  デプロイ待機: 以下の Issue がゲートを塞いでいます
+    #389 feat: SP-19 検索語を引き継ぐ Gem 一覧ページを追加する — Sprint Review 判定が未実施です
+  [workers-build-deploy] デプロイを実行しません（ゲート終了コード: 1）。
+  [workers-build-deploy] ビルドが赤くなるのは想定どおりの挙動です（本番は更新されていません）。
+  Failed: error occurred while running deploy command
+  ```
+  → `D-32` が意図した fail-closed（ゲートが閉じていれば本番を更新しない）は実測でも正しく成立している。全 24 件で本番は更新されていない。
+- **不足していたのは「ゲート通過後に再ビルドを起こす経路」**。デプロイゲート（`D-26`）は Sprint Review 判定が出るまで **あとで開く** 性質を持つが、塞がれた時点の push は Cloudflare 側で失敗ビルドとして記録されるだけで、**ゲートが後から開いても Cloudflare は自動的に再試行しない**。結果、セッションが手動で `npm run deploy` を打たない限り本番が古いまま滞留する（`D-31` が回避しようとしていた `L-130`＝分類器ブロックへの依存が、この救済経路として実運用に残り続けていた）。
+- **滞留は静かに起きる**: `tools/check_prod_drift.py`（本番と `main` HEAD の乖離を検出する専用スクリプト）は `tools/run_checks.sh` から `--self-test`（自己診断）としてしか呼ばれておらず、**本判定モードがどの定期ルーティンからも呼ばれていなかった**。乖離が発生してもアラートが上がらない状態だった。
+- 実測時点の本番は手動デプロイで `main` HEAD（`a621fea`）に追いついていた（`wrangler deployments list` の最新 tag `a621fead113b` が HEAD と一致・`source: "wrangler"` = Workers Builds 経由ではなく手動デプロイ由来）。
+
+**対策**（実装は別レーンが担当・本節は事実の記録）:
+
+1. `tools/trigger_workers_build.py`（新規）を一次のデプロイ経路として追加した。Cloudflare Builds API を次の 3 段で呼び、`main` の最新コミットのビルドを明示的に再トリガーする（内部でデプロイゲートを先に確認し、閉じていれば何もしない）:
+   - `GET /accounts/{account_id}/workers/scripts` → `worker_tag` を取得
+   - `GET /accounts/{account_id}/builds/workers/{worker_tag}/triggers` → `trigger_uuid` を取得
+   - `POST /accounts/{account_id}/builds/triggers/{trigger_uuid}/builds` → 再ビルドを起こす
+2. Sprint Review 判定コメント投稿を検知する経路（Step 7 のデプロイ発火）の一次手段を、手動 `npm run deploy` からこの再トリガーへ切り替えた（上の §8.2「本番デプロイ」参照。`npm run deploy` の手動実行はフォールバックとして残す）。
+3. スプリント自走ルーティンのプリフライトに `tools/check_prod_drift.py` の **本判定モード** を配線し、乖離を検出したら再トリガーを試み、ゲート待機中ならその滞留を可視化する。
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
 

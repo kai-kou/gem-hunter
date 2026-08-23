@@ -45,6 +45,8 @@ effort: medium
   コミット）だけ**。日次・毎 firing の判定に新規 state ファイルを作らない（§9 の週次ゲートのみ既存パターンを流用可）。
 - 早期リターン（§2）を安く済ませることで、cron を短い間隔で回しても空振りコストを抑える
   （実際の間隔は `docs/routines/sprint-cycle-routine.md` が正本・可変）。
+- **§1.5（Step 0.2・本番ドリフト検査）は早期リターンではない**。§2 以降のどのブランチが選ばれるかに
+  かかわらず毎 firing 必ず 1 回通る前置チェックとして、§2 より前に評価する（#451）。
   **N（cron 間隔）は完了保証の単位ではなく健全性チェックの再訪頻度**。
 
 ---
@@ -74,6 +76,51 @@ effort: medium
    ログを残さず何もしない（永続化先が無い。次回 firing が独立に再判定するのが ephemeral 前提と一致する。
    中途半端なローカル state ファイルを新設しない）。
 ```
+
+---
+
+## §1.5 Step 0.2: 本番ドリフト検査（毎 firing 必須・全ブランチより先に評価）
+
+Cloudflare Workers Builds は `main` への push ごとに発火するが、Deploy command 側のデプロイゲート
+（`tools/check_deploy_gate.py`）が閉じているとビルド自体が exit 1 で終わり、**ゲートが後から開いても
+その push を再ビルドする経路が存在しない**（Issue #451・実測: SP-17〜SP-19 の 3 スプリント分が本番
+未反映のまま気づかれずに滞留）。本ステップはその滞留を毎 firing 検知し、可能なら自己解決し、
+できなければ可視化する。
+
+🔴 **評価順の注意（このリポジトリは過去に到達不能な分岐を作った事故がある）**: 本ステップは
+**§1（Step 0.0 チャネル判定）の直後・§2（Step 0.1 早期リターン）より前** に評価する。早期リターンや
+Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回通る位置に置くことで「条件は書いたが
+評価順で到達しない」再発を防ぐ。1 firing 1 ブランチの原則（§0）の対象外の **前置チェック** であり、
+早期リターンではない（本ステップの実行後、通常どおり §2 以降の判定を続ける）。
+
+```
+1. §1 のチャネル判定が MCP/gh/curl のいずれかで成立している場合のみ実行する
+   （§1 手順 4「全滅」の場合は本ステップも実行せず安全側 no-op のまま Step 0.1 以降へ進まない）。
+2. python3 tools/check_prod_drift.py を実行する（引数なし・本判定）。
+   終了コード: 0 = ドリフト無し / 1 = ドリフトあり / 2 = 判定不能（fail-closed）。
+3. 0（ドリフト無し）→ 何もせず §2 へ進む。
+4. 1（ドリフトあり）→ python3 tools/trigger_workers_build.py を実行する（既定でデプロイゲートを
+   内部で再確認するため、ここでの `check_deploy_gate.py` の二重実行はしない）。
+   - 0（トリガー成功）→ 自己解決。`[prod-drift]` の open Issue があれば
+     `進捗: Workers Builds 再トリガー成功（build_uuid: <値>）` を追記コメントしてクローズする
+     （無ければ起票不要・「気づかれず滞留」した形跡が無いため）。
+   - 1（デプロイゲート待機中・異常ではない）→ **滞留を可視化する**:
+     `[prod-drift]` の open Issue が既に無いか確認する（重複起票防止・§9 の `[Milestone] M-3 到達`
+     と同じ作法）。無ければ 1 件だけ起票し、本文に「本番と main HEAD が乖離しています。
+     デプロイゲートが閉じているため Workers Builds の再トリガーは待機中です」と、乖離を検知した
+     コミット SHA・検知日時（JST）を記録する。既にあれば「まだ乖離継続中（前回検知から N 回目の
+     firing）」を追記コメントする（新規 Issue を毎回作らない）。**このステップでは @mention しない**
+     （A-1〜A-6 に該当しない・`user-notification-triage.md`）。
+   - 2（判定不能）→ fail-closed。`type:bug` Issue（`lane:cloudflare-deploy` 等の既存ラベル体系が
+     あれば流用）に判定不能の事実とエラー内容を記録し、握り潰さずに §2 へ進む。
+5. 2（`check_prod_drift.py` 自体が判定不能）→ 4 の「2（判定不能）」と同じ扱いで fail-closed 記録し、
+   §2 へ進む。
+6. `trigger_workers_build.py` が存在しない場合（未デプロイ環境等）はスキップし、記録も起票もせず
+   §2 へ進む（本ステップは #451 対策の一部であり、存在しない前提で決定木全体を止めない）。
+```
+
+新規ラベル・新規 state ファイルは作らない（`[prod-drift]` Issue の open/closed 状態だけで滞留を判定する。
+`[publish-sync]` Issue と同じ作法・`pr-review-flow-summary.md` 参照）。
 
 ---
 
@@ -404,6 +451,8 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 
 - [ ] 1 firing で決定木の該当ブランチが正しく特定でき、上位ステップを飛ばして実行していない
 - [ ] Step 0.0 のチャネル判定を毎 firing 実施している（前回の判定結果を恒久前提にしていない）
+- [ ] Step 0.2（本番ドリフト検査）を Step 0.1 以降のどのブランチよりも先に評価している（#451。
+      到達不能な分岐を作っていないか評価順を確認する）
 - [ ] Step 4 着手時、`SD-1`〜`SD-4` を省略していない（プレビュー URL・TDD・縦切り・ドキュメント参照）
 - [ ] 無人 firing で `AskUserQuestion` を使っていない（§6 の 3 条件判定で代替している）
 - [ ] `status:blocked` の Issue/PR が Step 3 / Step 4 / Step 5 の対象から除外されている
@@ -433,6 +482,8 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
 | `.claude/skills/self-improvement-loop/SKILL.md` | Step 5（消化モード）/ Step 7（整理モード）の委譲先 |
 | `.claude/skills/retro-try-handler/SKILL.md` | Step 5.5（`type:retro-try` の消化）の委譲先（#377） |
 | `tools/check_lane_reachability.py` | レーン定義のスキルが決定木・他スキル・hooks から到達可能かの機械検査（#377 の再発検知） |
+| `tools/check_prod_drift.py` | Step 0.2 が呼ぶ本番乖離判定（本判定は本番疎通に依存するため `run_checks.sh` には `--self-test` のみ配線） |
+| `tools/trigger_workers_build.py` | Step 0.2 が呼ぶ Workers Builds 再トリガー（内部でデプロイゲートを再確認・#451） |
 | `.claude/skills/workflow-health-check/SKILL.md` / `.claude/skills/project-sync/SKILL.md` | Step 6（衛生）の委譲先 |
 | `tools/sprint_backlog_sync.py` | Step 3.5 の SP→Issue 同期スクリプト（本スキルは呼び出し方のみ持ち、パース・判定ロジックは持たない） |
 | `tools/check_parallel_safety.py` | Step 4-1.5 の並行安全性判定スクリプト（CLI 契約・判定思想の詳細は `docs/rules/session-concurrency-rules-detail.md`「レイヤー 1 補強」） |

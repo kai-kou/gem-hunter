@@ -268,6 +268,14 @@ else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Workers Builds 再トリガーの self-test（Issue #451）。本判定（引数なし実行）は Cloudflare API への
+# 実疎通とデプロイゲート判定に依存するため配線しない（本番乖離検知 self-test と同じ理由・Issue #288）。
+if [ -f "$REPO_ROOT/tools/trigger_workers_build.py" ]; then
+  run_check "Workers Builds 再トリガー self-test (trigger_workers_build.py --self-test)" python3 tools/trigger_workers_build.py --self-test
+else
+  skip_check "Workers Builds 再トリガー self-test (trigger_workers_build.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # レーン定義のスキルが実装（決定木・他スキルの手順・hooks）から到達可能かの検査（Issue #377）。
 # 本判定（引数なし実行）も文書だけで完結しネットワークに出ないため、self-test と両方を配線する。
 # これが赤いときは「レーンマップに書いてあるのに誰も呼ばない」断絶が生まれている。
