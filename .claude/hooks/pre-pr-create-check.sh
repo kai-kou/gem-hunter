@@ -153,18 +153,23 @@ fi
 #    Actions が復帰しワークフローが CI を担うようになったら本ブロックは撤去する（cloudflare-infrastructure.md §8.4）。
 if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
-  # 許容する見出しパターン（Issue #405・複数表記を等価に扱う）:
+  # 許容する見出しパターン（Issue #405・複数表記を等価に扱う。見出しレベルは `##` 固定
+  # ＝ docs/rules/pr-review-flow-summary.md の例示と一致させる）:
   #   - ## run_checks 結果
   #   - ## `npm run check` 結果
   #   - ## npm run check 結果
-  # 見出し行を検出したら、その行以降に Markdown 表（| 区切り行）が続くかまで確認する
-  # （見出しだけ書いて表を貼り忘れるすり抜けを防ぐ）。
+  # 見出し行を検出したら、その「セクション内」（次の `##` 見出しに到達するか本文末尾まで）に
+  # Markdown 表（| 区切り行）があるかまで確認する。見出しだけ書いて表を貼り忘れる・無関係な
+  # 別セクションの表で素通りする、の両方のすり抜けを防ぐ（検証担当の敵対的検証で実測・#405）。
   # 末尾に `|| true` が必要（set -e 環境下で grep 不一致 [exit 1] のままだと
   # 代入コマンド自体の失敗としてスクリプトが即終了してしまうため）。
-  heading_lineno=$(printf '%s\n' "$pr_body" | grep -nE '^#{1,6}[[:space:]]*`?(run_checks|npm run check)`?[[:space:]]*結果' | head -1 | cut -d: -f1) || true
+  heading_lineno=$(printf '%s\n' "$pr_body" | grep -nE '^##[[:space:]]*`?(run_checks|npm run check)`?[[:space:]]*結果' | head -1 | cut -d: -f1) || true
   has_run_checks_result=0
   if [ -n "$heading_lineno" ]; then
-    if printf '%s\n' "$pr_body" | tail -n +"$heading_lineno" | grep -qE '^[[:space:]]*\|'; then
+    # 見出し行の「次の行」から、次の `##` 見出しに到達する直前まで（到達しなければ本文末尾まで）
+    # を抽出し、その範囲内だけで表の有無を判定する。
+    section=$(printf '%s\n' "$pr_body" | tail -n +"$((heading_lineno + 1))" | awk '/^##[[:space:]]/{exit} {print}') || true
+    if printf '%s\n' "$section" | grep -qE '^[[:space:]]*\|'; then
       has_run_checks_result=1
     fi
   fi
@@ -177,7 +182,7 @@ GitHub Actions が制限中で CI が無いため、\`npm run check\`（= tools/
    - ## run_checks 結果
    - ## \`npm run check\` 結果
    - ## npm run check 結果
-3. 見出しの直後に表（| 区切りの行）が続くようにする
+3. 見出しから次の見出し（##）までの間に表（| 区切りの行）を置く（無関係な別セクションの表は不可）
 4. PR 作成を再実行する
 
 手順の正本: docs/rules/pr-review-flow-summary.md「PR 作成時の必須事項」項目 0"
