@@ -26,6 +26,11 @@
  *   3. レジストリ単位の急減: 各レジストリで `count_今回 / count_前回 < 0.7`（30% 超の減少）なら違反
  *   4. 全体の急減・急増: `totalCount_今回 / totalCount_前回` が `0.85` 未満または `1.15` 超なら違反
  *
+ * `--check --json` の出力には合否判定に加えて `comparison`（前回比・レジストリ別件数）を
+ * 常に含める。PR 本文が「コミット後に再計算した意味のない差分ゼロ値」を貼らずに済むよう、
+ * 呼び出し側（ワークフロー）はこの JSON を生成直後・コミット前に 1 回だけファイルへ保存し、
+ * 後続のステップ（PR 本文組み立て）ではそのファイルを読むだけにする（再計算しない）。
+ *
  * 🔴 **閾値（0.7 / 0.85 / 1.15）は初期ヒューリスティックであり、実運転で較正し直す前提**である。
  * 根拠は `generate_gem_digest.mjs` の docstring に載っている実測（`minStars` を 1→5 に変えると
  * 88,981→62,565 ＝ 約 30% 減）。これは「意図的な閾値変更」のレジームであり、同一設定の週次運転で
@@ -145,15 +150,46 @@ export function checkRegistryCounts(prevIndex, currIndex) {
 }
 
 /**
- * `--check` の全検査を統合する。
+ * 前回・今回の `index.json` を突き合わせ、PR 本文用の比較データ（前回比・レジストリ別件数）を作る。
+ *
+ * 🔴 これは合否判定（`checkRegistryCounts`）とは別の関数にする。判定に通っても報告用の
+ * スナップショットは必要（PR 本文が「差分ゼロの無意味な値」を貼らないための唯一の情報源に
+ * なる。コミット後に再計算すると HEAD が新コミットを指してしまい前回比が消えるため、
+ * 呼び出し側はこの結果を生成直後・コミット前に 1 回だけファイルへ保存して使い回すこと）。
+ *
+ * @param {{totalCount:number, shards:{registry:string, count:number}[]}|null} prevIndex
+ * @param {{totalCount:number, shards:{registry:string, count:number}[]}} currIndex
+ * @returns {{totalCount: {prev: number|null, curr: number|null, ratio: number|null}, registries: {registry:string, prevCount: number|null, currCount: number|null}[]}}
+ */
+export function buildComparison(prevIndex, currIndex) {
+  const prevByRegistry = new Map((prevIndex?.shards ?? []).map((s) => [s.registry, s.count]))
+  const currByRegistry = new Map((currIndex?.shards ?? []).map((s) => [s.registry, s.count]))
+  const allRegistries = new Set([...prevByRegistry.keys(), ...currByRegistry.keys()])
+  const registries = [...allRegistries].sort().map((registry) => ({
+    registry,
+    prevCount: prevByRegistry.has(registry) ? prevByRegistry.get(registry) : null,
+    currCount: currByRegistry.has(registry) ? currByRegistry.get(registry) : null,
+  }))
+
+  const prevTotal =
+    prevIndex && Number.isFinite(Number(prevIndex.totalCount)) ? Number(prevIndex.totalCount) : null
+  const currTotal = Number.isFinite(Number(currIndex?.totalCount)) ? Number(currIndex.totalCount) : null
+  const ratio = prevTotal !== null && prevTotal > 0 && currTotal !== null ? currTotal / prevTotal : null
+
+  return { totalCount: { prev: prevTotal, curr: currTotal, ratio }, registries }
+}
+
+/**
+ * `--check` の全検査を統合する。`comparison` は合否に関わらず常に含める（PR 本文用のスナップショット）。
  *
  * @param {{changedPaths: string[], prevIndex: object|null, currIndex: object}} input
- * @returns {{ok: boolean, diffScope: object, registryCounts: object}}
+ * @returns {{ok: boolean, diffScope: object, registryCounts: object, comparison: object}}
  */
 export function runCheck({ changedPaths, prevIndex, currIndex }) {
   const diffScope = checkDiffScope(changedPaths)
   const registryCounts = checkRegistryCounts(prevIndex, currIndex)
-  return { ok: diffScope.ok && registryCounts.ok, diffScope, registryCounts }
+  const comparison = buildComparison(prevIndex, currIndex)
+  return { ok: diffScope.ok && registryCounts.ok, diffScope, registryCounts, comparison }
 }
 
 /**
@@ -454,6 +490,42 @@ function selfTest() {
       checkRegistryCounts(prevWithZero, { totalCount: 600, shards: [{ registry: 'npmjs.org', count: 600 }] }).ok ===
         true,
     )
+  }
+
+  // --- buildComparison ---
+  {
+    const prev = {
+      totalCount: 1000,
+      shards: [
+        { registry: 'npmjs.org', count: 600 },
+        { registry: 'rubygems.org', count: 400 },
+      ],
+    }
+    const curr = {
+      totalCount: 950,
+      shards: [
+        { registry: 'npmjs.org', count: 600 },
+        { registry: 'crates.io', count: 350 },
+      ],
+    }
+    const cmp = buildComparison(prev, curr)
+    assert('buildComparison: totalCount.prev/curr が入る', cmp.totalCount.prev === 1000 && cmp.totalCount.curr === 950)
+    assert('buildComparison: ratio が計算される', Math.abs(cmp.totalCount.ratio - 0.95) < 1e-9)
+    assert(
+      'buildComparison: 消失レジストリは currCount=null',
+      cmp.registries.find((r) => r.registry === 'rubygems.org')?.currCount === null,
+    )
+    assert(
+      'buildComparison: 新規レジストリは prevCount=null',
+      cmp.registries.find((r) => r.registry === 'crates.io')?.prevCount === null,
+    )
+    assert(
+      'buildComparison: registries はレジストリ名昇順',
+      cmp.registries.map((r) => r.registry).join(',') === 'crates.io,npmjs.org,rubygems.org',
+    )
+
+    const cmpFirstRun = buildComparison(null, curr)
+    assert('buildComparison: 初回実行（prevIndex=null）は totalCount.prev/ratio が null', cmpFirstRun.totalCount.prev === null && cmpFirstRun.totalCount.ratio === null)
   }
 
   // --- runCheck 統合 ---

@@ -52,9 +52,17 @@ jobs:
         # 以降のステップ（git add 相当）へは進まない。
 
       - name: QA check (fail-closed)
-        run: node tools/gem_pool_qa.mjs --check
+        run: |
+          set -e
+          node tools/gem_pool_qa.mjs --check --json > /tmp/gem_pool_qa.json
+          cat /tmp/gem_pool_qa.json
         # 差分パス限定・レジストリのゼロ化/急減・totalCount の急減急増を検査する。
         # 1 つでも違反すれば非ゼロ終了 → ジョブ失敗 → PR は作られない（壊れたデータで PR を開かない）。
+        # 🔴 JSON はここで 1 回だけ計算してファイルへ保存する（`set -e` はパイプを介さない単純な
+        # リダイレクトなので、node が非ゼロ終了すればこの行自体が失敗しジョブが止まる。標準出力は
+        # 失敗前に書き出し済みの内容がそのままファイルに残る）。コミット後に再計算すると HEAD が
+        # 新コミットを指してしまい「差分ゼロ・前回比 1.00」という無意味な値になるため、
+        # 後続の「Build PR body」ステップはこのファイルを読むだけにし、再計算しない。
 
       - name: No-op check
         id: noop
@@ -87,7 +95,7 @@ jobs:
           BRANCH="automation/gem-pool-refresh"
           git checkout -B "${BRANCH}"
           git add public/data/gem-index public/data/daily-digest.json
-          git commit -m "data: Gem 候補プールを週次再生成（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
+          git commit -m "data: Gem 候補プールを週次再生成（$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z')）"
           git push --force origin "${BRANCH}"
 
       - name: Build PR body
@@ -101,34 +109,32 @@ jobs:
             echo ""
             echo "この PR は GitHub Actions（\`gem-pool-refresh.yml\`）が自動生成しました。マージは Claude セッションが行います。"
             echo ""
-            echo "### QA 結果"
+            echo "### QA 結果（生成直後・コミット前に計算したスナップショット）"
             echo '```json'
-            node tools/gem_pool_qa.mjs --check --json || true
+            cat /tmp/gem_pool_qa.json
             echo '```'
             echo ""
             echo "### totalCount 前回比・レジストリ別件数"
+            # 🔴 上と同じ /tmp/gem_pool_qa.json（QA check ステップで 1 回だけ計算済み）の
+            # comparison フィールドを読むだけにする。ここで再計算しない
+            # （コミット後だと HEAD が新コミットを指し、前回比が消える）。
             node -e "
-              const { execFileSync } = require('node:child_process');
               const fs = require('node:fs');
-              const curr = JSON.parse(fs.readFileSync('public/data/gem-index/index.json', 'utf8'));
-              let prev = null;
-              try {
-                const text = execFileSync('git', ['show', 'origin/main:public/data/gem-index/index.json'], { encoding: 'utf8' });
-                prev = JSON.parse(text);
-              } catch {}
-              const prevTotal = prev ? prev.totalCount : null;
-              console.log(\`- totalCount: \${prevTotal ?? '(初回)'} -> \${curr.totalCount}\`);
-              const prevByRegistry = new Map((prev?.shards ?? []).map((s) => [s.registry, s.count]));
+              const qa = JSON.parse(fs.readFileSync('/tmp/gem_pool_qa.json', 'utf8'));
+              const cmp = qa.comparison ?? { totalCount: {}, registries: [] };
+              const t = cmp.totalCount ?? {};
+              const ratioLabel = t.ratio != null ? \` （比率 \${t.ratio.toFixed(3)}）\` : '';
+              console.log(\`- totalCount: \${t.prev ?? '(初回)'} -> \${t.curr ?? '?'}\${ratioLabel}\`);
               console.log('');
               console.log('| registry | 前回 | 今回 |');
               console.log('|---|---|---|');
-              for (const s of curr.shards) {
-                console.log(\`| \${s.registry} | \${prevByRegistry.get(s.registry) ?? '(新規)'} | \${s.count} |\`);
+              for (const r of cmp.registries ?? []) {
+                console.log(\`| \${r.registry} | \${r.prevCount ?? '(新規)'} | \${r.currCount ?? '(消失)'} |\`);
               }
             "
             echo ""
             echo "### 実行時刻"
-            echo "$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M %Z')"
+            echo "$(TZ="${PROJECT_TZ:-Asia/Tokyo}" date '+%Y-%m-%d %H:%M %Z')"
             echo "GEM_POOL_PR_BODY_EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -136,11 +142,15 @@ jobs:
         if: steps.noop.outputs.no_op != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 🔴 PR 本文（レジストリ名などデータ由来の文字列を含む）を `run:` のシェル内へ
+          # `${{ }}` で直接展開しない（スクリプトインジェクションの経路になる・GitHub 公式ガイダンス）。
+          # env 経由で渡し、シェル側は変数展開だけで済ませる。
+          PR_BODY: ${{ steps.prbody.outputs.body }}
         run: |
           set -e
           BRANCH="automation/gem-pool-refresh"
           BODY_FILE="$(mktemp)"
-          printf '%s' "${{ steps.prbody.outputs.body }}" > "${BODY_FILE}"
+          printf '%s' "$PR_BODY" > "${BODY_FILE}"
 
           existing_pr="$(gh pr list --head "${BRANCH}" --base main --state open --json number --jq '.[0].number' || true)"
           if [ -n "${existing_pr}" ]; then

@@ -15,7 +15,7 @@ ts: 2026-08-23T10:11:32+09:00
 
 **結論から言うと deploy_gate の設計は成立する。** ただし理由の説明が round 1 の私の書き方だと誤解を招くので訂正しておく。
 
-round 1 で確認した制約は「GITHUB_TOKEN が起こした *イベント*（push・PR opened 等）が **別の workflow run** を新規に起動しない」という話であって、「GITHUB_TOKEN で API 呼び出し（マージ操作）ができない」という話ではない。マージは `gh pr merge` / REST `PUT /pulls/{number}/merge` を **同じジョブの同じステップ内で能動的に呼ぶだけ**であり、`pull_request` イベントの発火を待つ受動的な仕組みではない。したがって「PR 作成 → 機械チェック → 同じ job 内で `gh pr merge --squash`」という 1 本の workflow は GITHUB_TOKEN のイベント抑制と無関係に動く。**deploy_gate の設計案（自動 PR + 同一ワークフローでの自動マージ）は技術的に妥当**。
+round 1 で確認した制約は「GITHUB_TOKEN が起こした *イベント*（push・PR opened 等）が **別の workflow run** を新規に起動しない」という話であって、「GITHUB_TOKEN で API 呼び出し（マージ操作）ができない」という話ではない。マージは `gh pr merge` / REST `PUT /pulls/{number}/merge` を **同じジョブの同じステップ内で能動的に呼ぶだけ** であり、`pull_request` イベントの発火を待つ受動的な仕組みではない。したがって「PR 作成 → 機械チェック → 同じ job 内で `gh pr merge --squash`」という 1 本の workflow は GITHUB_TOKEN のイベント抑制と無関係に動く。**deploy_gate の設計案（自動 PR + 同一ワークフローでの自動マージ）は技術的に妥当**。
 
 必要な `permissions:` は round 1 の #3 のとおり最低限:
 ```yaml
@@ -27,9 +27,9 @@ permissions:
 **ただし deploy_gate に 1 点、伝えていなかった落とし穴がある（ブランチ保護との相互作用・追加確認済み）**:
 GitHub には「Actions が生成した GITHUB_TOKEN で PR を承認できてしまう」ことを悪用したブランチ保護バイパスの既知パターンがあり、これに対する防御機能が存在する。
 - Organization/Repository 設定に **「Allow GitHub Actions to create and approve pull requests」** というスイッチがあり、既定でこれが無効な組織では **GITHUB_TOKEN で作成した PR を GITHUB_TOKEN 自身が承認できない**。
-- さらにブランチ保護に **「Require approval of the most recent reviewable push」** を有効化している場合、「直近の push をした主体 ≠ 承認者」が強制されるため、**PR 作成者とマージ実行者が同じ GITHUB_TOKEN だと承認要件を満たせず詰む**構成になりうる。
+- さらにブランチ保護に **「Require approval of the most recent reviewable push」** を有効化している場合、「直近の push をした主体 ≠ 承認者」が強制されるため、**PR 作成者とマージ実行者が同じ GITHUB_TOKEN だと承認要件を満たせず詰む** 構成になりうる。
 
-**本リポジトリへの影響（要確認事項として deploy_gate/lead に申し送り）**: 本 Issue の設計は「レビュー承認（approve）」を経由せず、**squash マージを直接 API で叩く**方式なので、上記の「approve できない」制約そのものには引っかからない可能性が高い（GitHub の必須レビュー数が 0 に設定されていれば approve は不要でマージ API が素通りする）。ただし **本リポジトリの `main` に GitHub 側のブランチ保護ルール（必須レビュー数・必須ステータスチェック）が実際に設定されているかどうかは、この議論の中の誰も一次情報で確認していない**（Claude セッションは `mcp__github__merge_pull_request` で日常的に自己マージしているので、少なくとも「レビュー必須」は設定されていない可能性が高いが、これは推測であり確認事項として残す)。**実装 Issue の Done Criteria に「対象リポジトリのブランチ保護設定を `mcp__github__` 系ツールか GitHub UI で 1 回確認する」を入れることを推奨する**。
+**本リポジトリへの影響（要確認事項として deploy_gate/lead に申し送り）**: 本 Issue の設計は「レビュー承認（approve）」を経由せず、**squash マージを直接 API で叩く** 方式なので、上記の「approve できない」制約そのものには引っかからない可能性が高い（GitHub の必須レビュー数が 0 に設定されていれば approve は不要でマージ API が素通りする）。ただし **本リポジトリの `main` に GitHub 側のブランチ保護ルール（必須レビュー数・必須ステータスチェック）が実際に設定されているかどうかは、この議論の中の誰も一次情報で確認していない**（Claude セッションは `mcp__github__merge_pull_request` で日常的に自己マージしているので、少なくとも「レビュー必須」は設定されていない可能性が高いが、これは推測であり確認事項として残す)。**実装 Issue の Done Criteria に「対象リポジトリのブランチ保護設定を `mcp__github__` 系ツールか GitHub UI で 1 回確認する」を入れることを推奨する**。
 
 ---
 
@@ -47,9 +47,9 @@ deploy_gate の round 1 主張:
 **実装前の検証手順（未確認のまま進めないための具体策・争点 D の Done Criteria に追加すべき）**:
 1. Gem digest ワークフローを `workflow_dispatch` で 1 回手動起動する（round 1 #7 の `inputs` で `--dry-run` を渡せるようにしておけば安全に試せる）。
 2. 実データで 1 回だけ PR 作成 → 同一 job で squash マージまで通す（本番相当の 1 回）。
-3. マージ直後、Cloudflare 側のダッシュボード or `mcp__Cloudflare_Developer_Platform__workers_list` 等で **新しいビルドが実際にキューされたか**を確認する。
-4. トリガーされていなければ、Workers Builds は GITHUB_TOKEN 発の push を無視している疑いが濃厚 → `trigger_workers_build.py`（PR #460・lead 追加事実 2）が持つ「ゲート通過後の再トリガー」経路を **Gem digest PR のマージ後にも明示的に呼ぶ**フォールバックが必須になる。
-この 1 往復さえ実施すれば「未確認」が「確認済み」に変わる。**本 Issue のスコープ内で十分に実施可能な検証**であり、別 Issue に切り出す必要はない。
+3. マージ直後、Cloudflare 側のダッシュボード or `mcp__Cloudflare_Developer_Platform__workers_list` 等で **新しいビルドが実際にキューされたか** を確認する。
+4. トリガーされていなければ、Workers Builds は GITHUB_TOKEN 発の push を無視している疑いが濃厚 → `trigger_workers_build.py`（PR #460・lead 追加事実 2）が持つ「ゲート通過後の再トリガー」経路を **Gem digest PR のマージ後にも明示的に呼ぶ** フォールバックが必須になる。
+この 1 往復さえ実施すれば「未確認」が「確認済み」に変わる。**本 Issue のスコープ内で十分に実施可能な検証** であり、別 Issue に切り出す必要はない。
 
 ---
 
