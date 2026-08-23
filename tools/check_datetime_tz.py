@@ -40,6 +40,8 @@
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import subprocess
 import sys
 import tempfile
@@ -118,6 +120,20 @@ def _dotted_chain(node: ast.AST) -> str | None:
     return None
 
 
+def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
+    """`id(子ノード) -> 親ノード` の対応表を作る（ast 標準には親リンクがないため自前で構築）。
+
+    `datetime.utcnow()` のように `Attribute` が `Call` の `func` として使われている場合、
+    親の `Call` を辿れないと呼び出し全体（閉じ括弧まで）の行範囲が分からず、複数行呼び出しの
+    閉じ括弧行に書いた `# tz-ok` を正しく認識できない（#445 CRITICAL3）。
+    """
+    parent_map: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_map[id(child)] = parent
+    return parent_map
+
+
 def _naive_attr_name(node: ast.Attribute) -> str | None:
     """`<...>.datetime.<attr>` 形式の Attribute なら `<attr>` を返す（そうでなければ None）。
 
@@ -142,18 +158,25 @@ def scan(path: Path) -> list[tuple[int, str]]:
     hits: list[tuple[int, str]] = []
     try:
         text = path.read_text(encoding="utf-8")
-    except Exception:
-        return hits
+    except (UnicodeDecodeError, OSError) as e:
+        # 読み込み失敗も「違反なし」ではない。#445 問題1 とまったく同じ失敗モードが
+        # ここでも起こり得る（非 UTF-8 バイト列の .py を黙殺して PASS 扱いにする）ため、
+        # ast.parse の失敗と同様に ScanError へ集約して呼び出し側へ伝播させる（CRITICAL1）。
+        raise ScanError(f"{path}: 読み込みに失敗（{e.__class__.__name__}: {e}）") from e
     try:
         tree = ast.parse(text, filename=str(path))
-    except SyntaxError as e:
+    except (SyntaxError, RecursionError, MemoryError, ValueError) as e:
         # 解析不能は「違反なし」ではない。黙殺すると検査全体が偽陰性化するため、
         # 呼び出し側（main / self-test）に判断を委ねられるよう例外として伝播させる
-        # （#445 問題1）。
+        # （#445 問題1）。SyntaxError 以外にも、病的に深いネスト式による RecursionError・
+        # 極端に巨大なファイルでの MemoryError・NUL バイト混入時の ValueError（Python の
+        # バージョンによっては SyntaxError ではなくこちらで送出される）も同様に扱う
+        # （CRITICAL4）。
         raise ScanError(f"{path}: 構文解析に失敗（{e.__class__.__name__}: {e}）") from e
 
     lines = text.splitlines()
     seen_linenos: set[int] = set()
+    parent_map = _build_parent_map(tree)
 
     def _record(node: ast.AST) -> None:
         lineno = getattr(node, "lineno", None)
@@ -180,7 +203,13 @@ def scan(path: Path) -> list[tuple[int, str]]:
             # ast.walk が Attribute ノード自体を独立して辿るのでここで一括して拾える。
             attr = _naive_attr_name(node)
             if attr in NAIVE_BARE_ATTRS:
-                _record(node)
+                # `datetime.utcnow()` のように Call の func として使われている場合は、
+                # 親の Call ノードを渡して範囲（end_lineno）を呼び出し全体に揃える。
+                # Attribute 自体の end_lineno は属性名の行までしかなく、複数行呼び出しの
+                # 閉じ括弧行の `# tz-ok` を見落とすため（#445 CRITICAL3）。
+                parent = parent_map.get(id(node))
+                target = parent if isinstance(parent, ast.Call) and parent.func is node else node
+                _record(target)
 
     return hits
 
@@ -229,6 +258,17 @@ def run_self_test() -> int:
             "x = datetime.now(\n)  # tz-ok\n",
             0,
         ),
+        (
+            "複数行 utcnow() 呼び出しでも naive なら検出する（回帰防止・CRITICAL3 併設ケース）",
+            "x = datetime.utcnow(\n)\n",
+            1,
+        ),
+        (
+            "複数行 utcnow() 呼び出しは閉じ括弧の行の # tz-ok でも抑制される"
+            "（#445 CRITICAL3: Attribute と Call の非対称性を解消）",
+            "x = datetime.utcnow(\n)  # tz-ok\n",
+            0,
+        ),
     ]
 
     # 構文エラーのある .py は黙殺せず ScanError を送出しなければならない（#445 問題1・後退防止）。
@@ -236,6 +276,16 @@ def run_self_test() -> int:
         (
             "構文エラーのある .py（内部に本物の violation あり）は黙殺せず ScanError を送出する",
             "def broken(:\n    x = datetime.now()\n",
+        ),
+    ]
+
+    # 非 UTF-8 バイト列を含む .py も同様に黙殺してはならない（#445 CRITICAL1: read_text の
+    # `except Exception: return hits` が UnicodeDecodeError を握りつぶし、旧問題1 とまったく
+    # 同じ「検出不能を PASS と誤認させる」失敗モードを別経路で再現していた）。
+    parse_error_byte_cases: list[tuple[str, bytes]] = [
+        (
+            "非 UTF-8 バイト列（内部に本物の violation あり）は黙殺せず ScanError を送出する",
+            b"x = datetime.now()\n# \xff\xfe invalid utf-8\n",
         ),
     ]
 
@@ -259,6 +309,84 @@ def run_self_test() -> int:
                     f"- {name}: ScanError が送出されず黙殺された（got {hits}・解析不能を「検出なし」に化かしている）"
                 )
 
+        for name, raw in parse_error_byte_cases:
+            tmp_path.write_bytes(raw)
+            try:
+                hits = scan(tmp_path)
+            except ScanError:
+                pass
+            else:
+                failures.append(
+                    f"- {name}: ScanError が送出されず黙殺された（got {hits}）"
+                )
+
+        # RecursionError も黙殺してはならない（#445 CRITICAL4）。実環境の再帰上限に依存させず
+        # 決定論的に再現するため、この 1 ケースに限りテスト実行中だけ再帰上限を下げる。
+        recursion_case_name = (
+            "病的に深いネスト式で RecursionError になっても黙殺せず ScanError を送出する"
+        )
+        old_limit = sys.getrecursionlimit()
+        try:
+            sys.setrecursionlimit(60)
+            deep_src = "x = " + ("not " * 500) + "True\n"
+            tmp_path.write_text(deep_src, encoding="utf-8")
+            try:
+                hits = scan(tmp_path)
+            except ScanError:
+                pass
+            except RecursionError:
+                failures.append(
+                    f"- {recursion_case_name}: RecursionError が ScanError に変換されず生で漏れた"
+                )
+            else:
+                failures.append(
+                    f"- {recursion_case_name}: 例外が送出されず黙殺された（got {hits}）"
+                )
+        finally:
+            sys.setrecursionlimit(old_limit)
+
+        # main() の判定ロジック（_run）は scan() の 3 ケース（違反あり／解析不能／両方なし）を
+        # 通してこそ意味を持つ。--self-test が scan() しか呼ばず main() 相当の集計・終了コード
+        # 判定を一切カバーしていなかった（#445 CRITICAL2）ため、一時ディレクトリを走査対象にして
+        # `_run()` を直接呼ぶ統合ケースを足す。
+        clean_path = Path(tmp_dir) / "clean.py"
+        clean_path.write_text("x = datetime.now(timezone.utc)\n", encoding="utf-8")
+        violation_path = Path(tmp_dir) / "violation.py"
+        violation_path.write_text("x = datetime.now()\n", encoding="utf-8")
+        broken_path = Path(tmp_dir) / "broken.py"
+        broken_path.write_text("def broken(:\n    pass\n", encoding="utf-8")
+
+        integration_cases: list[tuple[str, list[Path], int, list[str]]] = [
+            ("_run(): 違反ありなら exit 1", [violation_path], 1, ["❌"]),
+            (
+                "_run(): 構文エラーのみでも exit 1 かつ ⚠️ 解析不能を明示",
+                [broken_path],
+                1,
+                ["⚠️", "解析不能のため検査対象外", "構文解析できず検査不能"],
+            ),
+            ("_run(): 違反ゼロなら exit 0", [clean_path], 0, ["✅"]),
+            (
+                # 「構文解析できず検査不能」は parse_failures の集計（サマリー）メッセージにしか
+                # 出ない文言。violations が真になった時点で早期 return すると、この集計だけが
+                # 欠落したまま exit 1 にはなる（＝終了コードだけ見ると気づけない後退）ため、
+                # サマリー文言そのものをマーカーにして固定する（#445 NIT5）。
+                "_run(): 違反と解析不能が同時発生しても両方の集計メッセージを出してから exit 1（#445 NIT5）",
+                [violation_path, broken_path],
+                1,
+                ["❌", "TZ 未指定 datetime を検出", "構文解析できず検査不能"],
+            ),
+        ]
+        for name, files, expected_code, expected_markers in integration_cases:
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = _run(files, Path(tmp_dir), "test")
+            combined = out.getvalue() + err.getvalue()
+            if code != expected_code:
+                failures.append(f"- {name}: expected exit {expected_code}, got {code}")
+            missing = [m for m in expected_markers if m not in combined]
+            if missing:
+                failures.append(f"- {name}: 出力に {missing} が含まれない（出力: {combined!r}）")
+
     if failures:
         print("FAIL: check_datetime_tz self-test", file=sys.stderr)
         for f in failures:
@@ -269,17 +397,18 @@ def run_self_test() -> int:
     return 0
 
 
-def main() -> int:
-    if "--self-test" in sys.argv:
-        return run_self_test()
+def _run(files: list[Path], root: Path, scope: str) -> int:
+    """`files`（`root` からの相対パス表示用）を走査し、判定メッセージを出して終了コードを返す。
 
-    changed = "--changed" in sys.argv
-    files = _py_files_changed() if changed else _py_files_all()
-
+    `main()` から実ファイル走査部分を切り出したもの。`--self-test` から `root` に一時
+    ディレクトリを渡して直接呼べるため、`main()` 自体を subprocess 起動せずに統合的な
+    判定ロジック（違反検出→非ゼロ終了・解析不能→非ゼロ終了・両方発生時の集計表示）を
+    self-test でカバーできる（#445 問題1 修正時のレビュー指摘 CRITICAL2 対応）。
+    """
     violations = 0
     parse_failures = 0
     for f in sorted(files):
-        rel = f.relative_to(REPO_ROOT)
+        rel = f.relative_to(root)
         try:
             file_hits = scan(f)
         except ScanError as e:
@@ -292,15 +421,16 @@ def main() -> int:
             violations += 1
             print(f"{rel}:{lineno}: TZ 未指定 datetime（表示・記録に使うと不定）: {snippet}")
 
-    scope = "変更 .py" if changed else "全 .py"
+    # 違反・解析不能どちらも「あれば集計メッセージを出す」だけにして、片方が真でも
+    # もう片方の集計が欠落しないようにする（両方は独立した早期 return にしない・#445 NIT5）。
     if violations:
         print(
             f"\n❌ {violations} 件の TZ 未指定 datetime を検出（{scope}・{len(files)} ファイル走査）。\n"
             "   表示・記録用途なら datetime.now(JST)、機械処理用 UTC なら datetime.now(timezone.utc) を使う。\n"
-            "   レビュー済みの正当な例外は行末に `# tz-ok` を付けて抑制できる（datetime-rules.md §2）。",
+            "   レビュー済みの正当な例外は呼び出しの開始行〜終了行のいずれかに `# tz-ok` を付けて"
+            "抑制できる（datetime-rules.md §2）。",
             file=sys.stderr,
         )
-        return 1
     if parse_failures:
         print(
             f"\n⚠️ {parse_failures} 件の .py を構文解析できず検査不能（{scope}・{len(files)} ファイル走査）。"
@@ -308,9 +438,20 @@ def main() -> int:
             "検査対象から外す運用上の理由を明記すること。",
             file=sys.stderr,
         )
+    if violations or parse_failures:
         return 1
     print(f"✅ TZ 未指定 datetime は検出なし（{scope}・{len(files)} ファイル走査）。")
     return 0
+
+
+def main() -> int:
+    if "--self-test" in sys.argv:
+        return run_self_test()
+
+    changed = "--changed" in sys.argv
+    files = _py_files_changed() if changed else _py_files_all()
+    scope = "変更 .py" if changed else "全 .py"
+    return _run(files, REPO_ROOT, scope)
 
 
 if __name__ == "__main__":
