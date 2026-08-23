@@ -41,7 +41,9 @@ describe('LocaleSwitchAnnouncer', () => {
       <LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />,
     )
 
-    rerender(<LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />)
+    rerender(
+      <LocaleSwitchAnnouncer currentLocale="ja" announcedLabel="言語を日本語に切り替えました" />,
+    )
 
     const live = container.querySelector('[role="status"]')
     expect(live).toBeEmptyDOMElement()

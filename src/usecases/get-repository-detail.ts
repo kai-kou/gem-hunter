@@ -4,7 +4,9 @@ import type { RepositoryQueryPort } from '../domain/ports/repository-query-port'
 
 export type GetRepositoryDetailInput = { owner: string; repo: string }
 
-export type GetRepositoryDetail = (input: GetRepositoryDetailInput) => Promise<RepositoryDetail | null>
+export type GetRepositoryDetail = (
+  input: GetRepositoryDetailInput,
+) => Promise<RepositoryDetail | null>
 
 /** 独立 URL の詳細ページのためにリポジトリを単独取得する（US-16 / US-17 / AC-4）。 */
 export function makeGetRepositoryDetail(deps: { repos: RepositoryQueryPort }): GetRepositoryDetail {

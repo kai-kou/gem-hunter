@@ -38,7 +38,9 @@ test.describe('横スクロール退行ガード（NFR-15 / SC 1.4.10）', () =>
     await searchFor(page, uniqueOverflowGuardKeyword())
 
     // 3 件（長い URL 入り description / 長い単一 topic / 長いリポジトリ名）がすべて描画されるのを待つ。
-    await expect(page.getByRole('link', { name: 'octostub/overflow-guard-description' })).toBeVisible()
+    await expect(
+      page.getByRole('link', { name: 'octostub/overflow-guard-description' }),
+    ).toBeVisible()
     await expect(page.getByRole('link', { name: 'octostub/overflow-guard-topic' })).toBeVisible()
     await expect(
       page.getByRole('link', { name: `octostub/overflow-guard-${'n'.repeat(48)}` }),

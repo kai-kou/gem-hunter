@@ -9,14 +9,7 @@
   },
   "homepage": "https://github.com/kai-kou/claude-code-repository-base",
   "repository": "https://github.com/kai-kou/claude-code-repository-base",
-  "keywords": [
-    "claude-code",
-    "autonomous",
-    "harness",
-    "template",
-    "base",
-    "agent-teams"
-  ],
+  "keywords": ["claude-code", "autonomous", "harness", "template", "base", "agent-teams"],
   "skills": "./.claude/skills/",
   "agents": ["./.claude/agents/owner.md"]
 }

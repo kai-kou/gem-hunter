@@ -43,7 +43,7 @@
       }
     ],
     "tasks": [
-      {"id": "T-n", "title": "実行タスク", "files": ["対象ファイル"], "depends_on": ["T-n"]}
+      { "id": "T-n", "title": "実行タスク", "files": ["対象ファイル"], "depends_on": ["T-n"] }
     ],
     "critical": ["議論を経ても残った真の問題（別 Issue へ送るものを含む）"],
     "open_questions": ["ユーザー確認が要る仕様分岐"]

@@ -9,7 +9,6 @@ effort: medium
 > クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
 > ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
 
-
 # GitHub プロジェクト管理スキル
 
 GitHub Issues + Labels（+ Projects V2）でタスクを一元管理する。
@@ -45,12 +44,12 @@ GitHub Issues + Labels（+ Projects V2）でタスクを一元管理する。
 
 ## ラベル体系（要約）
 
-| 区分 | プレフィックス | 値 |
-|------|--------------|-----|
-| 種別 | `type:` | feature / bug / docs / improvement / retro-try |
-| ステータス | `status:` | waiting-user / waiting-claude / in-progress / blocked |
-| 優先度 | `priority:` | critical / high / medium / low |
-| 見積もり | `sp:` | 1 / 2 / 3 / 5 / 8（`session-sprint-rules.md` §3） |
+| 区分       | プレフィックス | 値                                                    |
+| ---------- | -------------- | ----------------------------------------------------- |
+| 種別       | `type:`        | feature / bug / docs / improvement / retro-try        |
+| ステータス | `status:`      | waiting-user / waiting-claude / in-progress / blocked |
+| 優先度     | `priority:`    | critical / high / medium / low                        |
+| 見積もり   | `sp:`          | 1 / 2 / 3 / 5 / 8（`session-sprint-rules.md` §3）     |
 
 色定義・作成コマンドの雛形は開発リポジトリの運用メモに保持している（`gh label create <name> --color <hex> --description <text>` の要領で同等のラベルを作成すればよい）。
 
@@ -77,6 +76,7 @@ GitHub Issues + Labels（+ Projects V2）でタスクを一元管理する。
 ### Issue 作成テンプレート
 
 MCP（クラウド・一次経路）:
+
 ```
 mcp__github__issue_write(method="create", owner, repo,
   title="{title_prefix}: {タスク名}",
@@ -85,6 +85,7 @@ mcp__github__issue_write(method="create", owner, repo,
 ```
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 gh issue create \
   --title "{title_prefix}: {タスク名}" \
@@ -142,6 +143,7 @@ gh project item-edit --project-id PROJECT_ID --id ITEM_ID \
 ### PR 作成コマンド
 
 MCP（クラウド・一次経路）:
+
 ```
 mcp__github__create_pull_request(owner, repo, title="{PRタイトル}",
   head="{現在のブランチ名}", base="main", body="{PR本文（Closes #N を含める）}")
@@ -165,6 +167,7 @@ EOF
 ## 3. 進捗確認フロー
 
 MCP（クラウド・一次経路）:
+
 ```
 # ステータス別の Issue 一覧
 mcp__github__list_issues(owner, repo, state="OPEN", labels=["status:in-progress"])
@@ -174,6 +177,7 @@ mcp__github__list_issues(owner, repo, state="ALL", perPage=100)
 ```
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 # マイルストーン別進捗
 gh api repos/kai-kou/gem-hunter/milestones --jq '.[] | "\(.title): \(.closed_issues)/\(.open_issues + .closed_issues) done"'
@@ -205,12 +209,12 @@ gh api --method PATCH repos/kai-kou/gem-hunter/milestones/MILESTONE_NUMBER -f st
 
 ## Issue 命名規約
 
-| パターン | 例 | 用途 |
-|---------|-----|------|
-| `feat: {機能名}` | `feat: project-manager スキル追加` | 機能開発 |
-| `fix: {修正名}` | `fix: フック出力スキーマ修正` | バグ修正 |
-| `docs: {内容}` | `docs: プロジェクト管理ルール追加` | ドキュメント |
-| `improvement: {概要}` | `improvement: Hot 層スリム化` | 改善・リファクタ |
+| パターン              | 例                                 | 用途             |
+| --------------------- | ---------------------------------- | ---------------- |
+| `feat: {機能名}`      | `feat: project-manager スキル追加` | 機能開発         |
+| `fix: {修正名}`       | `fix: フック出力スキーマ修正`      | バグ修正         |
+| `docs: {内容}`        | `docs: プロジェクト管理ルール追加` | ドキュメント     |
+| `improvement: {概要}` | `improvement: Hot 層スリム化`      | 改善・リファクタ |
 
 > ドメイン固有の命名（工程タスク等）が必要なプロジェクトは本表に追記する。
 

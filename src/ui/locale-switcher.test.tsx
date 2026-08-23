@@ -12,9 +12,7 @@ const labels = {
 
 describe('LocaleSwitcher', () => {
   it('ja / en の 2 リンクを描画する', () => {
-    render(
-      <LocaleSwitcher currentLocale={locale('ja')} currentPath="/ja" labels={labels} />,
-    )
+    render(<LocaleSwitcher currentLocale={locale('ja')} currentPath="/ja" labels={labels} />)
 
     expect(screen.getByRole('navigation', { name: '言語切替' })).toBeVisible()
     expect(screen.getByRole('link', { name: '日本語' })).toHaveAttribute('href', '/ja')
@@ -22,9 +20,7 @@ describe('LocaleSwitcher', () => {
   })
 
   it('現在のロケールのリンクに aria-current="true" を付ける', () => {
-    render(
-      <LocaleSwitcher currentLocale={locale('ja')} currentPath="/ja" labels={labels} />,
-    )
+    render(<LocaleSwitcher currentLocale={locale('ja')} currentPath="/ja" labels={labels} />)
 
     expect(screen.getByRole('link', { name: '日本語' })).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('link', { name: 'English' })).not.toHaveAttribute('aria-current')
@@ -63,9 +59,7 @@ describe('LocaleSwitcher', () => {
   })
 
   it('<nav> の末尾に LocaleSwitchAnnouncer（role="status"）を 1 つ持つ', () => {
-    render(
-      <LocaleSwitcher currentLocale={locale('ja')} currentPath="/ja" labels={labels} />,
-    )
+    render(<LocaleSwitcher currentLocale={locale('ja')} currentPath="/ja" labels={labels} />)
 
     const nav = screen.getByRole('navigation', { name: '言語切替' })
     expect(nav.querySelectorAll('[role="status"]')).toHaveLength(1)

@@ -38,7 +38,9 @@ describe('GET /api/auth/callback', () => {
     isAuthConfiguredMock.mockReturnValue(false)
     const { GET } = await import('./route')
 
-    const res = await GET(makeRequest('/api/auth/callback?code=c&state=s', `${OAUTH_STATE_COOKIE_NAME}=s`))
+    const res = await GET(
+      makeRequest('/api/auth/callback?code=c&state=s', `${OAUTH_STATE_COOKIE_NAME}=s`),
+    )
 
     expect(res.status).toBe(307)
     expect(new URL(res.headers.get('location')!).pathname).toBe('/')
@@ -71,7 +73,10 @@ describe('GET /api/auth/callback', () => {
     const { GET } = await import('./route')
 
     const res = await GET(
-      makeRequest('/api/auth/callback?code=c&state=attacker-state', `${OAUTH_STATE_COOKIE_NAME}=legit-state`),
+      makeRequest(
+        '/api/auth/callback?code=c&state=attacker-state',
+        `${OAUTH_STATE_COOKIE_NAME}=legit-state`,
+      ),
     )
 
     expect(res.status).toBe(307)
@@ -79,7 +84,7 @@ describe('GET /api/auth/callback', () => {
     expect(res.cookies.get(OAUTH_STATE_COOKIE_NAME)?.value).toBe('')
   })
 
-  it('state が一致すればトークン交換し、セッション Cookie を発行して \'/\' へ遷移する（HTTPS 接続なら Secure を付ける）', async () => {
+  it("state が一致すればトークン交換し、セッション Cookie を発行して '/' へ遷移する（HTTPS 接続なら Secure を付ける）", async () => {
     isAuthConfiguredMock.mockReturnValue(true)
     const completeLogin = vi.fn().mockResolvedValue({ accessToken: 'gho_from_callback' })
     completeLoginUseCaseMock.mockReturnValue(completeLogin)
@@ -116,7 +121,10 @@ describe('GET /api/auth/callback', () => {
 
     const { GET } = await import('./route')
     const res = await GET(
-      makeRequest('/api/auth/callback?code=auth-code&state=match', `${OAUTH_STATE_COOKIE_NAME}=match`),
+      makeRequest(
+        '/api/auth/callback?code=auth-code&state=match',
+        `${OAUTH_STATE_COOKIE_NAME}=match`,
+      ),
     )
 
     const setCookie = res.headers.get('set-cookie') ?? ''
@@ -130,7 +138,10 @@ describe('GET /api/auth/callback', () => {
 
     const { GET } = await import('./route')
     const res = await GET(
-      makeRequest('/api/auth/callback?code=auth-code&state=match', `${OAUTH_STATE_COOKIE_NAME}=match`),
+      makeRequest(
+        '/api/auth/callback?code=auth-code&state=match',
+        `${OAUTH_STATE_COOKIE_NAME}=match`,
+      ),
     )
 
     expect(res.status).toBe(307)

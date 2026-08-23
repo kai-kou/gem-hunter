@@ -117,151 +117,149 @@ export async function measureFocusIndicator(
   // 遷移途中の低 alpha / 極細幅を実効値として拾ってしまう（SP-10 実測で判明）。
   await page.waitForTimeout(300)
 
-  return target.evaluate(
-    (el): FocusIndicatorMeasurement => {
-      // --- 色解決: 任意の CSS 色文字列 -> {r,g,b,a}（0-255 / 0-1）。canvas の実合成結果から逆算する。
-      function resolveColor(colorStr: string): { r: number; g: number; b: number; a: number } {
-        const canvas = document.createElement('canvas')
-        canvas.width = 1
-        canvas.height = 1
-        const ctx = canvas.getContext('2d', { willReadFrequently: true })!
-        ctx.clearRect(0, 0, 1, 1)
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, 1, 1)
-        ctx.fillStyle = colorStr
-        ctx.fillRect(0, 0, 1, 1)
-        const overWhite = ctx.getImageData(0, 0, 1, 1).data
-        ctx.clearRect(0, 0, 1, 1)
-        ctx.fillStyle = '#000000'
-        ctx.fillRect(0, 0, 1, 1)
-        ctx.fillStyle = colorStr
-        ctx.fillRect(0, 0, 1, 1)
-        const overBlack = ctx.getImageData(0, 0, 1, 1).data
-        const aPerChannel = [0, 1, 2].map((i) => 1 - (overWhite[i] - overBlack[i]) / 255)
-        const a = Math.max(0, Math.min(1, (aPerChannel[0] + aPerChannel[1] + aPerChannel[2]) / 3))
-        const rgb = [0, 1, 2].map((i) => (a > 0.001 ? overBlack[i] / a : overWhite[i]))
-        return { r: rgb[0], g: rgb[1], b: rgb[2], a }
+  return target.evaluate((el): FocusIndicatorMeasurement => {
+    // --- 色解決: 任意の CSS 色文字列 -> {r,g,b,a}（0-255 / 0-1）。canvas の実合成結果から逆算する。
+    function resolveColor(colorStr: string): { r: number; g: number; b: number; a: number } {
+      const canvas = document.createElement('canvas')
+      canvas.width = 1
+      canvas.height = 1
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+      ctx.clearRect(0, 0, 1, 1)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, 1, 1)
+      ctx.fillStyle = colorStr
+      ctx.fillRect(0, 0, 1, 1)
+      const overWhite = ctx.getImageData(0, 0, 1, 1).data
+      ctx.clearRect(0, 0, 1, 1)
+      ctx.fillStyle = '#000000'
+      ctx.fillRect(0, 0, 1, 1)
+      ctx.fillStyle = colorStr
+      ctx.fillRect(0, 0, 1, 1)
+      const overBlack = ctx.getImageData(0, 0, 1, 1).data
+      const aPerChannel = [0, 1, 2].map((i) => 1 - (overWhite[i] - overBlack[i]) / 255)
+      const a = Math.max(0, Math.min(1, (aPerChannel[0] + aPerChannel[1] + aPerChannel[2]) / 3))
+      const rgb = [0, 1, 2].map((i) => (a > 0.001 ? overBlack[i] / a : overWhite[i]))
+      return { r: rgb[0], g: rgb[1], b: rgb[2], a }
+    }
+
+    function relLuminance(r: number, g: number, b: number): number {
+      const chan = (c: number) => {
+        const v = c / 255
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
       }
+      return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+    }
 
-      function relLuminance(r: number, g: number, b: number): number {
-        const chan = (c: number) => {
-          const v = c / 255
-          return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-        }
-        return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+    function contrastRatio(
+      c1: { r: number; g: number; b: number },
+      c2: { r: number; g: number; b: number },
+    ): number {
+      const l1 = relLuminance(c1.r, c1.g, c1.b)
+      const l2 = relLuminance(c2.r, c2.g, c2.b)
+      const [hi, lo] = l1 >= l2 ? [l1, l2] : [l2, l1]
+      return (hi + 0.05) / (lo + 0.05)
+    }
+
+    function blendOver(
+      fg: { r: number; g: number; b: number; a: number },
+      bg: { r: number; g: number; b: number },
+    ): { r: number; g: number; b: number } {
+      return {
+        r: fg.a * fg.r + (1 - fg.a) * bg.r,
+        g: fg.a * fg.g + (1 - fg.a) * bg.g,
+        b: fg.a * fg.b + (1 - fg.a) * bg.b,
       }
+    }
 
-      function contrastRatio(
-        c1: { r: number; g: number; b: number },
-        c2: { r: number; g: number; b: number },
-      ): number {
-        const l1 = relLuminance(c1.r, c1.g, c1.b)
-        const l2 = relLuminance(c2.r, c2.g, c2.b)
-        const [hi, lo] = l1 >= l2 ? [l1, l2] : [l2, l1]
-        return (hi + 0.05) / (lo + 0.05)
-      }
-
-      function blendOver(
-        fg: { r: number; g: number; b: number; a: number },
-        bg: { r: number; g: number; b: number },
-      ): { r: number; g: number; b: number } {
-        return {
-          r: fg.a * fg.r + (1 - fg.a) * bg.r,
-          g: fg.a * fg.g + (1 - fg.a) * bg.g,
-          b: fg.a * fg.b + (1 - fg.a) * bg.b,
-        }
-      }
-
-      // box-shadow の値をトップレベルのカンマで分割する（rgba(0, 0, 0, 0) 等 関数内のカンマは無視）。
-      function splitTopLevel(value: string): string[] {
-        const layers: string[] = []
-        let depth = 0
-        let current = ''
-        for (const ch of value) {
-          if (ch === '(') depth++
-          if (ch === ')') depth--
-          if (ch === ',' && depth === 0) {
-            layers.push(current.trim())
-            current = ''
-          } else {
-            current += ch
-          }
-        }
-        if (current.trim()) layers.push(current.trim())
-        return layers
-      }
-
-      function parseLayer(layer: string): { color: string; spread: number } {
-        const lengths = [...layer.matchAll(/(-?[\d.]+)px/g)].map((m) => parseFloat(m[1]))
-        const color = layer
-          .replace(/-?[\d.]+px/g, '')
-          .replace(/\binset\b/g, '')
-          .trim()
-        // box-shadow は [x, y, blur, spread] の順（inset の有無・順序は無視して良い。
-        // このプロジェクトの ring ユーティリティは常に 4 値 + spread のみで幅を作るため）。
-        return { color, spread: lengths[3] ?? 0 }
-      }
-
-      // 背景色: 最初に非透明な background-color を持つ祖先を採用する（無ければ body）。
-      function resolveBackground(start: Element): { r: number; g: number; b: number } {
-        let node: Element | null = start
-        while (node) {
-          const bg = getComputedStyle(node).backgroundColor
-          const resolved = resolveColor(bg)
-          if (resolved.a > 0.99) return resolved
-          node = node.parentElement
-        }
-        return resolveColor(getComputedStyle(document.body).backgroundColor)
-      }
-
-      const cs = getComputedStyle(el)
-      const bg = resolveBackground(el)
-
-      const boxShadow = cs.boxShadow
-      const raw = {
-        boxShadow,
-        outlineStyle: cs.outlineStyle,
-        outlineWidth: cs.outlineWidth,
-        outlineColor: cs.outlineColor,
-      }
-
-      if (boxShadow && boxShadow !== 'none') {
-        const layers = splitTopLevel(boxShadow).map(parseLayer)
-        // 実際に見えるリング = alpha > 0 かつ spread が最大のレイヤー。
-        let best: { color: string; spread: number; a: number } | null = null
-        for (const layer of layers) {
-          const resolved = resolveColor(layer.color)
-          if (resolved.a <= 0.001) continue
-          if (best === null || layer.spread > best.spread) {
-            best = { color: layer.color, spread: layer.spread, a: resolved.a }
-          }
-        }
-        if (best !== null && best.spread > 0) {
-          const resolved = resolveColor(best.color)
-          const blended = blendOver(resolved, bg)
-          return {
-            kind: 'box-shadow',
-            contrastRatio: contrastRatio(blended, bg),
-            widthPx: best.spread,
-            raw,
-          }
+    // box-shadow の値をトップレベルのカンマで分割する（rgba(0, 0, 0, 0) 等 関数内のカンマは無視）。
+    function splitTopLevel(value: string): string[] {
+      const layers: string[] = []
+      let depth = 0
+      let current = ''
+      for (const ch of value) {
+        if (ch === '(') depth++
+        if (ch === ')') depth--
+        if (ch === ',' && depth === 0) {
+          layers.push(current.trim())
+          current = ''
+        } else {
+          current += ch
         }
       }
+      if (current.trim()) layers.push(current.trim())
+      return layers
+    }
 
-      if (cs.outlineStyle !== 'none') {
-        const resolved = resolveColor(cs.outlineColor)
+    function parseLayer(layer: string): { color: string; spread: number } {
+      const lengths = [...layer.matchAll(/(-?[\d.]+)px/g)].map((m) => parseFloat(m[1]))
+      const color = layer
+        .replace(/-?[\d.]+px/g, '')
+        .replace(/\binset\b/g, '')
+        .trim()
+      // box-shadow は [x, y, blur, spread] の順（inset の有無・順序は無視して良い。
+      // このプロジェクトの ring ユーティリティは常に 4 値 + spread のみで幅を作るため）。
+      return { color, spread: lengths[3] ?? 0 }
+    }
+
+    // 背景色: 最初に非透明な background-color を持つ祖先を採用する（無ければ body）。
+    function resolveBackground(start: Element): { r: number; g: number; b: number } {
+      let node: Element | null = start
+      while (node) {
+        const bg = getComputedStyle(node).backgroundColor
+        const resolved = resolveColor(bg)
+        if (resolved.a > 0.99) return resolved
+        node = node.parentElement
+      }
+      return resolveColor(getComputedStyle(document.body).backgroundColor)
+    }
+
+    const cs = getComputedStyle(el)
+    const bg = resolveBackground(el)
+
+    const boxShadow = cs.boxShadow
+    const raw = {
+      boxShadow,
+      outlineStyle: cs.outlineStyle,
+      outlineWidth: cs.outlineWidth,
+      outlineColor: cs.outlineColor,
+    }
+
+    if (boxShadow && boxShadow !== 'none') {
+      const layers = splitTopLevel(boxShadow).map(parseLayer)
+      // 実際に見えるリング = alpha > 0 かつ spread が最大のレイヤー。
+      let best: { color: string; spread: number; a: number } | null = null
+      for (const layer of layers) {
+        const resolved = resolveColor(layer.color)
+        if (resolved.a <= 0.001) continue
+        if (best === null || layer.spread > best.spread) {
+          best = { color: layer.color, spread: layer.spread, a: resolved.a }
+        }
+      }
+      if (best !== null && best.spread > 0) {
+        const resolved = resolveColor(best.color)
         const blended = blendOver(resolved, bg)
         return {
-          kind: 'outline',
+          kind: 'box-shadow',
           contrastRatio: contrastRatio(blended, bg),
-          widthPx: parseFloat(cs.outlineWidth) || 0,
+          widthPx: best.spread,
           raw,
         }
       }
+    }
 
-      return { kind: 'none', contrastRatio: 1, widthPx: 0, raw }
-    },
-  )
+    if (cs.outlineStyle !== 'none') {
+      const resolved = resolveColor(cs.outlineColor)
+      const blended = blendOver(resolved, bg)
+      return {
+        kind: 'outline',
+        contrastRatio: contrastRatio(blended, bg),
+        widthPx: parseFloat(cs.outlineWidth) || 0,
+        raw,
+      }
+    }
+
+    return { kind: 'none', contrastRatio: 1, widthPx: 0, raw }
+  })
 }
 
 /**

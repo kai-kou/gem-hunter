@@ -41,9 +41,7 @@ const STATIC_FILE_EXTENSIONS = [
  * ロケール接頭辞（/ja, /en, ...）・`_next` 配下・`api` 配下・
  * 末尾セグメントが静的ファイル拡張子のパスを除く全パスにマッチする。
  */
-export function localeRedirectExclusionPattern(
-  locales: readonly string[] = LOCALES,
-): string {
+export function localeRedirectExclusionPattern(locales: readonly string[] = LOCALES): string {
   const localeAlternation = locales.join('|')
   const extensionAlternation = STATIC_FILE_EXTENSIONS.join('|')
 

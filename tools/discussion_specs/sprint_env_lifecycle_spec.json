@@ -41,7 +41,11 @@
     "rejected": ["議論で否定された案と理由"],
     "unknowns": ["確定できず、実装時に実機で確かめる必要がある事項"],
     "follow_up_issues": [
-      {"title": "Issue タイトル", "labels": ["type:*", "sp:*", "priority:*"], "done_criteria": "完了条件"}
+      {
+        "title": "Issue タイトル",
+        "labels": ["type:*", "sp:*", "priority:*"],
+        "done_criteria": "完了条件"
+      }
     ]
   }
 }

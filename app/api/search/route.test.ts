@@ -279,9 +279,7 @@ describe('GET /api/search — Issue #122: RateLimitPort の配線', () => {
       new RateLimitExceededError('rateLimitSecondary', { retryAfterSeconds: 60 }),
     )
 
-    const res = await GET(
-      new NextRequest('http://localhost/api/search?q=rate-limit-port-check'),
-    )
+    const res = await GET(new NextRequest('http://localhost/api/search?q=rate-limit-port-check'))
 
     expect(res.status).toBe(429)
     expect(res.headers.get('Retry-After')).toBe('60')
@@ -293,9 +291,7 @@ describe('GET /api/search — Issue #122: RateLimitPort の配線', () => {
   it('レート制限が超過していなければ従来どおり 200 を返し、enforceSearchRateLimit が1回だけ呼ばれる', async () => {
     searchMock.mockResolvedValue(makeSearchResult({ totalCount: 1 }))
 
-    const res = await GET(
-      new NextRequest('http://localhost/api/search?q=rate-limit-port-ok-check'),
-    )
+    const res = await GET(new NextRequest('http://localhost/api/search?q=rate-limit-port-ok-check'))
 
     expect(res.status).toBe(200)
     expect(enforceSearchRateLimitMock).toHaveBeenCalledTimes(1)

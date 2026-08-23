@@ -21,10 +21,7 @@
       "summary": "claude -p（headless CLI）フォールバック基盤の可用性",
       "native": {
         "how": "claude CLI（headless）",
-        "probes": [
-          {"type": "cli"},
-          {"type": "cli-flag", "flag": "-p"}
-        ]
+        "probes": [{ "type": "cli" }, { "type": "cli-flag", "flag": "-p" }]
       },
       "fallback": null,
       "notes": "このプローブが fallback 判定になった環境（L-117 のタスクモード等で CLI 不在）では claude -p フォールバック自体が不可。スキル固有の最終手段（fan-out・DIY 等）へ直行する"
@@ -36,16 +33,24 @@
       "native": {
         "how": "skill:discussion-review（.claude/skills/discussion-review/SKILL.md）",
         "routes": [
-          {"kind": "skill", "name": "discussion-review", "status": "preferred",
-           "how": "Skill(skill=\"discussion-review\", args=\"<議題・対象>\")",
-           "detail": "project スコープの自前スキル。bundled 置換のため disable-model-invocation を付けない運用（付けると自律起動不能になる）"},
-          {"kind": "session-tool", "name": "SendMessage", "status": "available",
-           "how": "name 付き background Agent + SendMessage + 共有ホワイトボードを直接組む",
-           "detail": "スキル経路が使えないとき、同等構成を手組みする（SKILL.md の手順を参照）"}
+          {
+            "kind": "skill",
+            "name": "discussion-review",
+            "status": "preferred",
+            "how": "Skill(skill=\"discussion-review\", args=\"<議題・対象>\")",
+            "detail": "project スコープの自前スキル。bundled 置換のため disable-model-invocation を付けない運用（付けると自律起動不能になる）"
+          },
+          {
+            "kind": "session-tool",
+            "name": "SendMessage",
+            "status": "available",
+            "how": "name 付き background Agent + SendMessage + 共有ホワイトボードを直接組む",
+            "detail": "スキル経路が使えないとき、同等構成を手組みする（SKILL.md の手順を参照）"
+          }
         ],
         "probes": [
-          {"type": "project-skill", "skill": "discussion-review"},
-          {"type": "session-tool", "tool": "SendMessage"}
+          { "type": "project-skill", "skill": "discussion-review" },
+          { "type": "session-tool", "tool": "SendMessage" }
         ]
       },
       "fallback": {
@@ -62,16 +67,22 @@
       "native": {
         "how": "Workflow tool: deep-research（ビルトイン Workflow）",
         "routes": [
-          {"kind": "skill", "name": "deep-research", "status": "unavailable",
-           "how": "Skill(skill=\"deep-research\", args=\"<質問文>\")",
-           "detail": "CLI v2.1.218 で disable-model-invocation 化され不可。失敗シグネチャ: 'cannot be used with Skill tool due to disable-model-invocation'（実機検証 2026-07-29 / v2.1.220・#370）"},
-          {"kind": "workflow", "name": "deep-research", "status": "preferred",
-           "how": "Workflow({name: \"deep-research\", args: \"<質問文>\"})",
-           "detail": "現行の正しい対話起動経路（run 起動・複数エージェントの phase 進行を実測確認・#370）"}
+          {
+            "kind": "skill",
+            "name": "deep-research",
+            "status": "unavailable",
+            "how": "Skill(skill=\"deep-research\", args=\"<質問文>\")",
+            "detail": "CLI v2.1.218 で disable-model-invocation 化され不可。失敗シグネチャ: 'cannot be used with Skill tool due to disable-model-invocation'（実機検証 2026-07-29 / v2.1.220・#370）"
+          },
+          {
+            "kind": "workflow",
+            "name": "deep-research",
+            "status": "preferred",
+            "how": "Workflow({name: \"deep-research\", args: \"<質問文>\"})",
+            "detail": "現行の正しい対話起動経路（run 起動・複数エージェントの phase 進行を実測確認・#370）"
+          }
         ],
-        "probes": [
-          {"type": "builtin-command", "command": "/deep-research"}
-        ]
+        "probes": [{ "type": "builtin-command", "command": "/deep-research" }]
       },
       "fallback": {
         "kind": "claude-p",

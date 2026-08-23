@@ -1,13 +1,19 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
 
 import { computeDigestDiff } from '../../domain/model/digest-diff'
 import { readSeen, writeSeen } from './seen-digest-store'
 
 type SeenDigestState =
-  | { status: 'pending' }
-  | { status: 'ready'; newNames: ReadonlySet<string>; isFirstVisit: boolean }
+  { status: 'pending' } | { status: 'ready'; newNames: ReadonlySet<string>; isFirstVisit: boolean }
 
 const SeenDigestContext = createContext<SeenDigestState>({ status: 'pending' })
 

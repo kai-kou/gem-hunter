@@ -4,7 +4,10 @@ import { clientIpOf, hashRateLimitKey } from './rate-limit-key'
 
 describe('clientIpOf', () => {
   it('cf-connecting-ip があれば最優先で使う', () => {
-    const headers = new Headers({ 'cf-connecting-ip': '203.0.113.1', 'x-forwarded-for': '198.51.100.1' })
+    const headers = new Headers({
+      'cf-connecting-ip': '203.0.113.1',
+      'x-forwarded-for': '198.51.100.1',
+    })
     expect(clientIpOf(headers)).toBe('203.0.113.1')
   })
 

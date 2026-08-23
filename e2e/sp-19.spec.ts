@@ -578,7 +578,9 @@ test('SP-19: 検索結果でバッジが付いた候補が、名前が一致し�
     const flags: boolean[] = []
     for (let i = 0; i < 2; i++) {
       names.push((await cards.nth(i).getByRole('link').first().innerText()).trim())
-      flags.push((await cards.nth(i).getByText(ja.home.gemBadge.srHint, { exact: true }).count()) > 0)
+      flags.push(
+        (await cards.nth(i).getByText(ja.home.gemBadge.srHint, { exact: true }).count()) > 0,
+      )
     }
     expect(flags).toEqual([false, true])
     badgedFullName = names[1]
@@ -633,7 +635,9 @@ test('SP-19: 検索結果ページを経由せず /gems を直接開くと、名
     const flags: boolean[] = []
     for (let i = 0; i < 2; i++) {
       names.push((await cards.nth(i).getByRole('link').first().innerText()).trim())
-      flags.push((await cards.nth(i).getByText(ja.home.gemBadge.srHint, { exact: true }).count()) > 0)
+      flags.push(
+        (await cards.nth(i).getByText(ja.home.gemBadge.srHint, { exact: true }).count()) > 0,
+      )
     }
     expect(flags).toEqual([false, true])
     badgedFullName = names[1]

@@ -143,7 +143,9 @@ test('SP-8: 未ログインで全機能が使える／ログインでレート�
   })
 })
 
-test('SP-8 Step 1: 未ログインのまま検索から詳細ページまで全機能が使える（回帰）', async ({ page }) => {
+test('SP-8 Step 1: 未ログインのまま検索から詳細ページまで全機能が使える（回帰）', async ({
+  page,
+}) => {
   await test.step('検索する', async () => {
     await page.goto('/ja')
     await searchFor(page, 'react')

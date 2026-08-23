@@ -5,7 +5,6 @@
 > クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
 > ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
 
-
 > SKILL.md の各 Step が参照する詳細コマンド・実装手順・テンプレートをまとめた補助ドキュメント。
 > 該当 Step を実行する直前に該当セクションだけを Read する。
 >
@@ -22,9 +21,11 @@
 ### 1-A: レトロスペクティブ Try Issue
 
 MCP（クラウド・一次経路）:
+
 ```
 mcp__github__list_issues(owner, repo, state="OPEN", labels=["type:retro-try"])
 ```
+
 （`status:waiting-claude` も課したい場合は、応答の `labels` 配列にそれも含まれる Issue だけを
 client-side で絞り込む。上記の通り複数ラベル指定は OR のため。）
 
@@ -49,6 +50,7 @@ client-side で絞り込む。上記の通り複数ラベル指定は OR のた�
 > **urgency ラベルが付与されていない Issue（旧形式）**: フォールバックとして priority:high→50、medium→51、low→52、未設定→53 を適用する。urgency ラベル付き Issue が優先処理される。
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 gh issue list -R kai-kou/gem-hunter \
   --label "type:retro-try" --label "status:waiting-claude" --state open --limit 1000 \
@@ -84,17 +86,18 @@ day_of_week=$(TZ=Asia/Tokyo LC_ALL=C date '+%A')
 > **プロジェクトで定義する**。上流スキル（例: ツール調査・ドメインリサーチ系スキル）が生成する「更新系」Issue を、プロジェクトが定義する `feat:*-update` ラベルで取得する。下記は汎用テンプレート。
 
 MCP（複数ラベル指定は OR のため、`{更新ラベル}` で取得後 `status:waiting-claude` を client-side で絞り込む）:
+
 ```
 mcp__github__list_issues(owner, repo, state="OPEN", labels=["{更新ラベル}"])
 ```
 
 代表的な更新カテゴリの例（プロジェクト定義）:
 
-| カテゴリ（例） | ラベル（例） | 対象 |
-|--------------|------------|------|
-| ツール/SDK 更新 | `feat:tool-update` | Claude Code / 利用 SDK の新機能・破壊的変更 |
-| 制作ツール更新 | `feat:dev-tool-update` | プロジェクト定義の制作ツール・依存ライブラリの更新 |
-| ドメイン/戦略更新 | `feat:domain-update` | 配信先・マーケ・ドメイン固有の戦略変更 |
+| カテゴリ（例）    | ラベル（例）           | 対象                                               |
+| ----------------- | ---------------------- | -------------------------------------------------- |
+| ツール/SDK 更新   | `feat:tool-update`     | Claude Code / 利用 SDK の新機能・破壊的変更        |
+| 制作ツール更新    | `feat:dev-tool-update` | プロジェクト定義の制作ツール・依存ライブラリの更新 |
+| ドメイン/戦略更新 | `feat:domain-update`   | 配信先・マーケ・ドメイン固有の戦略変更             |
 
 **処理優先順位**: ① ツール/SDK 更新 + `priority:high`（Breaking Change） ② 制作ツール更新 + `priority:high` ③ ドメイン/戦略更新 + `priority:high` ④ `type:retro-try` + `priority:high` ⑤ 上記以外は通常の優先度順
 
@@ -117,6 +120,7 @@ mcp__github__list_issues(owner, repo, state="OPEN", labels=["{更新ラベル}"]
 ### C-4: user / large の扱い（実装しない）
 
 **user（`assignee:user`）**: 実装せず Slack 通知のみ。
+
 ```bash
 python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" waiting \
   --issues "[Retro] ユーザー対応が必要な Try Issue があります: #{N1}, #{N2}" \
@@ -124,6 +128,7 @@ python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" waiting \
 ```
 
 **large 工数**: 実装計画をコメント投稿し `status:waiting-claude` のまま維持する。
+
 ```
 mcp__github__add_issue_comment(owner, repo, issue_number={N}, body="""
 ## 実装計画
@@ -148,6 +153,7 @@ Issue の「参照」セクションの URL を WebFetch/WebSearch で取得し�
 **対応優先順位**: `priority:high`（Breaking Change/Deprecated）は当日中、`priority:medium`（新機能）は週次、`priority:low`（マイナー）は月次。
 
 **判断フロー**:
+
 ```
 Claude Code の新機能・仕様変更        → docs/rules/claude-code-optimization.md を Edit
 CLAUDE.md 記載のモデル名・機能の変更  → CLAUDE.md の当該箇所を Edit
@@ -159,11 +165,11 @@ API Deprecated（破壊的変更）         → 全ルールファイルを grep
 
 ### C-6: domain カテゴリ（ドメイン/戦略更新・プロジェクト定義）
 
-| 優先度 | 対応内容 |
-|--------|---------|
-| `priority:high` | 「推奨アクション」を当日中に実施。取り消し困難な変更（A-2/A-6 相当）はユーザーに通知も行う |
-| `priority:medium` | 週次の{親ワークフロー}内で対応。戦略ドキュメントの更新が中心 |
-| `priority:low` | 「確認済み・参考情報として記録」コメントでクローズ |
+| 優先度            | 対応内容                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `priority:high`   | 「推奨アクション」を当日中に実施。取り消し困難な変更（A-2/A-6 相当）はユーザーに通知も行う |
+| `priority:medium` | 週次の{親ワークフロー}内で対応。戦略ドキュメントの更新が中心                               |
+| `priority:low`    | 「確認済み・参考情報として記録」コメントでクローズ                                         |
 
 ### C-7: dev-tool カテゴリ（制作ツール/新ライブラリ・プロジェクト定義）
 
@@ -179,12 +185,12 @@ API Deprecated（破壊的変更）         → 全ルールファイルを grep
 
 ### バンドル可能条件（全て満たす場合のみ）
 
-| 条件 | 詳細 |
-|------|------|
-| 同一カテゴリ | `doc` + `doc`、`skill` + `skill` など（カテゴリをまたぐ場合は別 PR） |
-| 推定工数 | 全て `small`（`medium` 以上が1件でもあれば個別 PR） |
-| ファイル競合なし | 同一ファイルを複数 Issue が変更する場合は個別 PR |
-| Issue 数 | 2〜3件（1件は個別 PR、4件以上はカテゴリを分割して 2PR） |
+| 条件             | 詳細                                                                 |
+| ---------------- | -------------------------------------------------------------------- |
+| 同一カテゴリ     | `doc` + `doc`、`skill` + `skill` など（カテゴリをまたぐ場合は別 PR） |
+| 推定工数         | 全て `small`（`medium` 以上が1件でもあれば個別 PR）                  |
+| ファイル競合なし | 同一ファイルを複数 Issue が変更する場合は個別 PR                     |
+| Issue 数         | 2〜3件（1件は個別 PR、4件以上はカテゴリを分割して 2PR）              |
 
 ### バンドル PR のコミットメッセージ形式
 
@@ -296,6 +302,7 @@ python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" pr \
 残りの条件を client-side で AND 判定する（SSOT: `docs/rules/github-mcp-fallback-patterns.md` §2.1）。
 
 **クラウド（一次経路）**:
+
 ```
 # 全 Try Issue
 mcp__github__list_issues(owner, repo, state="OPEN", labels=["type:retro-try"], perPage=100)
@@ -311,6 +318,7 @@ mcp__github__search_issues(query="repo:{owner}/{repo} is:issue is:open label:typ
 ```
 
 （以下はローカル実行用・gh CLI 到達可能時）
+
 ```bash
 # 全 Try Issue を取得
 gh issue list -R kai-kou/gem-hunter --label "type:retro-try" --state open --limit 1000

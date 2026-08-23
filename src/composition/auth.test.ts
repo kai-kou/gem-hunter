@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { buildGithubAuthorizeUrl, isAuthConfigured, isSecureConnection, resolveLandingHost } from './auth'
+import {
+  buildGithubAuthorizeUrl,
+  isAuthConfigured,
+  isSecureConnection,
+  resolveLandingHost,
+} from './auth'
 
 /** 32 バイトの固定ダミー鍵（base64url）。テスト専用（session-cookie.test.ts と同じ値）。 */
 const VALID_KEY = 'Z2VtLWh1bnRlci10ZXN0LXNlc3Npb24ta2V5LTMyYgA'

@@ -74,6 +74,7 @@ git checkout -b claude/retro-try-handler-{session_id}
 ## Step 1: 未対応 Issue の取得・ソート
 
 対象は 2 種類:
+
 - **1-A: レトロスペクティブ Try Issue**（`type:retro-try`）
 - **1-B: 更新系 Issue**（プロジェクト定義の `feat:*-update` ラベル）
 
@@ -103,25 +104,25 @@ mcp__github__list_issues(owner, repo, state="OPEN", labels=["type:retro-try"])
 
 各 Issue を以下のカテゴリに分類する（本文の「改善施策」「参考ルールファイル」セクションで判断）。
 
-| カテゴリ | 対象ファイル | 実装 Step |
-|---------|------------|----------|
-| **doc** | `CLAUDE.md` / `docs/rules/*.md` / `SKILL.md` | `reference.md` C-1 |
-| **script** | `tools/*.py` / `tools/*.sh` | `reference.md` C-2 |
-| **validate** | `.claude/hooks/post-tool-use-validate.sh` | `reference.md` C-3 |
-| **skill** | `.claude/skills/**/SKILL.md` | `reference.md` C-1 |
-| **user** | `assignee:user` の Issue（実装しない・通知のみ） | `reference.md` C-4 |
-| **tool-update** | Claude Code/SDK 新機能の反映 | `reference.md` C-5 |
-| **domain** | プロジェクト定義の戦略・設定ファイル | `reference.md` C-6 |
-| **dev-tool** | プロジェクト定義の制作ツール関連ルール | `reference.md` C-7 |
+| カテゴリ        | 対象ファイル                                     | 実装 Step          |
+| --------------- | ------------------------------------------------ | ------------------ |
+| **doc**         | `CLAUDE.md` / `docs/rules/*.md` / `SKILL.md`     | `reference.md` C-1 |
+| **script**      | `tools/*.py` / `tools/*.sh`                      | `reference.md` C-2 |
+| **validate**    | `.claude/hooks/post-tool-use-validate.sh`        | `reference.md` C-3 |
+| **skill**       | `.claude/skills/**/SKILL.md`                     | `reference.md` C-1 |
+| **user**        | `assignee:user` の Issue（実装しない・通知のみ） | `reference.md` C-4 |
+| **tool-update** | Claude Code/SDK 新機能の反映                     | `reference.md` C-5 |
+| **domain**      | プロジェクト定義の戦略・設定ファイル             | `reference.md` C-6 |
+| **dev-tool**    | プロジェクト定義の制作ツール関連ルール           | `reference.md` C-7 |
 
 ### 1 セッションの処理上限（動的・バックログ残件数に応じる）
 
-| バックログ残件数 | 処理上限 | 理由 |
-|--------------|---------|------|
-| 0〜9件 | 2件 | 通常運用 |
-| 10〜19件 | 3件 | 消化ペース加速 |
-| 20〜29件 | 4件 | バックログ圧縮モード |
-| 30件以上 | 5件 | 最大スループット |
+| バックログ残件数 | 処理上限 | 理由                 |
+| ---------------- | -------- | -------------------- |
+| 0〜9件           | 2件      | 通常運用             |
+| 10〜19件         | 3件      | 消化ペース加速       |
+| 20〜29件         | 4件      | バックログ圧縮モード |
+| 30件以上         | 5件      | 最大スループット     |
 
 > 1 ターンのツール呼び出しは 8 個以内（`session-safety-rules.md`）。処理上限を増やすときは中間報告を挟んで複数ターンに分散する。
 
@@ -210,12 +211,12 @@ Issue クローズ後、対応する lessons エントリを確認する。手�
 
 ## エラーハンドリング
 
-| エラー | 対応 |
-|--------|------|
-| Issue 取得失敗 | `list_issues` を再実行（最大2回）。それでも失敗したら STOP してユーザーに報告 |
-| 対象ファイルが存在しない | Issue にコメントを残し、スキップ |
-| 編集後にコンパイル/構文エラー | 変更を元に戻して Issue に「保留」コメントを投稿 |
-| ブランチ push 失敗 | 指数バックオフでリトライ（最大4回: 2s, 4s, 8s, 16s） |
+| エラー                        | 対応                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| Issue 取得失敗                | `list_issues` を再実行（最大2回）。それでも失敗したら STOP してユーザーに報告 |
+| 対象ファイルが存在しない      | Issue にコメントを残し、スキップ                                              |
+| 編集後にコンパイル/構文エラー | 変更を元に戻して Issue に「保留」コメントを投稿                               |
+| ブランチ push 失敗            | 指数バックオフでリトライ（最大4回: 2s, 4s, 8s, 16s）                          |
 
 ## 既存スキルとの関係
 
@@ -223,17 +224,17 @@ Issue クローズ後、対応する lessons エントリを確認する。手�
 > （`type:retro-try` の実装）に限定され、`type:improvement` の消化は改善 Issue レーン
 > （`self-improvement-loop` 消化モード）が担当する（奪い合い防止・#160）。
 
-| 関連スキル | 関係 |
-|-----------|------|
-| `retrospective` | Try Issue を生成する上流スキル |
-| `self-reviewer` | 実装後のセルフレビューに使用（PR 作成時） |
-| `pr-review-watcher` | PR 作成後の AIレビュー監視・自動マージに使用 |
-| `project-manager` | Projects V2 のステータス更新が必要な場合に参照 |
+| 関連スキル          | 関係                                           |
+| ------------------- | ---------------------------------------------- |
+| `retrospective`     | Try Issue を生成する上流スキル                 |
+| `self-reviewer`     | 実装後のセルフレビューに使用（PR 作成時）      |
+| `pr-review-watcher` | PR 作成後の AIレビュー監視・自動マージに使用   |
+| `project-manager`   | Projects V2 のステータス更新が必要な場合に参照 |
 
 ## 関連ファイル
 
-| ファイル | 役割 |
-|---------|------|
-| `reference.md` | Step 別の詳細コマンド・テンプレート（プログレッシブ・ディスクロージャ） |
-| `docs/rules/retrospective-rules.md` | 詳細ルール |
-| `docs/rules/self-review-checklist.md` | セルフレビュー学習ログ |
+| ファイル                              | 役割                                                                    |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| `reference.md`                        | Step 別の詳細コマンド・テンプレート（プログレッシブ・ディスクロージャ） |
+| `docs/rules/retrospective-rules.md`   | 詳細ルール                                                              |
+| `docs/rules/self-review-checklist.md` | セルフレビュー学習ログ                                                  |

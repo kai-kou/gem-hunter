@@ -386,87 +386,87 @@ export default async function LocaleHome({
         skipLinkLabel={messages.common.skipLink}
       />
       <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-10">
-      {hasKeyword ? null : (
-        // eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image の最適化は使わない
-        <img
-          src="/images/hero-idle.webp"
-          alt=""
-          width={768}
-          height={432}
-          loading="eager"
-          decoding="async"
-          className="mx-auto mb-4 h-auto w-full max-w-xs"
+        {hasKeyword ? null : (
+          // eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image の最適化は使わない
+          <img
+            src="/images/hero-idle.webp"
+            alt=""
+            width={768}
+            height={432}
+            loading="eager"
+            decoding="async"
+            className="mx-auto mb-4 h-auto w-full max-w-xs"
+          />
+        )}
+        <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
+
+        <SearchForm
+          keyword={rawKeyword}
+          action={basePath}
+          labels={{
+            inputLabel: messages.home.searchLabel,
+            placeholder: messages.home.searchPlaceholder,
+            submit: messages.home.searchSubmit,
+          }}
         />
-      )}
-      <p className="text-muted-foreground mt-1 mb-6 text-sm">{messages.home.description}</p>
 
-      <SearchForm
-        keyword={rawKeyword}
-        action={basePath}
-        labels={{
-          inputLabel: messages.home.searchLabel,
-          placeholder: messages.home.searchPlaceholder,
-          submit: messages.home.searchSubmit,
-        }}
-      />
-
-      {/*
+        {/*
         SP-14: 発見面（`ADR 0014`）。検索フォームの直下・コントロール行より前に置き、
         キーワード未入力のときだけ表示する（上のコメント参照）。出典表示（`D-29`）は
         同じ排他条件で表示し、ライセンス URL と改変明示を伴う。
       */}
-      {dailyDigest !== null ? (
-        <>
-          <DailyDigest
-            digest={dailyDigest}
-            locale={locale}
-            labels={{
-              heading: messages.home.digest.heading,
-              lead: messages.home.digest.lead,
-              empty: messages.home.digest.empty,
-              dependentLabel: messages.home.digest.dependentLabel,
-              starsLabel: messages.home.digest.starsLabel,
-              newBadge: messages.home.digest.newBadge,
-              firstVisitNote: messages.home.digest.firstVisitNote,
-            }}
-          />
-          <AttributionNotice
-            meta={dailyDigest.meta}
-            locale={locale}
-            labels={{ attribution: messages.home.digest.attribution }}
-          />
-        </>
-      ) : null}
+        {dailyDigest !== null ? (
+          <>
+            <DailyDigest
+              digest={dailyDigest}
+              locale={locale}
+              labels={{
+                heading: messages.home.digest.heading,
+                lead: messages.home.digest.lead,
+                empty: messages.home.digest.empty,
+                dependentLabel: messages.home.digest.dependentLabel,
+                starsLabel: messages.home.digest.starsLabel,
+                newBadge: messages.home.digest.newBadge,
+                firstVisitNote: messages.home.digest.firstVisitNote,
+              }}
+            />
+            <AttributionNotice
+              meta={dailyDigest.meta}
+              locale={locale}
+              labels={{ attribution: messages.home.digest.attribution }}
+            />
+          </>
+        ) : null}
 
-      {/*
+        {/*
         検索欄の直下に横並びのコントロール行（ソート切替 + 表示件数切替）を置く
         （ui-ux-guidelines.md §4.1）。モバイルでは flex-wrap で縦積みに落ちる。
         🔴 `<Suspense>` の外に置く: 結果待ちやエラーでコントロールが DOM から消えると
         レイアウトが上下に動き、Tab 順序が不安定になり、エラー時は「ソートを変えて
         やり直す」回復手段まで絶たれる。現在値は searchParams から取れるので結果を待つ必要はない。
       */}
-      {hasKeyword ? (
-        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-          <SortPicker
-            basePath={basePath}
-            current={searchState}
-            labels={{
-              navLabel: messages.home.sortLabel,
-              options: messages.home.sortOptions,
-            }}
-          />
-          <PerPagePicker
-            basePath={basePath}
-            current={searchState}
-            labels={{
-              navLabel: messages.home.perPageLabel,
-              optionLabel: messages.home.perPageOptionLabel,
-            }}
-          />
-        </div>
-      ) : null}
+        {hasKeyword ? (
+          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <SortPicker
+              basePath={basePath}
+              current={searchState}
+              labels={{
+                navLabel: messages.home.sortLabel,
+                options: messages.home.sortOptions,
+              }}
+            />
+            <PerPagePicker
+              basePath={basePath}
+              current={searchState}
+              labels={{
+                navLabel: messages.home.perPageLabel,
+                optionLabel: messages.home.perPageOptionLabel,
+              }}
+            />
+          </div>
+        ) : null}
 
-      {/*
+        {/*
         🔴 キーワード未入力時は「検索結果」見出しと結果本体を描画しない（飼い主決定・初見
         フィードバック⑥）。以前の idle 表示（「キーワードを入力して検索してください。」）は撤去し、
         まだ検索していない状態では検索フォームと日次ダイジェストだけを見せる。
@@ -478,18 +478,17 @@ export default async function LocaleHome({
         「読み込み中 → N 件中 M 件を表示」がスクリーンリーダーへ届かなくなる（`NFR-12` / `US-26`）。
         見出しは `<h2>` であってライブリージョンではないため、条件描画してよい。
       */}
-      {hasKeyword ? (
-        <h2
-          id="results-heading"
-          tabIndex={-1}
-          className="mt-6 text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring rounded-sm"
-        >
-          {messages.home.resultsHeading}
-        </h2>
-      ) : null}
+        {hasKeyword ? (
+          <h2
+            id="results-heading"
+            tabIndex={-1}
+            className="mt-6 text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring rounded-sm"
+          >
+            {messages.home.resultsHeading}
+          </h2>
+        ) : null}
 
-      <>
-
+        <>
           {/*
             ライブリージョン（初期 DOM に常設し、中身だけを書き換える・ui-ux-guidelines.md §7.2）。
             読み込み中（US-22）は fallback がストリーミングで先に届き、解決後は件数表示へ
@@ -502,48 +501,48 @@ export default async function LocaleHome({
             （`RepositoryList` の `role="status"` は本 `section` の **外**・兄弟要素であり、
             入れ子ではないので問題ない・§7.2）。
           */}
-        <section
-          id="search-status"
-          role="status"
-          aria-live="polite"
-          className="text-muted-foreground mt-6 text-sm"
-        >
-          {/* 未入力時は要素を残したまま中身だけ空にする（§7.2・上のコメント参照）。 */}
+          <section
+            id="search-status"
+            role="status"
+            aria-live="polite"
+            className="text-muted-foreground mt-6 text-sm"
+          >
+            {/* 未入力時は要素を残したまま中身だけ空にする（§7.2・上のコメント参照）。 */}
+            {hasKeyword ? (
+              <Suspense
+                key={suspenseKey}
+                fallback={<LoadingIndicator label={messages.common.loading} />}
+              >
+                <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
+              </Suspense>
+            ) : null}
+          </section>
+
           {hasKeyword ? (
-            <Suspense
-              key={suspenseKey}
-              fallback={<LoadingIndicator label={messages.common.loading} />}
-            >
-              <SearchStatusText statePromise={statePromise} locale={locale} messages={messages} />
+            <Suspense key={suspenseKey} fallback={null}>
+              <SearchBody
+                statePromise={statePromise}
+                basePath={basePath}
+                currentPath={currentPath}
+                searchState={searchState}
+                locale={locale}
+                messages={messages}
+                isLoggedIn={accessToken !== null}
+                showAuthLink={showAuthLink}
+              />
             </Suspense>
           ) : null}
-        </section>
+        </>
 
-        {hasKeyword ? (
-          <Suspense key={suspenseKey} fallback={null}>
-            <SearchBody
-              statePromise={statePromise}
-              basePath={basePath}
-              currentPath={currentPath}
-              searchState={searchState}
-              locale={locale}
-              messages={messages}
-              isLoggedIn={accessToken !== null}
-              showAuthLink={showAuthLink}
-            />
-          </Suspense>
-        ) : null}
-      </>
-
-      {/*
+        {/*
         `key={suspenseKey}` の Suspense 境界の外（= remount されない位置）に置く。
         `watch={currentPath}` はページ送り・ソート・件数切替のたびに値が変わるため、
         このコンポーネント自身は remount されずに props だけが更新され、初回判定
         （`useRef`）が遷移を跨いで機能する（`focus-on-navigate.tsx` 参照）。
       */}
-      {/* 🔴 未入力時は `results-heading` が存在しないため描画しない（無条件に置くと
+        {/* 🔴 未入力時は `results-heading` が存在しないため描画しない（無条件に置くと
           `getElementById` が null を返し、フォーカスが body に残ったまま無言で失敗する）。 */}
-      {hasKeyword ? <FocusOnNavigate watch={currentPath} targetId="results-heading" /> : null}
+        {hasKeyword ? <FocusOnNavigate watch={currentPath} targetId="results-heading" /> : null}
       </main>
     </>
   )

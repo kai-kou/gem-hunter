@@ -108,11 +108,15 @@ export function makeGithubOAuth(): AuthPort {
           body: body.toString(),
         })
       } catch (cause) {
-        throw new UpstreamError('GitHub OAuth トークンエンドポイントへ到達できませんでした', { cause })
+        throw new UpstreamError('GitHub OAuth トークンエンドポイントへ到達できませんでした', {
+          cause,
+        })
       }
 
       if (!response.ok) {
-        throw new UpstreamError(`GitHub OAuth トークン交換に失敗しました（HTTP ${response.status}）`)
+        throw new UpstreamError(
+          `GitHub OAuth トークン交換に失敗しました（HTTP ${response.status}）`,
+        )
       }
 
       const data = (await response.json()) as AccessTokenResponse

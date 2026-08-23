@@ -36,57 +36,55 @@ export default async function Image({ params }: { params: Promise<{ locale: stri
   const messages = getMessages(locale)
 
   return new ImageResponse(
-    (
-      <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative' }}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- next/og は satori ベースの独自レンダラで next/image 非対応 */}
-        <img
-          src={backgroundSrc}
-          width={size.width}
-          height={size.height}
-          style={{ position: 'absolute', inset: 0 }}
-        />
+    <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative' }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- next/og は satori ベースの独自レンダラで next/image 非対応 */}
+      <img
+        src={backgroundSrc}
+        width={size.width}
+        height={size.height}
+        style={{ position: 'absolute', inset: 0 }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 72,
+          left: 64,
+          width: 620,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         <div
           style={{
-            position: 'absolute',
-            top: 72,
-            left: 64,
-            width: 620,
             display: 'flex',
-            flexDirection: 'column',
+            fontSize: 64,
+            fontWeight: 700,
+            // 背景左側は明るいクリーム色（og-background の意匠）なので、判読性のため濃色にする
+            // （白文字は背景と同化して読めなくなる不具合を実画像の目視確認で発見・修正）。
+            color: '#171717',
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              fontSize: 64,
-              fontWeight: 700,
-              // 背景左側は明るいクリーム色（og-background の意匠）なので、判読性のため濃色にする
-              // （白文字は背景と同化して読めなくなる不具合を実画像の目視確認で発見・修正）。
-              color: '#171717',
-            }}
-          >
-            {messages.home.title}
-          </div>
-          {/*
+          {messages.home.title}
+        </div>
+        {/*
             🔴 `messages.home.title`（ブランド名）は ja/en で同一文字列のため、それだけでは
             「ロケール別に見た目を変える」という要件を満たさない（争点 B の目的が達成できない）。
             `messages.home.description`（実際に ja/en で異なる本文）を副題として併せて合成し、
             言語ごとに視覚的な差分が実際に生まれるようにする。
           */}
-          <div
-            style={{
-              display: 'flex',
-              marginTop: 20,
-              fontSize: 28,
-              lineHeight: 1.5,
-              color: '#3f3f3f',
-            }}
-          >
-            {messages.home.description}
-          </div>
+        <div
+          style={{
+            display: 'flex',
+            marginTop: 20,
+            fontSize: 28,
+            lineHeight: 1.5,
+            color: '#3f3f3f',
+          }}
+        >
+          {messages.home.description}
         </div>
       </div>
-    ),
+    </div>,
     { ...size },
   )
 }

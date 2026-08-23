@@ -11,8 +11,7 @@ import type { Page } from '@playwright/test'
 export function createAxeBuilder(page: Page): AxeBuilder {
   return new AxeBuilder({
     page: page as unknown as ConstructorParameters<typeof AxeBuilder>[0]['page'],
-  })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+  }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
 }
 
 /**

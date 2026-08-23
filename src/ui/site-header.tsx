@@ -50,28 +50,34 @@ export function SiteHeader({
         {skipLinkLabel}
       </a>
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
-      <h1 className="text-base font-semibold">
-        <Link
-          href={`/${locale}`}
-          className="text-primary inline-flex items-center gap-2 rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image 最適化は使わない */}
-          <img
-            src="/images/logo.webp"
-            alt=""
-            width={24}
-            height={24}
-            loading="eager"
-            decoding="async"
-            className="shrink-0"
+        <h1 className="text-base font-semibold">
+          <Link
+            href={`/${locale}`}
+            className="text-primary inline-flex items-center gap-2 rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image 最適化は使わない */}
+            <img
+              src="/images/logo.webp"
+              alt=""
+              width={24}
+              height={24}
+              loading="eager"
+              decoding="async"
+              className="shrink-0"
+            />
+            <span>{title}</span>
+          </Link>
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <LocaleSwitcher
+            currentLocale={locale}
+            currentPath={currentPath}
+            labels={localeSwitcherLabels}
           />
-          <span>{title}</span>
-        </Link>
-      </h1>
-      <div className="flex flex-wrap items-center gap-2">
-        <LocaleSwitcher currentLocale={locale} currentPath={currentPath} labels={localeSwitcherLabels} />
-        {showAuthLink && authLabels ? <LoginLink isLoggedIn={isLoggedIn} labels={authLabels} /> : null}
-      </div>
+          {showAuthLink && authLabels ? (
+            <LoginLink isLoggedIn={isLoggedIn} labels={authLabels} />
+          ) : null}
+        </div>
       </header>
     </>
   )

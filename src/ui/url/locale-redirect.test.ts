@@ -78,8 +78,6 @@ describe('buildLocaleRedirectDestination（OpenNext の match→compile 往復�
   })
 
   it('パス途中にドットを含む多セグメントパス（GitHub リポジトリ名）でも例外を投げない', () => {
-    expect(redirectDestinationFor('/repos/foo/user.github.io')).toBe(
-      '/ja/repos/foo/user.github.io',
-    )
+    expect(redirectDestinationFor('/repos/foo/user.github.io')).toBe('/ja/repos/foo/user.github.io')
   })
 })

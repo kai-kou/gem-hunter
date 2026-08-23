@@ -147,8 +147,7 @@ test.describe('SP-10: 誰でも操作できる', () => {
       {
         label: '検索欄',
         locator: page.getByRole('searchbox', { name: '検索キーワード' }),
-        focus: () =>
-          tabUntilFocused(page, page.getByRole('searchbox', { name: '検索キーワード' })),
+        focus: () => tabUntilFocused(page, page.getByRole('searchbox', { name: '検索キーワード' })),
       },
       {
         label: '検索ボタン',

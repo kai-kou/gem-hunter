@@ -59,7 +59,9 @@ describe('GET /api/auth/login', () => {
 
   it('HTTP 接続（ローカル E2E 等）では Secure を付けない（PR #141 レビュー指摘: Chromium が非TLS接続のSecure Cookieを不安定にしか保持しない実機問題への対応）', async () => {
     isAuthConfiguredMock.mockReturnValue(true)
-    buildGithubAuthorizeUrlMock.mockImplementation((state: string) => `https://github.com/x?state=${state}`)
+    buildGithubAuthorizeUrlMock.mockImplementation(
+      (state: string) => `https://github.com/x?state=${state}`,
+    )
     const { GET } = await import('./route')
 
     const res = await GET(makeRequest('http://127.0.0.1:3100/api/auth/login'))
@@ -70,7 +72,9 @@ describe('GET /api/auth/login', () => {
 
   it('毎回異なる state を発行する（固定値の再利用は CSRF 対策として不十分）', async () => {
     isAuthConfiguredMock.mockReturnValue(true)
-    buildGithubAuthorizeUrlMock.mockImplementation((state: string) => `https://github.com/x?state=${state}`)
+    buildGithubAuthorizeUrlMock.mockImplementation(
+      (state: string) => `https://github.com/x?state=${state}`,
+    )
     const { GET } = await import('./route')
 
     const first = await GET(makeRequest('https://gem-hunter.example/api/auth/login'))

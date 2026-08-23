@@ -23,7 +23,8 @@ export function searchQuery(input: {
     keyword: searchKeyword(input.keyword),
     page: input.page === undefined ? (DEFAULT_PAGE as PageNumber) : pageNumber(input.page),
     sort: input.sort === undefined ? DEFAULT_SORT_ORDER : parseSortOrder(input.sort),
-    perPage: input.perPage === undefined ? (DEFAULT_PER_PAGE as PerPage) : parsePerPage(input.perPage),
+    perPage:
+      input.perPage === undefined ? (DEFAULT_PER_PAGE as PerPage) : parsePerPage(input.perPage),
   }
 }
 
