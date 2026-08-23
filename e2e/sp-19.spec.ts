@@ -574,21 +574,49 @@ test('SP-19: 検索結果でバッジが付いた候補が、名前が一致し�
  * 直接 `/gems?q=...` を開いた場合（検索結果ページ経由でない）は同伴パラメータが無いため、
  * 名前不一致のバッジ付き候補は一覧に現れない（lead 判定が明示した残る限界・`D-36` 追記）。
  * 同じキーワードでも「検索結果から来たか直接開いたか」で結果が変わることの回帰点。
+ *
+ * 🔴 **空状態（`gems.empty`）を期待しない**: `gem-badge-<hex>` は `tokenizeQuery` で
+ * 複数トークンに割れるため、全語 AND が 0 件でも `D-37` の緩和（最も選択的な 1 語で絞り込む）が
+ * 発火しうる。緩和で何かしらの候補が出ること自体は正しい挙動なので否定しない。本テストが
+ * 固定したいのは **同伴パラメータが無ければバッジ付き候補（`badgedFullName`）は一覧に含まれず、
+ * `gems.includedFromSearch` 注記も出ない** ことだけ。
  */
 test('SP-19: 検索結果ページを経由せず /gems を直接開くと、名前不一致のバッジ付き候補は同伴しない（ja）', async ({
   page,
 }) => {
   const keyword = uniqueGemBadgeKeyword()
+  let badgedFullName = ''
 
-  // 直接 /gems を開く（badged パラメータなし）。名前照合が AND=0 になる想定のランダム語なので
-  // 通常は空状態（gems.empty）になる。
-  await page.goto(`/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(keyword)}`)
+  await test.step('1. 検索結果でバッジが付いた候補の fullName を控える（前段の検索）', async () => {
+    await page.goto('/ja')
+    await searchFor(page, keyword)
+    const cards = page.getByRole('list').first().locator(':scope > li')
+    await expect(cards).toHaveCount(2, { timeout: FIRST_RESULT_TIMEOUT_MS })
 
-  await expect(page.getByText(ja.gems.empty, { exact: true })).toBeVisible({
-    timeout: FIRST_RESULT_TIMEOUT_MS,
+    const names: string[] = []
+    const flags: boolean[] = []
+    for (let i = 0; i < 2; i++) {
+      names.push((await cards.nth(i).getByRole('link').first().innerText()).trim())
+      flags.push((await cards.nth(i).getByText(ja.home.gemBadge.srHint, { exact: true }).count()) > 0)
+    }
+    expect(flags).toEqual([false, true])
+    badgedFullName = names[1]
+    expect(badgedFullName).not.toBe('')
   })
-  await expect(gemList(page)).toHaveCount(0)
-  await expect(page.getByText(ja.gems.includedFromSearch.replace('{count}', '1'), { exact: false })).toHaveCount(
-    0,
-  )
+
+  await test.step('2. 導線を経由せず /gems を直接開く（badged パラメータなし）', async () => {
+    await page.goto(`/ja/gems?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(keyword)}`)
+    // 緩和（D-37）が発火して何らかの候補が出ることはあるので、一覧の有無そのものは問わない。
+    // 見出しが検索語を含む状態まで描画が進んだことだけを待つ（0 件状態の <p> も対象に含める）。
+    await expect(page.getByRole('heading', { level: 2 })).toBeVisible({
+      timeout: FIRST_RESULT_TIMEOUT_MS,
+    })
+  })
+
+  await test.step('3. バッジ付き候補（名前不一致）は同伴されず、一覧にも注記にも現れない', async () => {
+    expect(await readRepositoryFullNames(page)).not.toContain(badgedFullName)
+    await expect(
+      page.getByText(ja.gems.includedFromSearch.replace('{count}', '1'), { exact: false }),
+    ).toHaveCount(0)
+  })
 })
