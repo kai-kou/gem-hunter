@@ -592,10 +592,14 @@ python3 tools/check_deploy_gate.py
 # 一次経路: Workers Builds の再トリガー（分類器の管轄外・Cloudflare のビルド環境で wrangler deploy が走る）
 git fetch origin +main:refs/remotes/origin/main && git checkout origin/main
 npm ci && npm run check       # 🔴 合成状態の検証（複数 PR がマージされた main HEAD で再実行する）
-python3 tools/trigger_workers_build.py
+python3 tools/trigger_workers_build.py --wait
 # → 内部でデプロイゲートを確認し、開いていれば Cloudflare Builds API 経由で main 最新コミットの
 #   ビルドを再トリガーする（エンドポイント 3 段は §8.2.3「移行後の実測」参照）。閉じていれば
 #   何もせず exit 1 で終わる（fail-closed のまま）。
+# → 🔴 `--wait` はトリガー後にビルドの終端まで待ち、`build_outcome: success` 以外はすべて exit 2 で
+#   終わる（既定の待機上限 900 秒・`--wait-timeout` / `--poll-interval` で調整可）。**`--wait` を
+#   付けずに「トリガーした = 本番へ反映された」と断定しない**（Issue #497 はこの取り違えで、
+#   ビルドが 55 秒で失敗しているのに気づけなかった）。
 ```
 
 ```bash
@@ -875,6 +879,17 @@ GitHub App の **切断** は接続と同様にダッシュボード操作が必
    - `POST /accounts/{account_id}/builds/triggers/{trigger_uuid}/builds` → 再ビルドを起こす
 2. Sprint Review 判定コメント投稿を検知する経路（Step 7 のデプロイ発火）の一次手段を、手動 `npm run deploy` からこの再トリガーへ切り替えた（上の §8.2「本番デプロイ」参照。`npm run deploy` の手動実行はフォールバックとして残す）。
 3. スプリント自走ルーティンのプリフライトに `tools/check_prod_drift.py` の **本判定モード** を配線し、乖離を検出したら再トリガーを試み、ゲート待機中ならその滞留を可視化する。
+
+### 8.2.4. 🔴 ビルド環境の依存インストール契約（npm の install スクリプト既定ブロック・Issue #497）
+
+Workers Builds のビルド環境の npm は **依存の install スクリプト（`preinstall` / `install` / `postinstall`）を既定でブロックする**（npm 11.15 で導入・npm 12 で既定 off）。ローカルの `node_modules` は古い npm で作られているため気づけず、**本番ビルドだけが落ちる** 形で現れる。実測（npm 12.0.2 で `npm ci` を再現）で分かった失敗は 2 つある。
+
+| # | 何が起きるか | 症状 | 対策（正本は `package.json`） |
+|---|---|---|---|
+| 1 | `esbuild` / `workerd` / `msw` / `unrs-resolver` の postinstall が走らず、ネイティブバイナリが配置されない | `npm warn install-scripts ... blocked because they are not covered by allowScripts` | `package.json` の **`allowScripts`** に許可を宣言する（`npm install-scripts approve <pkg> --no-allow-scripts-pin`）。バージョン固定しない形（`"esbuild": true`）で書き、依存更新のたびにビルドが落ちないようにする |
+| 2 | トップレベルの `node_modules/esbuild` が入らない | `Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'esbuild' imported from .../@opennextjs/cloudflare/dist/cli/build/bundle-server.js` | `esbuild` を **直接の devDependency として宣言する**。`@opennextjs/cloudflare` は `esbuild` を bare import するのに自身の依存として持たないため、宣言が無いと `vite` の **optional peer dependency** 経由の巻き上げに依存する。npm 12 の `npm ci` はこの optional peer を入れないので解決できなくなる |
+
+🔴 **この 2 点は `python3 tools/check_install_scripts_policy.py`（`npm run check` に配線済み）が静的に検査する。** lockfile の `hasInstallScript` を `allowScripts` と突き合わせ、必須の直接依存の宣言も見る。install スクリプトを持つ依存を新たに増やしたときは、この検査が落ちるので `npm install-scripts approve` で明示的に許可する（黙って通さない）。
 
 ### 8.3. 🔴 プレビュー URL は fail-closed で扱う（手動実行版）
 

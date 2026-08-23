@@ -34,15 +34,24 @@ gem-hunter は Cloudflare Workers Builds で `main` への push ごとに自動�
 
 【終了コード（fail-closed。呼び出し側の唯一の分岐点は `exit_code_for()`）】
   0 = ビルドをトリガーした（`--dry-run` 時は「トリガーしていたはずの」状態。build_uuid を出力）
+      `--wait` 併用時は「ビルドが `build_outcome: success` で終わった」ことまでを意味する
   1 = トリガーしなかった（デプロイゲートが閉じている＝待機中。異常ではない）
   2 = 判定不能・API エラー（fail-closed。トークン未設定・trigger 取得失敗・POST 失敗等）
+      `--wait` 併用時はビルド失敗・待機タイムアウトもここへ写像する
 
 【秘匿情報】
 `CLOUDFLARE_API_TOKEN` の値は stdout/stderr に一切出力しない。外部 API のエラーメッセージは
 念のため `mask_secrets.mask_text()` を通してから出力する（万一トークンがエコーバックされても隠す）。
 
+【`--wait` の挙動（Issue #497）】
+  トリガーの成功は **ビルドの成功ではない**。`--wait` を付けると `GET .../builds/builds/{uuid}` を
+  ポーリングしてビルドの終端まで待ち、`build_outcome: "success"` 以外はすべて exit 2 で終わる
+  （失敗・スキップ・終端なのに outcome が読めない応答・待機タイムアウトのすべてを fail 側へ倒す）。
+  本 Issue の失敗（ビルドが 55 秒で fail したのに「トリガーした」で終わっていた）を早期検知する経路。
+
 使い方:
     python3 tools/trigger_workers_build.py
+    python3 tools/trigger_workers_build.py --wait          # ビルド結果まで見届ける（推奨）
     python3 tools/trigger_workers_build.py --branch main --commit-hash <sha>
     python3 tools/trigger_workers_build.py --skip-gate-check
     python3 tools/trigger_workers_build.py --dry-run --json
@@ -59,6 +68,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -199,6 +209,62 @@ def extract_build_uuid(response: dict[str, Any]) -> str | None:
     return str(build_uuid) if build_uuid else None
 
 
+# ビルドが終端に達したことを示す status。`build_outcome` が読めるならそちらを優先する
+# （終端なのに outcome が読めないケースは fail-closed で "fail" 側へ倒す）。
+_TERMINAL_BUILD_STATUSES = {"stopped", "canceled", "cancelled", "failed", "completed"}
+
+
+def build_wait_outcome(build: dict[str, Any]) -> str | None:
+    """ビルド 1 件の状態を「継続中 / success / fail」に写像する純関数（Issue #497）。
+
+    戻り値: None = まだ走っている / "success" = 成功 / "fail" = 失敗・スキップ・判定不能。
+
+    Cloudflare の `GET .../builds/builds/{uuid}` は走行中に `status`（queued / running 等）だけを返し、
+    終端で `status: "stopped"` + `build_outcome`（"success" / "fail"）が入る。
+    **終端なのに `build_outcome` が読めない応答は "fail" として扱う**（fail-closed。
+    「読めなかった」を成功扱いにすると、本 Issue と同じ「静かに本番へ反映されない」状態に戻る）。
+    """
+    outcome = str(build.get("build_outcome") or "").strip().lower()
+    status = str(build.get("status") or "").strip().lower()
+    if outcome == "success":
+        return "success"
+    if outcome:
+        return "fail"
+    if status in _TERMINAL_BUILD_STATUSES:
+        return "fail"
+    return None
+
+
+def wait_for_build(
+    account_id: str,
+    token: str,
+    build_uuid: str,
+    *,
+    timeout_sec: float,
+    interval_sec: float,
+    fetcher: Callable[[str, str, str], dict[str, Any]] | None = None,
+    sleeper: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> tuple[str, dict[str, Any]]:
+    """ビルドが終端に達するまでポーリングする。
+
+    戻り値: ("success" | "fail" | "timeout", 最後に取得したビルド情報)。
+    `fetcher` / `sleeper` / `clock` は self-test で差し替えてネットワーク・実時間非依存にする。
+    """
+    fetch = fetcher if fetcher is not None else fetch_build
+    deadline = clock() + timeout_sec
+    build: dict[str, Any] = {}
+    while True:
+        build = fetch(account_id, token, build_uuid)
+        outcome = build_wait_outcome(build)
+        if outcome is not None:
+            return outcome, build
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return "timeout", build
+        sleeper(min(interval_sec, remaining))
+
+
 def should_fetch_next_worker_scripts_page(
     result_info: dict[str, Any], fetched_count: int, page_item_count: int
 ) -> bool:
@@ -315,6 +381,18 @@ def post_trigger_build(
     if not payload.get("success"):
         raise ApiError(mask_text(f"ビルドのトリガーに失敗しました: {payload.get('errors')}"))
     return payload
+
+
+def fetch_build(account_id: str, token: str, build_uuid: str) -> dict[str, Any]:
+    """`GET .../builds/builds/{build_uuid}` でビルド 1 件の状態を取得する（`--wait` 用）。"""
+    url = f"{CF_API_BASE}/accounts/{account_id}/builds/builds/{build_uuid}"
+    payload = _http_json(url, {"Authorization": f"Bearer {token}"})
+    if not payload.get("success"):
+        raise ApiError(mask_text(f"ビルド状態の取得に失敗しました: {payload.get('errors')}"))
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise ApiError("ビルド状態のレスポンスに result がありません")
+    return result
 
 
 def _read_worker_name(wrangler_path: Path) -> str:
@@ -668,6 +746,119 @@ def _self_test_should_fetch_next_worker_scripts_page() -> list[str]:
     return failures
 
 
+def _self_test_build_wait_outcome() -> list[str]:
+    """ビルド状態 → 継続中 / success / fail の写像（Issue #497）。"""
+    cases = [
+        ({"status": "queued"}, None),
+        ({"status": "running", "build_outcome": None}, None),
+        ({"status": "running", "build_outcome": ""}, None),
+        ({"status": "stopped", "build_outcome": "success"}, "success"),
+        ({"status": "stopped", "build_outcome": "fail"}, "fail"),
+        ({"status": "stopped", "build_outcome": "skipped"}, "fail"),
+        # 終端なのに outcome が読めない応答は fail-closed（成功扱いにしない）
+        ({"status": "stopped"}, "fail"),
+        ({"status": "canceled"}, "fail"),
+        # 大文字・前後空白の応答でも判定がぶれない
+        ({"status": "STOPPED", "build_outcome": " Success "}, "success"),
+        ({}, None),
+    ]
+    failures = []
+    for build, expected in cases:
+        actual = build_wait_outcome(build)
+        if actual != expected:
+            failures.append(f"build_wait_outcome({build!r}): expected {expected!r}, got {actual!r}")
+    return failures
+
+
+def _self_test_wait_for_build() -> list[str]:
+    """ポーリングループ（ネットワーク・実時間非依存。fetcher/sleeper/clock を差し替える）。"""
+    failures = []
+
+    def make_fetcher(sequence: list[dict[str, Any]]) -> Callable[[str, str, str], dict[str, Any]]:
+        remaining = list(sequence)
+
+        def fetcher(_account: str, _token: str, _uuid: str) -> dict[str, Any]:
+            return remaining.pop(0) if len(remaining) > 1 else remaining[0]
+
+        return fetcher
+
+    class FakeClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+        def advance(self, seconds: float) -> None:
+            self.now += seconds
+
+    # 1. 走行中 → 成功へ遷移したら "success" を返し、その間 sleep する
+    clock = FakeClock()
+    slept: list[float] = []
+
+    def sleeper(seconds: float) -> None:
+        slept.append(seconds)
+        clock.advance(seconds)
+
+    outcome, build = wait_for_build(
+        "acc", "tok", "uuid",
+        timeout_sec=100, interval_sec=10,
+        fetcher=make_fetcher([
+            {"status": "queued"},
+            {"status": "running"},
+            {"status": "stopped", "build_outcome": "success"},
+        ]),
+        sleeper=sleeper, clock=clock,
+    )
+    if outcome != "success":
+        failures.append(f"成功へ遷移するケース: expected 'success', got {outcome!r}")
+    if build.get("build_outcome") != "success":
+        failures.append("最後に取得したビルド情報を返せていない")
+    if slept != [10, 10]:
+        failures.append(f"ポーリング間隔で待っていない: {slept}")
+
+    # 2. 失敗で終端したら "fail"（トリガーしただけで成功扱いにしない・本 Issue の再発防止）
+    clock = FakeClock()
+    outcome, _ = wait_for_build(
+        "acc", "tok", "uuid",
+        timeout_sec=100, interval_sec=10,
+        fetcher=make_fetcher([{"status": "stopped", "build_outcome": "fail"}]),
+        sleeper=lambda s: clock.advance(s), clock=clock,
+    )
+    if outcome != "fail":
+        failures.append(f"失敗で終端するケース: expected 'fail', got {outcome!r}")
+
+    # 3. 終端しないまま期限を過ぎたら "timeout"（無限ループにしない）
+    clock = FakeClock()
+    outcome, _ = wait_for_build(
+        "acc", "tok", "uuid",
+        timeout_sec=25, interval_sec=10,
+        fetcher=make_fetcher([{"status": "running"}]),
+        sleeper=lambda s: clock.advance(s), clock=clock,
+    )
+    if outcome != "timeout":
+        failures.append(f"期限超過ケース: expected 'timeout', got {outcome!r}")
+
+    # 4. 残り時間より長い interval で待ち続けて期限を踏み越さない
+    clock = FakeClock()
+    slept = []
+
+    def capped_sleeper(seconds: float) -> None:
+        slept.append(seconds)
+        clock.advance(seconds)
+
+    wait_for_build(
+        "acc", "tok", "uuid",
+        timeout_sec=5, interval_sec=60,
+        fetcher=make_fetcher([{"status": "running"}]),
+        sleeper=capped_sleeper, clock=clock,
+    )
+    if slept != [5]:
+        failures.append(f"残り時間で interval を打ち切れていない: {slept}")
+
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("Worker 名読み取りの例外 wrap", _self_test_read_worker_name_wraps_error),
@@ -680,6 +871,8 @@ def run_self_test() -> int:
         ("trigger 解決の branch 伝搬（resolve_trigger）", _self_test_resolve_trigger_branch_wiring),
         ("_http_json の異常系（不正 JSON / HTTPError）", _self_test_http_json_error_handling),
         ("workers/scripts ページング判定", _self_test_should_fetch_next_worker_scripts_page),
+        ("ビルド結果の判定（build_wait_outcome）", _self_test_build_wait_outcome),
+        ("ビルド完了待ち（wait_for_build）", _self_test_wait_for_build),
     ]
     failed_groups = 0
     total_failures = 0
@@ -753,6 +946,26 @@ def _emit_success(result: dict[str, Any], as_json: bool) -> None:
               f"/ branch={result['branch']}）")
 
 
+def _emit_wait_result(result: dict[str, Any], as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    wait_outcome = result["wait_outcome"]
+    build_uuid = result["build_uuid"]
+    if wait_outcome == "success":
+        print(f"ビルド成功: build_uuid={build_uuid}（本番へデプロイされました）")
+    elif wait_outcome == "fail":
+        print(f"ビルド失敗: build_uuid={build_uuid}", file=sys.stderr)
+        print(f"（status={result.get('build_status')} / build_outcome={result.get('build_outcome')}）",
+              file=sys.stderr)
+        print("ダッシュボードのビルドログで原因を確認してください（本番は更新されていません）。",
+              file=sys.stderr)
+    else:
+        print(f"ビルド結果を待てませんでした（{result.get('wait_timeout_sec')} 秒でタイムアウト）: "
+              f"build_uuid={build_uuid}", file=sys.stderr)
+        print(f"（最後に観測した status={result.get('build_status')}）", file=sys.stderr)
+
+
 # ──────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────
@@ -771,6 +984,18 @@ def main() -> None:
     parser.add_argument(
         "--dry-run", action="store_true",
         help="API へ POST せず、送信予定のエンドポイントとペイロードだけ出力する",
+    )
+    parser.add_argument(
+        "--wait", action="store_true",
+        help="トリガー後にビルドの終了を待ち、結果が success でなければ非ゼロで終わる（Issue #497）",
+    )
+    parser.add_argument(
+        "--wait-timeout", type=float, default=900.0,
+        help="--wait の待機上限秒（既定: 900）",
+    )
+    parser.add_argument(
+        "--poll-interval", type=float, default=15.0,
+        help="--wait のポーリング間隔秒（既定: 15）",
     )
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
     parser.add_argument("--self-test", action="store_true", help="ネットワーク不要のユニットテストを実行")
@@ -847,7 +1072,40 @@ def main() -> None:
         "checked_at": now_jst_str(),
     }
     _emit_success(result, args.json)
-    sys.exit(exit_code_for("proceed"))
+
+    if not args.wait:
+        sys.exit(exit_code_for("proceed"))
+
+    # 🔴 トリガー成功 ≠ ビルド成功（Issue #497）。--wait はここで終端まで見届け、
+    #    success 以外はすべて非ゼロで終わる（呼び出し側が「本番へ反映された」と誤認しないため）。
+    build_uuid = result["build_uuid"]
+    if not build_uuid:
+        _emit_error("build_uuid を取得できなかったため、ビルド結果を待機できません", args.json)
+        sys.exit(exit_code_for("error"))
+
+    try:
+        wait_outcome, build = wait_for_build(
+            account_id,
+            token,
+            build_uuid,
+            timeout_sec=args.wait_timeout,
+            interval_sec=args.poll_interval,
+        )
+    except ApiError as error:
+        _emit_error(str(error), args.json)
+        sys.exit(exit_code_for("error"))
+
+    result.update(
+        {
+            "wait_outcome": wait_outcome,
+            "wait_timeout_sec": args.wait_timeout,
+            "build_status": build.get("status"),
+            "build_outcome": build.get("build_outcome"),
+            "finished_at": now_jst_str(),
+        }
+    )
+    _emit_wait_result(result, args.json)
+    sys.exit(exit_code_for("proceed") if wait_outcome == "success" else exit_code_for("error"))
 
 
 if __name__ == "__main__":

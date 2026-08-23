@@ -257,6 +257,17 @@ else
   skip_check "Workers Builds デプロイ入口 self-test (workers_build_deploy.sh --self-test)" "スクリプトが見つかりません"
 fi
 
+# install スクリプト方針の検査（Issue #497 の再発防止）。
+# 本番ビルド環境（npm 12）は install スクリプトを既定でブロックし、巻き上げ頼みの optional peer も
+# 入れないため、ローカルの node_modules では動くのに本番ビルドだけ落ちる。allowScripts の網羅と
+# 必須の直接依存を lockfile と突き合わせる（ローカルの JSON しか読まないためネットワーク非依存）。
+if [ -f "$REPO_ROOT/tools/check_install_scripts_policy.py" ]; then
+  run_check "install スクリプト方針検査 (check_install_scripts_policy.py)" python3 tools/check_install_scripts_policy.py
+  run_check "install スクリプト方針検査 self-test (check_install_scripts_policy.py --self-test)" python3 tools/check_install_scripts_policy.py --self-test
+else
+  skip_check "install スクリプト方針検査 (check_install_scripts_policy.py)" "スクリプトが見つかりません"
+fi
+
 if [ -f "$REPO_ROOT/tools/check_digest_freshness.py" ]; then
   run_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" python3 tools/check_digest_freshness.py --self-test
 else
