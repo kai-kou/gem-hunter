@@ -776,14 +776,6 @@ summary {
   .tile-wide p {
     max-width: 72ch;
   }
-  /* 「今日の Gem」（span-2）の直後に「検索結果でも Gem に気づける」（span-2）を
-     続けて置くと、3 列グリッドの 1 行目に 1 列分の空きセルができる。
-     直後の単色タイルをこの位置へ引き上げて 1 行目を埋める（DOM 順は変えないので
-     フォーカス順はそのまま。視覚順だけがこのタイル 1 枚分前へ出る）。 */
-  .bento .tile-fill-lead {
-    grid-column: 3;
-    grid-row: 1;
-  }
 }
 
 .tile {
