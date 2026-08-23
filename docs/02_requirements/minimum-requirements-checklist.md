@@ -114,7 +114,7 @@
 |---|---|---|---|
 | N-11 | ディレクトリ構成・命名・責務分割の一貫性（API 呼び出し / 表示ロジック / UI の分離） | ✅ | `src/domain`（モデル・ポート）→ `src/usecases` → `src/infrastructure`（GitHub ACL・プラットフォーム）→ `src/ui` / `app`、配線は `src/composition`。依存規則は `python3 tools/check_architecture_boundaries.py` が機械検証し `npm run check` に組み込み済み（**PASS**） |
 | N-12 | API レスポンスの型定義と型安全な取り扱い | ✅ | `src/infrastructure/github/dto.ts` が **zod スキーマ** で上流レスポンスを検証し、`mapper.ts` がドメインモデルへ変換（スキーマ不一致は `upstream` エラーへ）。`tsc --noEmit` **PASS** |
-| N-13 | Lint / フォーマッタを導入し機械的に検証できる状態 | ⚠️ | **Lint は充足**（`eslint.config.mjs` + `npm run lint`、`npm run check` の 1 番目で **PASS**）。**フォーマッタは導入済みだが検証が red**: `npm run format:check`（`prettier --check .`）が **110 ファイルで失敗**（内訳: `.claude` 33 / `src` 26 / `tools` 19 / `e2e` 11 / `app` 10 ほか）。実差分も確認済み（例: `src/ui/repository-detail.tsx:55` が `printWidth: 100` 超過）。さらに `tools/run_checks.sh` に Prettier のチェックが **含まれていない** ため、PR ゲートでも検出されない |
+| N-13 | Lint / フォーマッタを導入し機械的に検証できる状態 | ✅ | **Lint・フォーマッタとも充足**（`eslint.config.mjs` + `npm run lint`、`npm run check` の 1 番目で **PASS**）。`npm run format:check`（`prettier --check .`）が **PASS** し、`tools/run_checks.sh` に Prettier チェックが配線され PR ゲートで検出される（#402） |
 
 ---
 
@@ -181,6 +181,6 @@
 
 いずれも与件の ❌ ではないが、注記 ⚠️ の解消として Issue 化を検討する。
 
-1. **Prettier の是正と PR ゲートへの接続**: `npx prettier --write .` で 110 ファイルを整形し、`tools/run_checks.sh` に `prettier --check` を 1 チェックとして追加する（`N-13`）
+1. ~~**Prettier の是正と PR ゲートへの接続**~~: 対応済み（`N-13`・#402）。`prettier --write .` で全ファイルを整形し `npm run format:check` が PASS、`tools/run_checks.sh` に `prettier --check` を配線済み
 2. **CI でのテスト自動実行の回復**: GitHub Actions の制限解除時に撤去済みワークフローを復帰させる（復帰手順は `cloudflare-infrastructure.md` §8.4）。それまでの間、Workers Builds のビルドコマンド側でテストを走らせられるかを検証する（`TS-4`）
 3. **初期状態の文言**: 「検索を促す」意図を文言でも明示するか、現状（プレースホルダ + 説明文 + ビジュアル）で十分とするかを判断し、決定ログへ残す（§3.2）
