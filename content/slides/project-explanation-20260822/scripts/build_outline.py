@@ -31,7 +31,12 @@ def main() -> int:
         (s["no"] for s in plan["slides"] if "90〜100 秒" in s.get("message", "")), None
     )
     note = f"。スライド {long_slide} のみ 90〜100 秒" if long_slide else ""
-    lines.append(f"想定尺: {count}〜{count + 3} 分（{count} 枚 / 1 枚あたり 60〜70 秒{note}）")
+    # 秒から積み上げて分に直す（枚数 + 3 という当てずっぽうだと長尺スライドのぶんが落ちる）。
+    low_sec = count * 60 + (90 - 60 if long_slide else 0)
+    high_sec = count * 70 + (100 - 70 if long_slide else 0)
+    low_min = -(-low_sec // 60)
+    high_min = -(-high_sec // 60)
+    lines.append(f"想定尺: {low_min}〜{high_min} 分（{count} 枚 / 1 枚あたり 60〜70 秒{note}）")
     lines.append("作成日: 2026-08-22（2026-08-23 改訂）")
     lines.append("")
     lines.append("> 本ファイルは `content/slides_plan.json`（議論 `project-slides-20260822` の verdict）から")
