@@ -1,0 +1,7 @@
+Draw a four-tier stacked overview diagram that connects the logical architecture, its physical placement, the daily batch, and where the data comes from:
+- Four wide horizontal layer bands stacked vertically, filling the canvas below the title, in this top-to-bottom order: 「論理層」, 「物理配置」, 「日次バッチ」, 「2系統のデータ源」.
+- Each band is a long rounded box with its heading in an accent color on the left edge (with a small icon), and its bullet items laid out in two columns inside the band.
+- Inside the 「論理層」 band, draw small arrows pointing inward toward the center of the band, so the reader sees at a glance that dependencies only point inward.
+- Inside the 「日次バッチ」 band, connect the bullet items left to right with small hand-drawn arrows so the band reads as a pipeline.
+- Give each band a different accent color and a slightly different hand-drawn texture.
+- Draw a thin hand-drawn arrow on the far right connecting the bands top to bottom.

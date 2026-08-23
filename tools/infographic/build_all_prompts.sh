@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 全 13 枚のプロンプトを spec + layout から組み立て直す。
+# 全 14 枚のプロンプトを spec + layout から組み立て直す。
 # spec を更新したあとに実行し、prompts/*.txt を現行の内容へ揃える。
 set -euo pipefail
 
@@ -21,3 +21,4 @@ build extra1.json       gem-score        gem-score.txt        10-gem-score.txt
 build extra2.json       testing          testing.txt          11-testing-strategy.txt
 build extra2.json       cloudflare       cloudflare.txt       12-cloudflare.txt
 build extra3.json       ops-rules        ops-rules.txt        13-ops-rules.txt
+build extra4.json       architecture-overview architecture-overview.txt 14-architecture-overview.txt

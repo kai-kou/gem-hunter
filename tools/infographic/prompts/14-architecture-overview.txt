@@ -1,0 +1,76 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+
+TITLE (top banner, largest text):
+「アーキテクチャ全体像」
+
+SUBTITLE (under the title, one line):
+「論理層×物理配置×日次バッチを1枚で見る」
+
+LAYOUT INSTRUCTION:
+Draw a four-tier stacked overview diagram that connects the logical architecture, its physical placement, the daily batch, and where the data comes from:
+- Four wide horizontal layer bands stacked vertically, filling the canvas below the title, in this top-to-bottom order: 「論理層」, 「物理配置」, 「日次バッチ」, 「2系統のデータ源」.
+- Each band is a long rounded box with its heading in an accent color on the left edge (with a small icon), and its bullet items laid out in two columns inside the band.
+- Inside the 「論理層」 band, draw small arrows pointing inward toward the center of the band, so the reader sees at a glance that dependencies only point inward.
+- Inside the 「日次バッチ」 band, connect the bullet items left to right with small hand-drawn arrows so the band reads as a pipeline.
+- Give each band a different accent color and a slightly different hand-drawn texture.
+- Draw a thin hand-drawn arrow on the far right connecting the bands top to bottom.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「論理層」
+Block 1 items (bulleted list, one line each):
+・app→usecases→domain
+・依存は常に内向きのみ
+・domainは依存ゼロの中心
+・ui/appはinfra直接不可
+・compositionでDI合成
+・GitHub ACLはinfra/github/
+
+Block 2 heading:「物理配置」
+Block 2 items (bulleted list, one line each):
+・SA:JS/CSS/フォント配信
+・Worker:RSC/API実行
+・MISS時→Worker実行
+・L1:リクエスト内メモ化
+・L2:InMemoryCacheが主役
+・RATE_LIMITER:60/60s
+
+Block 3 heading:「日次バッチ」
+Block 3 items (bulleted list, one line each):
+・毎日1回cronで起動
+・収集:Ecosyste.ms API
+・12レジストリ順次取得
+・汚染フィルタ+dedupe
+・レジストリ別に順位付け
+・機械QAはfail-closed
+
+Block 4 heading:「2系統のデータ源」
+Block 4 items (bulleted list, one line each):
+・出力:シャード12+索引1
+・gem-index:ASSETS経由
+・digest:importで内蔵
+・Gem判定:静的プール
+・詳細/README:GitHub API
+・取得失敗でも検索は継続
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「候補プール62,483件」
+「バッチ起動 JST 06:17」
+「Gem Index=順位差で算出」
+「main反映は7日ごと」
+
+ARROWS (draw a hand-drawn arrow from the first label to the second; do NOT write the arrow list as text):
+日次バッチ → 2系統のデータ源
+2系統のデータ源 → 論理層
+論理層 → 物理配置
