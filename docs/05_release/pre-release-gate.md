@@ -46,7 +46,7 @@
 | **2** | **#338** | `src/infrastructure/github/dto.ts` は `updated_at: z.string()` / `pushed_at: z.string().nullable()` で **日付として妥当かを検証していない**。`app/**/error.tsx`・`global-error.tsx` はいずれも不在 | 上流の不正日付が `Intl.DateTimeFormat` に渡ると `RangeError` になり、**一覧・詳細が HTTP 500**。与件 §4.1「握り潰さず継続利用可能に保つ」に直撃する |
 | **3** | **#354** | 対応済み（PR #552）。`site-header.tsx` の `<header>` 直前に `#main-content` へのスキップリンクを追加し、各ページの `<main>` に `id="main-content"` / `tabIndex={-1}` を付与した | 与件 §4.3 は「キーボードのみで操作できる」を求めている。スキップリンクは与件の明文要求ではなく **WCAG 2.4.1（レベル A）に基づく本プロジェクト独自の基準** だが、キーボード操作性の実効を左右する |
 | **4** | **#352** | `app/[locale]/layout.tsx:25` の `description` が日本語リテラル固定 | `/en` でも日本語 description が出る。多言語対応を謳っている分だけ目立つ |
-| **5** | **#402** | `tools/run_checks.sh` に prettier / `format:check` の記述が 1 行も無い。`npm run format:check` は 110 ファイルで red | 与件 §4.4「フォーマッタを機械的に検証できる状態」の唯一の穴。充足チェックリストの ⚠️ 2 番がそのまま残っている |
+| **5** | **#402** | 対応済み（PR #556）。`prettier --write .` で全ファイルを整形し `npm run format:check` が PASS、`tools/run_checks.sh` に `prettier --check` を配線した | 与件 §4.4「フォーマッタを機械的に検証できる状態」の唯一の穴を解消。充足チェックリストの注記から Prettier 項目を削除済み |
 | **6** | **#366** | `NOTICE` に `Ecosyste.ms` / `Geist` の文字列が 0 件（`Geist` は `layout.tsx` で使用中） | 第三者データ・フォントの帰属表示。公開リポジトリとして提出する以上、権利表示の欠落は避ける |
 | **7** | **#401** | リポジトリに `.env*` が 1 つも存在しない | 与件 §6 のセットアップ手順。README に環境変数表があるため致命ではなく、実装系の最後に置く |
 | **8** | **#466** | 本ゲート自体の撤去作業（ラベル剥がし・各ファイルの参照撤去） | 🔴 **解除の発火主体**。これを表の最終行に置くことで、`release:required` が空になる直前に必ず 1 件残り、ルーティンが自力で解除に到達する（置かないと終了済みゲートを毎 firing 読み続ける） |
@@ -118,7 +118,7 @@
 | [`.claude/skills/sprint-cycle-router/SKILL.md`](../../.claude/skills/sprint-cycle-router/SKILL.md) | 決定木の SSOT（Step 5 が本ファイルを参照する） |
 | [`.claude/skills/self-improvement-loop/SKILL.md`](../../.claude/skills/self-improvement-loop/SKILL.md) | 消化モードの実行フロー（本ファイルはその上書きを与える運用メモ） |
 | [`docs/rules/improvement-lane-map.md`](../rules/improvement-lane-map.md) | レーン責務境界の SSOT（ゲート期間中のみ本ファイルが消化スロットの対象スコープ・順序を上書きする） |
-| [`docs/02_requirements/minimum-requirements-checklist.md`](../02_requirements/minimum-requirements-checklist.md) | 与件の充足状況（❌ ゼロ・⚠️ 4 件）。§2 の 順 5 は同ファイル ⚠️ 2 番の解消にあたる |
+| [`docs/02_requirements/minimum-requirements-checklist.md`](../02_requirements/minimum-requirements-checklist.md) | 与件の充足状況（❌ ゼロ・⚠️ 3 件）。§2 の 順 5（#402・PR #556 で対応済み）は同ファイルの Prettier 注記の解消にあたる |
 | [`docs/02_requirements/prd.md`](../02_requirements/prd.md) | §2.4.1 が URL クエリの正本（#272 を `release:deferred` にした根拠） |
 | [`docs/05_release/repository-publication-review.md`](./repository-publication-review.md) | 公開可否レビュー（#241 の判定と根拠） |
 | [`docs/rules/user-confirmation-minimization.md`](../rules/user-confirmation-minimization.md) | `A-5` / `A-6` の境界（マイルストーン新設を避けた理由・#241 `U-3` が飼い主作業である理由） |

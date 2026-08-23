@@ -6,3 +6,8 @@ content/
 docs/
 # 手書きで最適化した静的 LP（prettier に整形させると表示が変わる・Issue #360）
 site/
+# tools/gem-pool/output.mjs が JSON.stringify(doc, null, 2) で書き出す生成データ。
+# prettier の JSON プリンタは短い配列を1行へ折りたたむため出力が一致せず、
+# gem-pool-refresh.yml の週次再生成のたびに format:check が red になる（Issue #402 レビュー指摘）
+public/data/gem-index/
+public/data/daily-digest.json
