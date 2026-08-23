@@ -125,6 +125,10 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 
 ### Step 6: マージ直後の公開反映とデプロイゲート（#449・`sprint-env-lifecycle-20260820` 決定）
 
+🔵 **一次経路を `wrangler deploy` の直叩きから Workers Builds の再トリガーへ変更**（Issue #451）:
+`D-31` の理念（マージ＝本番反映・セッションが `wrangler deploy` を打たない）に戻す変更であり、
+`npm run deploy` の手動実行は L-130（auto mode classifier ブロック）対策のフォールバックに降格する。
+
 マージした瞬間が、公開リポジトリとのドリフトが生まれる瞬間である。**反映をセッション終了時や次回の
 定期ルーティンに先送りしない**（先送りが実際に 13〜17 時間の滞留を生んだ・#449）。
 
@@ -205,8 +209,13 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 
 3.5. **デプロイ・疎通確認・退役**（`デプロイ: yes` のときのみ実行。`rejected` または `deploy: no` は
    本項を丸ごとスキップして 4 へ進む・fail-closed）:
-   - Step 6 のデプロイ手順（`main` HEAD で `npm run check` 再実行 → `npm run deploy` → 本番 URL 疎通確認。
-     **手順の実体は `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。
+   - 🔴 **一次経路は `python3 tools/trigger_workers_build.py`**（Workers Builds の再トリガー・#451。
+     終了コード 0 = トリガー成功 / 1 = デプロイゲート待機中・異常ではない / 2 = 判定不能・fail-closed）。
+     スクリプトが存在しない、または 2 を返した場合に限り Step 6 のフォールバック手順（`main` HEAD で
+     `npm run check` 再実行 → `npm run deploy` → 本番 URL 疎通確認。**手順の実体は
+     `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。1（ゲート待機中）の場合は
+     デプロイを実行せず、`進捗:` を「デプロイ未完了」のまま更新しない（下記の失敗時と同じ扱い。
+     次回 firing は `sprint-cycle-router` Step 0.2 が拾う）。
    - デプロイ成功後、**そのスプリント PR の preview alias を退役する**:
      `python3 tools/retire_preview_aliases.py --alias pr-<N>`（`<N>` は対象 PR 番号。本番と同一ビルドへ
      張り替える＝「削除」ではなく「上書き」。削除 API が存在しないことは
