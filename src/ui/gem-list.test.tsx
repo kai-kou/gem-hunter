@@ -19,7 +19,8 @@ const labels: GemListLabels = {
   gemIndexLabel: 'Gem Index',
   registryLabel: 'レジストリ',
   attribution: 'このデータについて: {source}（{license}）のオープンデータをもとにしています。',
-  includedFromSearch: 'うち {count} 件は検索結果の Gem 印から同伴されました。',
+  includedFromSearch:
+    '全 {total} 件のうち、検索語に一致したのは {matchedCount} 件です。残り {count} 件は同伴です。',
 }
 
 const meta: DigestMeta = {
@@ -92,6 +93,48 @@ describe('GemList', () => {
   })
 
   /**
+   * 🔴 飼い主フィードバック「各カードに通常の一覧で表示している項目も含める」への対応（タスク A）。
+   * 候補プールの静的シャードには description/primaryLanguage/topics/lastPushedAt が無いため、
+   * 今回追加できるのは GitHub API 呼び出し不要な avatar だけ（`repository-list.tsx` の 2 カラム
+   * 構造を複製）。`alt=""` は `repositoryFullName` が隣接テキストとして出るための装飾扱い（§7.4）。
+   */
+  it('カードに GitHub avatar 画像を出す（owner/name が分解できるとき）', () => {
+    // 🔴 alt="" は暗黙 role が "presentation" になるため getByRole('img') では見つからない
+    // （装飾扱いの意図どおり）。container から直接 <img> を探す。
+    const { container } = render(
+      <GemList view={viewOf()} query="pad" locale={locale('ja')} labels={labels} />,
+    )
+
+    const avatar = container.querySelector('img')
+    expect(avatar).not.toBeNull()
+    expect(avatar).toHaveAttribute('src', 'https://github.com/stevemao.png?size=80')
+    expect(avatar).toHaveAttribute('alt', '')
+    expect(avatar).toHaveAttribute('width', '40')
+    expect(avatar).toHaveAttribute('height', '40')
+  })
+
+  /**
+   * 🔴 `repositoryFullName` が `owner/name` に割れないときはリンクを作らないのと同じ理由で、
+   * 壊れた画像 URL（owner 不明）を出すよりテキストのみで見せる方が害が小さい。
+   */
+  it('repositoryFullName が owner/name に割れないときは avatar を出さない', () => {
+    const broken: GemPoolEntry[] = [
+      { ...entries[0], repositoryFullName: 'not-a-full-name', packageName: 'broken' },
+    ]
+
+    const { container } = render(
+      <GemList
+        view={viewOf({ items: broken, totalCount: 1 })}
+        query="pad"
+        locale={locale('ja')}
+        labels={labels}
+      />,
+    )
+
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  /**
    * 🔴 メタ情報は可視ラベルを添える（`ui-ux-guidelines.md` §4.2）。裸の数値のままだと
    * 支援技術なしの利用者だけが「何の数値か」を読み取れない逆転が起きる。
    */
@@ -117,9 +160,11 @@ describe('GemList', () => {
       <GemList view={viewOf()} query="pad" locale={locale('ja')} labels={labels} />,
     )
 
-    // 行全体（flex アイテムではないので継承で配下のリポジトリ名・メタ情報まで届く）
-    const row = screen.getByRole('listitem')
-    expect(row.className).toContain('break-words')
+    // カード本文（`min-w-0` で floor を外した flex アイテム。継承で配下のリポジトリ名・
+    // メタ情報まで届く）
+    const cardBody = container.querySelector('li > div.min-w-0')
+    expect(cardBody).not.toBeNull()
+    expect(cardBody?.className).toContain('break-words')
 
     // 検索語をそのまま埋め込む見出し（任意長のユーザー入力）
     expect(screen.getByRole('heading', { level: 2 }).className).toContain('break-words')
@@ -365,17 +410,43 @@ describe('GemList', () => {
    * （既存の 0 件・件数表示の `role="status"` と同時に読み上げられる二重ライブリージョンを
    * 作らないため、`relaxedNotice` と同じくこの注記自体には role を付けない）。
    */
-  it('includedCount が 1 件以上のとき同伴の注記を出す', () => {
+  /**
+   * 🔴 飼い主フィードバック「Gem 一覧の検索結果数と説明にある件数が一致していない」への対応。
+   * 総件数 5・同伴 4（= 名前一致 1 + 同伴 4）のとき、名前一致件数 `{matchedCount}` を
+   * `totalCount - includedCount` として算出し、3 つの数値の関係が文章として読めることを固定する。
+   */
+  it('includedCount が 1 件以上のとき、総件数・名前一致件数・同伴件数を埋めた注記を出す', () => {
     render(
       <GemList
-        view={viewOf({ includedCount: 2 })}
+        view={viewOf({ totalCount: 5, includedCount: 4 })}
         query="next.js"
         locale={locale('ja')}
         labels={labels}
       />,
     )
 
-    expect(screen.getByText('うち 2 件は検索結果の Gem 印から同伴されました。')).toBeInTheDocument()
+    expect(
+      screen.getByText('全 5 件のうち、検索語に一致したのは 1 件です。残り 4 件は同伴です。'),
+    ).toBeInTheDocument()
+  })
+
+  /**
+   * 🔴 境界ケース: 名前照合が 0 件で全件が同伴（`includedCount === totalCount`）でも
+   * 「一致したのは 0 件です」と破綻せずに読めることを固定する（`matchedCount` が負にならない前提）。
+   */
+  it('includedCount が totalCount と同じ（名前一致 0 件で全件同伴）でも矛盾なく読める文言を出す', () => {
+    render(
+      <GemList
+        view={viewOf({ totalCount: 5, includedCount: 5 })}
+        query="next.js"
+        locale={locale('ja')}
+        labels={labels}
+      />,
+    )
+
+    expect(
+      screen.getByText('全 5 件のうち、検索語に一致したのは 0 件です。残り 5 件は同伴です。'),
+    ).toBeInTheDocument()
   })
 
   it('includedCount が 0 のとき同伴の注記を出さない', () => {
@@ -388,7 +459,7 @@ describe('GemList', () => {
       />,
     )
 
-    expect(screen.queryByText(/同伴されました/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/同伴です/)).not.toBeInTheDocument()
   })
 
   it('relaxedToken が入っているとき緩和の注記を出し、null のときは出さない', () => {
