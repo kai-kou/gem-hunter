@@ -53,6 +53,7 @@ mcp__github__list_issues(owner="{OWNER}", repo="{REPO}", state="OPEN", labels=["
 mcp__github__list_issues(owner="{OWNER}", repo="{REPO}", state="OPEN", labels=["status:waiting-claude"])
 ```
 
+- 🔴 **`release:deferred` の Issue は着手対象から除く**（提出前ゲートで「提出後に回す」と判断済み・`docs/05_release/pre-release-gate.md` §3。ゲート解除時に本行を撤去する・#466）。逆に `release:required` が open なら **それを最優先で選ぶ**（順序は同ファイル §2 の表）
 - `status:in-progress` ラベルを先付けしてから作業開始（CP-4）。`issue_write` の `labels` は全置換のため、
   現在のラベル一覧から `status:waiting-claude` を除き `status:in-progress` を加えたフルリストを渡す
 - パイプライン系 Issue は対応するスキルの SKILL.md を Read してから実行

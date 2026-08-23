@@ -156,6 +156,7 @@ gem-hunter
 - ステータスラベル: `status:waiting-user` / `status:waiting-claude` / `status:in-progress` / `status:blocked`
 - 見積もり: `sp:1` / `sp:2` / `sp:3` / `sp:5` / `sp:8`（`session-sprint-rules.md` §3）。AI Agent が全工程（リサーチ・判断・実装・レビュー）を実行する前提のため、ベーススケールに **Dynamic 補正（不確実性 +1〜2 SP・§3.1.5）** を重ねる。工程別標準値は `docs/project-mission.md`、推定 ↔ 実測の較正は `content/analytics/sprint/`（§5/§6）
 - 種別: `type:feature` / `type:bug` / `type:improvement` / `type:docs` / `type:retro-try`
+- 🔴 **提出前ゲート（期間限定・#452）**: `release:required`（提出前に片付ける。ルーティンの消化スロットはゲート稼働中このラベルだけを対象にする）/ `release:deferred`（提出後に回す＝**消化スロット・週次リファインメント・`/next` のいずれからも着手しない**）。対象・着手順・解除条件の SSOT は `docs/05_release/pre-release-gate.md`。**解除時にこの 2 行ごと削除する**（#466）
 - **Done Criteria（完了条件）**: Issue 着手前に「何ができたら完了とするか」を Issue 本文または最初のコミットメッセージに 1 行以上記載する。検証可能な形（テスト通過・出力確認・動作確認）で書くことが望ましい（Goal-Driven Execution）
 
 ## スプリント開発の 4 規律（SSOT: `sprint-development-rules.md`）

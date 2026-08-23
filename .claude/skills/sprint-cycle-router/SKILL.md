@@ -86,7 +86,7 @@ effort: medium
 a) [CC-Sync 破壊的変更] `lane:claude-code-spec` かつ `[CC-Sync][破壊的変更]` の open Issue の存在チェック（1 クエリ）
 b) 自分の in-progress Issue / open PR の存在チェック（`check_pending_pr_reviews.py --mine --actionable-only`
    相当・1 クエリ。§1 のチャネルに応じて MCP/gh/curl 手動実装のいずれかで実行）
-c) `status:waiting-claude` の **非 `SP-n`** Issue の在庫チェック（1 クエリ・`type` は問わない）
+c) `status:waiting-claude` の **非 `SP-n`** Issue の在庫チェック（1 クエリ・`type` は問わない。`release:deferred` は在庫に数えない＝Step 5 の対象外のため・`docs/05_release/pre-release-gate.md` §3）
 d) 当日の衛生スロット実施済みか（`project-sync` のログ相当・当日の Issue コメント日付や
    `workflow-health-check` 実行痕跡から判定・1 クエリ。新規 state ファイルは作らない）
 ```
@@ -107,8 +107,8 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 | **3** | `status:in-progress` かつ Sprint Planning コメントがある Issue のうち `updated_at` が **4 時間超 stale**（4 時間未満は他セッション対応中とみなし触らない） | 前回 firing が力尽きた形跡。git log とIssue コメント（Sprint Planning・仮定記録・「進捗: {SD ステップ名 **または Sprint Review 判定済み（結果 / デプロイ要否）・デプロイ完了・退役完了**}まで完了。次は {次にやること}」1 行）から続きを判定し再開（手順は §7 の中断条件と対。**Sprint Review 判定済みでデプロイ・退役が未完了のケースは下記「Step 3 の再開: デプロイ・退役未完了の検出」を先に見る**）。対応する open PR があれば Step 2 と同じ扱いに合流 | `pr-review-watcher`（PR 済みなら）/ 自前（PR 未作成なら §4 の 4-4 以降から再開） |
 | **3.5** | Ready 判定（下記「Ready の定義」5 条件）を満たす次の `SP-n` の Issue が **無い** | `tools/sprint_backlog_sync.py` を実行し、**その 1 件だけ** 起票する（先読み複数起票はしない＝CP-4 のロックと相性が悪く他セッションの着手余地を奪う）。起票は Issue 作成に限定した副作用。呼び出し方のみ本スキルが持ち、スクリプト内部のパース・判定ロジックは持たない | `tools/sprint_backlog_sync.py` |
 | **4** | Ready な `SP-n` の Issue が存在する（Step 3.5 の結果、必ず 0 件か 1 件） | 新規スプリント着手。内部手順は §4 | 自前（`pr-review-watcher` へ Step 4-6 で継続） |
-| **5** | `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい） | `self-improvement-loop` 消化モード |
-| **5.5** | ① `status:in-progress` かつ `type:retro-try` の Issue が **4 時間超 stale**（着手して中断したものの再開。Step 3 は Sprint Planning コメントを持つ `SP-n` しか拾わないためここで拾う）、または ② `status:waiting-claude` かつ `type:retro-try` の Issue が存在し **直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5）。① は ② より優先する | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
+| **5** | ① `status:in-progress` かつ `SP-n` 規約にも `type:retro-try` にも該当しない Issue が **4 時間超 stale**（前回 firing が着手だけして力尽きた形跡。Step 3 は Sprint Planning コメントを持つ `SP-n` しか拾わず、Step 5.5 ① は `type:retro-try` 限定のため、**この 2 つの隙間に落ちる非 `SP-n` Issue をここで再開する**・#452）、または ② `status:waiting-claude` の Issue のうち、タイトルが `SP-n` 規約（`^SP-(\d+):`）に一致しないものが存在する（**`type` で絞らない**）。① は ② より優先する。**`release:deferred` はどちらの対象にもしない**（提出後に回すと決めたもの・`docs/05_release/pre-release-gate.md` §3） | バックログ消化（既定 5 件/回。本ルーティンでは firing の残り予算次第で件数を絞ってよい）。🔴 **提出前ゲートが稼働中は `docs/05_release/pre-release-gate.md` §5 の上書き（対象スコープ・同 priority 内のタイブレーク順・件数上限の 3 項目のみ）を読み、`release:required` を §2 の表の順に 1 件だけ処理する**（上書きが許される根拠と射程は `self-improvement-loop` SKILL.md 消化モード冒頭。**priority ラベルの大小順は上書きしない**。ゲート終了後は本行の参照ごと撤去する・#466） | `self-improvement-loop` 消化モード |
+| **5.5** | ① `status:in-progress` かつ `type:retro-try` の Issue が **4 時間超 stale**（着手して中断したものの再開。Step 3 は Sprint Planning コメントを持つ `SP-n` しか拾わないためここで拾う）、または ② `status:waiting-claude` かつ `type:retro-try` の Issue が存在し **直近の retro-try 対応から 8 時間以上経過** している（エージング条件・§5）。① は ② より優先する。🔴 **提出前ゲート稼働中（`release:required` の open Issue が 1 件以上）は ① の Step 5 に対する優先を停止し、retro-try の再開は 1 日 1 回までに制限する**（2 時間 cron のスロットが retro-try に吸われてゲートが進まなくなるため・`docs/05_release/pre-release-gate.md` §5・#452。ゲート終了後は本文を撤去する・#466） | 振り返り由来の Try Issue の消化（既定 2〜5 件/回・件数は委譲先の動的上限に従う） | `retro-try-handler` |
 | **6** | 当日の衛生スロット未実施（`project-sync` ログなし） | 監査・衛生 | `workflow-health-check` 軽量版 → `project-sync` |
 | **7** | `config/backlog_refinement_state.json` の `last_refinement_at` から 7 日超 | リファインメント週次ゲート | `self-improvement-loop` 整理モード Step G-1.5〜G-6 <!-- refcheck:ignore --> |
 | **8** | `[CC-Sync][検証]` の open Issue が残っている | 検証 Issue 対応（1 件のみ） | `claude-code-spec-sync` Step2 |
@@ -161,6 +161,12 @@ Step 3 の対象は「**Sprint Planning コメントがある** Issue」で、�
 retro-try Issue は Step 3 では再開されない。**その再開は Step 5.5 の条件 ① が担う**
 （`status:in-progress` かつ 4 時間超 stale）。Step 3 の条件は変更しない（他ファイルから
 Step 番号と条件を名指しで参照されているため）。
+
+🔴 **同じ隙間が「非 `SP-n` かつ非 `type:retro-try`」の Issue にも空いていた**（#452 で実測: `status:in-progress`
+のまま滞留する非 `SP-n` Issue が 7 件）。Step 3（`SP-n` 限定）も Step 5.5 ①（`type:retro-try` 限定）も拾わず、
+Step 5 は `status:waiting-claude` しか見ていなかったため、**着手だけして力尽きた Issue が二度と再開されなかった**。
+その再開は **Step 5 の条件 ①** が担う。1 firing 1 件で逐次処理する運用（提出前ゲート）はこの穴を直撃するため、
+ゲートの有無にかかわらず恒久の条件として置く。
 
 ### エージング（Step 4 の飢餓防止・§5 で詳述）
 
