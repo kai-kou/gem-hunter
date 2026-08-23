@@ -19,8 +19,6 @@ const labels: GemListLabels = {
   gemIndexLabel: 'Gem Index',
   registryLabel: 'レジストリ',
   attribution: 'このデータについて: {source}（{license}）のオープンデータをもとにしています。',
-  includedFromSearch:
-    '全 {total} 件のうち、検索語に一致したのは {matchedCount} 件です。残り {count} 件は同伴です。',
 }
 
 const meta: DigestMeta = {
@@ -49,7 +47,6 @@ function viewOf(overrides: Partial<GemListViewModel> = {}): GemListViewModel {
     effectivePage: 1,
     relaxedToken: null,
     unmatchableQuery: false,
-    includedCount: 0,
     meta,
     ...overrides,
   }
@@ -377,61 +374,24 @@ describe('GemList', () => {
   })
 
   /**
-   * 🔴 Issue #453（案3'）: 検索結果でバッジが付いたが AND 不一致で一覧から漏れていた fullName を
-   * URL 経由で同伴させたときの注記。`includedCount > 0` のときだけ出し、0 のときは出さない
-   * （既存の 0 件・件数表示の `role="status"` と同時に読み上げられる二重ライブリージョンを
-   * 作らないため、`relaxedNotice` と同じくこの注記自体には role を付けない）。
+   * 🔴 飼い主フィードバック（2026-08-23）: 「全 N 件のうち、検索語に一致したのは M 件です。
+   * 残り M' 件は…」という内訳の説明は、読んでも意味が伝わらないため撤去した（Issue #453 で
+   * 追加した同伴の注記そのものを含む）。件数の表示は **総件数の 1 行だけ** に戻す。
+   * ここでは内訳の説明文が復活しないことを固定する（同伴で件数が増えること自体は変えない）。
    */
-  /**
-   * 🔴 飼い主フィードバック「Gem 一覧の検索結果数と説明にある件数が一致していない」への対応。
-   * 総件数 5・同伴 4（= 名前一致 1 + 同伴 4）のとき、名前一致件数 `{matchedCount}` を
-   * `totalCount - includedCount` として算出し、3 つの数値の関係が文章として読めることを固定する。
-   */
-  it('includedCount が 1 件以上のとき、総件数・名前一致件数・同伴件数を埋めた注記を出す', () => {
+  it('件数の表示は総件数の 1 行だけで、内訳の説明文を出さない', () => {
     render(
       <GemList
-        view={viewOf({ totalCount: 5, includedCount: 4 })}
+        view={viewOf({ totalCount: 5 })}
         query="next.js"
         locale={locale('ja')}
         labels={labels}
       />,
     )
 
-    expect(
-      screen.getByText('全 5 件のうち、検索語に一致したのは 1 件です。残り 4 件は同伴です。'),
-    ).toBeInTheDocument()
-  })
-
-  /**
-   * 🔴 境界ケース: 名前照合が 0 件で全件が同伴（`includedCount === totalCount`）でも
-   * 「一致したのは 0 件です」と破綻せずに読めることを固定する（`matchedCount` が負にならない前提）。
-   */
-  it('includedCount が totalCount と同じ（名前一致 0 件で全件同伴）でも矛盾なく読める文言を出す', () => {
-    render(
-      <GemList
-        view={viewOf({ totalCount: 5, includedCount: 5 })}
-        query="next.js"
-        locale={locale('ja')}
-        labels={labels}
-      />,
-    )
-
-    expect(
-      screen.getByText('全 5 件のうち、検索語に一致したのは 0 件です。残り 5 件は同伴です。'),
-    ).toBeInTheDocument()
-  })
-
-  it('includedCount が 0 のとき同伴の注記を出さない', () => {
-    render(
-      <GemList
-        view={viewOf({ includedCount: 0 })}
-        query="next.js"
-        locale={locale('ja')}
-        labels={labels}
-      />,
-    )
-
-    expect(screen.queryByText(/同伴です/)).not.toBeInTheDocument()
+    expect(screen.getByText('5 件')).toBeInTheDocument()
+    expect(screen.queryByText(/のうち/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/同伴/)).not.toBeInTheDocument()
   })
 
   it('relaxedToken が入っているとき緩和の注記を出し、null のときは出さない', () => {

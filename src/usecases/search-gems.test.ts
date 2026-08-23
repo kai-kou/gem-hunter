@@ -38,7 +38,6 @@ function makeResult(overrides: Partial<GemPoolSearchResult> = {}): GemPoolSearch
     effectivePage: DEFAULT_PAGE,
     usedTokens: [],
     relaxed: false,
-    includedCount: 0,
     meta,
     ...overrides,
   }

@@ -39,12 +39,6 @@ export type GemListViewModel = {
    * 日本語クエリの 0 件画面が「候補プールに載っていません」へ黙って化ける。
    */
   readonly unmatchableQuery: boolean
-  /**
-   * 検索結果でバッジが付いたが AND 不一致で漏れていたため、URL 経由の同伴（`badged`・Issue #453
-   * 案3'）で実際に追加された件数。判定は `src/usecases/search-gems.ts` が持ち、ここは受け取って
-   * `0` より大きいときだけ注記を出す（`GemListLabels.includedFromSearch`）。
-   */
-  readonly includedCount: number
   /** 出典メタデータ（`D-29` の帰属表示）。 */
   readonly meta: DigestMeta
 }
@@ -87,15 +81,6 @@ export type GemListLabels = {
   registryLabel: string
   /** 帰属表示（`D-29`）。`{source}` / `{license}` を含む。 */
   attribution: string
-  /**
-   * URL 経由の同伴（`badged`・Issue #453 案3'）で実際に追加された件数の注記。
-   * `view.includedCount > 0` のときだけ描画する（`GemListViewModel.includedCount`）。
-   * 3 つのプレースホルダを含む: `{total}`= 一覧の総件数（`view.totalCount`）/
-   * `{matchedCount}`= 検索語に名前が一致した件数（`total - includedCount`）/
-   * `{count}`= 検索語には一致しないが同伴で追加された件数（`view.includedCount`）。
-   * 常に `totalCount = matchedCount + includedCount` の関係が成り立つ。
-   */
-  includedFromSearch: string
 }
 
 /**
@@ -145,11 +130,6 @@ export function GemList({
     { [GEM_LIST_SOURCE_PARAM_KEY]: GEM_LIST_SOURCE_PARAM_VALUE },
   )
 
-  // 🔴 飼い主フィードバック「検索結果数と説明にある件数が一致していない」への対応。
-  // `includedCount`（同伴件数）自体の契約は変えず、文言側に「名前一致件数」を追加で渡すために
-  // ここで算出する（`totalCount = matchedCount + includedCount` という関係を注記本文に書く）。
-  const matchedCount = view.totalCount - view.includedCount
-
   return (
     <>
       {/*
@@ -198,21 +178,6 @@ export function GemList({
           <p role="status" className="text-muted-foreground mt-2 text-sm">
             {formatMessage(labels.totalCount, { count: numberFormat.format(view.totalCount) })}
           </p>
-          {/*
-            🔴 URL 経由の同伴（`badged`・Issue #453 案3'）で実際に追加された件数の注記。
-            `role="status"` は付けない: 直前の総件数 `<p role="status">` と同時に描画されるため、
-            付けると 2 つのライブリージョンが同時に読み上げられる（`relaxedNotice` と同じ理由・
-            `ui-ux-guidelines.md` §7.2「ライブリージョンは 1 つ」）。
-          */}
-          {view.includedCount > 0 ? (
-            <p className="text-muted-foreground mt-1 text-xs">
-              {formatMessage(labels.includedFromSearch, {
-                count: numberFormat.format(view.includedCount),
-                total: numberFormat.format(view.totalCount),
-                matchedCount: numberFormat.format(matchedCount),
-              })}
-            </p>
-          ) : null}
           {view.items.length > 0 ? (
             <ul className="divide-border mt-2 divide-y">
               {view.items.map((entry) => {

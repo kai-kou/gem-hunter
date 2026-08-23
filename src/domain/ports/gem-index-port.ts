@@ -64,12 +64,6 @@ export type GemPoolSearchResult = {
   readonly relaxed: boolean
   /** 出典メタデータ（`D-29` / `GR-6`）。一覧にも帰属表示を出すため返す。 */
   readonly meta: DigestMeta
-  /**
-   * 同伴指定（`includeFullNames`）によって名前照合の結果へ **追加された** 件数
-   * （`SP-19` 追補・`案3'`）。UI が「検索語には一致しないが同伴で表示している」ことを
-   * 注記するために返す。同伴指定が無い・全て無視された場合は `0`。
-   */
-  readonly includedCount: number
 }
 
 /**
@@ -115,7 +109,7 @@ export interface GemIndexPort {
    * - 🔴 **`gemIndex` の閾値では絞らない**。一覧に載るのは **プールに載っているもの全部** で、
    *   `gemIndex` は **順序** にだけ使う（値は母集団相対なので、閾値の意味が母集団ごとに変わる）
    * - 🔴 読み込みに失敗しても **例外を投げず空の結果を返す**（`items: []` / `totalCount: 0` /
-   *   `effectivePage: 1` / `usedTokens: []` / `relaxed: false` / `includedCount: 0` / `meta` は既定値）。
+   *   `effectivePage: 1` / `usedTokens: []` / `relaxed: false` / `meta` は既定値）。
    *   一覧が空になるだけでアプリは動き続ける（`lookup()` と同じ `D-28` の SPOF 方針）
    * - 🔵 `includeFullNames` を渡すと、名前照合の結果へその候補をマージしてから
    *   `gemIndex` 昇順（同値は `repositoryFullName` 昇順）で並べ直す（`includeFullNames` の
