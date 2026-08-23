@@ -92,10 +92,19 @@ test('shot-02: 今日の Gem ダイジェスト', async ({ page }, testInfo) => 
   // `?date=` は `getDailyDigest` の並び替えシード。固定日付で再現性を担保する（ADR 0014 §2.2）。
   await page.goto('/ja?date=20260820')
   await page.getByRole('heading', { name: '今日の Gem', level: 2 }).waitFor()
+  // 出典・鮮度（`{generatedAt}` を含む帰属表示）はダイジェストの末尾にあり、ファーストビューには
+  // 入らない。描画を待ってから撮る（下の PC 側はページ全体を写す）。
+  await page.getByText('このデータについて:').waitFor()
   await replaceStubAvatars(page)
-  // スマホ・PC とも **ファーストビューのまま** 撮る。共通ヘッダーとヒーロー画像
-  // （`/images/hero-idle.webp`）は最初の画面にしか出ないため、スクロールすると資料から消える。
-  // ヒーローが 16:9 になって縦幅が詰まった（#362）ので、スクロールしなくてもダイジェストが数件入る。
   await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/shot-02-${testInfo.project.name}.png` })
+  // 🔴 端末で撮り方を変える（この 1 枚だけ）。
+  //  - スマホ（主役）: **ファーストビューのまま**。共通ヘッダーとヒーロー画像
+  //    （`/images/hero-idle.webp`）はここにしか出ないうえ、縦長のページ全体を撮ると
+  //    合成時（高さ基準で縮小）に細い短冊になって主役の文字が読めなくなる。
+  //  - PC（添え）: **ページ全体**。5 件すべてと出典・鮮度が 1 枚に収まるのはこちら側で、
+  //    横幅がある分ページが短く、縮小しても破綻しない。
+  await page.screenshot({
+    path: `${OUT}/shot-02-${testInfo.project.name}.png`,
+    fullPage: testInfo.project.name === 'desktop',
+  })
 })

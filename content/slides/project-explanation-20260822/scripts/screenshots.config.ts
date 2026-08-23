@@ -62,7 +62,15 @@ export default defineConfig({
           timeout: 30_000,
         },
         {
-          command: 'npm run build && npm start -- --port 3100',
+          // 🔴 `.open-next/assets` を先に用意する（**撮影のための細工ではなく、既知の不具合の回避**）。
+          // `next start` でも `@opennextjs/cloudflare` の platform proxy が `wrangler.jsonc` の
+          // `assets.directory`（`.open-next/assets`）を見る ASSETS binding を作るため、OpenNext ビルドを
+          // 挟まないと Gem 候補プール（`/data/gem-index/*`）が **HTTP 404** になり、Gem バッジも
+          // Gem 一覧も出ない（`main` の E2E が赤い原因と同一。Issue #454 / #455 / #457）。
+          // 配信元は `public/` そのものなので、そこへ向けたシンボリックリンクを張れば実データで撮れる。
+          // ⚠️ **#454 / #455 / #457 が解決したらこの前段を外す**（既に実体があるときは何もしない）。
+          command:
+            '[ -e .open-next/assets ] || (mkdir -p .open-next && ln -s ../public .open-next/assets); npm run build && npm start -- --port 3100',
           cwd: repoRoot,
           env: { ...buildDummyGitHubEnv({ stubPort, appUrl: baseURL }), PORT: '3100' },
           url: baseURL,
