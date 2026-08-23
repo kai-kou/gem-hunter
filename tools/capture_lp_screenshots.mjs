@@ -89,10 +89,26 @@ const SHOTS = [
     width: 640,
   },
   {
+    // bento タイル内（span-2・表示幅は概ね 640px 前後）では俯瞰のままだと文字が実効 5px 程度に
+    // なり読めない（`shot-digest` と同じ理由）。見出し〜上位カードまで拡大トリミングする
     name: 'shot-gems',
     path: '/ja/gems?q=react',
-    viewport: { width: 1280, height: 760 },
-    width: 1600,
+    viewport: { width: 1280, height: 820 },
+    width: 1100,
+    clipFrom: () => {
+      const heading = document.getElementById('gems-heading')
+      const items = document.querySelectorAll('li[data-repository-full-name]')
+      if (!heading || items.length < 4) return null
+      const top = heading.getBoundingClientRect().top + window.scrollY - 18
+      const bottom = items[3].getBoundingClientRect().bottom + window.scrollY + 10
+      const main = document.querySelector('main').getBoundingClientRect()
+      return {
+        x: Math.round(main.left - 16),
+        y: Math.round(top),
+        width: Math.round(main.width + 32),
+        height: Math.round(bottom - top),
+      }
+    },
   },
 ]
 
