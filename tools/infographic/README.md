@@ -9,7 +9,7 @@ OpenAI の `gpt-image-2` を使い、ドキュメントから抽出した構造�
 |---|---|
 | `specs/*.json` | 各ドキュメントから抽出した **画像に描くテキストの正本**（`title` / `subtitle` / `sections` / `key_numbers`） |
 | `layouts/*.txt` | 図としてどう並べるかの指示（英語。画像モデルへそのまま渡る） |
-| `build_prompt.py` | spec + layout → 生成プロンプトを組み立てる（「見出し + 箇条書き」型の 12 枚） |
+| `build_prompt.py` | spec + layout → 生成プロンプトを組み立てる（「見出し + 箇条書き」型の 13 枚） |
 | `build_grid_prompt.py` | `specs/usm_grid.json` → 格子型プロンプトを組み立てる（ユーザーストーリーマップ専用） |
 | `prompts/*.txt` | 組み立て済みプロンプト（実際に投げた内容の記録） |
 | `generate.py` | プロンプトを `gpt-image-2` に投げて PNG を保存する CLI |
@@ -53,7 +53,7 @@ python3 tools/infographic/build_grid_prompt.py --out tools/infographic/prompts/0
 > `to_webp.mjs` が使う `sharp` は **`package.json` の直接依存ではなく `miniflare` の推移的依存** として
 > `node_modules/` に入っている。依存更新で解決できなくなったら、`sharp` を `devDependencies` に明示追加する。
 
-## 13 枚の対応表
+## 14 枚の対応表
 
 `build_prompt.py` の引数（spec ファイル / キー / レイアウト）は画像ごとに違うので、ここを正本にする。
 
@@ -72,8 +72,9 @@ python3 tools/infographic/build_grid_prompt.py --out tools/infographic/prompts/0
 | `11-testing-strategy.txt` | `specs/extra2.json` | `testing` | `layouts/testing.txt` |
 | `12-cloudflare.txt` | `specs/extra2.json` | `cloudflare` | `layouts/cloudflare.txt` |
 | `13-ops-rules.txt` | `specs/extra3.json` | `ops-rules` | `layouts/ops-rules.txt` |
+| `14-architecture-flow.txt` | `specs/extra4.json` | `architecture-flow` | `layouts/architecture-flow.txt` |
 
-全 13 枚のプロンプトをまとめて組み立て直すには `build_all_prompts.sh` を使う。
+全 14 枚のプロンプトをまとめて組み立て直すには `build_all_prompts.sh` を使う。
 
 ```bash
 bash tools/infographic/build_all_prompts.sh

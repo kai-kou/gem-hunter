@@ -1,0 +1,8 @@
+Draw a two-lane flow diagram, not a list of stacked bands:
+- MAIN LANE (upper two thirds): a left-to-right chain of boxes in this order: 「①ブラウザ」, 「②Workersキャッシュ」, 「③Worker(OpenNext)」, 「④composition」, 「⑤usecases/domain」, 「⑥データ源」. Connect each box to the next with a thick hand-drawn arrow pointing right.
+- Wrap the chain onto two rows if needed: the first row runs left to right, then a curved hand-drawn arrow drops down to the second row which also runs left to right. Keep the reading order unambiguous.
+- Make 「③Worker(OpenNext)」 the visually largest box, since it holds the most items.
+- Draw a thin hand-drawn arrow curving back from 「⑥データ源」 all the way to 「①ブラウザ」, labelled with nothing, to show the response returning.
+- BATCH LANE (bottom third, visually separated by a light dashed divider): 「⑦日次バッチ」 as one wide box whose items are laid out left to right as a pipeline with small arrows between them, and one thick hand-drawn arrow rising from this box up into 「⑥データ源」.
+- Each box has its heading in an accent color with a small doodle icon, and its bullet items listed underneath.
+- Give the main lane teal and navy accents, and the batch lane mustard and coral accents.

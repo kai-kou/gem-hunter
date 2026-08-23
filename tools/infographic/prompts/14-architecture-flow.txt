@@ -1,0 +1,80 @@
+A 16:9 hand-drawn "graphic recording" (グラレコ / sketchnote) infographic, drawn with markers on warm off-white paper.
+Style: hand-lettered Japanese text, rounded hand-drawn boxes and speech bubbles, simple flat doodle icons, hand-drawn arrows, ribbons and banners, light hatching for fills.
+Palette: deep navy for body text, teal, coral/salmon, mustard yellow, soft gray. No photorealism, no 3D, no gradients.
+
+--- ABSOLUTE TEXT RULE ---
+Every Japanese/English character listed below MUST be rendered EXACTLY as written: no missing characters, no extra characters, no garbled glyphs, no invented words, no translation, no paraphrase.
+Do NOT add any text that is not listed below. Do NOT add lorem ipsum or decorative fake characters.
+The set of headings drawn on the canvas must be EXACTLY the block headings listed below — no extra boxes, no extra headings, no summary/output box you invented. Every listed item appears exactly ONCE; never repeat the same heading or the same item in two places.
+All text must be fully inside the canvas with generous margins — nothing cropped at the edges.
+Hand-lettering must stay highly legible at a glance.
+--------------------------
+
+
+TITLE (top banner, largest text):
+「アーキテクチャの流れ」
+
+SUBTITLE (under the title, one line):
+「リクエストが返るまでと、候補プールができるまで」
+
+LAYOUT INSTRUCTION:
+Draw a two-lane flow diagram, not a list of stacked bands:
+- MAIN LANE (upper two thirds): a left-to-right chain of boxes in this order: 「①ブラウザ」, 「②Workersキャッシュ」, 「③Worker(OpenNext)」, 「④composition」, 「⑤usecases/domain」, 「⑥データ源」. Connect each box to the next with a thick hand-drawn arrow pointing right.
+- Wrap the chain onto two rows if needed: the first row runs left to right, then a curved hand-drawn arrow drops down to the second row which also runs left to right. Keep the reading order unambiguous.
+- Make 「③Worker(OpenNext)」 the visually largest box, since it holds the most items.
+- Draw a thin hand-drawn arrow curving back from 「⑥データ源」 all the way to 「①ブラウザ」, labelled with nothing, to show the response returning.
+- BATCH LANE (bottom third, visually separated by a light dashed divider): 「⑦日次バッチ」 as one wide box whose items are laid out left to right as a pipeline with small arrows between them, and one thick hand-drawn arrow rising from this box up into 「⑥データ源」.
+- Each box has its heading in an accent color with a small doodle icon, and its bullet items listed underneath.
+- Give the main lane teal and navy accents, and the batch lane mustard and coral accents.
+
+BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
+
+Block 1 heading:「①ブラウザ」
+Block 1 items (bulleted list, one line each):
+・URL/Cookieに状態を持つ
+・静的アセットを取得
+
+Block 2 heading:「②Workersキャッシュ」
+Block 2 items (bulleted list, one line each):
+・Cache-Controlに従う
+・MISS時→Worker実行
+
+Block 3 heading:「③Worker(OpenNext)」
+Block 3 items (bulleted list, one line each):
+・Server Components実行
+・Route Handlers実行
+・L1:リクエスト内メモ化
+・L2:InMemoryCacheが主役
+・RATE_LIMITER:60/60s
+
+Block 4 heading:「④composition」
+Block 4 items (bulleted list, one line each):
+・ポート実装を束ねる
+・依存は内向きにだけ流す
+
+Block 5 heading:「⑤usecases/domain」
+Block 5 items (bulleted list, one line each):
+・検索・詳細のユースケース
+・domainは依存ゼロの中心
+
+Block 6 heading:「⑥データ源」
+Block 6 items (bulleted list, one line each):
+・Gem判定:静的プール
+・詳細/README:GitHub API
+・gem-index:ASSETS経由
+・取得失敗でも検索は継続
+
+Block 7 heading:「⑦日次バッチ」
+Block 7 items (bulleted list, one line each):
+・毎日1回cronで起動
+・収集:Ecosyste.ms API
+・12レジストリ順次取得
+・汚染フィルタ+dedupe
+・レジストリ別に順位付け
+・出力:シャード12+索引1
+
+HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
+「候補プール62,483件」
+「バッチ起動 JST 06:17」
+「Gem Index=順位差で算出」
+「main反映は7日ごと」
