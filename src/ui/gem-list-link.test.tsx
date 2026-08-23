@@ -22,7 +22,7 @@ describe('GemListLink', () => {
     expect(link.className).toContain('focus-visible:ring-ring')
   })
 
-  it('ghost ボタンのクラスが当たっている（data-variant/data-size で判定）', () => {
+  it('ghost ボタンのクラスが当たっている（class 名の部分一致で判定）', () => {
     render(<GemListLink href="/ja/gems" label="Gem 一覧" />)
 
     const link = screen.getByRole('link', { name: 'Gem 一覧' })

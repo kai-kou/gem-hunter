@@ -289,6 +289,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
   - **説明文**: `D-29`（Ecosyste.ms の生テキストは再配信しない）
   - **主要言語 / topics / 最終更新日**: 候補プールのシャードに列が無く、追加にはバッチ側の列拡張が要る。シャード合計が `tools/check_gem_shards.py` の 8 MiB 予算を超える見込みで、`D-29` のライセンス一次確認（`R-8`）も未了のため、別 Issue とする
 - 🔴 **Gem Index を主役に保つため、検索結果カードの情報設計（`AR-1`）へ全面的に寄せない**（`D-36` の存在意義）
+- ⚠️ **既知の制約（avatar）**: 候補プールのシャードに `avatar_url` / owner の数値 ID の列が無いため、avatar は `https://github.com/{owner}.png` から描画しており、owner のリネーム・削除後は表示されないことがある。公式の `avatars.githubusercontent.com/u/{id}` へ移すにはシャードへの列追加が要るため別 Issue とする
 
 ### 4.3. データ取得方式
 

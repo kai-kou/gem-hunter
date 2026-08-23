@@ -258,19 +258,23 @@ async function SearchBody({
       {state.result.items.length > 0 ? (
         <>
           <p className="text-muted-foreground mt-2 text-sm">{messages.home.gemBadge.intro}</p>
-          <GemListLink
-            href={buildGemListUrl(
-              `/${locale}/gems`,
-              {
-                keyword: searchState.keyword,
-                page: DEFAULT_PAGE,
-                sort: DEFAULT_SORT_ORDER,
-                perPage: DEFAULT_PER_PAGE,
-              },
-              badgedFullNames,
-            )}
-            label={messages.home.gemListLink.label}
-          />
+          {/* 説明文と導線の間に余白を置く（4px グリッド準拠）。余白は配置の責務なので
+              `GemListLink` 側には持たせない（部品の責務ではない）。 */}
+          <div className="mt-2">
+            <GemListLink
+              href={buildGemListUrl(
+                `/${locale}/gems`,
+                {
+                  keyword: searchState.keyword,
+                  page: DEFAULT_PAGE,
+                  sort: DEFAULT_SORT_ORDER,
+                  perPage: DEFAULT_PER_PAGE,
+                },
+                badgedFullNames,
+              )}
+              label={messages.home.gemListLink.label}
+            />
+          </div>
         </>
       ) : null}
       <RepositoryList

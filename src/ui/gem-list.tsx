@@ -88,8 +88,12 @@ export type GemListLabels = {
   /** 帰属表示（`D-29`）。`{source}` / `{license}` を含む。 */
   attribution: string
   /**
-   * URL 経由の同伴（`badged`・Issue #453 案3'）で実際に追加された件数の注記。件数を埋める
-   * `{count}` を含む。`view.includedCount > 0` のときだけ描画する（`GemListViewModel.includedCount`）。
+   * URL 経由の同伴（`badged`・Issue #453 案3'）で実際に追加された件数の注記。
+   * `view.includedCount > 0` のときだけ描画する（`GemListViewModel.includedCount`）。
+   * 3 つのプレースホルダを含む: `{total}`= 一覧の総件数（`view.totalCount`）/
+   * `{matchedCount}`= 検索語に名前が一致した件数（`total - includedCount`）/
+   * `{count}`= 検索語には一致しないが同伴で追加された件数（`view.includedCount`）。
+   * 常に `totalCount = matchedCount + includedCount` の関係が成り立つ。
    */
   includedFromSearch: string
 }
@@ -234,6 +238,14 @@ export function GemList({
                       🔴 `repo` が `null`（`owner/name` に割れない）のときは avatar も出さない
                       （壊れたリンクを出さないのと同じ判定を再利用し、壊れた画像 URL を出さない）。
                       Link の **外**（兄弟）に置く（`repository-list.tsx` と同じ配置理由）。
+                      🔴 **なぜ `avatars.githubusercontent.com/u/{id}` ではないか**（`AR-11` の詳細）:
+                      候補プールのシャードに `avatar_url` / owner の数値 ID の列が無く、`AR-11` の
+                      方針でこの表示のためだけに GitHub API を追加で呼ばない。そのため公式には非推奨の
+                      `github.com/{owner}.png` を使う。
+                      ⚠️ **既知の制約**: owner のリネーム・削除後にスナップショットが古いままだと
+                      404 になり avatar が表示されないことがある（Server Component のため
+                      `onError` での差し替えはできない）。`bg-muted` を敷いておき、404 時も
+                      壊れたアイコンではなく丸い無地のプレースホルダに見えるようにする。
                     */}
                     {repo ? (
                       // eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image 最適化は使わない
@@ -246,7 +258,7 @@ export function GemList({
                         height={40}
                         loading="lazy"
                         decoding="async"
-                        className="size-10 shrink-0 rounded-full"
+                        className="size-10 shrink-0 rounded-full bg-muted"
                       />
                     ) : null}
                     <div className="min-w-0 flex-1">
