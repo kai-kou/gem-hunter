@@ -196,6 +196,18 @@ else
   skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
 fi
 
+# 4.75. レート制限の配線検査（Issue #442 の再発防止）。
+#       Cloudflare Rate Limiting は binding 宣言だけでは何も起きず、しかもフェイルオープン設計のため
+#       「配線し忘れ」と「正常」が実行時に区別できない。cloudflare-infrastructure.md の適用経路表
+#       （<!-- rate-limit-wiring --> マーカー）と実コードを双方向に突き合わせ、app/ 配下の
+#       エントリポイント網羅性まで見る。ローカルのファイルしか読まないためネットワーク非依存。
+if [ -f "$REPO_ROOT/tools/check_rate_limit_wiring.py" ]; then
+  run_check "レート制限配線検査 (check_rate_limit_wiring.py)" python3 tools/check_rate_limit_wiring.py
+  run_check "レート制限配線検査 self-test (check_rate_limit_wiring.py --self-test)" python3 tools/check_rate_limit_wiring.py --self-test
+else
+  skip_check "レート制限配線検査 (check_rate_limit_wiring.py)" "スクリプトが見つかりません"
+fi
+
 # 4.8. 副作用のある API ルートのプリフェッチ検査（#145 の再発防止）
 if [ -f "$REPO_ROOT/tools/check_prefetchable_side_effects.py" ]; then
   run_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" python3 tools/check_prefetchable_side_effects.py
@@ -259,6 +271,43 @@ if [ -f "$REPO_ROOT/tools/check_gem_shards.py" ]; then
   run_check "Gem シャード検査 self-test (check_gem_shards.py --self-test)" python3 tools/check_gem_shards.py --self-test
 else
   skip_check "Gem シャード検査 (check_gem_shards.py)" "スクリプトが見つかりません"
+fi
+
+# Gem 候補プール QA / no-op 判定（Issue #458）の self-test。ネットワーク・実データ非依存の
+# 純関数だけを検証する（本判定 --check / --no-op は gem-pool-refresh.yml ワークフロー内で実行する）。
+if [ -f "$REPO_ROOT/tools/gem_pool_qa.mjs" ]; then
+  run_check "Gem 候補プール QA self-test (gem_pool_qa.mjs --self-test)" node tools/gem_pool_qa.mjs --self-test
+else
+  skip_check "Gem 候補プール QA self-test (gem_pool_qa.mjs --self-test)" "スクリプトが見つかりません"
+fi
+
+# GitHub Actions workflow YAML の構文検査（Issue #458）。週次 cron だけだと構文崩れに最大 1 週間
+# 気づけないため、PyYAML でパースできるかだけを見る軽量チェック（actionlint 導入は YAGNI・見送り）。
+# PyYAML が無い環境・workflow が無い環境では skip_check にする（既存の作法に合わせる）。
+if python3 -c "import yaml" >/dev/null 2>&1; then
+  if compgen -G "$REPO_ROOT/.github/workflows/*.yml" >/dev/null 2>&1 || compgen -G "$REPO_ROOT/.github/workflows/*.yaml" >/dev/null 2>&1; then
+    run_check "GitHub Actions workflow YAML 構文検査" python3 -c '
+import glob
+import sys
+
+import yaml
+
+paths = sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml"))
+failed = False
+for p in paths:
+    try:
+        with open(p, encoding="utf-8") as f:
+            yaml.safe_load(f)
+    except Exception as e:
+        print(f"YAML parse error: {p}: {e}")
+        failed = True
+sys.exit(1 if failed else 0)
+'
+  else
+    skip_check "GitHub Actions workflow YAML 構文検査" ".github/workflows/ 配下に *.yml/*.yaml がありません"
+  fi
+else
+  skip_check "GitHub Actions workflow YAML 構文検査" "PyYAML が未インストール"
 fi
 
 # 被覆率測定（SP-17・D-36 / D-37）も --self-test だけを配線する。本測定は GitHub 検索 API を

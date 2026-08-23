@@ -20,9 +20,10 @@
 
 ## PR 作成時の必須事項（コマンド仕様は各ツールの description に従う）
 
-> 🔴 **GitHub Actions は制限中で使えない**（ジョブが数秒・ログ 0 バイトで失敗）。ワークフロー 2 本は撤去済み。
-> 代わりに **セッション（Claude）が `bash tools/run_checks.sh` を実行して品質を担保し、`wrangler` を直接叩いて**
-> プレビュー・本番へデプロイする。CI という機構自体が現在存在しない前提でこのファイルを読む。
+> 🔴 **GitHub Actions は品質ゲート・本番デプロイには使わない**（飼い主決定・Issue #298・`harness-escalation.md` Lv4）。
+> 本リポジトリでは **Gem 候補プールの週次再生成にのみ** 使う（Issue #458・PR を作るところまでで自動マージしない）。
+> 品質チェック・デプロイは引き続き **セッション（Claude）が `bash tools/run_checks.sh` を実行して品質を担保し、`wrangler` を直接叩いて**
+> プレビュー・本番へデプロイする。この 2 用途に CI という機構は使わない前提でこのファイルを読む。
 
 0. **PR 作成前チェック（唯一の機械的証跡）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）。**見出しは `##` 固定で `run_checks` または `npm run check` を含める（`pre-pr-create-check.sh` の検出仕様が SSOT・Issue #405 / PR #456）**: `## run_checks 結果` / `## npm run check 結果` のいずれか（`run_checks` / `npm run check` の部分はバッククォートで囲んでも囲まなくても良い）。同じ見出しが複数回出てきても構わない（いずれか 1 か所が満たしていれば可）。その見出しから次の `##` 見出しまでの間（無関係な別セクションの表・コードフェンス内の例示は不可）に表（`|` 区切り行）があること
 0.5. **プレビュー URL の取得**: GitHub Actions は使わず、**セッションが `npx opennextjs-cloudflare build` → `npx wrangler versions upload --preview-alias pr-<N>` を実行** して取得したプレビュー URL を PR 本文へ貼る（`sprint-development-rules.md` `SD-1` の「開けるプレビュー URL」要件をこの経路で満たす）

@@ -163,12 +163,57 @@ flowchart TB
 
 | 役割 | ファイル |
 |---|---|
-| composition root（唯一の呼び出し口） | `src/composition/rate-limit.ts` の `enforceSearchRateLimit(headers)` |
+| composition root（唯一の呼び出し口） | `src/composition/rate-limit.ts` の `enforceSearchRateLimit(headers)` / `enforceGemListRateLimit(headers)`（内部で共通の間引き処理にキー接頭辞を渡す） |
 | binding 取得 | `src/infrastructure/platform/cloudflare-bindings.ts` の `rateLimiterBinding()`（`getCloudflareContext()` を動的 import。Workers 実行環境の外（`npm test` / `next dev`）では `undefined`） |
 | binding ラッパー（`RateLimitPort` 実装） | `src/infrastructure/platform/rate-limit.ts` の `WorkersRateLimit` |
 | key 生成 | `src/infrastructure/platform/rate-limit-key.ts` の `clientIpOf()`（`cf-connecting-ip` → `x-forwarded-for` 先頭の順で解決）と `hashRateLimitKey()`（§9.1 の HMAC 化） |
 
-適用経路は **画面の検索（`app/[locale]/page.tsx`）と `GET /api/search`（`app/api/search/route.ts`）の 2 箇所**（リポジトリ詳細取得はスコープ外）。超過時は `RateLimitExceededError('rateLimitSecondary')` を投げ、画面はローカライズ済みメッセージを表示、API は **`429` + `Retry-After: 60`** を返す（`period=60` と一致させた保守的な上限値。Cloudflare の `limit()` は `{ success }` しか返さず復帰時刻を教えないため、窓の長さをそのまま使う）。
+#### 適用経路（正本）
+
+🔴 **本表が正本**。新しいエントリポイントを追加したらこの表にも行を足すこと（`tools/check_rate_limit_wiring.py` が機械検査する）。
+
+<!-- rate-limit-wiring:begin -->
+
+| 経路 | ファイル | レート制限 | キー接頭辞 |
+|---|---|---|---|
+| 検索画面 | `app/[locale]/page.tsx` | ✅ 適用 | `search:` |
+| 検索 API | `app/api/search/route.ts` | ✅ 適用 | `search:` |
+| Gem 一覧 | `app/[locale]/gems/page.tsx` | ✅ 適用 | `gems:` |
+| リポジトリ詳細 | `app/[locale]/repos/[owner]/[repo]/page.tsx` | ❌ 対象外 | — |
+| OG 画像 | `app/[locale]/opengraph-image.tsx` | ❌ 対象外 | — |
+| ログイン | `app/api/auth/login/route.ts` | ❌ 対象外 | — |
+| 認証コールバック | `app/api/auth/callback/route.ts` | ❌ 対象外 | — |
+| ログアウト | `app/api/auth/logout/route.ts` | ❌ 対象外 | — |
+
+<!-- rate-limit-wiring:end -->
+
+**❌ 対象外にした理由**（判断を再現できるように残す）:
+
+- **リポジトリ詳細**: **平常時のトラフィックでは** GitHub Core 枠が 5,000 req/h あり、ここがボトルネックにならない（既存の決定を維持する。`SP-19` の追加でもこの判断は変えていない）。🔴 **ただし枠の枯渇攻撃には無防備で、未対応の残存リスクとして受容している状態である**: 未ログインの `/{locale}/repos/{owner}/{repo}` は **全ユーザー共有の installation token** を使うため、存在しない `owner/repo` をランダム生成して叩き続けられるとキャッシュが毎回ミスし、詳細取得（+ README）で 1〜2 コールが上流へ飛ぶ。毎秒 1 リクエスト程度でも 1 時間以内に Core 枠を使い切り、以後は **正規の利用者全員が `rateLimitPrimary`**（検索・詳細とも利用不能）になる。**この経路への間引き適用は別 Issue で扱う**
+- **ログイン / 認証コールバック / ログアウト**: OAuth のリダイレクトと Cookie 操作だけで、上流 API の重い呼び出しも重い CPU 処理も持たない。むしろ間引くと正規のログイン導線を壊す側のリスクが大きい
+- **OG 画像**: 背景画像は `tools/ui-assets/build_data_uri_module.mjs` がビルド時に base64 データ URI の TS モジュールへ変換してバンドルへ埋め込んでおり、**実行時の I/O が無い**（実行時 `readFile` は Workers 上で 500 になるため不採用・Issue #347）。さらに `params` しか使わず `headers()` / `cookies()` 等のリクエスト時 API を使わないため、**ビルド時に静的最適化される**（= リクエストごとに Worker を起動しない）。🔴 **この判断は現在の実装に依存している**: リクエスト時 API の導入など静的最適化が崩れる変更を入れたら、間引きの要否をここで見直すこと
+
+#### Gem 一覧を独立枠にした理由（`gems:`・Issue #442）
+
+`SP-19` で追加した Gem 一覧（`/{locale}/gems`）は、**本数を絞る仕組みが 1 つも無い唯一の重量経路** だった。
+
+- `limits.cpu_ms: 400` は **1 リクエストあたりの CPU 時間の天井であって、リクエスト本数を制限しない**（本数が増えれば CPU の総量はそのまま増える）
+- Gem 一覧は GitHub API を叩かないため、**上流の 403/429 という壁にも間接的に守られない**（検索経路はそこに守られている）
+- 実測 CPU は **cold 237〜277ms / warm 8〜12ms**（[`open-questions.md`](../../02_requirements/open-questions.md) の `D-38` の `SP-19` 実測追記が正本）。Workers Paid の課金体系（含まれるリクエスト数・CPU 時間と超過単価）は [パブリック化レビュー](../../05_release/repository-publication-review.md) §7.3 が正本（🔴 §0.2 のとおり単価を本書へ書き写さない。数値を疑ったら正本と [Cloudflare 公式](https://developers.cloudflare.com/workers/platform/pricing/) を見る）
+
+**検索と枠を分ける**（キー接頭辞 `search:` / `gems:`）のは、守りたいコストの種類が違うため。検索が守るのは **上流 GitHub API の枠**、Gem 一覧が守るのは **自 Worker の CPU** である。枠を共有すると「検索 → Gem 一覧」という主要導線で正常な利用者どうしが枠を食い合う。
+
+🔴 **この打ち手の限界（過信しない）**:
+
+1. Cloudflare の Rate Limiting binding は **Worker のコード内で判定する** ため、**リクエスト課金そのものは減らない**。減るのは「重い処理に入る前に弾いて浮く CPU 分」だけである。Worker の手前で止めたいなら **WAF のレート制限という別レイヤー** が要る
+2. binding は公式が **per-colo・"permissive, eventually consistent"・正確な会計向けではない** と明記している。厳密な回数保証を前提にした設計にしない
+3. 同じ理由で **送信元 IP のローテーションには効かない**。レート制限キーは IP 全体（IPv6 なら 128 ビット）の HMAC なので、`/64` を配る VPS 等でアドレスを都度変えられると毎回別キーの 1 件目になり、閾値に到達しない。Worker の手前で止めるには WAF レイヤーが要る。🔵 これは「だから無意味」ではなく **この打ち手が守れる範囲はここまで** という意味である（IPv6 の `/64` 正規化そのものは別 Issue で扱う）
+
+#### 超過時の挙動とフェイルオープン（全経路共通）
+
+🔴 **本節は §3.3 の適用経路表で `✅ 適用` になっている全経路に共通する仕様である**（特定の経路の枠分けをやめても本節は残す）。
+
+超過時は `RateLimitExceededError('rateLimitSecondary')` を投げ、画面はローカライズ済みメッセージを表示、API は **`429` + `Retry-After: 60`** を返す（`period=60` と一致させた保守的な上限値。Cloudflare の `limit()` は `{ success }` しか返さず復帰時刻を教えないため、窓の長さをそのまま使う）。
 
 **フェイルオープン**（間引かず黙って通す）にする条件は 3 つ。いずれも「間引くべきでない」ではなく「判定に必要な材料が揃わない」ケースであり、意図的な設計判断（`src/composition/rate-limit.ts` のコメント参照）:
 
@@ -689,7 +734,7 @@ run `wrangler secret delete <key>`」「Secrets are never deleted by a deploymen
 
 1. 初回デプロイ前に `npx wrangler secret list` を実行し、既存 secrets の **名前一覧**（`RATE_LIMIT_SALT` を含む）を記録する
 2. デプロイ後に同じコマンドを再実行し、名前一覧が一致することを突合する
-3. レート制限が効くエンドポイントへ短時間に連続アクセスし、制限応答が返ることを 1 回だけ確認する
+3. レート制限が効く経路（§3.3「適用経路（正本）」の ✅ 適用 行）へ短時間に連続アクセスし、制限応答が返ることを確認する。**検索（`/{locale}` または `GET /api/search`）と Gem 一覧（`/{locale}/gems`）をそれぞれ 1 回ずつ** 確認する（キー接頭辞が `search:` / `gems:` で分かれた独立枠のため、片方だけでは他方の配線漏れに気づけない）
    （🔴 `RATE_LIMIT_SALT` が未解決だと **フェイルオープンでエラーにならない** ため、動作で確かめないと気づけない）
 
 #### 飼い主の操作（API では実行できない・1 回だけ）

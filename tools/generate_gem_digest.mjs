@@ -20,7 +20,9 @@
  *                                                           # 部分実行で書き換える（孤児シャードは削除される）
  *
  * 実行環境: Node 22+（ESM・fetch はグローバル）。
- * ⚠️ CI での自動実行はしない（更新は `D-28` どおり Cloudflare の外で回して git commit → デプロイ）。
+ * ⚠️ 定期実行は GitHub Actions の週次スケジュール（`.github/workflows/gem-pool-refresh.yml`）が本 CLI を
+ * 既定オプションで呼び出し、生成物は PR 経由で main へ入る（`D-28` の「Cloudflare の外で回す」を Actions が担う）。
+ * `--allow-partial-write` は孤児シャードを削除するため定期実行では使わない（手動の部分再実行専用）。
  */
 
 import { readdir, rm } from 'node:fs/promises'

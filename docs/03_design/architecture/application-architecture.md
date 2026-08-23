@@ -132,7 +132,7 @@ export function searchRepositoriesUseCase(): SearchRepositories {
 }
 ```
 
-⚠️ `CachePort`（`InMemoryCache`）は `container.ts` の `sharedCache` として（`SP-5`）、`RateLimitPort`（`WorkersRateLimit`）は `src/composition/rate-limit.ts` の `enforceSearchRateLimit()` として（Issue #122）、**いずれも composition root へ配線済み**。実装をポートへ束ねる場所は `src/composition/` 配下に限る（関心ごとにファイルを分けてよい）。
+⚠️ `CachePort`（`InMemoryCache`）は `container.ts` の `sharedCache` として（`SP-5`）、`RateLimitPort`（`WorkersRateLimit`）は `src/composition/rate-limit.ts` の間引き関数として（Issue #122 / Issue #442）、**いずれも composition root へ配線済み**。🔵 **どのエントリポイントへ適用しているかの正本は [Cloudflare インフラ設計](../infrastructure/cloudflare-infrastructure.md) §3.3 の適用経路表** であり、本書に経路を複製しない（`tools/check_rate_limit_wiring.py` がその表と実装を機械検査する）。実装をポートへ束ねる場所は `src/composition/` 配下に限る（関心ごとにファイルを分けてよい）。
 
 - ユースケースは **ポートを引数で受け取る高階関数（またはコンストラクタ注入）** として書く。`import` で実装を掴まない。
 - テストは composition root を経由せず、**フェイク実装を直接渡す**（[テスト戦略](../../04_development/testing-strategy.md) §4）。
@@ -180,7 +180,7 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 
 🔴 **判定順序は上表のとおり**（`prd.md` §7 の表と一致させる）。一次レート制限に `retry-after` が同時に付く応答があるため、`x-ratelimit-remaining: 0` を先に見ないとログイン導線（`AR-5` / `US-25`）が消える。
 
-🔵 **`rateLimitSecondary` は上流由来だけではない**: `src/composition/rate-limit.ts` の自リクエスト間引き（Issue #122・Cloudflare Rate Limiting binding）も、GitHub へ出る前に同じ `RateLimitExceededError('rateLimitSecondary')` を投げる。利用者への提示要件（`retry-after` 秒後に再試行可能）が一致するため `kind` を再利用しており、**上表は「上流応答からの変換」だけを定義している** 点に注意する。
+🔵 **`rateLimitSecondary` は上流由来だけではない**: `src/composition/rate-limit.ts` の自リクエスト間引き（Issue #122・Cloudflare Rate Limiting binding）も、**上流へ出る前（検索経路）／重い処理に入る前（Gem 一覧）** に同じ `RateLimitExceededError('rateLimitSecondary')` を投げる。利用者への提示要件（`retry-after` 秒後に再試行可能）が一致するため `kind` を再利用しており、**上表は「上流応答からの変換」だけを定義している** 点に注意する。
 
 🔵 **`SearchQueryRejectedError` は「上流がクエリを受理しなかった」を表す**（`DomainValidationError` は値オブジェクトの不変条件違反のみに残す・[ドメインモデル](../data-model/domain-model.md) §4）。
 
