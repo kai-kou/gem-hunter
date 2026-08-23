@@ -47,7 +47,16 @@ export default defineConfig({
           timeout: 30_000,
         },
         {
-          command: `npm run build && npm start -- --port 3100`,
+          // 🔴 `node tools/ensure_open_next_assets.mjs` を先に挟む（Issue #454 / #455 / #457）:
+          // `next start` は Node.js ランタイムで動くが、`getCloudflareContext({ async: true })`
+          // は NEXT_RUNTIME=nodejs でも wrangler の `getPlatformProxy()` を実際に呼び出し、
+          // `wrangler.jsonc` の `assets.directory`（`.open-next/assets`）を指す `env.ASSETS` を
+          // 用意してしまう。`opennextjs-cloudflare build` を未実行だとこのディレクトリが無く、
+          // Gem Index の読み取りが 404 のまま静かに空になり、E2E が「実装は正しいのに落ちる」形で
+          // 失敗する。鮮度チェック済みなら再ビルドはスキップされるため、通常時の起動時間はほぼ
+          // 変わらない（`tools/ensure_open_next_assets.mjs` 冒頭のコメント参照）。
+          // `tools/run_checks.sh` 側にも同じスクリプトを配線済み（ロジックは二重実装しない）。
+          command: `node tools/ensure_open_next_assets.mjs && npm run build && npm start -- --port 3100`,
           env: {
             // ダミー GitHub OAuth 環境変数一式は e2e/stub/e2e-env.mjs（共有モジュール）に集約済み。
             // tools/run_lighthouse.mjs（Lighthouse 計測: stub 8799 / app 3101）と同じ値セットを
