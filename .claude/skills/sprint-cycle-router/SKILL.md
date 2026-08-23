@@ -174,8 +174,8 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
    デプロイ・退役は不要。そのまま retrospective 起動へ進む（`pr-review-watcher` Step 7-4 から再開）
 3. **デプロイ: yes** かつ後続に「デプロイ完了」コメントが無い →
    retrospective 起動より **先に** `pr-review-watcher` Step 7-3.5（デプロイ → 疎通確認 → 退役）を
-   実行してから 4（retrospective）へ進む（`npm run deploy` と `retire_preview_aliases.py` は
-   いずれも idempotent なので再実行しても安全）
+   実行してから 4（retrospective）へ進む（`trigger_workers_build.py` / `npm run deploy`（フォールバック）/
+   `retire_preview_aliases.py` はいずれも idempotent なので再実行しても安全）
 4. **デプロイ: yes** かつ後続に「デプロイ完了」コメントが既にある →
    デプロイ・退役は完了済み。retrospective 未実行なら Step 7-4 から再開
 ```
