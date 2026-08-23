@@ -35,6 +35,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+
+class ScanError(Exception):
+    """`ast.parse` に失敗したファイルを表す例外。
+
+    解析不能は「違反なし」ではないため黙殺せず呼び出し側（main / self-test）へ伝播させる
+    （#445 問題1: 構文エラーのある .py を握りつぶして exit 0 にしてしまう後退の修正）。
+    """
+
+
 ALLOW_MARKER = "# tz-ok"
 # 引数なしで呼ばれたときだけ naive（`datetime.now(tz)` 等の aware 呼び出しは対象外）。
 NAIVE_NO_ARG_METHODS = {"now", "today"}
@@ -125,9 +134,11 @@ def scan(path: Path) -> list[tuple[int, str]]:
         return hits
     try:
         tree = ast.parse(text, filename=str(path))
-    except SyntaxError:
-        # Python として構文解析できないファイル（生成物・テンプレート等）は対象外。
-        return hits
+    except SyntaxError as e:
+        # 解析不能は「違反なし」ではない。黙殺すると検査全体が偽陰性化するため、
+        # 呼び出し側（main / self-test）に判断を委ねられるよう例外として伝播させる
+        # （#445 問題1）。
+        raise ScanError(f"{path}: 構文解析に失敗（{e.__class__.__name__}: {e}）") from e
 
     lines = text.splitlines()
     seen_linenos: set[int] = set()
@@ -136,9 +147,14 @@ def scan(path: Path) -> list[tuple[int, str]]:
         lineno = getattr(node, "lineno", None)
         if lineno is None or lineno in seen_linenos:
             return
+        # 複数行にまたがる呼び出しは、開始行〜終了行のどこに `# tz-ok` を書いても抑制する
+        # （閉じ括弧の行に書くのが自然なため・#445 問題2）。
+        end_lineno = getattr(node, "end_lineno", None) or lineno
+        for ln in range(lineno, end_lineno + 1):
+            line_text = lines[ln - 1] if 0 < ln <= len(lines) else ""
+            if ALLOW_MARKER in line_text:
+                return
         line_text = lines[lineno - 1] if 0 < lineno <= len(lines) else ""
-        if ALLOW_MARKER in line_text:
-            return
         seen_linenos.add(lineno)
         hits.append((lineno, line_text.strip()))
 
@@ -191,6 +207,24 @@ def run_self_test() -> int:
         ("aware: datetime.now(timezone.utc)", "x = datetime.now(timezone.utc)\n", 0),
         ("aware: datetime.now(tz=JST)", "x = datetime.now(tz=JST)\n", 0),
         ("# tz-ok は本物の違反も抑制する", "x = datetime.now()  # tz-ok\n", 0),
+        (
+            "複数行呼び出しでも naive なら検出する（回帰防止・#445 問題2 併設ケース）",
+            "x = datetime.now(\n)\n",
+            1,
+        ),
+        (
+            "複数行呼び出しは閉じ括弧の行の # tz-ok でも抑制される（#445 問題2）",
+            "x = datetime.now(\n)  # tz-ok\n",
+            0,
+        ),
+    ]
+
+    # 構文エラーのある .py は黙殺せず ScanError を送出しなければならない（#445 問題1・後退防止）。
+    parse_error_cases: list[tuple[str, str]] = [
+        (
+            "構文エラーのある .py（内部に本物の violation あり）は黙殺せず ScanError を送出する",
+            "def broken(:\n    x = datetime.now()\n",
+        ),
     ]
 
     failures: list[str] = []
@@ -201,6 +235,17 @@ def run_self_test() -> int:
             hits = scan(tmp_path)
             if len(hits) != expected:
                 failures.append(f"- {name}: expected {expected} 件, got {len(hits)} 件 {hits}")
+
+        for name, src in parse_error_cases:
+            tmp_path.write_text(src, encoding="utf-8")
+            try:
+                hits = scan(tmp_path)
+            except ScanError:
+                pass
+            else:
+                failures.append(
+                    f"- {name}: ScanError が送出されず黙殺された（got {hits}・解析不能を「検出なし」に化かしている）"
+                )
 
     if failures:
         print("FAIL: check_datetime_tz self-test", file=sys.stderr)
@@ -220,10 +265,19 @@ def main() -> int:
     files = _py_files_changed() if changed else _py_files_all()
 
     violations = 0
+    parse_failures = 0
     for f in sorted(files):
-        for lineno, snippet in scan(f):
+        rel = f.relative_to(REPO_ROOT)
+        try:
+            file_hits = scan(f)
+        except ScanError as e:
+            # 黙殺しない（#445 問題1）: 解析不能は「違反なし」ではないので、
+            # stderr に明示した上で検査結果を PASS にしない。
+            parse_failures += 1
+            print(f"⚠️ {rel}: 解析不能のため検査対象外（{e}）", file=sys.stderr)
+            continue
+        for lineno, snippet in file_hits:
             violations += 1
-            rel = f.relative_to(REPO_ROOT)
             print(f"{rel}:{lineno}: TZ 未指定 datetime（表示・記録に使うと不定）: {snippet}")
 
     scope = "変更 .py" if changed else "全 .py"
@@ -232,6 +286,14 @@ def main() -> int:
             f"\n❌ {violations} 件の TZ 未指定 datetime を検出（{scope}・{len(files)} ファイル走査）。\n"
             "   表示・記録用途なら datetime.now(JST)、機械処理用 UTC なら datetime.now(timezone.utc) を使う。\n"
             "   レビュー済みの正当な例外は行末に `# tz-ok` を付けて抑制できる（datetime-rules.md §2）。",
+            file=sys.stderr,
+        )
+        return 1
+    if parse_failures:
+        print(
+            f"\n⚠️ {parse_failures} 件の .py を構文解析できず検査不能（{scope}・{len(files)} ファイル走査）。"
+            "解析不能は「違反なし」ではないため PASS にしない。上記の対象ファイルを修正するか、"
+            "検査対象から外す運用上の理由を明記すること。",
             file=sys.stderr,
         )
         return 1
