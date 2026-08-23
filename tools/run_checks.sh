@@ -251,6 +251,14 @@ else
   skip_check "Gem シャード検査 (check_gem_shards.py)" "スクリプトが見つかりません"
 fi
 
+# Gem 候補プール QA / no-op 判定（Issue #458）の self-test。ネットワーク・実データ非依存の
+# 純関数だけを検証する（本判定 --check / --no-op は gem-pool-refresh.yml ワークフロー内で実行する）。
+if [ -f "$REPO_ROOT/tools/gem_pool_qa.mjs" ]; then
+  run_check "Gem 候補プール QA self-test (gem_pool_qa.mjs --self-test)" node tools/gem_pool_qa.mjs --self-test
+else
+  skip_check "Gem 候補プール QA self-test (gem_pool_qa.mjs --self-test)" "スクリプトが見つかりません"
+fi
+
 # 被覆率測定（SP-17・D-36 / D-37）も --self-test だけを配線する。本測定は GitHub 検索 API を
 # 叩くためネットワーク非依存を保てない（run_checks.sh はオフラインで完走できることを保つ）。
 if [ -f "$REPO_ROOT/tools/measure_gem_coverage.py" ]; then
