@@ -206,6 +206,15 @@
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-router.sh"
           }
         ]
+      },
+      {
+        "matcher": "Read|Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-file-tool-env-guard.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
