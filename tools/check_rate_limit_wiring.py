@@ -4,8 +4,10 @@
 【なぜ必要か】
 Cloudflare Rate Limiting binding（`wrangler.jsonc` の `ratelimits`）は **宣言しただけでは何も起きない**。
 実際に `limit()` を呼ぶ配線（`src/composition/rate-limit.ts` の `enforce*RateLimit`）がアプリコード側に要る。
-さらにこの機能は **フェイルオープン設計**（IP 不明 / `RATE_LIMIT_SALT` 未設定 / binding 未提供のとき黙って通す）
+さらにこの機能は **フェイルオープン設計**（IP 不明 / binding 未提供 / `RATE_LIMIT_SALT` 未設定 のとき黙って通す）
 なので、**「配線し忘れ」と「正常」が実行時に区別できない**。だから機械検査が要る。
+（判定順の正本は `src/composition/rate-limit.ts`。binding があるのに salt が無い場合だけ警告を出すため、
+ binding 取得を salt 確認より先に置いている）
 
 実際に起きた事故:
   1. `SP-19` で新設された `/{locale}/gems` に配線し忘れ、仕様（`cloudflare-infrastructure.md` §3.3）の
@@ -19,7 +21,12 @@ Cloudflare Rate Limiting binding（`wrangler.jsonc` の `ratelimits`）は **宣
 本スクリプトは「何経路あるべきか」を自分では持たず、その表と実コードを突き合わせるだけ。
 
 【検査（すべて Error・`run_checks.sh` を止める）】
-  1. ✅ 適用 行の検証: そのファイルに `enforce*RateLimit(` の呼び出しが実在する
+  1. ✅ 適用 行の検証: そのファイルに `enforce*RateLimit(` の呼び出しが実在する。あわせて
+     1-a. 呼び出しに `await`（または `void` / `return`）が付いている（付いていないと
+          `RateLimitExceededError` が unhandled rejection になり **一切間引かれない**。
+          型情報なし ESLint も `tsc --noEmit` もこれを検出しないので本スクリプトが唯一のゲート）
+     1-b. 呼び出しが usecase 呼び出し（`*UseCase(`）より **前** にある（重い処理を走らせてから
+          間引くのは Issue #442 と同型の抜け。usecase が無いファイルはこの検査をスキップする）
   2. ❌ 対象外 行の検証: そのファイルに呼び出しが **存在しない**（対象外と書いて実は掛かっている逆ドリフト）
   3. 🔴 網羅性の検証（核心）: `app/` 配下で **URL を生みコードが走る全ファイル**（`page` / `route` に加え
      `opengraph-image` 等のコード生成メタデータルート）を実際に列挙し、
@@ -82,7 +89,11 @@ ROUTE_PRODUCING_STEMS = (
     "robots",
     "manifest",
 )
-ROUTE_PRODUCING_EXTENSIONS = (".ts", ".tsx")
+# App Router はルート特殊ファイルを `.js` / `.jsx` / `.mjs` でも受け付ける
+# （出典: `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/page.md` /
+#  `route.md` の "File Extensions"）。本リポジトリに該当ファイルは無いが、
+# 拡張子の軸に穴があると「新経路の載せ忘れ」を止められない（`ROUTE_PRODUCING_STEMS` と同じ理由）。
+ROUTE_PRODUCING_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs")
 ENTRYPOINT_FILE_NAMES = tuple(
     f"{stem}{ext}" for stem in ROUTE_PRODUCING_STEMS for ext in ROUTE_PRODUCING_EXTENSIONS
 )
@@ -95,6 +106,14 @@ EXCLUDED_MARK = "❌"
 
 # `enforceSearchRateLimit(` のような **呼び出し**（import 文は `(` が続かないので拾わない）
 CALL_RE = re.compile(r"\b(enforce\w*RateLimit)\s*\(")
+# 呼び出しの **結果を捨てていない** 形だけを「配線済み」と認める。
+# `enforce*RateLimit()` は `RateLimitExceededError` を reject で返すため、`await`（または
+# `void` / `return`）が無いと例外が呼び出し元の try/catch に入らず unhandled rejection になり、
+# 429 応答にならないまま **一切間引かれない**。型情報なし ESLint（`no-floating-promises` 不在）も
+# `tsc --noEmit` もこれを検出しないので、本スクリプトが唯一のゲートになる。
+AWAITED_CALL_RE = re.compile(r"\b(?:await|void|return)\s+(?:await\s+)?(enforce\w*RateLimit)\s*\(")
+# usecase 呼び出し（`searchGemsUseCase(` 等）。間引きは「重い処理より前」で行う必要がある。
+USECASE_CALL_RE = re.compile(r"\b(\w+UseCase)\s*\(")
 # `export async function enforceGemListRateLimit` / `export const enforceX = ...`
 EXPORT_RE = re.compile(r"^export\s+(?:async\s+)?(?:function|const)\s+(enforce\w*RateLimit)\b", re.MULTILINE)
 # `'search:'` のようなコロン終わりの文字列リテラル
@@ -109,12 +128,26 @@ EXIT_VIOLATION = 1
 # ---------------------------------------------------------------------------
 
 def _strip_cell(cell: str) -> str:
-    """表セルの前後空白と装飾（バッククォート・太字）を落とす。"""
-    return cell.strip().strip("`").replace("**", "").strip()
+    """表セルの前後空白と装飾（バッククォート・太字）を落とす。
+
+    🔴 順序が重要: 太字（`**`）を先に落とさないと ``**`gems:`**`` のような
+    「太字 + コード記法」のセルでバッククォートが外側に残らず、`gems:` ではなく
+    ``` `gems:` ``` が値になる。すると「表は `` `gems:` `` と宣言しているが実装は `gems:` を使う」
+    という **見た目が同一の値を突きつける** 無意味なエラーになる。
+    """
+    return cell.replace("**", "").strip().strip("`").strip()
 
 
 def extract_wiring_table(markdown: str) -> tuple[list[str], str | None]:
     """マーカーで囲まれた表の行だけを返す。マーカーが無ければ (＿, エラー文) を返す。"""
+    # マーカーが 2 組以上あると「最初の 1 組」しか読まれず、2 組目に列挙した経路が
+    # 「表に載っていない（新経路の載せ忘れ）」と誤報される。黙って無視せず FAIL させる。
+    if markdown.count(BEGIN_MARKER) > 1 or markdown.count(END_MARKER) > 1:
+        return [], (
+            f"{DOC_PATH.name}: {BEGIN_MARKER} / {END_MARKER} が複数組ある"
+            f"（begin {markdown.count(BEGIN_MARKER)} 個 / end {markdown.count(END_MARKER)} 個）"
+            " → 適用経路表は 1 ブロックに統合する（最初の 1 組しか読まれず 2 組目が誤報になる）"
+        )
     begin = markdown.find(BEGIN_MARKER)
     end = markdown.find(END_MARKER)
     if begin == -1 or end == -1 or end < begin:
@@ -171,22 +204,29 @@ def parse_wiring_rows(table_lines: list[str], errors: list[str]) -> dict[str, di
     return rows
 
 
-def strip_comments(source: str) -> str:
-    """TS/TSX から行コメント・ブロックコメントを取り除く（文字列リテラルの中身は保つ）。
+_LINE_COMMENT = "//"
+_BLOCK_OPEN = "/*"
+_BLOCK_CLOSE = "*/"
 
-    コメントアウトされた `// await enforceGemListRateLimit(...)` を「配線済み」と誤認しないための前処理。
-    素朴に `//` で切ると `'https://…'` を壊すため、文字列リテラル（`'` / `"` / テンプレート）を跨がない
-    最小限のスキャナにしている。
-    """
+
+def _strip_line_tracking_quotes(line: str, quote: str | None, in_block: bool) -> tuple[str, str | None, bool]:
+    """1 行からコメントを除く（文字列リテラルの中身は保つ）。(出力, 行末 quote, 行末 in_block)。"""
     out: list[str] = []
-    i, n = 0, len(source)
-    quote: str | None = None
+    i, n = 0, len(line)
     while i < n:
-        ch = source[i]
+        if in_block:
+            end = line.find(_BLOCK_CLOSE, i)
+            if end == -1:
+                i = n
+                break
+            in_block = False
+            i = end + 2
+            continue
+        ch = line[i]
         if quote:
             out.append(ch)
             if ch == "\\" and i + 1 < n:
-                out.append(source[i + 1])
+                out.append(line[i + 1])
                 i += 2
                 continue
             if ch == quote:
@@ -198,23 +238,110 @@ def strip_comments(source: str) -> str:
             out.append(ch)
             i += 1
             continue
-        if source.startswith("//", i):
-            while i < n and source[i] != "\n":
-                i += 1
-            continue
-        if source.startswith("/*", i):
-            end = source.find("*/", i + 2)
-            i = n if end == -1 else end + 2
+        if line.startswith(_LINE_COMMENT, i):
+            break  # 行末まで捨てる
+        if line.startswith(_BLOCK_OPEN, i):
+            in_block = True
             out.append(" ")
+            i += 2
             continue
         out.append(ch)
         i += 1
+    return "".join(out), quote, in_block
+
+
+def _strip_line_ignoring_quotes(line: str, in_block: bool) -> tuple[str, bool]:
+    """クォート追跡を諦めて **消しすぎる方向** に倒す（`//` 以降と `/* */` を無条件で捨てる）。"""
+    out: list[str] = []
+    i, n = 0, len(line)
+    while i < n:
+        if in_block:
+            end = line.find(_BLOCK_CLOSE, i)
+            if end == -1:
+                i = n
+                break
+            in_block = False
+            i = end + 2
+            continue
+        if line.startswith(_LINE_COMMENT, i):
+            break
+        if line.startswith(_BLOCK_OPEN, i):
+            in_block = True
+            out.append(" ")
+            i += 2
+            continue
+        out.append(line[i])
+        i += 1
+    return "".join(out), in_block
+
+
+def strip_comments(source: str) -> str:
+    """TS/TSX から行コメント・ブロックコメントを取り除く（文字列リテラルの中身は保つ）。
+
+    コメントアウトされた `// await enforceGemListRateLimit(...)` を「配線済み」と誤認しないための前処理。
+    素朴に `//` で切ると `'https://…'` を壊すため、文字列リテラルを跨がないスキャナにしている。
+
+    🔴 **行単位で走査する**（誤検出の実害を 1 行に閉じ込めるため）。ソース全体を 1 本のクォート状態で
+    舐めると、対にならないアポストロフィ（`<p>Don't worry</p>`）や正規表現リテラル（`/'/g`）が
+    「文字列の開始」と誤解され、**以降のファイル全体でコメントが除去されなくなる**。その結果
+    `// await enforceGemListRateLimit(...)`（一時的にコメントアウトして戻し忘れた、最も起こりやすい
+    未配線）を「配線済み」と誤認して素通しする。JS/TS の非テンプレート文字列は行をまたげないので、
+    改行に到達したらクォート状態を捨ててよい（テンプレートリテラルだけは跨げるので維持する）。
+
+    さらに、行末でクォートが閉じていない行は追跡結果自体が信用できないため、その行だけ
+    **消しすぎる方向（= 呼び出しを見失い「配線し忘れ」として FAIL する安全側）** に倒して読み直す。
+    正規表現リテラル（`/https:\\/\\//`）を完全に解釈することは字句解析なしには不可能なので、
+    「見逃して緑になる」より「消しすぎて赤くなる」を選ぶ。
+    """
+    out: list[str] = []
+    quote: str | None = None
+    in_block = False
+    for raw_line in source.splitlines(keepends=True):
+        if raw_line.endswith("\n"):
+            body, eol = raw_line[:-1], "\n"
+        else:
+            body, eol = raw_line, ""
+        text, next_quote, next_block = _strip_line_tracking_quotes(body, quote, in_block)
+        if next_quote is not None and next_quote != "`":
+            # 行内でクォートが閉じない = アポストロフィか正規表現リテラルを文字列の開始と
+            # 誤解した。この行の追跡は信用できないので安全側（消しすぎる方向）へ倒す。
+            text, next_block = _strip_line_ignoring_quotes(body, in_block)
+            next_quote = None
+        out.append(text + eol)
+        quote, in_block = next_quote, next_block
     return "".join(out)
 
 
 def extract_calls(source: str) -> set[str]:
     """ソース中の `enforce*RateLimit(` 呼び出し名の集合（import 文・コメントは含まない）。"""
     return set(CALL_RE.findall(strip_comments(source)))
+
+
+def extract_awaited_calls(source: str) -> set[str]:
+    """`await` / `void` / `return` を伴う `enforce*RateLimit(` 呼び出し名の集合。"""
+    return set(AWAITED_CALL_RE.findall(strip_comments(source)))
+
+
+def find_ordering_violation(source: str) -> tuple[str, str] | None:
+    """`enforce*RateLimit(` が最初の usecase 呼び出しより後ろなら (呼び出し名, usecase 名) を返す。
+
+    完全な到達性解析はしない（字句解析なしには不可能）。「同じファイルの中で、間引きが重い処理より
+    **前に書かれている** こと」だけを文字オフセットで比べる。Issue #442 の事故は「呼び出しが
+    usecase の後ろへ移動する / 不到達な分岐の内側へ入る」形で再発しうるが、ファイル内のどこかに
+    呼び出しがあるかだけを見る検査ではそれを止められない。
+
+    🔴 usecase 呼び出しが 1 つも見つからないファイル（`app/api/search/route.ts` は
+    `searchRepositoriesWithCacheStatus()` を呼ぶ等、命名が `*UseCase` でない）ではこの検査を
+    **スキップする**（誤検出させない）。
+    """
+    stripped = strip_comments(source)
+    call = CALL_RE.search(stripped)
+    usecase = USECASE_CALL_RE.search(stripped)
+    if call is None or usecase is None:
+        return None
+    if call.start() < usecase.start():
+        return None
+    return call.group(1), usecase.group(1)
 
 
 def extract_exported_enforcers(source: str) -> dict[str, str | None]:
@@ -275,6 +402,25 @@ def check_wiring(
                 f"{path}: 表は「{APPLIED_MARK} 適用」だが `enforce*RateLimit(` の呼び出しが無い（配線し忘れ）"
                 " → 同ファイルで `enforce...RateLimit(...)` を呼ぶか、表を「❌ 対象外」に直す"
             )
+        elif row["applied"]:
+            # --- 2. 呼び出しの結果を捨てていないか（`await` 落ち）------------------
+            floating = calls - extract_awaited_calls(source)
+            if floating:
+                errors.append(
+                    f"{path}: {', '.join(sorted(floating))} に `await` が付いていない"
+                    "（`RateLimitExceededError` が try/catch の外で unhandled rejection になり、"
+                    "429 を返せないまま一切間引かれない）"
+                    " → `await enforce...RateLimit(...)` にする（意図的に捨てるなら `void` / `return`）"
+                )
+            # --- 6. 呼び出し位置（重い処理より前か）------------------------------
+            ordering = find_ordering_violation(source)
+            if ordering:
+                call_name, usecase_name = ordering
+                errors.append(
+                    f"{path}: `{call_name}(` が usecase 呼び出し `{usecase_name}(` より後ろにある"
+                    "（重い処理を走らせてから間引くので Issue #442 と同型の抜けになる）"
+                    " → 間引きを usecase 呼び出しより前へ移す"
+                )
         if not row["applied"] and calls:
             errors.append(
                 f"{path}: 表は「{EXCLUDED_MARK} 対象外」だが {', '.join(sorted(calls))} を呼んでいる（逆ドリフト）"
@@ -324,7 +470,14 @@ def check_wiring(
 # ---------------------------------------------------------------------------
 
 def collect_entrypoint_sources(app_dir: Path, repo_root: Path = REPO_ROOT) -> dict[str, str]:
-    """`app/` 配下の `page.tsx` / `route.ts` を実際に列挙して {相対パス: ソース} を返す。"""
+    """`app/` 配下の **URL を生みコードが走る全ファイル** を実際に列挙して {相対パス: ソース} を返す。
+
+    対象は `ROUTE_PRODUCING_STEMS`（`page` / `route` に加え `opengraph-image` 等のコード生成
+    メタデータルート）× `ROUTE_PRODUCING_EXTENSIONS` の組み合わせ。
+    🔴 「`page.tsx` / `route.ts` の 2 つ」に狭めてはいけない（モジュール docstring の
+    Issue #442 再発防止の本体）。対象集合を変えるときは `ROUTE_PRODUCING_STEMS` の
+    コメントと `--self-test` の列挙集合テスト（5-c）を必ず一緒に更新する。
+    """
     sources: dict[str, str] = {}
     if not app_dir.is_dir():
         return sources
@@ -533,6 +686,108 @@ def self_test() -> int:
     )
     expect_ok("URL 文字列があっても呼び出しを見失わない", check_wiring(_DOC_OK, with_url, _COMPOSITION_OK))
 
+    # 14-b) 🔴 正規表現リテラル（`/'/g`）の後ろでコメント除去が止まらない（修正項目 1 の再現入力）。
+    #       ソース全体を 1 本のクォート状態で舐めていた頃は、`'` を文字列の開始と誤解して
+    #       以降の `//` を除去できず、コメントアウトされた呼び出しを「配線済み」と誤認していた。
+    regex_literal = dict(_SOURCES_OK)
+    regex_literal["app/[locale]/gems/page.tsx"] = (
+        "const slug = raw.replace(/'/g, '')\n"
+        "// await enforceGemListRateLimit(await headers())\n"
+    )
+    expect_fail(
+        "正規表現リテラル後のコメントアウト",
+        check_wiring(_DOC_OK, regex_literal, _COMPOSITION_OK),
+        "配線し忘れ",
+    )
+
+    # 14-c) 🔴 対にならないアポストロフィ（JSX の `Don't`）でも同じ（修正項目 1 の再現入力）。
+    apostrophe = dict(_SOURCES_OK)
+    apostrophe["app/[locale]/gems/page.tsx"] = (
+        "export default function Page() {\n"
+        "  return <p>Don't worry</p>\n"
+        "}\n"
+        "// await enforceGemListRateLimit(await headers())\n"
+    )
+    expect_fail(
+        "アポストロフィ後のコメントアウト",
+        check_wiring(_DOC_OK, apostrophe, _COMPOSITION_OK),
+        "配線し忘れ",
+    )
+
+    # 14-d) 上記の安全側倒しが、正常な複数行テンプレートリテラルを壊していないこと
+    template_literal = dict(_SOURCES_OK)
+    template_literal["app/[locale]/gems/page.tsx"] = (
+        "const q = `line1\n"
+        "line2 // not a comment`\n"
+        "await enforceGemListRateLimit(await headers())\n"
+    )
+    expect_ok("複数行テンプレートリテラル", check_wiring(_DOC_OK, template_literal, _COMPOSITION_OK))
+
+    # 17) 🟡 `await` 落ち（修正項目 2）。呼び出しはあるが結果を捨てているので
+    #     `RateLimitExceededError` が unhandled rejection になり一切間引かれない。
+    #     ESLint（型情報なし）も `tsc --noEmit` も検出しないため、ここが唯一のゲート。
+    floating = dict(_SOURCES_OK)
+    floating["app/[locale]/gems/page.tsx"] = "enforceGemListRateLimit(await headers())\n"
+    expect_fail("await 落ち", check_wiring(_DOC_OK, floating, _COMPOSITION_OK), "`await` が付いていない")
+
+    # 17-b) 意図的に捨てる `void` / 呼び出し元へ返す `return` は配線とみなす
+    void_call = dict(_SOURCES_OK)
+    void_call["app/[locale]/gems/page.tsx"] = "void enforceGemListRateLimit(await headers())\n"
+    expect_ok("void 呼び出し", check_wiring(_DOC_OK, void_call, _COMPOSITION_OK))
+    return_call = dict(_SOURCES_OK)
+    return_call["app/[locale]/gems/page.tsx"] = "return enforceGemListRateLimit(await headers())\n"
+    expect_ok("return 呼び出し", check_wiring(_DOC_OK, return_call, _COMPOSITION_OK))
+
+    # 18) 🟡 太字 + コード記法のセル（修正項目 3）。`_strip_cell` の順序が逆だと
+    #     バッククォートが残り「表は `` `gems:` `` だが実装は `gems:`」という
+    #     見た目が同一の値を突きつける無意味な FAIL になる。
+    doc_decorated = _DOC_OK.replace("| `gems:` |", "| **`gems:`** |").replace(
+        "| `app/[locale]/gems/page.tsx` |", "| **`app/[locale]/gems/page.tsx`** |"
+    )
+    expect_ok("太字 + コード記法のセル", check_wiring(doc_decorated, dict(_SOURCES_OK), _COMPOSITION_OK))
+
+    # 19) 🟡 マーカーが 2 組ある（修正項目 4）。最初の 1 組しか読まれず、2 組目に列挙した
+    #     経路が「表に載っていない」と誤報される。黙って無視せず専用エラーにする。
+    doc_two_blocks = _DOC_OK + f"\n{BEGIN_MARKER}\n| 追加 | `app/api/x/route.ts` | ❌ 対象外 | — |\n{END_MARKER}\n"
+    expect_fail(
+        "マーカーが複数組",
+        check_wiring(doc_two_blocks, dict(_SOURCES_OK), _COMPOSITION_OK),
+        "1 ブロックに統合",
+    )
+
+    # 20) 🟡 呼び出し位置が usecase より後ろ（修正項目 6）。重い処理を走らせてから間引くので
+    #     Issue #442 と同型の抜けになる。存在チェックだけでは緑のままになる。
+    late_call = dict(_SOURCES_OK)
+    late_call["app/[locale]/gems/page.tsx"] = (
+        "const result = await searchGemsUseCase()({ page })\n"
+        "await enforceGemListRateLimit(await headers())\n"
+    )
+    expect_fail("usecase より後ろの呼び出し", check_wiring(_DOC_OK, late_call, _COMPOSITION_OK), "より後ろにある")
+
+    # 20-b) usecase 呼び出しより前なら通る（正常な並び）
+    early_call = dict(_SOURCES_OK)
+    early_call["app/[locale]/gems/page.tsx"] = (
+        "await enforceGemListRateLimit(await headers())\n"
+        "const result = await searchGemsUseCase()({ page })\n"
+    )
+    expect_ok("usecase より前の呼び出し", check_wiring(_DOC_OK, early_call, _COMPOSITION_OK))
+
+    # 20-c) 🔴 usecase 呼び出しが 1 つも無いファイル（`app/api/search/route.ts` の
+    #       `searchRepositoriesWithCacheStatus()` のように命名が `*UseCase` でない）では
+    #       位置検査をスキップする（誤検出させない）
+    no_usecase = dict(_SOURCES_OK)
+    no_usecase["app/[locale]/gems/page.tsx"] = (
+        "const { search } = searchRepositoriesWithCacheStatus(token)\n"
+        "await enforceGemListRateLimit(await headers())\n"
+        "const result = await search({ keyword })\n"
+    )
+    expect_ok("usecase 呼び出しが無いファイル", check_wiring(_DOC_OK, no_usecase, _COMPOSITION_OK))
+
+    # 21) ⚪ `.js` / `.jsx` / `.mjs` も App Router のルート特殊ファイルとして受け付ける（修正項目 5）
+    for required_js in ("page.js", "route.js", "page.jsx", "sitemap.mjs"):
+        if required_js not in ENTRYPOINT_FILE_NAMES:
+            failures.append(f"列挙対象に {required_js} が含まれていない（拡張子の軸に穴がある）")
+
     # 16) 補助関数の単体検証
     if extract_calls("import { enforceSearchRateLimit } from 'x'\n") != set():
         failures.append("extract_calls: import 文を呼び出しとして誤検出している")
@@ -549,7 +804,7 @@ def self_test() -> int:
             print(f"[rate-limit-wiring] SELF-TEST FAIL: {label}", file=sys.stderr)
         print(f"[rate-limit-wiring] self-test NG（{len(failures)} 件）", file=sys.stderr)
         return EXIT_VIOLATION
-    print("[rate-limit-wiring] self-test OK（18 ケース: 正常 2 / 反例 14 / 補助関数・列挙集合 2）")
+    print("[rate-limit-wiring] self-test OK（30 ケース: 正常 8 / 反例 19 / 補助関数・列挙集合 3）")
     return EXIT_OK
 
 
