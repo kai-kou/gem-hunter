@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import ja from '../messages/ja.json'
 import en from '../messages/en.json'
 import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
-import { searchFor } from './helpers'
+import { searchFor, uniqueGemBadgeKeyword } from './helpers'
 
 /**
  * SP-18: 検索結果カードに Gem バッジが出る（`D-36` / `D-38`）。
@@ -52,14 +52,6 @@ const FIRST_RESULT_TIMEOUT_MS = 30_000
 /** 他ファイル・retry 試行との衝突を避けるため、実行のたびに一意なキーワードを生成する（`sp-7` と同じ方針）。 */
 function uniqueManyHitsKeyword(): string {
   return `many-hits-${randomBytes(4).toString('hex')}`
-}
-
-/**
- * `gem-badge` データセット用の一意キーワード（マーカーは部分一致なので接尾辞を足してよい）。
- * `many-hits` 側と同じく、他ファイル・retry 試行とのキャッシュ衝突を避けるために毎回変える。
- */
-function uniqueGemBadgeKeyword(): string {
-  return `gem-badge-${randomBytes(4).toString('hex')}`
 }
 
 /** `gem-badge` データセットでバッジが付かない側（候補プールに載っていない架空のリポジトリ）。 */
@@ -260,5 +252,59 @@ test('SP-18: 英語 UI でもプール実在のカードにだけバッジが出
   await test.step('3. 注記が英語で 1 回だけ読める（日本語文言は混ざらない）', async () => {
     expect(await expectGemBadgeInvariants(page, labels)).toBe(1)
     await expect(page.getByText(ja.home.gemBadge.note, { exact: true })).toHaveCount(0)
+  })
+})
+
+/**
+ * Issue #453（F-2）: Gem 一覧導線（GemListLink）の直前に Gem 印の説明文（`home.gemBadge.intro`）を出す。
+ * `content/discussions/gem-list-match-20260823/whiteboard.md` lead 判定「争点 D」で確定。
+ *
+ * 🔴 **`home.gemBadge.note`（バッジが付かないことは低評価ではない旨・一覧末尾）とは役割が違う**
+ * ので、本テストは `note` とは別の文言（`intro`）が **別に** 読めることだけを見る（重複させない）。
+ * 描画条件は「検索結果が 1 件以上あるとき」（バッジの有無では条件分岐しない）。
+ */
+test('SP-18: Gem 一覧導線の直前に Gem 印の説明文が出る（ja）', async ({ page }) => {
+  const keyword = uniqueManyHitsKeyword()
+
+  await test.step('1. キーワード検索する', async () => {
+    await page.goto('/ja')
+    await searchFor(page, keyword)
+    await expect(resultCards(page)).toHaveCount(20, { timeout: FIRST_RESULT_TIMEOUT_MS })
+  })
+
+  await test.step('2. Gem 印の説明文が読める（home.gemBadge.note とは別の文言）', async () => {
+    await expect(page.getByText(ja.home.gemBadge.intro, { exact: true })).toBeVisible()
+  })
+
+  await test.step('3. 説明文は Gem 一覧導線（GemListLink）より前にある', async () => {
+    const introIsBeforeLink = await page.evaluate(
+      ({ intro, linkLabel }) => {
+        const introEl = [...document.querySelectorAll('main p')].find(
+          (p) => p.textContent?.trim() === intro,
+        )
+        const anchor = [...document.querySelectorAll('a')].find(
+          (a) => a.textContent?.trim() === linkLabel,
+        )
+        if (!introEl || !anchor) return null
+        // Node.DOCUMENT_POSITION_FOLLOWING = 4（introEl から見て anchor が後ろにある）
+        return (introEl.compareDocumentPosition(anchor) & 4) !== 0
+      },
+      { intro: ja.home.gemBadge.intro, linkLabel: ja.home.gemListLink.label },
+    )
+    expect(introIsBeforeLink, '説明文が Gem 一覧導線より前に無い').toBe(true)
+  })
+})
+
+test('SP-18: Gem 一覧導線の直前の Gem 印の説明文が英語でも読める（en）', async ({ page }) => {
+  const keyword = uniqueManyHitsKeyword()
+
+  await test.step('1. 英語 UI でキーワード検索する', async () => {
+    await page.goto(`/en?${SEARCH_PARAM_KEYS.keyword}=${encodeURIComponent(keyword)}`)
+    await expect(resultCards(page)).toHaveCount(20, { timeout: FIRST_RESULT_TIMEOUT_MS })
+  })
+
+  await test.step('2. 説明文が英語で読める（日本語文言は混ざらない）', async () => {
+    await expect(page.getByText(en.home.gemBadge.intro, { exact: true })).toBeVisible()
+    await expect(page.getByText(ja.home.gemBadge.intro, { exact: true })).toHaveCount(0)
   })
 })

@@ -1,4 +1,17 @@
+import { randomBytes } from 'node:crypto'
+
 import type { Locator, Page } from '@playwright/test'
+
+/**
+ * `gem-badge` データセット（`e2e/stub/server.mjs`）用の一意キーワード（マーカーは部分一致なので
+ * 接尾辞を足してよい）。`e2e/sp-18.spec.ts`（バッジ経路の検証）と `e2e/sp-19.spec.ts`
+ * （Issue #453 scoped hybrid の検証）の両方が同じデータセットを使うため共有する
+ * （`e2e/` の外へは出さない・`searchFor` と同じ置き方）。他ファイル・retry 試行との
+ * キャッシュ衝突を避けるために毎回変える。
+ */
+export function uniqueGemBadgeKeyword(): string {
+  return `gem-badge-${randomBytes(4).toString('hex')}`
+}
 
 /**
  * 検索欄にキーワードを入力し、検索を実行する（SP-1 の操作レビュー手順 2. の共通化）。

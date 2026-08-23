@@ -14,6 +14,13 @@ export type SearchGemsInput = {
   readonly page?: string | readonly string[] | number | null
   /** 1 ページの表示件数の生値。未指定・不正値は既定表示件数へ倒す。 */
   readonly perPage?: string | number | null
+  /**
+   * 検索結果ページでバッジが付いた候補を一覧へ同伴させる `repositoryFullName` 群の **生値**
+   * （URL の `badged`（`SEARCH_PARAM_KEYS.badged`）・`SP-19` 追補・`案3'`・Issue #453）。
+   * `searchParams` の素の形（文字列 1 本・カンマ区切り・配列いずれも来うる）をそのまま受け、
+   * 正規化は `normalizeIncludeFullNames` が行う。
+   */
+  readonly includeFullNames?: string | readonly string[] | null
 }
 
 /**
@@ -71,6 +78,113 @@ export function toGemListPage(raw: string | readonly string[] | number | null | 
     return DEFAULT_PAGE
   }
   return parsed
+}
+
+/**
+ * `includeFullNames`（`案3'` 同伴指定）として受理する最大件数（`SP-19` 追補・Issue #453）。
+ *
+ * `page` と同じ思想: 上限が無いと URL 長で isolate の CPU（配列走査・照合）を圧迫できるため、
+ * 検索結果ページで実際にバッジが付く現実的な件数（1 ページ数十件程度）を大きく超えない値で
+ * 有界にする。超過分は例外にせず切り捨てる。
+ */
+export const MAX_INCLUDE_FULL_NAMES = 20
+
+/** `includeFullNames` の 1 件あたりの最大文字数（超過は捨てる）。 */
+const MAX_INCLUDE_FULL_NAME_LENGTH = 200
+
+/**
+ * `includeFullNames` の 1 要素（`part`）に対して、`split(',')` する前に受け付ける最大文字数
+ * （超過分は切り捨てる・`F-01` 相当）。
+ *
+ * `gem-keyword.ts` の `tokenizeQuery` が「区切り文字だけを大量に並べた入力は、語数上限に
+ * 達する前に文字数で先に切らないと走査量が青天井になる」として `MAX_QUERY_LENGTH` で先に
+ * 切っているのと同じ理由。ここでは `,` が区切り文字で、`split` がその走査にあたる。
+ *
+ * 上限は「受理し得る最大件数（`MAX_INCLUDE_FULL_NAMES`）×（1 件あたり上限
+ * `MAX_INCLUDE_FULL_NAME_LENGTH` + 区切り文字 1 文字）」— 正規の入力（上限件数を 1 件あたり
+ * 上限文字数ぎりぎりで埋めた入力）を切り詰めない最小の値にする。
+ */
+const MAX_INCLUDE_FULL_NAMES_RAW_LENGTH =
+  MAX_INCLUDE_FULL_NAMES * (MAX_INCLUDE_FULL_NAME_LENGTH + 1)
+
+/**
+ * `owner/repo` 形式の判定（同伴指定の入口ガード）。
+ *
+ * 🔴 **3 実装が並存する**（本パターン・`static-gem-index.ts` の `isSafeRepositoryFullName`・
+ * `domain/model/repository-full-name.ts` の `tryRepositoryFullName`）。前提が違うため共有
+ * モジュール化はしない（別 Issue）: 本パターンは URL から届く利用者入力の防御（1 スラッシュ
+ * のみ許可）が目的、`isSafeRepositoryFullName` は配信データ（信頼できる自社バッチ出力）の
+ * 防御が目的、`tryRepositoryFullName` は GitHub の命名規則そのものの検証（末尾ハイフン禁止等）
+ * が目的、というように前提が異なる。
+ *
+ * 🔴 パターン **だけでは** ドットだけのセグメント（`.` / `..`）を弾けない（`[A-Za-z0-9._-]+` は
+ * `.` を許容するため `..` にも一致する）。`isSafeRepositoryFullName` と同じく、各セグメントが
+ * ドットだけでないことを `normalizeIncludeFullNames` 内で別途チェックする。
+ */
+const INCLUDE_FULL_NAME_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+
+/** セグメント（`/` で区切った各要素）がドットだけ（`.` / `..`）でないか。 */
+function hasNoDotOnlySegment(value: string): boolean {
+  return value.split('/').every((segment) => segment !== '.' && segment !== '..')
+}
+
+/**
+ * URL の `badged`（`SEARCH_PARAM_KEYS.badged`）生値を、`GemIndexPort#search` へ渡す
+ * `repositoryFullName` の集合へ正規化する（`SP-19` 追補・`案3'`・Issue #453）。
+ *
+ * - 分割前に生値を上限文字数（`MAX_INCLUDE_FULL_NAMES_RAW_LENGTH`）へ切り詰める（`F-01` 相当。
+ *   `tokenizeQuery` と同じく、区切り文字だけを大量に並べた入力の走査量を有界にする）
+ * - カンマ区切りで分割し、前後の空白を落とす（配列で届いた要素それぞれにも同じ分割を適用する。
+ *   `searchParams` は同名クエリを配列で返すことがあり、各要素がカンマ区切りを含むこともある）
+ * - `owner/repo` 形式（`INCLUDE_FULL_NAME_PATTERN`）に一致しないもの・ドットだけのセグメント
+ *   （`.` / `..`）を含むもの・200 文字超は捨てる
+ * - 大文字小文字を無視して重複を畳む（**最初に現れた綴りを残す**）
+ * - 先頭 `MAX_INCLUDE_FULL_NAMES` 件まで（超過分は切り捨て。例外を投げない）
+ *
+ * 不正値は例外にせず無視する（URL 改変で 500 にしない・他の生値変換と同じ方針）。
+ */
+export function normalizeIncludeFullNames(
+  raw: string | readonly string[] | null | undefined,
+): readonly string[] {
+  if (raw == null) {
+    return []
+  }
+  const parts = Array.isArray(raw) ? raw : [raw]
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const part of parts) {
+    if (typeof part !== 'string') {
+      continue
+    }
+    // `split(',')` の前に生値を切り詰める（`F-01` 相当。区切り文字だけを大量に並べた
+    // 入力の走査量を有界にする。件数上限は分割後にしか効かないため、これが一次防御）。
+    const bounded =
+      part.length > MAX_INCLUDE_FULL_NAMES_RAW_LENGTH
+        ? part.slice(0, MAX_INCLUDE_FULL_NAMES_RAW_LENGTH)
+        : part
+    for (const candidate of bounded.split(',')) {
+      const trimmed = candidate.trim()
+      if (
+        trimmed.length === 0 ||
+        trimmed.length > MAX_INCLUDE_FULL_NAME_LENGTH ||
+        !INCLUDE_FULL_NAME_PATTERN.test(trimmed) ||
+        !hasNoDotOnlySegment(trimmed)
+      ) {
+        continue
+      }
+      const lower = trimmed.toLowerCase()
+      if (seen.has(lower)) {
+        continue
+      }
+      seen.add(lower)
+      result.push(trimmed)
+      if (result.length >= MAX_INCLUDE_FULL_NAMES) {
+        return result
+      }
+    }
+  }
+  return result
 }
 
 /**
@@ -134,10 +248,14 @@ export function makeSearchGems(deps: { gems: GemIndexPort }): SearchGems {
         }
       }
 
+      // 🔴 `SP-19` 追補（`案3'`）: 同伴指定は照合不能クエリ（上の分岐）では渡さない
+      //    （絞り込みなしの 0 件案内と、同伴で 1 件以上出ることが矛盾するため）。
+      const includeFullNames = normalizeIncludeFullNames(input.includeFullNames)
       const result = await deps.gems.search({
         tokens,
         page: toGemListPage(input.page),
         perPage,
+        ...(includeFullNames.length > 0 ? { includeFullNames } : {}),
       })
       if (result.totalCount === 0 && (await isPoolUnavailable(deps.gems, perPage))) {
         return { status: 'failed' }

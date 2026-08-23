@@ -569,6 +569,7 @@ describe('StaticGemIndex#search', () => {
       effectivePage: 1,
       usedTokens: [],
       relaxed: false,
+      includedCount: 0,
       meta: FALLBACK_META,
     })
   })
@@ -920,5 +921,203 @@ describe('StaticGemIndex#search（続き）', () => {
     expect(result.totalCount).toBe(2)
     expect(reader.calls).toEqual(afterLookup)
     expect(afterLookup).toHaveLength(3)
+  })
+})
+
+/**
+ * `includeFullNames`（同伴指定）のマージ（`SP-19` 追補・案3'・Issue #453）。
+ *
+ * 検索結果ページでバッジが付いたのに `/gems` の名前照合（AND）には一致しない候補を、
+ * URL 経由で一覧へ同伴させるための口。プール所属照会（`lookup`）と一覧の名前照合とで
+ * 判定基準が別物であることによる不一致（`q=next.js` が `['next','js']` の AND で 1 件に
+ * 落ちる等）を、GitHub API の追加呼び出しなしで緩和する。
+ */
+describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3'）", () => {
+  beforeEach(() => {
+    resetGemIndexCacheForTest()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    resetGemIndexCacheForTest()
+    vi.restoreAllMocks()
+  })
+
+  it('同伴分がマージされ、結果全体が gemIndex 昇順に並ぶ', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const result = await port.search({
+      tokens: ['solo'],
+      page: 1,
+      perPage: perPageOf(10),
+      includeFullNames: ['acme/orm-core'],
+    })
+
+    // 名前照合だけなら delta/solo(-10) の 1 件。acme/orm-core(-70) が同伴で加わり、
+    // gemIndex 昇順（先頭固定ではない）で並ぶ。
+    expect(names(result.items)).toEqual(['acme/orm-core', 'delta/solo'])
+    expect(result.totalCount).toBe(2)
+    expect(result.includedCount).toBe(1)
+  })
+
+  it('プールに載っていない名前は黙って無視される', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const result = await port.search({
+      tokens: ['solo'],
+      page: 1,
+      perPage: perPageOf(10),
+      includeFullNames: ['nobody/unknown'],
+    })
+
+    expect(names(result.items)).toEqual(['delta/solo'])
+    expect(result.totalCount).toBe(1)
+    expect(result.includedCount).toBe(0)
+  })
+
+  it('名前照合（AND）に既に一致しているものは重複させない', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const result = await port.search({
+      tokens: ['orm'],
+      page: 1,
+      perPage: perPageOf(10),
+      includeFullNames: ['acme/orm-core'],
+    })
+
+    expect(names(result.items)).toEqual(['acme/orm-core', 'beta/orm-client'])
+    expect(result.totalCount).toBe(2)
+    expect(result.includedCount).toBe(0)
+  })
+
+  it('totalCount はマージ後の件数になる（ページングの母数もマージ後で決まる）', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const page2 = await port.search({
+      tokens: ['orm'],
+      page: 2,
+      perPage: perPageOf(2),
+      includeFullNames: ['delta/solo'],
+    })
+
+    // マージ後は acme/orm-core(-70) / beta/orm-client(-60) / delta/solo(-10) の 3 件。
+    expect(page2.totalCount).toBe(3)
+    expect(page2.effectivePage).toBe(2)
+    expect(names(page2.items)).toEqual(['delta/solo'])
+  })
+
+  it('大文字小文字を無視して照合する（lookup() と同じ規則）', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const result = await port.search({
+      tokens: ['solo'],
+      page: 1,
+      perPage: perPageOf(10),
+      includeFullNames: ['ACME/ORM-CORE'],
+    })
+
+    expect(names(result.items)).toEqual(['acme/orm-core', 'delta/solo'])
+    expect(result.includedCount).toBe(1)
+  })
+
+  it('同伴があっても relaxed / usedTokens の判定は名前照合（AND）だけで決まる', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    // image=1件 / client=2件 → AND 0 件で image へ緩和（従来どおり）。
+    const result = await port.search({
+      tokens: ['image', 'client'],
+      page: 1,
+      perPage: perPageOf(10),
+      includeFullNames: ['delta/solo'],
+    })
+
+    expect(result.relaxed).toBe(true)
+    expect(result.usedTokens).toEqual(['image'])
+    expect(names(result.items)).toEqual(['Gamma/Image-Tools', 'delta/solo'])
+    expect(result.totalCount).toBe(2)
+    expect(result.includedCount).toBe(1)
+  })
+
+  it('一覧用の列が欠けた（listable=false）レコードは同伴指定されても無視する', async () => {
+    const port = new StaticGemIndex(
+      stubReader({
+        [INDEX_PATH]: indexJsonWithMeta(['full.json', 'legacy.json']),
+        '/data/gem-index/full.json': registryShardJson('npmjs.org', [
+          ['acme/full', 'full', 9, 8, -70],
+        ]),
+        '/data/gem-index/legacy.json': JSON.stringify({
+          registry: 'pypi.org',
+          ecosystem: 'pypi',
+          columns: ['repositoryFullName', 'gemIndex'],
+          entries: [['legacy/one', -90]],
+        }),
+      }),
+    )
+
+    const result = await port.search({
+      tokens: [],
+      page: 1,
+      perPage: perPageOf(10),
+      includeFullNames: ['legacy/one'],
+    })
+
+    expect(names(result.items)).toEqual(['acme/full'])
+    expect(result.totalCount).toBe(1)
+    expect(result.includedCount).toBe(0)
+  })
+
+  /**
+   * 🟡 WARNING（`static-gem-index.ts:441` 相当）: `mergeIncludedRecords` は `includeFullNames`
+   * を件数上限なしで全件走査していた。`normalizeTokens`（`F-01`）が `tokens` を上限で切っている
+   * のと同じ流儀で、ポート側にも独立した定数上限（`break`）を持たせる。ユースケース層
+   * （`search-gems.ts` の `MAX_INCLUDE_FULL_NAMES` = 20）をバイパスしてポートへ直接大量の
+   * `includeFullNames` を渡しても、有界であることを固定する。
+   */
+  it('includeFullNames はポート側でも件数上限までしか走査しない（ユースケースをバイパスしても有界）', async () => {
+    const many = 30
+    const entries = Array.from({ length: many }, (_, i) => [
+      `acme/extra${String(i).padStart(2, '0')}`,
+      `extra${i}`,
+      1,
+      1,
+      -(i + 1),
+    ])
+    const reader = stubReader({
+      [INDEX_PATH]: indexJsonWithMeta(['extra.json']),
+      '/data/gem-index/extra.json': registryShardJson('npmjs.org', entries),
+    })
+    const port = new StaticGemIndex(reader)
+    // 名前照合には一切当たらない検索語にして、matched を空にする（同伴の効果だけを見る）。
+    const includeFullNames = entries.map(([name]) => name as string)
+
+    const result = await port.search({
+      tokens: ['nomatch'],
+      page: 1,
+      perPage: perPageOf(many),
+      includeFullNames,
+    })
+
+    // ポート側の上限（20）までしか走査しないため、`includeFullNames` に含まれていても
+    // 21 件目以降（`acme/extra20`〜）は一覧に現れない。
+    expect(result.includedCount).toBe(20)
+    expect(names(result.items)).toHaveLength(20)
+    expect(names(result.items)).not.toContain('acme/extra29')
+  })
+
+  it('includeFullNames 未指定・空配列は従来どおり（includedCount は 0）', async () => {
+    const port = new StaticGemIndex(stubReader(searchFiles))
+
+    const withoutField = await port.search({ tokens: ['solo'], page: 1, perPage: perPageOf(10) })
+    const withEmpty = await port.search({
+      tokens: ['solo'],
+      page: 1,
+      perPage: perPageOf(10),
+      includeFullNames: [],
+    })
+
+    expect(withoutField.includedCount).toBe(0)
+    expect(withEmpty.includedCount).toBe(0)
+    expect(names(withoutField.items)).toEqual(['delta/solo'])
+    expect(names(withEmpty.items)).toEqual(['delta/solo'])
   })
 })

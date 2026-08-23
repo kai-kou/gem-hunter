@@ -9,12 +9,13 @@ import {
 } from './search-params'
 
 describe('SEARCH_PARAM_KEYS', () => {
-  it('keyword は q、page は page、sort は sort、perPage は per_page に固定されている', () => {
+  it('keyword は q、page は page、sort は sort、perPage は per_page、badged は badged に固定されている', () => {
     expect(SEARCH_PARAM_KEYS).toEqual({
       keyword: 'q',
       page: 'page',
       sort: 'sort',
       perPage: 'per_page',
+      badged: 'badged',
     })
   })
 })

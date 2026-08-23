@@ -65,6 +65,7 @@ function okResult(): SearchGemsResult {
     usedTokens: ['react'],
     relaxed: false,
     unmatchableQuery: false,
+    includedCount: 0,
     meta: {
       source: 'Ecosyste.ms',
       sourceUrl: 'https://ecosyste.ms/',

@@ -57,6 +57,7 @@
     "gemBadge": {
       "label": "Gem",
       "srHint": "(Many packages depend on this repository, yet few people have starred it.)",
+      "intro": "The \"Gem\" mark flags repositories that many packages depend on, relative to their star count.",
       "note": "The Gem mark comes from a limited dataset gathered from 12 package registries. A repository without the mark is not rated any lower."
     },
     "digest": {
@@ -77,6 +78,7 @@
     "empty": "No Gem candidate matched this keyword. This list only covers a limited pool built from the most depended-upon packages of 12 package registries, so a repository that is missing here is not rated any lower.",
     "unmatchableQuery": "We could not take any term out of this keyword to narrow the list. Matching runs as whole-word matches against package names and repository names, which are alphanumeric identifiers, so a keyword without alphanumeric words cannot narrow the list. Trying an English keyword such as \"image processing\" may surface related Gem candidates.",
     "relaxedNotice": "No candidate contained all of your words, so the list is narrowed by \"{token}\" only.",
+    "includedFromSearch": "We've added {count} candidate(s) that were marked as Gem in your search results, including ones whose name doesn't match.",
     "totalCount": "{count} results",
     "starCount": "stars",
     "dependentCount": "Used by",

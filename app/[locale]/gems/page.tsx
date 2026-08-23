@@ -11,7 +11,7 @@ import { DEFAULT_PAGE } from '@/src/domain/model/page-number'
 import { DEFAULT_PER_PAGE } from '@/src/domain/model/per-page'
 import { DEFAULT_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { getMessages } from '@/src/shared/i18n/messages'
-import { toGemListPage } from '@/src/usecases/search-gems'
+import { normalizeIncludeFullNames, toGemListPage } from '@/src/usecases/search-gems'
 import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
@@ -20,6 +20,7 @@ import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { Pagination } from '@/src/ui/pagination'
 import { SiteHeader } from '@/src/ui/site-header'
 import { buildSearchUrl, type SearchUrlState } from '@/src/ui/url/build-search-url'
+import { rawBadgedOf } from '@/src/ui/url/gem-list-url'
 import { rawKeywordOf, SEARCH_PARAM_KEYS, type RawSearchParams } from '@/src/ui/url/search-params'
 
 /**
@@ -75,6 +76,25 @@ export default async function GemListPage({
    * 記号・非 ASCII は区切りとして落ちるので、生値をそのまま渡して安全。
    */
   const rawQuery = rawKeywordOf(rawSearchParams)
+  /**
+   * 🔴 検索結果でバッジが付いたが AND 不一致で漏れていた `fullName` の同伴（`badged`・Issue #453
+   * 案3'）。正規化・上限件数・不正形式のスキップはユースケース（`makeSearchGems`）の責務なので、
+   * ここでは URL の生値をそのまま渡す（分割・検証をしない）。
+   *
+   * 🔴 **ページ送り・言語切替・その他この面の自 URL では引き継ぐが、「検索に戻る」には載せない**
+   * （`backToSearchHref` は検索語だけを引き継ぐ既存仕様のまま・引き継ぐと検索一覧側が知らない
+   * クエリを URL に残すことになる）。引き継がないと Pagination でページ 2 を開いた瞬間に
+   * 同伴分が消え、総件数が同じ URL で変わってしまう。
+   */
+  const rawBadged = rawBadgedOf(rawSearchParams)
+  /**
+   * 🔴 ページ送り・言語切替・再試行リンクへ埋め込む値は **正規化後**（`normalizeIncludeFullNames`）
+   * を使う。絞り込みに使われる値（`searchGemsUseCase` へ渡す `rawBadged`）と生値のまま食い違うと、
+   * 不正形式・21 件目以降・極端に長い値がそのまま URL に複製され続ける。`buildSearchUrl` は
+   * 空文字の値を省略する契約なので、正規化結果が空配列（`join(',')` が `''`）なら `badged`
+   * パラメータ自体が付かない。
+   */
+  const badgedExtraParams = { badged: normalizeIncludeFullNames(rawBadged).join(',') }
   /**
    * 🔴 ページ番号も `parseSearchParams`（`tryPageNumber`）を使わない。あちらは GitHub 検索 API の
    * 1,000 件上限から決まる 50 ページ上限を持ち、**それを超える指定を 1 ページ目へ倒す**ため、
@@ -258,6 +278,7 @@ export default async function GemListPage({
     query: rawQuery,
     page: requestedPage,
     perPage: DEFAULT_PER_PAGE,
+    includeFullNames: rawBadged,
   })
 
   /**
@@ -277,7 +298,9 @@ export default async function GemListPage({
     sort: DEFAULT_SORT_ORDER,
     perPage: DEFAULT_PER_PAGE,
   }
-  const currentPath = buildSearchUrl(basePath, urlState)
+  // 🔴 `badged` を引き継ぐ（言語切替・再試行・ページ送りの行き先すべてに使う自ページ URL）。
+  //    「検索に戻る」（`backToSearchHref`）は上で別途組み立てており、ここへは影響しない。
+  const currentPath = buildSearchUrl(basePath, urlState, badgedExtraParams)
 
   /**
    * 🔴 **取得失敗は 0 件と別の状態として出す**（F-05 / `ui-ux-guidelines.md` §4.4・§5.2）。
@@ -314,6 +337,8 @@ export default async function GemListPage({
      * 渡すだけ（`GemList` が空状態の文言を切り替える）。
      */
     unmatchableQuery: result.unmatchableQuery,
+    // 同伴（`badged`）で実際に追加された件数。`GemList` は 0 より大きいときだけ注記を出す。
+    includedCount: result.includedCount,
     meta: result.meta,
   }
 
@@ -339,6 +364,7 @@ export default async function GemListPage({
           gemIndexLabel: messages.gems.gemIndexLabel,
           registryLabel: messages.gems.registryLabel,
           attribution: messages.gems.attribution,
+          includedFromSearch: messages.gems.includedFromSearch,
         }}
       />
 
@@ -362,6 +388,7 @@ export default async function GemListPage({
           current={urlState}
           totalCount={result.totalCount}
           maxPage={Math.ceil(result.totalCount / DEFAULT_PER_PAGE)}
+          extraParams={badgedExtraParams}
           labels={{
             navLabel: messages.home.paginationLabel,
             prev: messages.home.pagePrev,

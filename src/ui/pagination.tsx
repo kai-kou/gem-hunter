@@ -27,6 +27,16 @@ type PaginationProps = {
    * API 上限は存在せず、出せば嘘の理由を伝えることになる。
    */
   maxPage?: number
+  /**
+   * ページ送りリンクへ引き継ぐ付帯パラメータ（例: Gem 一覧の `badged`・Issue #453）。
+   *
+   * 🔴 **`SearchUrlState` には混ぜない**: `Pagination` は検索一覧・Gem 一覧の両方から使う汎用
+   * コンポーネントで、`badged` は Gem 一覧固有の概念（同伴 fullName）。専用フィールドを足すと
+   * `Pagination` 自体が Gem 一覧の語彙を知ることになるため、`buildSearchUrl` が既に持つ
+   * `extraParams`（検索 4 条件以外の付帯パラメータを載せる受け口・`build-search-url.ts`）を
+   * そのまま右から左へ渡すだけに留める。省略時は従来どおり付帯パラメータなし（既存呼び出しを壊さない）。
+   */
+  extraParams?: Readonly<Record<string, string>>
 }
 
 const linkClassName = buttonVariants({ variant: 'ghost', size: 'default' })
@@ -53,6 +63,7 @@ export function Pagination({
   totalCount,
   labels,
   maxPage: maxPageOverride,
+  extraParams = {},
 }: PaginationProps) {
   const totalPages = totalCount > 0 ? Math.ceil(totalCount / current.perPage) : current.page
   const maxPage = maxPageOverride ?? maxPageFor(current.perPage)
@@ -70,7 +81,7 @@ export function Pagination({
     >
       {hasPrev ? (
         <Link
-          href={buildSearchUrl(basePath, { ...current, page: current.page - 1 })}
+          href={buildSearchUrl(basePath, { ...current, page: current.page - 1 }, extraParams)}
           className={linkClassName}
         >
           {labels.prev}
@@ -87,7 +98,7 @@ export function Pagination({
 
       {hasNext ? (
         <Link
-          href={buildSearchUrl(basePath, { ...current, page: current.page + 1 })}
+          href={buildSearchUrl(basePath, { ...current, page: current.page + 1 }, extraParams)}
           className={linkClassName}
         >
           {labels.next}

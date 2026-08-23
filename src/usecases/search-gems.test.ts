@@ -9,7 +9,7 @@ import type {
 } from '../domain/ports/gem-index-port'
 import { DEFAULT_PAGE, MAX_PAGE } from '../domain/model/page-number'
 import { DEFAULT_PER_PAGE } from '../domain/model/per-page'
-import { makeSearchGems, toGemListPage } from './search-gems'
+import { MAX_INCLUDE_FULL_NAMES, makeSearchGems, toGemListPage } from './search-gems'
 
 const meta: DigestMeta = {
   source: 'Ecosyste.ms',
@@ -38,6 +38,7 @@ function makeResult(overrides: Partial<GemPoolSearchResult> = {}): GemPoolSearch
     effectivePage: DEFAULT_PAGE,
     usedTokens: [],
     relaxed: false,
+    includedCount: 0,
     meta,
     ...overrides,
   }
@@ -352,5 +353,132 @@ describe('searchGems', () => {
     await searchGems({ query: 'kafka' })
 
     expect(received).toHaveLength(1)
+  })
+})
+
+/**
+ * `includeFullNames`（URL 由来の同伴指定）の正規化（`SP-19` 追補・案3'・Issue #453）。
+ * 生値 → プールへ渡す `repositoryFullName` の集合への変換はこのユースケース層の責務。
+ */
+describe('searchGems: includeFullNames の正規化', () => {
+  it('カンマ区切り・配列・前後空白を正規化してポートへ渡す', async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+
+    await searchGems({
+      query: 'kafka',
+      includeFullNames: '  owner/repo1 , owner2/repo2  ',
+    })
+
+    expect(received[0].includeFullNames).toEqual(['owner/repo1', 'owner2/repo2'])
+  })
+
+  it('配列で届いた値も、要素ごとのカンマ区切りも合わせて正規化する（`searchParams` の素の形）', async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+
+    await searchGems({
+      query: 'kafka',
+      includeFullNames: ['ownerA/repoA', 'ownerB/repoB,ownerC/repoC'],
+    })
+
+    expect(received[0].includeFullNames).toEqual(['ownerA/repoA', 'ownerB/repoB', 'ownerC/repoC'])
+  })
+
+  it('`owner/repo` 形式でないもの・長すぎるものは捨てる', async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+    const tooLong = `${'x'.repeat(201)}/repo`
+
+    await searchGems({
+      query: 'kafka',
+      includeFullNames: [
+        'owner/repo1',
+        'not-a-fullname',
+        '../traversal/x',
+        'a/b/c',
+        tooLong,
+        'owner2/repo2',
+      ],
+    })
+
+    expect(received[0].includeFullNames).toEqual(['owner/repo1', 'owner2/repo2'])
+  })
+
+  /**
+   * 🟡 WARNING（`search-gems.ts:101` 相当）: `INCLUDE_FULL_NAME_PATTERN` は 1 スラッシュのみを
+   * 要求するだけで、セグメントがドットだけ（`.` / `..`）であることまでは弾かない。
+   * `'../evil'` は 2 セグメント（`..` と `evil`）で **パターン自体には一致する**ため、
+   * 3 セグメントの `'../traversal/x'`（上のテストでパターン不一致により弾かれる）とは
+   * 別に、ドットだけのセグメント防御そのものを固定する。
+   */
+  it('2 セグメントのドットトラバーサル（`../evil`）はパターンに一致しても捨てる', async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+
+    await searchGems({
+      query: 'kafka',
+      includeFullNames: ['owner/repo1', '../evil', 'owner/..', 'owner2/repo2'],
+    })
+
+    expect(received[0].includeFullNames).toEqual(['owner/repo1', 'owner2/repo2'])
+  })
+
+  /**
+   * 🟡 WARNING（`search-gems.ts:129` 相当）: `split(',')` の前に生値の文字数で切っていないと、
+   * 区切り文字だけを大量に並べた入力（20 件上限は分割後にしか効かない）で走査量が青天井になる
+   * （`tokenizeQuery` の `F-01` と同じ問題）。分割前の切り詰めにより、上限文字数を超えた位置に
+   * ある正当な値は最初から候補に入らないことを固定する。
+   */
+  it('カンマだけを大量に並べた入力は、分割前に上限文字数で切り捨てる（F-01 相当）', async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+    // 上限文字数をはるかに超える位置に正当な値を置く。分割前に切り詰められていれば
+    // この値は候補にすら現れない。
+    const raw = `${','.repeat(100_000)}owner/repo`
+
+    await searchGems({ query: 'kafka', includeFullNames: raw })
+
+    // 空配列に切り詰められた結果は「同伴指定なし」と同じ扱いになり、ポートへは渡さない
+    // （`makeSearchGems` は `includeFullNames.length > 0` のときだけフィールドを積む）。
+    expect(received[0].includeFullNames).toBeUndefined()
+  })
+
+  it(`先頭 ${MAX_INCLUDE_FULL_NAMES} 件までに切り詰める（超過分は例外にせず捨てる）`, async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+    const many = Array.from({ length: MAX_INCLUDE_FULL_NAMES + 5 }, (_, i) => `owner${i}/repo${i}`)
+
+    await searchGems({ query: 'kafka', includeFullNames: many })
+
+    expect(received[0].includeFullNames).toHaveLength(MAX_INCLUDE_FULL_NAMES)
+    expect(received[0].includeFullNames).toEqual(many.slice(0, MAX_INCLUDE_FULL_NAMES))
+  })
+
+  it('大文字小文字を無視して重複を畳み、最初に現れた綴りを残す', async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+
+    await searchGems({
+      query: 'kafka',
+      includeFullNames: 'Owner/Repo, owner/repo, OWNER/REPO',
+    })
+
+    expect(received[0].includeFullNames).toEqual(['Owner/Repo'])
+  })
+
+  /**
+   * 🔴 照合不能クエリ（日本語だけの検索語等）では同伴しない。この経路は「絞り込みなし」を
+   * 案内する 0 件 + `unmatchableQuery` 契約を維持するためのメタ取得専用呼び出しで、
+   * 同伴を混ぜると「該当なし」の案内と実際に返す件数が食い違う。
+   */
+  it('照合不能クエリでは includeFullNames を同伴させない', async () => {
+    const received: GemPoolSearchInput[] = []
+    const searchGems = makeSearchGems({ gems: fakePort(received) })
+
+    await searchGems({ query: '画像処理', includeFullNames: 'owner/repo' })
+
+    expect(received).toHaveLength(1)
+    expect(received[0].includeFullNames).toBeUndefined()
   })
 })

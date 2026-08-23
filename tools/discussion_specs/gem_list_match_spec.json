@@ -1,0 +1,44 @@
+{
+  "topic": "Gem 候補一覧（/gems）が検索結果のバッジ付き候補を取りこぼす問題の対応方針と、検索結果への Gem 印説明の設計を確定する",
+  "brief": "飼い主フィードバック（Issue #453）: (F-1)『この検索語の Gem 候補を一覧で見る』を押すと、検索結果には Gem マークが複数付いているのに一覧は 1 件しか出ない。(F-2) 検索結果タイトルの下に Gem マークの説明を端的に含めてほしい。\n\n【一次調査で判明した事実（実データ計測済み）】検索結果のバッジは GemIndexPort#lookup（= 候補プールへの所属照会のみ・検索語と無関係）で付く。一方 Gem 一覧は GemIndexPort#search（= repositoryFullName と packageName を単語境界で割ったトークン列に対する全語 AND 一致・D-37）で絞る。q=next.js は tokenizeQuery で ['next','js'] に割れ、npmjs-org シャードでの AND 一致は vercel/next.js の 1 件だけ（'next' 単独なら 19 件）。緩和（selectMostSelectiveToken）は『全語 AND が 0 件のとき』にしか発火しないため、1 件ヒットしたこのケースでは効かない。さらに chimurai/http-proxy-middleware は GitHub 側が description（'…for connect, express, next.js and more'）でヒットさせたもので、名前照合では原理的に一覧へ出ない（プールには載っているのでバッジは付く）。\n\n【関連実装】app/[locale]/page.tsx（検索結果・GemListLink を結果一覧の上に置く / lookupGemIndexes を検索結果 fullName に対して引く）、app/[locale]/gems/page.tsx（一覧・searchGemsUseCase）、src/usecases/search-gems.ts、src/domain/model/gem-keyword.ts（照合規則の正本）、src/infrastructure/platform/static-gem-index.ts（2 段遅延構築: プール約 82ms / 検索インデックス追加 122ms・cold 実測 2.78s）、src/ui/repository-list.tsx（gemBadgeNote は一覧の末尾に 1 回だけ描画）、src/ui/gem-badge.tsx、messages/{ja,en}.json（home.gemBadge.label/srHint/note・home.gemListLink.label・gems.*）。\n\n【制約】D-36（バッジは並び順を変えない注釈・sort=gem-index は復活させない / 印が付かないことが低評価を意味しない旨の注記は必須）、D-37（絞り込みの照合は repo 名・パッケージ名の単語境界一致のみ・部分一致は入れない / 緩和は 1 段だけ・あいまい一致に広げない）、D-38（レジストリ別静的シャード + isolate 内メモリ索引・DB を持たない）、F-01（クエリ語数上限 16・CPU 枯渇防止）、F-02（Gem 一覧に GitHub 検索 API の 50 ページ上限を適用しない）、F-05（取得失敗を 0 件に潰さない）、F-14（照合不能クエリはポート呼び出し前に 0 件へ倒す）、NFR-3（クライアント JS を増やさない）、NFR-12/13（a11y・見出し階層・色だけで意味を伝えない）、INF-2（Cloudflare Workers の CPU/コスト制約）、ARCH（ドメイン層はフレームワークに依存しない・app は infrastructure を直接 import しない）、GitHub 検索 API は認証済みで 30 req/min・1 クエリ最大 1000 件。\n\n【争点】A) 一覧の母集団をどう定義し直すか — 案1『今の検索結果（GitHub Search）のうちプールに載っているものを Gem Index 順に並べる』= バッジと定義が完全一致するがプール全体からの発見力を失い GitHub API 依存とレート枠消費が増える / 案2『プールベースのまま緩和条件を見直す（AND のヒット数が閾値未満なら 1 語緩和へ倒す等）』= 既存設計と D-37 を保つが chimurai/http-proxy-middleware のような description ヒット分は依然出ない / 案3『ハイブリッド（検索結果の Gem を必ず含めつつプール名照合の結果も出す）』= 期待に最も近いが 2 系統のマージ・並び順・ページングの整合が要る。どれを採るか、成果物がどう変わるかを比較し、ユーザー確認に出す 2 択（推奨つき）まで落とす。B) 緩和規則を変える場合の具体（発火条件・段数・注記文言・D-37 の書き換えが要るか / next.js のような『.js 付き製品名』を特別扱いせず一般規則で救えるか）。C) 期待のズレを UI 側で埋める手当（導線ラベル・一覧の見出し・注記で『この一覧はパッケージ名/リポジトリ名の一致で絞っている』ことをどう伝えるか / 0 件・少数件のときの導線）。D) F-2 の設計（検索結果見出し直下に置く説明文の文言（ja/en）・既存 home.gemBadge.note との関係＝重複を作らないか・末尾注記を残すか移すか・描画条件（バッジが 1 件も無いときも出すか）・a11y と見出し構造・E2E での固定方法）。E) パフォーマンスとリスク（採用案が cold start・CPU・レート枠に与える影響 / 既存 E2E・単体テストのどれが壊れるか / SP-18 で出荷済みのバッジ経路を回帰させないか）。",
+  "participants": [
+    {
+      "name": "search_semantics",
+      "model": "sonnet",
+      "lens": "検索・照合セマンティクス（バッジ=所属照会と一覧=名前照合という 2 つの定義の差が利用者の期待に対して何を壊しているか / 案1〜3 の母集団定義を厳密に比較し、どれが『この検索語の Gem 候補』というラベルの意味と一致するか / 緩和条件の具体設計（閾値・段数・決定論性・D-37 との整合）/ next.js のような .js 付き製品名を一般規則で救えるか、救うと orm→normalize 級のノイズが戻らないか / 実データでの件数を根拠に語る）"
+    },
+    {
+      "name": "arch_perf",
+      "model": "sonnet",
+      "lens": "アーキテクチャと性能（案1/案3 が要求する GitHub 検索 API 呼び出しを /gems に持ち込むことの是非＝ポート契約・層の責務・レート枠 30req/min・キャッシュ・cold start 実測 2.78s への影響 / 2 系統マージ時のページング・並び順・totalCount の整合をどう保つか / GemIndexPort の契約を変えずに実現できる範囲はどこまでか / Workers の CPU 制約と INF-2 / 既存 SP-18 バッジ経路の回帰リスク）"
+    },
+    {
+      "name": "ux_writer",
+      "model": "sonnet",
+      "lens": "UX とライティング（利用者が『Gem マークが付いていたのに一覧に出ない』と感じる期待のズレを、母集団を変えずに文言で埋められるか・埋めるべきでないか / 検索結果見出し直下の説明文の設計＝1〜2 文で Gem 印の意味を端的に伝える ja/en 文言案、既存 home.gemBadge.note との重複整理、描画条件、見出し構造と a11y（NFR-12/13・色だけで意味を伝えない）/ 導線ラベル・一覧見出し・緩和注記・0 件文言の一貫性 / D-36 の語調（断定的な優劣評価をしない）を守れているか）"
+    },
+    {
+      "name": "docs_trace",
+      "model": "haiku",
+      "lens": "既存ドキュメント整合（D-36 / D-37 / D-38 / US-34 / GR-4 / AC-n / NFR-n / SP-18 / SP-19 の操作レビュー手順・open-questions.md・user-story-map.md・prd.md・messages/*.json と、提案される変更の矛盾を機械的に洗い出す。新しい事実を主張せず、どのファイルのどの記述を更新する必要があるかを列挙することに徹する）"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、争点 A〜E それぞれについて採用する設計を 1 つに決める。決定は『どのファイルに何を書くか（新規/改修）』『どのテストで固定するか』まで落とす。議論で否定された案は採用しない。争点 A が仕様解釈の分岐（成果物が変わる）として残るなら、ユーザーへ出す 2 択（推奨を先頭・各 1 行の判断材料）を open_questions に書く。D-36/D-37 を書き換える必要があるなら、その書き換え文面の要点も決める。",
+    "name_note": "lead はメインセッション"
+  },
+  "verdict_schema": {
+    "decisions": [
+      {
+        "issue": "争点 A〜E のいずれか",
+        "design": "採用する設計の要点",
+        "artifacts": ["書き込み先ファイルパス（新規/改修の別）"],
+        "tests": ["固定するテスト"],
+        "rejected": "議論で否定された代替案と理由"
+      }
+    ],
+    "critical": ["議論を経ても残った真の問題"],
+    "open_questions": ["ユーザー確認が要る仕様分岐（SD-3 第 2 系統）"]
+  }
+}
