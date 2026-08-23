@@ -21,6 +21,7 @@ import { formatMessage } from '@/src/shared/i18n/format-message'
 import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
 import { getMessages, type Messages } from '@/src/shared/i18n/messages'
 import { toErrorPresentation } from '@/src/ui/i18n/error-message'
+import { MAX_INCLUDE_FULL_NAMES } from '@/src/usecases/search-gems'
 import { buildSearchUrl } from '@/src/ui/url/build-search-url'
 import { buildGemListUrl } from '@/src/ui/url/gem-list-url'
 import { parseSearchParams, rawKeywordOf, type RawSearchParams } from '@/src/ui/url/search-params'
@@ -223,10 +224,17 @@ async function SearchBody({
    * 🔴 `gemIndexes` が `undefined`（取得失敗）なら同伴しない（空配列を渡すと `badged` 自体が
    * 付かない・`buildGemListUrl` の契約）。AND 不一致かどうかの判定はここでは行わず、渡した名前の
    * うち実際に不足していた分だけを足すのはユースケース（`makeSearchGems`）の責務。
+   * 🔴 生成側でも `MAX_INCLUDE_FULL_NAMES` で切り詰める: 消費側（`normalizeIncludeFullNames`）が
+   * 同じ上限で黙って先頭 20 件へ切り詰めるため、ここで切らないと `per_page=100` でバッジが
+   * 20 件を超えたときに 21 件目以降が説明なく消える（生成側・消費側で同じ定数を共有し、
+   * どちらで切っても結果が変わらないようにする）。
    */
   const badgedFullNames =
     gemIndexes !== undefined
-      ? state.result.items.filter((item) => gemIndexes.has(item.fullName)).map((item) => item.fullName)
+      ? state.result.items
+          .filter((item) => gemIndexes.has(item.fullName))
+          .map((item) => item.fullName)
+          .slice(0, MAX_INCLUDE_FULL_NAMES)
       : []
 
   return (
@@ -242,6 +250,10 @@ async function SearchBody({
         F-2（Issue #453）: Gem 印の意味の説明（`gemBadge.intro`）を導線の直前に 1 文で出す。
         新しい見出しは作らない（`NFR-12`）。バッジが 1 件も付かなくても、検索結果が 1 件以上
         あれば出す（説明そのものはバッジの有無に依存しない）。
+        🔴 **`gemIndexes` の取得自体が失敗（`undefined`）していても分岐しない**（`D-28` の縮退設計）。
+        「0 件付いた」と「取得に失敗した」を画面上で区別すると、`badgedFullNames` の分岐に加えて
+        この説明文にも同じ条件分岐が要り、縮退時の見た目が本 UI 全体で一貫しなくなる。取得失敗は
+        バッジが 0 件のときと同じ見た目（説明文だけが出る）に倒す、という意図的な選択。
       */}
       {state.result.items.length > 0 ? (
         <>

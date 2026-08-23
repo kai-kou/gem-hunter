@@ -10,7 +10,7 @@
   → Layer 0 機械ゲート + Layer 1 観点別フレッシュ文脈セルフレビュー（主軸・全 PR 必須・自己実行）
   → 指摘対応（修正コミット or スキップ + 返信 + Resolve）→ Layer 0+1 通過で自動マージ（squash）
   → **公開反映（publish-sync・マージした同一セッションで完遂）**
-  → 🔴 **本番デプロイはゲート判定を経由**（`npm run deploy` を無条件では呼ばない。発火条件・終了コードの意味は `cloudflare-infrastructure.md` §8.2 が SSOT）
+  → 🔴 **本番デプロイはゲート判定を経由**（一次経路 `trigger_workers_build.py`・フォールバック `npm run deploy` とも無条件では呼ばない。発火条件・終了コードの意味は `cloudflare-infrastructure.md` §8.2 が SSOT）
   → Slack 完了通知
 ```
 
@@ -20,11 +20,12 @@
 
 ## PR 作成時の必須事項（コマンド仕様は各ツールの description に従う）
 
-> 🔴 **GitHub Actions は制限中で使えない**（ジョブが数秒・ログ 0 バイトで失敗）。ワークフロー 2 本は撤去済み。
-> 代わりに **セッション（Claude）が `bash tools/run_checks.sh` を実行して品質を担保し、`wrangler` を直接叩いて**
-> プレビュー・本番へデプロイする。CI という機構自体が現在存在しない前提でこのファイルを読む。
+> 🔴 **GitHub Actions は品質ゲート・本番デプロイには使わない**（飼い主決定・Issue #298・`harness-escalation.md` Lv4）。
+> 本リポジトリでは **Gem 候補プールの週次再生成にのみ** 使う（Issue #458・PR を作るところまでで自動マージしない）。
+> 品質チェック・デプロイは引き続き **セッション（Claude）が `bash tools/run_checks.sh` を実行して品質を担保し、`wrangler` を直接叩いて**
+> プレビュー・本番へデプロイする。この 2 用途に CI という機構は使わない前提でこのファイルを読む。
 
-0. **PR 作成前チェック（唯一の機械的証跡）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）
+0. **PR 作成前チェック（唯一の機械的証跡）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）。**見出しは `##` 固定で `run_checks` または `npm run check` を含める（`pre-pr-create-check.sh` の検出仕様が SSOT・Issue #405 / PR #456）**: `## run_checks 結果` / `## npm run check 結果` のいずれか（`run_checks` / `npm run check` の部分はバッククォートで囲んでも囲まなくても良い）。同じ見出しが複数回出てきても構わない（いずれか 1 か所が満たしていれば可）。その見出しから次の `##` 見出しまでの間（無関係な別セクションの表・コードフェンス内の例示は不可）に表（`|` 区切り行）があること
 0.5. **プレビュー URL の取得**: GitHub Actions は使わず、**セッションが `npx opennextjs-cloudflare build` → `npx wrangler versions upload --preview-alias pr-<N>` を実行** して取得したプレビュー URL を PR 本文へ貼る（`sprint-development-rules.md` `SD-1` の「開けるプレビュー URL」要件をこの経路で満たす）
 1. `mcp__github__create_pull_request`（`head`={作業ブランチ} / `base`=main）。本文に **`Session-Id: $CLAUDE_CODE_SESSION_ID`**・`Sprint Goal:` 1 行・`sp:N`・**`Team:` トレーラー**（例 `Team: fan-out(3)`・Issue の `編成` 欄の同期コピー）を必ず含める（`--mine` 所有判定と done_sp 計測の前提）。🔴 **`SP-n` のスプリント PR には `Closes #N` を書かない**（Issue のクローズは `pr-review-watcher` Step 7 の最終アクション）
 2. **PR 存在確認（必須・L-050）**: `mcp__github__list_pull_requests` で `head` を指定して実在を確認する（作成の成否をレスポンスだけで判断しない）

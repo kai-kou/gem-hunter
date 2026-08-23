@@ -414,12 +414,33 @@ function emptyResult(meta: DigestMeta): GemPoolSearchResult {
 }
 
 /**
+ * `includeFullNames`（ポート入力）として実際に走査する最大件数。
+ *
+ * 🔴 `normalizeTokens`（`F-01`）と同じ流儀の二重防御: ユースケース層（`search-gems.ts` の
+ * `MAX_INCLUDE_FULL_NAMES`）が正規の入口だが、ポートは外部入力の受け口なので、正規化
+ * ユースケースを経由せずに直接呼ばれても有界にしておく。
+ *
+ * 🔴 **ユースケース側の上限を import せず、値を独立に定義する**（`normalizeTokens` が
+ * `MAX_QUERY_TOKENS` を `domain/model/gem-keyword.ts` から import しているのとは異なる）。
+ * あちらは「照合規則の正本はドメイン層」という理由でユースケース層もポート層も同じ値を
+ * 参照する対称な関係だが、こちらは「ユースケース層の URL 入力向け上限」と「ポート層の
+ * 入力全般に対する二重防御」という **非対称な関係**（ポートを直接呼ぶテスト・将来の別
+ * ユースケースが、ユースケース側の定数変更に連動して意図せず緩む/絞ることを避ける）。
+ */
+const MAX_INCLUDE_FULL_NAMES = 20
+
+/**
  * 同伴指定（`includeFullNames`）を名前照合の結果（`matched`）へマージする
  * （`SP-19` 追補・`案3'`・Issue #453）。
  *
  * 🔴 **`records`（検索インデックス）を引くだけ**（新しいアセット読み込み・2 回目の parse・
  * トークン再計算はしない）。`records` は既に `listable` なレコードだけを持つため、一覧に
  * 出せないレコード（欠損列を埋めたもの）は素通しで無視される（`records` に無い＝候補にならない）。
+ *
+ * 🔴 **`includeFullNames` は先頭 `MAX_INCLUDE_FULL_NAMES` 件までしか走査しない**（`F-01` 相当）。
+ * 正規のユースケース層が既に上限を掛けているが、ポートは外部入力の受け口として二重に有界化する
+ * （`normalizeTokens` と同じ設計）。走査の打ち切りは有効/無効を問わず件数だけで判定する
+ * （不正値の除外だけを続けると、不正値を大量に並べる入力で走査量が有効件数と無関係に膨らむ）。
  *
  * 🔵 マージ後は `compareRecords`（`gemIndex` 昇順・同値は `repositoryFullName` 昇順）で
  * 並べ直す（同伴分を先頭に固定しない）。`includeFullNames` が空・未指定なら `matched` を
@@ -438,7 +459,12 @@ function mergeIncludedRecords(
   const recordByLowerName = new Map(records.map((record) => [record.entry.lowerName, record]))
 
   const additions: SearchRecord[] = []
+  let scanned = 0
   for (const name of includeFullNames) {
+    if (scanned >= MAX_INCLUDE_FULL_NAMES) {
+      break
+    }
+    scanned += 1
     if (typeof name !== 'string' || name.length === 0) {
       continue
     }

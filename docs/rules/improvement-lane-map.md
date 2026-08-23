@@ -3,6 +3,11 @@
 > **このファイルは「改善 Issue の世話・振り返り・監査/衛生」を担う各スキルの責務境界の唯一の正本（SSOT）である。**
 > 各 SKILL.md は本ファイルを **参照** し、自分の中で境界表を再定義しない（相互弁明の再発防止・Issue #147）。
 > Warm 層（`docs/rules/` のみ・`.claude/rules/` へ symlink しない）。境界に迷ったときだけ Read する。
+>
+> ⚠️ **提出前ゲート稼働中の例外（期間限定・#452）**: `release:required` の open Issue が 1 件以上ある間、
+> 改善 Issue レーン（消化モード）の **対象スコープ・着手順・件数上限** は
+> [`docs/05_release/pre-release-gate.md`](../05_release/pre-release-gate.md) §5 が優先する。
+> `release:deferred` の Issue はどのレーンも着手しない。**ゲート解除時に本注記を撤去する**（#466）。
 
 ---
 

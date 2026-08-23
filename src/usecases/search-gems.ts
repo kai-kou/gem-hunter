@@ -16,8 +16,9 @@ export type SearchGemsInput = {
   readonly perPage?: string | number | null
   /**
    * 検索結果ページでバッジが付いた候補を一覧へ同伴させる `repositoryFullName` 群の **生値**
-   * （URL の `include`・`SP-19` 追補・`案3'`・Issue #453）。`searchParams` の素の形（文字列 1 本・
-   * カンマ区切り・配列いずれも来うる）をそのまま受け、正規化は `normalizeIncludeFullNames` が行う。
+   * （URL の `badged`（`SEARCH_PARAM_KEYS.badged`）・`SP-19` 追補・`案3'`・Issue #453）。
+   * `searchParams` の素の形（文字列 1 本・カンマ区切り・配列いずれも来うる）をそのまま受け、
+   * 正規化は `normalizeIncludeFullNames` が行う。
    */
   readonly includeFullNames?: string | readonly string[] | null
 }
@@ -92,21 +93,51 @@ export const MAX_INCLUDE_FULL_NAMES = 20
 const MAX_INCLUDE_FULL_NAME_LENGTH = 200
 
 /**
+ * `includeFullNames` の 1 要素（`part`）に対して、`split(',')` する前に受け付ける最大文字数
+ * （超過分は切り捨てる・`F-01` 相当）。
+ *
+ * `gem-keyword.ts` の `tokenizeQuery` が「区切り文字だけを大量に並べた入力は、語数上限に
+ * 達する前に文字数で先に切らないと走査量が青天井になる」として `MAX_QUERY_LENGTH` で先に
+ * 切っているのと同じ理由。ここでは `,` が区切り文字で、`split` がその走査にあたる。
+ *
+ * 上限は「受理し得る最大件数（`MAX_INCLUDE_FULL_NAMES`）×（1 件あたり上限
+ * `MAX_INCLUDE_FULL_NAME_LENGTH` + 区切り文字 1 文字）」— 正規の入力（上限件数を 1 件あたり
+ * 上限文字数ぎりぎりで埋めた入力）を切り詰めない最小の値にする。
+ */
+const MAX_INCLUDE_FULL_NAMES_RAW_LENGTH =
+  MAX_INCLUDE_FULL_NAMES * (MAX_INCLUDE_FULL_NAME_LENGTH + 1)
+
+/**
  * `owner/repo` 形式の判定（同伴指定の入口ガード）。
  *
- * 🔴 `static-gem-index.ts` の `isSafeRepositoryFullName` より **厳しい**（1 スラッシュのみ許可）。
- * こちらは URL から届く利用者入力の防御が目的で、インフラ側は配信データ（信頼できる自社バッチ
- * 出力）の防御が目的という前提が違うため、共有モジュール化はしない（別 Issue）。
+ * 🔴 **3 実装が並存する**（本パターン・`static-gem-index.ts` の `isSafeRepositoryFullName`・
+ * `domain/model/repository-full-name.ts` の `tryRepositoryFullName`）。前提が違うため共有
+ * モジュール化はしない（別 Issue）: 本パターンは URL から届く利用者入力の防御（1 スラッシュ
+ * のみ許可）が目的、`isSafeRepositoryFullName` は配信データ（信頼できる自社バッチ出力）の
+ * 防御が目的、`tryRepositoryFullName` は GitHub の命名規則そのものの検証（末尾ハイフン禁止等）
+ * が目的、というように前提が異なる。
+ *
+ * 🔴 パターン **だけでは** ドットだけのセグメント（`.` / `..`）を弾けない（`[A-Za-z0-9._-]+` は
+ * `.` を許容するため `..` にも一致する）。`isSafeRepositoryFullName` と同じく、各セグメントが
+ * ドットだけでないことを `normalizeIncludeFullNames` 内で別途チェックする。
  */
 const INCLUDE_FULL_NAME_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
 
+/** セグメント（`/` で区切った各要素）がドットだけ（`.` / `..`）でないか。 */
+function hasNoDotOnlySegment(value: string): boolean {
+  return value.split('/').every((segment) => segment !== '.' && segment !== '..')
+}
+
 /**
- * URL の `include` 生値を、`GemIndexPort#search` へ渡す `repositoryFullName` の集合へ
- * 正規化する（`SP-19` 追補・`案3'`・Issue #453）。
+ * URL の `badged`（`SEARCH_PARAM_KEYS.badged`）生値を、`GemIndexPort#search` へ渡す
+ * `repositoryFullName` の集合へ正規化する（`SP-19` 追補・`案3'`・Issue #453）。
  *
+ * - 分割前に生値を上限文字数（`MAX_INCLUDE_FULL_NAMES_RAW_LENGTH`）へ切り詰める（`F-01` 相当。
+ *   `tokenizeQuery` と同じく、区切り文字だけを大量に並べた入力の走査量を有界にする）
  * - カンマ区切りで分割し、前後の空白を落とす（配列で届いた要素それぞれにも同じ分割を適用する。
  *   `searchParams` は同名クエリを配列で返すことがあり、各要素がカンマ区切りを含むこともある）
- * - `owner/repo` 形式（`INCLUDE_FULL_NAME_PATTERN`）に一致しないもの・200 文字超は捨てる
+ * - `owner/repo` 形式（`INCLUDE_FULL_NAME_PATTERN`）に一致しないもの・ドットだけのセグメント
+ *   （`.` / `..`）を含むもの・200 文字超は捨てる
  * - 大文字小文字を無視して重複を畳む（**最初に現れた綴りを残す**）
  * - 先頭 `MAX_INCLUDE_FULL_NAMES` 件まで（超過分は切り捨て。例外を投げない）
  *
@@ -126,12 +157,19 @@ export function normalizeIncludeFullNames(
     if (typeof part !== 'string') {
       continue
     }
-    for (const candidate of part.split(',')) {
+    // `split(',')` の前に生値を切り詰める（`F-01` 相当。区切り文字だけを大量に並べた
+    // 入力の走査量を有界にする。件数上限は分割後にしか効かないため、これが一次防御）。
+    const bounded =
+      part.length > MAX_INCLUDE_FULL_NAMES_RAW_LENGTH
+        ? part.slice(0, MAX_INCLUDE_FULL_NAMES_RAW_LENGTH)
+        : part
+    for (const candidate of bounded.split(',')) {
       const trimmed = candidate.trim()
       if (
         trimmed.length === 0 ||
         trimmed.length > MAX_INCLUDE_FULL_NAME_LENGTH ||
-        !INCLUDE_FULL_NAME_PATTERN.test(trimmed)
+        !INCLUDE_FULL_NAME_PATTERN.test(trimmed) ||
+        !hasNoDotOnlySegment(trimmed)
       ) {
         continue
       }

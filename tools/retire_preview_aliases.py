@@ -49,6 +49,7 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mask_secrets import mask_text, mask_value  # noqa: E402
 from repo_slug import resolve_repo_slug  # noqa: E402
+from wrangler_config import parse_worker_name  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CF_API_BASE = "https://api.cloudflare.com/client/v4"
@@ -72,14 +73,16 @@ class Precondition(Exception):
 # ---------------------------------------------------------------------------
 
 
-def parse_worker_name(jsonc_text: str) -> str:
-    """wrangler.jsonc から Worker 名を取り出す（行コメントを除去してから JSON として読む）。"""
-    without_comments = re.sub(r"^\s*//.*$", "", jsonc_text, flags=re.MULTILINE)
-    data = json.loads(without_comments)
-    name = data.get("name")
-    if not name:
-        raise Precondition("wrangler 設定に name がありません")
-    return str(name)
+def _read_worker_name(jsonc_text: str) -> str:
+    """wrangler.jsonc の中身から Worker 名を読み取る（共有パーサは `wrangler_config.py`。
+    Layer 1 セルフレビュー WARNING-6・PR #460 — `trigger_workers_build.py` と一言一句同一だった
+    パースロジックを共有モジュールへ一本化し、ここでは `ValueError` を `Precondition` へ wrap
+    するだけにする）。
+    """
+    try:
+        return parse_worker_name(jsonc_text)
+    except ValueError as error:
+        raise Precondition(str(error)) from error
 
 
 def latest_alias_map(versions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
@@ -302,11 +305,14 @@ def self_test() -> int:
         if actual != expected:
             failures.append(f"{label}: 期待 {expected!r} / 実際 {actual!r}")
 
-    check(
-        "wrangler.jsonc のコメント除去",
-        parse_worker_name('{\n  // コメント\n  "name": "gem-hunter"\n}'),
-        "gem-hunter",
-    )
+    # parse_worker_name 本体（コメント除去・パース）のテストは共有モジュール
+    # `wrangler_config.py` の self-test 側の責務（Layer 1 セルフレビュー WARNING-6・重複を残さない）。
+    # ここでは `ValueError` → `Precondition` への wrap だけを確認する。
+    try:
+        _read_worker_name('{"main": "src/index.ts"}')  # name が無い
+        failures.append("_read_worker_name: name が無いのに Precondition を送出していない")
+    except Precondition:
+        pass
 
     versions = [
         {
@@ -445,7 +451,7 @@ def self_test() -> int:
         for failure in failures:
             print(f"  - {failure}")
         return EXIT_FAILED
-    print("セルフテスト: 全 25 ケース PASS")
+    print("セルフテスト: 全 26 ケース PASS")
     return EXIT_OK
 
 
@@ -462,7 +468,7 @@ def load_context() -> tuple[str, str, str]:
             "CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN がセッション環境にありません"
         )
     with open(os.path.join(REPO_ROOT, "wrangler.jsonc"), encoding="utf-8") as handle:
-        worker = parse_worker_name(handle.read())
+        worker = _read_worker_name(handle.read())
     return account_id, token, worker
 
 

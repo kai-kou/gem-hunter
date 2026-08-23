@@ -1,22 +1,38 @@
+import type { ComponentProps, ReactNode } from 'react'
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import { searchGemsUseCase } from '@/src/composition/container'
+import { enforceGemListRateLimit } from '@/src/composition/rate-limit'
+import { RateLimitExceededError } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, tryLocale, type Locale } from '@/src/domain/model/locale'
 import { DEFAULT_PAGE } from '@/src/domain/model/page-number'
 import { DEFAULT_PER_PAGE } from '@/src/domain/model/per-page'
 import { DEFAULT_SORT_ORDER } from '@/src/domain/model/sort-order'
 import { getMessages } from '@/src/shared/i18n/messages'
-import { toGemListPage } from '@/src/usecases/search-gems'
+import { normalizeIncludeFullNames, toGemListPage } from '@/src/usecases/search-gems'
 import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { GemList, GEM_LIST_HEADING_ID, type GemListViewModel } from '@/src/ui/gem-list'
+import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { Pagination } from '@/src/ui/pagination'
 import { SiteHeader } from '@/src/ui/site-header'
 import { buildSearchUrl, type SearchUrlState } from '@/src/ui/url/build-search-url'
 import { rawBadgedOf } from '@/src/ui/url/gem-list-url'
 import { rawKeywordOf, SEARCH_PARAM_KEYS, type RawSearchParams } from '@/src/ui/url/search-params'
+
+/**
+ * フォーカス受け口（`GEM_LIST_HEADING_ID` を持つ `h2`）の意匠。
+ *
+ * 🔴 **`GemList` の見出し（`src/ui/gem-list.tsx`）と同じ見た目・同じ挙動にする**。この面では
+ * 一覧・0 件・照合不能を `GemList` の `h2` が、それ以外の分岐（検索語なし・レート制限・取得失敗）を
+ * 本ファイルの `h2` が出すが、**利用者から見れば同じ 1 つの受け口** なので、意匠がずれると
+ * 「同じページの同じ見出しなのに分岐でフォーカスリングが変わる」ことになる。
+ */
+const HEADING_CLASS =
+  'rounded-sm text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring'
 
 /**
  * 検索語を引き継いだ Gem 一覧（`SP-19` / `US-34` / `GR-4` / `D-37`）。
@@ -71,7 +87,14 @@ export default async function GemListPage({
    * 同伴分が消え、総件数が同じ URL で変わってしまう。
    */
   const rawBadged = rawBadgedOf(rawSearchParams)
-  const badgedExtraParams = { badged: rawBadged }
+  /**
+   * 🔴 ページ送り・言語切替・再試行リンクへ埋め込む値は **正規化後**（`normalizeIncludeFullNames`）
+   * を使う。絞り込みに使われる値（`searchGemsUseCase` へ渡す `rawBadged`）と生値のまま食い違うと、
+   * 不正形式・21 件目以降・極端に長い値がそのまま URL に複製され続ける。`buildSearchUrl` は
+   * 空文字の値を省略する契約なので、正規化結果が空配列（`join(',')` が `''`）なら `badged`
+   * パラメータ自体が付かない。
+   */
+  const badgedExtraParams = { badged: normalizeIncludeFullNames(rawBadged).join(',') }
   /**
    * 🔴 ページ番号も `parseSearchParams`（`tryPageNumber`）を使わない。あちらは GitHub 検索 API の
    * 1,000 件上限から決まる 50 ページ上限を持ち、**それを超える指定を 1 ページ目へ倒す**ため、
@@ -115,24 +138,139 @@ export default async function GemListPage({
     </div>
   )
 
+  /**
+   * 全分岐で共通のページ骨格（ヘッダー + 本文 + フォーカス移動）。
+   *
+   * 🔴 **`FocusOnNavigate` はここ 1 箇所にだけ置く**（分岐ごとに置かない）。`isFirstRender`
+   * （`src/ui/focus-on-navigate.tsx`）は「初回描画ではフォーカスを奪わない」ための状態を
+   * `useRef` で持つため、分岐ごとに別々に置くと success ↔ error の遷移で remount されて
+   * 初回判定が真に戻り、**遷移のたびにフォーカス移動がスキップされる**。骨格を 1 つに揃えて
+   * `main` の同じ位置に置けば、どの分岐へ遷移しても props（`watch`）だけが更新される。
+   *
+   * 🔴 受け口（`GEM_LIST_HEADING_ID` の `h2`）は **全分岐に必ず存在する**: 一覧・0 件・照合不能は
+   * `GemList` が、それ以外は本ファイルの `h2` が出す。どの分岐にも無いと `getElementById` が
+   * `null` を返してフォーカスが `body` に残り、無言で失敗する（`app/[locale]/page.tsx` の
+   * 未入力時と同じ落とし穴）。
+   *
+   * 🔴 **なぜフォーカス移動が要るのか**（`ui-ux-guidelines.md` §7.1 の必須要件・F-04）:
+   * `<title>` は固定なので route announcer は無言、総件数の `role="status"` もページ間で同一
+   * 文字列（「1,631 件」）のため変更通知が発火しない。さらにページ送りリンク（`Pagination`）は
+   * エラー分岐へ倒れた瞬間に DOM ごと消えるため、押したリンクにフォーカスが留まることすらなく
+   * `document.body` へ落ちる。つまりフォーカス移動だけが「画面が変わった・再試行導線がある」を
+   * 支援技術へ伝える唯一の手段になる（`NFR-12` / `AC-8`）。検索一覧（`app/[locale]/page.tsx`）と
+   * 同じ `FocusOnNavigate` + `tabIndex={-1}` の見出しで揃える。
+   */
+  const renderPage = (currentPath: string, body: ReactNode) => (
+    <>
+      {renderHeader(currentPath)}
+      <main className="mx-auto w-full max-w-3xl px-4 py-10">
+        {body}
+        {/* `watch` はページ送り・分岐の切り替わりのたびに値が変わる（`currentPath`）。 */}
+        <FocusOnNavigate watch={currentPath} targetId={GEM_LIST_HEADING_ID} />
+      </main>
+    </>
+  )
+
+  /**
+   * エラー 2 分岐（レート制限・取得失敗）の共通本文。構造（見出し → `ErrorNotice` → 検索へ戻る）は
+   * 同じで、変わるのは `ErrorNotice` へ渡す 3 つだけなので、分岐側には「どの状態か」を決める
+   * 引数と理由コメントだけを残す。
+   */
+  const renderErrorBody = ({
+    kind,
+    presentation,
+    retryHref,
+  }: {
+    kind: ComponentProps<typeof ErrorNotice>['kind']
+    presentation: ComponentProps<typeof ErrorNotice>['presentation']
+    retryHref: string
+  }) => (
+    <>
+      {/* エラー時も見出し（＝フォーカス受け口）を失わない（`NFR-12`・上の `renderPage` 参照）。 */}
+      <h2 id={GEM_LIST_HEADING_ID} tabIndex={-1} className={`mb-4 ${HEADING_CLASS}`}>
+        {messages.gems.title}
+      </h2>
+      <ErrorNotice
+        kind={kind}
+        presentation={presentation}
+        // 再試行手段（`US-24`）: いま失敗した一覧 URL をそのまま開き直す。
+        retryHref={retryHref}
+        retryLabel={messages.common.retry}
+      />
+      {backToSearch}
+    </>
+  )
+
   // 検索語なしで直接開かれた場合（`AC-2` と同じ思想: 未入力はエラーではない）。
   // 500 にも 404 にもせず、何が足りないかと戻り先を示す。
   if (rawQuery.trim().length === 0) {
-    return (
+    return renderPage(
+      basePath,
       <>
-        {renderHeader(basePath)}
-        <main className="mx-auto w-full max-w-3xl px-4 py-10">
-          {/*
-            🔴 この分岐にも見出しを置く（F-21）。他の分岐は `GemList` が `h2` を出すため、
-            ここだけ本文に見出しが無いと、同じ URL でも検索語の有無で見出し構造が変わり、
-            スクリーンリーダーの見出しジャンプで本文へ到達できない（`NFR-12`）。
-            `h1` は共有ヘッダーが持つので増やさない。
-          */}
-          <h2 className="text-lg font-semibold">{messages.gems.title}</h2>
-          <p className="text-muted-foreground mt-2 text-sm">{messages.gems.queryRequired}</p>
-          {backToSearch}
-        </main>
-      </>
+        {/*
+          🔴 この分岐にも見出しを置く（F-21）。他の分岐は `GemList` が `h2` を出すため、
+          ここだけ本文に見出しが無いと、同じ URL でも検索語の有無で見出し構造が変わり、
+          スクリーンリーダーの見出しジャンプで本文へ到達できない（`NFR-12`）。
+          `h1` は共有ヘッダーが持つので増やさない。
+          `id` / `tabIndex` はフォーカス受け口の要件（`renderPage` 参照）。検索語を消して
+          この分岐へ遷移したときも「画面が変わった」ことが伝わる。
+        */}
+        <h2 id={GEM_LIST_HEADING_ID} tabIndex={-1} className={HEADING_CLASS}>
+          {messages.gems.title}
+        </h2>
+        <p className="text-muted-foreground mt-2 text-sm">{messages.gems.queryRequired}</p>
+        {backToSearch}
+      </>,
+    )
+  }
+
+  /**
+   * Issue #442: Gem 一覧の自リクエスト間引き（`NFR-7`）。
+   *
+   * 🔴 **位置は「検索語なしの早期 return より後・候補プールの読み込みより前」**。検索経路が
+   * 「値オブジェクトへの変換が通った入力だけを対象にする」（不正入力で枠を消費しない・
+   * `app/api/search/route.test.ts`）のと同じ規律で、`gems.queryRequired` に倒れる入力では
+   * 枠を消費しない。逆に消費の判定は重い処理（`searchGemsUseCase()`）より前に済ませ、
+   * 間引きの目的（負荷の抑制）を果たす。
+   *
+   * 🔵 枠は検索経路と独立（`enforceGemListRateLimit` が別キーを使う）。同じ IP からの検索と
+   * 一覧閲覧が互いの枠を食い合うと、片方の操作でもう片方が使えなくなる。
+   *
+   * 超過時は `RateLimitExceededError` を投げるので、下の取得失敗分岐と同じ `ErrorNotice` へ倒す。
+   * それ以外の例外は握り潰さずそのまま投げ直す（`headers()` 由来の障害等を隠さない）。
+   */
+  try {
+    await enforceGemListRateLimit(await headers())
+  } catch (error) {
+    if (!(error instanceof RateLimitExceededError)) {
+      throw error
+    }
+    /**
+     * 🔴 再試行先は `effectivePage` ではなく `requestedPage` で組み立てる（取得自体を行って
+     * いないため実際のページが分からない）。取得失敗分岐が `currentPage` のフォールバックに
+     * `requestedPage` を使うのと同じ扱い。
+     */
+    const requestedPath = buildSearchUrl(basePath, {
+      keyword: rawQuery,
+      page: requestedPage,
+      sort: DEFAULT_SORT_ORDER,
+      perPage: DEFAULT_PER_PAGE,
+    })
+    return renderPage(
+      requestedPath,
+      renderErrorBody({
+        kind: error.kind,
+        // 文言・秒数のローカライズは `toErrorPresentation` に委ねる（`NFR-9`: 例外の
+        // 内部文言は画面へ運ばない）。ログイン導線は二次レート制限では出ない
+        // （`loginHint` が付くのは一次レート制限のみ）ため、この面では渡さない。
+        presentation: toErrorPresentation(error.kind, messages, {
+          locale,
+          retryAfterSeconds: error.retryAfterSeconds,
+          isLoggedIn: accessToken !== null,
+        }),
+        // 再試行先は、いま弾かれた一覧 URL そのもの（上の `requestedPath` のコメント参照）。
+        retryHref: requestedPath,
+      }),
     )
   }
 
@@ -172,26 +310,18 @@ export default async function GemListPage({
    * 同時に描画しない（この分岐は `GemList` を出さない）。
    */
   if (result.status === 'failed') {
-    return (
-      <>
-        {renderHeader(currentPath)}
-        <main className="mx-auto w-full max-w-3xl px-4 py-10">
-          {/* エラー時も見出しを失わない（詳細ページのエラー分岐と同じ理由・`NFR-12`）。 */}
-          <h2 className="mb-4 text-lg font-semibold">{messages.gems.title}</h2>
-          <ErrorNotice
-            // 🔴 文言は `gems.loadFailed`。`common.errors.upstream`（「GitHub 側で問題が
-            // 起きています」）は流用しない — 障害元は GitHub ではなく自前の静的アセット
-            // （`public/data/gem-index/`）で、利用者に誤った原因を伝えることになる。
-            // `kind` は装飾イラストの出し分けにのみ使われるので `upstream` のままでよい。
-            kind="upstream"
-            presentation={{ message: messages.gems.loadFailed }}
-            // 再試行手段（`US-24`）: いま失敗した一覧 URL をそのまま開き直す。
-            retryHref={currentPath}
-            retryLabel={messages.common.retry}
-          />
-          {backToSearch}
-        </main>
-      </>
+    return renderPage(
+      currentPath,
+      renderErrorBody({
+        // 🔴 文言は `gems.loadFailed`。`common.errors.upstream`（「GitHub 側で問題が
+        // 起きています」）は流用しない — 障害元は GitHub ではなく自前の静的アセット
+        // （`public/data/gem-index/`）で、利用者に誤った原因を伝えることになる。
+        // `kind` は装飾イラストの出し分けにのみ使われるので `upstream` のままでよい。
+        kind: 'upstream',
+        presentation: { message: messages.gems.loadFailed },
+        // 再試行先は、いま失敗した一覧 URL そのもの。
+        retryHref: currentPath,
+      }),
     )
   }
 
@@ -212,74 +342,65 @@ export default async function GemListPage({
     meta: result.meta,
   }
 
-  return (
+  return renderPage(
+    currentPath,
     <>
-      {renderHeader(currentPath)}
-      <main className="mx-auto w-full max-w-3xl px-4 py-10">
-        <GemList
-          view={view}
-          query={rawQuery}
-          locale={locale}
+      {/*
+        この分岐の見出し（＝フォーカス受け口・`GEM_LIST_HEADING_ID`）は `GemList` が出す。
+        一覧・0 件・照合不能のいずれの状態でも描画されるため、受け口が欠ける状態は無い。
+      */}
+      <GemList
+        view={view}
+        query={rawQuery}
+        locale={locale}
+        labels={{
+          heading: messages.gems.heading,
+          empty: messages.gems.empty,
+          unmatchableQuery: messages.gems.unmatchableQuery,
+          relaxedNotice: messages.gems.relaxedNotice,
+          totalCount: messages.gems.totalCount,
+          starCount: messages.gems.starCount,
+          dependentCount: messages.gems.dependentCount,
+          gemIndexLabel: messages.gems.gemIndexLabel,
+          registryLabel: messages.gems.registryLabel,
+          attribution: messages.gems.attribution,
+          includedFromSearch: messages.gems.includedFromSearch,
+        }}
+      />
+
+      {/*
+        ページネーションは検索一覧と同じ `src/ui/pagination.tsx` を再利用する（Gem 一覧専用の
+        コンポーネントを先回りで作らない・YAGNI）。ラベルも `home.pagination*` を共用する
+        （「前のページへ / 次のページへ / N ページ目」は面に依らない汎用文言）。
+
+        🔴 **描画条件は `totalCount > 0`**（`items.length > 0` ではない・F-03）。範囲外ページの
+        クランプで手前のページへ戻れなくなる状況を作らない。
+        🔴 **`maxPage` は候補プールの実際の最終ページ**（`Math.ceil(totalCount / perPage)`）。
+        既定の `maxPageFor(perPage)` は GitHub 検索 API の 1,000 件上限（＝50 ページ）由来で、
+        候補プールには存在しない制約である: 実データには 1 語で 1,000 件を超えるトークンが 10 個
+        あり（`com` 8,913 / `github` 8,156 / `core` 1,631 ほか）、50 ページで打ち切ると
+        `q=core` の 631 件が閲覧不能になる（F-02）。`maxPage` を明示すると API 上限の注記
+        （`limitReached`）は描画されない（この面に API 上限は無いため）。
+      */}
+      {result.totalCount > 0 ? (
+        <Pagination
+          basePath={basePath}
+          current={urlState}
+          totalCount={result.totalCount}
+          maxPage={Math.ceil(result.totalCount / DEFAULT_PER_PAGE)}
+          extraParams={badgedExtraParams}
           labels={{
-            heading: messages.gems.heading,
-            empty: messages.gems.empty,
-            unmatchableQuery: messages.gems.unmatchableQuery,
-            relaxedNotice: messages.gems.relaxedNotice,
-            totalCount: messages.gems.totalCount,
-            starCount: messages.gems.starCount,
-            dependentCount: messages.gems.dependentCount,
-            gemIndexLabel: messages.gems.gemIndexLabel,
-            registryLabel: messages.gems.registryLabel,
-            attribution: messages.gems.attribution,
-            includedFromSearch: messages.gems.includedFromSearch,
+            navLabel: messages.home.paginationLabel,
+            prev: messages.home.pagePrev,
+            next: messages.home.pageNext,
+            current: messages.home.pageCurrent,
+            limitReached: messages.home.pageLimitReached,
           }}
         />
+      ) : null}
 
-        {/*
-          ページネーションは検索一覧と同じ `src/ui/pagination.tsx` を再利用する（Gem 一覧専用の
-          コンポーネントを先回りで作らない・YAGNI）。ラベルも `home.pagination*` を共用する
-          （「前のページへ / 次のページへ / N ページ目」は面に依らない汎用文言）。
-
-          🔴 **描画条件は `totalCount > 0`**（`items.length > 0` ではない・F-03）。範囲外ページの
-          クランプで手前のページへ戻れなくなる状況を作らない。
-          🔴 **`maxPage` は候補プールの実際の最終ページ**（`Math.ceil(totalCount / perPage)`）。
-          既定の `maxPageFor(perPage)` は GitHub 検索 API の 1,000 件上限（＝50 ページ）由来で、
-          候補プールには存在しない制約である: 実データには 1 語で 1,000 件を超えるトークンが 10 個
-          あり（`com` 8,913 / `github` 8,156 / `core` 1,631 ほか）、50 ページで打ち切ると
-          `q=core` の 631 件が閲覧不能になる（F-02）。`maxPage` を明示すると API 上限の注記
-          （`limitReached`）は描画されない（この面に API 上限は無いため）。
-        */}
-        {result.totalCount > 0 ? (
-          <Pagination
-            basePath={basePath}
-            current={urlState}
-            totalCount={result.totalCount}
-            maxPage={Math.ceil(result.totalCount / DEFAULT_PER_PAGE)}
-            extraParams={badgedExtraParams}
-            labels={{
-              navLabel: messages.home.paginationLabel,
-              prev: messages.home.pagePrev,
-              next: messages.home.pageNext,
-              current: messages.home.pageCurrent,
-              limitReached: messages.home.pageLimitReached,
-            }}
-          />
-        ) : null}
-
-        {backToSearch}
-
-        {/*
-          🔴 ページ送りの完了後に見出しへフォーカスを移す（`ui-ux-guidelines.md` §7.1 の必須要件・
-          F-04）。`<title>` は固定なので route announcer は無言、総件数の `role="status"` も
-          ページ間で同一文字列（「1,631 件」）のため変更通知が発火せず、フォーカスは押したリンクに
-          留まる — つまり一覧が差し替わったことが支援技術へ一切伝わらない（`AC-8` 不成立）。
-          検索一覧（`app/[locale]/page.tsx`）と同じ `FocusOnNavigate` + `tabIndex={-1}` の見出しで揃える。
-          `watch` はページが変わるたびに値が変わる（`currentPath`）。見出し（受け口）は `GemList` が
-          一覧・0 件・照合不能のいずれの状態でも描画するため、この分岐では常に置いてよい。
-        */}
-        <FocusOnNavigate watch={currentPath} targetId={GEM_LIST_HEADING_ID} />
-      </main>
-    </>
+      {backToSearch}
+    </>,
   )
 }
 

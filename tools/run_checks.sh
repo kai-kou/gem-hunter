@@ -191,8 +191,21 @@ fi
 # 4.7. ADR 記録と README 必須記載のゲート（E-18 / E-19 / NFR-29〜NFR-32 / AC-11）
 if [ -f "$REPO_ROOT/tools/check_adr_coverage.py" ]; then
   run_check "ADR / README 記載検査 (check_adr_coverage.py)" python3 tools/check_adr_coverage.py
+  run_check "ADR / README 記載検査 self-test (check_adr_coverage.py --self-test)" python3 tools/check_adr_coverage.py --self-test
 else
   skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
+fi
+
+# 4.75. レート制限の配線検査（Issue #442 の再発防止）。
+#       Cloudflare Rate Limiting は binding 宣言だけでは何も起きず、しかもフェイルオープン設計のため
+#       「配線し忘れ」と「正常」が実行時に区別できない。cloudflare-infrastructure.md の適用経路表
+#       （<!-- rate-limit-wiring --> マーカー）と実コードを双方向に突き合わせ、app/ 配下の
+#       エントリポイント網羅性まで見る。ローカルのファイルしか読まないためネットワーク非依存。
+if [ -f "$REPO_ROOT/tools/check_rate_limit_wiring.py" ]; then
+  run_check "レート制限配線検査 (check_rate_limit_wiring.py)" python3 tools/check_rate_limit_wiring.py
+  run_check "レート制限配線検査 self-test (check_rate_limit_wiring.py --self-test)" python3 tools/check_rate_limit_wiring.py --self-test
+else
+  skip_check "レート制限配線検査 (check_rate_limit_wiring.py)" "スクリプトが見つかりません"
 fi
 
 # 4.8. 副作用のある API ルートのプリフェッチ検査（#145 の再発防止）
@@ -217,6 +230,15 @@ else
 fi
 
 # 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
+
+# wrangler.jsonc 共有パーサ self-test（Layer 1 セルフレビュー WARNING-6・PR #460）。
+# trigger_workers_build.py / retire_preview_aliases.py が共有する Worker 名パースの実体。
+if [ -f "$REPO_ROOT/tools/wrangler_config.py" ]; then
+  run_check "wrangler 設定パーサ self-test (wrangler_config.py --self-test)" python3 tools/wrangler_config.py --self-test
+else
+  skip_check "wrangler 設定パーサ self-test (wrangler_config.py --self-test)" "スクリプトが見つかりません"
+fi
+
 if [ -f "$REPO_ROOT/tools/retire_preview_aliases.py" ]; then
   run_check "退役スクリプト self-test (retire_preview_aliases.py --self-test)" python3 tools/retire_preview_aliases.py --self-test
 else
@@ -251,6 +273,43 @@ else
   skip_check "Gem シャード検査 (check_gem_shards.py)" "スクリプトが見つかりません"
 fi
 
+# Gem 候補プール QA / no-op 判定（Issue #458）の self-test。ネットワーク・実データ非依存の
+# 純関数だけを検証する（本判定 --check / --no-op は gem-pool-refresh.yml ワークフロー内で実行する）。
+if [ -f "$REPO_ROOT/tools/gem_pool_qa.mjs" ]; then
+  run_check "Gem 候補プール QA self-test (gem_pool_qa.mjs --self-test)" node tools/gem_pool_qa.mjs --self-test
+else
+  skip_check "Gem 候補プール QA self-test (gem_pool_qa.mjs --self-test)" "スクリプトが見つかりません"
+fi
+
+# GitHub Actions workflow YAML の構文検査（Issue #458）。週次 cron だけだと構文崩れに最大 1 週間
+# 気づけないため、PyYAML でパースできるかだけを見る軽量チェック（actionlint 導入は YAGNI・見送り）。
+# PyYAML が無い環境・workflow が無い環境では skip_check にする（既存の作法に合わせる）。
+if python3 -c "import yaml" >/dev/null 2>&1; then
+  if compgen -G "$REPO_ROOT/.github/workflows/*.yml" >/dev/null 2>&1 || compgen -G "$REPO_ROOT/.github/workflows/*.yaml" >/dev/null 2>&1; then
+    run_check "GitHub Actions workflow YAML 構文検査" python3 -c '
+import glob
+import sys
+
+import yaml
+
+paths = sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml"))
+failed = False
+for p in paths:
+    try:
+        with open(p, encoding="utf-8") as f:
+            yaml.safe_load(f)
+    except Exception as e:
+        print(f"YAML parse error: {p}: {e}")
+        failed = True
+sys.exit(1 if failed else 0)
+'
+  else
+    skip_check "GitHub Actions workflow YAML 構文検査" ".github/workflows/ 配下に *.yml/*.yaml がありません"
+  fi
+else
+  skip_check "GitHub Actions workflow YAML 構文検査" "PyYAML が未インストール"
+fi
+
 # 被覆率測定（SP-17・D-36 / D-37）も --self-test だけを配線する。本測定は GitHub 検索 API を
 # 叩くためネットワーク非依存を保てない（run_checks.sh はオフラインで完走できることを保つ）。
 if [ -f "$REPO_ROOT/tools/measure_gem_coverage.py" ]; then
@@ -266,6 +325,14 @@ if [ -f "$REPO_ROOT/tools/check_prod_drift.py" ]; then
   run_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" python3 tools/check_prod_drift.py --self-test
 else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# Workers Builds 再トリガーの self-test（Issue #451）。本判定（引数なし実行）は Cloudflare API への
+# 実疎通とデプロイゲート判定に依存するため配線しない（本番乖離検知 self-test と同じ理由・Issue #288）。
+if [ -f "$REPO_ROOT/tools/trigger_workers_build.py" ]; then
+  run_check "Workers Builds 再トリガー self-test (trigger_workers_build.py --self-test)" python3 tools/trigger_workers_build.py --self-test
+else
+  skip_check "Workers Builds 再トリガー self-test (trigger_workers_build.py --self-test)" "スクリプトが見つかりません"
 fi
 
 # レーン定義のスキルが実装（決定木・他スキルの手順・hooks）から到達可能かの検査（Issue #377）。

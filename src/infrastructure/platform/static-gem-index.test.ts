@@ -1066,6 +1066,44 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
     expect(result.includedCount).toBe(0)
   })
 
+  /**
+   * 🟡 WARNING（`static-gem-index.ts:441` 相当）: `mergeIncludedRecords` は `includeFullNames`
+   * を件数上限なしで全件走査していた。`normalizeTokens`（`F-01`）が `tokens` を上限で切っている
+   * のと同じ流儀で、ポート側にも独立した定数上限（`break`）を持たせる。ユースケース層
+   * （`search-gems.ts` の `MAX_INCLUDE_FULL_NAMES` = 20）をバイパスしてポートへ直接大量の
+   * `includeFullNames` を渡しても、有界であることを固定する。
+   */
+  it('includeFullNames はポート側でも件数上限までしか走査しない（ユースケースをバイパスしても有界）', async () => {
+    const many = 30
+    const entries = Array.from({ length: many }, (_, i) => [
+      `acme/extra${String(i).padStart(2, '0')}`,
+      `extra${i}`,
+      1,
+      1,
+      -(i + 1),
+    ])
+    const reader = stubReader({
+      [INDEX_PATH]: indexJsonWithMeta(['extra.json']),
+      '/data/gem-index/extra.json': registryShardJson('npmjs.org', entries),
+    })
+    const port = new StaticGemIndex(reader)
+    // 名前照合には一切当たらない検索語にして、matched を空にする（同伴の効果だけを見る）。
+    const includeFullNames = entries.map(([name]) => name as string)
+
+    const result = await port.search({
+      tokens: ['nomatch'],
+      page: 1,
+      perPage: perPageOf(many),
+      includeFullNames,
+    })
+
+    // ポート側の上限（20）までしか走査しないため、`includeFullNames` に含まれていても
+    // 21 件目以降（`acme/extra20`〜）は一覧に現れない。
+    expect(result.includedCount).toBe(20)
+    expect(names(result.items)).toHaveLength(20)
+    expect(names(result.items)).not.toContain('acme/extra29')
+  })
+
   it('includeFullNames 未指定・空配列は従来どおり（includedCount は 0）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 

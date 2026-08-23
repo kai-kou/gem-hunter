@@ -256,14 +256,14 @@ test('SP-18: 英語 UI でもプール実在のカードにだけバッジが出
 })
 
 /**
- * Issue #453（F-2）: 検索結果の見出し直下に Gem 印の説明文（`home.gemBadge.intro`）を出す。
+ * Issue #453（F-2）: Gem 一覧導線（GemListLink）の直前に Gem 印の説明文（`home.gemBadge.intro`）を出す。
  * `content/discussions/gem-list-match-20260823/whiteboard.md` lead 判定「争点 D」で確定。
  *
  * 🔴 **`home.gemBadge.note`（バッジが付かないことは低評価ではない旨・一覧末尾）とは役割が違う**
  * ので、本テストは `note` とは別の文言（`intro`）が **別に** 読めることだけを見る（重複させない）。
  * 描画条件は「検索結果が 1 件以上あるとき」（バッジの有無では条件分岐しない）。
  */
-test('SP-18: 検索結果の見出し直下に Gem 印の説明文が出る（ja）', async ({ page }) => {
+test('SP-18: Gem 一覧導線の直前に Gem 印の説明文が出る（ja）', async ({ page }) => {
   const keyword = uniqueManyHitsKeyword()
 
   await test.step('1. キーワード検索する', async () => {
@@ -295,7 +295,7 @@ test('SP-18: 検索結果の見出し直下に Gem 印の説明文が出る（ja
   })
 })
 
-test('SP-18: 検索結果の見出し直下の Gem 印の説明文が英語でも読める（en）', async ({ page }) => {
+test('SP-18: Gem 一覧導線の直前の Gem 印の説明文が英語でも読める（en）', async ({ page }) => {
   const keyword = uniqueManyHitsKeyword()
 
   await test.step('1. 英語 UI でキーワード検索する', async () => {

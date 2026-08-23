@@ -210,7 +210,7 @@ def get_open_prs() -> list[dict]:
         "-R", REPO,
         "--state", "open",
         "--limit", "100",
-        "--json", "number,title,createdAt,headRefName,author,authorAssociation,reviewRequests,labels,body",
+        "--json", "number,title,createdAt,headRefName,author,authorAssociation,reviewRequests,labels,body,isCrossRepository",
     ], critical=True)
     if not output:
         return []
@@ -409,6 +409,12 @@ def analyze_pr(pr: dict) -> dict:
     owner_session_id = parse_session_id(pr.get("body", ""))
     # 著者検証（#379・公開リスク監査 r03 critical）: ブランチ名だけでなく著者関係も見る
     author_association = pr.get("authorAssociation", "")
+    # Issue #458: Gem Pool 週次リフレッシュ workflow が作る自動化 PR を認識するための追加情報。
+    # `isCrossRepository` は gh pr list --json が返す真偽値（fork なら True）。フィールド自体が
+    # 欠落する場合は None のままにし、_is_automation_pr() 側で fail-closed に倒す。
+    author_login = (pr.get("author") or {}).get("login", "")
+    is_cross_repository = pr.get("isCrossRepository")
+    is_automation_pr = _is_automation_pr(branch, author_login, is_cross_repository)
 
     # status:waiting-user ラベル付き PR は自動マージ対象から除外（#2173）
     if "status:waiting-user" in pr_labels:
@@ -526,7 +532,11 @@ def analyze_pr(pr: dict) -> dict:
     # ①だけを塞ぐと穴が②③へ移動するだけなので、**すべての分岐の手前で信頼境界を 1 回引く**。
     # 取得できないときは fail-closed（対象外）。外部 AI レビュアーは廃止済み（ai-reviewer-strategy.md）で
     # ②の 2 経路は履歴 PR 互換のための残骸だが、残す以上は同じ信頼境界の内側に置く。
-    if not _is_trusted_author_association(author_association):
+    # 🔴 Issue #458: 信頼境界の例外を 1 つだけ増やす（既存の「信頼境界外なら全分岐の手前で
+    # no_action」という構造は壊さない）。`is_automation_pr` は fork 不可・ブランチ完全一致・
+    # 著者ログイン固定の 3 条件 AND（`_is_automation_pr()` docstring 参照）なので、
+    # authorAssociation が信頼集合に無い bot 著者でもここだけは通す。
+    if not _is_trusted_author_association(author_association) and not is_automation_pr:
         # 信頼できない著者（fork PR・外部コントリビューター・authorAssociation 取得失敗）は
         # どのステータスにも乗せない。pr-review-watcher は status だけを見てマージまで進めるため、
         # ここを通した時点で無人マージの対象になる（下流へも同じ設定が配布される）。
@@ -540,6 +550,7 @@ def analyze_pr(pr: dict) -> dict:
         _is_claude_branch(branch, author_association)
         or has_ai_reviewer_requested_combined
         or has_ai_review
+        or is_automation_pr
     ):
         # Claude 作業ブランチの PR。Layer 0（機械ゲート）+ Layer 1（観点別フレッシュ文脈セルフレビュー）で
         # 完結する。復帰セッションはセルフレビューを実行し指摘を解消してから即マージする
@@ -624,6 +635,38 @@ def _is_claude_branch(branch: str, author_association: str | None) -> bool:
     return branch_matches and _is_trusted_author_association(author_association)
 
 
+# 🔴 SSOT: このブランチ名は .github/workflows/gem-pool-refresh.yml の固定ブランチ（`BRANCH=`）と
+#     同一でなければならない。どちらか片方を変更したら必ずもう片方も直すこと（Issue #458）。
+AUTOMATION_PR_BRANCH = "automation/gem-pool-refresh"
+AUTOMATION_PR_AUTHOR_LOGIN = "github-actions[bot]"
+
+
+def _is_automation_pr(
+    branch: str,
+    author_login: str | None,
+    is_cross_repository: bool | None,
+) -> bool:
+    """Gem Pool 週次リフレッシュ workflow（Issue #458）が作った PR を自動化 PR として認めるか。
+
+    🔴 `_is_trusted_author_association()` の許可集合に bot を足す形にはしない（#379 の信頼境界が
+    全経路で緩む）。代わりにこの独立した狭い述語を新設し、次を **すべて満たすときだけ** True にする
+    （1 つでも欠けたら False = 従来どおりの信頼境界判定に落ちる）:
+      1. head が同一リポジトリ（fork ではない）。`isCrossRepository` を取得できない（None）場合は
+         安全側で False にする（fail-closed。fork かどうか分からない PR を通さない）
+      2. ブランチ名が **完全一致**（前方一致にしない。`automation/gem-pool-refresh-evil` 等を弾く）
+      3. 著者ログインが `github-actions[bot]`（GITHUB_TOKEN で作成された PR の固定著者）
+
+    3 条件の AND がなぜ安全か: fork からは同名ブランチを作れても `isCrossRepository=True` になり
+    ①で弾かれる。著者ログインは GitHub 側が PR 作成 API 呼び出し元から機械的に決めるため、
+    このリポジトリの `github-actions[bot]` になりすますことは通常のユーザー操作では出来ない。
+    """
+    if is_cross_repository is not False:
+        return False
+    if branch != AUTOMATION_PR_BRANCH:
+        return False
+    return (author_login or "") == AUTOMATION_PR_AUTHOR_LOGIN
+
+
 def _run_self_test() -> None:
     """Session-Id 解析（純粋関数）の決定論テスト。CI / セルフレビューで実行する。"""
     uid = "ec373723-01dc-54c9-a204-9ebb221b2295"
@@ -694,7 +737,24 @@ def _run_self_test() -> None:
                 f"  _is_trusted_author_association({assoc!r}) = {got!r} (expected {expected!r})"
             )
 
-    total_cases = len(cases) + 1 + len(branch_cases) + len(assoc_cases)
+    # 自動化 PR 判定（Issue #458）: fork 不可・ブランチ完全一致・著者ログイン固定の 3 条件 AND。
+    automation_cases: list[tuple[str, str | None, bool | None, bool]] = [
+        # (branch, author_login, is_cross_repository, expected)
+        ("automation/gem-pool-refresh", "github-actions[bot]", False, True),  # 3 条件が揃う
+        ("automation/gem-pool-refresh-evil", "github-actions[bot]", False, False),  # 前方一致は対象外
+        ("automation/gem-pool-refresh", "some-other-user", False, False),  # 著者が別
+        ("automation/gem-pool-refresh", "github-actions[bot]", True, False),  # fork（head が別リポジトリ）
+        ("automation/gem-pool-refresh", "github-actions[bot]", None, False),  # 取得不能 → fail-closed
+        ("automation/other-branch", "github-actions[bot]", False, False),  # ブランチ名が違う
+    ]
+    for branch, author_login, is_cross_repository, expected in automation_cases:
+        got = _is_automation_pr(branch, author_login, is_cross_repository)
+        if got != expected:
+            failures.append(
+                f"  _is_automation_pr({branch!r}, {author_login!r}, {is_cross_repository!r}) = {got!r} (expected {expected!r})"
+            )
+
+    total_cases = len(cases) + 1 + len(branch_cases) + len(assoc_cases) + len(automation_cases)
     if failures:
         print("FAIL: check_pending_pr_reviews self-test", file=sys.stderr)
         print("\n".join(failures), file=sys.stderr)
