@@ -42,7 +42,7 @@
 | **0-a** | **#454** | `main` の E2E が赤い（`/data/gem-index/index.json` が 404） | 与件 §5 はテストコードの存在とコマンド 1 つでの実行・CI 自動実行可能な状態を求めており、**E2E が赤いまま他を直しても提出できない**。実測は下記 |
 | **0-b** | **#455** | 同上（`.open-next/assets` 未生成という別角度の見立て） | 同上。#454 / #457 と同一症状の可能性が高い |
 | **0-c** | **#457** | 同上（失敗の内訳: SP-18 の Gem バッジ・SP-19 の見出し） | 同上 |
-| **1** | **#365** | `src/ui/i18n/error-message.ts:69-70` は `params.isLoggedIn` では分岐しているが、**`isAuthConfigured()`（`src/composition/auth.ts`）を見ていない**。本番 `/ja` にログイン導線は 0 件（OAuth 未設定・実取得で確認） | レート上限を踏むと **本番に存在しない導線を案内するエラー画面** が出る。未認証枠は評価者が踏みやすい |
+| **1** | **#365** | 対応済み（PR #548）。`toErrorPresentation()`（`src/ui/i18n/error-message.ts`）に `isAuthConfigured` パラメータを追加し、`isAuthConfigured()`（`src/composition/auth.ts`）を根本で見るよう修正した | レート上限を踏むと **本番に存在しない導線を案内するエラー画面** が出る問題を解消（未認証枠は評価者が踏みやすい） |
 | **2** | **#338** | `src/infrastructure/github/dto.ts` は `updated_at: z.string()` / `pushed_at: z.string().nullable()` で **日付として妥当かを検証していない**。`app/**/error.tsx`・`global-error.tsx` はいずれも不在 | 上流の不正日付が `Intl.DateTimeFormat` に渡ると `RangeError` になり、**一覧・詳細が HTTP 500**。与件 §4.1「握り潰さず継続利用可能に保つ」に直撃する |
 | **3** | **#354** | `skip-link` は `site/index.html`（LP）のみ。アプリ側の `app/` `src/` に 0 件 | 与件 §4.3 は「キーボードのみで操作できる」を求めている。スキップリンクは与件の明文要求ではなく **WCAG 2.4.1（レベル A）に基づく本プロジェクト独自の基準** だが、キーボード操作性の実効を左右する |
 | **4** | **#352** | `app/[locale]/layout.tsx:25` の `description` が日本語リテラル固定 | `/en` でも日本語 description が出る。多言語対応を謳っている分だけ目立つ |
