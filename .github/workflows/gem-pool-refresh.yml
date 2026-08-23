@@ -1,0 +1,156 @@
+name: Gem Pool Refresh
+
+# Gem 候補プール（public/data/gem-index/ + public/data/daily-digest.json）を週次で再生成し、
+# 生成物のみを差分に持つ PR を作成するワークフロー（Issue #458・`D-39`）。
+#
+# 決定の正本: content/discussions/gem-pool-actions-schedule-20260823/whiteboard.md（round 3 lead 判定）。
+#
+# 🔴 このワークフローは以下を絶対に行わない:
+#   - main への直接 push（A-1・docs/rules/user-confirmation-minimization.md §1）
+#   - 自動マージ（PR を作るところまで。マージは Claude セッションが既存の回収経路で行う）
+#   - Cloudflare へのデプロイ・Workers Builds の再トリガー（PR #460 のレーンに委ねる。SSOT 二重化禁止）
+#   - node tools/generate_gem_digest.mjs への --allow-partial-write（孤児シャード削除が不可逆）
+#
+# 品質担保は本ワークフロー自身が持つ（.claude/hooks/pre-pr-create-check.sh は Actions 発の PR に効かない）。
+
+on:
+  schedule:
+    # UTC 日曜 21:17 = JST 月曜 06:17。毎時ちょうど（:00）は GitHub 側の高負荷でキュー投入が
+    # ドロップされうるため分をずらす。週次にする理由・cron の根拠は whiteboard round 3 参照。
+    - cron: '17 21 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: gem-pool-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # git show HEAD:<path> で前回生成物と比較するために必要
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          # npm ci は実行しない: tools/gem-pool/*.mjs は Node 組み込みモジュールのみに依存し、
+          # 外部 npm パッケージへの依存はゼロ（whiteboard round 1 batch_ops が import 一覧で確認済み）。
+
+      - name: Generate gem pool
+        run: node tools/generate_gem_digest.mjs
+        # --allow-partial-write は絶対に付けない（孤児シャード削除が不可逆）。
+        # CLI は失敗時に非ゼロで終了し、部分書き込みは既定で拒否するため、ここで失敗すれば
+        # 以降のステップ（git add 相当）へは進まない。
+
+      - name: QA check (fail-closed)
+        run: node tools/gem_pool_qa.mjs --check
+        # 差分パス限定・レジストリのゼロ化/急減・totalCount の急減急増を検査する。
+        # 1 つでも違反すれば非ゼロ終了 → ジョブ失敗 → PR は作られない（壊れたデータで PR を開かない）。
+
+      - name: No-op check
+        id: noop
+        run: |
+          set -e
+          result="$(node tools/gem_pool_qa.mjs --no-op --json)"
+          echo "result=${result}"
+          no_op="$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).no_op))" "${result}")"
+          echo "no_op=${no_op}" >> "$GITHUB_OUTPUT"
+
+      - name: Discard no-op changes
+        if: steps.noop.outputs.no_op == 'true'
+        run: |
+          git checkout -- public/data/gem-index public/data/daily-digest.json
+          echo "no-op: 実質差分なし。以降のステップをスキップします。"
+
+      - name: Static shard check
+        if: steps.noop.outputs.no_op != 'true'
+        run: python3 tools/check_gem_shards.py
+
+      - name: Commit and push
+        if: steps.noop.outputs.no_op != 'true'
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -e
+          BRANCH="automation/gem-pool-refresh"
+          git checkout -B "${BRANCH}"
+          git add public/data/gem-index public/data/daily-digest.json
+          git commit -m "data: Gem 候補プールを週次再生成（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
+          git push --force origin "${BRANCH}"
+
+      - name: Build PR body
+        if: steps.noop.outputs.no_op != 'true'
+        id: prbody
+        run: |
+          set -e
+          {
+            echo "body<<GEM_POOL_PR_BODY_EOF"
+            echo "## Gem 候補プール 週次再生成"
+            echo ""
+            echo "この PR は GitHub Actions（\`gem-pool-refresh.yml\`）が自動生成しました。マージは Claude セッションが行います。"
+            echo ""
+            echo "### QA 結果"
+            echo '```json'
+            node tools/gem_pool_qa.mjs --check --json || true
+            echo '```'
+            echo ""
+            echo "### totalCount 前回比・レジストリ別件数"
+            node -e "
+              const { execFileSync } = require('node:child_process');
+              const fs = require('node:fs');
+              const curr = JSON.parse(fs.readFileSync('public/data/gem-index/index.json', 'utf8'));
+              let prev = null;
+              try {
+                const text = execFileSync('git', ['show', 'origin/main:public/data/gem-index/index.json'], { encoding: 'utf8' });
+                prev = JSON.parse(text);
+              } catch {}
+              const prevTotal = prev ? prev.totalCount : null;
+              console.log(\`- totalCount: \${prevTotal ?? '(初回)'} -> \${curr.totalCount}\`);
+              const prevByRegistry = new Map((prev?.shards ?? []).map((s) => [s.registry, s.count]));
+              console.log('');
+              console.log('| registry | 前回 | 今回 |');
+              console.log('|---|---|---|');
+              for (const s of curr.shards) {
+                console.log(\`| \${s.registry} | \${prevByRegistry.get(s.registry) ?? '(新規)'} | \${s.count} |\`);
+              }
+            "
+            echo ""
+            echo "### 実行時刻"
+            echo "$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M %Z')"
+            echo "GEM_POOL_PR_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or update pull request
+        if: steps.noop.outputs.no_op != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          BRANCH="automation/gem-pool-refresh"
+          BODY_FILE="$(mktemp)"
+          printf '%s' "${{ steps.prbody.outputs.body }}" > "${BODY_FILE}"
+
+          existing_pr="$(gh pr list --head "${BRANCH}" --base main --state open --json number --jq '.[0].number' || true)"
+          if [ -n "${existing_pr}" ]; then
+            gh pr edit "${existing_pr}" --body-file "${BODY_FILE}"
+          else
+            gh pr create \
+              --title "data: Gem 候補プール週次再生成" \
+              --body-file "${BODY_FILE}" \
+              --base main \
+              --head "${BRANCH}" \
+              --label "type:improvement" \
+              --label "status:waiting-claude"
+          fi
