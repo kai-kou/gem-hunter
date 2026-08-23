@@ -62,6 +62,62 @@ describe('toSearchResult', () => {
     expect(result.items[0].lastPushedAt.toISOString()).toBe('2026-08-01T00:00:00.000Z')
   })
 
+  it('pushed_at が不正な日付文字列でも例外を投げず updated_at にフォールバックする（Issue #338）', () => {
+    const raw = {
+      total_count: 1,
+      incomplete_results: false,
+      items: [
+        {
+          id: 998,
+          name: 'broken-pushed-at',
+          full_name: 'octostub/broken-pushed-at',
+          html_url: 'https://github.com/octostub/broken-pushed-at',
+          description: null,
+          language: null,
+          stargazers_count: 0,
+          updated_at: '2026-08-01T00:00:00Z',
+          pushed_at: 'not-a-date',
+          private: false,
+          topics: [],
+          owner: { login: 'octostub', avatar_url: 'https://example.com/a.png' },
+        },
+      ],
+    }
+
+    const result = toSearchResult(raw)
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].lastPushedAt.toISOString()).toBe('2026-08-01T00:00:00.000Z')
+  })
+
+  it('pushed_at・updated_at のいずれも不正な日付文字列なら epoch へフォールバックする（Issue #338）', () => {
+    const raw = {
+      total_count: 1,
+      incomplete_results: false,
+      items: [
+        {
+          id: 997,
+          name: 'broken-both',
+          full_name: 'octostub/broken-both',
+          html_url: 'https://github.com/octostub/broken-both',
+          description: null,
+          language: null,
+          stargazers_count: 0,
+          updated_at: 'also-not-a-date',
+          pushed_at: 'not-a-date',
+          private: false,
+          topics: [],
+          owner: { login: 'octostub', avatar_url: 'https://example.com/a.png' },
+        },
+      ],
+    }
+
+    const result = toSearchResult(raw)
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].lastPushedAt.toISOString()).toBe('1970-01-01T00:00:00.000Z')
+  })
+
   it('private: true のアイテムを除外し、totalCount は API の値をそのまま保つ（is:public が効かなくなった場合の多層防御）', () => {
     // 🔴 total_count は items 件数と **一致しない値**（999）にする。
     //    items 件数と同じ値だと `totalCount: items.length` へ変異させてもテストが緑のままになり、
@@ -161,6 +217,22 @@ describe('toPublicRepositoryDetail', () => {
     const detail = toPublicRepositoryDetail({ ...detailFixture, pushed_at: null })
 
     expect(detail?.lastPushedAt.toISOString()).toBe('2026-08-18T09:00:00.000Z')
+  })
+
+  it('pushed_at が不正な日付文字列でも例外を投げず updated_at にフォールバックする（Issue #338）', () => {
+    const detail = toPublicRepositoryDetail({ ...detailFixture, pushed_at: 'not-a-date' })
+
+    expect(detail?.lastPushedAt.toISOString()).toBe('2026-08-18T09:00:00.000Z')
+  })
+
+  it('pushed_at・updated_at のいずれも不正な日付文字列なら epoch へフォールバックする（Issue #338）', () => {
+    const detail = toPublicRepositoryDetail({
+      ...detailFixture,
+      pushed_at: 'not-a-date',
+      updated_at: 'also-not-a-date',
+    })
+
+    expect(detail?.lastPushedAt.toISOString()).toBe('1970-01-01T00:00:00.000Z')
   })
 
   it('watchers は subscribers_count を使い、star のミラーである watchers_count は使わない', () => {

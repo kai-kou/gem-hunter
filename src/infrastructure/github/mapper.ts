@@ -49,9 +49,20 @@ export function toSearchResult(raw: unknown): SearchResult {
  * （コミット履歴のない空リポジトリ）の場合のみ `updated_at` へフォールバックする。
  * 🔴 一覧（`toSearchResult`）と詳細（`toPublicRepositoryDetail`）で **同じ関数を使う**
  * （同一概念に別の算出規則が混ざると、画面遷移で「最終更新」の意味が変わって見える・Issue #334）。
+ * 🔴 上流が日付として不正な文字列を返しても `Invalid Date` を持ち出さない（Issue #338）。
+ *    `new Date(invalid)` をそのまま `Intl.DateTimeFormat` に渡すと `RangeError` で 500 になるため、
+ *    `pushed_at` が不正なら `updated_at` へ、それも不正なら epoch（1970-01-01）へ倒す
+ *    （`github-repository-query.ts` の `resetAt()` と同じ「壊れた値は安全な既定値に丸める」防御）。
+ *    1 件のリポジトリの不正データで一覧・詳細全体を落とさない（与件 §4.1「握り潰さず継続利用可能に保つ」）。
  */
 function lastPushedAtOf(pushedAt: string | null, updatedAt: string): Date {
-  return new Date(pushedAt ?? updatedAt)
+  const primary = pushedAt === null ? null : toValidDate(pushedAt)
+  return primary ?? toValidDate(updatedAt) ?? new Date(0)
+}
+
+function toValidDate(value: string): Date | null {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 /**
