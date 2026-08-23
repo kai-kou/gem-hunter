@@ -12,8 +12,8 @@ F-3 の実測（スクリーンショット）: 検索語 next.js で総件数 5
 
 争点は少なくとも次の 5 つ: A) F-1 の実装形（既存 button.tsx の意匠を流用した「ボタン風リンク」にするのか、リンクのままアイコン + 強調に留めるのか。logo.webp をアイコンとして流用してよいか（ロゴの意味が『アプリ』から『Gem 一覧』へ二重化しないか・alt/装飾扱いの妥当性・24px 以下での視認性・webp 1 枚の再利用 vs 新規アセット生成 vs インライン SVG）。gemBadge.intro の説明文との位置関係・視覚的階層。タッチターゲット 44px・フォーカスリング・ダークモード。検索結果 0 件で出さない現行仕様を維持するか） B) F-2 でカードに足せる項目は何か（候補プールに実在するのは registry / packageName / dependentCount / stars / gemIndex のみ。検索結果と揃えるには description・言語・topics・最終更新日・avatar が要るが、これらは D-29 か GitHub API 追加呼び出しに抵触する。avatar だけは https://github.com/{owner}.png で API を使わず出せるが外部画像リクエストが 20 件増える。GitHub API を最大 20 件分呼ぶ案（GET /repos/{owner}/{repo} × N もしくは GraphQL 一括）は E-2・NFR-7・INF-2・D-28 の SPOF 回避とどう衝突するか。『通常の一覧で表示している項目も含める』という指示を、どこまでが仕様として満たされたと言えるか） C) F-2 を満たす際のカードの構造（検索結果カードと同じレイアウトへ寄せるのか、Gem 一覧固有の項目（Gem Index・レジストリ・利用パッケージ数）を主役に据えたまま不足項目だけ足すのか。共通コンポーネント化すべきか（repository-list.tsx と gem-list.tsx を 1 本にすると型と責務が混ざる懸念）。a11y（リンク領域拡張の ::after とバッジ・画像の関係）） D) F-3 の正しい仕様（① 文言だけ直す＝「この一覧の N 件のうち M 件は、検索結果で Gem の印が付いていた候補です」の形にする ② includedCount の意味を『同伴指定のうち一覧に載っている総数』へ変える＝ポート契約 GemPoolSearchResult.includedCount の意味変更 ③ 両方の数を返して文言で使い分ける。どれがユーザーの誤読を最も減らすか。ポート契約を動かす場合の影響範囲（src/domain/ports/gem-index-port.ts・static-gem-index.test.ts の既存 10 ケース・search-gems.ts・gem-list.tsx・messages 2 言語）。総件数 role=status とのライブリージョン重複規律を壊さないか） E) 上記 3 件を 1 PR にまとめるか分けるか、E2E（e2e/sp-19.spec.ts・e2e/sp-18.spec.ts）と単体テスト（src/ui/*.test.tsx）の追加範囲、docs（docs/02_requirements/user-story-map.md §5.3 SP-19 の操作レビュー手順・prd.md の AC・docs/02_requirements/open-questions.md の D-36/D-37 追補）の更新要否。
 - 参加者: `ux_entry`, `data_scope`, `count_truth`, `docs_trace`
-- 投稿数: 4
-- 更新: 2026-08-23T12:06:11+09:00
+- 投稿数: 9
+- 更新: 2026-08-23T12:13:54+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -415,3 +415,418 @@ export function GemListLink({ href, label }: { href: string; label: string }) {
 
 - `focus-visible:ring-3` / `focus-visible:ring-ring` は `buttonVariants` の共通ベースクラス（`button.tsx` L11）にそのまま含まれるため、既存の `gem-list-link.test.tsx`（`toContain('focus-visible:ring-3')` / `toContain('focus-visible:ring-ring')`、`getByRole('link', { name })`）は **無修正で通る**（アイコンは `aria-hidden` でアクセシブルネームに含まれない）。
 - `messages.home.gemBadge.intro` との位置関係・0 件時に出さない現行仕様（`page.tsx` L258, L275）は変更不要。ghost button 化で箱の形が付くこと自体が、直前の `<p>`（本文）とリンク（アクション）の視覚階層を分離する。
+
+## ラウンド 2
+
+### `ux_entry` — 反論
+<sub>2026-08-23T12:09:42+09:00</sub>
+
+# ux_entry Round 2: 実装検証 + F-1 PR 文言 + F-2 avatar レイアウト判定
+
+## 1. 自案の実装検証（再読・実行済み・結論: 訂正不要）
+
+- **import パス**: `src/ui/gem-list-link.tsx` は `src/ui/` 直下にあり、`src/ui/components/button.tsx` が実在（`login-link.tsx` L1 が同じ階層から同じ `./components/button` で import している前例と一致）。**`./components/button` は正しい**。飼い主コメントが疑った `src/ui/button.tsx`（直下）は存在しない——実体は `src/ui/components/button.tsx` の 1 箇所のみ（`find /home/user/gem-hunter/src/ui -iname "*button*"` で確認済み）。
+- **`buttonVariants` の `className` 受け口**: `node_modules/class-variance-authority/package.json` の実バージョンは `0.7.1`。`dist/types.d.ts` L20-25 に `ClassPropKey = "class" | "className"` があり、cva の戻り関数は `class` / `className` のどちらか一方を追加マージ入力として正式に受ける型定義になっている。**`buttonVariants({ variant, size, className })` は型・実装ともに正しい**（`pagination.tsx` L43-46 が `disabledClassName = buttonVariants({ variant: 'ghost', size: 'default', className: 'pointer-events-none text-muted-foreground/50' })` と全く同じ形で既に使っている前例あり）。
+- **`lucide-react` の `Gem` エクスポート**: `node_modules/lucide-react/dist/esm/lucide-react.mjs` L882 に `export { default as Gem, default as GemIcon, default as LucideGem } from './icons/gem.mjs';` を実測。**named export `Gem` は実在する**（`Gemini`/`Gemma` 系アイコンとの誤爆ではない、`gem.mjs` 単体ファイルも実在)。
+- **`gem-list-link.test.tsx` の既存アサーション**: 全文を再読。
+  - `getByRole('link', { name: '…' })` + `href` 検証 → アイコンに `aria-hidden="true"` を付ける前提のため、アクセシブルネームは可視ラベルのみで変わらず **無修正で通る**。
+  - `link.className` に対する `toContain('focus-visible:ring-3')` / `toContain('focus-visible:ring-ring')` → `button.tsx` L11 のベースクラス文字列に両方の部分文字列がリテラルで含まれる（`focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring`）。cva はこれをそのまま結合した文字列を返すため **部分一致は成立し、無修正で通る**。
+
+**結論**: round 1 の実装案（`buttonVariants({ variant: 'ghost', size: 'default', className: 'gap-1.5' })` + `<Gem aria-hidden="true" className="size-4 shrink-0" />`）は import パス・API・テストのいずれについても訂正不要。断定して良いことを実機で確認した。
+
+## 2. 飼い主が名指しした「ロゴ流用」への回答（PR 本文にそのまま書ける 1〜2 文）
+
+> 飼い主案の「アプリタイトルのロゴを文言頭に添える」は見送り、代わりに lucide の `Gem` アイコンを採用します。`logo.webp` はサイトブランド（ホームへの `<h1>` タイトルリンク）専用の固定色ラスター画像で、検索結果の別導線に転用すると「これもホームへのリンクでは」という誤読を招くため、行き先（Gem 一覧）を直接示すピクトグラムを新規に用意する方が導線としての意味が伝わります。`Gem` は既存の `lucide-react` 依存内にあり追加コスト・追加アセットレビューなしで導入できます。
+
+**ロゴ流用が妥当になる条件（1 行）**: 「この導線がトップページ（`/${locale}`）そのものへ戻る操作を兼ねる」設計に変わるなら、ロゴ＝ホームという意味が導線の意味と一致するため流用は妥当（現行仕様は Gem 一覧という別画面へ行く導線であり、この条件を満たさない）。
+
+## 3. F-2: avatar 追加時の Gem 一覧カードのレイアウトと `::after` クリック領域整合（`data_scope` 案への判定）
+
+**判定: 妥当。ただし `repository-list.tsx` と厳密に同じ 2 カラム構造に揃える必要がある（現状の `gem-list.tsx` は単カラムなので実装変更が要る）。**
+
+根拠（実測・行番号付き）:
+
+- 現行 `repository-list.tsx` L113-142 は `<li className="relative flex gap-3 py-4">` の中に、**avatar `<img>` を `Link` の外（兄弟）** に置き（L116-125）、続けて `<div className="min-w-0 flex-1">`（L126）の中に `::after` 付き `Link`（L134-142）を置く 2 カラム（画像 + テキスト列）構造。`::after` の `position: absolute; inset: 0` は最も近い `position` 祖先である `<li className="relative …">` を基準に広がるため、avatar が `Link` の外に居ても **クリック領域は `<li>` 全体（avatar の上も含む）** に及ぶ（`ui-ux-guidelines.md` §4.3 が要求する「見出しだけを `<a>` にし `::after` で領域拡張」という構造と矛盾しない——avatar を `<a>` の中に入れていないので二次リンクの `z-index` 競合問題（§4.3 の注記）も発生しない）。
+- 一方、現行 `gem-list.tsx` L210-238 は `<li className="relative py-4">`（`flex` 無し・単カラム）で avatar が無い。`data_scope` の avatar 追加案をそのまま L210 の `<li>` 直下に `<img>` を足すだけだと、`flex` が無いため画像がブロック要素として **テキストの上に積み上がる**（横並びにならない）。**`repository-list.tsx` と同じ `className="relative flex gap-3 py-4"` へ変更し、`<img>` を `Link` の外側・`<div className="min-w-0 flex-1">` の外に置く構造に揃える実装が必要**（`data_scope` の主張は「足せる」という可否判定としては正しいが、レイアウト構造の変更点までは明示していない——ここを補う）。
+- **画像仕様も `repository-list.tsx` に揃える**: `width={40} height={40}` 明示 + `className="size-10 shrink-0 rounded-full"` + `loading="lazy"` + `alt=""`（`repositoryFullName` がテキストとして隣接表示されるため装飾扱い・`ui-ux-guidelines.md` §7.4 表の 1 行目と同じ理由）。1 ページ最大 20 件（`data_scope` の投稿にある GitHub API 20 件枠と同じ母数）全件に `loading="lazy"` を付ければ、初期ビューポート外の画像はブラウザが自動的に読み込みを遅延する。`repository-list.tsx` も全件 `loading="lazy"` で特別扱い（最初の数件だけ eager にする等）はしていないため、Gem 一覧も同じ扱いで一貫性が保てる。
+- **レイアウトシフト対策**: `width`/`height` 属性が明示されていれば、ブラウザは画像読み込み前にアスペクト比から確保領域を計算する（CLS 対策・`ui-ux-guidelines.md` L524「画像は `width`/`height` を必須指定」）。`size-10`（40px 固定）と合わせて数値が矛盾なく一致しているため、20 件分の画像が順次読み込まれても行の高さが動かない。これは検索結果一覧で既に本番相当のトラフィックで検証済みのパターン（`repository-list.tsx`）の再利用であり、新規のリスクではない。
+- `next/image` の remote patterns 設定（`next.config.js` の `avatars.githubusercontent.com` 許可）は **今回のケースには不要**: `data_scope` が提案する `https://github.com/{owner}.png` も、既存の `repository-list.tsx` と同じ **素の `<img src>`**（`next/image` 不使用・`INF-11`）で描画するため、ドメイン許可リストの対象外。ここは `data_scope` 案の実装上の懸念点にはならない（念のため明示しておく）。
+
+**結論**: `data_scope` の「avatar だけなら足せる」という可否判定に同意した上で、実装は `repository-list.tsx` の 2 カラム構造・画像属性一式をそのまま複製する形に限定すべきで、単カラムの `gem-list.tsx` へ `<img>` を無条件に追記する実装は避ける（レイアウトが崩れる）。§4.3 のクリック領域要件・§7.4 の `alt` 方針・CLS 対策のいずれも repository-list.tsx の実装をコピーすれば自動的に満たされる。
+
+### `count_truth` — 反論
+<sub>2026-08-23T12:10:37+09:00</sub>
+
+# count_truth Round 2: 自己検証 + docs_trace への応答 + 境界ケース修正 + F-1/F-2 との非干渉確認
+
+## 1. 自分の未検証前提の検証結果
+
+### (a) `formatMessage` は未知のプレースホルダ `{total}` を正しく置換できるか → **断定: できる。訂正不要**
+
+`src/shared/i18n/format-message.ts` 実装:
+```ts
+export function formatMessage(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (matched, key) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? values[key] : matched,
+  )
+}
+```
+正規表現は `template` 中の `\{(\w+)\}` を **キー名を決め打ちせず** 走査し、`values` に
+`hasOwnProperty` があればその値で置換する汎用実装。既存の呼び出し（`{query}` `{token}`
+`{count}` `{source}` `{license}` `{generatedAt}` 等）と同じ扱いで `{total}` も通る。
+`gem-list.test.tsx` の labels スタブ（22 行目 `includedFromSearch: 'うち {count} 件は…'`）は
+`{total}` を含まないテンプレートだが、`values` に `total` を追加で渡しても `template.replace`
+は **テンプレートに存在するプレースホルダしか置換しない**（正規表現がテンプレート側を走査する
+ため、渡す `values` に未使用キーがあっても無害）。よって round 1 で示した
+`formatMessage(labels.includedFromSearch, { count, total })` への変更は、本番文言（`{total}` を
+含む新テンプレート）にも既存テストのスタブ（`{total}` を含まない旧テンプレート）にも
+**両立して安全**。前提は正しかった。
+
+### (b) `messages/*.json` は CJK スペース規律の検査対象外か → **断定: 対象外。訂正不要**
+
+`tools/check_cjk_markdown.py:232`:
+```python
+if p.suffix.lower() not in (".md", ".markdown"):
+    print(f"[cjk-md] スキップ（.md 以外）: {path}", file=sys.stderr)
+```
+`--changed` 収集（167-191 行目）も `f.endswith(".md")` でフィルタしており、`.json` は最初から
+候補に入らない。`messages/ja.json` / `messages/en.json` は対象外で確定。round 1 の記載は正しい。
+
+### (c) `messages.test.ts` は ja/en の同型性・プレースホルダ整合を検査していないか → **一部訂正が要る（軽微・自分の主張は補強される方向）**
+
+全文読了。`describe('messages カタログ')` は **`D-36`/`D-37`/`D-29` が明示要求する要素だけ**を
+個別に `toContain` で固定する設計（コメントで「意思決定が要求している要素に限る」と明言）。
+`gems.attribution` / `home.digest.attribution` にはプレースホルダの存在チェックがあるが
+（64-81 行目）、**`gems.includedFromSearch` に対する `{count}` の存在チェックも、ja/en の
+キー集合を汎用的に突き合わせる仕組みも存在しない**。round 1 では「既存テストは無傷のまま」
+とだけ書いたが、正確には **「既存テストは無傷 *かつ* 今回のプレースホルダ追加を検知する
+安全網も無い」**。後者は round 1 の主張への反証ではなく、むしろ ①案の低リスク性を裏付ける
+（変更してもテストが割れないのは「既存契約と衝突しない」ことの証拠であって「検査が甘い」
+ことの証拠でもある）。ただし実装時の付随作業として、`gems.includedFromSearch` に
+`{count}` `{total}` `{matchedCount}`（下記 3 で追加）が揃っていることを固定する
+`it.each(['ja','en'])` を 1 本足すことを推奨する（`gems.attribution` のテストと同じ形。
+これは実装 Issue 側のチェックリスト項目であり、設計判断そのものは変わらない）。
+
+## 2. docs_trace への応答: `open-questions.md` `D-36` 追記に足す 1〜2 行
+
+docs_trace の指摘（「F-3 は意図的な設計差分だが、利用者への説明方法が未文書化」）は正しい。
+**Issue #453 追記の末尾に以下を追記する**（`D-36` の該当行、`content/discussions/gem-list-match-20260823/whiteboard.md`
+の直前）:
+
+> 🔵 **F-3 追記（2026-08-23）**: `totalCount`（一覧に並ぶ全件数）と `includedCount`（同伴で
+> **追加された** 件数）は最初から別の母集団を数えており矛盾ではないが、`gems.includedFromSearch`
+> の文言がその関係（`totalCount = matchedCount + includedCount`）を明示しないと利用者には
+> 数値の不一致に見える。文言側で母数と内訳（一致 `matchedCount` 件 / 同伴 `includedCount` 件 /
+> 全 `totalCount` 件）を 1 文に収める形で解消し、`includedCount` の定義（追加分のみ）自体は
+> 変えない。反映先は `messages/ja.json` `messages/en.json` の `gems.includedFromSearch`。
+
+これで「意図的な差分である」という事実だけでなく「利用者への説明責任をどう果たすか」まで
+`D-36` の系列に記録され、次に F-3 系の Issue が来たときに再調査せずに済む。
+
+## 3. 境界ケースの検証: `includedCount === totalCount`（名前照合 0 件・全件同伴）
+
+**round 1 の文言案には欠陥があった。訂正する（concession）。**
+
+`includedCount === totalCount` は実際に到達可能: `search()`（`static-gem-index.ts:270-289`）で
+全語 AND が 0 件になり、緩和用の `selectMostSelectiveToken` も候補なし（`fallbackToken === null`）
+のとき `matched = []` のまま `mergeIncludedRecords` に渡る。この状態で `includeFullNames` に
+名前一致するレコードが N 件あれば `merged = additions` のみ、`includedCount = totalCount = N`。
+
+round 1 の文言（「この一覧の `{total}` 件のうち `{count}` 件は…」）にこの値を当てはめると
+「この一覧の 5 件のうち 5 件は、検索語には一致しませんが…」という **同語反復**（全部だと
+言っているのに「のうち」という部分集合の構文を使う）になり、不自然かつ「では残りの 0 件は
+何なのか」という空虚な含意を残す——**F-3 が問題にしている『数値の関係が読者の推論任せになる』
+という欠陥を、境界ケースでは形を変えて再発させてしまう。**
+
+### 修正案: 「一致した内訳」を先に言う構成に変える（分数の構文をやめる）
+
+`{total}` に加えて **`{matchedCount}`（`view.totalCount - view.includedCount`、名前照合で
+直接一致した件数）** をもう 1 つのプレースホルダとして足し、「一致 `matchedCount` / 同伴
+`includedCount` / 全 `total`」の 3 点を **加算の構文** で提示する（部分集合の言い回しをやめる）。
+
+```
+ja: "全 {total} 件のうち、検索語に一致したのは {matchedCount} 件です。残り {count} 件は
+     検索語には一致しませんが、検索結果で Gem の印が付いていたためこの一覧に加えています。"
+
+en: "Of {total} results, {matchedCount} match your search words directly. The other {count}
+     don't match, but are included because they were marked as Gem in your search results."
+```
+
+**通常ケース**（matched=1, count=4, total=5）: 「全 5 件のうち、検索語に一致したのは 1 件です。
+残り 4 件は…」——round 1 案より **さらに明示的**（「1 件は一致・4 件は同伴」と両方の内訳を
+言い切るため、`5-4=1` の暗算を読者に要求しない。docs_trace の指摘への回答にもなる:
+「意図的な差分である」ことを、読者が引き算せずに読める形にした）。
+
+**境界ケース**（matched=0, count=5, total=5）: 「全 5 件のうち、検索語に一致したのは 0 件です。
+残り 5 件は…」——**破綻しない**。「0 件」という事実をそのまま述べているだけで、
+同語反復にも空虚な含意にもならない。追加の分岐（条件付き別文言）は不要——**この構成
+自体が両ケースを 1 つの文で正しくカバーする**ため、round 1 で懸念していた「条件分岐が
+要るのでは」という追加実装コストも発生しない。
+
+### `gem-list.tsx` 側の変更（round 1 からの差分のみ）
+
+```tsx
+const matchedCount = view.totalCount - view.includedCount // 名前照合で直接一致した件数
+
+{formatMessage(labels.includedFromSearch, {
+  count: numberFormat.format(view.includedCount),
+  total: numberFormat.format(view.totalCount),
+  matchedCount: numberFormat.format(matchedCount),
+})}
+```
+`matchedCount` も `totalCount` と `includedCount` という **既存の 2 値からの引き算だけ**で
+出せるため、round 1 の結論（②③の契約変更は不要）は変わらない。影響ファイルも round 1 の
+2 ファイル（`messages/ja.json` `messages/en.json` `src/ui/gem-list.tsx`）のまま増えない。
+
+## 4. F-1（ux_entry）・F-2（data_scope）が `gem-list.tsx` の `role="status"` に影響するか
+
+**判定: どちらも影響なし。**
+
+- **F-1（`GemListLink` の ghost ボタン化）**: 変更対象は `src/ui/gem-list-link.tsx` と
+  その呼び出し元 `app/[locale]/page.tsx`（**検索結果ページ**）であり、`src/ui/gem-list.tsx`
+  （**Gem 一覧ページ**）とは別コンポーネント・別ルートで、`role="status"` を含む DOM 木を
+  一切共有しない。ux_entry の実装案（`buttonVariants` + `aria-hidden="true"` の `Gem` アイコン）
+  も `focus-visible:ring-3` の付与元を変えるだけで、ライブリージョンにもフォーカス移動先
+  （`GEM_LIST_HEADING_ID`）にも触れていない。**非干渉を確認。**
+
+- **F-2（data_scope の avatar 追加）**: 追加先は `gem-list.tsx` の `<li>` 内（205-264 行目、
+  `<ul className="divide-border ...">` の子要素）。現行構造では `role="status"` の 2 つの
+  `<p>`（`totalCount` 190 行目・`includedFromSearch` 199 行目）は `<ul>` の **手前の兄弟要素**
+  であり、`<ul>`/`<li>` はライブリージョンの外側にある。avatar の `<img>` を `<li>` 内
+  （例: `repositoryFullName` の直前）に足しても、ライブリージョンの中身（総件数・同伴注記の
+  テキスト）は変わらないため **二重読み上げ・読み上げ順の混線は起きない**。
+  ⚠️ ただし data_scope の実装時に 1 点だけ依存が生じる: `ui-ux-guidelines.md` §7.4 の表
+  （「オーナー名がテキストとして隣接表示される場合は `alt=""` を明示指定」）どおり、
+  `repositoryFullName`（例 `vercel/next.js`）が同じ `<li>` 内にテキストとして既に表示されて
+  いるため、avatar の `<img>` は **`alt=""` を明示** する必要がある（省略するとファイル名を
+  読み上げる SR がある、と同ガイドラインが既に指摘している既知のパターン）。これは
+  ライブリージョンの問題ではなく別の a11y 要件だが、data_scope の実装 PR で見落とされないよう
+  ここで明示しておく。
+
+## 結論（round 1 からの更新点のみ）
+
+- ①案（文言修正のみ・契約不変）は round 1 の判定のまま維持。
+- **文言は 3 に基づき修正**: `{count}` `{total}` に加え `{matchedCount}`
+  （`totalCount - includedCount`）を足した「一致 / 同伴 / 全体」の加算構文に変える
+  （round 1 の「〜のうち」構文は境界ケースで同語反復になるため撤回）。
+- `open-questions.md` `D-36`（Issue #453 追記部）に F-3 の説明責任を 1 段落追記する
+  （2 節の具体文）。
+- F-1・F-2 の他提案は `gem-list.tsx` のライブリージョン・読み上げ順と非干渉。data_scope の
+  avatar 実装には `alt=""` の付与が必要（別 a11y 要件として申し送り）。
+
+### `data_scope` — 反論
+<sub>2026-08-23T12:10:48+09:00</sub>
+
+## 1. `docs_trace` への応答（部分譲歩 + 具体的な「対応済み」の定義）
+
+**譲歩する**: `prd.md` §4.2 `AR-1` が検索結果カード限定の記述であり、Gem 一覧カードの表示項目仕様がどこにも明文化されていない、という指摘は事実。Round 1 の自分の投稿もこの欠落を追認する形になっていた（型・実データだけを見て「仕様として何が正本か」を問わなかった点は補う）。
+
+**しかし「根拠が無いから保留」ではなく、この PR 内で仕様側のギャップを埋めて閉じるべき**（`SD-4` 完了条件「見つけたドキュメントの矛盾を修正したか、別 Issue を起票したか」）。以下を「対応済み」の定義とする。
+
+### 「対応済み」の定義（具体・検証可能な形）
+
+1. **`prd.md` に Gem 一覧カード専用の新規 `AR-n`（例 `AR-9`）を追加**し、表示項目を確定させる: `repositoryFullName`（リンク）/ `packageName` / `registry` / `stars` / `dependentCount` / `gemIndex` / **avatar（新規）**。「検索結果と同一にする」ではなく「候補プールが持つ列 + avatar」を正本として明記する
+2. **除外した項目とその理由を同じ `AR-9` に明記**: description（`D-29` 生テキスト再配信禁止）/ primaryLanguage・topics・lastPushedAt（候補プールに列が無く、追加は §2 で判定するとおり別 Issue 相当）
+3. `ui-ux-guidelines.md` §4.2 に Gem 一覧カードの節を追加し、検索結果カードとの **意図的な差分**（Gem Index・レジストリを主役に保つ、`D-36` の注記位置）を明記
+4. `user-story-map.md` §5.3 `SP-19` 操作レビュー手順に「カードに avatar が表示されること」の 1 行を足し、`e2e/sp-19.spec.ts` に対応するアサーションを追加
+5. 飼い主フィードバック原文「通常の一覧で表示している項目も含める」に対しては、**avatar 追加 + 上記ドキュメント整備 + UI 上での除外理由の明示**をもって「技術的・規約的に可能な範囲で対応した」と report する。全項目を検索結果と揃えることは今回のスコープでは技術的に不可能（§2 のとおり）なので、それを隠さず Issue #(新規) として起票し、飼い主に見える形で残す
+
+これで「ドキュメントに根拠が無いまま実装した」という状態を作らず、かつ `docs_trace` が指摘した欠落 3 箇所（`prd.md` / `ui-ux-guidelines.md` / `user-story-map.md`）を同じ PR で埋められる。
+
+---
+
+## 2. バッチ側で列を焼き込む案（案 a）— スコープ判定: **別 Issue にすべき（数字で確認済み）**
+
+`tools/generate_gem_digest.mjs` → `tools/gem-pool/collect.mjs`（`packages.ecosyste.ms` から収集）→ `tools/gem-pool/pipeline.mjs`（`projectPackage` で投影）→ `tools/gem-pool/output.mjs`（シャード書き出し）という実在するパイプラインを確認した。
+
+### (i) データ源
+
+`pipeline.mjs:170` の `projectPackage` は `raw.repo_metadata`（Ecosyste.ms の一覧 API が返す GitHub ミラーオブジェクト）から現状 **`stargazers_count` の 1 フィールドしか取り出していない**。`description` / `language` / `topics` / `pushed_at` 相当のキーが `repo_metadata` に実在するかは、**本リポジトリのコード・テスト・研究ドキュメント（`content/research/20260820-zero-query-discovery_supplement.md:144`）のどこにも記載が無く未確認**（テストフィクスチャも `{ stargazers_count: N }` しか作っていない）。「取れる」と断定するのは confabulation になるため、まず Ecosyste.ms API を実プローブして schema を確定させる調査タスクが **前提として必要**——この時点で既に「今回のフィードバック対応」の枠を超えた着手前工程が発生する。
+仮に `repo_metadata` に載っていても、**`packages.ecosyste.ms` 経由で取得する限りその値は Ecosyste.ms が配信する CC BY-SA 4.0 データの一部**（`D-29` が対象にする母体そのもの）である。GitHub API から直接取れば CC BY-SA の対象外にできるが、その場合は「候補プール 62,483 件全件」に `GET /repos/{owner}/{repo}` を打つ必要があり、Core API 5,000 req/h でも **単純直列で最短 12.5 時間**（レート制限のみを条件にした理論値。リトライ・ページング分は含まない）かかる一括バッチになる。これは現行バッチ（Ecosyste.ms の一覧 API を registry 単位でページ取得するだけ）とは別次元のコスト構造で、実行環境（Cloudflare 外の cron セッション）の実行時間予算内に収まるかも未検証。
+
+### (ii) サイズ増分（実測ベースの概算）
+
+現行シャード合計（`index.json` 除く 12 ファイル）を実測: **3,640,392 byte ≒ 3.47 MiB**、`62,483` 件。1 件平均 **約 58.3 byte**（タプル配列形式・列名を持たないコンパクト JSON のため既に圧縮効率が高い）。
+
+3 列を同じタプル形式で追加した場合の 1 件あたり増分見積り（**実データが存在しないため GitHub の一般的な値を仮定した概算であり検証値ではない**、と明記した上で）:
+- `primaryLanguage`（例 `"JavaScript"` + カンマ）: 約 12〜15 byte
+- `lastPushedAt`（ISO 文字列 `"2026-08-20T00:00:00Z"` + カンマ・クォート）: 約 25 byte（コンパクトな `YYYYMMDD` 数値にすれば 9 byte まで圧縮可能）
+- `topics`（配列。平均 3〜5 件・1 件 8 文字程度と仮定）: 約 40〜60 byte
+
+合計増分 **1 件あたり約 65〜100 byte**。62,483 件では **約 4.06〜6.25 MiB の増加**。現行 3.47 MiB に加算すると **合計 約 7.5〜9.7 MiB**。
+
+`tools/check_gem_shards.py` の `TOTAL_SIZE_BUDGET_BYTES = 8 * 1024 * 1024`（8 MiB）は、見積りレンジの中央〜上振れで **既に超過**する。このチェックはコメントで「超えたら PR を落として再検討する（黙って上限だけ引き上げない）」と明記された意図的なゲートであり、`D-38` の `limits.cpu_ms` 実測（シャード合計サイズが cold start の JSON.parse / Map 構築コストに直結し、`SP-19` で 400ms まで引き上げ済み）とも直結する。3 列追加は cold start コストの再実測・`limits.cpu_ms` の再チューニングを要求する規模の変更であり、UI フィードバック対応 1 件の作業ではない。
+
+### (iii) 契約変更の範囲
+
+`columns` 契約を 5 列から 8 列に拡張する場合に触る箇所（実際に grep で確認した実在ファイルのみ）:
+- `tools/gem-pool/pipeline.mjs` の `projectPackage`（投影ロジック追加）
+- `tools/gem-pool/output.mjs`（シャード書き出しの列定義）
+- `tools/check_gem_shards.py` の `EXPECTED_COLUMNS`（5→8 列に変更・行の形検査ロジックも型ごとに追加）
+- `src/infrastructure/platform/static-gem-index.ts` の `COLUMN_*` 定数・`PoolEntry` 型・タプル読み取りロジック
+- `src/domain/model/gem.ts` の `Gem` / `GemPoolEntry` 型
+- `src/domain/ports/gem-index-port.ts`（契約に新フィールドを足すなら型変更）
+- `src/infrastructure/platform/static-gem-index.test.ts`・`tools/gem-pool/pipeline.test.mjs`・`tools/check_gem_shards.py --self-test` 相当のテスト全面更新
+- 12 シャード全件の再生成（cron バッチの臨時実行が要る。実行時間は未計測）
+
+これは 1 PR・1 スプリントの範囲を超える設計変更（型契約 6 箇所 + テスト複数 + バッチ再実行 + サイズ予算超過の再検討）であり、**別 Issue（`sp:5` 相当、Dynamic 補正 +1〜2 込みで `sp:8` もありうる）にすべき**と判定する。
+
+### D-29 抵触の判定（description 以外も対象か）
+
+- **description**: 明確に禁止（`D-29` の名指し対象・自然文の生テキスト）
+- **topics**: **抵触リスクが高い**と判定する。GitHub topics はリポジトリ管理者が任意に付与する自由記述タグ列で、`packages.ecosyste.ms` 経由で取得する限り Ecosyste.ms が配信する CC BY-SA 4.0 データの一部（`D-29` が対象にする母体そのもの）。`gem.ts` 冒頭コメントの判定基準（「識別子か生テキストか」）に照らすと、topics は description ほど連続的な文章ではないが、複数の任意語の列挙という点で「識別子」より「記述内容」に近い。**採用するなら D-29 の R-8（GitHub 利用規約の一次確認）と同じタイミングで法務的な最終判断を待つべき**で、今回のスコープには入れない
+- **primaryLanguage**: topics より抵触リスクは低い（GitHub の linguist が機械判定する単一のカテゴリ値で、著作性のある創作テキストではない）が、**Ecosyste.ms 経由で取得する限り同じ CC BY-SA 母体に属する値**である点は topics と同じ。「識別子に近い」という整理はできるが「識別子そのもの」と言い切るには一次情報（`R-8`）の確認を経ていない。安全側に倒すなら、これも今回のスコープには含めず別 Issue の調査対象に含める
+- **lastPushedAt**: 数値由来の事実（日時）であり、`stars`/`dependentCount` と同じ「自作の派生値」に近い性質。D-29 の懸念（生テキストの再配信）には該当しない。3 項目の中では最も抵触リスクが低い
+
+**結論**: 「description だけが D-29 対象で language/topics は自由」という単純な切り分けはできない。3 者とも取得元が同じ Ecosyste.ms API である以上、`R-8` の一次確認前に language/topics を配信物へ混ぜるのはリスクを取りすぎている。lastPushedAt のみは数値的事実として D-29 のリスクが低いが、それでも上記 (i)〜(iii) のコスト構造から **今回は追加しない**という Round 1 の結論を維持する。
+
+---
+
+## 3. カード構造（`ux_entry` の F-1 提案とは独立の論点・F-2 の構造）
+
+**Gem 一覧固有の項目（Gem Index・レジストリ・利用パッケージ数）を主役に保ったまま avatar だけ足す**べきで、検索結果カードの 2 カラムレイアウトへ全面的に寄せることには反対する。
+
+- `D-36` はこの一覧の存在意義を「Gem Index という母集団相対の指標を見せること」に置いており、`gem-list.tsx` 冒頭のコメントも「並び順は `gemIndex` 昇順のまま・ここで並べ替えない」と明記している。検索結果カードと同じ情報設計（description 主体・メタ情報は補助的な 1 行）に寄せると、**Gem Index がその他の指標に埋もれる**——これは飼い主フィードバックが問題にした「埋もれ」を、今度は Gem 一覧側で再発させることになる
+- 実務的にも `repository-list.tsx` と `gem-list.tsx` を共通コンポーネント化するのは、`GemListViewModel` 冒頭のコメントが明記する「ポートの契約型を props に採らない」設計判断と同じ理由で避けるべき: 2 つの一覧は表示するドメイン概念が違う（`RepositorySummary` vs `GemPoolEntry`）ため、共通化すると型と責務が混ざる
+- **採る形**: `gem-list.tsx` の各カードの先頭に avatar（`size-10` 程度、`repository-list.tsx` と揃えた寸法）を追加し、`repositoryFullName` をその隣に置く。Gem Index・レジストリ・利用パッケージ数・stars は現行どおり同じ行に並べたメタ情報として維持し、レイアウトの主従関係（Gem Index が主役）は変えない。avatar は「このカードがどのリポジトリか」を視覚的に一目で分かるようにする **補助**であって、情報設計全体を検索結果カードに合わせ直す話ではない
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-23T12:13:10+09:00</sub>
+
+# 合意（lead 統合）
+
+## 進行上の記録
+`docs_trace` は round 2 の投稿に失敗した（返り値には内容が含まれていたが `post` が実行されず、
+`entries/` に r02 の docs_trace エントリが無い）。本 consensus では **その返り値の内容を lead が
+取り込んだ上で、`data_scope` round 2 の対案と突き合わせて lead が裁定した**。以降のドキュメント
+更新範囲は lead の裁定が正本。
+
+## 合意した点（4 者に争いが無い）
+
+1. **F-3 の数値は破綻していない**。`totalCount`（一覧に並ぶ全件）と `includedCount`（同伴で
+   *追加された* 件数）は別の母集団を数えており、`5 = 1 + 4` の関係を文言が説明していないことが
+   誤読の原因。→ **文言だけを直す**（ポート契約・実装ロジック・既存テストは触らない）。
+2. **`includedCount` の意味変更（案②）・新フィールド追加（案③）は却下**。`matchedCount` は
+   `totalCount - includedCount` で導出でき、契約面を増やす理由が無い（YAGNI）。
+3. **F-1 は ghost ボタン化 + lucide `Gem` アイコン**。`pagination.tsx` / `login-link.tsx` が
+   既に使う `buttonVariants({ variant: 'ghost' })` パターンに合流させ、新しい見た目を増やさない。
+   `bg-primary`（filled）は検索ボタン（主要 CTA）と主張が競合するため採らない。
+4. **ロゴ画像（`logo.webp`）の流用は採らない**。ブランドマークの転用は「ホームへのリンクでは」
+   という誤読を招き、固定色ラスターで `currentColor` に追従しない。飼い主が名指しした選択肢を
+   退ける判断なので、**理由を PR 本文に明記する**（`ux_entry` round 2 の 1〜2 文を使う）。
+5. **F-2 で今回足せるのは avatar だけ**。`description` / `primaryLanguage` / `topics` /
+   `lastPushedAt` は候補プールのシャードに列自体が無く、追加には (a) バッチ側の列拡張か
+   (b) 実行時の GitHub API 追加呼び出ししかない。(b) は D-28（SPOF 回避）・E-2（データソース
+   限定）・NFR-7（レート枠）・NFR-1（LCP）のいずれにも反するため却下。
+6. **F-1 / F-2 は Gem 一覧の `role="status"` ライブリージョンと非干渉**（別ルート・`<ul>` の外側）。
+
+## 対立点と lead の裁定
+
+### 対立 1: avatar を足すときのカード構造
+- `ux_entry`: `repository-list.tsx` と同じ 2 カラム（`relative flex gap-3 py-4`・`<img>` は
+  `Link` の外・`<div className="min-w-0 flex-1">` でテキスト列）にしないと画像が縦積みになる。
+- `data_scope`: 検索結果カードの情報設計へ全面的に寄せると Gem Index が埋もれる。Gem 一覧固有の
+  項目を主役に保つべき。
+
+**裁定: 両立する。構造（2 カラムの箱）は `ux_entry` の指摘どおり `repository-list.tsx` に揃え、
+情報設計（何を出すか・主従）は `data_scope` の主張どおり現行のまま（avatar を足すだけ）とする。**
+「レイアウトの器」と「載せる情報」は別の話であり、器を揃えても Gem Index は埋もれない。
+
+### 対立 2: ドキュメント更新の範囲
+- `data_scope`: `prd.md` に新規 `AR-9` を起こす + `ui-ux-guidelines.md` §4.2 追加 +
+  `user-story-map.md` §5.3 + `e2e` の 4 点。
+- `docs_trace`（返り値）: 必須なのは `open-questions.md` D-36 追記と `prd.md` の 1 行注記だけ。
+  `ui-ux-guidelines.md` §4.2 追加・E2E 更新は不要。
+
+**裁定: 中間を採る。**
+- ✅ `prd.md` に **`AR-9`（Gem 一覧カードの表示項目）を新設** する。今回「何を出し、何を出さないか」を
+  意思決定した以上、その正本が無い状態で実装だけ進めるのは `SD-4`（矛盾を放置しない）に反する。
+  除外項目とその理由（`D-29` / 列が無い）も同じ `AR-9` に書く。
+- ✅ `open-questions.md` の `D-36`（Issue #453 追記部）に F-3 の説明責任を 1 段落追記する
+  （`count_truth` round 2 の具体文を採用）。
+- ✅ `user-story-map.md` §5.3 `SP-19` の操作レビュー手順に avatar 確認の 1 行を足し、
+  `e2e/sp-19.spec.ts` に対応するアサーションを足す（`SD-2`: 操作レビュー手順は E2E に写す）。
+- ❌ `ui-ux-guidelines.md` §4.2 への Gem 一覧カード節の追加は **今回やらない**。`AR-9` が
+  表示項目の正本になるため、同じ内容を 2 箇所に持つと SSOT が割れる（`docs_trace` の
+  「SSOT を増やす提案は矛盾」という指摘を採る）。
+
+### 対立 3: F-3 の文言の構文
+- `count_truth` round 1:「この一覧の {total} 件のうち {count} 件は…」
+- `count_truth` round 2（自己撤回）: 境界ケース（`includedCount === totalCount`）で
+  「5 件のうち 5 件は」という同語反復になる。「全 {total} 件のうち、検索語に一致したのは
+  {matchedCount} 件です。残り {count} 件は…」の加算構文へ。
+
+**裁定: round 2 の加算構文を採用する。** 通常ケースでも読者に引き算を要求せず、境界ケースでも
+破綻しない。追加の条件分岐が要らない点も良い。
+
+## 実装の契約（並列作業の前提・これを守れば衝突しない）
+
+Gem 一覧カードの avatar マークアップ（`src/ui/gem-list.tsx` の `<li>`）:
+
+```tsx
+<li className="relative flex gap-3 py-4" data-gem-index={...} data-repository-full-name={...}>
+  {/* eslint-disable-next-line @next/next/no-img-element -- INF-11 */}
+  <img src={`https://github.com/${encodeURIComponent(owner)}.png?size=80`} alt="" width={40} height={40}
+       loading="lazy" decoding="async" className="size-10 shrink-0 rounded-full" />
+  <div className="min-w-0 flex-1">
+    {/* 既存の Link / メタ情報をそのまま移す（情報設計は変えない） */}
+  </div>
+</li>
+```
+
+- `alt=""`（`repositoryFullName` が隣接テキストとして出るため装飾扱い・`ui-ux-guidelines.md` §7.4）
+- `<img>` は `Link` の **外**（`::after` のクリック領域は `<li className="relative">` 基準で
+  avatar の上にも及ぶ）
+- `repositoryFullName` が `owner/name` に割れないときは avatar を出さない（既存のリンク抑止と同じ判定）
+
+### `lead` — 判定
+<sub>2026-08-23T12:13:54+09:00</sub>
+
+{
+  "decisions": [
+    {
+      "issue": "A: 検索結果からの Gem 一覧導線（F-1）の強調方法",
+      "design": "GemListLink を素のテキストリンクから buttonVariants({ variant: 'ghost', size: 'default', className: 'gap-1.5' }) へ置き換え、lucide-react の Gem アイコン（aria-hidden・size-4）をラベルの前に置く。ラベル文言・配置・0 件時に出さない仕様は変えない。",
+      "artifacts": ["src/ui/gem-list-link.tsx（改修）", "src/ui/gem-list-link.test.tsx（アサーション追加）"],
+      "rejected": "filled primary ボタン（検索ボタンという主要 CTA と主張が競合）/ logo.webp の流用（ブランドマーク転用でホームリンクと誤読・固定色ラスターで currentColor 非追従）/ 新規アイコンのアセット生成（YAGNI）/ Unicode 絵文字（環境依存の固定色でトークン制御不能）"
+    },
+    {
+      "issue": "B: Gem 一覧カードに載せる項目（F-2）",
+      "design": "avatar 画像だけを追加する（https://github.com/{owner}.png・GitHub API 呼び出し不要）。description / primaryLanguage / topics / lastPushedAt は候補プールのシャードに列が無く今回は追加せず、別 Issue へ切り出す。",
+      "artifacts": ["src/ui/gem-list.tsx（改修）", "src/ui/gem-list.test.tsx（テスト追加）", "docs/02_requirements/prd.md（AR-9 新設）"],
+      "rejected": "実行時に GitHub API を最大 20 件呼んで補完（D-28 の SPOF 回避・E-2 のデータソース限定・NFR-7 のレート枠・NFR-1 の LCP に反する）/ バッチ側でシャードに 3 列を焼き込む（実測 3.47MiB → 7.5〜9.7MiB で tools/check_gem_shards.py の 8MiB 予算超過・契約変更 6 ファイル以上・language/topics は D-29 の CC BY-SA 母体に属し R-8 の一次確認が未了）"
+    },
+    {
+      "issue": "C: avatar 追加時のカード構造",
+      "design": "器（レイアウト）は repository-list.tsx と同じ 2 カラム（li は relative flex gap-3 py-4・img は Link の外・テキスト列は min-w-0 flex-1）に揃え、載せる情報（Gem Index・レジストリ・利用パッケージ数・star の並び）は現行のまま変えない。共通コンポーネント化はしない（RepositorySummary と GemPoolEntry は別のドメイン概念）。",
+      "artifacts": ["src/ui/gem-list.tsx（改修）"],
+      "rejected": "検索結果カードの情報設計へ全面的に寄せる（Gem Index が埋もれ、この一覧の存在意義（D-36）を損なう）/ repository-list.tsx と gem-list.tsx の共通化（型と責務が混ざる）"
+    },
+    {
+      "issue": "D: 件数と説明文の不一致（F-3）",
+      "design": "gems.includedFromSearch の文言を『全 {total} 件のうち、検索語に一致したのは {matchedCount} 件です。残り {count} 件は検索語には一致しませんが、検索結果で Gem の印が付いていたためこの一覧に加えています。』へ差し替える。matchedCount は totalCount - includedCount を UI 側で算出する。ポート契約・実装ロジック・既存テストは変更しない。",
+      "artifacts": ["messages/ja.json（改修）", "messages/en.json（改修）", "src/ui/gem-list.tsx（formatMessage の引数追加）", "src/shared/i18n/messages.test.ts（プレースホルダ固定テスト追加）", "docs/02_requirements/open-questions.md（D-36 追記）"],
+      "rejected": "includedCount の意味変更（ポート契約と既存テスト 10 ケースを割るのに誤読は解消しない）/ 新フィールド追加（totalCount - includedCount で導出でき YAGNI）/ totalCount の定義変更（clampPage の母数と食い違いページング契約が壊れる）"
+    },
+    {
+      "issue": "E: PR の分割とドキュメント更新の範囲",
+      "design": "3 件は 1 PR にまとめる（相互に同じファイル・同じ画面を触るため）。ドキュメントは prd.md の AR-9 新設・open-questions.md の D-36 追記・user-story-map.md §5.3 SP-19 の操作レビュー 1 行・e2e/sp-19.spec.ts のアサーション追加の 4 点に絞る。",
+      "artifacts": ["docs/02_requirements/user-story-map.md（改修）", "e2e/sp-19.spec.ts（改修）"],
+      "rejected": "ui-ux-guidelines.md §4.2 への Gem 一覧カード節の追加（AR-9 と同内容になり SSOT が割れる）"
+    }
+  ],
+  "tasks": [
+    { "id": "T-1", "title": "GemListLink を ghost ボタン + Gem アイコンへ置き換える（テスト先行）", "actor": "claude", "depends_on": [], "sp": "sp:1" },
+    { "id": "T-2", "title": "Gem 一覧カードへ avatar を追加し、includedFromSearch の文言を加算構文へ差し替える（テスト先行）", "actor": "claude", "depends_on": [], "sp": "sp:2" },
+    { "id": "T-3", "title": "prd.md AR-9 新設・D-36 追記・SP-19 操作レビュー 1 行・E2E アサーション追加", "actor": "claude", "depends_on": [], "sp": "sp:2" },
+    { "id": "T-4", "title": "候補プールのシャードへ表示用の列（language / topics / lastPushedAt）を足すかの調査 Issue を起票する（8MiB 予算・D-29 の R-8 一次確認を含む）", "actor": "claude", "depends_on": ["T-2"], "sp": "sp:5" }
+  ],
+  "critical": [
+    "docs_trace の round 2 投稿が失敗し（返り値には内容があったが post 未実行）、ドキュメント更新範囲の対立は lead 裁定で決着させた。議論記録としては docs_trace の round 2 が欠落している。"
+  ],
+  "open_questions": [
+    "F-2 の『通常の一覧で表示している項目も含める』を、avatar 追加 + 出せない項目の理由明示（AR-9）で今回のスコープを閉じてよいか（推奨）。もう一方は、シャードの列拡張（language / topics / lastPushedAt）を別 Issue ではなく今回まとめて着手する案だが、シャード合計が 8MiB 予算を超え、D-29 のライセンス一次確認（R-8）が未了のため即着手はできない。"
+  ]
+}
