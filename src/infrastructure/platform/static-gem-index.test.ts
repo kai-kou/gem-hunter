@@ -569,7 +569,6 @@ describe('StaticGemIndex#search', () => {
       effectivePage: 1,
       usedTokens: [],
       relaxed: false,
-      includedCount: 0,
       meta: FALLBACK_META,
     })
   })
@@ -957,7 +956,6 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
     // gemIndex 昇順（先頭固定ではない）で並ぶ。
     expect(names(result.items)).toEqual(['acme/orm-core', 'delta/solo'])
     expect(result.totalCount).toBe(2)
-    expect(result.includedCount).toBe(1)
   })
 
   it('プールに載っていない名前は黙って無視される', async () => {
@@ -972,7 +970,6 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
 
     expect(names(result.items)).toEqual(['delta/solo'])
     expect(result.totalCount).toBe(1)
-    expect(result.includedCount).toBe(0)
   })
 
   it('名前照合（AND）に既に一致しているものは重複させない', async () => {
@@ -987,7 +984,6 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
 
     expect(names(result.items)).toEqual(['acme/orm-core', 'beta/orm-client'])
     expect(result.totalCount).toBe(2)
-    expect(result.includedCount).toBe(0)
   })
 
   it('totalCount はマージ後の件数になる（ページングの母数もマージ後で決まる）', async () => {
@@ -1017,7 +1013,6 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
     })
 
     expect(names(result.items)).toEqual(['acme/orm-core', 'delta/solo'])
-    expect(result.includedCount).toBe(1)
   })
 
   it('同伴があっても relaxed / usedTokens の判定は名前照合（AND）だけで決まる', async () => {
@@ -1035,7 +1030,6 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
     expect(result.usedTokens).toEqual(['image'])
     expect(names(result.items)).toEqual(['Gamma/Image-Tools', 'delta/solo'])
     expect(result.totalCount).toBe(2)
-    expect(result.includedCount).toBe(1)
   })
 
   it('一覧用の列が欠けた（listable=false）レコードは同伴指定されても無視する', async () => {
@@ -1063,7 +1057,6 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
 
     expect(names(result.items)).toEqual(['acme/full'])
     expect(result.totalCount).toBe(1)
-    expect(result.includedCount).toBe(0)
   })
 
   /**
@@ -1099,12 +1092,12 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
 
     // ポート側の上限（20）までしか走査しないため、`includeFullNames` に含まれていても
     // 21 件目以降（`acme/extra20`〜）は一覧に現れない。
-    expect(result.includedCount).toBe(20)
+    expect(result.totalCount).toBe(20)
     expect(names(result.items)).toHaveLength(20)
     expect(names(result.items)).not.toContain('acme/extra29')
   })
 
-  it('includeFullNames 未指定・空配列は従来どおり（includedCount は 0）', async () => {
+  it('includeFullNames 未指定・空配列は従来どおり（名前照合の結果だけを返す）', async () => {
     const port = new StaticGemIndex(stubReader(searchFiles))
 
     const withoutField = await port.search({ tokens: ['solo'], page: 1, perPage: perPageOf(10) })
@@ -1115,8 +1108,6 @@ describe("StaticGemIndex#search: includeFullNames 同伴（`SP-19` 追補・案3
       includeFullNames: [],
     })
 
-    expect(withoutField.includedCount).toBe(0)
-    expect(withEmpty.includedCount).toBe(0)
     expect(names(withoutField.items)).toEqual(['delta/solo'])
     expect(names(withEmpty.items)).toEqual(['delta/solo'])
   })

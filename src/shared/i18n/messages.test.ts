@@ -86,22 +86,6 @@ describe('messages カタログ', () => {
    * 起きています」）を流用すると **存在しない原因** を利用者に伝えることになるため、
    * 専用の文言を持つ（PR #440 Layer 1 指摘 F-05）。型では守れないのでカタログ本文で固定する。
    */
-  /**
-   * 🔴 飼い主フィードバック「検索結果数と説明にある件数が一致していない」への対応（`{total}` /
-   * `{matchedCount}` を追加）。数値自体は正しかった（`includedCount` の契約は変えていない）ので、
-   * ここで固定するのは「3 プレースホルダが揃っているか」だけ（語尾・言い回しは対象外）。
-   */
-  describe('gems.includedFromSearch（総件数・名前一致件数・同伴件数の 3 プレースホルダを持つ）', () => {
-    it.each([
-      ['ja', ja],
-      ['en', en],
-    ])('%s は {total} {matchedCount} {count} を持つ', (_name, messages) => {
-      expect(messages.gems.includedFromSearch).toContain('{total}')
-      expect(messages.gems.includedFromSearch).toContain('{matchedCount}')
-      expect(messages.gems.includedFromSearch).toContain('{count}')
-    })
-  })
-
   describe('gems.loadFailed（取得失敗の原因を GitHub にすり替えない）', () => {
     it('ja は障害元（Gem 候補プール）を名指しする', () => {
       expect(ja.gems.loadFailed).toContain('Gem 候補プール')

@@ -337,8 +337,6 @@ export default async function GemListPage({
      * 渡すだけ（`GemList` が空状態の文言を切り替える）。
      */
     unmatchableQuery: result.unmatchableQuery,
-    // 同伴（`badged`）で実際に追加された件数。`GemList` は 0 より大きいときだけ注記を出す。
-    includedCount: result.includedCount,
     meta: result.meta,
   }
 
@@ -364,7 +362,6 @@ export default async function GemListPage({
           gemIndexLabel: messages.gems.gemIndexLabel,
           registryLabel: messages.gems.registryLabel,
           attribution: messages.gems.attribution,
-          includedFromSearch: messages.gems.includedFromSearch,
         }}
       />
 

@@ -294,7 +294,7 @@ export class StaticGemIndex implements GemIndexPort {
 
     // 🔵 `SP-19` 追補（`案3'`・Issue #453）: 同伴指定のマージ。`relaxed` / `usedTokens` は
     //    上で確定済み（名前照合＝AND だけで判定）なので、ここから下では一切触らない。
-    const { merged, includedCount } = mergeIncludedRecords(matched, records, input.includeFullNames)
+    const merged = mergeIncludedRecords(matched, records, input.includeFullNames)
 
     const perPage = positiveIntOr(input.perPage, DEFAULT_PER_PAGE)
     // 🔵 範囲外のページは **最終ページへクランプ**（`F-02`）。1 ページ目へ倒すと、`?page=999` を
@@ -309,7 +309,6 @@ export class StaticGemIndex implements GemIndexPort {
       effectivePage,
       usedTokens,
       relaxed,
-      includedCount,
       meta: pool.meta,
     }
   }
@@ -408,7 +407,6 @@ function emptyResult(meta: DigestMeta): GemPoolSearchResult {
     effectivePage: DEFAULT_PAGE,
     usedTokens: [],
     relaxed: false,
-    includedCount: 0,
     meta,
   }
 }
@@ -450,9 +448,9 @@ function mergeIncludedRecords(
   matched: readonly SearchRecord[],
   records: readonly SearchRecord[],
   includeFullNames: readonly string[] | undefined,
-): { readonly merged: readonly SearchRecord[]; readonly includedCount: number } {
+): readonly SearchRecord[] {
   if (includeFullNames === undefined || includeFullNames.length === 0) {
-    return { merged: matched, includedCount: 0 }
+    return matched
   }
 
   const matchedLower = new Set(matched.map((record) => record.entry.lowerName))
@@ -483,11 +481,10 @@ function mergeIncludedRecords(
   }
 
   if (additions.length === 0) {
-    return { merged: matched, includedCount: 0 }
+    return matched
   }
 
-  const merged = [...matched, ...additions].sort(compareRecords)
-  return { merged, includedCount: additions.length }
+  return [...matched, ...additions].sort(compareRecords)
 }
 
 /**

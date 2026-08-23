@@ -597,22 +597,12 @@ test('SP-19: 検索結果でバッジが付いた候補が、名前が一致し�
     expect(await readRepositoryFullNames(page)).toContain(badgedFullName)
   })
 
-  await test.step('4. 内訳文言（全 N 件のうち M 件が一致）に総件数と一致件数が含まれる', async () => {
-    // 🔴 F-3（Issue #453）: `gems.includedFromSearch` は「全 {total} 件のうち、検索語に一致
-    // したのは {matchedCount} 件です。残り {count} 件は…」の加算構文へ改訂される（実装は並行
-    // 作業中）。文言の完全一致ではなく、`totalCount = matchedCount + includedCount` の関係が
-    // 画面上の 1 文に現れることだけを頑健に検証する（`includedCount` 自体はこの一件のみ = 1）。
-    const totalCount = await readTotalCount(page)
-    const matchedCount = totalCount - 1
-
-    const notice = page.getByText(/全\s*[\d,]+\s*件のうち/).first()
-    await expect(notice).toBeVisible()
-    const text = await notice.innerText()
-    // 画面は `Intl.NumberFormat` の桁区切り（例: `1,631`）で描画するため、比較前にカンマを除去する
-    // （4 桁以上の件数で `toContain(String(totalCount))` が恒常的に落ちるのを防ぐ）。
-    const normalized = text.replace(/,/g, '')
-    expect(normalized, '総件数が内訳文言に含まれていない').toContain(String(totalCount))
-    expect(normalized, '一致件数が内訳文言に含まれていない').toContain(String(matchedCount))
+  await test.step('4. 件数の内訳を説明する文は出さない（飼い主フィードバック 2026-08-23）', async () => {
+    // 🔴 「全 N 件のうち、検索語に一致したのは M 件です。残り…」の内訳説明は、読んでも意味が
+    // 伝わらないため撤去した（Issue #453 で追加した `gems.includedFromSearch` ごと）。
+    // 同伴そのもの（手順 3）は維持したまま、説明文だけが復活しないことを固定する。
+    await expect(page.getByText(/件のうち/)).toHaveCount(0)
+    await expect(page.getByText(/Gem の印が付いていた/)).toHaveCount(0)
   })
 })
 
@@ -624,8 +614,8 @@ test('SP-19: 検索結果でバッジが付いた候補が、名前が一致し�
  * 🔴 **空状態（`gems.empty`）を期待しない**: `gem-badge-<hex>` は `tokenizeQuery` で
  * 複数トークンに割れるため、全語 AND が 0 件でも `D-37` の緩和（最も選択的な 1 語で絞り込む）が
  * 発火しうる。緩和で何かしらの候補が出ること自体は正しい挙動なので否定しない。本テストが
- * 固定したいのは **同伴パラメータが無ければバッジ付き候補（`badgedFullName`）は一覧に含まれず、
- * `gems.includedFromSearch` 注記も出ない** ことだけ。
+ * 固定したいのは **同伴パラメータが無ければバッジ付き候補（`badgedFullName`）は一覧に
+ * 含まれない** ことだけ。
  */
 test('SP-19: 検索結果ページを経由せず /gems を直接開くと、名前不一致のバッジ付き候補は同伴しない（ja）', async ({
   page,
@@ -659,10 +649,7 @@ test('SP-19: 検索結果ページを経由せず /gems を直接開くと、名
     })
   })
 
-  await test.step('3. バッジ付き候補（名前不一致）は同伴されず、一覧にも注記にも現れない', async () => {
+  await test.step('3. バッジ付き候補（名前不一致）は同伴されず、一覧に現れない', async () => {
     expect(await readRepositoryFullNames(page)).not.toContain(badgedFullName)
-    await expect(
-      page.getByText(ja.gems.includedFromSearch.replace('{count}', '1'), { exact: false }),
-    ).toHaveCount(0)
   })
 })
