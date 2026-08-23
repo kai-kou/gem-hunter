@@ -126,5 +126,8 @@ describe('SiteHeader', () => {
     const skipLink = screen.getByRole('link', { name: '本文へスキップ' })
     expect(skipLink).toHaveAttribute('href', '#main-content')
     expect(skipLink).toHaveClass('sr-only')
+
+    const header = screen.getByRole('banner')
+    expect(skipLink.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

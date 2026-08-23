@@ -44,7 +44,7 @@
 | **0-c** | **#457** | 同上（失敗の内訳: SP-18 の Gem バッジ・SP-19 の見出し） | 同上 |
 | **1** | **#365** | 対応済み（PR #548）。`toErrorPresentation()`（`src/ui/i18n/error-message.ts`）に `isAuthConfigured` パラメータを追加し、`isAuthConfigured()`（`src/composition/auth.ts`）を根本で見るよう修正した | レート上限を踏むと **本番に存在しない導線を案内するエラー画面** が出る問題を解消（未認証枠は評価者が踏みやすい） |
 | **2** | **#338** | `src/infrastructure/github/dto.ts` は `updated_at: z.string()` / `pushed_at: z.string().nullable()` で **日付として妥当かを検証していない**。`app/**/error.tsx`・`global-error.tsx` はいずれも不在 | 上流の不正日付が `Intl.DateTimeFormat` に渡ると `RangeError` になり、**一覧・詳細が HTTP 500**。与件 §4.1「握り潰さず継続利用可能に保つ」に直撃する |
-| **3** | **#354** | `skip-link` は `site/index.html`（LP）のみ。アプリ側の `app/` `src/` に 0 件 | 与件 §4.3 は「キーボードのみで操作できる」を求めている。スキップリンクは与件の明文要求ではなく **WCAG 2.4.1（レベル A）に基づく本プロジェクト独自の基準** だが、キーボード操作性の実効を左右する |
+| **3** | **#354** | 対応済み（PR #552）。`site-header.tsx` の `<header>` 直前に `#main-content` へのスキップリンクを追加し、各ページの `<main>` に `id="main-content"` / `tabIndex={-1}` を付与した | 与件 §4.3 は「キーボードのみで操作できる」を求めている。スキップリンクは与件の明文要求ではなく **WCAG 2.4.1（レベル A）に基づく本プロジェクト独自の基準** だが、キーボード操作性の実効を左右する |
 | **4** | **#352** | `app/[locale]/layout.tsx:25` の `description` が日本語リテラル固定 | `/en` でも日本語 description が出る。多言語対応を謳っている分だけ目立つ |
 | **5** | **#402** | `tools/run_checks.sh` に prettier / `format:check` の記述が 1 行も無い。`npm run format:check` は 110 ファイルで red | 与件 §4.4「フォーマッタを機械的に検証できる状態」の唯一の穴。充足チェックリストの ⚠️ 2 番がそのまま残っている |
 | **6** | **#366** | `NOTICE` に `Ecosyste.ms` / `Geist` の文字列が 0 件（`Geist` は `layout.tsx` で使用中） | 第三者データ・フォントの帰属表示。公開リポジトリとして提出する以上、権利表示の欠落は避ける |
