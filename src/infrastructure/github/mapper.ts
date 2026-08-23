@@ -53,7 +53,7 @@ export function toSearchResult(raw: unknown): SearchResult {
  *    `new Date(invalid)` をそのまま `Intl.DateTimeFormat` に渡すと `RangeError` で 500 になるため、
  *    `pushed_at` が不正なら `updated_at` へ、それも不正なら epoch（1970-01-01）へ倒す
  *    （`github-repository-query.ts` の `resetAt()` と同じ「壊れた値は安全な既定値に丸める」防御）。
- *    1 件のリポジトリの不正データで一覧・詳細全体を落とさない（与件 §4.1「握り潰さず継続利用可能に保つ」）。
+ *    1 件のリポジトリの不正データで一覧・詳細全体を落とさない（docs/02_requirements/minimum-requirements.md §4.1「握り潰さず継続利用可能に保つ」）。
  */
 function lastPushedAtOf(pushedAt: string | null, updatedAt: string): Date {
   const primary = pushedAt === null ? null : toValidDate(pushedAt)
