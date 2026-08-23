@@ -127,6 +127,27 @@ elif [ ! -d "$REPO_ROOT/node_modules/@playwright/test" ]; then
   RESULTS+=("E2E (playwright test)|FAIL|0")
   OVERALL_EXIT=1
 else
+  # 3.55. OpenNext アセット鮮度チェック（Issue #454 / #455 / #457 の再発防止）。
+  #       E2E は `next build && next start`（Node.js ランタイム）でアプリを起動するが、
+  #       `getCloudflareContext({ async: true })` は NEXT_RUNTIME=nodejs でも wrangler の
+  #       `getPlatformProxy()` を実際に呼び出し、`wrangler.jsonc` の `assets.directory`
+  #       （`.open-next/assets`）を指す `env.ASSETS` を用意してしまう。`opennextjs-cloudflare build`
+  #       を未実行だとこのディレクトリが無く、Gem Index の読み取りが 404 のまま静かに空になり、
+  #       E2E が「実装は正しいのに落ちる」形で失敗する。E2E 本体の直前でここに可視の 1 行として
+  #       出す（黙って緑にしない・自動ビルドを挟んだ事実がサマリー表に残る）。
+  #       playwright.config.ts の webServer 側にも同じスクリプトを配線済み（run_checks.sh を
+  #       経由しない直接の `npx playwright test` 実行でも同じ安全網が効く・ロジックは二重実装しない）。
+  #       ここで先に鮮度を揃えておけば、webServer 側の呼び出しは再チェックするだけで即終わる。
+  OPEN_NEXT_ASSETS_TIMEOUT_SEC="${RUN_CHECKS_OPEN_NEXT_ASSETS_TIMEOUT:-180}"
+  if [ ! -d "$REPO_ROOT/node_modules/@opennextjs/cloudflare" ]; then
+    echo "[run_checks] FAIL: OpenNext アセット鮮度チェック（@opennextjs/cloudflare が未インストールのため実行できません。'npm ci' を実行してください）"
+    RESULTS+=("OpenNext アセット鮮度チェック (ensure_open_next_assets.mjs)|FAIL|0")
+    OVERALL_EXIT=1
+  else
+    run_check_timeout "OpenNext アセット鮮度チェック (ensure_open_next_assets.mjs)" \
+      "$OPEN_NEXT_ASSETS_TIMEOUT_SEC" node tools/ensure_open_next_assets.mjs
+  fi
+
   run_check_timeout "E2E (playwright test)" "$E2E_TIMEOUT_SEC" npx playwright test
 fi
 
@@ -230,6 +251,16 @@ else
 fi
 
 # 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
+
+# OpenNext アセット鮮度チェック self-test（Issue #454 / #455 / #457）。
+# 鮮度判定の純関数（checkStaleness / newestMtimeMs）だけを一時ディレクトリで検証し、
+# 実ビルド・ネットワークには依存しない（本判定は上の 3.55 で E2E 直前に配線済み）。
+if [ -f "$REPO_ROOT/tools/ensure_open_next_assets.mjs" ]; then
+  run_check "OpenNext アセット鮮度チェック self-test (ensure_open_next_assets.mjs --self-test)" \
+    node tools/ensure_open_next_assets.mjs --self-test
+else
+  skip_check "OpenNext アセット鮮度チェック self-test (ensure_open_next_assets.mjs --self-test)" "スクリプトが見つかりません"
+fi
 
 # wrangler.jsonc 共有パーサ self-test（Layer 1 セルフレビュー WARNING-6・PR #460）。
 # trigger_workers_build.py / retire_preview_aliases.py が共有する Worker 名パースの実体。
