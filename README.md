@@ -7,9 +7,21 @@ star の多さでは埋もれてしまう「実際に使われている OSS」�
 - **使ってみる**: <https://gem-hunter.kinamocchi-tech.workers.dev/ja>（[English](https://gem-hunter.kinamocchi-tech.workers.dev/en)）
 - **紹介ページ**（スクリーンショット・できること・FAQ）: <https://kai-kou.github.io/gem-hunter/>（ソースは [`site/`](./site)）
 
-> **この README で分かること**: [動かし方](#開発ローカル) / [環境変数](#環境変数) / [設計上の判断](#設計上の判断) / [AI の利用範囲](#ai-を利用した範囲と方法nfr-31) / [ADR 一覧](#技術的意思決定の記録adr)
+> **この README で分かること**: [画面](#画面) / [動かし方](#開発ローカル) / [環境変数](#環境変数) / [設計上の判断](#設計上の判断) / [AI の利用範囲](#ai-を利用した範囲と方法nfr-31) / [ADR 一覧](#技術的意思決定の記録adr)
 
 > 旧称: IndieGems（[`Q-12`](./docs/02_requirements/open-questions.md) により `gem-hunter` に統一）
+
+## 画面
+
+スマートフォン幅（本番環境・日本語ロケール）の実画面。PC 幅を含む紹介は[紹介ページ](https://kai-kou.github.io/gem-hunter/)を参照。
+
+| 今日の Gem（キーワード未入力） | 検索結果 |
+|---|---|
+| <img src="./docs/images/readme/mobile-digest.webp" width="320" alt="スマートフォンで開いたトップページ。ヘッダーに gem-hunter のロゴと日本語 / English の言語切替があり、その下に虫眼鏡で石の中から宝石を見つけるイラスト、キーワード検索欄、「今日の Gem」の見出しと、利用パッケージ数と star 数を添えたリポジトリが順位付きで並んでいる。"> | <img src="./docs/images/readme/mobile-search.webp" width="320" alt="スマートフォンで開いた検索結果画面。検索欄に入力したキーワードの下に、関連度 / star 数 / 更新日時の並び替えと 20 / 50 / 100 件の表示件数の切り替えが並び、総件数と「Gem の印は star 数のわりに多くのパッケージから使われている候補に付く」旨の説明、Gem 候補の一覧へ移動するリンク、そしてリポジトリ名・説明・star 数・最終更新日・トピックを持つカードが縦に並んでいる。"> |
+
+| 検索語を引き継いだ Gem 一覧 | リポジトリ詳細 |
+|---|---|
+| <img src="./docs/images/readme/mobile-gems.webp" width="320" alt="スマートフォンで開いた Gem 一覧画面。「markdown」の Gem という見出しと件数の下に、リポジトリ名・パッケージ名・レジストリ名・star 数・利用パッケージ数・Gem Index を持つカードが Gem Index の降順で並んでいる。"> | <img src="./docs/images/readme/mobile-detail.webp" width="320" alt="スマートフォンで開いたリポジトリ詳細画面。検索結果へ戻るリンクの下にオーナーアイコン・リポジトリ名・主要言語・説明があり、star 数 / watcher 数 / fork 数 / issue 数 / 最終更新日のタイルが並び、その下に README の本文が表示されている。"> |
 
 ## 開発（ローカル）
 
