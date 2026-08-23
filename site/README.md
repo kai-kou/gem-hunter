@@ -126,3 +126,7 @@ node tools/capture_lp_screenshots.mjs
 - スクリプトは撮影後に **`index.html` の `width` / `height` と出力の実寸を突き合わせ、
   食い違っていれば非ゼロ終了する**（属性の更新漏れ = CLS を機械で止める）。
   同じ照合は `tools/check_site.py` にも入っているので、撮り直さない PR でも守られる
+- 本番を対象に撮るときは `LP_SHOT_BASE=https://gem-hunter.kinamocchi-tech.workers.dev` を明示する。
+  🔴 **本番直叩きは共有 API レート枠を消費する副作用があるため、乱用しない**
+- 🔴 `LP_SHOT_FETCH_VIA_CURL=1`（既定 off）は **直接 HTTPS が通らないサンドボックスでの回避策**
+  （恒久のベストプラクティスではない）。on にすると全リクエストを `curl` 経由で取得して差し替える
