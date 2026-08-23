@@ -7,6 +7,8 @@ star の多さでは埋もれてしまう「実際に使われている OSS」�
 - **使ってみる**: <https://gem-hunter.kinamocchi-tech.workers.dev/ja>（[English](https://gem-hunter.kinamocchi-tech.workers.dev/en)）
 - **紹介ページ**（スクリーンショット・できること・FAQ）: <https://kai-kou.github.io/gem-hunter/>（ソースは [`site/`](./site)）
 
+> ✅ **[与件](./docs/02_requirements/minimum-requirements.md)（受け入れ基準 §7・全 11 項目）を全件充足**（[充足チェックリスト](./docs/02_requirements/minimum-requirements-checklist.md)・❌ 0 件）。手元確認: `npm ci && npm test && npm run test:e2e`（上記「使ってみる」と同じ本番で確認可）。🔵 Gem Index・OAuth・多言語対応は与件外の上乗せ（冒頭「本要件を満たしたうえで段階的に追加する」に基づく）。
+
 > **この README で分かること**: [画面](#画面) / [動かし方](#開発ローカル) / [環境変数](#環境変数) / [技術スタック](#技術スタック) / [設計上の判断](#設計上の判断) / [AI の利用範囲](#ai-を利用した範囲と方法nfr-31) / [ADR 一覧](#技術的意思決定の記録adr)
 
 > 旧称: IndieGems（[`Q-12`](./docs/02_requirements/open-questions.md) により `gem-hunter` に統一）
@@ -51,9 +53,7 @@ npm run cf-typegen       # wrangler types（CloudflareEnv の型を生成する�
 
 `npm test` / `npm run test:e2e` は環境変数を一切設定しなくても通る（外部 API はモック化されている）。
 
-`npm run check`（[`tools/run_checks.sh`](./tools/run_checks.sh)）は Lint・型チェック・Vitest・Playwright に加えて、**Lighthouse の Accessibility スコア 100 を満たさなければ落ちるゲート**（[`D-25`](./docs/02_requirements/open-questions.md)）と、リポジトリ固有の機械検査 30 本超（層の依存規則・配色コントラスト・UI 寸法・ADR 索引・レート制限の配線・Gem シャードの整合・CJK Markdown の記法など）をまとめて実行し、結果を Markdown の表で出力する。
-
-本リポジトリでは品質チェック・デプロイに GitHub Actions を使わない（[`D-23`](./docs/02_requirements/open-questions.md)）ため、上記を走らせる CI は動いていない。代わりに `npm run check` を実行し、出力される結果表を PR 本文に貼ることが PR 前の唯一の機械的証跡になっている。GitHub Actions は Gem 候補プールの **日次実行 + 週次反映**（[`.github/workflows/gem-pool-refresh.yml`](./.github/workflows/gem-pool-refresh.yml)）にのみ使う。毎日生成・機械 QA まで走らせてパイプラインの健全性を検証し、`main` への反映（PR 作成）は生成物が 7 日以上前のときだけ行う（マージ頻度を抑えて git 履歴コストを避けるため）。
+`npm run check`（[`tools/run_checks.sh`](./tools/run_checks.sh)）は Lint・型チェック・Vitest・Playwright・**Lighthouse Accessibility=100 ゲート**（[`D-25`](./docs/02_requirements/open-questions.md)）・リポジトリ固有の機械検査 30 本超（層の依存規則・配色コントラスト・UI 寸法・ADR 索引・CJK Markdown 記法など）をまとめて実行し、結果を Markdown の表で出力する。品質チェック・デプロイには GitHub Actions を使わず（[`D-23`](./docs/02_requirements/open-questions.md)）、この結果表を PR 本文に貼ることが PR 前の唯一の機械的証跡になっている（Actions は [`gem-pool-refresh.yml`](./.github/workflows/gem-pool-refresh.yml) による Gem 候補プールの日次生成・週次反映にのみ使用）。
 
 ### デプロイ経路
 
