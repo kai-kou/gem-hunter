@@ -1,7 +1,10 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
 import { searchGemsUseCase } from '@/src/composition/container'
+import { enforceGemListRateLimit } from '@/src/composition/rate-limit'
+import { RateLimitExceededError } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, tryLocale, type Locale } from '@/src/domain/model/locale'
 import { DEFAULT_PAGE } from '@/src/domain/model/page-number'
 import { DEFAULT_PER_PAGE } from '@/src/domain/model/per-page'
@@ -12,6 +15,7 @@ import { BackLink } from '@/src/ui/back-link'
 import { ErrorNotice } from '@/src/ui/error-notice'
 import { FocusOnNavigate } from '@/src/ui/focus-on-navigate'
 import { GemList, GEM_LIST_HEADING_ID, type GemListViewModel } from '@/src/ui/gem-list'
+import { toErrorPresentation } from '@/src/ui/i18n/error-message'
 import { Pagination } from '@/src/ui/pagination'
 import { SiteHeader } from '@/src/ui/site-header'
 import { buildSearchUrl, type SearchUrlState } from '@/src/ui/url/build-search-url'
@@ -117,6 +121,64 @@ export default async function GemListPage({
           */}
           <h2 className="text-lg font-semibold">{messages.gems.title}</h2>
           <p className="text-muted-foreground mt-2 text-sm">{messages.gems.queryRequired}</p>
+          {backToSearch}
+        </main>
+      </>
+    )
+  }
+
+  /**
+   * Issue #442: Gem 一覧の自リクエスト間引き（`NFR-7`）。
+   *
+   * 🔴 **位置は「検索語なしの早期 return より後・候補プールの読み込みより前」**。検索経路が
+   * 「値オブジェクトへの変換が通った入力だけを対象にする」（不正入力で枠を消費しない・
+   * `app/api/search/route.test.ts`）のと同じ規律で、`gems.queryRequired` に倒れる入力では
+   * 枠を消費しない。逆に消費の判定は重い処理（`searchGemsUseCase()`）より前に済ませ、
+   * 間引きの目的（負荷の抑制）を果たす。
+   *
+   * 🔵 枠は検索経路と独立（`enforceGemListRateLimit` が別キーを使う）。同じ IP からの検索と
+   * 一覧閲覧が互いの枠を食い合うと、片方の操作でもう片方が使えなくなる。
+   *
+   * 超過時は `RateLimitExceededError` を投げるので、下の取得失敗分岐と同じ `ErrorNotice` へ倒す。
+   * それ以外の例外は握り潰さずそのまま投げ直す（`headers()` 由来の障害等を隠さない）。
+   */
+  try {
+    await enforceGemListRateLimit(await headers())
+  } catch (error) {
+    if (!(error instanceof RateLimitExceededError)) {
+      throw error
+    }
+    /**
+     * 🔴 再試行先は `effectivePage` ではなく `requestedPage` で組み立てる（取得自体を行って
+     * いないため実際のページが分からない）。取得失敗分岐が `currentPage` のフォールバックに
+     * `requestedPage` を使うのと同じ扱い。
+     */
+    const requestedPath = buildSearchUrl(basePath, {
+      keyword: rawQuery,
+      page: requestedPage,
+      sort: DEFAULT_SORT_ORDER,
+      perPage: DEFAULT_PER_PAGE,
+    })
+    return (
+      <>
+        {renderHeader(requestedPath)}
+        <main className="mx-auto w-full max-w-3xl px-4 py-10">
+          {/* エラー時も見出しを失わない（取得失敗分岐と同じ理由・`NFR-12`）。 */}
+          <h2 className="mb-4 text-lg font-semibold">{messages.gems.title}</h2>
+          <ErrorNotice
+            kind={error.kind}
+            // 文言・秒数のローカライズは `toErrorPresentation` に委ねる（`NFR-9`: 例外の
+            // 内部文言は画面へ運ばない）。ログイン導線は二次レート制限では出ない
+            // （`loginHint` が付くのは一次レート制限のみ）ため、この面では渡さない。
+            presentation={toErrorPresentation(error.kind, messages, {
+              locale,
+              retryAfterSeconds: error.retryAfterSeconds,
+              isLoggedIn: accessToken !== null,
+            })}
+            // 再試行手段（`US-24`）: いま弾かれた一覧 URL をそのまま開き直す。
+            retryHref={requestedPath}
+            retryLabel={messages.common.retry}
+          />
           {backToSearch}
         </main>
       </>

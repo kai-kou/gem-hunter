@@ -195,6 +195,18 @@ else
   skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
 fi
 
+# 4.75. レート制限の配線検査（Issue #442 の再発防止）。
+#       Cloudflare Rate Limiting は binding 宣言だけでは何も起きず、しかもフェイルオープン設計のため
+#       「配線し忘れ」と「正常」が実行時に区別できない。cloudflare-infrastructure.md の適用経路表
+#       （<!-- rate-limit-wiring --> マーカー）と実コードを双方向に突き合わせ、app/ 配下の
+#       エントリポイント網羅性まで見る。ローカルのファイルしか読まないためネットワーク非依存。
+if [ -f "$REPO_ROOT/tools/check_rate_limit_wiring.py" ]; then
+  run_check "レート制限配線検査 (check_rate_limit_wiring.py)" python3 tools/check_rate_limit_wiring.py
+  run_check "レート制限配線検査 self-test (check_rate_limit_wiring.py --self-test)" python3 tools/check_rate_limit_wiring.py --self-test
+else
+  skip_check "レート制限配線検査 (check_rate_limit_wiring.py)" "スクリプトが見つかりません"
+fi
+
 # 4.8. 副作用のある API ルートのプリフェッチ検査（#145 の再発防止）
 if [ -f "$REPO_ROOT/tools/check_prefetchable_side_effects.py" ]; then
   run_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" python3 tools/check_prefetchable_side_effects.py

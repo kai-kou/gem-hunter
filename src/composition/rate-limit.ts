@@ -4,20 +4,23 @@ import { clientIpOf, hashRateLimitKey } from '../infrastructure/platform/rate-li
 import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from '../infrastructure/platform/rate-limit'
 
 /**
- * composition root（Issue #122）。検索経路（画面 / GET /api/search）の自リクエスト間引きを
- * `RateLimitPort`（`WorkersRateLimit`）へ実際に配線する唯一の場所。
+ * composition root（Issue #122 / #442）。検索経路（画面 / GET /api/search）と Gem 一覧
+ * （`/{locale}/gems`）の自リクエスト間引きを `RateLimitPort`（`WorkersRateLimit`）へ
+ * 実際に配線する唯一の場所。
  * 検索・詳細取得の組み立て（`container.ts`）や認証（`auth.ts`）と同じく、composition root を
  * 関心ごとにファイルへ分けている（`src/composition/` 配下全体が composition root・architecture §2.1）。
  */
 
 /**
- * 検索経路の自リクエスト間引き（Issue #122 / NFR-7）。超過時は
- * `RateLimitExceededError('rateLimitSecondary')` を投げる。
+ * 経路をまたいで共通の間引き処理。呼び出し側は Cloudflare Rate Limiting のキー接頭辞だけを渡す。
  *
  * 判定できない事情（接続元不明・salt 未設定・binding 未提供）があれば **フェイルオープン**（黙って通す）。
  * これは「握り潰し」ではなく、設定不備や実行環境の違いでサービス全体を止めないための意図的な設計判断。
+ *
+ * @param keyPrefix Cloudflare Rate Limiting のキー接頭辞（`search:` / `gems:`）。
+ *   接頭辞が違えばカウンタも別枠になるため、経路ごとに独立した枠を割り当てる手段になる。
  */
-export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
+async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<void> {
   // 1. 接続元 IP を識別できない（Workers 実行環境の外・ヘッダ欠落等）場合は、
   //    そもそも誰を制限すべきか判定できないため間引かない。
   const ip = clientIpOf(headers)
@@ -43,7 +46,7 @@ export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
     return
   }
 
-  const key = `search:${await hashRateLimitKey(ip, salt)}`
+  const key = `${keyPrefix}${await hashRateLimitKey(ip, salt)}`
   const limiter = new WorkersRateLimit(binding, { periodSeconds: RATE_LIMIT_PERIOD_SECONDS })
   const decision = await limiter.consume(key)
 
@@ -56,4 +59,32 @@ export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
       retryAfterSeconds: decision.retryAfterSeconds,
     })
   }
+}
+
+/**
+ * 検索経路の自リクエスト間引き（Issue #122 / NFR-7）。超過時は
+ * `RateLimitExceededError('rateLimitSecondary')` を投げる。
+ *
+ * 守っているコストは **上流 GitHub API の枠**。フェイルオープン条件は `enforceRateLimit` を参照。
+ */
+export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
+  await enforceRateLimit(headers, 'search:')
+}
+
+/**
+ * Gem 一覧（`/{locale}/gems`）の自リクエスト間引き（Issue #442）。超過時は検索経路と同じく
+ * `RateLimitExceededError('rateLimitSecondary')` を投げる。
+ *
+ * **なぜ Gem 一覧にも掛けるのか**: `limits.cpu_ms` は 1 リクエストあたりの CPU 時間の天井であって
+ * リクエスト本数を制限しない。`SP-19` で追加された Gem 一覧には本数を絞る仕組みが 1 つも無く、
+ * さらに GitHub API を叩かないため上流の 403/429 に間接的に守られることもない
+ * （＝ 自 Worker の CPU がそのまま費用として露出する）。
+ *
+ * **なぜ検索と枠を分けるのか**: 守りたいコストの種類が違う（検索 = 上流 GitHub API 枠 /
+ * Gem 一覧 = 自 Worker の CPU）。枠を共有すると「検索 → Gem 一覧」という主要導線で
+ * 正常な利用者どうしが枠を食い合うため、キー接頭辞を `gems:` に分けて独立した枠にする
+ * （ユーザー裁定・Issue #442）。
+ */
+export async function enforceGemListRateLimit(headers: Headers): Promise<void> {
+  await enforceRateLimit(headers, 'gems:')
 }
