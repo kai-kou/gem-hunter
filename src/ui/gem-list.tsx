@@ -171,7 +171,9 @@ export function GemList({
         `ui-ux-guidelines.md` §7.2「ライブリージョンは 1 つ」）。
       */}
       {view.relaxedToken !== null ? (
-        <p className="text-muted-foreground mt-2 text-sm">
+        <p className="text-muted-foreground mt-2 text-sm break-words">
+          {/* `token` は利用者の入力語がそのまま入る（最長 256 文字の連続文字列があり得る）。
+              上の `<h2>` と同じく折り返し指定が要る（`ui-ux-guidelines.md` §3）。 */}
           {formatMessage(labels.relaxedNotice, { token: view.relaxedToken })}
         </p>
       ) : null}
@@ -287,10 +289,9 @@ export function GemList({
                         <span className="font-medium">{entry.repositoryFullName}</span>
                       )}
                       <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                        {/* 🔴 この `<span>` は `p.flex.flex-wrap` の flex アイテムなので、継承した
-                            `break-words` では min-content の floor が残る。パッケージ名は第三者由来で
-                            区切りのない長い文字列があり得るため `wrap-anywhere` を直付けする
-                            （`repository-list.tsx` の topics `<li>` と同じ理由）。 */}
+                        {/* この `<span>` は `p.flex.flex-wrap` の flex アイテムなので `wrap-anywhere`
+                            を直付けする（`ui-ux-guidelines.md` §3 の表・`repository-list.tsx` の
+                            topics `<li>` と同じ理由）。パッケージ名は第三者由来で区切りが無いことがある。 */}
                         <span className="wrap-anywhere">{entry.packageName}</span>
                         <span>
                           {labels.registryLabel} {entry.registry}

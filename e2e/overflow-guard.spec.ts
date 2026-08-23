@@ -1,7 +1,5 @@
-import { randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
-import type { Page } from '@playwright/test'
-import { searchFor } from './helpers'
+import { expectNoHorizontalScroll, searchFor, uniqueKeyword } from './helpers'
 
 /**
  * 横スクロール退行ガード（`NFR-15` / WCAG 2.2 SC 1.4.10 Reflow）。
@@ -20,26 +18,12 @@ import { searchFor } from './helpers'
  * 320 を通れば 375 / 430 は論理的に導ける（固定幅ブレークポイントを使わない
  * `ui-ux-guidelines.md` §3 の制約が前提）。
  *
- * 🔴 `body` / `html` に `overflow-x: hidden` / `clip` を足してはならない。`body` が
- * `overflow` を明示した時点で viewport への伝播が止まり、**この述語が恒久的に green** になる
- * （溢れが復活しても検知できなくなる）。
+ * 🔴 `body` / `html` に `overflow-x: hidden` / `clip` を足してはならない（理由は
+ * `expectNoHorizontalScroll`（`e2e/helpers.ts`）のコメント）。
  */
 
-/** 横スクロールが発生していないこと（`clientWidth` は縦スクロールバー分を除いた値）。 */
-async function expectNoHorizontalScroll(page: Page, label: string): Promise<void> {
-  const overflow = await page.evaluate(() => {
-    const el = document.scrollingElement ?? document.documentElement
-    return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
-  })
-  // +1px は sub-pixel 丸め対策
-  expect(overflow.scrollWidth, `${label}: ${JSON.stringify(overflow)}`).toBeLessThanOrEqual(
-    overflow.clientWidth + 1,
-  )
-}
-
-/** マーカーは部分一致なので接尾辞を足してよい（試行ごとのキャッシュ衝突を避ける）。 */
 function uniqueOverflowGuardKeyword(): string {
-  return `overflow-guard-${randomBytes(4).toString('hex')}`
+  return uniqueKeyword('overflow-guard')
 }
 
 test.describe('横スクロール退行ガード（NFR-15 / SC 1.4.10）', () => {

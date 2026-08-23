@@ -1,16 +1,48 @@
 import { randomBytes } from 'node:crypto'
 
+import { expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 /**
- * `gem-badge` データセット（`e2e/stub/server.mjs`）用の一意キーワード（マーカーは部分一致なので
- * 接尾辞を足してよい）。`e2e/sp-18.spec.ts`（バッジ経路の検証）と `e2e/sp-19.spec.ts`
- * （Issue #453 scoped hybrid の検証）の両方が同じデータセットを使うため共有する
- * （`e2e/` の外へは出さない・`searchFor` と同じ置き方）。他ファイル・retry 試行との
- * キャッシュ衝突を避けるために毎回変える。
+ * スタブ（`e2e/stub/server.mjs`）のデータセットマーカーに、他ファイル・retry 試行との
+ * キャッシュ衝突を避ける接尾辞を足した一意キーワード（マーカーの判定は部分一致なので足してよい）。
+ * 衝突回避の手段（バイト数・エンコーディング）をここ 1 箇所に閉じ込める。
+ */
+export function uniqueKeyword(marker: string): string {
+  return `${marker}-${randomBytes(4).toString('hex')}`
+}
+
+/**
+ * `gem-badge` データセット用の一意キーワード。`e2e/sp-18.spec.ts`（バッジ経路の検証）と
+ * `e2e/sp-19.spec.ts`（Issue #453 scoped hybrid の検証）の両方が同じデータセットを使うため
+ * 共有する（`e2e/` の外へは出さない・`searchFor` と同じ置き方）。
  */
 export function uniqueGemBadgeKeyword(): string {
-  return `gem-badge-${randomBytes(4).toString('hex')}`
+  return uniqueKeyword('gem-badge')
+}
+
+/**
+ * 「破綻しない」の述語: 横スクロールが発生しない（`NFR-15` / WCAG 2.2 SC 1.4.10 Reflow）。
+ * `document.scrollingElement` の `clientWidth` は縦スクロールバー分を既に除いた値なので、
+ * スクロールバー由来の偽陽性は原理的に発生しない。
+ *
+ * 🔴 `body` / `html` に `overflow-x: hidden` / `clip` を足すと、`body` 自身がスクロール
+ * コンテナになって viewport への伝播が止まり、**この述語は恒久的に成立してしまう**
+ * （溢れが復活しても検知できなくなる）。塞ぐのは常に折り返し指定の側で行う。
+ *
+ * @param label 失敗時にどの画面での測定かを示す短い語（省略時は測定値だけを出す）
+ */
+export async function expectNoHorizontalScroll(page: Page, label?: string): Promise<void> {
+  const overflow = await page.evaluate(() => {
+    const el = document.scrollingElement ?? document.documentElement
+    return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
+  })
+  const detail = JSON.stringify(overflow)
+  // +1px は sub-pixel 丸め対策
+  expect(
+    overflow.scrollWidth,
+    label === undefined ? detail : `${label}: ${detail}`,
+  ).toBeLessThanOrEqual(overflow.clientWidth + 1)
 }
 
 /**
