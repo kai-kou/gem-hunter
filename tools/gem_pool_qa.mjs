@@ -290,6 +290,18 @@ function listShardFileNames(index) {
 // JST 表示ヘルパー（datetime-rules.md 準拠。人間向け表示のみ・機械処理は UTC のまま扱う）
 // ============================================================
 
+/**
+ * `Intl.DateTimeFormat` が挿入する非標準の空白（narrow no-break space U+202F・
+ * no-break space U+00A0 等。ICU のバージョンによって sv-SE ロケールの日付/時刻区切りに
+ * 使われることがある）を通常の半角スペース 1 個へ正規化する（純関数・self-test 対象）。
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+export function normalizeSpaces(value) {
+  return String(value ?? '').replace(/\s+/gu, ' ')
+}
+
 function nowJstLabel() {
   const fmt = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Tokyo',
@@ -300,7 +312,7 @@ function nowJstLabel() {
     minute: '2-digit',
     hour12: false,
   }).format(new Date())
-  return `${fmt.replace(' ', ' ')} JST`
+  return `${normalizeSpaces(fmt)} JST`
 }
 
 // ============================================================
@@ -398,10 +410,25 @@ function selfTest() {
     if (!cond) failures.push(label)
   }
 
+  // --- normalizeSpaces ---
+  assert(
+    'normalizeSpaces: narrow no-break space (U+202F) を半角スペースへ正規化する',
+    normalizeSpaces('2026-08-23\u202F10:38') === '2026-08-23 10:38',
+  )
+  assert(
+    'normalizeSpaces: no-break space (U+00A0) を半角スペースへ正規化する',
+    normalizeSpaces('2026-08-23\u00A010:38') === '2026-08-23 10:38',
+  )
+  assert(
+    'normalizeSpaces: 連続する空白は 1 個にまとめる（g フラグが効いている）',
+    normalizeSpaces('a\u202F\u202Fb   c') === 'a b c',
+  )
+  assert('normalizeSpaces: 通常の半角スペースはそのまま', normalizeSpaces('2026-08-23 10:38') === '2026-08-23 10:38')
+
   // --- checkDiffScope ---
   assert(
     'checkDiffScope: 許可パスのみなら ok',
-    checkDiffScope([`${SHARD_DIR}/npmjs-org.json`, DIGEST_PATH, `${SHARD_DIR}/index.json`]).ok === true,
+    checkDiffScope([`${SHARD_DIR}/registry-a.json`, DIGEST_PATH, `${SHARD_DIR}/index.json`]).ok === true,
   )
   assert(
     'checkDiffScope: 許可外パスがあれば ok=false',
@@ -416,41 +443,41 @@ function selfTest() {
   // --- checkRegistryCounts ---
   assert(
     'checkRegistryCounts: prevIndex が null なら PASS（初回実行）',
-    checkRegistryCounts(null, { totalCount: 100, shards: [{ registry: 'npmjs.org', count: 100 }] }).ok === true,
+    checkRegistryCounts(null, { totalCount: 100, shards: [{ registry: 'registry-a', count: 100 }] }).ok === true,
   )
   {
     const prev = {
       totalCount: 1000,
       shards: [
-        { registry: 'npmjs.org', count: 600 },
-        { registry: 'rubygems.org', count: 400 },
+        { registry: 'registry-a', count: 600 },
+        { registry: 'registry-b', count: 400 },
       ],
     }
     const currOk = {
       totalCount: 980,
       shards: [
-        { registry: 'npmjs.org', count: 590 },
-        { registry: 'rubygems.org', count: 390 },
+        { registry: 'registry-a', count: 590 },
+        { registry: 'registry-b', count: 390 },
       ],
     }
     assert('checkRegistryCounts: 軽微な増減は PASS', checkRegistryCounts(prev, currOk).ok === true)
 
     const currZero = {
       totalCount: 600,
-      shards: [{ registry: 'npmjs.org', count: 600 }],
+      shards: [{ registry: 'registry-a', count: 600 }],
     }
     const zeroResult = checkRegistryCounts(prev, currZero)
     assert('checkRegistryCounts: レジストリ消失は violation', zeroResult.ok === false)
     assert(
       'checkRegistryCounts: 消失メッセージに registry 名を含む',
-      zeroResult.violations.some((v) => v.includes('rubygems.org')),
+      zeroResult.violations.some((v) => v.includes('registry-b')),
     )
 
     const currRegistryDrop = {
       totalCount: 750,
       shards: [
-        { registry: 'npmjs.org', count: 600 },
-        { registry: 'rubygems.org', count: 150 }, // 400 → 150 = 62.5%減 > 30%
+        { registry: 'registry-a', count: 600 },
+        { registry: 'registry-b', count: 150 }, // 400 → 150 = 62.5%減 > 30%
       ],
     }
     const dropResult = checkRegistryCounts(prev, currRegistryDrop)
@@ -459,8 +486,8 @@ function selfTest() {
     const currTotalSpike = {
       totalCount: 1300, // 1000 → 1300 = 比率 1.3 > 1.15
       shards: [
-        { registry: 'npmjs.org', count: 750 },
-        { registry: 'rubygems.org', count: 550 },
+        { registry: 'registry-a', count: 750 },
+        { registry: 'registry-b', count: 550 },
       ],
     }
     const spikeResult = checkRegistryCounts(prev, currTotalSpike)
@@ -469,8 +496,8 @@ function selfTest() {
     const currRegistryZeroCount = {
       totalCount: 600,
       shards: [
-        { registry: 'npmjs.org', count: 600 },
-        { registry: 'rubygems.org', count: 0 },
+        { registry: 'registry-a', count: 600 },
+        { registry: 'registry-b', count: 0 },
       ],
     }
     assert(
@@ -481,13 +508,13 @@ function selfTest() {
     const prevWithZero = {
       totalCount: 600,
       shards: [
-        { registry: 'npmjs.org', count: 600 },
+        { registry: 'registry-a', count: 600 },
         { registry: 'gone.org', count: 0 },
       ],
     }
     assert(
       'checkRegistryCounts: 前回時点で既に 0 件だったレジストリの消失は対象外',
-      checkRegistryCounts(prevWithZero, { totalCount: 600, shards: [{ registry: 'npmjs.org', count: 600 }] }).ok ===
+      checkRegistryCounts(prevWithZero, { totalCount: 600, shards: [{ registry: 'registry-a', count: 600 }] }).ok ===
         true,
     )
   }
@@ -497,15 +524,15 @@ function selfTest() {
     const prev = {
       totalCount: 1000,
       shards: [
-        { registry: 'npmjs.org', count: 600 },
-        { registry: 'rubygems.org', count: 400 },
+        { registry: 'registry-a', count: 600 },
+        { registry: 'registry-b', count: 400 },
       ],
     }
     const curr = {
       totalCount: 950,
       shards: [
-        { registry: 'npmjs.org', count: 600 },
-        { registry: 'crates.io', count: 350 },
+        { registry: 'registry-a', count: 600 },
+        { registry: 'registry-c', count: 350 },
       ],
     }
     const cmp = buildComparison(prev, curr)
@@ -513,15 +540,15 @@ function selfTest() {
     assert('buildComparison: ratio が計算される', Math.abs(cmp.totalCount.ratio - 0.95) < 1e-9)
     assert(
       'buildComparison: 消失レジストリは currCount=null',
-      cmp.registries.find((r) => r.registry === 'rubygems.org')?.currCount === null,
+      cmp.registries.find((r) => r.registry === 'registry-b')?.currCount === null,
     )
     assert(
       'buildComparison: 新規レジストリは prevCount=null',
-      cmp.registries.find((r) => r.registry === 'crates.io')?.prevCount === null,
+      cmp.registries.find((r) => r.registry === 'registry-c')?.prevCount === null,
     )
     assert(
       'buildComparison: registries はレジストリ名昇順',
-      cmp.registries.map((r) => r.registry).join(',') === 'crates.io,npmjs.org,rubygems.org',
+      cmp.registries.map((r) => r.registry).join(',') === 'registry-a,registry-b,registry-c',
     )
 
     const cmpFirstRun = buildComparison(null, curr)
@@ -530,10 +557,10 @@ function selfTest() {
 
   // --- runCheck 統合 ---
   {
-    const prevIndex = { totalCount: 100, shards: [{ registry: 'npmjs.org', count: 100 }] }
-    const currIndex = { totalCount: 98, shards: [{ registry: 'npmjs.org', count: 98 }] }
+    const prevIndex = { totalCount: 100, shards: [{ registry: 'registry-a', count: 100 }] }
+    const currIndex = { totalCount: 98, shards: [{ registry: 'registry-a', count: 98 }] }
     const ok = runCheck({
-      changedPaths: [`${SHARD_DIR}/npmjs-org.json`, `${SHARD_DIR}/index.json`],
+      changedPaths: [`${SHARD_DIR}/registry-a.json`, `${SHARD_DIR}/index.json`],
       prevIndex,
       currIndex,
     })
