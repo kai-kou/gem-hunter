@@ -1,7 +1,12 @@
-import { randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
-import type { Locator, Page } from '@playwright/test'
-import { measureFocusIndicator, searchFor, tabUntilFocused } from './helpers'
+import type { Locator } from '@playwright/test'
+import {
+  expectNoHorizontalScroll,
+  measureFocusIndicator,
+  searchFor,
+  tabUntilFocused,
+  uniqueKeyword,
+} from './helpers'
 
 /**
  * SP-10: 誰でも操作できる（`docs/02_requirements/user-story-map.md` §5.3 `SP-10`）。
@@ -18,23 +23,7 @@ import { measureFocusIndicator, searchFor, tabUntilFocused } from './helpers'
  */
 
 function uniqueManyHitsKeyword(): string {
-  return `many-hits-${randomBytes(4).toString('hex')}`
-}
-
-/**
- * 「破綻しない」の述語: 横スクロールが発生しない
- * （`document.scrollingElement` の `clientWidth` は縦スクロールバー分を既に除いた値なので、
- * スクロールバー由来の偽陽性は原理的に発生しない）。
- */
-async function expectNoHorizontalScroll(page: Page): Promise<void> {
-  const overflow = await page.evaluate(() => {
-    const el = document.scrollingElement ?? document.documentElement
-    return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
-  })
-  // +1px は sub-pixel 丸め対策
-  expect(overflow.scrollWidth, JSON.stringify(overflow)).toBeLessThanOrEqual(
-    overflow.clientWidth + 1,
-  )
+  return uniqueKeyword('many-hits')
 }
 
 test.describe('SP-10: 誰でも操作できる', () => {

@@ -203,4 +203,29 @@ describe('DailyDigest', () => {
     expect(screen.getByText(/175,000/)).toBeInTheDocument()
     expect(screen.getByText('lodash/lodash')).toBeInTheDocument()
   })
+
+  /**
+   * 横スクロール退行ガード。日次ダイジェストは候補プールの実データを直接読むため E2E スタブから
+   * 病的な文字列を注入できず、`e2e/overflow-guard.spec.ts` の射程外にある。判定規則と
+   * この代替手段を採る理由は `ui-ux-guidelines.md` §3。
+   */
+  it('第三者由来テキストを載せるカード本文に折り返し指定を当てる（NFR-15 / SC 1.4.10）', () => {
+    const digest = makeDigest([
+      {
+        packageName: 'chalk',
+        repositoryFullName: 'chalk/chalk',
+        dependentCount: 130085,
+        stars: 22000,
+        gemIndex: gemIndex(-63.9),
+      },
+    ])
+
+    const { container } = render(
+      <DailyDigest digest={digest} labels={labels} locale={locale('ja')} />,
+    )
+
+    const cardBody = container.querySelector('ol > li > div')
+    expect(cardBody).not.toBeNull()
+    expect(cardBody?.className).toContain('break-words')
+  })
 })

@@ -148,6 +148,47 @@ describe('GemList', () => {
     expect(srOnlyTexts.some((text) => text?.includes('利用パッケージ数'))).toBe(false)
   })
 
+  /**
+   * 横スクロール退行ガード。Gem 一覧は候補プールの実データを直接読むため E2E スタブから
+   * 病的な文字列を注入できず、`e2e/overflow-guard.spec.ts` の射程外にある。判定規則と
+   * この代替手段を採る理由は `ui-ux-guidelines.md` §3。
+   */
+  it('第三者由来テキストに折り返し指定を当てる（NFR-15 / SC 1.4.10）', () => {
+    const { container } = render(
+      <GemList view={viewOf()} query="pad" locale={locale('ja')} labels={labels} />,
+    )
+
+    // カード本文（`min-w-0` で floor を外した flex アイテム。継承で配下のリポジトリ名・
+    // メタ情報まで届く）
+    const cardBody = container.querySelector('li > div.min-w-0')
+    expect(cardBody).not.toBeNull()
+    expect(cardBody?.className).toContain('break-words')
+
+    // 検索語をそのまま埋め込む見出し（任意長のユーザー入力）
+    expect(screen.getByRole('heading', { level: 2 }).className).toContain('break-words')
+
+
+    // 🔴 パッケージ名の `<span>` は `p.flex.flex-wrap` の flex アイテムなので、継承した
+    //    `break-word` では min-content の floor が残る。`wrap-anywhere` の直付けが要る。
+    expect(screen.getByText('left-pad').className).toContain('wrap-anywhere')
+
+    expect(container.querySelectorAll('li').length).toBe(1)
+  })
+
+  /** 緩和注記も見出しと同じく利用者の入力語をそのまま埋め込む（`ui-ux-guidelines.md` §3）。 */
+  it('緩和の注記に折り返し指定を当てる（NFR-15 / SC 1.4.10）', () => {
+    render(
+      <GemList
+        view={viewOf({ relaxedToken: 'pad' })}
+        query="left pad"
+        locale={locale('ja')}
+        labels={labels}
+      />,
+    )
+
+    expect(screen.getByText(/だけで絞り込みました/).className).toContain('break-words')
+  })
+
   it('各行に生値の data 属性を出す（E2E が並び順を表記ゆれ無しで検証できるようにする）', () => {
     render(<GemList view={viewOf()} query="pad" locale={locale('ja')} labels={labels} />)
 

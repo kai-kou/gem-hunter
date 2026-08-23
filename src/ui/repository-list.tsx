@@ -123,7 +123,11 @@ export function RepositoryList({
               className="size-10 shrink-0 rounded-full"
               loading="lazy"
             />
-            <div className="min-w-0 flex-1">
+            {/* 第三者由来テキスト（`description` には改行機会ゼロの長い URL が入りうる）の
+                折り返し。この `<div>` は `min-w-0` で floor を外した flex アイテムなので、
+                ここに 1 回当てれば配下の `<a>` / `<p>` まで継承で届く（`ui-ux-guidelines.md` §3・
+                退行検知は `e2e/overflow-guard.spec.ts`）。 */}
+            <div className="min-w-0 flex-1 break-words">
               {/*
               独立 URL の詳細ページへの遷移（AC-4・モーダルではない）。
               カード全体をクリック可能にするが、<a> でカード全体を包むと
@@ -171,7 +175,10 @@ export function RepositoryList({
                   {item.topics.slice(0, 5).map((topic) => (
                     <li
                       key={topic}
-                      className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs"
+                      /* この `<li>` は `ul.flex.flex-wrap` の flex アイテムなので、祖先から
+                         継承した `break-words` では閉じない（理由は `ui-ux-guidelines.md` §3 の表）。
+                         GitHub の topic は空白・ハイフンなしの単一トークンで最大 50 文字あり得る。 */
+                      className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs wrap-anywhere"
                     >
                       {topic}
                     </li>

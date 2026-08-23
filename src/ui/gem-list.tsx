@@ -160,7 +160,8 @@ export function GemList({
       <h2
         id={GEM_LIST_HEADING_ID}
         tabIndex={-1}
-        className="rounded-sm text-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring"
+        // `query` は利用者が入力した任意長の文字列がそのまま入るため折り返し指定が要る（§3）。
+        className="rounded-sm text-lg font-semibold break-words outline-none focus-visible:ring-3 focus-visible:ring-ring"
       >
         {formatMessage(labels.heading, { query })}
       </h2>
@@ -170,7 +171,9 @@ export function GemList({
         `ui-ux-guidelines.md` §7.2「ライブリージョンは 1 つ」）。
       */}
       {view.relaxedToken !== null ? (
-        <p className="text-muted-foreground mt-2 text-sm">
+        <p className="text-muted-foreground mt-2 text-sm break-words">
+          {/* `token` は利用者の入力語がそのまま入る（最長 256 文字の連続文字列があり得る）。
+              上の `<h2>` と同じく折り返し指定が要る（`ui-ux-guidelines.md` §3）。 */}
           {formatMessage(labels.relaxedNotice, { token: view.relaxedToken })}
         </p>
       ) : null}
@@ -261,7 +264,11 @@ export function GemList({
                         className="size-10 shrink-0 rounded-full bg-muted"
                       />
                     ) : null}
-                    <div className="min-w-0 flex-1">
+                    {/* 第三者由来テキスト（`repositoryFullName` / `packageName`）の折り返し。
+                        この `<div>` は flex アイテムだが `min-w-0` で floor を外してあるため、
+                        ここに `break-words` を 1 回当てれば配下へ継承で届く
+                        （判定規則は `ui-ux-guidelines.md` §3・`repository-list.tsx` と同型）。 */}
+                    <div className="min-w-0 flex-1 break-words">
                       {/*
                         詳細ページ（独立 URL・`AC-4`）への遷移。カード全体をクリック可能にするが
                         `<a>` で全体を包まず、リポジトリ名だけをリンクにして `::after` で領域を
@@ -282,7 +289,10 @@ export function GemList({
                         <span className="font-medium">{entry.repositoryFullName}</span>
                       )}
                       <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                        <span>{entry.packageName}</span>
+                        {/* この `<span>` は `p.flex.flex-wrap` の flex アイテムなので `wrap-anywhere`
+                            を直付けする（`ui-ux-guidelines.md` §3 の表・`repository-list.tsx` の
+                            topics `<li>` と同じ理由）。パッケージ名は第三者由来で区切りが無いことがある。 */}
+                        <span className="wrap-anywhere">{entry.packageName}</span>
                         <span>
                           {labels.registryLabel} {entry.registry}
                         </span>
