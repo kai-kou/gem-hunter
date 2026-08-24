@@ -44,7 +44,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mask_secrets import mask_text, mask_value  # noqa: E402
@@ -62,6 +62,11 @@ EXIT_PRECONDITION = 2
 
 # alias 名から PR 番号を取り出すパターン（`pr-<N>` 形式のみを PR 由来とみなす）
 PR_ALIAS_RE = re.compile(r"^pr-(\d+)$")
+
+# select_closed_pr_aliases() が退役対象とみなす状態（#613）。
+# "issue:closed" は `pr-<N>` の N が実際には PR ではなく Issue 番号として起票された
+# ケース（`/pulls/<N>` が 404 で `/issues/<N>` にフォールバックした結果）を指す。
+RETIRABLE_STATES = ("closed", "merged", "issue:closed")
 
 
 class Precondition(Exception):
@@ -123,6 +128,8 @@ def select_closed_pr_aliases(
     - `pr-<N>` 形式でない alias（`sp1` 等）は自動選別の対象にしない（`--alias` で明示指定する）
     - PR が open のものは対象にしない（レビュー中のプレビューを壊さないため）
     - PR 状態が取得できなかったものは対象にしない（fail-closed）
+    - `<N>` が PR ではなく Issue として起票されていた場合（`issue:closed` / `issue:open`）も、
+      Issue が closed なら対象にする（open なら PR の open と同じく対象にしない・#613）
     - 現在の指し先の tag が `retired-` で始まる alias は退役済みとみなして再実行しない
     """
     targets = []
@@ -131,7 +138,7 @@ def select_closed_pr_aliases(
         if number is None:
             continue
         state = pr_states.get(number)
-        if state not in ("closed", "merged"):
+        if state not in RETIRABLE_STATES:
             continue
         if info.get("tag", "").startswith(retired_prefix):
             continue
@@ -190,9 +197,16 @@ def should_fetch_next_page(result_info: dict[str, Any], fetched_count: int, page
 # ---------------------------------------------------------------------------
 
 
-def _http_json(url: str, headers: dict[str, str]) -> Any:
+def _http_json(
+    url: str,
+    headers: dict[str, str],
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> Any:
+    """`opener` は既定で `urllib.request.urlopen`。self-test では差し替えて、
+    `fetch_pr_states` / `_fetch_issue_state` の例外分岐（`trigger_workers_build.py` と同じ
+    パターン）をネットワーク非依存で検証する。"""
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+    with opener(request, timeout=30) as response:  # noqa: S310
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -225,8 +239,22 @@ def fetch_versions(account_id: str, token: str, worker: str) -> list[dict[str, A
     return items
 
 
-def fetch_pr_states(repo: str, numbers: list[int]) -> dict[int, str]:
-    """GitHub API で PR の状態を取得する（取得できなかった番号は結果に入れない）。"""
+def fetch_pr_states(
+    repo: str,
+    numbers: list[int],
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> dict[int, str]:
+    """GitHub API で PR の状態を取得する（取得できなかった番号は結果に入れない）。
+
+    `pr-<N>` 形式の alias でも、`<N>` が実際には PR ではなく **Issue 番号**として起票された
+    作業単位を指すことがある（本プロジェクトの運用上、`SP-n` の作業が PR ではなく Issue 単位で
+    完結するケース。#613 の実測で `pr-442` / `pr-388` 等 5 件が該当し、`/pulls/<N>` の 404 で
+    fail-closed のまま退役対象から永久に外れていた）。`/pulls/<N>` が 404 のときだけ
+    `/issues/<N>` へフォールバックする（PR が本当に存在しない番号を Issue 扱いするだけなので、
+    PR が open/closed どちらであってもフォールバックしない＝誤判定の余地はない）。
+
+    `opener` は self-test 用の差し替え口（既定は実際の `urllib.request.urlopen`）。
+    """
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "retire-preview-aliases"}
     if token:
@@ -234,14 +262,39 @@ def fetch_pr_states(repo: str, numbers: list[int]) -> dict[int, str]:
     states: dict[int, str] = {}
     for number in numbers:
         try:
-            data = _http_json(f"{GH_API_BASE}/repos/{repo}/pulls/{number}", headers)
-        except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
+            data = _http_json(f"{GH_API_BASE}/repos/{repo}/pulls/{number}", headers, opener=opener)
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                issue_state = _fetch_issue_state(repo, number, headers, opener=opener)
+                if issue_state is not None:
+                    states[number] = issue_state
+            continue
+        except (urllib.error.URLError, ValueError, OSError):
             continue
         if data.get("merged_at"):
             states[number] = "merged"
         else:
             states[number] = str(data.get("state") or "")
     return states
+
+
+def _fetch_issue_state(
+    repo: str,
+    number: int,
+    headers: dict[str, str],
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> str | None:
+    """`/pulls/<N>` が 404 のとき、`<N>` が Issue として起票されていないか確認する。
+
+    Issue が見つかれば `"issue:<state>"`（例: `"issue:closed"`）、見つからない・取得できない
+    ときは None を返す（従来どおり fail-closed のまま）。
+    """
+    try:
+        data = _http_json(f"{GH_API_BASE}/repos/{repo}/issues/{number}", headers, opener=opener)
+    except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
+        return None
+    state = str(data.get("state") or "")
+    return f"issue:{state}" if state else None
 
 
 def git_head_sha() -> str:
@@ -298,10 +351,60 @@ def run_retire(alias: str, tag: str, dry_run: bool) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+class _FakeHttpResponse:
+    """`urllib.request.urlopen` の戻り値（context manager + `.read()`）を模倣する（self-test 専用。
+    `trigger_workers_build.py` の同名ヘルパーと同じ形）。"""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def __enter__(self) -> "_FakeHttpResponse":
+        return self
+
+    def __exit__(self, *exc_info: Any) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return self._body
+
+
+def _make_pulls_issues_opener(
+    pulls: dict[int, dict[str, Any] | int], issues: dict[int, dict[str, Any] | int]
+) -> Callable[..., Any]:
+    """`/pulls/<N>` と `/issues/<N>` への `urlopen` 呼び出しを模倣するフェイク opener を組み立てる。
+
+    `pulls[N]` / `issues[N]` の値が `int` なら「その HTTP ステータスで `HTTPError` を送出する」
+    （404 相当）、`dict` なら「その JSON を 200 で返す」ことを意味する。マップに無い番号は
+    テスト実装ミスとして `AssertionError` にする（silent success を避ける）。
+    """
+
+    def opener(request: Any, timeout: int = 30) -> _FakeHttpResponse:  # noqa: ARG001
+        url = request.full_url
+        if "/pulls/" in url:
+            number = int(url.rsplit("/", 1)[-1])
+            source = pulls
+        elif "/issues/" in url:
+            number = int(url.rsplit("/", 1)[-1])
+            source = issues
+        else:
+            raise AssertionError(f"想定外の URL: {url}")
+        if number not in source:
+            raise AssertionError(f"フェイク opener に未定義の番号: {number} ({url})")
+        value = source[number]
+        if isinstance(value, int):
+            raise urllib.error.HTTPError(url, value, "error", None, None)
+        return _FakeHttpResponse(json.dumps(value).encode("utf-8"))
+
+    return opener
+
+
 def self_test() -> int:
     failures: list[str] = []
+    check_count = 0
 
     def check(label: str, actual: Any, expected: Any) -> None:
+        nonlocal check_count
+        check_count += 1
         if actual != expected:
             failures.append(f"{label}: 期待 {expected!r} / 実際 {actual!r}")
 
@@ -340,7 +443,7 @@ def self_test() -> int:
     check("PR 由来でない alias は None", alias_pr_number("sp1"), None)
     check("末尾に余計な語が付く alias は None", alias_pr_number("pr-212-old"), None)
 
-    states = {96: "merged", 212: "open", 143: "closed"}
+    states = {96: "merged", 212: "open", 143: "closed", 442: "issue:closed", 388: "issue:open"}
     wide_map = {
         "pr-96": {"version_id": "bbb", "created_on": "x", "tag": ""},
         "pr-212": {"version_id": "ccc", "created_on": "x", "tag": ""},
@@ -348,13 +451,65 @@ def self_test() -> int:
         "pr-999": {"version_id": "fff", "created_on": "x", "tag": ""},
         "sp1": {"version_id": "ggg", "created_on": "x", "tag": ""},
         "pr-88": {"version_id": "hhh", "created_on": "x", "tag": "retired-0123456789ab"},
+        "pr-442": {"version_id": "iii", "created_on": "x", "tag": ""},
+        "pr-388": {"version_id": "jjj", "created_on": "x", "tag": ""},
     }
     selected = select_closed_pr_aliases(wide_map, states)
-    check("open PR と PR 由来でない alias と退役済みを除く", selected, ["pr-96", "pr-143"])
+    check(
+        "open PR / PR 由来でない alias / 退役済み / Issue open を除く",
+        selected,
+        ["pr-96", "pr-143", "pr-442"],
+    )
     check(
         "状態を取得できなかった PR は対象外（fail-closed）",
         "pr-999" in select_closed_pr_aliases(wide_map, states),
         False,
+    )
+    check(
+        "N が Issue 番号で closed なら退役対象にする（#613）",
+        "pr-442" in selected,
+        True,
+    )
+    check(
+        "N が Issue 番号でも open なら退役対象にしない",
+        "pr-388" in selected,
+        False,
+    )
+
+    # --- fetch_pr_states / _fetch_issue_state: 404→Issue フォールバックの本体コードを
+    #     ネットワーク非依存で実際に実行する（レビュー指摘: 上記は select_closed_pr_aliases に
+    #     手で state を渡すだけで、例外分岐・_fetch_issue_state 自体は未実行だった） ---
+    opener_issue_closed = _make_pulls_issues_opener(
+        pulls={442: 404},
+        issues={442: {"state": "closed"}},
+    )
+    check(
+        "fetch_pr_states: 404→Issue フォールバックで issue:closed を返す",
+        fetch_pr_states("owner/repo", [442], opener=opener_issue_closed),
+        {442: "issue:closed"},
+    )
+
+    opener_issue_also_404 = _make_pulls_issues_opener(pulls={999: 404}, issues={999: 404})
+    check(
+        "fetch_pr_states: PR も Issue も 404 なら結果に含めない（fail-closed）",
+        fetch_pr_states("owner/repo", [999], opener=opener_issue_also_404),
+        {},
+    )
+
+    opener_server_error = _make_pulls_issues_opener(pulls={500: 500}, issues={})
+    check(
+        "fetch_pr_states: 404 以外の HTTPError では Issue へフォールバックしない",
+        fetch_pr_states("owner/repo", [500], opener=opener_server_error),
+        {},
+    )
+
+    opener_pr_found = _make_pulls_issues_opener(
+        pulls={212: {"state": "open", "merged_at": None}}, issues={}
+    )
+    check(
+        "fetch_pr_states: PR が見つかれば Issue フォールバックを試みない",
+        fetch_pr_states("owner/repo", [212], opener=opener_pr_found),
+        {212: "open"},
     )
 
     check(
@@ -451,7 +606,7 @@ def self_test() -> int:
         for failure in failures:
             print(f"  - {failure}")
         return EXIT_FAILED
-    print("セルフテスト: 全 26 ケース PASS")
+    print(f"セルフテスト: 全 {check_count} ケース PASS")
     return EXIT_OK
 
 

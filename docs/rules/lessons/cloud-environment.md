@@ -15,6 +15,7 @@
 | スコープ外リポジトリへの `git clone` / `ls-remote` が 403、`add_repo` が無い | L-117 |
 | OpenNext Cloudflare のプレビューでのみリダイレクト / パス解決が期待どおりにならない | L-129 |
 | 本番デプロイ系コマンド（`wrangler deploy` 等）が `permissions.allow` 済みでも auto mode classifier にブロックされることがある（毎回ではない） | L-130 |
+| Cloudflare API に `DELETE` で未知のサブリソース名を投げて 404 を確認しようとしたら、本番リソースが消えた | L-134 |
 
 ---
 
@@ -309,3 +310,62 @@ Next.js 本体は `compile()` を `{ validate: false }` で呼ぶため、ロー
 さらに **「必ずブロックされる」と思い込むと、実際には通る経路を最初から諦める**（試さずに保留する）判断を誘発する
 ため、非決定性そのものを記録に残す。詳細は Issue #288 / #300 / #451、議論記録は
 `content/discussions/prod-deploy-gate-20260821/whiteboard.md`。
+
+## L-134: Cloudflare API に「未知のサブリソース名 + DELETE」を投げると親リソースが削除される（本番 Worker 誤削除・実測）
+
+**症状**: 「preview alias / version を個別削除する API があるか」を実 API で裏取りする過程で、
+存在しない末尾サブリソースを付けた `DELETE` を送った。
+
+```
+DELETE /accounts/{account_id}/workers/scripts/gem-hunter/totally-bogus-subresource
+```
+
+「存在しないルートなら 404 が返るはず」という前提で投げたところ、Cloudflare API は
+**パス末尾の未知セグメントを黙って切り捨て**、`DELETE /accounts/{account_id}/workers/scripts/gem-hunter`
+（Worker 本体の削除）として処理し `HTTP 200 / success: true` を返した。結果、本番 Worker・
+version 165 件・preview alias 46 件・シークレット 4 件が全て消失した（Issue #613 / #615）。
+
+**根本原因**: 「破壊的メソッドを本番リソースのパスに対して探索目的で送った」こと自体が誤り。
+読み取り専用の調査（公式ドキュメント確認・`OPTIONS` での許可メソッド確認）で
+「削除 API は存在しない」という結論は既に得られていたにもかかわらず、実 API での追加裏取りに
+**取り消しのきかない `DELETE` を本番パスへ選んだ**。
+
+**対策（行動指針・全プロジェクト共通）**:
+- 未知のエンドポイント・サブリソースの存在を確かめたいときは、まず **`GET` / `OPTIONS`** など
+  非破壊メソッドで確認する。`DELETE` / `PUT` / `PATCH` を探索に使わない
+- どうしても破壊的メソッドで挙動を確認する必要があるなら、**実在しないダミーの識別子**
+  （存在しない account_id・存在しないリソース名全体）に対して投げ、**本物の本番リソース名を
+  パスに含めない**
+- 「末尾に未知のセグメントを付ければ 404 になる」という前提を無検証で信じない。REST API の
+  ルーティング実装によっては、末尾の未知セグメントが黙って無視され親リソースのハンドラへ
+  フォールスルーすることがある（Cloudflare の Workers Scripts API で実測）
+- 本プロジェクトでは `.claude/hooks/pre-cloudflare-destructive-check.sh` を PreToolUse に配線し、
+  `DELETE` × `workers/scripts` パス・`wrangler delete` を機械的にブロックする（他プロジェクトへ
+  展開する場合は対象 API・リソース名を読み替えて同様のガードを検討する）
+
+**保持理由**: 本番停止に直結する不可逆操作で、複数プロジェクトの Cloudflare API 運用に
+共通して当てはまる教訓（探索目的の破壊的メソッドを本番パスに使わない）。
+
+## L-135: `PUT /pulls/{N}/merge`（REST）も GraphQL の `mergePullRequest` も、このセッション種別では 403 でブロックされる
+
+**症状**: GitHub MCP（`mcp__github__*`）が一切ロードされないセッションで、代替として GitHub REST API
+を直叩きして PR をマージしようとすると `403 Merging into a protected base branch is not permitted
+for this session type.` が返る。GraphQL 経由（`mergePullRequest` mutation）も試すと `403 This GraphQL
+query is not enabled for this session — only the pinned set of PR-review operations is served.` で
+同様にブロックされる。`gh` CLI・シムも存在しない環境だった。
+
+**根本原因（推測・一次情報未確認）**: protected branch へのマージは MCP の
+`mcp__github__merge_pull_request`（Claude Code Remote が持つ追加チェック付きの経路）を通す設計で、
+生トークンでの REST/GraphQL 直叩きは意図的にブロックされている。本セッションは GitHub MCP サーバー
+自体が接続されていなかった（`ToolSearch` で `mcp__github__*` が一件もヒットしない）ため、マージだけ
+がどの経路からも実行不能になった。Issue/PR 作成・コメント・レビュー投稿・CI 確認は同じ REST 直叩きで
+問題なく成功した（マージだけが個別にブロックされている）。
+
+**対策**: MCP の GitHub サーバーが未接続のまま作業を進めてしまった場合、実装・セルフレビュー・PR 作成
+までは自律完了できるが、**最終マージだけはブロックされる可能性がある** と想定しておく。ブロックされたら
+`gh` CLI 導入を試さない（L-114 と同じ理由でこの種の 403 は認証不足ではない）。PR を green・レビュー
+済みの状態のまま残し、状況を正直に報告する（L-113: マージしていないのに「マージ済み」と書かない）。
+MCP が接続されたセッション、または人間が GitHub UI から直接マージすることで解消する。
+
+**保持理由**: L-113（捏造禁止）と直結する新規の環境制約。「PR は完成しているのにマージだけできない」
+という状態を正しく報告できないと、虚偽の完了報告につながる。

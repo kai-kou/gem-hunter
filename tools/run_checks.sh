@@ -493,6 +493,14 @@ else
   skip_check "env ファイルツールガード self-test (pre-file-tool-env-guard.sh --self-test)" "スクリプトが見つかりません"
 fi
 
+# Cloudflare Workers 破壊的操作ガード self-test（Issue #613 / #615・本番 Worker 誤削除の再発防止）。
+if [ -f "$REPO_ROOT/.claude/hooks/pre-cloudflare-destructive-check.sh" ]; then
+  run_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" \
+    bash .claude/hooks/pre-cloudflare-destructive-check.sh --self-test
+else
+  skip_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="
