@@ -276,6 +276,7 @@ def main():
     p_cls.add_argument("--labels", default="", help="カンマ区切りラベル")
     p_cls.add_argument("--json", action="store_true")
 
+    # selftest-wiring-ok: 通知トリアージ判定でのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
     args = parser.parse_args()
 

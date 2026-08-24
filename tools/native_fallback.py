@@ -559,6 +559,7 @@ def cmd_self_test() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    # selftest-wiring-ok: Web 未提供機能の native-first 判定でのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="煙テスト（claude 実起動なし）")
     sub = parser.add_subparsers(dest="command")
 

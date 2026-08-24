@@ -350,6 +350,7 @@ def _self_test() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="マルチエージェント議論ホワイトボード基盤")
+    # selftest-wiring-ok: 議論型レビュー実行中にのみ起動する運用ツールで、PR 前の品質ゲートではない
     ap.add_argument("--self-test", action="store_true", help="並列post→render とクロバー防止の検証")
     sub = ap.add_subparsers(dest="cmd")
 

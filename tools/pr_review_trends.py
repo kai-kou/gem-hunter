@@ -685,6 +685,7 @@ def main() -> int:
     ap.add_argument("--all", action="store_true", help="update → render → notify を一括")
     ap.add_argument("--weeks", type=int, default=12, help="集計対象週数（既定 12）")
     ap.add_argument("--no-issue", action="store_true", help="悪化検知 Issue の自動起票を抑制")
+    # selftest-wiring-ok: 週次スロットでのみ起動する運用ツールで、PR 前の品質ゲートではない
     ap.add_argument("--self-test", action="store_true", help="内蔵フィクスチャで検証")
     args = ap.parse_args()
 

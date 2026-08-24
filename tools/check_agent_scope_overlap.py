@@ -455,6 +455,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--lane", action="append", default=[], help="'name:glob1,glob2' 形式で繰り返し指定")
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
+    # selftest-wiring-ok: 並列委譲の直前に親が手動で叩く運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
     args = parser.parse_args()
 

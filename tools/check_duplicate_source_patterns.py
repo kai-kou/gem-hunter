@@ -86,18 +86,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-try:
-    from ts_source import strip_comments
-except ImportError:  # pragma: no cover - ts_source.py が未配置の環境向けフォールバック
-
-    def strip_comments(source: str) -> str:  # type: ignore[misc]
-        """`ts_source.strip_comments` が import できない場合の最小限フォールバック。
-
-        コメントを一切除去しない（誤検出が増える可能性はあるが、クラッシュはしない）。
-        `tools/ts_source.py` は本リポジトリに既に存在する想定で、通常このフォールバックは
-        使われない。
-        """
-        return source
+from ts_source import JS_IDENTIFIER_RE, strip_comments  # 共通モジュール（#612）。フォールバックは持たない
 
 
 EXIT_OK = 0
@@ -131,7 +120,7 @@ class Occurrence:
 # TypeScript / TSX 側: 正規表現リテラルの抽出
 # ---------------------------------------------------------------------------
 
-_IDENT_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+_IDENT_RE = JS_IDENTIFIER_RE  # 共通定数（ts_source）。同じパターンの再定義を避ける（#612）
 
 # これらの識別子の直後に来る `/` は「式の開始」＝正規表現リテラルの可能性が高い
 # （除算ではありえない）。それ以外の識別子（変数名・`true`/`this` 等）は「値」として

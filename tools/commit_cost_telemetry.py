@@ -695,6 +695,7 @@ def main() -> int:
                     help="JST 当日に既に実行済みならスキップ（Stop hook から毎回呼ぶ用）")
     ap.add_argument("--dry-run", action="store_true",
                     help="差分判定のみ。push しない")
+    # selftest-wiring-ok: Stop hook からの日次コストテレメトリ永続化でのみ起動する運用ツールで、PR 前の品質ゲートではない
     ap.add_argument("--self-test", action="store_true", help="ロジックの自己テスト")
     args = ap.parse_args()
 

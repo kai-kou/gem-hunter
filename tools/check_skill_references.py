@@ -309,6 +309,7 @@ def main() -> int:
             "PROTECT_PATHS を基準に判定・#448）。既定では終了コードを変えない"
         ),
     )
+    # selftest-wiring-ok: skill-audit スキルからのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument(
         "--self-test",
         action="store_true",

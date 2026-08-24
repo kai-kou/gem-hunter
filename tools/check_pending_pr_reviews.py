@@ -149,8 +149,8 @@ ACTIVE_WINDOW_MIN = 10
 # 決定論的に識別でき、時間ベースの active_session（レイヤー 5）の穴
 # （①自 PR でも 10 分超アイドルで奪われる ②セッション再起動・圧縮後に自 PR を見失う）を埋める。
 # sprint_session_metrics.py の SESSION_ID_RE と同一パターン（UUID 形式・大文字小文字不問）。
-# dup-ok: 意図的な重複。統合は Issue #612 のスコープ外として見送る（本 PR は dup-ok マーカー追記のみ）
 SESSION_ID_RE = re.compile(
+    # dup-ok: sprint_session_metrics.py の SESSION_ID_RE と同一パターン。統合は Issue #612 のスコープ外
     r"Session-Id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
     re.I,
 )
@@ -888,6 +888,7 @@ def main():
         default=None,
         help="--mine の照合に使うセッション ID を明示指定する（既定は $CLAUDE_CODE_SESSION_ID）",
     )
+    # selftest-wiring-ok: セッション復帰時のレビュー待ちPR検出でのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument(
         "--self-test",
         action="store_true",

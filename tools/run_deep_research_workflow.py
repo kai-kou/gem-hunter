@@ -649,6 +649,7 @@ def main() -> int:
     ap.add_argument("--extra-allowed-tools", default=None,
                     help="検索サブプロセスに追加許可するツール（既定の SEARCH_ALLOWED_TOOLS に追記）")
     ap.add_argument("--dry-run", action="store_true")
+    # selftest-wiring-ok: Deep Research 実行時のみ起動する運用ツールで、PR 前の品質ゲートではない
     ap.add_argument("--self-test", action="store_true",
                     help="レート枠超過検出（_is_rate_limited）の単体テストを実行して終了する（#2814）")
     args = ap.parse_args()

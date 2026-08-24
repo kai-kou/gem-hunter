@@ -291,6 +291,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="secrets-broker 移行の動作確認ゲート")
     ap.add_argument("--json", action="store_true", help="機械可読 JSON 出力")
     ap.add_argument("--gate", action="store_true", help="ゲート専用（READY なら exit 0・else 10）")
+    # selftest-wiring-ok: 一度きりの移行検証スクリプトで、恒常的な品質ゲートではない
     ap.add_argument("--self-test", action="store_true", help="ネットワーク非依存の自己テスト")
     args = ap.parse_args()
 

@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ts_source import find_matching_brace, find_tag_end, strip_comments  # noqa: E402
+from ts_source import JS_IDENTIFIER_RE, find_matching_brace, find_tag_end, strip_comments  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -276,7 +276,7 @@ def _scan_classname_expr(rel: str, expr: str, base_offset: int, code: str) -> tu
     has_dynamic = saw_dynamic_interp
     if not has_dynamic:
         remainder = "".join(skeleton)
-        for id_m in re.finditer(r"[A-Za-z_$][A-Za-z0-9_$]*", remainder):
+        for id_m in JS_IDENTIFIER_RE.finditer(remainder):
             k = id_m.end()
             while k < n and remainder[k].isspace():
                 k += 1

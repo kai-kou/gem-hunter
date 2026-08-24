@@ -610,6 +610,7 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--create-issue", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="状態ファイルを書き込まない")
+    # selftest-wiring-ok: Claude Code 仕様変更追随レーンの定期スロットでのみ起動する運用ツールで、PR 前の品質ゲートではない
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--mark-known", nargs="+", metavar="VERSION",
                      help="指定バージョンの dedup キーをネット非依存で state に直接追記し終了する"

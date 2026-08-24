@@ -70,51 +70,7 @@ from pathlib import Path
 # `strip_comments` は本来 `tools/ts_source.py` の共通実装を使う（別レーンが実装中）。
 # まだ存在しない/インポートに失敗した場合は本ファイル内のフォールバック実装を使う。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-try:
-    from ts_source import strip_comments  # type: ignore[import-not-found]
-except ImportError:
-
-    def strip_comments(text: str) -> str:
-        """コメントを空白へ置換する（オフセット・行番号を保つ）。文字列リテラルは保護する。
-
-        `tools/ts_source.py` が導入されたらこのフォールバックは削除し、そちらへ委譲する。
-        """
-        out = list(text)
-        i, n = 0, len(text)
-        quote: str | None = None
-        while i < n:
-            ch = text[i]
-            if quote:
-                if ch == "\\":
-                    i += 2
-                    continue
-                if ch == quote:
-                    quote = None
-                i += 1
-                continue
-            if ch in "\"'`":
-                quote = ch
-                i += 1
-                continue
-            if ch == "/" and i + 1 < n:
-                nxt = text[i + 1]
-                if nxt == "/":
-                    j = text.find("\n", i)
-                    j = n if j == -1 else j
-                    for k in range(i, j):
-                        out[k] = " "
-                    i = j
-                    continue
-                if nxt == "*":
-                    j = text.find("*/", i + 2)
-                    j = n if j == -1 else j + 2
-                    for k in range(i, j):
-                        if out[k] != "\n":
-                            out[k] = " "
-                    i = j
-                    continue
-            i += 1
-        return "".join(out)
+from ts_source import strip_comments  # 共通モジュール（#612）。フォールバックは持たない
 
 
 def blank_string_literals(code: str) -> str:

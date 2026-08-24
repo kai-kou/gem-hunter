@@ -909,6 +909,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="起票せず判定結果のみ出力する")
     parser.add_argument("--json", action="store_true", help="機械可読な JSON で出力する")
     parser.add_argument("--repo", default=None, help="owner/name（既定: git remote から解決）")
+    # selftest-wiring-ok: スプリント自走ルーティンの SP→Issue 同期でのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="ネットワーク不要のユニットテストを実行")
     args = parser.parse_args()
 

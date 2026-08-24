@@ -278,7 +278,7 @@ fi
 
 # 4.10. app/ 薄さ検査（Issue #612・「app/ はロジックを書かない」の機械化）
 if [ -f "$REPO_ROOT/tools/check_app_thinness.py" ]; then
-  run_check "app/ 薄さ検査 (check_app_thinness.py)" python3 tools/check_app_thinness.py
+  run_check "app/ 薄さ検査 (check_app_thinness.py --strict)" python3 tools/check_app_thinness.py --strict
   run_check "app/ 薄さ検査 self-test (check_app_thinness.py --self-test)" python3 tools/check_app_thinness.py --self-test
 else
   skip_check "app/ 薄さ検査 (check_app_thinness.py)" "スクリプトが見つかりません"
@@ -286,7 +286,7 @@ fi
 
 # 4.11. 正規表現リテラルの重複検査（Issue #612・コピーの再発防止）
 if [ -f "$REPO_ROOT/tools/check_duplicate_source_patterns.py" ]; then
-  run_check "正規表現重複検査 (check_duplicate_source_patterns.py)" python3 tools/check_duplicate_source_patterns.py
+  run_check "正規表現重複検査 (check_duplicate_source_patterns.py --strict)" python3 tools/check_duplicate_source_patterns.py --strict
   run_check "正規表現重複検査 self-test (check_duplicate_source_patterns.py --self-test)" python3 tools/check_duplicate_source_patterns.py --self-test
 else
   skip_check "正規表現重複検査 (check_duplicate_source_patterns.py)" "スクリプトが見つかりません"
