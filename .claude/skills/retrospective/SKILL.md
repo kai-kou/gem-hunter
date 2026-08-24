@@ -167,6 +167,8 @@ Q1 または Q2 が YES？（Q3 は判定に使わない）
 
 配置・フォーマットは既存の `content/analytics/sprint/*.jsonl`（`docs/rules/session-sprint-rules-detail.md` §5・「日次メトリクスは JSONL に追記してコミット対象にする」という既存の作法）に倣い、**追記専用の JSONL・1 行 1 レコード** とする。
 
+🔴 **このログは追跡対象でなければ意味がない。** `.gitignore` は `content/analytics/*` を除外しているため、`!content/analytics/retro/` の再包含を入れてある（`content/analytics/sprint/` と同じ扱い・#417）。追跡されないとクラウドではコンテナ破棄でログごと消え、`Q1` の判定材料が永久に貯まらず、Step 3-0 が「初回は必ず見送り、記録が残らないので次回も見送る」自己ロックに戻る。`git check-ignore content/analytics/retro/deferred_try.jsonl` が **何も出力しない**（＝無視されない）ことが前提条件にゃ。
+
 ```jsonl
 {
   "date": "2026-08-24 JST",
