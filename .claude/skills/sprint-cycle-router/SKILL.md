@@ -212,7 +212,8 @@ Step 番号と条件を名指しで参照されているため）。
 🔴 **同じ隙間が「非 `SP-n` かつ非 `type:retro-try`」の Issue にも空いていた**（#452 で実測: `status:in-progress`
 のまま滞留する非 `SP-n` Issue が 7 件）。Step 3（`SP-n` 限定）も Step 5.5 ①（`type:retro-try` 限定）も拾わず、
 Step 5 は `status:waiting-claude` しか見ていなかったため、**着手だけして力尽きた Issue が二度と再開されなかった**。
-その再開は **Step 5 の条件 ①** が担う。
+その再開は **Step 5 の条件 ①** が担う。**この条件 ① はゲートの有無にかかわらず恒久で置く**
+（#452 当時の提出前ゲートは 1 firing 1 件で逐次処理する運用だったためこの穴を直撃したが、ゲート自体は #466 で終了済み・記録は `docs/05_release/pre-release-gate.md`）。
 
 ### エージング（Step 4 の飢餓防止・§5 で詳述）
 
