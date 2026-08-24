@@ -1,6 +1,6 @@
 # ADR 0004: リリースサイクルを trunk-based（PR プレビュー + `main` = 本番）に確定し、常設の dev 環境を持たない
 
-- **状態**: **承認**（`M-4` 公開判断ゲートで、`[env.dev]` と gradual deployment の追加要否を再判定する）
+- **状態**: **承認**（🔵 **`M-4` での再判定は 2026-08-24 に完了し、いずれも追加しないと決定した** — `[env.dev]` は `D-44`、gradual deployment は `D-45`。本 ADR の決定そのものは変更なし）
 - **日付**: 2026-08-18 JST
 - **対応要件**: `D-21` / `D-26` / `D-16` / `INF-4` / `INF-20` / `INF-21` / `SD-1` / `CP-6` / `minimum-requirements.md` §4 / §6
 - **関連**: [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §6 / [議論記録](../../content/discussions/release-cycle-20260818/whiteboard.md) / Issue #38 / #39 / #40
@@ -29,7 +29,7 @@
 
 1. 本番直結のリスクは、**`main` マージ後のテストゲート**（テスト失敗時は `wrangler deploy` に進ませない）で塞ぐ（Issue #39）
 2. 判断の根拠は **README「設計上の判断」** に記載する（`minimum-requirements.md` §6 が README への設計判断記載を与件として要求しているため、ADR より確実に読まれる導線になる）
-3. **`M-4`（第三者へ公開するかの判断ゲート）** で、OAuth 検証用 `[env.dev]` と gradual deployment の追加要否を再判定する（Issue #40）
+3. ~~**`M-4`（第三者へ公開するかの判断ゲート）** で、OAuth 検証用 `[env.dev]` と gradual deployment の追加要否を再判定する（Issue #40）~~ → ✅ **再判定済み（2026-08-24）**: いずれも追加しない（`[env.dev]` は `D-44` / gradual deployment は `D-45`。根拠は [`open-questions.md`](../02_requirements/open-questions.md) が正本）
 
 ---
 
@@ -77,7 +77,7 @@
 | 代償 | 緩和策 |
 |---|---|
 | `main` 上の合成状態が本番で初めて動く | `main` マージ後のテストゲート（Issue #39・`SP-4` のテスト CI 完成が前提）。**2026-08-20 追記**: スプリント PR に限り、テストゲートの上にスプリントレビューゲートを重ねる（下記「スプリントレビューゲートの追加」）。**2026-08-23 追記**: GitHub Actions が起動できない（`D-23`）ため、このテストゲートは CI ではなく **セッションが `main` HEAD で `npm run check` を再実行する形** で運用している（[Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §8.2 が手順の正本）。🔴 **本 ADR 本文（§3.2 / §3.3）の「CI」もすべてこの読み替えを適用する**。Actions が復帰したら CI へ戻す |
-| OAuth 経路を本番でしか検証できない（プレビューは PR ごとに URL が変わりコールバック URL を登録できない） | OAuth 自体が未実装のため現時点では顕在化しない。`M-4` で `[env.dev]` の要否を判定する |
+| OAuth 経路を本番でしか検証できない（プレビューは PR ごとに URL が変わりコールバック URL を登録できない） | ✅ **`M-4` で判定済み（`D-44`・2026-08-24）**: `[env.dev]` は持たない。OAuth は本番でも未公開（`D-39`）で、`SP-8` の検証はダミー OAuth を注入したローカルビルドで行う設計が既に実装済み |
 | 段階的な本番投入（カナリア）ができない | `INF-21`（ロールバック）で戻す。段階的展開の導入可否は Issue #40 で別途決定する |
 | ブランチ構成だけを見た第三者に「環境分離をしていない」と映る可能性 | README「設計上の判断」に理由を明記する（与件 §6 が要求する導線） |
 | **（2026-08-20 追記）** rejected 判定が続く間、その rejected スプリントと無関係な非スプリント PR のデプロイも足止めされる | `main` が 1 本の Worker である以上、部分的デプロイができないため不可避。「反映が遅れる」に留まり「壊れたコードが本番に出る」より軽いため trunk-based の 1 ホップ原則は維持できると判断する |
