@@ -41,12 +41,17 @@ Keep the whole composition readable when projected: few, large elements with gen
 
 
 TITLE (top banner, largest text, drawn once):
-「gem-hunter」
+「与件を満たしたうえで、決定を辿れる形に残した」
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
-「gem-hunter」
-「star では埋もれる「実際に使われている OSS」を見つける」
-「開発者向け解説 / 2026-08-24」
+「与件を満たしたうえで、決定を辿れる形に残した」
+「初期コンセプト（IndieGems 構想）が先にあり、外部から与えられた要件でスコープを絞り直した」
+「外部要件の受け入れ基準は 11 項目で、いま全件を充足している（未充足はゼロ）」
+「コンセプト → 要件 → 設計 → 開発の順に積み上げ、要件の正本は prd.md 1 本に決めた」
+「「何を作るか」は PRD、「なぜその技術か」は ADR（Architecture Decision Record）と役割を分けた」
+「決めきれない論点は open-questions.md に D-n 番号で残し、決まった分だけ PRD に反映する」
+「先に書いたおかげで、実装中に「これは決めたはず」と辿れる状態になった」
+「この発表の後半で話す判断は、すべてこの与件を満たしたうえに積んだものになる」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
-表紙。中央にダイヤ + 虫眼鏡のシンプルなアイコン 1 つ、上部にバナー見出し。生成りの紙地・手書きグラレコ調
+左から右へ 5 つの工程カードをアイコンだけで並べ、矢印でつなぐ横並びのフロー（電球 → クリップボード → 図面 → ノート PC → ロケット）。2 つ目のクリップボードのカードだけを一回り大きくして中心に見せ、そこへ下から破線矢印で 2 つの小さなカード（本のアイコン・疑問符の吹き出しアイコン）が入る。左端に封筒アイコンの帯を置き、そこから大きいカードへ太い矢印を引く。チェックマークのアイコンを 1 つだけ使う。🔴 これらのカード・アイコン・帯には文字を一切書かない（工程名・ラベル・キャプションを描き足さない）。数量を表す数字（件数・本数）も一切描かない

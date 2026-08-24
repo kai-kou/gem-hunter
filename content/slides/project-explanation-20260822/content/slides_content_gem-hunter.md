@@ -11,9 +11,8 @@
 
 - 見出し: gem-hunter
 - 本文:
-  - gem-hunter
   - star では埋もれる「実際に使われている OSS」を見つける
-  - 開発者向け解説 / 2026-08-23
+  - 開発者向け解説 / 2026-08-24
 - ビジュアル: 新規生成 new-01（表紙）
 - 伝えたい 1 メッセージ: プロダクト名と 1 行の主題を示す
 - 出典: docs/project-mission.md ミッションステートメント
@@ -32,19 +31,19 @@
 - 伝えたい 1 メッセージ: まず動くものを見せる（アウトカム先出し）
 - 出典: docs/02_requirements/user-story-map.md SP-1〜SP-11 / ADR 0012 / 実画面（スタブ API）
 
-## Slide 3: 検索語をそのまま、Gem だけの一覧へ
+## Slide 3: 検索の並び順は変えない。絞り込むのは Gem 一覧だけ
 
-- 見出し: 検索語をそのまま、Gem だけの一覧へ
+- 見出し: 検索の並び順は変えない。絞り込むのは Gem 一覧だけ
 - 本文:
   - 検索結果のカードには、star 数のわりに多くのパッケージから使われている候補に「Gem」の印が付く
   - 印が付いた候補だけを見たくなったら、検索結果の上の導線から Gem 一覧へ移れる
-  - 一覧は検索語を引き継ぎ、過小評価が強い順（Gem Index が小さい順）に 20 件ずつ並ぶ
+  - 一覧は検索語を引き継ぎ、過小評価が強い順に 20 件ずつ並ぶ（順位づけの定義は後半で扱う）
   - 検索結果そのものの並び順は変えない。順位づけをするのはこの一覧の中だけ
   - 絞り込みはリポジトリ名とパッケージ名を語の区切りで照合し、0 件のときだけ 1 語に緩める
   - 検索結果で印が付いた候補は一覧側へそのまま引き渡すので、印と一覧で判定基準がずれない
   - 印が付かないことは評価が低いことを意味しない、と画面にも明記している
 - ビジュアル: 実 UI スクリーンショット shot-03（Gem 一覧）
-- 伝えたい 1 メッセージ: SP-18 / SP-19 で入った Gem の印と一覧（検索の並び順は変えない）
+- 伝えたい 1 メッセージ: SP-18 / SP-19 で入った Gem の印と一覧（検索結果の並び順は変えない）
 - 出典: user-story-map.md SP-18 / SP-19 / open-questions.md D-36・D-37 / messages/ja.json home.gemBadge・gems.*
 
 ## Slide 4: 検索しなくても、その日の Gem が並ぶ
@@ -74,19 +73,20 @@
 - 伝えたい 1 メッセージ: なぜ作ったのか（作り手の動機 + 観測された事実）
 - 出典: docs/00_concept/initial-concept.md / lean-canvas.md P-1・P-2 / ADR 0009 §2.1 / project-mission.md
 
-## Slide 6: 構想を、辿れるドキュメントに分解した
+## Slide 6: 与件を満たしたうえで、決定を辿れる形に残した
 
-- 見出し: 構想を、辿れるドキュメントに分解した
+- 見出し: 与件を満たしたうえで、決定を辿れる形に残した
 - 本文:
   - 初期コンセプト（IndieGems 構想）が先にあり、外部から与えられた要件でスコープを絞り直した
+  - 外部要件の受け入れ基準は 11 項目で、いま全件を充足している（未充足はゼロ）
   - コンセプト → 要件 → 設計 → 開発の順に積み上げ、要件の正本は prd.md 1 本に決めた
   - 「何を作るか」は PRD、「なぜその技術か」は ADR（Architecture Decision Record）と役割を分けた
   - 決めきれない論点は open-questions.md に D-n 番号で残し、決まった分だけ PRD に反映する
   - 先に書いたおかげで、実装中に「これは決めたはず」と辿れる状態になった
-  - 各ドキュメントは 16:9 のインフォグラフィック 1 枚に要約してあり、この発表でもそれを使っている
-- ビジュアル: 既存流用 docs/infographics/08-doc-relations.webp
-- 伝えたい 1 メッセージ: どういう検討をして何を作ったか（全体像）
-- 出典: docs/README.md / inception-deck.md Q1 / minimum-requirements.md / docs/infographics/README.md
+  - この発表の後半で話す判断は、すべてこの与件を満たしたうえに積んだものになる
+- ビジュアル: 新規生成 new-10（ドキュメント相関と与件の充足）
+- 伝えたい 1 メッセージ: 与件を満たしたうえで、どういう検討をして何を作ったか（全体像）
+- 出典: docs/README.md / inception-deck.md Q1 / minimum-requirements.md §7 / minimum-requirements-checklist.md §0 / docs/infographics/README.md
 
 ## Slide 7: 依存は内側へ。中心のドメインは何も知らない
 
@@ -117,9 +117,9 @@
 - 伝えたい 1 メッセージ: アーキテクチャの規律（増やさないための条件）
 - 出典: application-architecture.md §1.1 / architecture-rules.md §2 の ARCH 表 / ADR 0005 §3.1 / tools/check_architecture_boundaries.py
 
-## Slide 9: Next.js 16 を Workers の上で動かす
+## Slide 9: 技術選定は、事業者固有 API を持ち込まない制約で決めた
 
-- 見出し: Next.js 16 を Workers の上で動かす
+- 見出し: 技術選定は、事業者固有 API を持ち込まない制約で決めた
 - 本文:
   - Next.js 16（App Router・React Server Components）で、クライアント JS を最小限に保つ
   - UI は Tailwind CSS v4 + shadcn/ui（Radix UI）。デザイントークンを 1 か所に集約する
@@ -167,13 +167,13 @@
   - Red → Green → Refactor の順を崩さない。テストを後から足す順序を取らない
   - 単体・結合は Vitest + MSW でネットワークに触らず、E2E は Playwright + axe で実ブラウザを動かす
   - 操作レビューの手順をそのまま E2E に写すので、手で確かめたことが以後は自動で守られる
-  - いまの規模はテストが 954 ケース、E2E が 107 ケース（2026-08-23 時点の実行結果）
+  - いまの規模はテストが 960 ケース、E2E が 112 ケース（2026-08-24 時点の実行結果）
   - テストのスキップ・無効化で緑にしない。落ちたまま次のタスクに進まない
   - 外部 API はすべてモック化してあり、環境変数を 1 つも設定しなくてもテストが完走する
   - テストを後回しにした回は、動くものは早くできても後から直すコストの方が高くついた
 - ビジュアル: 既存流用 docs/infographics/11-testing-strategy.webp
 - 伝えたい 1 メッセージ: TDD と品質担保
-- 出典: docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2 / npx vitest run・npx playwright test --list の実行結果（2026-08-23）
+- 出典: docs/04_development/testing-strategy.md / sprint-development-rules.md SD-2 / npx vitest list --run・npx playwright test --list の実行結果（2026-08-24）
 
 ## Slide 13: 機械検証を通さないと PR を出せない
 
@@ -181,14 +181,14 @@
 - 本文:
   - 品質ゲートと本番デプロイに GitHub Actions は使わず、セッション自身が npm run check を走らせる
   - Actions の唯一の用途は Gem 候補プールの日次生成で、PR を作るところまでしかやらせない
-  - 検査は 38 項目。lint・型・テスト・E2E・Lighthouse の 5 点に、静的検査 15 点を重ねる
-  - 残る 18 点は運用ツール自身の self-test で、判定ロジックが壊れたことに機械で気づける
+  - 検査は 41 項目（2026-08-24 時点）。lint・整形・型・テスト・E2E ほか 7 点に、静的検査 15 点を重ねる
+  - 残る 19 点は運用ツール自身の self-test で、判定ロジックが壊れたことに機械で気づける
   - 結果の Markdown 表を PR 本文に貼るのが必須。貼っていないとフックが PR 作成をブロックする
   - アーキテクチャの依存規則もここで落ちるので、規律が文書だけで終わらない
   - 機械で落とせるものは人が見ない。レビューは設計判断に集中できる
 - ビジュアル: 新規生成 new-05（機械検証ゲート）
 - 伝えたい 1 メッセージ: Layer 0（機械ゲート）— 人が見る前に落ちる
-- 出典: tools/run_checks.sh（実測 38 項目）/ .github/workflows/gem-pool-refresh.yml / pr-review-flow-summary.md / .claude/hooks/pre-pr-create-check.sh
+- 出典: tools/run_checks.sh（実測 41 項目・2026-08-24）/ .github/workflows/gem-pool-refresh.yml / pr-review-flow-summary.md / .claude/hooks/pre-pr-create-check.sh
 
 ## Slide 14: レビューは、他人の PR として読み直す
 
