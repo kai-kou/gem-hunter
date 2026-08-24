@@ -72,6 +72,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ts_source import find_function_body_end, strip_comments  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 DOC_PATH = REPO_ROOT / "docs" / "03_design" / "infrastructure" / "cloudflare-infrastructure.md"
@@ -237,114 +240,6 @@ def parse_wiring_rows(table_lines: list[str], errors: list[str]) -> dict[str, di
     return rows
 
 
-_LINE_COMMENT = "//"
-_BLOCK_OPEN = "/*"
-_BLOCK_CLOSE = "*/"
-
-
-def _strip_line_tracking_quotes(line: str, quote: str | None, in_block: bool) -> tuple[str, str | None, bool]:
-    """1 行からコメントを除く（文字列リテラルの中身は保つ）。(出力, 行末 quote, 行末 in_block)。"""
-    out: list[str] = []
-    i, n = 0, len(line)
-    while i < n:
-        if in_block:
-            end = line.find(_BLOCK_CLOSE, i)
-            if end == -1:
-                i = n
-                break
-            in_block = False
-            i = end + 2
-            continue
-        ch = line[i]
-        if quote:
-            out.append(ch)
-            if ch == "\\" and i + 1 < n:
-                out.append(line[i + 1])
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            i += 1
-            continue
-        if ch in "'\"`":
-            quote = ch
-            out.append(ch)
-            i += 1
-            continue
-        if line.startswith(_LINE_COMMENT, i):
-            break  # 行末まで捨てる
-        if line.startswith(_BLOCK_OPEN, i):
-            in_block = True
-            out.append(" ")
-            i += 2
-            continue
-        out.append(ch)
-        i += 1
-    return "".join(out), quote, in_block
-
-
-def _strip_line_ignoring_quotes(line: str, in_block: bool) -> tuple[str, bool]:
-    """クォート追跡を諦めて **消しすぎる方向** に倒す（`//` 以降と `/* */` を無条件で捨てる）。"""
-    out: list[str] = []
-    i, n = 0, len(line)
-    while i < n:
-        if in_block:
-            end = line.find(_BLOCK_CLOSE, i)
-            if end == -1:
-                i = n
-                break
-            in_block = False
-            i = end + 2
-            continue
-        if line.startswith(_LINE_COMMENT, i):
-            break
-        if line.startswith(_BLOCK_OPEN, i):
-            in_block = True
-            out.append(" ")
-            i += 2
-            continue
-        out.append(line[i])
-        i += 1
-    return "".join(out), in_block
-
-
-def strip_comments(source: str) -> str:
-    """TS/TSX から行コメント・ブロックコメントを取り除く（文字列リテラルの中身は保つ）。
-
-    コメントアウトされた `// await enforceGemListRateLimit(...)` を「配線済み」と誤認しないための前処理。
-    素朴に `//` で切ると `'https://…'` を壊すため、文字列リテラルを跨がないスキャナにしている。
-
-    🔴 **行単位で走査する**（誤検出の実害を 1 行に閉じ込めるため）。ソース全体を 1 本のクォート状態で
-    舐めると、対にならないアポストロフィ（`<p>Don't worry</p>`）や正規表現リテラル（`/'/g`）が
-    「文字列の開始」と誤解され、**以降のファイル全体でコメントが除去されなくなる**。その結果
-    `// await enforceGemListRateLimit(...)`（一時的にコメントアウトして戻し忘れた、最も起こりやすい
-    未配線）を「配線済み」と誤認して素通しする。JS/TS の非テンプレート文字列は行をまたげないので、
-    改行に到達したらクォート状態を捨ててよい（テンプレートリテラルだけは跨げるので維持する）。
-
-    さらに、行末でクォートが閉じていない行は追跡結果自体が信用できないため、その行だけ
-    **消しすぎる方向（= 呼び出しを見失い「配線し忘れ」として FAIL する安全側）** に倒して読み直す。
-    正規表現リテラル（`/https:\\/\\//`）を完全に解釈することは字句解析なしには不可能なので、
-    「見逃して緑になる」より「消しすぎて赤くなる」を選ぶ。
-    """
-    out: list[str] = []
-    quote: str | None = None
-    in_block = False
-    for raw_line in source.splitlines(keepends=True):
-        if raw_line.endswith("\n"):
-            body, eol = raw_line[:-1], "\n"
-        else:
-            body, eol = raw_line, ""
-        text, next_quote, next_block = _strip_line_tracking_quotes(body, quote, in_block)
-        if next_quote is not None and next_quote != "`":
-            # 行内でクォートが閉じない = アポストロフィか正規表現リテラルを文字列の開始と
-            # 誤解した。この行の追跡は信用できないので安全側（消しすぎる方向）へ倒す。
-            text, next_block = _strip_line_ignoring_quotes(body, in_block)
-            next_quote = None
-        out.append(text + eol)
-        quote, in_block = next_quote, next_block
-    return "".join(out)
-
-
 def extract_calls(source: str) -> set[str]:
     """ソース中の `enforce*RateLimit(` 呼び出し名の集合（import 文・コメントは含まない）。"""
     return set(CALL_RE.findall(strip_comments(source)))
@@ -390,12 +285,21 @@ def find_ordering_violation(
 
 
 def extract_exported_enforcers(source: str) -> dict[str, str | None]:
-    """`src/composition/rate-limit.ts` の export 名 → その実装が使うキー接頭辞（不明なら None）。"""
+    """`src/composition/rate-limit.ts` の export 名 → その実装が使うキー接頭辞（不明なら None）。
+
+    🔴 本文の終端は `find_function_body_end`（対応する閉じ括弧までのブレースカウンタ）で
+    厳密に決める（Issue #612 フォローアップ）。旧実装は「次の export 宣言の開始位置までの
+    単純なテキストスライス」だったため、export と export の間に非 export のヘルパー関数が
+    置かれていると、そのヘルパーの中身が直前の export の本文として一緒に取り込まれ、
+    ヘルパー内の無関係な接頭辞リテラルを export の実装接頭辞として誤帰属していた
+    （`extract_composition_wrappers` で PR #609 に修正したのと同型のバグ）。
+    """
     source = strip_comments(source)
     matches = list(EXPORT_RE.finditer(source))
     result: dict[str, str | None] = {}
     for i, match in enumerate(matches):
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(source)
+        fallback_end = matches[i + 1].start() if i + 1 < len(matches) else len(source)
+        end = find_function_body_end(source, match.start(), fallback_end)
         body = source[match.start() : end]
         literal = PREFIX_LITERAL_RE.search(body)
         result[match.group(1)] = literal.group(1) if literal else None
@@ -424,59 +328,6 @@ def _name_awaited_call_re(names: set[str]) -> re.Pattern[str] | None:
     return re.compile(rf"\b(?:await|void|return)\s+(?:await\s+)?({alternation})\s*\(")
 
 
-def _find_function_body_end(source: str, start: int, fallback_end: int) -> int:
-    """`start`（export 宣言の開始位置）から、対応する関数本体の閉じ括弧の直後の
-    オフセットを返す（波括弧の対応を追跡する簡易ブレースカウンタ）。
-
-    🔴 なぜ要るか（修正項目 1・Issue #604 フォローアップ）: 旧実装は本文の終端を
-    「次の `export` 宣言の開始位置」という **単純なテキストスライス** で決めていた。
-    export と export の間に非 export のトップレベル関数（ヘルパー等）が置かれていると、
-    そのヘルパーの中身が直前の export の本文として一緒に取り込まれてしまい、ヘルパー側の
-    `enforce*RateLimit(` 呼び出しが export のラッパー呼び出しとして **誤帰属** する
-    （export の本体は実際には呼んでいないのに「配線あり」と誤って認識される＝偽陰性）。
-
-    波括弧の対応を文字単位で数え、**クォート（`'` `"` `` ` ``）の中の `{` `}` は数えない**
-    （文字列リテラル中の中括弧で対応がずれるのを避ける・エスケープ文字も 1 文字読み飛ばす）。
-    完全な字句解析ではないため正規表現リテラル中の `{n,m}` のような量指定子までは判別できないが、
-    それは既存の `strip_comments` と同じ「完璧なパーサは持たない」割り切りに合わせている。
-
-    最初の `{` に到達する前に走査が尽きた場合（例: 本体を持たない一行の `export const x = 5`）は
-    対応する閉じ括弧が無いので `fallback_end`（次の export 宣言の開始位置、無ければソース終端）を返す。
-    """
-    n = len(source)
-    i = start
-    depth = 0
-    quote: str | None = None
-    body_started = False
-    while i < n:
-        ch = source[i]
-        if quote:
-            if ch == "\\" and i + 1 < n:
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            i += 1
-            continue
-        if ch in "'\"`":
-            quote = ch
-            i += 1
-            continue
-        if ch == "{":
-            depth += 1
-            body_started = True
-            i += 1
-            continue
-        if ch == "}":
-            depth -= 1
-            i += 1
-            if body_started and depth <= 0:
-                return i
-            continue
-        i += 1
-    return fallback_end
-
-
 def extract_composition_wrappers(
     wrapper_sources: dict[str, str], known_enforcers: set[str]
 ) -> tuple[dict[str, set[str]], list[str]]:
@@ -488,7 +339,7 @@ def extract_composition_wrappers(
     `enforce*RateLimit` を直接呼ばなくなるため、これを「配線あり」と認識できないと
     誤って「配線し忘れ・死蔵」を報告してしまう。
 
-    🔴 本文の終端は `_find_function_body_end`（対応する閉じ括弧までのブレースカウンタ）で
+    🔴 本文の終端は `find_function_body_end`（対応する閉じ括弧までのブレースカウンタ）で
     厳密に決める。export の **外側**（次の export 宣言より前にある非 export のトップレベル
     ヘルパー等）のコードは本文に含めない（修正項目 1・上記 docstring 参照）。
 
@@ -508,7 +359,7 @@ def extract_composition_wrappers(
         for i, match in enumerate(matches):
             name = match.group(1)
             fallback_end = matches[i + 1].start() if i + 1 < len(matches) else len(stripped)
-            end = _find_function_body_end(stripped, match.start(), fallback_end)
+            end = find_function_body_end(stripped, match.start(), fallback_end)
             body = stripped[match.start() : end]
             called = set(CALL_RE.findall(body)) & known_enforcers
             if not called:

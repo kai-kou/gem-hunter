@@ -84,7 +84,8 @@ function parseDigest(raw: unknown): { candidates: readonly Gem[]; meta: DigestMe
   const source = raw as RawDigestJson
 
   const meta = parseMeta(source.meta, {
-    notObjectWarning: '候補プール JSON の meta が読めません。既定の帰属表示へフォールバックします。',
+    notObjectWarning:
+      '候補プール JSON の meta が読めません。既定の帰属表示へフォールバックします。',
     logFieldWarnings: true,
   })
   const candidatesRaw = source.candidates

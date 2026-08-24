@@ -1,10 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import {
-  landingUrl,
-  OAUTH_STATE_COOKIE_NAME,
-  SESSION_COOKIE_NAME,
-} from '@/src/composition/auth'
+import { landingUrl, OAUTH_STATE_COOKIE_NAME, SESSION_COOKIE_NAME } from '@/src/composition/auth'
 
 /**
  * ログアウト（AR-5）。セッション Cookie を破棄して元の画面へ戻す。
