@@ -56,6 +56,65 @@ gws drive files list --params '{"q":"'\''<FOLDER_ID>'\'' in parents and trashed=
 
 URL は `https://docs.google.com/presentation/d/<FILE_ID>/edit`。
 
+### 解説ガイド（`slide-guide.md`）を Google ドキュメントにする
+
+`mimeType` に `application/vnd.google-apps.document`、`--upload-content-type` に `text/markdown` を指定すると、
+Markdown が Google ドキュメントへ変換されて入る（見出し・表・リンクは保たれる）。
+
+🔵 **これは新規作成であり、下の「差し替え」節の禁止（`delete` → `create` をしない）とは別の話**。あの禁止は
+**既存ファイルの中身を更新する** ときに ID / URL を変えないための規則で、まだ Google 側に存在しないものを
+初めて作る場合には当たらない。2 回目以降は下の `files update` で差し替える。
+
+🔴 **アップロード前に相対リンクを GitHub の絶対 URL へ置き換える**。`slide-guide.md` は
+`../../../docs/...`（一次資料）と `./images/...`（スライド画像）を相対パスで参照しており、
+そのまま上げると **リンクも画像も全部切れる**（2026-08-24 時点で 96 本）。
+
+⚠️ **単純な文字列置換を上から順に当ててはいけない**。`./images/new-01.jpg` は「`./` で始まるリンク」の
+規則に先にマッチしてしまい、画像用の `raw.githubusercontent.com` に到達しない。**`![...]` かどうかで
+分岐する 1 本の置換**にする。ディレクトリへのリンク（末尾が `/`）は `blob` ではなく `tree` を使う。
+
+```python
+import re
+from pathlib import Path
+src = Path('content/slides/project-explanation-20260822/slide-guide.md')
+RAW  = 'https://raw.githubusercontent.com/kai-kou/gem-hunter/main/'
+BLOB = 'https://github.com/kai-kou/gem-hunter/blob/main/'
+TREE = 'https://github.com/kai-kou/gem-hunter/tree/main/'
+DECK = 'content/slides/project-explanation-20260822/'
+
+def resolve(p: str) -> str | None:
+    if p.startswith('../../../'):   return p[len('../../../'):]          # リポジトリルート相対
+    if p.startswith('../../'):      return 'content/' + p[len('../../'):]  # content/ 配下（議論記録など）
+    if p.startswith('./'):          return DECK + p[2:]                   # このデッキ配下
+    return None
+
+def fix(m: re.Match) -> str:
+    bang, alt, path = m.group(1), m.group(2), m.group(3)
+    if path.startswith(('http://', 'https://', '#')):
+        return m.group(0)
+    rel = resolve(path)
+    if rel is None:
+        return m.group(0)
+    base = RAW if bang else (TREE if rel.endswith('/') else BLOB)
+    return f'{bang}[{alt}]({base}{rel})'
+
+t = re.sub(r'(!?)\[([^\]]*)\]\(([^)]+)\)', fix, src.read_text())
+assert not re.search(r'\]\((?:\.\./|\./)', t), '相対リンクが残っている'
+```
+
+あわせて冒頭に「これは `slide-guide.md` から生成した Google ドキュメント版であり、直すときは正本を直す」旨の注記を足す。
+
+```bash
+# ⚠️ --upload はカレントディレクトリの外を拒否する（/tmp 配下を直接指定すると validationError）。
+#    リポジトリ内へ一時コピーしてから渡し、終わったら消す。
+cp <変換後のファイル> './gem-hunter_解説ガイド.md'
+gws drive files create \
+  --json '{"name":"gem-hunter_解説ガイド","parents":["<FOLDER_ID>"],"mimeType":"application/vnd.google-apps.document"}' \
+  --upload './gem-hunter_解説ガイド.md' \
+  --upload-content-type text/markdown
+rm -f './gem-hunter_解説ガイド.md'
+```
+
 ## 差し替え（フィードバック反映時）
 
 🔴 **`files update` で中身だけ差し替える。`delete` → `create` はしない**（2026-08-23 に実機確認）。
@@ -98,3 +157,7 @@ rm -f roundtrip-check.pptx
 |---|---|---|
 | テキスト版 | `1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g` | https://docs.google.com/presentation/d/1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g/edit |
 | 画像版 | `1DNO_Pi0nZrN1nHIj3oWA2iopxGuSTqst_GlJacspCqE` | https://docs.google.com/presentation/d/1DNO_Pi0nZrN1nHIj3oWA2iopxGuSTqst_GlJacspCqE/edit |
+| 解説ガイド（Google ドキュメント） | `12FMMm0omtq1w9-TqkUAsdfglTh4qWbQ0HiQSYWntfmA` | https://docs.google.com/document/d/12FMMm0omtq1w9-TqkUAsdfglTh4qWbQ0HiQSYWntfmA/edit |
+
+いずれも `Presentations/gem-hunter/`（フォルダ ID `1djoc6Rdyv2As0sCjWP8xTMik72Wi6BaU`）に置いてある。
+**最終アップロード: 2026-08-24**（21 枚改訂版）。

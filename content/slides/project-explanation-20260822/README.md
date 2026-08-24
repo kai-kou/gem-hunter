@@ -1,5 +1,9 @@
 # gem-hunter プロジェクト解説スライド（2026-08-22 作成 / 2026-08-23・2026-08-24 改訂）
 
+> **Google ドライブ**（`Presentations/gem-hunter/`・最終アップロード 2026-08-24）:
+> [画像版](https://docs.google.com/presentation/d/1DNO_Pi0nZrN1nHIj3oWA2iopxGuSTqst_GlJacspCqE/edit) / [テキスト版](https://docs.google.com/presentation/d/1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g/edit) / [解説ガイド](https://docs.google.com/document/d/12FMMm0omtq1w9-TqkUAsdfglTh4qWbQ0HiQSYWntfmA/edit)。
+> 差し替え手順は [`references/google-slides-upload.md`](./references/google-slides-upload.md)。
+
 開発者・エンジニア向けに gem-hunter を 22〜25 分で解説するスライド一式（21 枚）。
 
 > **2026-08-24 の改訂**: 最新のドキュメント・仕様・実装・画面に照らして構成ごと見直した（議論
