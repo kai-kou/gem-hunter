@@ -1,0 +1,15 @@
+{
+  "id": "tech-review-20260824",
+  "topic": "gem-hunter を技術課題の提出物として網羅的レビューし観点別スコアと合否を判定する",
+  "brief": "与件 docs/02_requirements/minimum-requirements.md を採点基準とし、O-1〜O-8 の観点で 0〜5 のスコアと合否を判定する。残存 Issue の存在自体は減点しない。",
+  "participants": [
+    "cto",
+    "frontend",
+    "qa",
+    "security",
+    "code_quality",
+    "requirements_auditor"
+  ],
+  "created_at": "2026-08-24T12:00:58+09:00",
+  "updated_at": "2026-08-24T12:00:58+09:00"
+}
