@@ -62,16 +62,16 @@ Block 6 items (bulleted list, one line each):
 
 Block 7 heading:「ADR」
 Block 7 items (bulleted list, one line each):
-・技術意思決定14件
+・技術意思決定15件
 
 Block 8 heading:「運用ルール」
 Block 8 items (bulleted list, one line each):
-・CP-1〜6等57ファイル
+・CP-1〜6等56ファイル
 
 HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
 「6フェーズ」
-「ADR14件」
-「ルール57件」
+「ADR15件」
+「ルール56件」
 「3正本(設計)」
 
 ARROWS (draw a hand-drawn arrow from the first label to the second; do NOT write the arrow list as text):

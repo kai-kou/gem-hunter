@@ -18,7 +18,7 @@ SUBTITLE (under the title, one line):
 「リクエストの通り道とキャッシュ層」
 
 LAYOUT INSTRUCTION:
-a left-to-right request-flow diagram: browser -> Workers Static Assets / Workers Caching -> Worker (OpenNext adapter) -> GitHub API / GitHub OAuth, with a Rate Limiting binding attached to the Worker. Below the Worker box, stack three cache layers labelled L1 (in-request memoization), L2 (InMemoryCache, the main layer), and L3 (external store, not adopted). Add a small side lane showing three environment boxes: local, preview (versions + alias), production, with arrows indicating wrangler deploy paths.
+a left-to-right request-flow diagram: browser -> Workers Static Assets / Workers Caching -> Worker (OpenNext adapter) -> GitHub API / GitHub OAuth, with a Rate Limiting binding attached to the Worker. Label the two cache outcomes correctly and do not swap them: the arrow that goes from Workers Caching INTO the Worker is the cache miss and must be labelled 「MISS時」, while the arrow that returns from Workers Caching BACK to the browser without touching the Worker is the cache hit and must be labelled 「HIT」. Below the Worker box, stack three cache layers and label them with exactly the three L1 / L2 / L3 lines written in the 「キャッシュ階層」 block below — copy those Japanese lines verbatim, do not translate them into English. Do NOT draw a separate environment lane or deploy lane inside the diagram: the 「環境構成」 and 「デプロイ」 blocks below already carry that content, and drawing them twice would repeat a heading.
 
 BLOCKS (each block = one hand-drawn rounded box with a small doodle icon next to its heading):
 
@@ -45,7 +45,7 @@ Block 4 heading:「バインディング」
 Block 4 items (bulleted list, one line each):
 ・RateLimiting binding
 ・keyはIPのHMAC化
-・検索エンドポイントに適用
+・検索とGem一覧に適用
 
 Block 5 heading:「環境構成」
 Block 5 items (bulleted list, one line each):
@@ -56,8 +56,8 @@ Block 5 items (bulleted list, one line each):
 Block 6 heading:「デプロイ」
 Block 6 items (bulleted list, one line each):
 ・プレビューへversions upload
-・本番はwrangler deploy
-・現在セッション実行が暫定
+・本番はBuilds再トリガー
+・wrangler deployは代替経路
 
 Block 7 heading:「コスト境界」
 Block 7 items (bulleted list, one line each):

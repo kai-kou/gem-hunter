@@ -72,7 +72,7 @@
       },
       {
         "heading": "バインディング",
-        "items": ["RateLimiting binding", "keyはIPのHMAC化", "検索エンドポイントに適用"]
+        "items": ["RateLimiting binding", "keyはIPのHMAC化", "検索とGem一覧に適用"]
       },
       {
         "heading": "環境構成",
@@ -82,8 +82,8 @@
         "heading": "デプロイ",
         "items": [
           "プレビューへversions upload",
-          "本番はwrangler deploy",
-          "現在セッション実行が暫定"
+          "本番はBuilds再トリガー",
+          "wrangler deployは代替経路"
         ]
       },
       {

@@ -1,7 +1,7 @@
 {
   "adr-map": {
     "title": "ADR意思決定マップ",
-    "subtitle": "技術選定14件、決め手を一望",
+    "subtitle": "技術選定15件、決め手を一望",
     "sections": [
       {
         "heading": "基盤技術",
@@ -9,7 +9,7 @@
       },
       {
         "heading": "UI/UX",
-        "items": ["ADR-0001 Radix UI採用", "ADR-0008 ページネーション"]
+        "items": ["ADR-0001 Radix UI採用", "ADR-0008 ページネーション", "ADR-0015 生成画像WebP配信"]
       },
       {
         "heading": "データ設計",
@@ -28,7 +28,7 @@
         "items": ["ADR-0014 日次ダイジェスト"]
       }
     ],
-    "key_numbers": ["ADR総数 14件", "抜粋掲載 9件", "策定期間 2026-08-17〜21", "全件 承認/採用"],
+    "key_numbers": ["ADR総数 15件", "抜粋掲載 10件", "策定期間 2026-08-17〜21", "全件 承認/採用"],
     "layout_hint": "a numbered timeline of decision cards grouped into 6 thematic clusters (infrastructure, UI, data, auth, policy, features); each card shows the ADR number badge, the chosen technology, and a short rationale tag; use a left-to-right or top-to-bottom flow with thin connecting lines linking related decisions (e.g. Cloudflare -> Next.js -> DB-less state)."
   },
   "gem-score": {
