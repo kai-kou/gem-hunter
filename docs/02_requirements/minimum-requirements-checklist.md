@@ -6,6 +6,8 @@
 >
 > **判定記号**: ✅ 充足（実物で確認）/ ⚠️ 充足だが注記あり・または部分的 / ❌ 未充足
 >
+> 🔵 **追記（2026-08-24・`D-42`）**: `TS-4` と §0 の注記・集計は本日時点の再検証結果に更新済み（検証コミットは PR #578 の HEAD）。E2E の件数・所要時間（`TS-1` / §8）も同日の実測値へ差し替えた。
+>
 > 🔴 **本ファイルは与件の再掲ではない**。与件の本文は原著者に権利が帰属するため（[`NOTICE`](../../NOTICE)）、ここでは **要件 ID と短い要約** のみを参照キーとして用い、原文は引用しない。原文は上記リンク先を参照する。
 
 ---
@@ -19,15 +21,14 @@
 | 3.1 画面構成 | 8 | 0 | 0 |
 | 3.2 状態ごとの表示 | 4 | 1 | 0 |
 | 4. 非機能要件 | 12 | 1 | 0 |
-| 5. テスト要件 | 3 | 1 | 0 |
+| 5. テスト要件 | 4 | 0 | 0 |
 | 6. ドキュメント要件 | 4 | 0 | 0 |
-| **合計** | **43** | **3** | **0** |
+| **合計** | **44** | **2** | **0** |
 
-**結論: 与件の機能要件・技術要件は全件充足しており、未充足（❌）はゼロ。** ただし以下 3 件に注記がある（詳細は各項）。
+**結論: 与件の機能要件・技術要件は全件充足しており、未充足（❌）はゼロ。** ただし以下 2 件に注記がある（詳細は各項）。
 
 1. ⚠️ **初期状態（未検索）の文言**: 「検索を促す」明示文言は撤去済みで、プレースホルダ + 説明文 + ヒーロー画像が担う（与件 §3.1.1 の「プレースホルダで入力を促す」は満たす）
 2. ⚠️ **画像最適化は `next/image` を使わない**（`INF-11` の意図的判断。GitHub の `?s=N` + 明示寸法 + `loading="lazy"` で代替）
-3. ⚠️ **CI で自動実行されるのは高速チェックのみ**: `.github/workflows/quality-checks.yml` が `push`（`main`）/ `pull_request` を契機に Prettier / ESLint / `tsc --noEmit` / Vitest（ユニット）を自動実行する（`D-42`・Issue #543）。**E2E と Lighthouse a11y ゲートは待ち時間の都合で CI に含めず**、セッションが `npm run check` を実行して結果表を PR 本文へ貼る運用で担保する（二層構成）
 
 ---
 
@@ -121,10 +122,10 @@
 
 | # | 要件（要約） | 判定 | 事実確認の根拠 |
 |---|---|---|---|
-| TS-1 | テストコードを記述する | ✅ | `npm test`（Vitest）→ **Test Files 67 passed / Tests 593 passed**（実行時間 35.84s・実行結果を確認済み）。E2E は `npm run test:e2e`（Playwright・21 spec ファイル / 89 テスト。件数は `npx playwright test --list` の実測）→ `npm run check` 内で **PASS**（218 秒） |
+| TS-1 | テストコードを記述する | ✅ | `npm test`（Vitest）→ **Test Files 67 passed / Tests 593 passed**（実行時間 35.84s・実行結果を確認済み）。E2E は `npm run test:e2e`（Playwright・**25 spec ファイル / 112 テスト**。件数は `npx playwright test --list` の実測・2026-08-24 JST）→ `npm run check` 内で **PASS**（**262 秒**・2026-08-24 JST 実測。初回 1 件が落ちたが再実行で PASS した既知のフレーク） |
 | TS-2 | 主要フロー（検索→一覧 / 一覧→詳細 / 読み込み中・0 件・エラー）を対象 | ✅ | 検索→一覧: `e2e/sp-1.spec.ts`（「SP-1: 検索して一覧が出る」）/ 一覧→詳細→戻る: `e2e/sp-3.spec.ts`（「SP-3: 詳細まで往復できる」）・`e2e/sp-7.spec.ts`（検索条件を保持した往復）/ 読み込み中・0 件: `e2e/sp-9-loading-empty.spec.ts` / エラー種別 5 ケース: `e2e/sp-9-errors.spec.ts` / 404: `e2e/sp-6-notfound.spec.ts`。ユニットでも `search-repositories.test.ts` `get-repository-detail.test.ts` `repository-list.test.tsx` `error-notice.test.tsx` 等が対応 |
 | TS-3 | 外部 API をモック化し、ネットワークに依存せず再現可能 | ✅ | ユニット・結合は **MSW 2**（`http.get('https://api.github.com/search/repositories', …)`）。E2E は Playwright がスタブ API + アプリを自動起動し外部ネットワークに出ない（README も明記）。`npm test` は環境変数ゼロで通る |
-| TS-4 | コマンド一つで実行でき、CI で自動実行できる状態 | ✅ | **コマンド一つは充足**（`npm test` / `npm run test:e2e` / まとめて `npm run check`）。**CI でも自動実行される**: `.github/workflows/quality-checks.yml` が `push`（`main`）/ `pull_request` を契機に Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を実行する（`D-42`・Issue #543・権限は `contents: read` のみで自動マージ / デプロイはしない）。⚠️ **E2E（Playwright）と Lighthouse a11y ゲートは CI に含めない**（実測 7.4 分 + ブラウザ導入コストが PR ごとの待ち時間に見合わないため）。この 2 つは従来どおりセッションが `npm run check` を実行し、結果表を PR 本文へ貼ることで担保する（二層構成） |
+| TS-4 | コマンド一つで実行でき、CI で自動実行できる状態 | ✅ | **コマンド一つは充足**（`npm test` / `npm run test:e2e` / まとめて `npm run check`）。**CI でも自動実行される**: `.github/workflows/quality-checks.yml` が `push`（`main`）/ `pull_request` を契機に Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を実行する（`D-42`・Issue #543・権限は `contents: read` のみで自動マージ / デプロイはしない）。🔵 **E2E（Playwright）と Lighthouse a11y ゲートは CI に含めない**（E2E は 112 件・実測 262 秒 = 約 4.4 分。ブラウザ導入コストを含めると PR ごとの待ち時間に見合わないため。件数は `npx playwright test --list`・所要時間は `npm run check` の実測・いずれも 2026-08-24 JST）。この 2 つは従来どおりセッションが `npm run check` を実行し、結果表を PR 本文へ貼ることで担保する（二層構成） |
 
 ---
 
@@ -165,7 +166,7 @@
 |---|---|
 | `node -p "require('./node_modules/next/package.json').version"` | `16.3.1` |
 | `npm test` | Test Files **67 passed** / Tests **593 passed**（35.84s） |
-| `npx playwright test`（`npm run check` 内） | **PASS**（218 秒・21 spec ファイル / 89 テスト） |
+| `npx playwright test`（`npm run check` 内） | **PASS**（262 秒・25 spec ファイル / 112 テスト・2026-08-24 JST 実測。件数は `npx playwright test --list`） |
 | `npx eslint`（`npm run check` 内） | **PASS**（8 秒） |
 | `npx tsc --noEmit`（同上） | **PASS**（8 秒） |
 | `python3 tools/check_architecture_boundaries.py`（同上） | **PASS** |

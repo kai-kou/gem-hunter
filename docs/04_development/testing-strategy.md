@@ -164,16 +164,23 @@ npm run check          # bash tools/run_checks.sh。Lint/型/vitest/E2E 等を�
 | `rate-limit` | HTTP 403 + `x-ratelimit-remaining: 0` + `x-ratelimit-reset`（レート制限表示の検証用） |
 | `not-found`（詳細 API の repo 名 or owner のみ） | HTTP 404（詳細ページの Not Found 表示の検証用） |
 
-### CI の読み替え（🔴 Actions 制限中）
+### CI の分担（二層構成・`D-42`）
 
-> **GitHub Actions は制限中で使えない**（`docs/rules/pr-review-flow-summary.md` 冒頭）。テストブロッキングの
-> 役割は現在 **`bash tools/run_checks.sh`（= `npm run check`）が Vitest と Playwright(E2E) の両方を実行して代替する**
-> （`E-12` / `SP-4`）。PR 作成前にセッションがこれを実行し、結果のサマリー表を PR 本文に貼る運用。
+> 🔴 **テストブロッキングの役割は 2 層に分かれる**（2026-08-24・`D-42`・Issue #543）。
+>
+> **層 1（GitHub Actions・自動）**: `.github/workflows/quality-checks.yml` が `push`（`main`）と `pull_request`
+> のたびに **Vitest（ユニット）** を自動実行する（あわせて Prettier `format:check` / ESLint `lint` /
+> `tsc --noEmit` も同じ run で走る）。権限は `contents: read` のみで、**自動マージもデプロイも行わない**。
+>
+> **層 2（セッション実行・手動）**: 🔴 **Playwright（E2E）と Lighthouse は CI 対象外**（E2E は実測 262 秒 / 112 件・2026-08-24 JST +
+> ブラウザ導入コストがあり PR ごとの待ち時間に見合わないため・`D-42`）。この 2 つは
+> **`bash tools/run_checks.sh`（= `npm run check`）が担当する**（`E-12` / `SP-4`）。PR 作成前にセッションが
+> これを実行し、結果のサマリー表を PR 本文に貼る運用は **廃止しない**（`pre-pr-create-check.sh` のブロックも維持）。
 > `SKIP_E2E=1 bash tools/run_checks.sh` で E2E だけを明示的にスキップできるが、スキップした事実は
 > サマリー表に `SKIP` として必ず残る（黙って緑にしない）。
 >
-> 🔵 **将来 Actions が復旧したら、この読み替えを外し「CI は PR ごとに両方を実行する」という記述へ戻す**
-> （ワークフロー定義自体は撤去済みなので復旧時は再導入が必要。詳細は `E-12` / Issue #77）。
+> 🔵 **ワークフローの再導入は対応済み**（`D-42` / Issue #543）。🔴 **ただし解禁されたのは品質チェックだけで、
+> 本番・プレビューのデプロイに Actions は使わない**（発火点は Workers Builds・`D-31` / `D-32`）。
 
 ### 8.1 赤くなったときの判断手順（flaky レジストリ）
 

@@ -23,6 +23,10 @@
 > 🔴 **品質チェックは二層構成**（`D-42`・Issue #543）。**GitHub Actions は本番デプロイには使わない**（`D-31` / `D-32` の Workers Builds が正本・不変）。
 > - **層 1（CI・自動）**: `push`（`main`）と `pull_request` を契機に `.github/workflows/quality-checks.yml` が
 >   Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を自動実行する（読み取り権限のみ・自動マージもデプロイもしない）。
+>   🔴 **層 1 の被覆はごく一部**: CI が見るのは `tools/run_checks.sh` に定義された 42 件（実測・`grep -cE '^\s*run_check(_timeout)? ' tools/run_checks.sh`）のチェックのうち **4 件だけ**。
+>   残り（E2E・Lighthouse・依存規則 `check_architecture_boundaries.py`・CJK Markdown・LP 静的検査・各 self-test など）は層 2 が唯一の担保であり、
+>   **CI 緑は層 2 の省略理由にならない**。※ `.prettierignore` が `docs/` `content/` `site/` `public/data/` を除外しているため、
+>   **ドキュメントのみの PR では CI が実質空振りの緑を返す**（層 2 の CJK Markdown 検査などが本当の担保になる）。
 > - **層 2（セッション・手動）**: **E2E と Lighthouse a11y ゲートは CI に含めない**（1 PR あたりの待ち時間に見合わないため）。
 >   従来どおり **セッション（Claude）が `bash tools/run_checks.sh` を実行し、結果のサマリー表を PR 本文へ貼る**（下記 0 は引き続き必須）。
 > - **本番・プレビューのデプロイ** は引き続きセッションが `wrangler` を直接叩く / Workers Builds に委ねる（Actions からはデプロイしない）。
@@ -45,9 +49,9 @@
 | タイミング | アクション |
 |---------|-----------|
 | PR 作成直後 | Layer 1 セルフレビュー → **指摘を行単位インラインコメントで投稿** → 指摘対応（修正コミット or スキップ + **同一スレッドへの返信** + Resolve） |
-| Layer 0+1 通過後 | `mcp__github__merge_pull_request`（`merge_method="squash"`）で即マージ |
+| **マージ前** | 🔴 **`quality-checks.yml` の check run が緑であることを確認する**（`mcp__github__pull_request_read` の `method="get_check_runs"` または `method="get_status"`。`mcp__github__get_check_run` は check run ID を引数に取るため PR からは引けない）。**赤いままマージしない**（強制力は未配線＝`main` の required status check には未登録なので、運用規律として守る）。⚠️ **例外**: `gem-pool-refresh.yml` が `secrets.GITHUB_TOKEN` で作る `automation/gem-pool-refresh` PR には、GitHub 公式仕様（`GITHUB_TOKEN` 由来のイベントは新しい workflow run を作らない）により **check run が生成されない**。この PR は check run 不在をもって赤とみなさず、同ワークフロー自身の QA ステップが品質を担保する（必要なら `workflow_dispatch` で明示起動して検証できる） |
+| Layer 0+1 通過後 | **上記の CI が緑であることを確認したうえで** `mcp__github__merge_pull_request`（`merge_method="squash"`）で即マージ |
 | **マージ直後** | 🔵 **`site/`（LP）を変更していたら `gh-pages` ブランチへ同期する**（手順の正本は [`site/README.md`](../../site/README.md)・決定は `D-35`）。続けて **公開リポジトリへ反映（`publish-sync`）**。`post-merge-publish-check.sh` がドリフトを判定して指示を注入する。反映できないセッション（`add_repo` 不在・L-117）は `[publish-sync]` Issue に記録して終える（沈黙禁止・#449）。続けて 🔴 **本番デプロイの発火条件をゲート判定**（`Sprint Goal:` 行ありなら Step 7 のスプリントレビュー判定へ委譲・無ければ `tools/check_deploy_gate.py` の結果に従う。判断基準・終了コードは `cloudflare-infrastructure.md` §8.2 が SSOT・実行手順は `pr-review-watcher` スキル Step 6/7）→ Slack 完了通知 |
-| **マージ前** | 🔴 **`quality-checks.yml` が緑であることを確認する**（`mcp__github__get_check_run` / `pull_request_read`）。赤いままマージしない |
 | 任意 | 人手コメントがあれば対応してからマージ |
 
 サーキットブレーカー: 修正サイクル 2 回超で STOP → ユーザー報告（A-4）。

@@ -16,13 +16,25 @@ PR 作成後に **Claude 自身が Layer 1 セルフレビュー（自前 `code-
 フィードバックループ）は `reference.md`**、フロー全体の正本は **`docs/rules/pr-review-flow.md`**、
 レビュアー構成の SSOT は **`docs/rules/ai-reviewer-strategy.md`** を参照。
 
-## CI 制限中の運用（Actions 制限・必読）
+## 品質チェックの二層構成（必読・`D-42`・Issue #543）
 
-🔴 **CI は無い**（GitHub Actions が制限中でジョブが数秒・ログ 0 バイトで失敗するため、ワークフロー 2 本は撤去済み）。
-**Layer 0（機械ゲート）は「PR 作成前の `tools/run_checks.sh` + フック」だけで完結する**（手順・PR 本文への
-結果貼付は `docs/rules/pr-review-flow-summary.md`「PR 作成時の必須事項」が正本）。以降の各ステップで
-「CI 失敗を待つ / 監視する」という記述が出てきても、Actions 制限中はその事象自体が発生しない
-（`subscribe_pr_activity` は人手コメントの監視にのみ有効）。Actions 復旧後は本節を削除し従来運用に戻す。
+🔴 **CI はある**。`.github/workflows/quality-checks.yml` が `push`（`main`）と `pull_request` を契機に
+**自動実行** される（Prettier `format:check` / ESLint / `tsc --noEmit` / Vitest の 4 種のみ・`contents: read` の
+読み取り権限だけで、自動マージもデプロイもしない）。**マージ前に check run を確認し、赤いままマージしない**
+（確認方法・例外の正本は `docs/rules/pr-review-flow-summary.md`「レビュー監視と自動マージ」）。
+
+⚠️ **CI 緑は層 2 の省略理由にならない**。CI が見るのは `tools/run_checks.sh` に定義された 40 件超
+（実測 42 件）のチェックのうち **4 件だけ** で、E2E・Lighthouse・依存規則（`check_architecture_boundaries.py`）・
+CJK Markdown・LP 静的検査・各 self-test は **CI に載っていない**。**PR 作成前に `npm run check`
+（= `bash tools/run_checks.sh`）を実行し、結果表を PR 本文へ貼る層 2 は引き続き必須**
+（手順は同ファイル「PR 作成時の必須事項」項目 0 が正本・`pre-pr-create-check.sh` がブロックで強制する）。
+
+⚠️ **check run が付かない例外**: `gem-pool-refresh.yml` が `secrets.GITHUB_TOKEN` で作る
+`automation/gem-pool-refresh` PR には、GitHub 公式仕様（`GITHUB_TOKEN` 由来のイベントは新しい
+workflow run を作らない）により check run が生成されない。この PR は **check run 不在をもって赤とみなさない**
+（品質は同ワークフロー自身の QA ステップが担保する。必要なら `workflow_dispatch` で明示起動して検証する）。
+
+🔴 **本番デプロイに Actions は使わない**（`D-31` / `D-32` の Workers Builds が正本・不変）。
 
 ## トリガー条件
 
@@ -104,6 +116,7 @@ Monitor(pid={HEARTBEAT_PID}, description="PR #{pr_number} ハートビート")
 ```
 0分   : PR 作成 → Layer 1 観点別フレッシュ文脈セルフレビューを必ず実行
         指摘対応（修正コミット or スキップ + 返信 + Resolve）
+マージ前        : quality-checks.yml の check run を確認（赤ならマージしない・上記の例外を除く）
 Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちなし）
 任意   : subscribe_pr_activity で CI / 人手コメントを監視。あれば対応してからマージ
         └─ A-1〜A-6 該当（サーキットブレーカー発動等）時のみユーザー報告
@@ -116,7 +129,7 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 | 1    | Layer 1 セルフレビュー実行（自前 `code-review` スキル・`Skill(code-review)`）+ 既存レビュー状態の取得。**指摘は全件 PR の行単位インラインコメントで記録し、指摘ゼロでも `event="COMMENT"` のレビューを 1 件投稿する**（#461・手順は code-review スキル Step 3-A）                                                                                                                                                    |
 | 2    | 指摘の分類（修正対象 / スキップ）。CI 失敗・人手コメントの有無を確認                                                                                                                                                                                                                                                                                                                                                 |
 | 3    | 指摘への自動対応（修正コミット or スキップ → スレッド返信 → **Resolve 必須**）                                                                                                                                                                                                                                                                                                                                       |
-| 4    | Layer 0（機械ゲート）+ Layer 1 通過の確認                                                                                                                                                                                                                                                                                                                                                                            |
+| 4    | Layer 0（機械ゲート）+ Layer 1 通過の確認。**あわせて `quality-checks.yml` の check run が緑であることを `mcp__github__pull_request_read`（`method="get_check_runs"` / `method="get_status"`）で確認する**（赤ならマージしない。check run が付かない例外は本ファイル冒頭の二層構成の節）                                                                                                                             |
 | 5    | 自動マージ（squash・外部レビュアー応答待ちなし）                                                                                                                                                                                                                                                                                                                                                                     |
 | 6    | **公開リポジトリへの反映（`publish-sync`）は常に実行**。**本番デプロイはゲート判定を経由し、一次経路は Workers Builds の再トリガー**（`tools/trigger_workers_build.py`。`npm run deploy` の直叩きはフォールバック）: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は同スクリプトが内部でゲートを確認し、開いているときだけトリガーする（fail-closed）。詳細は下記 |
 | 7    | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）ならデプロイ → 疎通確認 → プレビュー環境の退役（`tools/retire_preview_aliases.py`）まで実行。詳細は下記                                                                                                                             |
