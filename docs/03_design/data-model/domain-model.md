@@ -51,7 +51,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | ダイジェスト差分 | `DigestDiff` | `SeenDigest` と当日の `DailyDigest` を突き合わせた結果（`newNames`＝前回に無かった `packageName` 集合 / `isFirstVisit`・`src/domain/model/digest-diff.ts`） | 🔵 **`isFirstVisit` のとき `newNames` は空**（初回に「全件が新着」と示さない・`ADR 0014` §2.4 のフォールバック要件）。「未読」「既読」とは呼ばない（読んだかではなく前回表示に含まれたかで判定するため） |
 | リポジトリ | `Repository` | GitHub 上の 1 リポジトリ。同一性は `owner/repo` | 「プロジェクト」「レポ」と混在させない |
 | リポジトリ識別子 | `RepositoryId` | `owner` と `name` の組。文字列 1 本では持たない | URL・キャッシュキーの素材（`NFR-18`） |
-| リポジトリ完全名 | `RepositoryFullName` | `"owner/repo"` 形式のブランド型（`src/domain/model/repository-full-name.ts`）。`RepositoryQueryPort#findDetail` の引数として使う | `RepositoryId`（`owner`/`name` を分解して持つ設計）とは別物。詳細取得のポート境界でのみ使う軽量な識別子 |
+| リポジトリ完全名 | `RepositoryFullName` | `"owner/repo"` 形式のブランド型（`src/domain/model/repository-full-name.ts`）。`RepositoryQueryPort#findDetail` の引数として使う。🔴 **厳格版（`repositoryFullName` / `tryRepositoryFullName`）と許容版（`isLenientRepositoryFullName` / `tryParseLenientRepositoryFullName`）の 2 系統が同居する**（実データ 62,783 件中 26 件・ユニーク owner 25 件で判定が割れる。すべて末尾ハイフン owner の実在リポジトリ。詳細は §4） | `RepositoryId`（`owner`/`name` を分解して持つ設計）とは別物。詳細取得のポート境界でのみ使う軽量な識別子。**許容版はブランド型を返さない**（§4） |
 | オーナー | `Owner` | リポジトリの所有者（ユーザーまたは Organization）。表示に使うのは名前とアイコン | 「ユーザー」は **本アプリの利用者** を指すので混同しない |
 | 検索条件 | `SearchQuery` | キーワード・ページ・ソート・表示件数の 4 つ組。**URL と 1 対 1 で対応する**（`NFR-2`） | UI 状態ではなくドメインの値。バラバラの引数で持ち回らない |
 | 検索結果 | `SearchResult` | 検索条件に対する `RepositorySummary` の並びと総件数 | |
@@ -133,6 +133,21 @@ export function trySearchKeyword(raw: string): SearchKeyword | null { /* … */ 
 - 🔴 **生の `string` / `number` をユースケースの引数にしない。** 境界（`searchParams` の読み取り・ACL）で値オブジェクトへ変換する。
 - 値オブジェクトは **不変**（`readonly`）。等価性は値で判定する。
 - `zod` は **`src/infrastructure/` 側の外部データ検証で使う**。ドメインは依存ゼロを保つ（アーキテクチャ §1.2）。
+
+**`RepositoryFullName` の 2 系統（厳格版 / 許容版・実データ 62,783 件で実測・#141 系）**: 上記「ブランド型 + スマートコンストラクタ」は原則だが、`RepositoryFullName`（`src/domain/model/repository-full-name.ts`）だけは **目的の異なる 2 つの判定系統** を同じファイルに持つ。
+
+| 系統 | 関数 | 判定内容 | 返り値 | 使う場面 |
+|---|---|---|---|---|
+| **厳格版** | `repositoryFullName` / `tryRepositoryFullName` | GitHub の命名規則そのもの（`owner` は英数字とハイフンのみ・先頭末尾ハイフン不可・最大 39 文字。`repo` は `[A-Za-z0-9._-]+`・`.` `..` 単体不可・最大 100 文字） | `RepositoryFullName`（ブランド型） | GitHub の命名規則を不変条件として保証したい場面（新規作成時の入力検証） |
+| **許容版** | `isLenientRepositoryFullName` / `tryParseLenientRepositoryFullName` | スラッシュ 1 個で 2 分割でき、両セグメントが空白を含まず `.` / `..` 単体でないことだけ | `{ readonly owner: string; readonly name: string }`（**生の `string` の組・ブランド型ではない**） | 実データの読み取り（候補プール JSON のパース・一覧行の描画・検索の同伴指定 URL 解釈） |
+
+**なぜ緩い方が要るか**: GitHub リポジトリ実データ 62,783 件を両系統で全件突合したところ、**厳格版は 26 件（ユニーク owner 25 件）を拒否した**。すべて「owner が末尾ハイフンで終わる実在リポジトリ」（例: `Qix-/color-convert`・`qix-/node-is-arrayish`・`main--/rust-timerfd`）。GitHub 自体は現在ハイフン終わりの owner 名の作成を禁止しているが、命名規則変更前に作られた既存アカウントは生き残っている。候補プール（インフラ層が読む配信データ）や一覧画面（UI 層が描く行）はこの実データをそのまま扱うため、厳格版で弾くと実在する正当な行が消える・リンクが壊れる。
+
+🔴 **許容版がブランド型を返さない理由**: 上記の「ブランド型 + スマートコンストラクタ」は **GitHub の命名規則という不変条件を保証したい値** に対する形であり、許容版は意図的にこの形を取らない。許容版は末尾ハイフン owner のような「本来の命名規則には違反するが実在する」値をそのまま素通りさせる設計であり、GitHub の命名規則そのものを不変条件として検証しない。ブランド型で包むと「`RepositoryFullName` 型である＝厳格版の不変条件を満たす」という既存の意味が壊れるため、許容版は素の `{ owner, name }` を返すに留める。
+
+**使い分け**: 実データの読み取り（配信 JSON のパース・一覧行の描画・検索の同伴指定 URL 解釈）→ 許容版を使う。GitHub の命名規則そのものを検証したい（新規作成時の入力検証・ドメインの不変条件として "正しい owner/repo 名" を保証したい）→ 厳格版を使う。
+
+🔴 **厳格版はインフラ層・UI 層の実データ読み取りには使わないこと**。実在データの一部を拒否し、一覧からの消失・リンク破損を招く（`static-gem-index.ts` / `static-gem-digest.ts` / `gem-list.tsx` は過去に独自の緩い判定を重複実装していたが、許容版へ統合済み）。
 
 **`CacheKey` の実装位置（Issue #67）**: ブランド型 + 生成関数を `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。`src/domain/model/` ではない — キー形式が `CachePort` 実装詳細と不可分なため）。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` の 2 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
 
