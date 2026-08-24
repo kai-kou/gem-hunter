@@ -252,7 +252,19 @@ python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" pipeline \
 
 ## 禁止事項
 
-- Try アイテムを Issue 化せずに「次回気をつける」で済ませない
-- 同じ Problem が 2 回以上繰り返されても新しい Try Issue を作らないでいる
+> 🔴 **Issue #417（起票基準の厳格化）との関係**: `retrospective/SKILL.md` Step 3-0 は `priority:high` 相当以外の
+> Try を GitHub Issue 化しない。これは以下の禁止事項と矛盾しない — 元の禁止事項が守ろうとしていたのは
+> **「記録を残さず握り潰すこと」の禁止** であって「Issue 化そのものの強制」ではない。Step 3-0 は Issue 化しない
+> 代わりに、**Issue 化以外の行き先（lessons 直記載 / 見送りログ `content/analytics/retro/deferred_try.jsonl` へ
+> の追記）に必ず記録を残す**ことを条件に運用する。記録が完了しないまま見送るのは、Issue 化を省略する場合でも
+> 引き続き違反である。
+
+- Try アイテムを **どの行き先にも記録せず**「次回気をつける」で済ませない（GitHub Issue 化 / lessons 直記載 /
+  見送りログ `content/analytics/retro/deferred_try.jsonl` への追記のいずれにも乗せずに Try を捨てるのは違反。
+  `priority:high` 相当でないため Issue 化しない場合でも、上記いずれかへの記録が完了して初めて処理完了とみなす）
+- 同じ Problem が 2 回以上繰り返されても新しい Try Issue を作らないでいる（`retrospective/SKILL.md` Step 3-0 の
+  `Q1` 判定は、見送りログと `docs/rules/lessons/` の両方を実際に検索して「2 回以上」を数える。**数えるための
+  記録（見送りログ・lessons）が無い状態で「再発なし」と見送るのは違反** — 記録を残すことで初めてこの禁止事項を
+  機械的に守れる、という関係にある）
 - KPT を 3 役割の並列実行ではなく逐次実行する（並列化必須）
 - `type:retro-try` ラベルなしで Try Issue を作成する（フィルタリングが機能しなくなる）
