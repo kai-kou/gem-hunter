@@ -61,7 +61,6 @@ Block 5 heading:「残課題」
 Block 5 items (bulleted list, one line each):
 ・R-6 コスト文言の是正
 ・独自ドメインの要否
-・残るはM-4の2項目
 
 HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
 「M-1〜M-6」
