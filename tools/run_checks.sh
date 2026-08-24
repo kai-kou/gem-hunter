@@ -118,6 +118,16 @@ else
   skip_check "テスト (vitest run)" "package.json が無い（アプリコード導入前）"
 fi
 
+# 3.45. E2E スタブの外部サブリソース URL 混入検査（実測: 到達不可な外部ホストへの <img src> 等が
+#       page.goto() を1回あたり約12.6秒ブロックしていた・NFR-24）。E2E 本体より前に置き、
+#       混入があれば軽量に即座に検出する。
+if [ -f "$REPO_ROOT/tools/check_e2e_stub_external_urls.py" ]; then
+  run_check "E2E スタブ外部 URL 検査 (check_e2e_stub_external_urls.py)" python3 tools/check_e2e_stub_external_urls.py
+  run_check "E2E スタブ外部 URL 検査 self-test (check_e2e_stub_external_urls.py --self-test)" python3 tools/check_e2e_stub_external_urls.py --self-test
+else
+  skip_check "E2E スタブ外部 URL 検査 (check_e2e_stub_external_urls.py)" "スクリプトが見つかりません"
+fi
+
 # 3.5. E2E テスト (Playwright)
 # 🔴 ビルドを含み重いため Vitest とは別ステップにし、専用タイムアウトを持つ。
 #    RUN_CHECKS_TIMEOUT（既定 300 秒）を流用すると Lint/型/vitest と取り合いになるため個別の env を持つ。

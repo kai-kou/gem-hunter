@@ -25,7 +25,8 @@
 //   readme-rich を含む（repo 名）    → Issue #339（README の書式反映）E2E 専用。書式要素
 //                             （見出し・段落・ネストした箇条書き・番号付きリスト・引用・列が多く
 //                             横に長い表・長い行を含むコードブロック・インラインコード・長い URL・
-//                             バッジ画像）を網羅した README HTML を返す（`octostub/octo-readme-rich`）
+//                             バッジ画像。バッジは data: URI 固定で外部ネットワークに依存しない）
+//                             を網羅した README HTML を返す（`octostub/octo-readme-rich`）
 //   private-mixed を含む  → AC-12 E2E 専用。上流が is:public を無視して private を混ぜて返す状況を
 //                             再現する（public 1 件 + private 1 件・total_count は 2）。
 //                             `octostub/octo-secret` の詳細も 200 + `private: true` で返す
@@ -114,14 +115,28 @@ const SP9_FORBIDDEN_MARKER = 'sp9-forbidden'
 /** 読み込み中表示（US-22）を E2E から観測できる長さ。長すぎると 60 秒のテスト時間を圧迫する。 */
 const SP9_SLOW_DELAY_MS = 1500
 
+// E2E フィクスチャの画像は外部ネットワークに依存させないため、実体を持たない 1x1 透明 PNG の
+// data URI に統一する。描画サイズは呼び出し側の `<img>` が持つ width/height 属性で決まるため、
+// アバターでもバッジでも実ピクセルが 1x1 のままで用途ごとの見た目を再現できる。
+// 用途別の定数（PRIVATE_MIXED_AVATAR / GEM_BADGE_AVATAR / README_BADGE_IMAGE）は全てこれを参照し、
+// 同じ base64 文字列を複数箇所に重複定義しない（1 か所を差し替えれば全用途に伝播する誤りを防ぐため、
+// 用途ごとに独立した定数として持たせたうえで実体だけをここに一本化している）。
+const TRANSPARENT_1PX_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
 // AC-12 E2E 専用: `q` に `private-mixed` を含む検索でのみ使うデータセット
 // （`e2e/ac-12-private.spec.ts`）。GitHub App の installation token を使うと、
 // `is:public` が効かなくなった場合に private リポジトリが検索応答へ混ざりうる。その状況を
 // スタブ側で再現し、アプリの多層防御（mapper での除外・詳細の 404 化）が効くことを確認する。
 // `total_count` は上流が返した値（2）のまま画面に出る（フィルタで書き換えない契約の確認用）。
 const PRIVATE_MIXED_MARKER = 'private-mixed'
-const PRIVATE_MIXED_AVATAR =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const PRIVATE_MIXED_AVATAR = TRANSPARENT_1PX_PNG
+
+// readmeRichHtml() のバッジ画像用。実体は TRANSPARENT_1PX_PNG（共有定数）を参照するため、
+// PRIVATE_MIXED_AVATAR / GEM_BADGE_AVATAR とは独立した定数でありながら重複定義は増えない。
+// バッジは <img> の width/height 属性で 120×20・98×20 の描画サイズが確定するため、
+// 実ピクセルが 1x1 でも横長要素としてのレイアウト検証は成立する。
+const README_BADGE_IMAGE = TRANSPARENT_1PX_PNG
 
 function privateMixedRepo({ id, name, isPrivate, description }) {
   return {
@@ -288,8 +303,11 @@ function readmeRichHtml(owner, repoName) {
     'https://github.com/octostub/octo-readme-rich/blob/main/docs/very/long/nested/path/' +
     'that/should/not/force/horizontal/scroll/on/the/page/README.md</a></p>' +
     '<p>' +
-    '<img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build status badge" width="120" height="20" /> ' +
-    '<img src="https://img.shields.io/badge/license-MIT-blue" alt="License badge" width="98" height="20" />' +
+    // 🔴 外部 URL（img.shields.io 等）を画像 src に置かない: テスト用 Chromium からは到達不可のため
+    // page.goto() が 1 リクエストあたり約 12.6 秒ブロックする（`readme-typography` / `a11y` の
+    // README 系テストで実測・NFR-24 違反）。data: URI に固定してネットワークを完全に遮断する。
+    `<img src="${README_BADGE_IMAGE}" alt="Build status badge" width="120" height="20" /> ` +
+    `<img src="${README_BADGE_IMAGE}" alt="License badge" width="98" height="20" />` +
     '</p>' +
     '</article>'
   )
@@ -324,8 +342,7 @@ const privateMixedRepos = [
 //    その場合は 1 件だけ返し、`console.warn` で理由を出す。テスト側は「2 件返ること」を
 //    `expect` して失敗する（静かに素通りさせない）。
 const GEM_BADGE_MARKER = 'gem-badge'
-const GEM_BADGE_AVATAR =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const GEM_BADGE_AVATAR = TRANSPARENT_1PX_PNG
 const gemIndexDir = path.join(__dirname, '..', '..', 'public', 'data', 'gem-index')
 
 /**
