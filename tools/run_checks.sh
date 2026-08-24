@@ -389,6 +389,17 @@ else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# ロードマップ状態検査（roadmap.md §2/§3/§5.1 と GitHub Issue 実態の乖離検知・Issue #572）も
+# 「--self-test だけ」を配線する。本判定は GitHub API への実疎通に依存するため、本番乖離検知
+# self-test と同じ理由（Issue #288）で配線しない（判定不能＝終了コード 2 で CI を赤くしないための
+# 個別ハンドリングを実装するのではなく、本判定自体をネットワーク非依存の run_checks.sh に乗せない
+# 既存パターンに合わせる）。
+if [ -f "$REPO_ROOT/tools/check_roadmap_status.py" ]; then
+  run_check "ロードマップ状態検査 self-test (check_roadmap_status.py --self-test)" python3 tools/check_roadmap_status.py --self-test
+else
+  skip_check "ロードマップ状態検査 self-test (check_roadmap_status.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # Workers Builds 再トリガーの self-test（Issue #451）。本判定（引数なし実行）は Cloudflare API への
 # 実疎通とデプロイゲート判定に依存するため配線しない（本番乖離検知 self-test と同じ理由・Issue #288）。
 if [ -f "$REPO_ROOT/tools/trigger_workers_build.py" ]; then
