@@ -522,6 +522,86 @@ SELF_TEST_CASES: list[tuple[str, str, int]] = [
 ]
 
 
+# --- ロールアップ（app/ 内相対 import の合算）専用ケース ---
+# (entry_rel, file_texts, want_count) — 複数ファイルの依存関係を検査するため file_texts 辞書で渡す。
+ROLLUP_TEST_CASES: list[tuple[str, dict[str, str], int]] = [
+    # 🔴 セルフレビューで実測された回避手口そのものを固定化する回帰テスト（Issue #619）。
+    # page-split2.tsx 自体は空っぽの薄い皮（0 件）だが、helperA/helperB（各単独では domain_imports=3・
+    # array_chains=1 で閾値以下）を相対 import しており、合算すると domain_imports=6 / array_chains=2 で
+    # 両方が閾値超過になる＝この 2 件を検出できることを固定化する。
+    (
+        "app/[locale]/page-split2.tsx",
+        {
+            "app/[locale]/page-split2.tsx": (
+                "import { helperA } from './_orchestration-a'\n"
+                "import { helperB } from './_orchestration-b'\n"
+                "export default function Page() {\n"
+                "  return helperA() ?? helperB()\n"
+                "}\n"
+            ),
+            "app/[locale]/_orchestration-a.ts": (
+                "import { a1 } from '@/src/domain/model/a1'\n"
+                "import { a2 } from '@/src/domain/model/a2'\n"
+                "import { a3 } from '@/src/domain/model/a3'\n"
+                "export function helperA() {\n"
+                "  return [a1, a2, a3].filter((x) => x)\n"
+                "}\n"
+            ),
+            "app/[locale]/_orchestration-b.ts": (
+                "import { b1 } from '@/src/domain/model/b1'\n"
+                "import { b2 } from '@/src/domain/model/b2'\n"
+                "import { b3 } from '@/src/domain/model/b3'\n"
+                "export function helperB() {\n"
+                "  return [b1, b2, b3].map((x) => x)\n"
+                "}\n"
+            ),
+        },
+        2,  # domain_imports 超過 + array_chains 超過
+    ),
+    # 単独では閾値以下の helper 1 個だけを import する場合は合算しても閾値以下（過剰検出しない）。
+    (
+        "app/[locale]/page-split-safe.tsx",
+        {
+            "app/[locale]/page-split-safe.tsx": (
+                "import { helperA } from './_orchestration-a-safe'\n"
+                "export default function Page() {\n  return helperA()\n}\n"
+            ),
+            "app/[locale]/_orchestration-a-safe.ts": (
+                "import { a1 } from '@/src/domain/model/a1'\n"
+                "export function helperA() {\n  return [a1].filter((x) => x)\n}\n"
+            ),
+        },
+        0,
+    ),
+    # 実例に相当する回帰: 小さな co-located データファイル（自動生成の定数等）を相対 import しても
+    # 誤検出しない（`app/[locale]/opengraph-image.tsx` → `./og-background-data` を模したケース）。
+    (
+        "app/[locale]/image-with-data.tsx",
+        {
+            "app/[locale]/image-with-data.tsx": (
+                "import { DATA_URI } from './local-data'\n"
+                "export default function Image() {\n  return DATA_URI\n}\n"
+            ),
+            "app/[locale]/local-data.ts": "export const DATA_URI = 'data:image/png;base64,AAAA'\n",
+        },
+        0,
+    ),
+    # 循環 import があっても無限ループしない（visited による打ち切り）。
+    (
+        "app/[locale]/cycle-a.tsx",
+        {
+            "app/[locale]/cycle-a.tsx": (
+                "import { b } from './cycle-b'\nexport default function A() {\n  return b\n}\n"
+            ),
+            "app/[locale]/cycle-b.ts": (
+                "import { a } from './cycle-a'\nexport const b = a\n"
+            ),
+        },
+        0,
+    ),
+]
+
+
 def run_self_test() -> int:
     failures: list[str] = []
     for rel, text, want_count in SELF_TEST_CASES:
@@ -529,6 +609,13 @@ def run_self_test() -> int:
         if len(problems) != want_count:
             failures.append(
                 f"  {rel}: want {want_count} 件, got {len(problems)} 件 :: {problems}"
+            )
+
+    for rel, file_texts, want_count in ROLLUP_TEST_CASES:
+        problems = check_file(rel, file_texts[rel], file_texts=file_texts)
+        if len(problems) != want_count:
+            failures.append(
+                f"  [rollup] {rel}: want {want_count} 件, got {len(problems)} 件 :: {problems}"
             )
 
     # ceiling_for の allowlist 参照が exact path match であること（誤って部分一致しない）
