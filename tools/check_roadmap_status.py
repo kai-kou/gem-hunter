@@ -984,6 +984,29 @@ def _self_test_suppression_marker() -> list[str]:
     return failures
 
 
+def _self_test_suppression_marker_redos() -> list[str]:
+    """WARNING2 回帰テスト: 閉じられない抑制マーカーの反復（病的入力）が実用的な時間で終わること。
+
+    レビューの実測（旧実装）: 4000 回反復（約 96KB）で 4.4 秒。修正後は文字クラス変更
+    （`[^>]`）+ 走査対象の長さ上限（`_SUPPRESSION_SCAN_MAX_LEN`）により、入力サイズに
+    関わらず一定時間内に収まることを確認する。
+    """
+    failures = []
+    malicious = "<!-- roadmap-status-ok: " * 4000  # 閉じる `-->` を含まない反復（約 96KB）
+    start = time.monotonic()
+    result = _find_suppression_reason(malicious)
+    elapsed = time.monotonic() - start
+
+    if result is not None:
+        failures.append(f"病的入力で誤って抑制理由を検出してしまった: {result!r}")
+    if elapsed > 1.0:
+        failures.append(
+            f"病的入力（約 96KB・閉じられないマーカーの反復）の処理が遅すぎる"
+            f"（{elapsed:.3f} 秒。1 秒以内を期待。旧実装は同規模の入力で約 4.4 秒だった）"
+        )
+    return failures
+
+
 def _self_test_no_false_positive() -> list[str]:
     """陰性対照: 違反の無いフィクスチャでは何も検出しない。"""
     failures = []
@@ -998,6 +1021,9 @@ def _self_test_no_false_positive() -> list[str]:
 def run_self_test() -> int:
     groups = [
         ("SP セル展開（4 形態）", _self_test_sp_cell_expansion),
+        ("SP セル展開: 列挙+範囲混在（実 M-6 セル・CRITICAL 回帰）", _self_test_expand_sp_cell_mixed_range_and_enum),
+        ("SP セル展開: 範囲が 2 つ以上", _self_test_expand_sp_cell_multiple_ranges),
+        ("SP セル展開: 開区間 + 単独参照混在", _self_test_expand_sp_cell_open_mixed),
         ("タイトル抽出（3 パターン + 紛らわしい非マッチ）", _self_test_title_extraction),
         ("PR 除外", _self_test_pull_request_filter),
         ("roadmap パース（正常系）", _self_test_parse_roadmap_ok),
@@ -1005,7 +1031,9 @@ def run_self_test() -> int:
         ("違反3 検出（壊す前/後）", _self_test_violation3_detection),
         ("違反4 検出（壊す前/後）", _self_test_violation4_detection),
         ("違反4: 通過済みキーワード + 装飾つき表記", _self_test_violation4_pass_keyword_and_decoration),
+        ("達成宣言キーワードの否定文（WARNING1 回帰）", _self_test_achievement_keyword_negation),
         ("抑制マーカー（§5.1 行/§3 節/空理由/陰性対照）", _self_test_suppression_marker),
+        ("抑制マーカーの ReDoS 耐性（WARNING2 回帰）", _self_test_suppression_marker_redos),
         ("陰性対照（誤検出なし）", _self_test_no_false_positive),
     ]
     failed_groups = 0
