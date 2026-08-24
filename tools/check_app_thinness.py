@@ -14,7 +14,7 @@ SSOT: `docs/03_design/architecture/application-architecture.md`
   1. 同じオーケストレーション手順が `app/[locale]/page.tsx` と `app/api/search/route.ts` に
      重複していた（ユースケース層へ寄せるべき手順が `app/` に 2 箇所書かれていた）。
   2. `app/[locale]/page.tsx` が、検索結果ポートと Gem バッジポートという **2 つのポートの
-     結果を実行時に組み合わせて**表示用データ（`badgedFullNames`）を算出していた
+     結果を実行時に組み合わせて** 表示用データ（`badgedFullNames`）を算出していた
      （`.filter().map().slice()` のチェーンが `app/` に居座っていた＝本来ユースケース層の仕事）。
 
 どちらも「import の向き」は正しいまま起きる。そこで本スクリプトは **量的な代理指標**
@@ -38,7 +38,7 @@ SSOT: `docs/03_design/architecture/application-architecture.md`
 🔴 **既存の違反を後追いで赤くしない**。初回導入時点で実測し、閾値を超えているファイルは
 `ALLOWLIST` に「ファイルパス → 4 指標の現在の実測値」として登録し、検査を PASS させる。
 
-- allowlist 登録ファイルは、登録時点の実測値が **そのファイル専用の上限**になる
+- allowlist 登録ファイルは、登録時点の実測値が **そのファイル専用の上限** になる
   （デフォルト閾値ではなく実測値そのものが上限＝現状より 1 でも悪化したら検出する）
 - allowlist 未登録ファイル（＝新規ファイル、または現状すでにデフォルト閾値以下のファイル）は
   `DEFAULT_THRESHOLDS` がそのまま上限になる

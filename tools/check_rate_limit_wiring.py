@@ -698,6 +698,26 @@ _WRAPPER_MISATTRIBUTED_HELPER_CALL = {
     ),
 }
 
+# 🔴 任務 1 の反例フィクスチャ（本 PR）: `extract_exported_enforcers` 版の同型バグ。
+# `enforceSearchRateLimit` の本体には接頭辞リテラルが無く（動的生成）、その **外側**
+# （次の export より前）にある非 export のヘルパーだけが `'gems:'` を持つ。
+# 旧実装（本文の終端 = 次の export の開始位置という単純スライス）だと、このヘルパーの
+# 中の無関係な文字列が `enforceSearchRateLimit` の実装接頭辞として誤帰属し、
+# 本来 `None`（判定不能）であるべきところを `'gems:'` と誤って返していた。
+_COMPOSITION_ENFORCER_MISATTRIBUTED_HELPER_LITERAL = """
+export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
+  return await enforceRateLimitDynamic(headers, buildSearchPrefix())
+}
+
+function debugLogRateLimitProbe(headers: Headers): void {
+  void enforceGemListRateLimit(headers, 'gems:')
+}
+
+export async function enforceGemListRateLimit(headers: Headers): Promise<void> {
+  await enforceRateLimit(headers, 'gems:')
+}
+"""
+
 
 def self_test() -> int:
     failures: list[str] = []
@@ -1011,6 +1031,21 @@ def self_test() -> int:
     }:
         failures.append("extract_exported_enforcers: export 名と接頭辞の対応を取り出せていない")
 
+    # 🔴 任務 1（本 PR）の反例: export 外側の非 export ヘルパー内の文字列を、
+    # 直前の export（`enforceSearchRateLimit`）の実装接頭辞として誤帰属しないこと。
+    # 本来 `enforceSearchRateLimit` は接頭辞不明（動的生成）なので `None` であるべき。
+    misattributed = extract_exported_enforcers(_COMPOSITION_ENFORCER_MISATTRIBUTED_HELPER_LITERAL)
+    if misattributed.get("enforceSearchRateLimit") is not None:
+        failures.append(
+            "extract_exported_enforcers: export 外側のヘルパー内の文字列を export 本体の"
+            f"接頭辞として誤帰属している（期待 None、実際 {misattributed.get('enforceSearchRateLimit')!r}）"
+        )
+    if misattributed.get("enforceGemListRateLimit") != "gems:":
+        failures.append(
+            "extract_exported_enforcers: 反例フィクスチャで自身の接頭辞まで壊れている"
+            f"（{misattributed!r}）"
+        )
+
     # Issue #604: ラッパー抽出・間接呼び出し解決の補助関数の単体検証
     known = {"enforceSearchRateLimit", "enforceGemListRateLimit"}
     wrappers_ok, wrapper_errs_ok = extract_composition_wrappers(_WRAPPER_OK, known)
@@ -1053,8 +1088,9 @@ def self_test() -> int:
         print(f"[rate-limit-wiring] self-test NG（{len(failures)} 件）", file=sys.stderr)
         return EXIT_VIOLATION
     print(
-        "[rate-limit-wiring] self-test OK（37 ケース: 正常 9 / 反例 25 / 補助関数・列挙集合 3・"
-        "間接呼び出し（Issue #604）6 件・ラッパー本文の誤帰属反例（修正項目 1）1 件を含む）"
+        "[rate-limit-wiring] self-test OK（38 ケース: 正常 9 / 反例 25 / 補助関数・列挙集合 4・"
+        "間接呼び出し（Issue #604）6 件・ラッパー本文の誤帰属反例（修正項目 1）1 件・"
+        "extract_exported_enforcers の誤帰属反例（本 PR）1 件を含む）"
     )
     return EXIT_OK
 

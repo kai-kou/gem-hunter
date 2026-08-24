@@ -8,6 +8,7 @@ import {
 import { type GemIndex, gemIndex, gemIndexValue } from '../../domain/model/gem-index'
 import { DEFAULT_PAGE } from '../../domain/model/page-number'
 import { DEFAULT_PER_PAGE } from '../../domain/model/per-page'
+import { isLenientRepositoryFullName } from '../../domain/model/repository-full-name'
 import type {
   GemIndexPort,
   GemPoolSearchInput,
@@ -71,34 +72,6 @@ const COLUMN_GEM_INDEX = 'gemIndex'
 const COLUMN_PACKAGE_NAME = 'packageName'
 const COLUMN_DEPENDENT_COUNT = 'dependentCount'
 const COLUMN_STARS = 'stars'
-
-/**
- * `owner/repo` の形式判定。`string かつ非空` だけでは `../settings` `owner/` `a/b/c` が通り、
- * 一覧の項目名とリンク先が食い違う（`F-09`）。
- *
- * 🔴 **正本は `static-gem-digest.ts` の `REPOSITORY_FULL_NAME_PATTERN`（同一パターン）**。
- * 共有モジュールへの切り出しは別 Issue（本 PR のファイル分担の外側にあるため今回は同値複製）。
- * ⚠️ ドメインの `tryRepositoryFullName` は使わない。`OWNER_PATTERN` が末尾ハイフンを禁止しており、
- * 実データに末尾ハイフンの owner が 25 件（`Qix-/color-convert` 等）実在してリンクが消える。
- */
-const REPOSITORY_FULL_NAME_PATTERN = /^[^/\s]+\/[^/\s]+$/
-
-/**
- * `owner/repo` として受理してよい値か。
- *
- * 🔴 上のパターン **だけでは `../settings` を弾けない**（`..` は `/` も空白も含まないので
- * `[^/\s]+` に一致してしまう）。`F-09` が問題にしたのはまさにその値なので、ドットだけの
- * セグメント（`.` / `..`）を明示的に落とす。
- * ⚠️ したがって本関数は正本（`static-gem-digest.ts` の同一パターン）より **厳しい**。
- * 共有モジュールへ切り出すときは、この 1 段も一緒に持っていく（別 Issue）。
- */
-function isSafeRepositoryFullName(value: string): boolean {
-  if (!REPOSITORY_FULL_NAME_PATTERN.test(value)) {
-    return false
-  }
-  // パターン上ちょうど 2 セグメントなので、それぞれがドットだけでないことを見れば足りる。
-  return value.split('/').every((segment) => segment !== '.' && segment !== '..')
-}
 
 /**
  * プール 1 件。`GemPoolEntry`（一覧が必要とする全項目）に、照合の基準となる小文字名を足したもの。
@@ -707,7 +680,7 @@ async function loadShard(
     }
     // 🔴 `owner/repo` の形でないものは入口で落とす（`F-09`）。`../settings` のような値が通ると
     //    詳細ページへのリンクが URL 正規化で別のページへ化け、項目名と遷移先が食い違う。
-    if (!isSafeRepositoryFullName(fullName)) {
+    if (!isLenientRepositoryFullName(fullName)) {
       malformedNames += 1
       continue
     }

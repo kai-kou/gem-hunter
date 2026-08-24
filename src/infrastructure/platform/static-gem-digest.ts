@@ -1,5 +1,6 @@
 import type { DigestMeta, Gem } from '../../domain/model/gem'
 import { gemIndex } from '../../domain/model/gem-index'
+import { isLenientRepositoryFullName } from '../../domain/model/repository-full-name'
 import type { GemDigestPort } from '../../domain/ports/gem-digest-port'
 
 import digestJson from '../../../public/data/daily-digest.json'
@@ -56,12 +57,6 @@ export const FALLBACK_META: DigestMeta = {
   sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
   generatedAt: '',
 }
-
-/**
- * `owner/repo` の厳格判定。`includes('/')` だけでは `owner/` `/repo` `a/b/c` `owner repo`
- * `../..` が通過し、詳細ページのリンクが 404 になる（`AC-4`）。
- */
-const REPOSITORY_FULL_NAME_PATTERN = /^[^/\s]+\/[^/\s]+$/
 
 export class StaticGemDigest implements GemDigestPort {
   /**
@@ -164,7 +159,7 @@ function tryParseCandidate(raw: unknown, index: number): Gem | null {
   }
   if (
     typeof entry.repositoryFullName !== 'string' ||
-    !isRepositoryFullName(entry.repositoryFullName)
+    !isLenientRepositoryFullName(entry.repositoryFullName)
   ) {
     return skip(index, 'repositoryFullName が owner/repo 形式ではありません')
   }
@@ -186,14 +181,6 @@ function tryParseCandidate(raw: unknown, index: number): Gem | null {
     stars: entry.stars,
     gemIndex: gemIndex(entry.gemIndex),
   }
-}
-
-/** `owner/repo` 形式か（スラッシュ 1 個・空白なし・`.` / `..` セグメントなし）。 */
-function isRepositoryFullName(value: string): boolean {
-  if (!REPOSITORY_FULL_NAME_PATTERN.test(value)) {
-    return false
-  }
-  return value.split('/').every((segment) => segment !== '.' && segment !== '..')
 }
 
 function nonEmptyStringOr(

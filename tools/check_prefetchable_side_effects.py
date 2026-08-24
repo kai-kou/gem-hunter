@@ -52,6 +52,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ts_source import find_matching_brace, find_tag_end, strip_comments
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 EXCLUDE_DIR_PARTS = {"node_modules", ".next", "dist", "build", ".git", "__tests__", "e2e"}
@@ -72,130 +75,8 @@ GET_COOKIE_MUTATION_EXCEPTIONS: dict[str, str] = {
 }
 
 
-# --------------------------------------------------------------------------- コメント除去
-
-def strip_comments(text: str) -> str:
-    """コメントを空白へ置換する（オフセットと行番号を保つ）。文字列リテラルは保護する。
-
-    コメント内・文字列内の `<Link href="/api/...">` や `cookies.delete(` を誤検出しない
-    ために必要（`check_architecture_boundaries.py` と同じ方式）。
-    """
-    out = list(text)
-    i, n = 0, len(text)
-    quote: str | None = None
-    while i < n:
-        ch = text[i]
-        if quote:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            i += 1
-            continue
-        if ch in "\"'`":
-            quote = ch
-            i += 1
-            continue
-        if ch == "/" and i + 1 < n:
-            nxt = text[i + 1]
-            if nxt == "/":
-                j = text.find("\n", i)
-                j = n if j == -1 else j
-                for k in range(i, j):
-                    out[k] = " "
-                i = j
-                continue
-            if nxt == "*":
-                j = text.find("*/", i + 2)
-                j = n if j == -1 else j + 2
-                for k in range(i, j):
-                    if out[k] != "\n":
-                        out[k] = " "
-                i = j
-                continue
-        i += 1
-    return "".join(out)
-
-
 def line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
-
-
-def find_matching_brace(text: str, open_idx: int) -> int:
-    """`text[open_idx] == '{'` として、対応する `}` のインデックスを返す。
-
-    文字列 / テンプレートリテラル内の `{` `}` は数えない（既にコメントは除去済みの
-    テキストに対して使う想定）。対応する閉じ括弧が見つからなければ末尾を返す。
-    """
-    depth = 0
-    i = open_idx
-    n = len(text)
-    quote: str | None = None
-    while i < n:
-        ch = text[i]
-        if quote:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            i += 1
-            continue
-        if ch in "\"'`":
-            quote = ch
-            i += 1
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    return n - 1
-
-
-def find_tag_end(text: str, start_idx: int) -> int:
-    """`text[start_idx]` 以降で、深さ 0 のタグ終端 `>` のインデックスを返す。
-
-    JSX 属性は `{...}`（式）や `(...)`（関数呼び出し・アロー関数）を含みうり、その中には
-    `onClick={() => doThing()}` のアロー演算子 `=>` や比較式 `{a > b}` のように `>` が
-    現れうる。非貪欲正規表現の `.*?/?>` はこれをタグ終端と誤認してしまうため、`{}` / `()`
-    の深さと文字列クォートを追跡しながら 1 文字ずつ走査し、深さ 0 の `>` だけをタグ終端と
-    みなす。見つからなければ -1 を返す。
-    """
-    i = start_idx
-    n = len(text)
-    brace_depth = 0
-    paren_depth = 0
-    quote: str | None = None
-    while i < n:
-        ch = text[i]
-        if quote:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            i += 1
-            continue
-        if ch in "\"'`":
-            quote = ch
-            i += 1
-            continue
-        if ch == "{":
-            brace_depth += 1
-        elif ch == "}":
-            brace_depth = max(0, brace_depth - 1)
-        elif ch == "(":
-            paren_depth += 1
-        elif ch == ")":
-            paren_depth = max(0, paren_depth - 1)
-        elif ch == ">" and brace_depth == 0 and paren_depth == 0:
-            return i
-        i += 1
-    return -1
 
 
 def find_matching_paren(text: str, open_idx: int) -> int:
@@ -487,6 +368,22 @@ CASES: list[tuple[str, str, int]] = [
 
 def run_self_test() -> int:
     failures: list[str] = []
+
+    # 回帰テスト（Issue #612）: strip_comments / find_matching_brace / find_tag_end が
+    # tools/ts_source.py の共通実装そのものであることを確認する。誰かがローカル実装へ
+    # 書き戻してしまう（重複再発）と、この import 元との同一性チェックで検出できる。
+    import ts_source
+
+    for name in ("strip_comments", "find_matching_brace", "find_tag_end"):
+        local_fn = globals()[name]
+        shared_fn = getattr(ts_source, name)
+        if local_fn is not shared_fn:
+            failures.append(
+                f"  regression/{name}_is_ts_source_shared: "
+                f"check_prefetchable_side_effects.{name} が ts_source.{name} と同一関数では"
+                "ない（ローカル実装へ書き戻された疑いがあります・Issue #612 の再発）"
+            )
+
     for rel, text, want_n in CASES:
         got = check_file(rel, text)
         if len(got) != want_n:

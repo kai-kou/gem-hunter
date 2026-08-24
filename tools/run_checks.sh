@@ -198,6 +198,7 @@ fi
 # 4.5. UI 寸法検査（コントロールサイズ・フォントサイズのトークン化ゲート）
 if [ -f "$REPO_ROOT/tools/check_ui_dimensions.py" ]; then
   run_check "UI 寸法検査 (check_ui_dimensions.py)" python3 tools/check_ui_dimensions.py
+  run_check "UI 寸法検査 self-test (check_ui_dimensions.py --self-test)" python3 tools/check_ui_dimensions.py --self-test
 else
   skip_check "UI 寸法検査 (check_ui_dimensions.py)" "スクリプトが見つかりません"
 fi
@@ -252,8 +253,33 @@ fi
 # 4.8. 副作用のある API ルートのプリフェッチ検査（#145 の再発防止）
 if [ -f "$REPO_ROOT/tools/check_prefetchable_side_effects.py" ]; then
   run_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" python3 tools/check_prefetchable_side_effects.py
+  run_check "副作用 GET のプリフェッチ検査 self-test (check_prefetchable_side_effects.py --self-test)" python3 tools/check_prefetchable_side_effects.py --self-test
 else
   skip_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" "スクリプトが見つかりません"
+fi
+
+# 4.9. TS/JSX 字句解析ヘルパーの共通モジュール self-test（Issue #612）
+#      複数の検査スクリプトが共有するため、ここが壊れると検査全体が壊れる
+if [ -f "$REPO_ROOT/tools/ts_source.py" ]; then
+  run_check "字句解析ヘルパー self-test (ts_source.py --self-test)" python3 tools/ts_source.py --self-test
+else
+  skip_check "字句解析ヘルパー self-test (ts_source.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# 4.10. app/ 薄さ検査（Issue #612・「app/ はロジックを書かない」の機械化）
+if [ -f "$REPO_ROOT/tools/check_app_thinness.py" ]; then
+  run_check "app/ 薄さ検査 (check_app_thinness.py)" python3 tools/check_app_thinness.py
+  run_check "app/ 薄さ検査 self-test (check_app_thinness.py --self-test)" python3 tools/check_app_thinness.py --self-test
+else
+  skip_check "app/ 薄さ検査 (check_app_thinness.py)" "スクリプトが見つかりません"
+fi
+
+# 4.11. 正規表現リテラルの重複検査（Issue #612・コピーの再発防止）
+if [ -f "$REPO_ROOT/tools/check_duplicate_source_patterns.py" ]; then
+  run_check "正規表現重複検査 (check_duplicate_source_patterns.py)" python3 tools/check_duplicate_source_patterns.py
+  run_check "正規表現重複検査 self-test (check_duplicate_source_patterns.py --self-test)" python3 tools/check_duplicate_source_patterns.py --self-test
+else
+  skip_check "正規表現重複検査 (check_duplicate_source_patterns.py)" "スクリプトが見つかりません"
 fi
 
 # 5. CJK Markdown 整形
