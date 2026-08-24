@@ -414,7 +414,12 @@ def analyze_pr(pr: dict) -> dict:
     # 欠落する場合は None のままにし、_is_automation_pr() 側で fail-closed に倒す。
     author_login = (pr.get("author") or {}).get("login", "")
     is_cross_repository = pr.get("isCrossRepository")
+    # PR #594: 信頼境界の bot 例外は 2 系統ある（gem-pool-refresh workflow と Dependabot）。
+    # どちらも「fork 不可 + ブランチ条件 + 著者ログイン固定」の 3 条件 AND で、
+    # `_is_trusted_author_association()` の許可集合自体は広げない（#379 の境界を保つ）。
     is_automation_pr = _is_automation_pr(branch, author_login, is_cross_repository)
+    is_dependabot_pr = _is_dependabot_pr(branch, author_login, is_cross_repository)
+    is_trusted_bot_pr = is_automation_pr or is_dependabot_pr
 
     # status:waiting-user ラベル付き PR は自動マージ対象から除外（#2173）
     if "status:waiting-user" in pr_labels:
@@ -532,11 +537,12 @@ def analyze_pr(pr: dict) -> dict:
     # ①だけを塞ぐと穴が②③へ移動するだけなので、**すべての分岐の手前で信頼境界を 1 回引く**。
     # 取得できないときは fail-closed（対象外）。外部 AI レビュアーは廃止済み（ai-reviewer-strategy.md）で
     # ②の 2 経路は履歴 PR 互換のための残骸だが、残す以上は同じ信頼境界の内側に置く。
-    # 🔴 Issue #458: 信頼境界の例外を 1 つだけ増やす（既存の「信頼境界外なら全分岐の手前で
-    # no_action」という構造は壊さない）。`is_automation_pr` は fork 不可・ブランチ完全一致・
-    # 著者ログイン固定の 3 条件 AND（`_is_automation_pr()` docstring 参照）なので、
+    # 🔴 Issue #458 / PR #594: 信頼境界の例外を bot 自動化 PR の 2 系統だけに増やす（既存の
+    # 「信頼境界外なら全分岐の手前で no_action」という構造は壊さない）。`is_trusted_bot_pr` は
+    # `_is_automation_pr()`（gem-pool-refresh）と `_is_dependabot_pr()`（Dependabot）の OR で、
+    # いずれも fork 不可・ブランチ条件・著者ログイン固定の 3 条件 AND（各 docstring 参照）なので、
     # authorAssociation が信頼集合に無い bot 著者でもここだけは通す。
-    if not _is_trusted_author_association(author_association) and not is_automation_pr:
+    if not _is_trusted_author_association(author_association) and not is_trusted_bot_pr:
         # 信頼できない著者（fork PR・外部コントリビューター・authorAssociation 取得失敗）は
         # どのステータスにも乗せない。pr-review-watcher は status だけを見てマージまで進めるため、
         # ここを通した時点で無人マージの対象になる（下流へも同じ設定が配布される）。
@@ -550,7 +556,7 @@ def analyze_pr(pr: dict) -> dict:
         _is_claude_branch(branch, author_association)
         or has_ai_reviewer_requested_combined
         or has_ai_review
-        or is_automation_pr
+        or is_trusted_bot_pr
     ):
         # Claude 作業ブランチの PR。Layer 0（機械ゲート）+ Layer 1（観点別フレッシュ文脈セルフレビュー）で
         # 完結する。復帰セッションはセルフレビューを実行し指摘を解消してから即マージする
@@ -640,6 +646,12 @@ def _is_claude_branch(branch: str, author_association: str | None) -> bool:
 AUTOMATION_PR_BRANCH = "automation/gem-pool-refresh"
 AUTOMATION_PR_AUTHOR_LOGIN = "github-actions[bot]"
 
+# 🔴 SSOT: このプレフィックスは .github/dependabot.yml で有効化した Dependabot が作るブランチ
+#     （`dependabot/<ecosystem>/<package>-<version>`）に対応する。dependabot.yml を撤去したら
+#     本述語も一緒に外すこと（PR #594）。
+DEPENDABOT_PR_BRANCH_PREFIX = "dependabot/"
+DEPENDABOT_PR_AUTHOR_LOGIN = "dependabot[bot]"
+
 
 def _is_automation_pr(
     branch: str,
@@ -665,6 +677,38 @@ def _is_automation_pr(
     if branch != AUTOMATION_PR_BRANCH:
         return False
     return (author_login or "") == AUTOMATION_PR_AUTHOR_LOGIN
+
+
+def _is_dependabot_pr(
+    branch: str,
+    author_login: str | None,
+    is_cross_repository: bool | None,
+) -> bool:
+    """Dependabot（`.github/dependabot.yml`・PR #594）が作った PR を自動化 PR として認めるか。
+
+    🔴 `_is_trusted_author_association()` の許可集合に bot を足す形にはしない（#379 の信頼境界が
+    全経路で緩む）。`_is_automation_pr()` と同じ 3 条件 AND で、次を **すべて満たすときだけ** True にする:
+      1. head が同一リポジトリ（fork ではない）。取得できない（None）場合は fail-closed で False
+      2. ブランチ名が `dependabot/` で始まる。**ここだけ前方一致にする**（`_is_automation_pr()` は
+         完全一致だが、Dependabot のブランチ名は `dependabot/npm_and_yarn/<pkg>-<ver>` のように
+         更新対象ごとに変わるため完全一致では書けない）
+      3. 著者ログインが `dependabot[bot]`
+
+    前方一致を許してなお安全な理由: 信頼境界の実質は ③ の著者ログインである。`dependabot[bot]` は
+    GitHub 側が PR 作成元から機械的に決める値で、通常のユーザー操作でなりすませない。人間が
+    `dependabot/evil` というブランチを作って PR を出しても、著者ログインが自分のアカウントになる
+    ため ③ で弾かれる。fork からの偽装は ① で弾かれる。
+
+    なぜ必要か: この述語が無いと、Dependabot PR は `authorAssociation` が信頼集合
+    （OWNER/MEMBER/COLLABORATOR）に入らないため `analyze_pr()` で必ず `no_action` に落ち、
+    `pr-review-watcher` / `project-sync` のどちらの回収経路にも乗らない。`open-pull-requests-limit`
+    に達した時点で Dependabot は新規 PR を出さなくなり、依存更新の自動化が黙って止まる。
+    """
+    if is_cross_repository is not False:
+        return False
+    if not branch.startswith(DEPENDABOT_PR_BRANCH_PREFIX):
+        return False
+    return author_login == DEPENDABOT_PR_AUTHOR_LOGIN
 
 
 def _run_self_test() -> None:
@@ -754,7 +798,55 @@ def _run_self_test() -> None:
                 f"  _is_automation_pr({branch!r}, {author_login!r}, {is_cross_repository!r}) = {got!r} (expected {expected!r})"
             )
 
-    total_cases = len(cases) + 1 + len(branch_cases) + len(assoc_cases) + len(automation_cases)
+    # Dependabot PR 判定（PR #594）: fork 不可・ブランチ前方一致・著者ログイン固定の 3 条件 AND。
+    dependabot_cases: list[tuple[str, str | None, bool | None, bool]] = [
+        # (branch, author_login, is_cross_repository, expected)
+        ("dependabot/npm_and_yarn/next-15.5.1", "dependabot[bot]", False, True),  # 3 条件が揃う
+        ("dependabot/github_actions/actions/checkout-5", "dependabot[bot]", False, True),
+        ("dependabot/pip/pyyaml-6.0.2", "dependabot[bot]", False, True),
+        # 人間が Dependabot を騙る名前のブランチを作っても、著者ログインで弾かれる
+        ("dependabot/npm_and_yarn/evil", "some-other-user", False, False),
+        ("dependabot/npm_and_yarn/next-15.5.1", "github-actions[bot]", False, False),
+        # fork（head が別リポジトリ）・取得不能はいずれも fail-closed
+        ("dependabot/npm_and_yarn/next-15.5.1", "dependabot[bot]", True, False),
+        ("dependabot/npm_and_yarn/next-15.5.1", "dependabot[bot]", None, False),
+        # 前方一致しないブランチは対象外（`dependabot` 単体・別プレフィックス）
+        ("dependabot", "dependabot[bot]", False, False),
+        ("feat/dependabot/npm", "dependabot[bot]", False, False),
+    ]
+    for branch, author_login, is_cross_repository, expected in dependabot_cases:
+        got = _is_dependabot_pr(branch, author_login, is_cross_repository)
+        if got != expected:
+            failures.append(
+                f"  _is_dependabot_pr({branch!r}, {author_login!r}, {is_cross_repository!r}) = {got!r} (expected {expected!r})"
+            )
+
+    # 2 系統の述語が互いのケースを取り違えないこと（相互排他の回帰検査）
+    cross_cases: list[tuple[str, str, bool]] = [
+        # (branch, author_login) → _is_automation_pr が False であること
+        ("dependabot/npm_and_yarn/next-15.5.1", "dependabot[bot]", False),
+    ]
+    for branch, author_login, expected in cross_cases:
+        got = _is_automation_pr(branch, author_login, False)
+        if got != expected:
+            failures.append(
+                f"  _is_automation_pr({branch!r}, {author_login!r}, False) = {got!r} (expected {expected!r})"
+            )
+    if _is_dependabot_pr("automation/gem-pool-refresh", "github-actions[bot]", False):
+        failures.append(
+            "  _is_dependabot_pr('automation/gem-pool-refresh', 'github-actions[bot]', False) = True (expected False)"
+        )
+
+    total_cases = (
+        len(cases)
+        + 1
+        + len(branch_cases)
+        + len(assoc_cases)
+        + len(automation_cases)
+        + len(dependabot_cases)
+        + len(cross_cases)
+        + 1
+    )
     if failures:
         print("FAIL: check_pending_pr_reviews self-test", file=sys.stderr)
         print("\n".join(failures), file=sys.stderr)

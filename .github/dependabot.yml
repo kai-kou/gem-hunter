@@ -1,0 +1,78 @@
+# Dependabot version updates（定期的な依存更新 PR）の設定。
+#
+# 🔴 このファイルが main に存在すること自体が version updates の有効化条件（GitHub 公式仕様）。
+# Settings → Code security の「Dependabot version updates」の Enable ボタンは、本ファイルを
+# main へ直接コミットさせる編集画面を開くだけなので使わない（main 直 push は A-1 で禁止・
+# `protect-main` ルールセットでも拒否される）。追加・変更は必ず PR 経由で行う。
+#
+# 🔴 このファイルは以下を意図的に行わない:
+#   - 自動マージ（Dependabot PR のマージは既存の回収経路で Claude セッションが行う）
+#   - メジャーバージョンの自動追随（破壊的変更は人／セッションの判断を要するため ignore する）
+#
+# 背景: SECURITY.md が「依存パッケージの脆弱性は Dependabot が追跡している」と書いていたが、
+# alerts と security updates（脆弱性起因の PR）だけが有効で、version updates（定期更新）は
+# 本ファイル不在のため動いていなかった（2026-08-24 の公開リポジトリセキュリティレビュー）。
+
+version: 2
+updates:
+  # --- npm（package.json / package-lock.json）------------------------------
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      # JST 06:00 = UTC 21:00（前日）。gem-pool-refresh.yml（UTC 21:17）と時間帯が近いが、
+      # Dependabot は Actions の runner を使わないため競合しない。
+      time: '21:00'
+      timezone: 'Etc/UTC'
+    open-pull-requests-limit: 5
+    labels:
+      - 'type:improvement'
+      - 'status:waiting-claude'
+    # PR 乱立を避けるため、更新をまとめて 1 本にする（自動レビュー・自動マージのコストを抑える）。
+    groups:
+      npm-production:
+        dependency-type: 'production'
+        update-types:
+          - 'minor'
+          - 'patch'
+      npm-development:
+        dependency-type: 'development'
+        update-types:
+          - 'minor'
+          - 'patch'
+    ignore:
+      # メジャー更新は破壊的変更を伴うため、自動 PR にせずセッション側の判断で行う
+      # （Next.js / React / Tailwind のメジャー跨ぎは移行作業そのもの）。
+      - dependency-name: '*'
+        update-types:
+          - 'version-update:semver-major'
+
+  # --- GitHub Actions（.github/workflows/*.yml の SHA pin を追随させる）-----
+  # Action は SHA 固定で pin しているため、Dependabot がいないと固まったまま古くなる
+  # （pin は改ざん耐性のためであり、更新しない理由ではない）。
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '21:00'
+      timezone: 'Etc/UTC'
+    open-pull-requests-limit: 3
+    labels:
+      - 'type:improvement'
+      - 'status:waiting-claude'
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+
+  # --- pip（requirements.txt）----------------------------------------------
+  - package-ecosystem: 'pip'
+    directory: '/'
+    schedule:
+      interval: 'monthly'
+    open-pull-requests-limit: 2
+    labels:
+      - 'type:improvement'
+      - 'status:waiting-claude'
