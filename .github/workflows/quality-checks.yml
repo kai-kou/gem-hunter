@@ -1,0 +1,78 @@
+name: Quality Checks
+
+# push（main）と pull_request を契機に **高速な品質チェック** を自動実行するワークフロー（Issue #543）。
+#
+# 🔴 なぜ追加したか: これまで品質チェックは「セッション（Claude）が `bash tools/run_checks.sh` を
+# 手で実行し、結果を PR 本文に貼る」運用だった（`D-23` / `D-40`）。この前提が失効したため、
+# 機械的な回帰検知を Actions 側にも置く。セッション側の `npm run check` と PR 本文への貼り付けは
+# 引き続き有効で、本ワークフローはそれを置き換えるものではなく **二重の網** として働く。
+#
+# 🔴 E2E（`npm run test:e2e`）と Lighthouse を含めない理由: 実測で E2E が 7.4 分、Lighthouse が
+# 40 秒台かかり、さらに E2E は Playwright ブラウザのインストール（数分・キャッシュ管理）を要する。
+# PR ごとに毎回回すには遅く、フィードバックループを損なう。本ワークフローは「秒〜数十秒で返る
+# 高速チェック」だけに絞り、E2E / Lighthouse は従来どおりセッション側で実行する。
+# 判断の記録は決定ログを参照（Issue #543）。
+#
+# 🔴 このワークフローは以下を絶対に行わない:
+#   - main への直接 push（A-1・docs/rules/user-confirmation-minimization.md §1）
+#   - PR の自動マージ（マージは Claude セッションが既存の回収経路で行う）
+#   - Cloudflare へのデプロイ（デプロイのゲート判定は docs/rules/cloudflare-infrastructure.md §8.2 が SSOT）
+#
+# 権限は `contents: read` のみ（読み取り専用・最小権限）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # PR へ連続 push したとき、古い run を打ち切って最新のコミットだけを検証する
+  # （`github.ref` は PR では refs/pull/<N>/merge になるため PR 単位でまとまる）。
+  group: quality-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        id: install
+        run: npm ci
+
+      # 🔴 以下 4 ステップには `if: ${{ !cancelled() }}` を付ける。
+      # 既定では前のステップが失敗した時点で後続がスキップされるが、それだと 1 回の run で
+      # 1 種類の失敗しか分からず、修正 → push を何往復もすることになる。`!cancelled()` を付けると
+      # 「失敗しても後続は走る／キャンセル時だけ止まる」となり、1 回の run で全チェックの結果が揃う。
+      # どれか 1 つでも失敗すればステップが赤くなり、ジョブ全体も失敗する（緩和ではない）。
+      - name: Format check (Prettier)
+        id: format
+        if: ${{ !cancelled() }}
+        run: npm run format:check
+
+      - name: Lint (ESLint)
+        id: lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
+
+      - name: Type check (tsc --noEmit)
+        id: typecheck
+        if: ${{ !cancelled() }}
+        run: npx tsc --noEmit
+
+      - name: Unit tests (Vitest)
+        id: test
+        if: ${{ !cancelled() }}
+        run: npm test
