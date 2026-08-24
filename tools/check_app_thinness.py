@@ -626,7 +626,8 @@ def run_self_test() -> int:
         print("❌ check_app_thinness --self-test FAILED")
         print("\n".join(failures))
         return 1
-    print(f"✅ check_app_thinness --self-test PASSED（{len(SELF_TEST_CASES)} ケース）")
+    total_cases = len(SELF_TEST_CASES) + len(ROLLUP_TEST_CASES) + 1
+    print(f"✅ check_app_thinness --self-test PASSED（{total_cases} ケース）")
     return 0
 
 
