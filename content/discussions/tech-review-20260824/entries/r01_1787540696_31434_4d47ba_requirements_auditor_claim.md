@@ -56,8 +56,8 @@ ts: 2026-08-24T12:04:56+09:00
 
 | 追加機能 | 該当箇所 | 与件対象外リストとの関係 | 判定 |
 |---|---|---|---|
-| GitHub OAuth ログイン | `app/api/auth/{login,callback,logout}/route.ts`、`src/composition/auth.ts` | §1.2 対象外「ユーザー認証」に**文言上は抵触**。ただし実装は「未ログインでも全機能が使える」任意機能で、目的はレート枠の切替（`README.md:84` 「公開中の本番環境には OAuth の 4 変数を供給していないため、現在ログイン導線は表示されない」）。認証がないと使えない機能は存在しない | **与件必達項目は侵食していない**が、対象外リストの文言には反する追加スコープ |
-| Gem Index / Hidden Gem スコア（`gem-badge` / `/gems` 一覧 / daily-digest） | `docs/adr/0009-hidden-gem-score-definition.md`、`src/ui/gem-badge.tsx`、`app/[locale]/gems/page.tsx` | §1.2 対象外「独自スコアリング」に**文言上は抵触**（ADR 0009 は「合成スコアは作らない」としつつ `Gem Index`＝被依存数パーセンタイル−star パーセンタイルという独自算出値を新設しており、実質は独自スコアリングの一種） | 検索結果の並び順（`sort`）には使っておらず（ADR 0009: 「`sort=gem-index` は復活させていない」）、必須の FR-1〜FR-7・§3.1・§3.2 の挙動を変更・妨害してはいない。**与件必達項目は侵食していない**が、スコープ外機能として作り込みの規模が大きい |
+| GitHub OAuth ログイン | `app/api/auth/{login,callback,logout}/route.ts`、`src/composition/auth.ts` | §1.2 対象外「ユーザー認証」に **文言上は抵触**。ただし実装は「未ログインでも全機能が使える」任意機能で、目的はレート枠の切替（`README.md:84` 「公開中の本番環境には OAuth の 4 変数を供給していないため、現在ログイン導線は表示されない」）。認証がないと使えない機能は存在しない | **与件必達項目は侵食していない** が、対象外リストの文言には反する追加スコープ |
+| Gem Index / Hidden Gem スコア（`gem-badge` / `/gems` 一覧 / daily-digest） | `docs/adr/0009-hidden-gem-score-definition.md`、`src/ui/gem-badge.tsx`、`app/[locale]/gems/page.tsx` | §1.2 対象外「独自スコアリング」に **文言上は抵触**（ADR 0009 は「合成スコアは作らない」としつつ `Gem Index`＝被依存数パーセンタイル−star パーセンタイルという独自算出値を新設しており、実質は独自スコアリングの一種） | 検索結果の並び順（`sort`）には使っておらず（ADR 0009: 「`sort=gem-index` は復活させていない」）、必須の FR-1〜FR-7・§3.1・§3.2 の挙動を変更・妨害してはいない。**与件必達項目は侵食していない** が、スコープ外機能として作り込みの規模が大きい |
 | i18n（`/{locale}/` ルーティング・`next-intl` 不使用の自前実装） | `app/[locale]/`、`docs/adr/0011-i18n-routing-and-default-locale.md` | 与件に記載なし（禁止もされていない） | 与件必達項目を侵食せず、むしろ FR 系の実装はロケール非依存に成立している |
 | Cloudflare Workers 本番運用・OG 画像生成・日次ダイジェスト | `wrangler.jsonc`、`app/[locale]/opengraph-image.tsx`、`daily-digest.tsx` | 与件に記載なし | 必達項目を侵食していない（付加機能） |
 
