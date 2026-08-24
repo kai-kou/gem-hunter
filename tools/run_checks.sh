@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 品質チェックの二層構成のうち「層 2（セッション実行）」を担う（Issue #72 / #543・決定ログ D-41）。
+# 品質チェックの二層構成のうち「層 2（セッション実行）」を担う（Issue #72 / #543・決定ログ D-42）。
 # 層 1（高速ゲート）は .github/workflows/quality-checks.yml が Prettier / ESLint / tsc / Vitest を自動実行する。
 # 本スクリプトはそれに加えて E2E・Lighthouse a11y ゲートなど CI に載せない重いチェックまで通し、
 # PR 作成前の証跡（PR 本文へ貼る Markdown サマリー）を生成する。

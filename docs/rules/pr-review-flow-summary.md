@@ -20,7 +20,7 @@
 
 ## PR 作成時の必須事項（コマンド仕様は各ツールの description に従う）
 
-> 🔴 **品質チェックは二層構成**（`D-41`・Issue #543）。**GitHub Actions は本番デプロイには使わない**（`D-31` / `D-32` の Workers Builds が正本・不変）。
+> 🔴 **品質チェックは二層構成**（`D-42`・Issue #543）。**GitHub Actions は本番デプロイには使わない**（`D-31` / `D-32` の Workers Builds が正本・不変）。
 > - **層 1（CI・自動）**: `push`（`main`）と `pull_request` を契機に `.github/workflows/quality-checks.yml` が
 >   Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を自動実行する（読み取り権限のみ・自動マージもデプロイもしない）。
 > - **層 2（セッション・手動）**: **E2E と Lighthouse a11y ゲートは CI に含めない**（1 PR あたりの待ち時間に見合わないため）。

@@ -156,7 +156,7 @@ Agent #3: subagent_type=general-purpose, model=sonnet
     Lv1: ドキュメント追加
     Lv2: SKILL.md にチェックステップ追加
     Lv3: hook（pre/post-tool-use）で物理ブロック
-    Lv4: CI（GitHub Actions）でブロック（本プロジェクトは採用済み・`.github/workflows/quality-checks.yml`・#543 / `D-41`）
+    Lv4: CI（GitHub Actions）でブロック（本プロジェクトは採用済み・`.github/workflows/quality-checks.yml`・#543 / `D-42`）
   - 関連 SKILL.md の「トラブルシューティング」「フォールバック」セクション更新
   - 必要なら新規ツール（バリデータ・自動修復スクリプト）を作成
 

@@ -45,9 +45,8 @@ TITLE (top banner, largest text, drawn once):
 
 Text elements (exhaustive — render ALL of these VERBATIM, character for character, add nothing else):
 「gem-hunter」
-「gem-hunter」
 「star では埋もれる「実際に使われている OSS」を見つける」
-「開発者向け解説 / 2026-08-23」
+「開発者向け解説 / 2026-08-24」
 
 Visual elements (icons and shapes ONLY — never draw any text inside these):
 表紙。中央にダイヤ + 虫眼鏡のシンプルなアイコン 1 つ、上部にバナー見出し。生成りの紙地・手書きグラレコ調
