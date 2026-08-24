@@ -35,7 +35,7 @@ ts: 2026-08-24T12:26:18+09:00
 ## 2. `appsec_runtime` の CSP / セキュリティヘッダ指摘 — Cloudflare Workers + OpenNext 構成での実装可否
 
 - **結論: 実装可能。ただし推奨実装面は `next.config.ts` の `headers()`（または `middleware.ts`）であり、`public/_headers` ファイルではない。**
-- 根拠: `public/_headers` は **Cloudflare Pages 専用の規約**（静的アセット配信時にのみ Pages のルーティング層が解釈する）。本プロジェクトは `wrangler.jsonc` + `wrangler deploy` / `@opennextjs/cloudflare` で **Workers としてデプロイ**しており（`package.json` の `deploy` スクリプトが `wrangler deploy` を呼ぶ構成を確認済み）、Pages ではない。したがって `public/_headers` が存在しないことは「CSP 未設定の証拠」の一つとしては成立するが、**仮に追加してもこのデプロイ経路では効かない**（Workers のリクエストは Pages のアセットルーターを経由しない）。
+- 根拠: `public/_headers` は **Cloudflare Pages 専用の規約**（静的アセット配信時にのみ Pages のルーティング層が解釈する）。本プロジェクトは `wrangler.jsonc` + `wrangler deploy` / `@opennextjs/cloudflare` で **Workers としてデプロイ** しており（`package.json` の `deploy` スクリプトが `wrangler deploy` を呼ぶ構成を確認済み）、Pages ではない。したがって `public/_headers` が存在しないことは「CSP 未設定の証拠」の一つとしては成立するが、**仮に追加してもこのデプロイ経路では効かない**（Workers のリクエストは Pages のアセットルーターを経由しない）。
 - 正しい実装面: `next.config.ts` の `async headers()` はビルド時に Next.js のルーティングメタデータへ組み込まれ、OpenNext Cloudflare アダプタは Next.js のレスポンス生成パイプラインをそのまま Worker 上で実行するため、`headers()` で定義したレスポンスヘッダ（CSP・`X-Frame-Options`・`Referrer-Policy` 等）は Workers 環境でも問題なく付与される（OpenNext のドキュメント・アーキテクチャ上、`next.config.js` の `headers()`/`redirects()`/`rewrites()` は Cloudflare アダプタのサポート範囲内）。あるいはミドルウェア（`NextResponse.next()` の `.headers.set(...)`）でも同様に付与可能。
 - **`appsec_runtime` の finding 自体（CSP 欠如は medium）は妥当・撤回不要**。実装ガイダンスとして「`next.config.ts` に `headers()` を追加する（`public/_headers` ではない）」という 1 行を最終成果物に添えることを提案する。
 

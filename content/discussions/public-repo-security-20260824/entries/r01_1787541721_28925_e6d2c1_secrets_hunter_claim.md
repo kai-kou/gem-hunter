@@ -9,11 +9,11 @@ ts: 2026-08-24T12:22:00+09:00
 
 ## 結論（severity: なし。実値の秘密情報漏洩は検出ゼロ）
 
-事前に `docs/05_release/repository-publication-review.md`（2026-08-20 実施の公開前レビュー）が存在し、Issue/PR/全ブランチ含む網羅スキャンで「秘密情報の検出ゼロ」と結論済み。本ラウンドはその**再現性確認**（独立した正規表現走査）と**2026-08-20〜08-24 の差分 50 コミット分の再走査**を実施した。結果、新規混入なし。
+事前に `docs/05_release/repository-publication-review.md`（2026-08-20 実施の公開前レビュー）が存在し、Issue/PR/全ブランチ含む網羅スキャンで「秘密情報の検出ゼロ」と結論済み。本ラウンドはその **再現性確認**（独立した正規表現走査）と **2026-08-20〜08-24 の差分 50 コミット分の再走査** を実施した。結果、新規混入なし。
 
 ## 実施した調査と結果
 
-1. **`git log --all -p` 全履歴**を `ghp_/gho_/ghu_/ghs_/ghr_/xox[baprs]-/sk-ant-/sk-/AKIA/AIza/ya29\./BEGIN * PRIVATE KEY` で走査
+1. **`git log --all -p` 全履歴** を `ghp_/gho_/ghu_/ghs_/ghr_/xox[baprs]-/sk-ant-/sk-/AKIA/AIza/ya29\./BEGIN * PRIVATE KEY` で走査
    → ヒットはすべてダミー値・docstring 例示・鍵形式名への言及のみ（例: `tools/mask_secrets.py:54` の docstring、`docs/rules/slack-notification-rules.md:199-202` のプレースホルダ `xoxb-xxxxx-xxxxx-xxxxx` / `C0XXXXXXXXX`）。実値なし。
 
 2. **`.env` 系ファイル**: `git ls-files` に実 `.env`/`.env.local` 等は 0 件。`.gitignore` が `.env` `.env.*` `*.pem` `*.key` を網羅し、`!.env.example`（値なしテンプレート）のみ例外化。
@@ -26,7 +26,7 @@ ts: 2026-08-24T12:22:00+09:00
 
 6. **GitHub App / Cloudflare 識別子**: `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_INSTALLATION_ID` の実値が入った箇所なし（`.env.example` は空欄、テストは `vi.stubEnv` でダミー文字列 `'client-id'` 等）。Cloudflare account_id/zone_id（32 桁 hex）走査もヒットゼロ。`installation-token.test.ts` は `jose` で都度生成した使い捨て鍵ペアを使用（実鍵ではない）。
 
-7. **`kinamocchi-tech.workers.dev`**（本番 URL）は README・SECURITY.md・`content/discussions/` に多数露出しているが、これは**意図的に公開しているプロダクト URL そのもの**（README 冒頭で「使ってみる」として案内済み）であり秘密情報ではない。既存レビューの `M-1'` で「新たな露出ではない」と結論済みの内容と整合。
+7. **`kinamocchi-tech.workers.dev`**（本番 URL）は README・SECURITY.md・`content/discussions/` に多数露出しているが、これは **意図的に公開しているプロダクト URL そのもの**（README 冒頭で「使ってみる」として案内済み）であり秘密情報ではない。既存レビューの `M-1'` で「新たな露出ではない」と結論済みの内容と整合。
 
 8. **Slack チャンネル ID っぽい文字列（`C0[A-Z0-9]{8,10}`）**: ヒットは `og-background-data.ts` の SVG/画像生成用ランダム文字列、`e2e/fixtures/repos.json` のダミー avatar URL 断片、`package-lock.json` の npm パッケージ integrity 由来の base64 断片で、いずれも実 Slack チャンネル ID ではない誤検知。ドキュメント中の `C0XXXXXXXXX` はプレースホルダ。
 

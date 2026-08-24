@@ -5,7 +5,7 @@
 - 論点: 本リポジトリは現在 public。① 公開してはいけない情報が入っていないか ② CI/CD・自動化の権限とサプライチェーンが公開前提で安全か ③ アプリ実行時のセキュリティ（OAuth/Cookie/レート制限/リダイレクト/CSP 等）④ GitHub 側で設定すべきハードニング（ブランチ保護・Secret scanning・Push protection・Dependabot・Actions 権限・fork PR の扱い等）を洗い、実際にリスクがある指摘だけを残す。最終成果物はユーザーが 1 手順ずつコピペで実行できる設定手順。
 - 参加者: `secrets_hunter`, `ci_supply_chain`, `appsec_runtime`, `repo_hardening`
 - 投稿数: 10
-- 更新: 2026-08-24T12:28:27+09:00
+- 更新: 2026-08-24T13:11:48+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -18,11 +18,11 @@
 
 ## 結論（severity: なし。実値の秘密情報漏洩は検出ゼロ）
 
-事前に `docs/05_release/repository-publication-review.md`（2026-08-20 実施の公開前レビュー）が存在し、Issue/PR/全ブランチ含む網羅スキャンで「秘密情報の検出ゼロ」と結論済み。本ラウンドはその**再現性確認**（独立した正規表現走査）と**2026-08-20〜08-24 の差分 50 コミット分の再走査**を実施した。結果、新規混入なし。
+事前に `docs/05_release/repository-publication-review.md`（2026-08-20 実施の公開前レビュー）が存在し、Issue/PR/全ブランチ含む網羅スキャンで「秘密情報の検出ゼロ」と結論済み。本ラウンドはその **再現性確認**（独立した正規表現走査）と **2026-08-20〜08-24 の差分 50 コミット分の再走査** を実施した。結果、新規混入なし。
 
 ## 実施した調査と結果
 
-1. **`git log --all -p` 全履歴**を `ghp_/gho_/ghu_/ghs_/ghr_/xox[baprs]-/sk-ant-/sk-/AKIA/AIza/ya29\./BEGIN * PRIVATE KEY` で走査
+1. **`git log --all -p` 全履歴** を `ghp_/gho_/ghu_/ghs_/ghr_/xox[baprs]-/sk-ant-/sk-/AKIA/AIza/ya29\./BEGIN * PRIVATE KEY` で走査
    → ヒットはすべてダミー値・docstring 例示・鍵形式名への言及のみ（例: `tools/mask_secrets.py:54` の docstring、`docs/rules/slack-notification-rules.md:199-202` のプレースホルダ `xoxb-xxxxx-xxxxx-xxxxx` / `C0XXXXXXXXX`）。実値なし。
 
 2. **`.env` 系ファイル**: `git ls-files` に実 `.env`/`.env.local` 等は 0 件。`.gitignore` が `.env` `.env.*` `*.pem` `*.key` を網羅し、`!.env.example`（値なしテンプレート）のみ例外化。
@@ -35,7 +35,7 @@
 
 6. **GitHub App / Cloudflare 識別子**: `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_INSTALLATION_ID` の実値が入った箇所なし（`.env.example` は空欄、テストは `vi.stubEnv` でダミー文字列 `'client-id'` 等）。Cloudflare account_id/zone_id（32 桁 hex）走査もヒットゼロ。`installation-token.test.ts` は `jose` で都度生成した使い捨て鍵ペアを使用（実鍵ではない）。
 
-7. **`kinamocchi-tech.workers.dev`**（本番 URL）は README・SECURITY.md・`content/discussions/` に多数露出しているが、これは**意図的に公開しているプロダクト URL そのもの**（README 冒頭で「使ってみる」として案内済み）であり秘密情報ではない。既存レビューの `M-1'` で「新たな露出ではない」と結論済みの内容と整合。
+7. **`kinamocchi-tech.workers.dev`**（本番 URL）は README・SECURITY.md・`content/discussions/` に多数露出しているが、これは **意図的に公開しているプロダクト URL そのもの**（README 冒頭で「使ってみる」として案内済み）であり秘密情報ではない。既存レビューの `M-1'` で「新たな露出ではない」と結論済みの内容と整合。
 
 8. **Slack チャンネル ID っぽい文字列（`C0[A-Z0-9]{8,10}`）**: ヒットは `og-background-data.ts` の SVG/画像生成用ランダム文字列、`e2e/fixtures/repos.json` のダミー avatar URL 断片、`package-lock.json` の npm パッケージ integrity 由来の base64 断片で、いずれも実 Slack チャンネル ID ではない誤検知。ドキュメント中の `C0XXXXXXXXX` はプレースホルダ。
 
@@ -65,7 +65,7 @@
 3. **Action pin**: 両ワークフローとも `actions/checkout` `actions/setup-node` を full-length commit SHA で pin（`# vX.Y.Z` コメント併記）。tag pin ではなくSHA pin なので改ざん耐性あり。
 4. **`permissions:` 最小権限性**: `quality-checks.yml` は `contents: read` のみで妥当。`gem-pool-refresh.yml` の `contents: write` + `pull-requests: write` は「生成物をコミットして自動化ブランチへ push → PR 作成」という目的に対して必要最小限（Issue 作成権限・Actions 権限等の不要スコープは付与していない）。
 5. **`.mcp.json`**: `CONTEXT7_API_KEY` / `GH_TOKEN` はプレースホルダ変数展開（`${VAR:-}`）のみで、実トークンはリポジトリに存在しない。public リポジトリに置いても安全な形。
-6. **`.claude/hooks/*.sh`**: 全 19 スクリプトを `PR_TITLE`/`PR_BODY`/`ISSUE_TITLE`/`github.event` の直接シェル展開・`eval`/`bash -c` パターンで grep したが、危険な使用箇所はゼロ（`pre-git-push-check.sh` にヒットしたのは `eval` 自体を **検出してブロックする側**のガード実装）。
+6. **`.claude/hooks/*.sh`**: 全 19 スクリプトを `PR_TITLE`/`PR_BODY`/`ISSUE_TITLE`/`github.event` の直接シェル展開・`eval`/`bash -c` パターンで grep したが、危険な使用箇所はゼロ（`pre-git-push-check.sh` にヒットしたのは `eval` 自体を **検出してブロックする側** のガード実装）。
 7. **Fork PR 経由の `.claude/` 改ざん → メンテナセッションでの任意コード実行**: hooks・skills・tools を grep した限り、PR レビュー処理は `mcp__github__*`（API 経由）で完結しており、**fork PR のブランチを `git checkout` してディスク上に展開する経路が見当たらない**（`pr-review-watcher` はレビュー・マージを GitHub API 越しに行う設計）。したがって fork 側で `.claude/settings.json` や hooks を書き換えても、それが同一セッションで自動的に読み込まれ実行される直接経路は確認できなかった。**ただし** これは grep ベースの確認であり、`pr-review-watcher` / `code-review` スキルが将来 diff 適用のために `git checkout <pr-branch>` する変更が入ると経路が生まれる点は要警戒（設計原則として明文化する価値はあるが、現状のコードには該当箇所なし）。
 8. **依存関係**: `package.json` に `postinstall`/`preinstall`/`prepare` スクリプトなし。`package-lock.json`（lockfileVersion 3）は 1330 件の `resolved` が全て `registry.npmjs.org`（git/http 経由の野良依存ゼロ）。`requirements.txt` は `PyYAML>=6.0` のみで妥当。
 9. **秘密情報の直書き**: リポジトリ全体を軽量 grep（AWS key / OpenAI風 sk- / GitHub PAT / Slack xox 系）した結果、ヒットは全てドキュメントのプレースホルダ・テストフィクスチャ・マスク関数の docstring 例（`tools/mask_secrets.py` 等）のみで実トークンなし。
@@ -119,7 +119,7 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
   と明記され、コード側も `binding があるのに salt が無い＝Workers 上の設定不備` の場合だけ
   `console.warn('[rate-limit] RATE_LIMIT_SALT 未設定のため間引きを無効化しています')` を出す設計になっている。
 - **リスク**: 本番（Workers 上）で salt だけが外れる事故（`wrangler secret` の付け替えミス等）が起きると、
-  検索・Gem 一覧の両経路のレート制限が **黙って無効化**される。警告は `console.warn` のみで、
+  検索・Gem 一覧の両経路のレート制限が **黙って無効化** される。警告は `console.warn` のみで、
   Cloudflare Logs を能動的に見ていない限り気づかない。上流 GitHub API 枠の枯渇・自 Worker CPU 課金の
   青天井化につながりうる（`wrangler.jsonc` の `limits.cpu_ms: 400` が個別リクエストの天井にはなるが、
   本数自体は絞られない）。
@@ -140,7 +140,7 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
 - OAuth スコープ: `buildAuthorizeUrl` に `scope` パラメータを付けず no-scope（最小権限）
 - SSRF: `resolveLoopbackOverridableOrigin()` が上書き先をループバックのみに制限し、認証情報送信先ホストを外部から差し替えられない（`loopback-origin.ts`）
 - 検索クエリインジェクション: `searchKeyword()` が修飾子構文（`名前:値`）と大文字ブール演算子を拒否 + `is:public` を先頭固定（多層防御・`search-keyword.ts` / `github-repository-query.ts:44-50`）
-- README XSS: `sanitize-html` allowlist（`script`/`style`/`iframe`等除外・`javascript:`等の危険スキーム除外・`parseStyleAttributes:false`）（`readme-html.ts`）
+- README XSS: `sanitize-html` allowlist（`script`/`style`/`iframe` 等除外・`javascript:` 等の危険スキーム除外・`parseStyleAttributes:false`）（`readme-html.ts`）
 - 秘密情報のクライアント漏洩: `NEXT_PUBLIC_` プレフィックスの使用箇所がリポジトリ全体でゼロ（grep 確認済み）
 - エラー応答: `search/route.ts` の `errorResponse()` は `error.message` を含めず `ErrorKind` のみ返す（内部情報を出さない）
 - CSRF（logout）: POST 限定 + `sameSite=lax` セッション Cookie でクロスサイト POST は Cookie 非送信（`logout/route.ts`）
@@ -246,8 +246,8 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
 
 ## 4. 譲歩（Concession）
 
-- **Issue/PR コメント本文の直近 4 日分は未走査**: Round 1 で「2026-08-20〜08-24 の差分を再走査」と書いたが、これは **git 追跡ファイルの diff のみ**であり、GitHub Issue/PR コメント本文（GitHub API 経由でしか取れない領域）は今回のセッションでは再確認していない。既存レビュー（`repository-publication-review.md`）は 2026-08-20 時点で Issue 233 件・コメント 196 件・PR レビュー 197 件・行コメント 415 件を走査済みだが、**それ以降の 4 日間に投稿された新規コメントは私の Round 1 の走査範囲外**。ゼロ件と断定した範囲を「追跡ファイル + 全 git 履歴」に限定するよう訂正する（severity は変えないが、対象範囲を明確化）。
-- **workers.dev URL の一括評価を訂正**: Round 1 の主張 7 で `kinamocchi-tech.workers.dev` 系 URL 全般を「意図的公開・問題なし」と一括評価したが、これは **本番 URL**（README で案内済み）についてのみ正確。`appsec_runtime` / `repo_hardening` が指摘する **PR プレビュー用サブドメイン**（`pr-N-gem-hunter.workers.dev` 等）は、Issue #187（secret 未注入）により認証・レート制限が効かない状態で公開されている点で本番 URL とは性質が異なる。これは「秘密の漏洩」ではなく「未認証アクセスの可用性リスク」であり両者の担当レンズだが、**「URL の存在自体は新規露出ではない」という私の結論は本番 URL に限定し、プレビュー URL の可用性リスクの評価には及ばない**ことを明示しておく。
+- **Issue/PR コメント本文の直近 4 日分は未走査**: Round 1 で「2026-08-20〜08-24 の差分を再走査」と書いたが、これは **git 追跡ファイルの diff のみ** であり、GitHub Issue/PR コメント本文（GitHub API 経由でしか取れない領域）は今回のセッションでは再確認していない。既存レビュー（`repository-publication-review.md`）は 2026-08-20 時点で Issue 233 件・コメント 196 件・PR レビュー 197 件・行コメント 415 件を走査済みだが、**それ以降の 4 日間に投稿された新規コメントは私の Round 1 の走査範囲外**。ゼロ件と断定した範囲を「追跡ファイル + 全 git 履歴」に限定するよう訂正する（severity は変えないが、対象範囲を明確化）。
+- **workers.dev URL の一括評価を訂正**: Round 1 の主張 7 で `kinamocchi-tech.workers.dev` 系 URL 全般を「意図的公開・問題なし」と一括評価したが、これは **本番 URL**（README で案内済み）についてのみ正確。`appsec_runtime` / `repo_hardening` が指摘する **PR プレビュー用サブドメイン**（`pr-N-gem-hunter.workers.dev` 等）は、Issue #187（secret 未注入）により認証・レート制限が効かない状態で公開されている点で本番 URL とは性質が異なる。これは「秘密の漏洩」ではなく「未認証アクセスの可用性リスク」であり両者の担当レンズだが、**「URL の存在自体は新規露出ではない」という私の結論は本番 URL に限定し、プレビュー URL の可用性リスクの評価には及ばない** ことを明示しておく。
 
 ### `ci_supply_chain` — 反論
 <sub>2026-08-24T12:26:18+09:00</sub>
@@ -282,7 +282,7 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
 ## 2. `appsec_runtime` の CSP / セキュリティヘッダ指摘 — Cloudflare Workers + OpenNext 構成での実装可否
 
 - **結論: 実装可能。ただし推奨実装面は `next.config.ts` の `headers()`（または `middleware.ts`）であり、`public/_headers` ファイルではない。**
-- 根拠: `public/_headers` は **Cloudflare Pages 専用の規約**（静的アセット配信時にのみ Pages のルーティング層が解釈する）。本プロジェクトは `wrangler.jsonc` + `wrangler deploy` / `@opennextjs/cloudflare` で **Workers としてデプロイ**しており（`package.json` の `deploy` スクリプトが `wrangler deploy` を呼ぶ構成を確認済み）、Pages ではない。したがって `public/_headers` が存在しないことは「CSP 未設定の証拠」の一つとしては成立するが、**仮に追加してもこのデプロイ経路では効かない**（Workers のリクエストは Pages のアセットルーターを経由しない）。
+- 根拠: `public/_headers` は **Cloudflare Pages 専用の規約**（静的アセット配信時にのみ Pages のルーティング層が解釈する）。本プロジェクトは `wrangler.jsonc` + `wrangler deploy` / `@opennextjs/cloudflare` で **Workers としてデプロイ** しており（`package.json` の `deploy` スクリプトが `wrangler deploy` を呼ぶ構成を確認済み）、Pages ではない。したがって `public/_headers` が存在しないことは「CSP 未設定の証拠」の一つとしては成立するが、**仮に追加してもこのデプロイ経路では効かない**（Workers のリクエストは Pages のアセットルーターを経由しない）。
 - 正しい実装面: `next.config.ts` の `async headers()` はビルド時に Next.js のルーティングメタデータへ組み込まれ、OpenNext Cloudflare アダプタは Next.js のレスポンス生成パイプラインをそのまま Worker 上で実行するため、`headers()` で定義したレスポンスヘッダ（CSP・`X-Frame-Options`・`Referrer-Policy` 等）は Workers 環境でも問題なく付与される（OpenNext のドキュメント・アーキテクチャ上、`next.config.js` の `headers()`/`redirects()`/`rewrites()` は Cloudflare アダプタのサポート範囲内）。あるいはミドルウェア（`NextResponse.next()` の `.headers.set(...)`）でも同様に付与可能。
 - **`appsec_runtime` の finding 自体（CSP 欠如は medium）は妥当・撤回不要**。実装ガイダンスとして「`next.config.ts` に `headers()` を追加する（`public/_headers` ではない）」という 1 行を最終成果物に添えることを提案する。
 
@@ -305,12 +305,12 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
 
 ### Q1: CSP/セキュリティヘッダ指摘（medium）の再評価 → **自主的に low へ格下げ**
 
-「ソース公開で悪化するリスク」ではなく、大部分は**公開有無と無関係な一般的改善**だと判断する。
+「ソース公開で悪化するリスク」ではなく、大部分は **公開有無と無関係な一般的改善** だと判断する。
 本アプリはソースの公開/非公開に関係なく常時インターネットへ露出する Web サービス（README でも
 本番 URL を案内済み・`secrets_hunter` round1 記載の `kinamocchi-tech.workers.dev` の扱いと同じ論理）
 であり、CSP/`X-Frame-Options` 欠如という状態そのものは公開前から存在していた。
 
-公開によって **純増する分**は 1 点のみ: 攻撃者が `sanitize-html` の allowlist（許可タグ・属性・
+公開によって **純増する分** は 1 点のみ: 攻撃者が `sanitize-html` の allowlist（許可タグ・属性・
 スキーム）を黒箱推測ではなく `readme-html.ts` から正確に読めるため、バイパス探索の効率が上がる
 （security-through-obscurity の喪失）。ただし allowlist 方式のサニタイザはソースが読めること自体を
 前提に安全であるべき設計であり（Kerckhoffs の原則）、この増分は小さいと評価する。
@@ -320,8 +320,8 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
 
 429 が出るかどうかは、稼働中のアプリへ実際にバーストリクエストを送れば誰でも黒箱的に検出できる
 事実であり、ソースを読まなくても攻撃者は判明させられる。ソース公開が追加で明かすのは「なぜ
-429 が出ないか」という**理由**（salt 未設定時のフェイルオープン設計）であって、「429 が出ない」
-という**観測可能な事実**そのものではない。
+429 が出ないか」という **理由**（salt 未設定時のフェイルオープン設計）であって、「429 が出ない」
+という **観測可能な事実** そのものではない。
 
 → 「公開したことで悪化するリスク」というカテゴリからは撤回する。round1 の指摘は
 「運用監視の穴（アラート未整備）」という一般的な運用課題として残し、本議題（公開リスク）内での
@@ -353,7 +353,7 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
 
 具体的に 1 点だけ挙げる。両者とも `wrangler.jsonc` の `ratelimits`（`60 req / 60s`、キー接頭辞
 `search:` / `gems:`）と `limits.cpu_ms: 400` を秘密情報・サプライチェーンの対象外として扱っている
-（妥当な判断）。公開によって攻撃者はこれらの**閾値を黒箱調査なしで正確に**知れるようにはなるが、
+（妥当な判断）。公開によって攻撃者はこれらの **閾値を黒箱調査なしで正確に** 知れるようにはなるが、
 実害は限定的と判断し **新規指摘は起票しない**:
 - 閾値を知ることは「閾値未満に留める」という合法的な使い方を助けるだけで、閾値超過を回避する
   バイパス手段を与えるものではない（レート制限は元々「知られてよい」性質の設定）。
@@ -365,7 +365,7 @@ OAuth・セッション Cookie・レート制限・SSRF 対策・README サニ�
 キャッシュキーがセッション状態（accessToken の有無）を含めているかは round1 で未確認。ただし
 `GithubRepositoryQuery.search()` は常に `is:public` を強制するため、認証状態に関わらず返る内容は
 常に公開リポジトリのみ（`github-repository-query.ts:29`）であり、たとえキャッシュキーが
-セッション状態を無視していても **プライベート情報の漏洩には当たらない**と推測する（未検証）。
+セッション状態を無視していても **プライベート情報の漏洩には当たらない** と推測する（未検証）。
 新規指摘としては起票しない。
 
 ### `repo_hardening` — 反論
@@ -393,7 +393,7 @@ GitHub の仕様上、**ワークフロー/ジョブ側で `permissions:` を明
 
 `gem-pool-refresh.yml:208,235` は `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` で `gh pr create` を実行しており、**(b) が ON でなければこの自動化は確実に壊れる**。
 
-**訂正**: 私の Round 1 の指摘 5「Workflow permissions を Read-only に」は (a) だけを指すつもりだったが、同じ画面にあるため誤って (b) まで変更されるリスクがある。**(b) は現状 ON のはずで、変更禁止（touch しない）と明記する**よう Round 1 を修正する。
+**訂正**: 私の Round 1 の指摘 5「Workflow permissions を Read-only に」は (a) だけを指すつもりだったが、同じ画面にあるため誤って (b) まで変更されるリスクがある。**(b) は現状 ON のはずで、変更禁止（touch しない）と明記する** よう Round 1 を修正する。
 
 ### Q3. required status check に `quality-checks` を登録すると automation PR は永久 pending にならないか？
 **→ なる。Round 1 で既に認めていたリスクだが、対応策が弱かったので格下げ + 具体策に差し替える。**
@@ -439,7 +439,7 @@ GitHub の仕様上、**ワークフロー/ジョブ側で `permissions:` を明
 
 **5-a. Actions → Workflow permissions のデフォルトを Read-only に**（Q1 で安全性確認済み）
 - URL: `https://github.com/kai-kou/gem-hunter/settings/actions`
-- 操作: "Workflow permissions" セクションの **ラジオボタン**を "Read repository contents permission" に変更
+- 操作: "Workflow permissions" セクションの **ラジオボタン** を "Read repository contents permission" に変更
 - 🔴 **その下のチェックボックス「Allow GitHub Actions to create and approve pull requests」は触らない（ON のまま維持）**（Q2 参照。OFF にすると `gem-pool-refresh.yml` の `gh pr create` が失敗する）
 - 既存自動化への影響: **なし**（Q1 で確認済み。両ワークフローとも `permissions:` を明示宣言しているため既定値変更の影響を受けない）
 

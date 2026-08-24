@@ -27,7 +27,7 @@ GitHub の仕様上、**ワークフロー/ジョブ側で `permissions:` を明
 
 `gem-pool-refresh.yml:208,235` は `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` で `gh pr create` を実行しており、**(b) が ON でなければこの自動化は確実に壊れる**。
 
-**訂正**: 私の Round 1 の指摘 5「Workflow permissions を Read-only に」は (a) だけを指すつもりだったが、同じ画面にあるため誤って (b) まで変更されるリスクがある。**(b) は現状 ON のはずで、変更禁止（touch しない）と明記する**よう Round 1 を修正する。
+**訂正**: 私の Round 1 の指摘 5「Workflow permissions を Read-only に」は (a) だけを指すつもりだったが、同じ画面にあるため誤って (b) まで変更されるリスクがある。**(b) は現状 ON のはずで、変更禁止（touch しない）と明記する** よう Round 1 を修正する。
 
 ### Q3. required status check に `quality-checks` を登録すると automation PR は永久 pending にならないか？
 **→ なる。Round 1 で既に認めていたリスクだが、対応策が弱かったので格下げ + 具体策に差し替える。**
@@ -73,7 +73,7 @@ GitHub の仕様上、**ワークフロー/ジョブ側で `permissions:` を明
 
 **5-a. Actions → Workflow permissions のデフォルトを Read-only に**（Q1 で安全性確認済み）
 - URL: `https://github.com/kai-kou/gem-hunter/settings/actions`
-- 操作: "Workflow permissions" セクションの **ラジオボタン**を "Read repository contents permission" に変更
+- 操作: "Workflow permissions" セクションの **ラジオボタン** を "Read repository contents permission" に変更
 - 🔴 **その下のチェックボックス「Allow GitHub Actions to create and approve pull requests」は触らない（ON のまま維持）**（Q2 参照。OFF にすると `gem-pool-refresh.yml` の `gh pr create` が失敗する）
 - 既存自動化への影響: **なし**（Q1 で確認済み。両ワークフローとも `permissions:` を明示宣言しているため既定値変更の影響を受けない）
 
