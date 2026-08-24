@@ -253,7 +253,7 @@ Monitor(pid={HEARTBEAT_PID}, description="PR #{pr_number} ハートビート（�
 
 Layer 0（機械ゲート）+ Layer 1（観点別フレッシュ文脈セルフレビュー）通過後、自動マージ前に以下を全て満たすことを確認する（外部レビュアーの応答は待たない）:
 
-- [ ] CI 全 check が PASS している（CI を運用する派生プロジェクトのみ。本ベースは Lv4 CI 現時点不採用・#298・`harness-escalation.md`）
+- [ ] CI 全 check が PASS している（本リポジトリは `.github/workflows/quality-checks.yml` が Prettier / ESLint / 型 / ユニットを自動実行する・`D-42`・Issue #543。**赤いままマージしない**）
 - [ ] セルフレビューで Error ゼロ
 - [ ] `fact_check_flags` が 5 件未満かつ rank C ゼロ（該当パイプラインのみ）
 - [ ] 字幕改行エラーゼロ（該当パイプラインのみ）

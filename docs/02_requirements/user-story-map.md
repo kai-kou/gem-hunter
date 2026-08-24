@@ -388,7 +388,7 @@
 - **操作レビュー**:
   1. **コマンド 1 つ** でテストが実行でき、全て成功する
   2. ネットワークを遮断した状態でも同じ結果になる（外部 API に依存していない）
-  3. PR を作ると CI でテストが自動実行される。🔴 **Actions 制限中の読み替え**: CI が無いため「PR 作成前にセッションが `bash tools/run_checks.sh`（= `npm run check`）を実行し、結果のサマリー表を PR 本文に貼る」に読み替える（`docs/rules/sprint-development-rules.md` `SD-2` 完了条件と同じ読み替え）。制限解除後はこの読み替えを外し元の文言に戻す
+  3. PR を作ると CI でテストが自動実行される（`.github/workflows/quality-checks.yml`・Issue #543 / `D-42`）。🔵 **CI が回すのは Prettier / ESLint / `tsc --noEmit` / Vitest の高速チェックだけ** なので、E2E と Lighthouse は引き続き「PR 作成前にセッションが `bash tools/run_checks.sh`（= `npm run check`）を実行し、結果のサマリー表を PR 本文に貼る」で担保する（`docs/rules/sprint-development-rules.md` `SD-2` 完了条件と同じ二層構成）
 - **対応 `AC`**: `AC-10`（基盤部分）
 - **見積もり**: `sp:5`（手段は [テスト戦略](../04_development/testing-strategy.md) で確定済み（`R-11` クローズ）。残る不確実性は Vitest / Playwright / axe の実機セットアップと CI 組み込み）
 

@@ -8,7 +8,7 @@
 | 1 | **ドキュメント** | 低（AI が読む） | `CLAUDE.md`, `.claude/rules/*.md` |
 | 2 | **AI セマンティック** | 中（スキルが検証） | `self-reviewer`, `fact-checker` スキル |
 | 3 | **フック** | 高（物理的にブロック） | `post-tool-use-validate.sh`（台本 JSON バリデーション） |
-| 4 | **CI / 構造テスト** | 最高（マージ不可） | **本ベースは現時点不採用（飼い主決定・2026-07-24・#298）**。GitHub Actions での品質ゲートは「クラウドセッション内で完結させ従量課金を発生させない」方針により導入しない。再提案せず、方針転換時に #298 を再オープンして実装する。Actions を運用する派生プロジェクトのみ任意で追加可（`lessons-management.md` §4 と同方針） |
+| 4 | **CI / 構造テスト** | 最高（マージ不可） | 🟢 **本プロジェクトは採用済み**（`.github/workflows/quality-checks.yml`・Issue #543 / `D-42`）。`push`（`main`）と `pull_request` を契機に Prettier / ESLint / `tsc --noEmit` / Vitest が自動実行され、赤いままマージできない。**E2E と Lighthouse は含めず**、`bash tools/run_checks.sh` を実行して結果表を PR 本文へ貼る層 2 が引き続き担保する（二層構成）。⚠️ **本番デプロイに Actions は使わない**（Workers Builds が正本・`D-31` / `D-32`）。かつての不採用判断（#298・2026-07-24）は品質ゲートに関しては `D-42` で失効した |
 
 ## Lv3 フック詳細
 
