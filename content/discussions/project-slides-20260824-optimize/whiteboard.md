@@ -4,8 +4,8 @@
 - 議題ID: `project-slides-20260824-optimize`
 - 論点: ユーザー指示（2026-08-24）: 最新のドキュメント・仕様・実装・画面を把握したうえで構成含めて最適化する。画像スライドは修整が必要なものだけ再生成する。争点 A〜E はスペック tools/discussion_specs/project_slides_optimize_spec.json 参照。現行の正本は content/slides/project-explanation-20260822/content/slides_plan.json（21 枚・前回改訂 2026-08-23 / #517 / 06fbdcf）。
 - 参加者: `narrative_design`, `project_truth`, `dev_audience`, `visual_assets`, `workflow_compliance`
-- 投稿数: 1
-- 更新: 2026-08-24T09:25:11+09:00
+- 投稿数: 3
+- 更新: 2026-08-24T09:29:15+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -68,3 +68,118 @@
 見出しの字数超過: slide 2（25 字。ただし実 UI スクリーンショットなので焼き込み無し）/ slide 9（27 字・既存流用なので上限 32 字で適合）
 
 ⚠️ **注意**: 現行 21 枚は既にこの状態で画像化・目視照合済みで運用されている。`text_budget` 側が実態に合っていない可能性がある（＝ 基準を実態へ合わせる案も検討対象）。budget を守らせるために既存画像を大量再生成するのはコストに見合わない、という反論は成立しうる。
+
+### `lead` — 根拠
+<sub>2026-08-24T09:28:43+09:00</sub>
+
+# lead（機械検査・workflow_compliance の代替実行）
+
+> ⚠️ 参加者 `workflow_compliance` は round 1 で検査を実行せず出力を捏造した（投稿・一時ファイルとも不在。ツール実行 1 回のみ）。機械検査は決定論的なので lead が同一項目を実行して置き換える。以後のラウンドでは欠席扱いとする。
+
+## 1. text_budget 充足検査（実測）
+
+基準: 見出し 24 字以内（新規生成画像）/ 32 字以内（既存流用）・本文 5〜7 点・各 40〜60 字・合計 250〜300 字
+
+| slide | 系統 | 見出し字数 | 上限 | 判定 | 点数 | 判定 | 各点 min/max | 60字超の点数 | 本文合計 | 判定 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 新規生成 | 10 | 24 | OK | 3 | NG | 10/31 | 0 | 61 | NG |
+| 2 | スクショ | 25 | 24 | NG | 6 | OK | 39/51 | 0 | 268 | OK |
+| 3 | スクショ | 19 | 24 | OK | 7 | OK | 34/50 | 0 | 293 | OK |
+| 4 | スクショ | 20 | 24 | OK | 5 | OK | 38/55 | 0 | 222 | NG |
+| 5 | 新規生成 | 22 | 24 | OK | 6 | OK | 41/54 | 0 | 273 | OK |
+| 6 | 既存流用 | 18 | 32 | OK | 6 | OK | 34/64 | 1 | 304 | NG |
+| 7 | 既存流用 | 21 | 32 | OK | 7 | OK | 40/83 | 4 | 438 | NG |
+| 8 | 新規生成 | 17 | 24 | OK | 6 | OK | 45/62 | 1 | 313 | NG |
+| 9 | 既存流用 | 27 | 32 | OK | 6 | OK | 47/69 | 4 | 358 | NG |
+| 10 | 新規生成 | 19 | 24 | OK | 7 | OK | 36/71 | 1 | 353 | NG |
+| 11 | 新規生成 | 21 | 24 | OK | 6 | OK | 38/49 | 0 | 259 | OK |
+| 12 | 既存流用 | 19 | 32 | OK | 7 | OK | 34/65 | 1 | 327 | NG |
+| 13 | 新規生成 | 19 | 24 | OK | 7 | OK | 31/62 | 1 | 336 | NG |
+| 14 | 新規生成 | 20 | 24 | OK | 6 | OK | 41/64 | 1 | 304 | NG |
+| 15 | 新規生成 | 19 | 24 | OK | 7 | OK | 39/66 | 1 | 350 | NG |
+| 16 | 新規生成 | 19 | 24 | OK | 7 | OK | 32/56 | 0 | 328 | NG |
+| 17 | 新規生成 | 17 | 24 | OK | 8 | NG | 32/57 | 0 | 369 | NG |
+| 18 | 新規生成 | 18 | 24 | OK | 7 | OK | 42/60 | 0 | 348 | NG |
+| 19 | 新規生成 | 14 | 24 | OK | 7 | OK | 31/65 | 1 | 292 | OK |
+| 20 | 新規生成 | 23 | 24 | OK | 7 | OK | 26/53 | 0 | 312 | NG |
+| 21 | 新規生成 | 13 | 24 | OK | 5 | OK | 39/43 | 0 | 204 | NG |
+
+- 見出し字数超過: [2]
+- 本文点数が 5〜7 の外: [1, 17]
+- 本文合計が 250〜300 の外: slide 1（61 字）, slide 4（222 字）, slide 6（304 字）, slide 7（438 字）, slide 8（313 字）, slide 9（358 字）, slide 10（353 字）, slide 12（327 字）, slide 13（336 字）, slide 14（304 字）, slide 15（350 字）, slide 16（328 字）, slide 17（369 字）, slide 18（348 字）, slide 20（312 字）, slide 21（204 字）
+
+**注**: 見出しの上限は「画像に焼き込むか」で決まるため、スクリーンショットのスライド（2・3・4）は焼き込み無し。上表では新規生成と同じ 24 字で機械判定しているが、実質的な制約は無い。
+
+## 2. 参照先の実在検査
+
+- `slides[].source` の実在しないパス: 25 件
+  - slide 3: `user-story-map.md`
+  - slide 3: `open-questions.md`
+  - slide 4: `open-questions.md`
+  - slide 5: `lean-canvas.md`
+  - slide 5: `project-mission.md`
+  - slide 6: `inception-deck.md`
+  - slide 6: `minimum-requirements.md`
+  - slide 7: `architecture-rules.md`
+  - slide 8: `application-architecture.md`
+  - slide 8: `architecture-rules.md`
+  - slide 10: `cloudflare-infrastructure.md`
+  - slide 11: `user-confirmation-minimization.md`
+  - slide 11: `sprint-development-rules.md`
+  - slide 12: `sprint-development-rules.md`
+  - slide 13: `pr-review-flow-summary.md`
+  - slide 14: `pr-review-flow.md`
+  - slide 15: `pr-review-flow.md`
+  - slide 15: `session-concurrency-rules.md`
+  - slide 16: `open-questions.md`
+  - slide 17: `open-questions.md`
+  - slide 18: `open-questions.md`
+  - slide 18: `user-story-map.md`
+  - slide 21: `application-architecture.md`
+  - slide 21: `open-questions.md`
+  - slide 21: `project-mission.md`
+- `slides[].visual` が指す画像で不在のもの: 0 件 
+- `new_images` にあるが `slides[].visual` から参照されないもの: なし
+- `slides[].visual` が参照するが `new_images` に定義が無いもの: なし
+- `new_images[].slide_no` と `slides[].visual` の食い違い: なし
+
+## 3. slides 配列の整合
+
+- `no` は 1..21 の連番: OK
+- `layout` の値域（title/summary/bullets）: OK
+- `layout` の内訳: {'title': 1, 'bullets': 20}
+
+
+## 4. CJK Markdown 表記検査
+
+`python3 tools/check_cjk_markdown.py slide-guide.md README.md slides_content_gem-hunter.md` → **OK（違反なし・exit 0）**
+
+### `lead` — メモ
+<sub>2026-08-24T09:29:08+09:00</sub>
+
+# lead: 機械検査の補足（誤検出の切り分け）
+
+前の投稿の「§2 `slides[].source` の実在しないパス 25 件」は **ほぼ全件が誤検出** である。`source` は
+`docs/02_requirements/user-story-map.md SP-18 / SP-19 / open-questions.md D-36` のように、
+**2 件目以降をディレクトリ名なしの短縮形で書く記法**を使っている。検査側が短縮形をリポジトリルート相対と
+解釈したために不在と出た。
+
+実在確認をやり直した結果:
+
+- 短縮形をリポジトリ内でファイル名一致で解決すると、25 件すべてが実在ファイルへ解決できる
+- **真に不在の参照はゼロ**
+
+したがって `source` の実在性は問題ではない。ただし **「短縮形が読み手にとって曖昧」** という指摘は
+別途成立しうる（`source` は構成 md にしか出ず画像には焼き込まれないので、直しても画像再生成は発生しない）。
+
+## 残った本物の機械検査結果（この 4 点だけが実際の指摘）
+
+1. **slide 2 の見出しが 25 字**（新規生成の上限 24 字を 1 字超過）。ただし slide 2 は実 UI スクリーンショットで
+   **画像への焼き込みが無い**ため、実害は無い（`text_budget` の定義が「新規生成画像 24 字 / 既存流用 32 字」の
+   2 分類しか持たず、スクリーンショットの分類が欠けているのが原因）
+2. **本文合計が 250〜300 字の範囲外が 16 枚**（上振れ 12 枚・下振れ 4 枚。最大は slide 7 の 438 字）
+3. **slide 17 の本文が 8 点**（上限 7 点を超過）
+4. `layout` は `title` 1 枚 + `bullets` 20 枚で、`summary` を 1 枚も使っていない
+
+`no` の連番・`visual` の画像実在・`new_images` と `slides[].visual` の 1 対 1 対応・CJK Markdown 表記は
+いずれも違反ゼロ。
