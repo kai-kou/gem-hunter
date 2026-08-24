@@ -56,6 +56,28 @@ gws drive files list --params '{"q":"'\''<FOLDER_ID>'\'' in parents and trashed=
 
 URL は `https://docs.google.com/presentation/d/<FILE_ID>/edit`。
 
+### 解説ガイド（`slide-guide.md`）を Google ドキュメントにする
+
+`mimeType` に `application/vnd.google-apps.document`、`--upload-content-type` に `text/markdown` を指定すると、
+Markdown が Google ドキュメントへ変換されて入る（見出し・表・リンクは保たれる）。
+
+🔴 **アップロード前に相対リンクを GitHub の絶対 URL へ置き換える**。`slide-guide.md` は
+`../../../docs/...`（一次資料）と `./images/...`（スライド画像）を相対パスで参照しており、
+そのまま上げると **リンクも画像も全部切れる**。次の置換で 100 本ほどが直る。
+
+| 元 | 置換先 |
+|---|---|
+| `../../../<path>`（リンク） | `https://github.com/kai-kou/gem-hunter/blob/main/<path>` |
+| `../../../<path>`（画像 `![...]`） | `https://raw.githubusercontent.com/kai-kou/gem-hunter/main/<path>` |
+| `./<path>`（リンク） | `https://github.com/kai-kou/gem-hunter/blob/main/content/slides/project-explanation-20260822/<path>` |
+| `./images/<file>`（画像） | `https://raw.githubusercontent.com/kai-kou/gem-hunter/main/content/slides/project-explanation-20260822/images/<file>` |
+| `../../discussions/<path>` | `https://github.com/kai-kou/gem-hunter/blob/main/content/discussions/<path>` |
+
+あわせて冒頭に「これは `slide-guide.md` から生成した Google ドキュメント版であり、直すときは正本を直す」旨の注記を足す。
+
+⚠️ **`--upload` はカレントディレクトリの外を拒否する**（`/tmp` 配下を直接指定すると `validationError`）。
+リポジトリ内へ一時コピーしてから渡し、終わったら消す。
+
 ## 差し替え（フィードバック反映時）
 
 🔴 **`files update` で中身だけ差し替える。`delete` → `create` はしない**（2026-08-23 に実機確認）。
@@ -98,3 +120,7 @@ rm -f roundtrip-check.pptx
 |---|---|---|
 | テキスト版 | `1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g` | https://docs.google.com/presentation/d/1uEk0V-YowdUY8hKU7yliTBfaQoppBLS3710pGt9r10g/edit |
 | 画像版 | `1DNO_Pi0nZrN1nHIj3oWA2iopxGuSTqst_GlJacspCqE` | https://docs.google.com/presentation/d/1DNO_Pi0nZrN1nHIj3oWA2iopxGuSTqst_GlJacspCqE/edit |
+| 解説ガイド（Google ドキュメント） | `12FMMm0omtq1w9-TqkUAsdfglTh4qWbQ0HiQSYWntfmA` | https://docs.google.com/document/d/12FMMm0omtq1w9-TqkUAsdfglTh4qWbQ0HiQSYWntfmA/edit |
+
+いずれも `Presentations/gem-hunter/`（フォルダ ID `1djoc6Rdyv2As0sCjWP8xTMik72Wi6BaU`）に置いてある。
+**最終アップロード: 2026-08-24**（21 枚改訂版）。
