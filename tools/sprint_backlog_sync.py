@@ -86,11 +86,17 @@ MAX_SYNCABLE_SP = 11
 # ヒットし、Ready 条件③の判定対象へ誤って混入した（新規スプリント着手が永久にブロック
 # される実害）。スプリント本体 Issue（`type:feature`）は実測上すべて `feat` プレフィックス
 # で作られているため、`feat` 限定で本体だけを拾う。
+# 🔴 パターン 3 の末尾は `\b` ではなく `(?!\d)` を使う（Layer1 セルフレビュー CRITICAL 指摘・
+# 実測確認済み）。Python の `\b` は Unicode の `\w` 判定に従い、日本語文字は `\w` とみなされる
+# ため「数字 → 日本語」の境界では成立しない。`"feat: SP-16の検索結果..."`（助詞が直接続く、
+# 日本語タイトルでは空白省略が普通に起こる）で `\b` 版は None を返し、既存の SP-n を
+# 「未存在」と誤判定して重複起票する（#551 と同型の実害）。`(?!\d)` は「次の文字が数字でない」
+# だけを要求するため、空白・日本語・行末のいずれでも正しくマッチする。
 SP_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     # dup-ok: check_roadmap_status.py の SP_TITLE_PATTERNS[0] と同一パターン。統合は Issue #612 のスコープ外
     re.compile(r"^SP-(\d+):"),
     re.compile(r"^feat\(SP-(\d+)\):"),
-    re.compile(r"^feat:\s*SP-(\d+)\b"),
+    re.compile(r"^feat:\s*SP-(\d+)(?!\d)"),
 )
 # Issue 全件取得の上限（gh 経路・REST 経路で共有する。片方だけ広げると取得漏れが片側に残る）。
 # 300 件上限で古い SP-n Issue を取得漏れし、既存を「未存在」と誤判定して重複起票した実害（#551）の
@@ -548,17 +554,24 @@ def list_all_issues() -> tuple[list[dict], str | None]:
             ok = False
             out = "gh の JSON 応答が不正"
         else:
+            # トークン失効等でプロキシが 200 + `{"message": "Bad credentials", ...}` のような
+            # JSON オブジェクトを返す経路があるため、配列であることを検証してから使う（実測確認済み・
+            # 未検証だと内包表記が dict のキーを走査して未捕捉 AttributeError で異常終了する）。
+            if not isinstance(raw, list):
+                ok = False
+                out = "gh の JSON 応答が配列ではありません（想定外の応答形式）"
             # 🔴 返却件数が --limit ちょうどなら「暗黙の打ち切り」を疑う。gh は上限に達しても
             # エラーを返さないため、この検知が無いと全件取得を保証できないまま「取得完了」と
             # 誤って返し、取得漏れした SP-n を「未存在」と誤判定して重複起票する（#551 の再発）。
-            if len(raw) >= FETCH_LIMIT:
+            elif len(raw) >= FETCH_LIMIT:
                 return [], (
                     f"gh の返却が上限（{FETCH_LIMIT} 件）に達し、全件取得を保証できません"
                     "（判定不能・FETCH_LIMIT の引き上げが必要）"
                 )
-            return [
-                {"title": i.get("title", ""), "state": i.get("state", "")} for i in raw
-            ], None
+            else:
+                return [
+                    {"title": i.get("title", ""), "state": i.get("state", "")} for i in raw
+                ], None
     gh_err = out
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -577,6 +590,8 @@ def list_all_issues() -> tuple[list[dict], str | None]:
             batch = json.loads(out2)
         except json.JSONDecodeError:
             return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
+        if not isinstance(batch, list):
+            return [], f"gh 失敗（{gh_err}）・REST 応答の形式が想定外です（配列でない）"
         if not batch:
             return issues, None
         # /issues エンドポイントは PR も含むため pull_request キーで除外する
@@ -817,6 +832,10 @@ def _self_test_title_extraction_variants() -> list[str]:
         ("improvement: SP-1 の ADR 0001 確定後に shadcn MCP を追加する", None),
         ("docs: SP-4 で増えた E2E 関連の環境変数を env-vars.md に記載する", None),
         ("fix(SP-16): キーワード検索の結果も並べられる", None),
+        # `\b` が日本語文字境界で不成立になる回帰テスト（Layer1 セルフレビュー CRITICAL 指摘・実測確認済み）:
+        # 数字の直後に助詞・別の数字が続いても正しく番号を抽出できること
+        ("feat: SP-16の検索結果を並べ替えられる", 16),
+        ("feat: SP-160 別番号（3桁になっても数字の続きだけ弾く）", 160),
     ]
     for title, want in cases:
         got = extract_sp_number_from_title(title)
@@ -860,6 +879,17 @@ def _self_test_decide() -> list[str]:
     r = decide(_FIXTURE_MD_NO_SECTION, existing_issues=[])
     if r["action"] != "create_bug_issue":
         failures.append(f"decide: セクション欠落で bug Issue 起票を期待したが {r}")
+
+    # SP_TITLE_PATTERNS の新パターン（feat(SP-n): / feat: SP-n）が sp_numbers() 経由の
+    # 統合経路（既存判定 → decide）で実際に効くことの回帰テスト（#542・単体テストだけでは
+    # sp_numbers() を SP_TITLE_PATTERNS[0] 直呼びに戻す退行を検知できない）
+    r = decide(_FIXTURE_MD_OK, existing_issues=[_issue("feat(SP-1): 検索して一覧が出る")])
+    if r["action"] != "create_sp_issue" or r.get("sp_number") != 2:
+        failures.append(f"decide: feat(SP-1): 形式が Closed なら SP-2 起票を期待したが {r}")
+
+    r = decide(_FIXTURE_MD_OK, existing_issues=[_issue("feat: SP-1 検索して一覧が出る")])
+    if r["action"] != "create_sp_issue" or r.get("sp_number") != 2:
+        failures.append(f"decide: feat: SP-1 形式が Closed なら SP-2 起票を期待したが {r}")
 
     return failures
 
@@ -929,6 +959,12 @@ def _self_test_ready_condition() -> list[str]:
     ])
     if r["action"] != "create_sp_issue" or r.get("sp_number") != 2:
         failures.append(f"Ready③: 範囲外の SP-12 が open でも SP-2 の起票を止めない: {r}")
+
+    # feat(SP-n): 形式の本体 Issue が open のときも Ready 条件③でブロックされる
+    # （sp_numbers() が新パターンを既存判定に正しく使っていることの統合経路テスト）
+    r = decide(_FIXTURE_MD_OK, existing_issues=[_issue("feat(SP-1): 検索して一覧が出る", "open")])
+    if r["action"] != "noop" or r.get("blocked_by_open_sp") != [1]:
+        failures.append(f"Ready③: feat(SP-1): 形式が open なら noop を期待したが {r}")
 
     return failures
 
