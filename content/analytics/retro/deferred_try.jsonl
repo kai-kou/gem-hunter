@@ -1,0 +1,6 @@
+{"date": "2026-08-24 JST", "title": "レトロの Q1 予備検索のキーワード抽出精度が低く、一般語（「重複」「L-114」）で誤ヒットする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-24 JST", "title": "self-test のフィクスチャが実ドキュメントのスキーマ変更に追随しているかを検出する（#430 の反対側）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "430"}
+{"date": "2026-08-24 JST", "title": "抑制マーカーの理由に > を書けない制約を、コード内コメントから運用ルールへ外出しする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-24 JST", "title": "リサーチ後に同一症状の Issue 重複を機械検出して統合を促す（今回 4 件の重複を手動で発見した）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "393"}
+{"date": "2026-08-24 JST", "title": "レトロの Try 起票で影響ファイル一覧の精度が役割ごとにばらつく（存在しないパスが混ざる）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-24 JST", "title": "haiku サブエージェントの返り値に日本語以外の言語が混入することがある（今回 1 件）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
