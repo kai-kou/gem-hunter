@@ -84,6 +84,7 @@ MAX_SYNCABLE_SP = 11
 # される実害）。スプリント本体 Issue（`type:feature`）は実測上すべて `feat` プレフィックス
 # で作られているため、`feat` 限定で本体だけを拾う。
 SP_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # dup-ok: check_roadmap_status.py の SP_TITLE_PATTERNS[0] と同一パターン。統合は Issue #612 のスコープ外
     re.compile(r"^SP-(\d+):"),
     re.compile(r"^feat\(SP-(\d+)\):"),
     re.compile(r"^feat:\s*SP-(\d+)\b"),
