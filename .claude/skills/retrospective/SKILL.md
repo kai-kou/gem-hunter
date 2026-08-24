@@ -57,7 +57,7 @@ Step 1: Agent Teams 起動（3役割を並列サブエージェント・全て h
   ↓
 Step 2: KPT 結果のマージ・重複統合
   ↓
-Step 3: Try アイテムを GitHub Issue 化（重複チェック → 追記 or 新規作成）
+Step 3: Try アイテムの起票フィルタリング（#417）→ GitHub Issue 化（重複チェック → 追記 or 新規作成）
   ↓
 Step 4: Slack 通知 → Step 5: 完了報告 → Step 6: lessons 更新チェック
 ```
@@ -103,9 +103,42 @@ git status              # ステージ・作業ツリーの状態
 
 ---
 
-## Step 3: Try アイテムを GitHub Issue 化
+## Step 3: Try アイテムの起票フィルタリング → GitHub Issue 化
 
-統合済みの全 Try アイテムを `high` → `medium` → `low` の順に処理する。各アイテムごとに:
+> 🔴 **流入抑制（Issue #417）**: `type:retro-try` の起票は流出能力（`sprint-cycle-router` Step 5.5 の消化ペース・エージング X=8h で 1 日 3 回 firing × 5 件/回 = **15 件/日**）を継続的に上回っていた（実測: 3 日平均 **31 件/日** の起票）。**全 Try アイテムは Step 3-A（重複チェック）より前に、まず下記 Step 3-0 の起票要否フィルタを通す**。
+
+統合済みの全 Try アイテムを `high` → `medium` → `low` の順に処理する。
+
+### Step 3-0: 起票要否フィルタ（新設・#417）
+
+**`priority:high` 相当の判定基準**（reproducible な YES/NO 問い。`try.priority` フィールドの値をそのまま使わず、以下 3 問で判定し直す。**いずれか 1 つでも YES なら high 相当** として扱う）:
+
+| # | 問い（YES/NO） | 参照する既存情報 |
+| - | -------------- | ---------------- |
+| Q1（再発） | 同種の Problem が **過去に 2 回以上** 検出されているか？ | Step 3-A の重複検索結果、または `docs/rules/lessons/` に既存の同一パターン `L-N` があるか |
+| Q2（正しさ毀損） | 放置すると成果物の正しさ（本番の挙動・提出物の事実性・ユーザーに見える出力）が壊れる、またはパイプラインが停止/データを破壊するか？ | 対応する Problem の `urgency` が `blocker` または `quality` か |
+| Q3（機械検査なし） | 人手のレビュー・振り返りでしか気づけない問題か（対応する機械チェック・CI・フックが存在しないか）？ | 該当する `tools/*.py` / `run_checks.sh` / フックの有無 |
+
+判定フロー（**全 Try アイテムがこの分岐のいずれか 1 つに必ず落ちる。どの導線にも乗らない Try は存在しない**）:
+
+```
+Q1〜Q3 のいずれかが YES？
+  ├─ YES（priority:high 相当）→ 下記「起票上限ゲート」→ Step 3-A（重複チェック）→ 3-B / 3-C
+  └─ NO（priority:high 相当ではない）
+        ├─ かつ try.priority == "low" かつ影響ファイルが単一 → 「lessons 直記載」で完結。Issue化しない
+        └─ それ以外（medium 相当、または low だが複数ファイルに影響）→ Step 3-A（重複チェック）のみ実行
+              ├─ 類似 Issue あり → Step 3-B（既存 Issue へコメント追記。新規起票はしない。#393 の重複検索必須化と整合）
+              └─ 類似 Issue なし → Issue化せず Step 5 完了報告の KPT 本文にのみ記録する（「見送り Try 一覧」）
+```
+
+**起票上限ゲート（1 回のレトロ実行あたり新規 Issue 作成は最大 5 件）**: 流出上限 15 件/日 ÷ 1 日 3 回 firing（`sprint-cycle-router` Step 5.5・エージング X=8h）= **5 件/firing**。1 回のレトロ実行での新規 Issue 作成をこの 5 件/firing の消化能力に揃えることで、起票バースト（実測: 2026-08-20 に単日 49 件）が起きても、その回だけで 1 firing 分の処理能力を超えて在庫を積み増さない。
+
+- 上限内 → 通常どおり Step 3-A へ進む
+- 上限到達後に high 相当と判定された Try → **今回は起票せず**、Step 5 完了報告に「上限超過・次回レトロへ持ち越し」として明記する（新規の追跡 Issue やラベルは作らない＝ YAGNI）。同一パターンが解消されていなければ次回のレトロスペクティブ実行時に Step 3-0 から改めて評価される
+
+**lessons 直記載**（priority:low かつ単一ファイル完結の場合）: Issue化せず、Step 6 条件 A と同じ手順・フォーマット（`reference.md` の I 節）で `docs/rules/lessons/{カテゴリ}.md` に直接追記して完結させる（`try.title` → パターン名 / `try.detail` → 対策）。**Hot 層（`lessons-core.md`）へは昇格させない**（`lessons-management.md` §2 の既定どおり Warm 直行）。
+
+### Step 3-A 以降（priority:high 相当・上限内の Try のみ）
 
 ```
 Step 3-A: 既存オープン Issue との重複チェック（type:retro-try を検索）
@@ -126,6 +159,9 @@ Step 3-A: 既存オープン Issue との重複チェック（type:retro-try を
 | 新規 Issue 作成            | Issue 番号・URL                            |
 | 既存 Issue へコメント追記  | 既存 Issue 番号・URL・「コメント追記」の旨 |
 | 優先度エスカレーション実施 | 対象 Issue 番号・変更前後の priority       |
+| lessons 直記載             | 追記先ファイル・`L-{N}` 番号               |
+| Issue化見送り（medium 等） | Try タイトル一覧（KPT 本文にのみ記録）     |
+| 上限超過で次回持ち越し     | Try タイトル一覧・次回レトロで再評価する旨 |
 
 ---
 
