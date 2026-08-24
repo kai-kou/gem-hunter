@@ -52,27 +52,29 @@ jobs:
         id: install
         run: npm ci
 
-      # 🔴 以下 4 ステップには `if: ${{ !cancelled() }}` を付ける。
+      # 🔴 以下 4 ステップには `if: ${{ !cancelled() && steps.install.outcome == 'success' }}` を付ける。
       # 既定では前のステップが失敗した時点で後続がスキップされるが、それだと 1 回の run で
       # 1 種類の失敗しか分からず、修正 → push を何往復もすることになる。`!cancelled()` を付けると
       # 「失敗しても後続は走る／キャンセル時だけ止まる」となり、1 回の run で全チェックの結果が揃う。
       # どれか 1 つでも失敗すればステップが赤くなり、ジョブ全体も失敗する（緩和ではない）。
+      # ただし `npm ci` が落ちたときだけは 4 ステップとも走らせない（依存が無いので
+      # 「prettier が見つからない」系の同じ失敗が 4 重に並び、本当の原因が埋もれるため）。
       - name: Format check (Prettier)
         id: format
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run format:check
 
       - name: Lint (ESLint)
         id: lint
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
       - name: Type check (tsc --noEmit)
         id: typecheck
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx tsc --noEmit
 
       - name: Unit tests (Vitest)
         id: test
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm test
