@@ -33,6 +33,40 @@ SSOT: `docs/03_design/architecture/application-architecture.md`
    🔴 Issue #604 と #612 の両方を検出できる指標なので必須。複数ポートの結果をその場で
    `.filter().map().slice()` して整形するのは典型的な「薄くない `app/`」の症状。
 
+## 既知の限界（ファイル分割による回避・Issue #619 セルフレビューで実測済み）
+
+🔴 **本検査はファイル単位でしか 4 指標を評価しないため、`app/` 配下でファイルを分割するだけで
+回避できる**（意図的に検査を欺こうとした場合の話であり、ふつうにリファクタしていて偶然踏む
+類の話ではない）。実測された回避手口:
+
+```
+単一ファイルなら domain import 4 件（>3）・配列チェーン 2 件（>1）で Error になる量のロジックを、
+  app/[locale]/page-split2.tsx（helperA/helperB を呼ぶだけの薄い皮）
+  app/[locale]/_orchestration-a.ts（domain import 3 件・chain 1 件 = 単独では閾値以下）
+  app/[locale]/_orchestration-b.ts（domain import 3 件・chain 1 件 = 単独では閾値以下）
+の 3 ファイルへ分割すると、各ファイルは単独では閾値以下になり検出されない。
+```
+
+これに対して本スクリプトは、**`app/` 内の相対 import（`./…` `../…`）で解決できる依存関係だけを
+辿り、依存先ファイルの 4 指標を依存元（エントリポイント）の実測値に合算してから閾値判定する**
+（`rolled_up_metrics`）。上記の例は `page-split2.tsx` の合算値が domain_imports=6 / array_chains=2
+となり検出できる（`SELF_TEST_CASES` に固定化済み）。
+
+**それでもなお検出できないケース（意図的に残した限界）**:
+
+- **相対 import で繋がっていない分割**（例: 共通ロジックを import せず、無関係な複数の
+  route/page ファイルへコピー&ペーストで分散する。あるいは `app/` 外の `src/` エイリアス経由で
+  読み込む形に偽装する）は依存グラフに辺が存在しないため合算されない。
+- **依存グラフを辿れない import**（`@/…` エイリアス・パッケージ名・動的 `import()` 式）は対象外。
+  `app/` から `app/` 内の別ファイルへは相対 import が実務上の標準であり（`ARCH-3` 前提と同じ）、
+  エイリアス経由の app 内 import は現状の実測コードベースに存在しないため対象に含めていない。
+- リポジトリ全体（`app/` の総量）を集計して閾値を設ける案（下記選択肢 (c)）は **意図的に不採用**。
+  ページ数が増えるたびに正当な理由で総量が伸びる（1 ページ追加 = 総 domain import が +1〜数個）ため、
+  「意図的な回避」と「素直な機能追加」を区別できず誤検知が避けられないと判断した。
+
+**意図的な回避（上記の残存ケース）の抑止は人手レビューの担当**であり、本検査は「うっかりの
+肥大化」と「単純な相対 import 分割での回避」を止めるところまでを守備範囲とする。
+
 ## allowlist の運用方針
 
 🔴 **既存の違反を後追いで赤くしない**。初回導入時点で実測し、閾値を超えているファイルは
@@ -62,6 +96,7 @@ SSOT: `docs/03_design/architecture/application-architecture.md`
 """
 from __future__ import annotations
 
+import posixpath
 import re
 import sys
 from dataclasses import dataclass
@@ -201,6 +236,93 @@ class Metrics:
         return problems
 
 
+# --------------------------------------------------------------------------- app/ 内合算（ロールアップ）
+# `app/` 内の相対 import（`./…` `../…`）で解決できる依存だけを辿り、依存先ファイルの 4 指標を
+# 依存元（エントリポイント）の実測値へ合算する。これにより「ロジックを別ファイルへ切り出して
+# import するだけ」の回避を閾値判定の土俵に乗せる（詳細はモジュール docstring の
+# 「既知の限界」節）。エイリアス（`@/…`）・パッケージ名・動的 `import()` は対象外（相対 import のみ）。
+RELATIVE_IMPORT_RE = re.compile(
+    r"""(?:^|[\s;])(?:import|export)\s[^'"();]*?from\s*['"](\.[^'"]*)['"]"""
+    r"""|(?:^|[\s;])import\s*['"](\.[^'"]*)['"]""",
+    re.MULTILINE,
+)
+
+# 拡張子省略・index 解決を試す候補サフィックス（TS/TSX ソースのみ対象）。
+_RESOLVE_SUFFIXES = ("", ".ts", ".tsx", ".mts", ".cts", "/index.ts", "/index.tsx")
+
+
+def extract_relative_import_specs(code: str) -> list[str]:
+    """コメント除去済みコードから `./…` `../…` で始まる import 指定子を抽出する。"""
+    specs: list[str] = []
+    for m in RELATIVE_IMPORT_RE.finditer(code):
+        spec = m.group(1) or m.group(2)
+        if spec:
+            specs.append(spec)
+    return specs
+
+
+def resolve_relative_import(from_rel: str, spec: str, known: set[str]) -> str | None:
+    """`from_rel` にある相対 import 指定子 `spec` を、`known`（既知ファイル集合）の中の
+    リポジトリルート相対パスへ解決する。解決できなければ None（`known` に無い＝`app/` 外や
+    未読み込みのファイルは合算対象にしない）。
+    """
+    base_dir = posixpath.dirname(from_rel)
+    joined = posixpath.normpath(posixpath.join(base_dir, spec))
+    for suffix in _RESOLVE_SUFFIXES:
+        candidate = joined + suffix
+        if candidate in known:
+            return candidate
+    return None
+
+
+def local_import_targets(rel: str, text: str, known: set[str]) -> list[str]:
+    """`rel` のソースが `app/` 内の他ファイルへ相対 import している解決済みパスの一覧。"""
+    code = strip_comments(text)
+    targets: list[str] = []
+    for spec in extract_relative_import_specs(code):
+        resolved = resolve_relative_import(rel, spec, known)
+        if resolved and resolved != rel:
+            targets.append(resolved)
+    return targets
+
+
+def rolled_up_metrics(rel: str, file_texts: dict[str, str]) -> Metrics:
+    """`rel` 自身の指標 + 相対 import で到達できる `app/` 内ファイル群の指標の合計。
+
+    BFS で辿る（循環 import があっても `visited` で無限ループしない）。`file_texts` に無い
+    依存（`app/` 外・読み込み失敗ファイル）は無視する。
+    """
+    known = set(file_texts.keys())
+    own = measure(file_texts[rel])
+    lines, func_defs, domain_imports, array_chains = (
+        own.lines,
+        own.func_defs,
+        own.domain_imports,
+        own.array_chains,
+    )
+
+    visited: set[str] = {rel}
+    queue: list[str] = local_import_targets(rel, file_texts[rel], known)
+    while queue:
+        cur = queue.pop()
+        if cur in visited:
+            continue
+        visited.add(cur)
+        cur_text = file_texts.get(cur)
+        if cur_text is None:
+            continue
+        m = measure(cur_text)
+        lines += m.lines
+        func_defs += m.func_defs
+        domain_imports += m.domain_imports
+        array_chains += m.array_chains
+        queue.extend(local_import_targets(cur, cur_text, known))
+
+    return Metrics(
+        lines=lines, func_defs=func_defs, domain_imports=domain_imports, array_chains=array_chains
+    )
+
+
 def measure(text: str) -> Metrics:
     """1 ファイルのソース全文（コメント除去前）から 4 指標を実測する。"""
     code = strip_comments(text)
@@ -295,11 +417,22 @@ def collect_targets(argv: list[str]) -> tuple[list[str], list[str]]:
     return targets, warnings
 
 
-def check_file(rel: str, text: str) -> list[str]:
-    """1 ファイルを検査して問題メッセージのリストを返す（I/O を持たない・self-test の注入口）。"""
-    actual = measure(text)
+def check_file(rel: str, text: str, file_texts: dict[str, str] | None = None) -> list[str]:
+    """1 ファイルを検査して問題メッセージのリストを返す（I/O を持たない・self-test の注入口）。
+
+    `file_texts`（rel → ソース全文の辞書）を渡すと、`app/` 内の相対 import で到達できる
+    依存ファイルの指標を合算してから判定する（`rolled_up_metrics`）。省略時は自ファイル単独の
+    指標で判定する（後方互換・既存の単体 self-test ケースはこの経路のまま）。
+    """
+    if file_texts is not None and rel in file_texts:
+        actual = rolled_up_metrics(rel, file_texts)
+    else:
+        actual = measure(text)
     ceiling = ceiling_for(rel)
-    return [f"{rel}: {p}" for p in actual.exceeds(ceiling)]
+    problems = actual.exceeds(ceiling)
+    if file_texts is not None and problems and actual != measure(text):
+        problems = [f"{p}（app/ 内の相対 import で取り込んだ依存ファイル分を合算した値）" for p in problems]
+    return [f"{rel}: {p}" for p in problems]
 
 
 # --------------------------------------------------------------------------- self-test
@@ -425,14 +558,19 @@ def main() -> int:
         print("ℹ️ 検査対象の app/ コード（.ts/.tsx）がありません")
         return 0
 
-    problems: list[str] = []
+    file_texts: dict[str, str] = {}
     for rel in targets:
         try:
-            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            file_texts[rel] = (REPO_ROOT / rel).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             warnings.append(f"{rel} を読めませんでした: {exc}")
+
+    problems: list[str] = []
+    for rel in targets:
+        text = file_texts.get(rel)
+        if text is None:
             continue
-        problems.extend(check_file(rel, text))
+        problems.extend(check_file(rel, text, file_texts=file_texts))
 
     for w in warnings:
         print(f"⚠️ {w}")
