@@ -67,8 +67,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# `strip_comments` は本来 `tools/ts_source.py` の共通実装を使う（別レーンが実装中）。
-# まだ存在しない/インポートに失敗した場合は本ファイル内のフォールバック実装を使う。
+# `strip_comments` は `tools/ts_source.py` の共通実装を使う（Issue #612）。
+# フォールバックは持たない: 静かに劣化した実装へ落ちるより、import 失敗で明示的に落ちる方が安全。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ts_source import strip_comments  # 共通モジュール（#612）。フォールバックは持たない
 

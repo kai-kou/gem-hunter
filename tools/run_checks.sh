@@ -284,6 +284,15 @@ else
   skip_check "app/ 薄さ検査 (check_app_thinness.py)" "スクリプトが見つかりません"
 fi
 
+# 4.10.5. self-test の配線漏れ検査（Issue #612）
+#         「テストがあるのに実行されない」状態を止める検査。この検査自身も下で self-test を走らせる
+if [ -f "$REPO_ROOT/tools/check_selftest_wiring.py" ]; then
+  run_check "self-test 配線検査 (check_selftest_wiring.py)" python3 tools/check_selftest_wiring.py
+  run_check "self-test 配線検査 self-test (check_selftest_wiring.py --self-test)" python3 tools/check_selftest_wiring.py --self-test
+else
+  skip_check "self-test 配線検査 (check_selftest_wiring.py)" "スクリプトが見つかりません"
+fi
+
 # 4.11. 正規表現リテラルの重複検査（Issue #612・コピーの再発防止）
 if [ -f "$REPO_ROOT/tools/check_duplicate_source_patterns.py" ]; then
   run_check "正規表現重複検査 (check_duplicate_source_patterns.py --strict)" python3 tools/check_duplicate_source_patterns.py --strict
