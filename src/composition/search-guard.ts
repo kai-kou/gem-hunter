@@ -6,7 +6,7 @@ import { enforceSearchRateLimit } from './rate-limit'
  * `app/api/search/route.ts`）に重複していた「値オブジェクト変換 → 自リクエスト間引き
  * （Issue #122 の `RateLimitPort`）」という順序判断を 1 本へ集約する。
  *
- * 命名は `enforceSearchRateLimit`（同ファイル内の姉妹関数）に倣い、「検索の実行前に
+ * 命名は `enforceSearchRateLimit`（`src/composition/rate-limit.ts` の姉妹関数）に倣い、「検索の実行前に
  * 満たしておく前提条件」という語感で `prepare` を選んだ（`validateAndConsume` 等の
  * 実装詳細を名前に出す案より、呼び出し側から見た意図を表すほうがこのリポジトリの
  * 既存命名（`enforce*` / `complete*` 等、動詞 + 対象）に馴染むと判断）。

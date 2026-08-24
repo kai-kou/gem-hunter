@@ -51,6 +51,18 @@ Cloudflare Rate Limiting binding（`wrangler.jsonc` の `ratelimits`）は **宣
 使い方:
     python3 tools/check_rate_limit_wiring.py              # 本判定（0=PASS / 1=FAIL）
     python3 tools/check_rate_limit_wiring.py --self-test  # 検査ロジック自身のテスト（実ファイル非依存）
+
+【既知の限界（字句解析のみで完全な静的解析はしていない・Issue #604 レビュー指摘）】
+本スクリプトは AST を持たず正規表現とブレースカウンタによる字句解析だけで判定する。以下 2 点は
+意図的に対応していない（過剰実装を避けるため）。**composition ラッパー（`src/composition/*.ts`
+の export 関数）へ分岐や紛らわしい文字列を持ち込む変更は、この限界により機械検査だけでは
+配線状態を保証できないため、人手レビューが要る**:
+  1. 文字列リテラル内に書かれた `await enforce*RateLimit(...)` のような記述を、実際の呼び出しと
+     誤認しうる（`strip_comments` はコメントだけを取り除き、文字列リテラルの中身はそのまま保つ設計
+     のため）。エラーメッセージ・ログ文言・テストの説明文字列などに関数名をそのまま書くと誤検出しうる。
+  2. 到達可能性解析はしない。`if (false) { await enforce*RateLimit(...) }` のように実行時には
+     絶対に到達しない分岐の内側にあっても、呼び出しが「存在する」というだけで配線ありと数える
+     （直接呼び出しの検査も元々同じ限界を持つ・本改修はこの限界を拡大も縮小もしていない）。
 """
 
 from __future__ import annotations
@@ -412,6 +424,59 @@ def _name_awaited_call_re(names: set[str]) -> re.Pattern[str] | None:
     return re.compile(rf"\b(?:await|void|return)\s+(?:await\s+)?({alternation})\s*\(")
 
 
+def _find_function_body_end(source: str, start: int, fallback_end: int) -> int:
+    """`start`（export 宣言の開始位置）から、対応する関数本体の閉じ括弧の直後の
+    オフセットを返す（波括弧の対応を追跡する簡易ブレースカウンタ）。
+
+    🔴 なぜ要るか（修正項目 1・Issue #604 フォローアップ）: 旧実装は本文の終端を
+    「次の `export` 宣言の開始位置」という **単純なテキストスライス** で決めていた。
+    export と export の間に非 export のトップレベル関数（ヘルパー等）が置かれていると、
+    そのヘルパーの中身が直前の export の本文として一緒に取り込まれてしまい、ヘルパー側の
+    `enforce*RateLimit(` 呼び出しが export のラッパー呼び出しとして **誤帰属** する
+    （export の本体は実際には呼んでいないのに「配線あり」と誤って認識される＝偽陰性）。
+
+    波括弧の対応を文字単位で数え、**クォート（`'` `"` `` ` ``）の中の `{` `}` は数えない**
+    （文字列リテラル中の中括弧で対応がずれるのを避ける・エスケープ文字も 1 文字読み飛ばす）。
+    完全な字句解析ではないため正規表現リテラル中の `{n,m}` のような量指定子までは判別できないが、
+    それは既存の `strip_comments` と同じ「完璧なパーサは持たない」割り切りに合わせている。
+
+    最初の `{` に到達する前に走査が尽きた場合（例: 本体を持たない一行の `export const x = 5`）は
+    対応する閉じ括弧が無いので `fallback_end`（次の export 宣言の開始位置、無ければソース終端）を返す。
+    """
+    n = len(source)
+    i = start
+    depth = 0
+    quote: str | None = None
+    body_started = False
+    while i < n:
+        ch = source[i]
+        if quote:
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+            i += 1
+            continue
+        if ch == "{":
+            depth += 1
+            body_started = True
+            i += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            i += 1
+            if body_started and depth <= 0:
+                return i
+            continue
+        i += 1
+    return fallback_end
+
+
 def extract_composition_wrappers(
     wrapper_sources: dict[str, str], known_enforcers: set[str]
 ) -> tuple[dict[str, set[str]], list[str]]:
@@ -422,6 +487,10 @@ def extract_composition_wrappers(
     集約した関数がこれに当たる。呼び出し元（`app/` 側）はラッパー名だけを呼び、実体の
     `enforce*RateLimit` を直接呼ばなくなるため、これを「配線あり」と認識できないと
     誤って「配線し忘れ・死蔵」を報告してしまう。
+
+    🔴 本文の終端は `_find_function_body_end`（対応する閉じ括弧までのブレースカウンタ）で
+    厳密に決める。export の **外側**（次の export 宣言より前にある非 export のトップレベル
+    ヘルパー等）のコードは本文に含めない（修正項目 1・上記 docstring 参照）。
 
     Returns:
         wrappers: {ラッパー関数名: 転送先の `enforce*RateLimit` 名の集合}
@@ -438,7 +507,8 @@ def extract_composition_wrappers(
         matches = list(GENERIC_EXPORT_RE.finditer(stripped))
         for i, match in enumerate(matches):
             name = match.group(1)
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(stripped)
+            fallback_end = matches[i + 1].start() if i + 1 < len(matches) else len(stripped)
+            end = _find_function_body_end(stripped, match.start(), fallback_end)
             body = stripped[match.start() : end]
             called = set(CALL_RE.findall(body)) & known_enforcers
             if not called:
@@ -754,6 +824,25 @@ _WRAPPER_MISSING_AWAIT = {
         "  const keyword = parseKeyword(rawKeyword)\n"
         "  enforceSearchRateLimit(headers)\n"  # await 抜け
         "  return keyword\n"
+        "}\n"
+    ),
+}
+
+# 🔴 修正項目 1 の反例フィクスチャ: export 本体は `enforce*RateLimit` を呼ばず、
+# export の **外側**（次の export より前）にある非 export のヘルパーだけが呼ぶ。
+# 旧実装（本文の終端 = 次の export の開始位置という単純スライス）だと、このヘルパーの
+# 呼び出しが `prepareSearchKeyword` の本文へ誤って取り込まれ、実際には配線していない
+# ラッパーを「配線あり」と誤認していた。
+_WRAPPER_MISATTRIBUTED_HELPER_CALL = {
+    "src/composition/search-guard.ts": (
+        "export async function prepareSearchKeyword(rawKeyword: string, headers: Headers) {\n"
+        "  const keyword = parseKeyword(rawKeyword)\n"
+        "  return keyword\n"
+        "}\n"
+        "\n"
+        "// export の外側にある非 export のヘルパー。prepareSearchKeyword の本文には含まれない。\n"
+        "function debugLogRateLimitProbe(headers: Headers) {\n"
+        "  void enforceSearchRateLimit(headers)\n"
         "}\n"
     ),
 }
@@ -1085,6 +1174,17 @@ def self_test() -> int:
             f"（wrappers={wrappers_bad!r} / errors={wrapper_errs_bad!r}）"
         )
 
+    # 🔴 修正項目 1（CRITICAL）の反例: export の外側にあるヘルパーの呼び出しを、
+    # 直前の export の本文として誤帰属しないこと（偽陰性の再発防止）。
+    wrappers_helper, wrapper_errs_helper = extract_composition_wrappers(
+        _WRAPPER_MISATTRIBUTED_HELPER_CALL, known
+    )
+    if "prepareSearchKeyword" in wrappers_helper or wrapper_errs_helper:
+        failures.append(
+            "extract_composition_wrappers: export 外側のヘルパー呼び出しを export 本体へ誤帰属している"
+            f"（wrappers={wrappers_helper!r} / errors={wrapper_errs_helper!r}）"
+        )
+
     raw_matched, raw_awaited, resolved = extract_calls_via_wrappers(
         "await prepareSearchKeyword(k, h)\n", {"prepareSearchKeyword": {"enforceSearchRateLimit"}}
     )
@@ -1102,8 +1202,8 @@ def self_test() -> int:
         print(f"[rate-limit-wiring] self-test NG（{len(failures)} 件）", file=sys.stderr)
         return EXIT_VIOLATION
     print(
-        "[rate-limit-wiring] self-test OK（36 ケース: 正常 9 / 反例 24 / 補助関数・列挙集合 3・"
-        "間接呼び出し（Issue #604）6 件を含む）"
+        "[rate-limit-wiring] self-test OK（37 ケース: 正常 9 / 反例 25 / 補助関数・列挙集合 3・"
+        "間接呼び出し（Issue #604）6 件・ラッパー本文の誤帰属反例（修正項目 1）1 件を含む）"
     )
     return EXIT_OK
 
