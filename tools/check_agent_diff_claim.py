@@ -237,6 +237,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--stdin", action="store_true", help="標準入力から完了報告テキストを読みパスらしき文字列を抽出する")
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
+    # selftest-wiring-ok: サブエージェント委譲直後に親が手動で叩く運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
     args = parser.parse_args()
 

@@ -588,6 +588,7 @@ def main() -> int:
     parser.add_argument("--in-flight-json", action="append", default=[], help="get_files 系 API の生 JSON ファイルパス（繰り返し指定可）")
     parser.add_argument("--candidate", action="append", default=[], help="'label:glob1,glob2' 形式で繰り返し指定。'label:' は未確定を表す")
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
+    # selftest-wiring-ok: 進行中 PR/スプリントとの並行着手判定でのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
     args = parser.parse_args()
 

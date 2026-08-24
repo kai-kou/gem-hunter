@@ -40,6 +40,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ts_source import JS_IDENTIFIER_RE, find_matching_brace, find_tag_end, strip_comments  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # --------------------------------------------------------------------------- 対応表（SSOT はここだけ）
@@ -99,45 +102,7 @@ CALL_SITE_H_TEXT_RE = re.compile(r"^(?:h-|text-)")
 
 
 # --------------------------------------------------------------------------- 共通ユーティリティ
-
-def strip_comments(text: str) -> str:
-    """コメントを空白へ置換する（オフセット保持・文字列リテラルは保護）。"""
-    out = list(text)
-    i, n = 0, len(text)
-    quote: str | None = None
-    while i < n:
-        ch = text[i]
-        if quote:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            i += 1
-            continue
-        if ch in "\"'`":
-            quote = ch
-            i += 1
-            continue
-        if ch == "/" and i + 1 < n:
-            nxt = text[i + 1]
-            if nxt == "/":
-                j = text.find("\n", i)
-                j = n if j == -1 else j
-                for k in range(i, j):
-                    out[k] = " "
-                i = j
-                continue
-            if nxt == "*":
-                j = text.find("*/", i + 2)
-                j = n if j == -1 else j + 2
-                for k in range(i, j):
-                    if out[k] != "\n":
-                        out[k] = " "
-                i = j
-                continue
-        i += 1
-    return "".join(out)
+# strip_comments は tools/ts_source.py（共通モジュール・Issue #612）からの import に統一済み。
 
 
 def lineno_at(text: str, offset: int) -> int:
@@ -169,50 +134,6 @@ def css_var_px(css_text: str, var_name: str) -> float | None:
 
 def tier_order_index(tier: str) -> int | None:
     return TIER_ORDER.index(tier) if tier in TIER_ORDER else None
-
-
-def _find_matching_brace(text: str, open_idx: int) -> int:
-    """`text[open_idx]` が `{` である前提で、対応する `}` の index を返す。
-
-    文字列リテラル（`"` `'`）・テンプレートリテラル（`` ` ``、`${...}` の再帰含む）の
-    中身は中括弧としてカウントしない。対応が見つからない場合は `len(text)` を返す。
-    """
-    n = len(text)
-    depth = 0
-    i = open_idx
-    while i < n:
-        ch = text[i]
-        if ch == "{":
-            depth += 1
-            i += 1
-            continue
-        if ch == "}":
-            depth -= 1
-            i += 1
-            if depth == 0:
-                return i - 1
-            continue
-        if ch in "\"'":
-            q = ch
-            i += 1
-            while i < n and text[i] != q:
-                i += 2 if text[i] == "\\" else 1
-            i += 1
-            continue
-        if ch == "`":
-            i += 1
-            while i < n and text[i] != "`":
-                if text[i] == "\\":
-                    i += 2
-                    continue
-                if text[i] == "$" and i + 1 < n and text[i + 1] == "{":
-                    i = _find_matching_brace(text, i + 1) + 1
-                    continue
-                i += 1
-            i += 1
-            continue
-        i += 1
-    return n
 
 
 # --------------------------------------------------------------------------- 検査 1: cva size テーブルの生値
@@ -339,7 +260,7 @@ def _scan_classname_expr(rel: str, expr: str, base_offset: int, code: str) -> tu
                     continue
                 if expr[j] == "$" and j + 1 < n and expr[j + 1] == "{":
                     check_segment(expr[seg_start:j], base_offset + seg_start)
-                    close = _find_matching_brace(expr, j + 1)
+                    close = find_matching_brace(expr, j + 1)
                     saw_dynamic_interp = True
                     j = close + 1
                     seg_start = j
@@ -355,7 +276,7 @@ def _scan_classname_expr(rel: str, expr: str, base_offset: int, code: str) -> tu
     has_dynamic = saw_dynamic_interp
     if not has_dynamic:
         remainder = "".join(skeleton)
-        for id_m in re.finditer(r"[A-Za-z_$][A-Za-z0-9_$]*", remainder):
+        for id_m in JS_IDENTIFIER_RE.finditer(remainder):
             k = id_m.end()
             while k < n and remainder[k].isspace():
                 k += 1
@@ -385,7 +306,7 @@ def check_call_site_classname(rel: str, text: str) -> tuple[list[str], list[str]
 
     for m in CLASSNAME_EXPR_START_RE.finditer(code):
         brace_start = m.end() - 1
-        close = _find_matching_brace(code, brace_start)
+        close = find_matching_brace(code, brace_start)
         expr = code[brace_start + 1 : close]
         expr_errors, has_dynamic = _scan_classname_expr(rel, expr, brace_start + 1, code)
         errors.extend(expr_errors)
@@ -408,8 +329,16 @@ def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> l
         required_idx = tier_order_index(required_tier)
         if required_idx is None:
             continue
-        for tag_m in re.finditer(rf"<{re.escape(component)}\b(.*?)(?:/>|>)", code, re.DOTALL):
-            attrs = tag_m.group(1)
+        for open_m in re.finditer(rf"<{re.escape(component)}\b", code):
+            tag_start = open_m.start()
+            attrs_start = open_m.end()
+            # 非貪欲正規表現 `(.*?)(?:/>|>)` は onClick={() => f()} の `=>` の `>` を
+            # タグ終端と誤認する（属性の並び順で結果が変わる偽陽性の原因）。深さ・クォートを
+            # 追跡する find_tag_end で実際のタグ終端だけを終端と判定する（Issue #612）。
+            tag_end = find_tag_end(code, attrs_start)
+            if tag_end == -1:
+                continue  # 対応するタグ終端が見つからない（壊れた/切り詰められた入力）。誤検知を避けて素通りする。
+            attrs = code[attrs_start:tag_end]
             size_m = re.search(r'size\s*=\s*"([^"]+)"', attrs)
             variant_name = size_m.group(1) if size_m else "default"
             used_tier = VARIANT_TIER.get(variant_name)
@@ -418,7 +347,7 @@ def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> l
             used_idx = tier_order_index(used_tier)
             if used_idx is None or used_idx >= required_idx:
                 continue
-            ln = lineno_at(code, tag_m.start())
+            ln = lineno_at(code, tag_start)
             errors.append(
                 f"{rel}:{ln} UI-DIM-5: <{component}> が size=\"{variant_name}\"（tier {used_tier}）"
                 f"を使っていますが、この呼び出しサイトは tier {required_tier} 以上が必要です"
@@ -734,6 +663,45 @@ _case(
         "src/ui/search-form.tsx",
         f["src/ui/search-form.tsx"].replace(
             '<Button type="submit" size="xl">', '<Button type="submit" size="icon-xs">'
+        ),
+    ),
+    1, 0,
+)
+
+# --- 検査5 反例（Issue #612・タグ終端の誤認による偽陽性の固定）-----------------
+# 非貪欲正規表現 `.*?(?:/>|>)` は onClick={() => f()} の `=>` の `>` をタグ終端と
+# 誤認し、それより後ろにある size="xl" を読み落として tier 不足の偽陽性を出す
+# （属性の並び順だけで結果が変わっていた実バグ）。find_tag_end による深さ追跡で
+# 正しくタグ全体を捉え、並び順に関わらず size="xl" を読み取れることを固定する。
+
+_case(
+    "検査5 反例（偽陽性）: アロー関数を含む属性が size より前にあっても size=\"xl\" を正しく読み取れる",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            'size="xl" className="flex-1"', 'onClick={() => {}} size="xl" className="flex-1"'
+        ),
+    ),
+    0, 0,
+)
+
+_case(
+    "検査5 反例（偽陽性）: 属性値の文字列内の `>` をタグ終端と誤認せず、後続の size=\"xl\" を正しく読み取れる",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            'size="xl" className="flex-1"', 'title="a > b" size="xl" className="flex-1"'
+        ),
+    ),
+    0, 0,
+)
+
+_case(
+    "検査5 反例（偽陰性ガード）: アロー関数を含む属性があっても本当の tier 違反（size=\"sm\"）は検出できる",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            'size="xl" className="flex-1"', 'onClick={() => {}} size="sm" className="flex-1"'
         ),
     ),
     1, 0,

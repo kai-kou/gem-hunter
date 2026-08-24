@@ -130,6 +130,7 @@ def _self_test() -> None:
 if __name__ == "__main__":
     import sys
 
+    # selftest-wiring-ok: 共有ユーティリティ。利用側スクリプトの検査で間接的に担保される
     if "--self-test" in sys.argv:
         _self_test()
         sys.exit(0)

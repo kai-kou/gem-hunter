@@ -168,6 +168,7 @@ def severity_of(body: str) -> "str | None":
 
 
 def analyze(comments: list) -> dict:
+    # dup-ok: pr_review_trends.py の _PR_RE と同一パターン。統合は Issue #612 のスコープ外
     pr_re = re.compile(r"/pulls/(\d+)")
     stats = {
         "generated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),

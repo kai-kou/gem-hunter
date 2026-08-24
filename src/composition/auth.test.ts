@@ -1,9 +1,11 @@
+import { NextRequest } from 'next/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildGithubAuthorizeUrl,
   isAuthConfigured,
   isSecureConnection,
+  landingUrl,
   resolveLandingHost,
 } from './auth'
 
@@ -71,5 +73,30 @@ describe('resolveLandingHost（PR #141 レビュー指摘: オープンリダイ
   it('受信した Host が許可ホストと食い違うと許可ホスト側にフォールバックする（Host ヘッダ偽装対策）', () => {
     vi.stubEnv('GITHUB_OAUTH_CALLBACK_URL', 'https://gem-hunter.example/api/auth/callback')
     expect(resolveLandingHost('evil.example')).toBe('gem-hunter.example')
+  })
+})
+
+describe('landingUrl（PR #141 レビュー指摘: callback/logout 2 route handler の重複解消）', () => {
+  it('Host ヘッダを優先し、プロトコルと合わせて "/" への URL を組み立てる', () => {
+    const request = new NextRequest('http://127.0.0.1:3100/api/auth/callback', {
+      headers: { host: '127.0.0.1:3100' },
+    })
+
+    expect(landingUrl(request).toString()).toBe('http://127.0.0.1:3100/')
+  })
+
+  it('Host ヘッダが無ければ nextUrl.host にフォールバックする（NextURL は既定で localhost へ正規化する）', () => {
+    const request = new NextRequest('http://127.0.0.1:3100/api/auth/logout')
+
+    expect(landingUrl(request).toString()).toBe(`http://${request.nextUrl.host}/`)
+  })
+
+  it('受信 Host が許可ホストと食い違うと resolveLandingHost 経由で許可ホスト側に解決される（オープンリダイレクト対策）', () => {
+    vi.stubEnv('GITHUB_OAUTH_CALLBACK_URL', 'https://gem-hunter.example/api/auth/callback')
+    const request = new NextRequest('https://gem-hunter.example/api/auth/callback', {
+      headers: { host: 'evil.example' },
+    })
+
+    expect(landingUrl(request).toString()).toBe('https://gem-hunter.example/')
   })
 })

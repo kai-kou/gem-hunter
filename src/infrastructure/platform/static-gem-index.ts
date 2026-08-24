@@ -8,6 +8,7 @@ import {
 import { type GemIndex, gemIndex, gemIndexValue } from '../../domain/model/gem-index'
 import { DEFAULT_PAGE } from '../../domain/model/page-number'
 import { DEFAULT_PER_PAGE } from '../../domain/model/per-page'
+import { isLenientRepositoryFullName } from '../../domain/model/repository-full-name'
 import type {
   GemIndexPort,
   GemPoolSearchInput,
@@ -15,7 +16,7 @@ import type {
 } from '../../domain/ports/gem-index-port'
 
 import { type AssetReader, resolveAssetReader } from './asset-reader'
-import { FALLBACK_META } from './static-gem-digest'
+import { FALLBACK_META, parseMeta } from './static-gem-digest'
 
 /**
  * Gem 候補プールのレジストリ別シャード（静的アセット）を読む `GemIndexPort` 実装
@@ -71,34 +72,6 @@ const COLUMN_GEM_INDEX = 'gemIndex'
 const COLUMN_PACKAGE_NAME = 'packageName'
 const COLUMN_DEPENDENT_COUNT = 'dependentCount'
 const COLUMN_STARS = 'stars'
-
-/**
- * `owner/repo` の形式判定。`string かつ非空` だけでは `../settings` `owner/` `a/b/c` が通り、
- * 一覧の項目名とリンク先が食い違う（`F-09`）。
- *
- * 🔴 **正本は `static-gem-digest.ts` の `REPOSITORY_FULL_NAME_PATTERN`（同一パターン）**。
- * 共有モジュールへの切り出しは別 Issue（本 PR のファイル分担の外側にあるため今回は同値複製）。
- * ⚠️ ドメインの `tryRepositoryFullName` は使わない。`OWNER_PATTERN` が末尾ハイフンを禁止しており、
- * 実データに末尾ハイフンの owner が 25 件（`Qix-/color-convert` 等）実在してリンクが消える。
- */
-const REPOSITORY_FULL_NAME_PATTERN = /^[^/\s]+\/[^/\s]+$/
-
-/**
- * `owner/repo` として受理してよい値か。
- *
- * 🔴 上のパターン **だけでは `../settings` を弾けない**（`..` は `/` も空白も含まないので
- * `[^/\s]+` に一致してしまう）。`F-09` が問題にしたのはまさにその値なので、ドットだけの
- * セグメント（`.` / `..`）を明示的に落とす。
- * ⚠️ したがって本関数は正本（`static-gem-digest.ts` の同一パターン）より **厳しい**。
- * 共有モジュールへ切り出すときは、この 1 段も一緒に持っていく（別 Issue）。
- */
-function isSafeRepositoryFullName(value: string): boolean {
-  if (!REPOSITORY_FULL_NAME_PATTERN.test(value)) {
-    return false
-  }
-  // パターン上ちょうど 2 セグメントなので、それぞれがドットだけでないことを見れば足りる。
-  return value.split('/').every((segment) => segment !== '.' && segment !== '..')
-}
 
 /**
  * プール 1 件。`GemPoolEntry`（一覧が必要とする全項目）に、照合の基準となる小文字名を足したもの。
@@ -581,7 +554,10 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
   }
 
   const index = tryParseJson(indexRaw, INDEX_PATH)
-  const meta = parseMeta(isObject(index) ? index.meta : undefined)
+  const meta = parseMeta(isObject(index) ? index.meta : undefined, {
+    notObjectWarning: `${INDEX_PATH} の meta が読めません。既定の帰属表示へフォールバックします。`,
+    warn,
+  })
 
   if (!isObject(index) || !Array.isArray(index.shards)) {
     warn(`${INDEX_PATH} の shards が配列ではありません。Gem バッジ・Gem 一覧なしで継続します。`)
@@ -704,7 +680,7 @@ async function loadShard(
     }
     // 🔴 `owner/repo` の形でないものは入口で落とす（`F-09`）。`../settings` のような値が通ると
     //    詳細ページへのリンクが URL 正規化で別のページへ化け、項目名と遷移先が食い違う。
-    if (!isSafeRepositoryFullName(fullName)) {
+    if (!isLenientRepositoryFullName(fullName)) {
       malformedNames += 1
       continue
     }
@@ -780,46 +756,6 @@ function finiteAt(entry: readonly unknown[], index: number): number {
   }
   const value = entry[index]
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-/**
- * `index.json` の `meta` を出典表示（`D-29`）へ落とす。フィールド単位でフォールバックする
- * （1 つ壊れても他の帰属情報は活かす）。既定値は `StaticGemDigest` と **同じもの** を使う
- * （出典・ライセンスは同一バッチが書く固定値なので、2 か所に別々の既定を置かない）。
- */
-function parseMeta(raw: unknown): DigestMeta {
-  if (!isObject(raw)) {
-    warn(`${INDEX_PATH} の meta が読めません。既定の帰属表示へフォールバックします。`)
-    return FALLBACK_META
-  }
-  return {
-    source: nonEmptyStringOr(raw.source, FALLBACK_META.source),
-    // 🔴 `javascript:` / `data:` スキームは `<a href>` へ流さない（React 19 は
-    //    `javascript:` href でレンダリング例外を投げ、画面全体が 500 になる）。
-    sourceUrl: httpUrlOr(raw.sourceUrl, FALLBACK_META.sourceUrl),
-    license: nonEmptyStringOr(raw.license, FALLBACK_META.license),
-    sourceLicenseUrl: httpUrlOr(raw.sourceLicenseUrl, FALLBACK_META.sourceLicenseUrl),
-    generatedAt: nonEmptyStringOr(raw.generatedAt, FALLBACK_META.generatedAt),
-  }
-}
-
-function nonEmptyStringOr(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.length > 0 ? value : fallback
-}
-
-/** `http:` / `https:` のみ許可する（スキーム経由の XSS・レンダリング例外を入口で止める）。 */
-function httpUrlOr(value: unknown, fallback: string): string {
-  if (typeof value === 'string') {
-    try {
-      const url = new URL(value)
-      if (url.protocol === 'http:' || url.protocol === 'https:') {
-        return value
-      }
-    } catch {
-      // URL としてパースできない → 下のフォールバックへ落とす。
-    }
-  }
-  return fallback
 }
 
 function tryParseJson(raw: string, path: string): unknown {

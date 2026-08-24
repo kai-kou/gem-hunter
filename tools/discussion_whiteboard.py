@@ -54,7 +54,9 @@ JST = _dt.timezone(_dt.timedelta(hours=9))
 SENTINEL = "<!-- discussion_whiteboard:auto -->"
 
 KINDS = ("claim", "evidence", "rebuttal", "question", "concession", "consensus", "verdict", "note")
+# dup-ok: run_discussion_review.py の _ID_RE と同一パターン。統合は Issue #612 のスコープ外
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+# dup-ok: run_discussion_review.py の _NAME_RE と同一パターン。統合は Issue #612 のスコープ外
 _AUTHOR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 # refs はエントリヘッダ（HTML コメント）に書かれるため、改行や `-->` `<` `>` 等を含む値を拒否する
 # （含むと _HEADER_RE が途中で閉じ _parse_entry が誤動作する）。entry ファイル名・短い ID 用途を想定。
@@ -348,6 +350,7 @@ def _self_test() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="マルチエージェント議論ホワイトボード基盤")
+    # selftest-wiring-ok: 議論型レビュー実行中にのみ起動する運用ツールで、PR 前の品質ゲートではない
     ap.add_argument("--self-test", action="store_true", help="並列post→render とクロバー防止の検証")
     sub = ap.add_subparsers(dest="cmd")
 

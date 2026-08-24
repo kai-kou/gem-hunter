@@ -191,6 +191,7 @@ fi
 # 4. 依存規則（クリーンアーキテクチャ）
 if [ -f "$REPO_ROOT/tools/check_architecture_boundaries.py" ]; then
   run_check "依存規則 (check_architecture_boundaries.py)" python3 tools/check_architecture_boundaries.py
+  run_check "依存規則 self-test (check_architecture_boundaries.py --self-test)" python3 tools/check_architecture_boundaries.py --self-test
 else
   skip_check "依存規則 (check_architecture_boundaries.py)" "スクリプトが見つかりません"
 fi
@@ -198,6 +199,7 @@ fi
 # 4.5. UI 寸法検査（コントロールサイズ・フォントサイズのトークン化ゲート）
 if [ -f "$REPO_ROOT/tools/check_ui_dimensions.py" ]; then
   run_check "UI 寸法検査 (check_ui_dimensions.py)" python3 tools/check_ui_dimensions.py
+  run_check "UI 寸法検査 self-test (check_ui_dimensions.py --self-test)" python3 tools/check_ui_dimensions.py --self-test
 else
   skip_check "UI 寸法検査 (check_ui_dimensions.py)" "スクリプトが見つかりません"
 fi
@@ -205,6 +207,7 @@ fi
 # 4.6. カラートークン コントラスト検査（E-9 / NFR-13）
 if [ -f "$REPO_ROOT/tools/check_contrast.py" ]; then
   run_check "配色コントラスト検査 (check_contrast.py)" python3 tools/check_contrast.py
+  run_check "配色コントラスト検査 self-test (check_contrast.py --self-test)" python3 tools/check_contrast.py --self-test
 else
   skip_check "配色コントラスト検査 (check_contrast.py)" "スクリプトが見つかりません"
 fi
@@ -252,13 +255,56 @@ fi
 # 4.8. 副作用のある API ルートのプリフェッチ検査（#145 の再発防止）
 if [ -f "$REPO_ROOT/tools/check_prefetchable_side_effects.py" ]; then
   run_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" python3 tools/check_prefetchable_side_effects.py
+  run_check "副作用 GET のプリフェッチ検査 self-test (check_prefetchable_side_effects.py --self-test)" python3 tools/check_prefetchable_side_effects.py --self-test
 else
   skip_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" "スクリプトが見つかりません"
+fi
+
+# 4.8.5. 日時 TZ 検査（datetime-rules.md の完了条件が挙げる機械チェック・Issue #80 / #445）
+if [ -f "$REPO_ROOT/tools/check_datetime_tz.py" ]; then
+  run_check "日時 TZ 検査 (check_datetime_tz.py)" python3 tools/check_datetime_tz.py
+  run_check "日時 TZ 検査 self-test (check_datetime_tz.py --self-test)" python3 tools/check_datetime_tz.py --self-test
+else
+  skip_check "日時 TZ 検査 (check_datetime_tz.py)" "スクリプトが見つかりません"
+fi
+
+# 4.9. TS/JSX 字句解析ヘルパーの共通モジュール self-test（Issue #612）
+#      複数の検査スクリプトが共有するため、ここが壊れると検査全体が壊れる
+if [ -f "$REPO_ROOT/tools/ts_source.py" ]; then
+  run_check "字句解析ヘルパー self-test (ts_source.py --self-test)" python3 tools/ts_source.py --self-test
+else
+  skip_check "字句解析ヘルパー self-test (ts_source.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# 4.10. app/ 薄さ検査（Issue #612・「app/ はロジックを書かない」の機械化）
+if [ -f "$REPO_ROOT/tools/check_app_thinness.py" ]; then
+  run_check "app/ 薄さ検査 (check_app_thinness.py --strict)" python3 tools/check_app_thinness.py --strict
+  run_check "app/ 薄さ検査 self-test (check_app_thinness.py --self-test)" python3 tools/check_app_thinness.py --self-test
+else
+  skip_check "app/ 薄さ検査 (check_app_thinness.py)" "スクリプトが見つかりません"
+fi
+
+# 4.10.5. self-test の配線漏れ検査（Issue #612）
+#         「テストがあるのに実行されない」状態を止める検査。この検査自身も下で self-test を走らせる
+if [ -f "$REPO_ROOT/tools/check_selftest_wiring.py" ]; then
+  run_check "self-test 配線検査 (check_selftest_wiring.py)" python3 tools/check_selftest_wiring.py
+  run_check "self-test 配線検査 self-test (check_selftest_wiring.py --self-test)" python3 tools/check_selftest_wiring.py --self-test
+else
+  skip_check "self-test 配線検査 (check_selftest_wiring.py)" "スクリプトが見つかりません"
+fi
+
+# 4.11. 正規表現リテラルの重複検査（Issue #612・コピーの再発防止）
+if [ -f "$REPO_ROOT/tools/check_duplicate_source_patterns.py" ]; then
+  run_check "正規表現重複検査 (check_duplicate_source_patterns.py --strict)" python3 tools/check_duplicate_source_patterns.py --strict
+  run_check "正規表現重複検査 self-test (check_duplicate_source_patterns.py --self-test)" python3 tools/check_duplicate_source_patterns.py --self-test
+else
+  skip_check "正規表現重複検査 (check_duplicate_source_patterns.py)" "スクリプトが見つかりません"
 fi
 
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
+  run_check "CJK Markdown self-test (check_cjk_markdown.py --self-test)" python3 tools/check_cjk_markdown.py --self-test
 else
   skip_check "CJK Markdown (check_cjk_markdown.py --changed)" "スクリプトが見つかりません"
 fi
@@ -266,6 +312,7 @@ fi
 # 6. セルフレビュー機械チェック
 if [ -f "$REPO_ROOT/tools/self_review_check.py" ]; then
   run_check "セルフレビュー機械チェック (self_review_check.py)" python3 tools/self_review_check.py
+  run_check "セルフレビュー機械チェック self-test (self_review_check.py --self-test)" python3 tools/self_review_check.py --self-test
 else
   skip_check "セルフレビュー機械チェック (self_review_check.py)" "スクリプトが見つかりません"
 fi

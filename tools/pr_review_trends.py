@@ -54,6 +54,7 @@ RENDER_PATH = ROOT / "content" / "analytics" / "pr_review_trends.png"
 # matplotlib で日本語が豆腐化しないよう登録するフォント（既存 compose_channel_banner.py と同じ実績パス）
 JP_FONT = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
 # pull_request_url から PR 番号を抽出する正規表現（モジュールレベルで 1 度だけコンパイル）
+# dup-ok: analyze_pr_review_comments.py の pr_re と同一パターン。統合は Issue #612 のスコープ外
 _PR_RE = re.compile(r"/pulls/(\d+)")
 
 # analyze_pr_review_comments.py のロジックを再利用（SSOT・同 tools/ ディレクトリ・sys.path は上で追加済み）
@@ -684,6 +685,7 @@ def main() -> int:
     ap.add_argument("--all", action="store_true", help="update → render → notify を一括")
     ap.add_argument("--weeks", type=int, default=12, help="集計対象週数（既定 12）")
     ap.add_argument("--no-issue", action="store_true", help="悪化検知 Issue の自動起票を抑制")
+    # selftest-wiring-ok: 週次スロットでのみ起動する運用ツールで、PR 前の品質ゲートではない
     ap.add_argument("--self-test", action="store_true", help="内蔵フィクスチャで検証")
     args = ap.parse_args()
 

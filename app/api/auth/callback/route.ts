@@ -5,8 +5,8 @@ import {
   encodeSessionCookie,
   isAuthConfigured,
   isSecureConnection,
+  landingUrl,
   OAUTH_STATE_COOKIE_NAME,
-  resolveLandingHost,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_TTL_SECONDS,
 } from '@/src/composition/auth'
@@ -20,25 +20,10 @@ import {
  */
 
 /**
- * ログイン成否に関わらず遷移する先。US-2 と同じくロケール未指定は `/` → 既定ロケールへ（next.config.ts）。
- *
- * 🔴 `request.url`（`request.nextUrl`）はそのまま使わない。`next start`（`--hostname` 未指定）は
- * 内部的に `localhost` を既定ホストとして `NextURL` を組み立てることがあり、クライアントが実際に
- * 到達したホスト（例: `127.0.0.1:3100`）と食い違う場合がある（実機検証済み）。セッション Cookie は
- * 「このレスポンスをどのオリジンで受け取ったか」で暗黙にスコープされる一方、`Location` の
- * ホストが食い違うとブラウザは次のページを **別オリジン** として読み込み、そのオリジンには
- * 送られてこない Cookie を参照できなくなる（レート枠切替が反映されない障害の原因になる）。
- *
- * 🔴 とはいえ受信した `Host` ヘッダをそのまま信頼すると、TLS の SNI で正規ドメインへ接続した上で
- * `Host` ヘッダだけ別ドメインに書き換えるリクエストでオープンリダイレクトが成立してしまう
- * （PR #141 レビュー指摘）。`resolveLandingHost()` で `GITHUB_OAUTH_CALLBACK_URL` から導出した
- * 許可ホストと突き合わせ、一致する場合のみ受信した `Host` を使う。
+ * ログイン成否に関わらず遷移する先。`landingUrl()` の実装（オープンリダイレクト対策込み）は
+ * `app/api/auth/logout/route.ts` と共通のため `src/composition/auth.ts` に集約している
+ * （PR #141 レビュー指摘・重複解消）。
  */
-function landingUrl(request: NextRequest): URL {
-  const requestHost = request.headers.get('host') ?? request.nextUrl.host
-  const host = resolveLandingHost(requestHost)
-  return new URL('/', `${request.nextUrl.protocol}//${host}`)
-}
 
 /**
  * タイミングセーフな文字列比較（`crypto.timingSafeEqual` は Node 専用で Workers 実行を想定した

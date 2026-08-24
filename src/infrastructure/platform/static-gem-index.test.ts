@@ -905,6 +905,58 @@ describe('StaticGemIndex: index.json の meta の入口ガード（`F-34`）', (
     expect(result.meta.sourceLicenseUrl).toBe(FALLBACK_META.sourceLicenseUrl)
     expect(result.meta.sourceUrl).toBe(POOL_META.sourceUrl)
   })
+
+  // 🔴 統合後の非対称性を固定する回帰テスト（PR #619 セルフレビュー指摘）: `static-gem-index.ts`
+  // は `parseMeta` を `logFieldWarnings` 省略（既定 false）で呼ぶため、フィールド単位の
+  // フォールバックが起きても `console.warn` を呼ばない。`static-gem-digest.ts` 側
+  // （`logFieldWarnings: true`）とはここが異なる（`static-gem-digest.test.ts` の
+  // `toHaveBeenCalledWith(expect.stringContaining('meta.sourceUrl'))` と対を成す）。
+
+  it('正常な meta（全項目あり）を読んだときは console.warn が呼ばれない', async () => {
+    const port = new StaticGemIndex(stubReader(filesWithMeta(POOL_META)))
+
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+
+    expect(result.meta).toEqual(POOL_META)
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('meta のフィールドが欠落・不正でも、index 側はフィールド単位の warn ログを出さない（digest 側との非対称）', async () => {
+    const brokenMeta = {
+      ...POOL_META,
+      sourceUrl: 'javascript:alert(1)', // http(s) 以外 → 既定 URL へフォールバック
+    }
+    delete (brokenMeta as Partial<typeof POOL_META>).license // 欠落 → 既定値へフォールバック
+    const port = new StaticGemIndex(stubReader(filesWithMeta(brokenMeta)))
+
+    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+
+    // 値そのものはフィールド単位でフォールバックしている（挙動は digest 側と同じ）。
+    expect(result.meta.sourceUrl).toBe(FALLBACK_META.sourceUrl)
+    expect(result.meta.license).toBe(FALLBACK_META.license)
+    expect(result.meta.source).toBe(POOL_META.source)
+    // 🔴 だがログは出ない。digest 側なら `meta.sourceUrl` / `meta.license` を含む warn が
+    //    出るところ（`static-gem-digest.test.ts` L110 相当）、index 側は無音でフォールバックする。
+    expect(console.warn).not.toHaveBeenCalledWith(expect.stringContaining('meta.'))
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['null', null],
+    ['配列', ['not', 'an', 'object']],
+    ['文字列', 'not-an-object'],
+  ])(
+    'meta 自体がオブジェクトでない（%s）ときは `[StaticGemIndex]` プレフィックス・INDEX_PATH 入りの警告で既定値へ丸ごと倒す',
+    async (_label, meta) => {
+      const port = new StaticGemIndex(stubReader(filesWithMeta(meta)))
+
+      const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+
+      expect(result.meta).toEqual(FALLBACK_META)
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('[StaticGemIndex]'))
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining(INDEX_PATH))
+    },
+  )
 })
 
 describe('StaticGemIndex#search（続き）', () => {

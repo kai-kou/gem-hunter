@@ -311,6 +311,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Python 危険パターン検出（FAIR Layer 0・#56）")
     ap.add_argument("files", nargs="*", help="検査する .py ファイル")
     ap.add_argument("--changed", action="store_true", help="git 差分の .py を検査")
+    # selftest-wiring-ok: self_review_check.py から呼ばれるため、そちらの配線で実行される
     ap.add_argument("--self-test", action="store_true", help="自己テストを実行")
     args = ap.parse_args()
 

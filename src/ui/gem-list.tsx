@@ -6,6 +6,7 @@ import { formatMessage } from '@/src/shared/i18n/format-message'
 import type { DigestMeta, GemPoolEntry } from '../domain/model/gem'
 import { gemIndexValue } from '../domain/model/gem-index'
 import type { Locale } from '../domain/model/locale'
+import { tryParseLenientRepositoryFullName } from '../domain/model/repository-full-name'
 import { AttributionNotice } from './attribution-notice'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 import { buildSearchUrl } from './url/build-search-url'
@@ -184,7 +185,7 @@ export function GemList({
           {view.items.length > 0 ? (
             <ul className="divide-border mt-2 divide-y">
               {view.items.map((entry) => {
-                const repo = splitRepositoryFullName(entry.repositoryFullName)
+                const repo = tryParseLenientRepositoryFullName(entry.repositoryFullName)
                 return (
                   <li
                     // 🔴 `repositoryFullName` を key にする（`byRepo` のキーがその小文字なので
@@ -298,28 +299,4 @@ export function GemList({
       />
     </>
   )
-}
-
-const REPOSITORY_FULL_NAME_PATTERN = /^[^/\s]+\/[^/\s]+$/
-
-/**
- * `owner/name` を分解する。分解できなければ `null`（リンクを作らない）。
- *
- * ⚠️ **ドメインの関数へ寄せられない**: `tryRepositoryFullName` の `OWNER_PATTERN` は末尾
- * ハイフンの owner を弾くが、候補プールの実データに末尾ハイフン owner が 25 件（`Qix-/color-convert`
- * 等）実在するため適用すると正当な行のリンクが消える。`ownerOf` / `repoOf` は分解専用で
- * 検証を持たない（`daily-digest.tsx` はインフラ側が形式検証済みの前提で使っている）。
- * そのため判定はインフラ側（`static-gem-digest.ts`）と同じ形式に揃えたうえで、パス走査に
- * 使われる `.` / `..` セグメントを明示的に弾く（`encodeURIComponent` はドットを残すため、
- * これが無いと `../x` が `/{locale}/repos/../x` として正規化され表示名と遷移先が食い違う）。
- */
-function splitRepositoryFullName(fullName: string): { owner: string; name: string } | null {
-  if (!REPOSITORY_FULL_NAME_PATTERN.test(fullName)) return null
-  const [owner, name] = fullName.split('/')
-  if (isDotSegment(owner) || isDotSegment(name)) return null
-  return { owner, name }
-}
-
-function isDotSegment(segment: string): boolean {
-  return segment === '.' || segment === '..'
 }

@@ -47,6 +47,7 @@ _STATE_DIR = _anchored("STATE_DIR", PROJECT_DIR / "content" / "pipeline-state")
 _ANALYTICS_DIR = _anchored("ANALYTICS_DIR", PROJECT_DIR / "content" / "analytics")
 COST_LOG = _STATE_DIR / "cost_log.jsonl"
 OUT_PATH = _ANALYTICS_DIR / "sprint" / "session_metrics.jsonl"
+# dup-ok: check_pending_pr_reviews.py の SESSION_ID_RE と同一パターン。統合は Issue #612 のスコープ外
 SESSION_ID_RE = re.compile(r"Session-Id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", re.I)
 ATTRIBUTION_GRACE = timedelta(minutes=30)
 

@@ -72,6 +72,7 @@ JST = timezone(timedelta(hours=9))
 # 上記 docstring 「設計上の注意」参照）。
 MAX_SYNCABLE_SP = 11
 
+# dup-ok: check_roadmap_status.py の SP_TITLE_PATTERNS[0] と同一パターン。統合は Issue #612 のスコープ外
 SP_TITLE_RE = re.compile(r"^SP-(\d+):")
 MILESTONE_ISSUE_TITLE = "[Milestone] M-3 到達"
 BUG_ISSUE_TITLE = "[sprint_backlog_sync] user-story-map.md §5.3 のパースに失敗"
@@ -908,6 +909,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="起票せず判定結果のみ出力する")
     parser.add_argument("--json", action="store_true", help="機械可読な JSON で出力する")
     parser.add_argument("--repo", default=None, help="owner/name（既定: git remote から解決）")
+    # selftest-wiring-ok: スプリント自走ルーティンの SP→Issue 同期でのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="ネットワーク不要のユニットテストを実行")
     args = parser.parse_args()
 
