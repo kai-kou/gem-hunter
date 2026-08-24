@@ -75,7 +75,7 @@ Red（失敗するテストを書く） → Green（通す最小の実装） →
 - [ ] 追加した振る舞いに **先行して書かれたテスト** がある
 - [ ] 該当スプリントの操作レビュー手順が E2E テストとして存在する（`SP-4` 以降）
 - [ ] コマンド 1 つで全テストが通る（**実行結果を確認済み**・`SP-4` 以降）
-- [ ] CI が緑（`SP-4` 以降）。🔴 **Actions 制限中の読み替え**: CI が無いため「`bash tools/run_checks.sh` が緑（`SP-4` 以降）」に読み替える（結果を PR 本文に貼る手順は `pr-review-flow-summary.md`「PR 作成時の必須事項」）。制限解除後はこの読み替えを外し元の文言に戻す
+- [ ] CI が緑（`SP-4` 以降）。🔵 **二層で確認する**（`D-41`・Issue #543）: ① `.github/workflows/quality-checks.yml`（Prettier / ESLint / 型 / ユニット）が緑であること ② **E2E と Lighthouse a11y ゲートは CI に含まれない** ため、`bash tools/run_checks.sh` を実行して緑であることを確認し、結果を PR 本文へ貼ること（手順は `pr-review-flow-summary.md`「PR 作成時の必須事項」）
 
 ---
 

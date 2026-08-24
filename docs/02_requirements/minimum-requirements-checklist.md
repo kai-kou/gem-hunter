@@ -27,7 +27,7 @@
 
 1. ⚠️ **初期状態（未検索）の文言**: 「検索を促す」明示文言は撤去済みで、プレースホルダ + 説明文 + ヒーロー画像が担う（与件 §3.1.1 の「プレースホルダで入力を促す」は満たす）
 2. ⚠️ **画像最適化は `next/image` を使わない**（`INF-11` の意図的判断。GitHub の `?s=N` + 明示寸法 + `loading="lazy"` で代替）
-3. ⚠️ **CI でのテスト自動実行が現状ない**: GitHub Actions が制限中で撤去済み（`D-23`）。テスト自体はコマンド 1 つで実行でき環境変数に依存しないため「CI で自動実行できる状態」ではある
+3. ⚠️ **CI で自動実行されるのは高速チェックのみ**: `.github/workflows/quality-checks.yml` が `push`（`main`）/ `pull_request` を契機に Prettier / ESLint / `tsc --noEmit` / Vitest（ユニット）を自動実行する（`D-41`・Issue #543）。**E2E と Lighthouse a11y ゲートは待ち時間の都合で CI に含めず**、セッションが `npm run check` を実行して結果表を PR 本文へ貼る運用で担保する（二層構成）
 
 ---
 
@@ -124,7 +124,7 @@
 | TS-1 | テストコードを記述する | ✅ | `npm test`（Vitest）→ **Test Files 67 passed / Tests 593 passed**（実行時間 35.84s・実行結果を確認済み）。E2E は `npm run test:e2e`（Playwright・21 spec ファイル / 89 テスト。件数は `npx playwright test --list` の実測）→ `npm run check` 内で **PASS**（218 秒） |
 | TS-2 | 主要フロー（検索→一覧 / 一覧→詳細 / 読み込み中・0 件・エラー）を対象 | ✅ | 検索→一覧: `e2e/sp-1.spec.ts`（「SP-1: 検索して一覧が出る」）/ 一覧→詳細→戻る: `e2e/sp-3.spec.ts`（「SP-3: 詳細まで往復できる」）・`e2e/sp-7.spec.ts`（検索条件を保持した往復）/ 読み込み中・0 件: `e2e/sp-9-loading-empty.spec.ts` / エラー種別 5 ケース: `e2e/sp-9-errors.spec.ts` / 404: `e2e/sp-6-notfound.spec.ts`。ユニットでも `search-repositories.test.ts` `get-repository-detail.test.ts` `repository-list.test.tsx` `error-notice.test.tsx` 等が対応 |
 | TS-3 | 外部 API をモック化し、ネットワークに依存せず再現可能 | ✅ | ユニット・結合は **MSW 2**（`http.get('https://api.github.com/search/repositories', …)`）。E2E は Playwright がスタブ API + アプリを自動起動し外部ネットワークに出ない（README も明記）。`npm test` は環境変数ゼロで通る |
-| TS-4 | コマンド一つで実行でき、CI で自動実行できる状態 | ⚠️ | **コマンド一つは充足**（`npm test` / `npm run test:e2e` / まとめて `npm run check`）。**ただし現在この規模の CI が稼働していない**: `.github/workflows/` は **存在しない**（GitHub Actions がプラットフォーム側の制限で起動できず 2 本とも撤去・`D-23`）。代替の Workers Builds（`D-31`・`tools/workers_build_deploy.sh`）は **デプロイゲート + デプロイのみでテストを実行しない**。現状は各セッションが `npm run check` を実行し、結果表を PR 本文へ貼ることで機械的証跡としている |
+| TS-4 | コマンド一つで実行でき、CI で自動実行できる状態 | ✅ | **コマンド一つは充足**（`npm test` / `npm run test:e2e` / まとめて `npm run check`）。**CI でも自動実行される**: `.github/workflows/quality-checks.yml` が `push`（`main`）/ `pull_request` を契機に Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を実行する（`D-41`・Issue #543・権限は `contents: read` のみで自動マージ / デプロイはしない）。⚠️ **E2E（Playwright）と Lighthouse a11y ゲートは CI に含めない**（実測 7.4 分 + ブラウザ導入コストが PR ごとの待ち時間に見合わないため）。この 2 つは従来どおりセッションが `npm run check` を実行し、結果表を PR 本文へ貼ることで担保する（二層構成） |
 
 ---
 
@@ -172,7 +172,7 @@
 | `npm run check`（`tools/run_checks.sh`・全チェック） | **全 PASS**（上記に加え Lighthouse a11y ゲート・ADR 記載検査・配色コントラスト検査・CJK Markdown 検査・Format (prettier --check) 検査・各 self-test を含む） |
 | `npm run format:check` | **PASS**（#402 で `prettier --write .` により全ファイルを整形済み） |
 | `grep -rn "NEXT_PUBLIC" src app next.config.ts wrangler.jsonc` | **0 件**（秘匿情報のクライアント露出なし） |
-| `ls .github/workflows` | **存在しない**（`D-23` により撤去済み） |
+| `ls .github/workflows` | `gem-pool-refresh.yml`（`D-40`・Gem 候補プールの日次実行 + 週次反映）/ `quality-checks.yml`（`D-41`・品質チェック CI） |
 
 ---
 
@@ -181,5 +181,5 @@
 いずれも与件の ❌ ではないが、注記 ⚠️ の解消として Issue 化を検討する。
 
 1. ~~**Prettier の是正と PR ゲートへの接続**~~: 対応済み（`N-13`・#402）。`prettier --write .` で全ファイルを整形し `npm run format:check` が PASS、`tools/run_checks.sh` に `prettier --check` を配線済み
-2. **CI でのテスト自動実行の回復**: GitHub Actions の制限解除時に撤去済みワークフローを復帰させる（復帰手順は `cloudflare-infrastructure.md` §8.4）。それまでの間、Workers Builds のビルドコマンド側でテストを走らせられるかを検証する（`TS-4`）
+2. ~~**CI でのテスト自動実行の回復**~~: 対応済み（`D-41`・Issue #543）。`quality-checks.yml` が Prettier / ESLint / 型 / ユニットを自動実行する。**残る検討事項は E2E の CI 化**（現状は待ち時間の都合で除外し、セッション実行 + PR 本文の結果表で担保している・`TS-4`）
 3. **初期状態の文言**: 「検索を促す」意図を文言でも明示するか、現状（プレースホルダ + 説明文 + ビジュアル）で十分とするかを判断し、決定ログへ残す（§3.2）

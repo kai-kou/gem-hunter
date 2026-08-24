@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# GitHub Actions が制限中のため、CI をセッション実行の自前チェックへ切り替える（Issue #72）。
+# 品質チェックの二層構成のうち「層 2（セッション実行）」を担う（Issue #72 / #543・決定ログ D-41）。
+# 層 1（高速ゲート）は .github/workflows/quality-checks.yml が Prettier / ESLint / tsc / Vitest を自動実行する。
+# 本スクリプトはそれに加えて E2E・Lighthouse a11y ゲートなど CI に載せない重いチェックまで通し、
+# PR 作成前の証跡（PR 本文へ貼る Markdown サマリー）を生成する。
 # 常に末尾に「PR 本文に貼れる Markdown サマリー」を出力する（--markdown オプションは設けない）。
 # 各チェックはタイムアウト付きで実行し、タイムアウトは「チェッカー自体が落ちた」失敗として扱う。
 set -uo pipefail

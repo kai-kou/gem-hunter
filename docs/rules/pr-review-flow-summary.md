@@ -20,14 +20,18 @@
 
 ## PR 作成時の必須事項（コマンド仕様は各ツールの description に従う）
 
-> 🔴 **GitHub Actions は品質ゲート・本番デプロイには使わない**（飼い主決定・Issue #298・`harness-escalation.md` Lv4）。
-> 本リポジトリでは **Gem 候補プールの日次実行 + 週次反映にのみ** 使う（Issue #458 / #482・PR を作るところまでで自動マージしない）。
+> 🔴 **品質チェックは二層構成**（`D-41`・Issue #543）。**GitHub Actions は本番デプロイには使わない**（`D-31` / `D-32` の Workers Builds が正本・不変）。
+> - **層 1（CI・自動）**: `push`（`main`）と `pull_request` を契機に `.github/workflows/quality-checks.yml` が
+>   Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を自動実行する（読み取り権限のみ・自動マージもデプロイもしない）。
+> - **層 2（セッション・手動）**: **E2E と Lighthouse a11y ゲートは CI に含めない**（1 PR あたりの待ち時間に見合わないため）。
+>   従来どおり **セッション（Claude）が `bash tools/run_checks.sh` を実行し、結果のサマリー表を PR 本文へ貼る**（下記 0 は引き続き必須）。
+> - **本番・プレビューのデプロイ**は引き続きセッションが `wrangler` を直接叩く / Workers Builds に委ねる（Actions からはデプロイしない）。
+>
+> 定期バッチ用途としては **Gem 候補プールの日次実行 + 週次反映にも** Actions を使う（`D-40`・Issue #458 / #482・PR を作るところまでで自動マージしない）。
 > 生成・機械 QA は毎日走らせるが、`main` への反映（PR 作成）は生成物が 7 日以上前のときだけ行う（マージ頻度が git 履歴コストを決めるため）。
-> 品質チェック・デプロイは引き続き **セッション（Claude）が `bash tools/run_checks.sh` を実行して品質を担保し、`wrangler` を直接叩いて**
-> プレビュー・本番へデプロイする。この 2 用途に CI という機構は使わない前提でこのファイルを読む。
 
-0. **PR 作成前チェック（唯一の機械的証跡）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）。**見出しは `##` 固定で `run_checks` または `npm run check` を含める（`pre-pr-create-check.sh` の検出仕様が SSOT・Issue #405 / PR #456）**: `## run_checks 結果` / `## npm run check 結果` のいずれか（`run_checks` / `npm run check` の部分はバッククォートで囲んでも囲まなくても良い）。同じ見出しが複数回出てきても構わない（いずれか 1 か所が満たしていれば可）。その見出しから次の `##` 見出しまでの間（無関係な別セクションの表・コードフェンス内の例示は不可）に表（`|` 区切り行）があること
-0.5. **プレビュー URL の取得**: GitHub Actions は使わず、**セッションが `npx opennextjs-cloudflare build` → `npx wrangler versions upload --preview-alias pr-<N>` を実行** して取得したプレビュー URL を PR 本文へ貼る（`sprint-development-rules.md` `SD-1` の「開けるプレビュー URL」要件をこの経路で満たす）
+0. **PR 作成前チェック（層 2 の証跡・CI と重複しても省略しない）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）。**見出しは `##` 固定で `run_checks` または `npm run check` を含める（`pre-pr-create-check.sh` の検出仕様が SSOT・Issue #405 / PR #456）**: `## run_checks 結果` / `## npm run check 結果` のいずれか（`run_checks` / `npm run check` の部分はバッククォートで囲んでも囲まなくても良い）。同じ見出しが複数回出てきても構わない（いずれか 1 か所が満たしていれば可）。その見出しから次の `##` 見出しまでの間（無関係な別セクションの表・コードフェンス内の例示は不可）に表（`|` 区切り行）があること
+0.5. **プレビュー URL の取得**: プレビューデプロイに GitHub Actions は使わず、**セッションが `npx opennextjs-cloudflare build` → `npx wrangler versions upload --preview-alias pr-<N>` を実行** して取得したプレビュー URL を PR 本文へ貼る（`sprint-development-rules.md` `SD-1` の「開けるプレビュー URL」要件をこの経路で満たす）
 1. `mcp__github__create_pull_request`（`head`={作業ブランチ} / `base`=main）。本文に **`Session-Id: $CLAUDE_CODE_SESSION_ID`**・`Sprint Goal:` 1 行・`sp:N`・**`Team:` トレーラー**（例 `Team: fan-out(3)`・Issue の `編成` 欄の同期コピー）を必ず含める（`--mine` 所有判定と done_sp 計測の前提）。🔴 **`SP-n` のスプリント PR には `Closes #N` を書かない**（Issue のクローズは `pr-review-watcher` Step 7 の最終アクション）
 2. **PR 存在確認（必須・L-050）**: `mcp__github__list_pull_requests` で `head` を指定して実在を確認する（作成の成否をレスポンスだけで判断しない）
 3. Slack 通知: `python3 tools/slack_notify.py pr --pr-url ... --pr-title "[PR作成] ..." --branch ...`
@@ -43,7 +47,8 @@
 | PR 作成直後 | Layer 1 セルフレビュー → **指摘を行単位インラインコメントで投稿** → 指摘対応（修正コミット or スキップ + **同一スレッドへの返信** + Resolve） |
 | Layer 0+1 通過後 | `mcp__github__merge_pull_request`（`merge_method="squash"`）で即マージ |
 | **マージ直後** | 🔵 **`site/`（LP）を変更していたら `gh-pages` ブランチへ同期する**（手順の正本は [`site/README.md`](../../site/README.md)・決定は `D-35`）。続けて **公開リポジトリへ反映（`publish-sync`）**。`post-merge-publish-check.sh` がドリフトを判定して指示を注入する。反映できないセッション（`add_repo` 不在・L-117）は `[publish-sync]` Issue に記録して終える（沈黙禁止・#449）。続けて 🔴 **本番デプロイの発火条件をゲート判定**（`Sprint Goal:` 行ありなら Step 7 のスプリントレビュー判定へ委譲・無ければ `tools/check_deploy_gate.py` の結果に従う。判断基準・終了コードは `cloudflare-infrastructure.md` §8.2 が SSOT・実行手順は `pr-review-watcher` スキル Step 6/7）→ Slack 完了通知 |
-| 任意 | CI 失敗・人手コメントがあれば対応してからマージ |
+| **マージ前** | 🔴 **`quality-checks.yml` が緑であることを確認する**（`mcp__github__get_check_run` / `pull_request_read`）。赤いままマージしない |
+| 任意 | 人手コメントがあれば対応してからマージ |
 
 サーキットブレーカー: 修正サイクル 2 回超で STOP → ユーザー報告（A-4）。
 
