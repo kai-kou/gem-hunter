@@ -40,7 +40,7 @@ Block 2 heading:「現在地」
 Block 2 items (bulleted list, one line each):
 ・M-1〜M-2 達成済み
 ・M-5 通過済み(D-27)
-・M-6 完了(SP-14〜16)
+・M-6 完了(SP-14〜19)
 ・M-3 未着手
 ・M-4 判断前
 
@@ -65,5 +65,5 @@ Block 5 items (bulleted list, one line each):
 HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
 「M-1〜M-6」
 「6マイルストーン」
-「SP-16まで完了」
+「SP-19まで完了」
 「D-27でPhase2着手決定」

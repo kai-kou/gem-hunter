@@ -73,10 +73,10 @@ Row S-3 × Column A-4 見極める: EMPTY
 Row S-3 × Column A-5 戻って比べる: EMPTY
 Row S-3 × Column A-6 復帰する: EMPTY
 Row S-3 × Column A-7 残す: EMPTY
-Row S-3 × Column A-8 出会う: 「US-30 今日のGem」[DONE] / 「US-34 Gem順並替」[DONE]
+Row S-3 × Column A-8 出会う: 「US-30 今日のGem」[DONE] / 「US-34 Gemバッジ・一覧」[DONE]
 
 HIGHLIGHT CHIPS (small hand-drawn tags along the very bottom, in accent colors):
 「US-1〜34」
 「E-1〜25」
-「SP-16まで完了」
+「SP-19まで完了」
 「残るはS-2積み上げ」
