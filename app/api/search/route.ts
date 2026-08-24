@@ -1,9 +1,8 @@
 import type { NextRequest } from 'next/server'
 import { decodeSessionCookie, SESSION_COOKIE_NAME } from '@/src/composition/auth'
 import { searchRepositoriesWithCacheStatus } from '@/src/composition/container'
-import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
+import { prepareSearchKeyword } from '@/src/composition/search-guard'
 import { DomainError, type ErrorKind, RateLimitExceededError } from '@/src/domain/errors'
-import { searchKeyword } from '@/src/domain/model/search-keyword'
 import { parseSearchParams, SEARCH_PARAM_KEYS } from '@/src/ui/url/search-params'
 
 /**
@@ -55,13 +54,13 @@ export async function GET(request: NextRequest) {
     // 生値だけは `rawParams` から直接取り出す（page.tsx にはこの精度要件がないため
     // `parseSearchParams` の page 解決はそのまま利用する）。
     const rawKeyword = rawParams[SEARCH_PARAM_KEYS.keyword] ?? ''
-    const keyword = searchKeyword(rawKeyword)
-
-    // Issue #122: 自リクエストの間引き（RateLimitPort）。不正な入力（400 で弾く分）で
-    // 枠を消費しないよう `searchKeyword` の検証（値オブジェクト変換）の後に置き、
-    // GitHub API を実際に叩く（`search()`）前に間引く。超過時は `RateLimitExceededError`
-    // を投げ、下の catch → `errorResponse()` が 429 + `Retry-After` を返す（新しい分岐は足さない）。
-    await enforceSearchRateLimit(request.headers)
+    // 「変換 → Issue #122 の自リクエスト間引き（RateLimitPort）」の順序自体が仕様（不正な
+    // 入力・400 で弾く分では枠を消費せず、GitHub API を実際に叩く前に間引く）で、この画面
+    // （page.tsx）と重複していたため `prepareSearchKeyword`（composition root）へ集約した。
+    // 超過時は `RateLimitExceededError` を投げ、下の catch → `errorResponse()` が 429 +
+    // `Retry-After` を返す（新しい分岐は足さない）。理由の全文は同関数の JSDoc
+    // （`src/composition/search-guard.ts`）を参照。
+    const keyword = await prepareSearchKeyword(rawKeyword, request.headers)
 
     // SP-8: セッション Cookie があればユーザー自身のレート枠で検索する（AR-5）。
     // このエンドポイントは元々 X-Cache-Status 観測・検証専用（用途はファイル冒頭コメント参照）
