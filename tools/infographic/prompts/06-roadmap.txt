@@ -20,7 +20,7 @@ SUBTITLE (under the title, one line):
 LAYOUT INSTRUCTION:
 Draw a left-to-right roadmap timeline:
 - A bold hand-drawn horizontal road/arrow across the middle of the canvas with milestone flags along it, showing the order of the 「到達順序」.
-- The 「マイルストーン」 items are the milestone stations on that road, each as a labelled flag or pin, in order.
+- The 「マイルストーン」 items are the milestone stations on that road, each as a labelled flag or pin. 🔴 Place the flags along the road strictly in the left-to-right order given by the 「到達順序」 block, NOT in numeric ID order: M-1, M-2, M-5, M-6, then M-4 last. M-4 is a judgement gate that has not been passed yet, so it must sit to the RIGHT of M-6 at the far end of the road — never between M-2 and M-5.
 - 「現在地」 is a "YOU ARE HERE" style marker box attached to the road with a small hand-drawn pointer. Anchor that pointer to the LAST milestone that is already reached according to the 「現在地」 block (here: M-6), not to an earlier one, so the marker does not imply the project is still before it.
 - Draw a milestone that the 「現在地」 block marks as 見送り (here: M-3) OFF the main road: place it above or below the road in a dashed grey frame with a short 「見送り」 tag, and do not let the road arrow pass through it.
 - 「削減ルール」 and 「残課題」 sit as two rounded boxes below the road, connected by short thin lines.
@@ -41,7 +41,7 @@ Block 2 heading:「現在地」
 Block 2 items (bulleted list, one line each):
 ・M-1〜M-2 達成済み
 ・M-5 通過済み(D-27)
-・M-6 実装完了(SP-14〜19)
+・M-6 通過済み(SP-14〜19)
 ・M-3 見送り(D-41)
 ・M-4 判断前
 
@@ -59,9 +59,9 @@ Block 4 items (bulleted list, one line each):
 
 Block 5 heading:「残課題」
 Block 5 items (bulleted list, one line each):
-・R-5 レート枠の逆算
-・R-8 GitHub規約確認
-・R-6 運用コスト試算
+・R-6 コスト文言の是正
+・独自ドメインの要否
+・残るはM-4の2項目
 
 HIGHLIGHT CHIPS (small hand-drawn tags along the bottom, in accent colors):
 「M-1〜M-6」
