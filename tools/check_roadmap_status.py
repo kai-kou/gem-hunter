@@ -24,6 +24,15 @@
      場合は黙って消さず、`🔵` を付けた情報行として stderr に出す（`❌`＝違反 / `⚠️`＝判定不能
      と記号で区別する）。
 
+     ⚠️ **既知の限界（YAGNI により簡易実装）**:
+     - 達成宣言キーワードの判定（`_has_achievement_keyword`）は、キーワード直後に代表的な
+       否定語尾（`_NEGATION_SUFFIXES` = 「ではない」「とは言えない」「ていない」等）が
+       続く場合だけを否定文として除外する。それ以外の言い回し（二重否定・離れた位置の
+       否定等）は拾えない可能性がある。完璧な自然言語処理は行わない。
+     - 抑制マーカーの理由テキストには `>` を書けない（`_SUPPRESSION_MARKER_RE` が
+       `[^>]` で理由を切り出すため。ReDoS 対策）。また検索対象は `_SUPPRESSION_SCAN_MAX_LEN`
+       文字までに切り詰めて走査する（同じく ReDoS 対策。切り詰めの詳細はその定数のコメント）。
+
 【§2「束ねるスプリント」列の 4 形態】
   - 範囲: `` `SP-1`〜`SP-5` ``
   - 列挙: `` `SP-14` → `SP-15` / `SP-16` ``
@@ -74,6 +83,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -153,7 +163,24 @@ ACHIEVEMENT_KEYWORDS: tuple[str, ...] = ("達成済み", "通過済み")
 # 抑制マーカー（`docs/rules/datetime-rules.md` の `# tz-ok` に倣う HTML コメント形式）。
 # 理由が空（コロン無し・コロン直後が空白のみ）は無効とするため、キャプチャ後に strip して
 # 非空であることを別途確認する（正規表現だけでは「空理由」を排除しきれないため）。
-_SUPPRESSION_MARKER_RE = re.compile(r"<!--\s*roadmap-status-ok\s*:\s*(.*?)-->", re.DOTALL)
+#
+# 🔴 ReDoS 対策（レビュー WARNING2 対応）: 旧実装は `(.*?)` + `re.DOTALL` で「任意の文字を
+# 何文字でも」許していたため、閉じられない `<!-- roadmap-status-ok: ` を大量に反復した
+# 入力（本リポジトリはパブリックなので外部コントリビューターの PR 経由で混入しうる）に対し
+# バックトラック量が入力長の 2 乗で増える（実測: 96KB で 4.4 秒）。理由部分を `>` を含まない
+# 文字クラス `[^>]` へ変える（＝抑制理由に `>` を書けない制約と引き換えに、`-->` の外側へ
+# 際限なく後方追跡させない）。DOTALL は `.`専用の挙動切り替えなので `[^>]` には効果が無く、
+# 複数行にまたがる理由は元々サポートしない想定だったため付けない。
+_SUPPRESSION_MARKER_RE = re.compile(r"<!--\s*roadmap-status-ok\s*:\s*([^>]*?)-->")
+
+# 🔴 ReDoS 対策その2（多重防御）: 文字クラス変更だけでは「`>` を一切含まない巨大な反復入力」
+# に対する最悪計算量（O(n^2)）を根本的には防げない。検索対象を一定長に切り詰めることで
+# 絶対的な処理時間の上限を保証する。実 `roadmap.md` の §3 マイルストーン節は最大でも
+# 約 2,700 文字（2026-08-24 実測・最長は `M-6`）なので、8,000 文字は十分な安全マージンを持つ
+# （マーカー自体は数百文字で収まる運用を想定しており、この上限で切り詰められることは通常無い。
+# 万一マイルストーン節がこの上限を超えて成長し、かつマーカーが末尾側に置かれた場合は
+# 検出漏れになりうるが、それは「誤って違反として報告される」側の安全な失敗モードである）。
+_SUPPRESSION_SCAN_MAX_LEN = 8000
 
 
 def _extract_section(text: str, start_re: re.Pattern[str], end_re: re.Pattern[str]) -> str | None:
@@ -181,42 +208,81 @@ def _is_separator_row(cells: list[str]) -> bool:
 
 
 def _find_suppression_reason(text: str) -> str | None:
-    """`text` 内に有効な抑制マーカー（理由が非空）があれば理由文字列を、無ければ None を返す。"""
-    for m in _SUPPRESSION_MARKER_RE.finditer(text):
+    """`text` 内に有効な抑制マーカー（理由が非空）があれば理由文字列を、無ければ None を返す。
+
+    ReDoS 対策として `text` は `_SUPPRESSION_SCAN_MAX_LEN` 文字までに切り詰めてから走査する
+    （切り詰めの理由・トレードオフは `_SUPPRESSION_SCAN_MAX_LEN` のコメント参照）。
+    """
+    for m in _SUPPRESSION_MARKER_RE.finditer(text[:_SUPPRESSION_SCAN_MAX_LEN]):
         reason = m.group(1).strip()
         if reason:
             return reason
     return None
 
 
+# 達成宣言キーワード直後に続くと「否定文」とみなす代表的な語尾（簡易ヒューリスティック）。
+_NEGATION_SUFFIXES: tuple[str, ...] = ("ではない", "とは言えない", "ていない", "していない", "できていない")
+_NEGATION_LOOKAHEAD_LEN = 12  # キーワード直後、この文字数以内に否定語尾が始まれば否定文とみなす
+
+
 def _has_achievement_keyword(state_text: str) -> bool:
-    return any(kw in state_text for kw in ACHIEVEMENT_KEYWORDS)
+    """達成宣言キーワード（`ACHIEVEMENT_KEYWORDS`）が肯定形で含まれるかを判定する。
+
+    🔴 完璧な自然言語処理は行わない（YAGNI）。キーワード出現の **直後** に代表的な否定語尾
+    （`_NEGATION_SUFFIXES`）が続く場合だけを否定文として除外する簡易チェックであり、
+    それ以外の否定表現（二重否定・キーワードから離れた位置の否定・「まだ〜ではとても言えない」
+    のような言い回し等）は拾えない可能性がある（既知の限界）。同じキーワードが複数回出現する
+    場合は、いずれか 1 回でも肯定形なら True を返す（1 箇所が否定でも他が肯定なら達成宣言とみなす）。
+    """
+    for kw in ACHIEVEMENT_KEYWORDS:
+        pos = 0
+        while True:
+            idx = state_text.find(kw, pos)
+            if idx == -1:
+                break
+            after = state_text[idx + len(kw): idx + len(kw) + _NEGATION_LOOKAHEAD_LEN]
+            if not any(after.startswith(neg) for neg in _NEGATION_SUFFIXES):
+                return True
+            pos = idx + len(kw)
+    return False
 
 
 def expand_sp_cell(cell: str) -> dict:
     """§2「束ねるスプリント」セルの生テキストを `SP-n` 集合の表現へ展開する。
 
+    🔴 **早期 return しない**（レビュー CRITICAL の修正）。旧実装は範囲パターンが 1 つでも
+    見つかった時点でセル全体を「範囲のみ」として `return` していたため、範囲の外にある
+    単独参照（列挙表記との混在。実例: 実 `roadmap.md` §2 `M-6` 行
+    `` `SP-14`・`SP-15`・`SP-17`〜`SP-19`（スライス `S-3`。`SP-16` は再設計元として履歴保持） ``）
+    が丸ごと消えていた。本実装は ① セル内の全 `` `SP-n` `` 参照（列挙・範囲の端点・
+    括弧内の参照を問わず全部）を集める → ② 範囲パターン（`` `SP-a`〜`SP-b` ``）を
+    `re.finditer` で **全走査** し、区間内のギャップ番号（端点以外）を集合へ追加でマージする、
+    という順で処理し、どちらのステップも早期 return しない。
+
     Returns:
         {"kind": "concrete"|"open"|"none", "numbers": set[int], "start": int | None}
-        - concrete: 範囲・列挙のいずれも具体的な番号集合が確定する
-        - open: 「`SP-n` 以降」— 上限が無いため呼び出し側が既知の SP-n 全体から絞り込む
+        - concrete: 範囲・列挙のいずれも（混在していても）具体的な番号集合が確定する
+        - open: 「`SP-n` 以降」— 上限が無いため呼び出し側が既知の SP-n 全体（`>= start`）と
+          `numbers`（開区間の外＝`start` 未満の明示参照。混在していなければ `start` 自身のみ）
+          を OR で合成する。開区間と単独参照が混在するケース（例: 「`SP-12` 以降。ただし
+          `SP-9` の追加修正を含む」）でも `numbers` 経由で取りこぼさない
         - none: 「なし」等、束ねる SP-n が存在しない
     """
     if not _SP_REF_RE.search(cell):
         return {"kind": "none", "numbers": set(), "start": None}
 
-    m_range = _SP_RANGE_RE.search(cell)
-    if m_range:
-        a, b = int(m_range.group(1)), int(m_range.group(2))
-        lo, hi = min(a, b), max(a, b)
-        return {"kind": "concrete", "numbers": set(range(lo, hi + 1)), "start": None}
+    # ① セル内の全 `SP-n` 参照を集める（列挙・範囲端点・括弧内を問わず全部）
+    numbers = {int(x) for x in _SP_REF_RE.findall(cell)}
+
+    # ② 範囲パターンは全走査し、区間のギャップ番号を追加でマージする（早期 return しない）
+    for a, b in _SP_RANGE_RE.findall(cell):
+        lo, hi = min(int(a), int(b)), max(int(a), int(b))
+        numbers.update(range(lo, hi + 1))
 
     m_open = _SP_OPEN_RE.search(cell)
     if m_open:
-        return {"kind": "open", "numbers": set(), "start": int(m_open.group(1))}
+        return {"kind": "open", "numbers": numbers, "start": int(m_open.group(1))}
 
-    # 範囲でも開区間でもない → 列挙表記として、セル内の `SP-n` 参照を全部集める
-    numbers = {int(x) for x in _SP_REF_RE.findall(cell)}
     return {"kind": "concrete", "numbers": numbers, "start": None}
 
 
@@ -374,8 +440,8 @@ def evaluate_roadmap(
             continue
         if sp["kind"] == "concrete":
             numbers = sp["numbers"]
-        else:  # open
-            numbers = {x for x in sp_state_index if x >= sp["start"]}
+        else:  # open: `>= start` の全既知 SP-n と、開区間の外にある明示参照（混在ケース）を OR で合成
+            numbers = {x for x in sp_state_index if x >= sp["start"]} | sp["numbers"]
         existing = sorted(x for x in numbers if x in sp_state_index)
         if not existing:
             continue  # 対応する Issue が 1 件も無ければ「全件 Closed」は判定できない
@@ -503,6 +569,83 @@ def _self_test_sp_cell_expansion() -> list[str]:
     if r["kind"] != "none":
         failures.append(f"なし+補足展開: 期待 none だが {r}")
 
+    return failures
+
+
+# 実 `roadmap.md` §2 `M-6` 行のセル文字列（2026-08-24 実測）。合成フィクスチャが実物から
+# 乖離していたことが CRITICAL（早期 return による取りこぼし）の検出漏れの原因だったため、
+# 加工せずそのまま self-test に使う。
+_REAL_M6_CELL = (
+    "`SP-14`・`SP-15`・`SP-17`〜`SP-19`"
+    "（スライス `S-3`。`SP-16` は再設計元として履歴保持）"
+)
+
+
+def _self_test_expand_sp_cell_mixed_range_and_enum() -> list[str]:
+    """CRITICAL 回帰テスト: 「列挙 + 範囲」混在セルで SP-n を取りこぼさないこと。
+
+    両側アサート: ① 旧実装（範囲を最初に見つけた時点で早期 return するロジック）を
+    このテスト内で再現し、それが実際に一部を取りこぼす（壊れている）ことを先に確認する
+    → ② 現行の `expand_sp_cell` が全参照を正しく展開することを確認する。①が「壊れていない」
+    結果を返してしまったら、このテスト自体が退行を検出できなくなっている合図として扱う。
+    """
+    failures = []
+
+    def _old_buggy_expand(cell: str) -> set[int]:
+        """旧実装（範囲マッチで早期 return）の再現。CRITICAL 修正前の挙動そのもの。"""
+        m_range = _SP_RANGE_RE.search(cell)
+        if m_range:
+            a, b = int(m_range.group(1)), int(m_range.group(2))
+            lo, hi = min(a, b), max(a, b)
+            return set(range(lo, hi + 1))
+        return {int(x) for x in _SP_REF_RE.findall(cell)}
+
+    old_result = _old_buggy_expand(_REAL_M6_CELL)
+    if old_result == {14, 15, 16, 17, 18, 19}:
+        failures.append(
+            "回帰確認: 旧ロジックの再現が『取りこぼしていない』結果を返した"
+            f"（{old_result}）。このテストが CRITICAL の再発を検出できていない可能性がある"
+        )
+
+    result = expand_sp_cell(_REAL_M6_CELL)
+    if result["kind"] != "concrete" or result["numbers"] != {14, 15, 16, 17, 18, 19}:
+        failures.append(f"混在セル展開（実 M-6 セル）: 期待 concrete/{{14..19}} だが {result}")
+
+    return failures
+
+
+def _self_test_expand_sp_cell_multiple_ranges() -> list[str]:
+    """1 セルに範囲が 2 つ以上あるケース（`SP-1`〜`SP-3` と `SP-7`〜`SP-9`）も落とさない。"""
+    failures = []
+    r = expand_sp_cell("`SP-1`〜`SP-3` と `SP-7`〜`SP-9`（統合予定）")
+    if r["kind"] != "concrete" or r["numbers"] != {1, 2, 3, 7, 8, 9}:
+        failures.append(f"複数範囲展開: 期待 concrete/{{1,2,3,7,8,9}} だが {r}")
+    return failures
+
+
+def _self_test_expand_sp_cell_open_mixed() -> list[str]:
+    """開区間と単独参照が混在するケース（例:「`SP-12` 以降。ただし `SP-9` の追加修正を含む」）。
+
+    open kind の `numbers` に開区間の外（`start` 未満）の明示参照も保持され、
+    `evaluate_roadmap` 側の OR 合成で取りこぼさないことを確認する。
+    """
+    failures = []
+    r = expand_sp_cell("`SP-12` 以降。ただし `SP-9` の追加修正を含む")
+    if r["kind"] != "open" or r["start"] != 12 or r["numbers"] != {9, 12}:
+        failures.append(f"開区間+単独参照混在展開: 期待 open/start=12/numbers={{9,12}} だが {r}")
+
+    # evaluate_roadmap 側でも `SP-9`（開区間の外）が取りこぼされないことを確認する
+    parsed = {
+        "milestones": {1: {"sp": r, "raw_cell": ""}},
+        "states": {1: "未着手"},
+        "checklists": {},
+        "states_raw_lines": {},
+        "section3_blocks": {},
+    }
+    violations, _ = evaluate_roadmap(parsed, sp_state_index={9: ["closed"], 12: ["closed"], 13: ["closed"]})
+    hit = [v for v in violations if v["milestone"] == "M-1"]
+    if len(hit) != 1 or hit[0]["sp_numbers"] != [9, 12, 13]:
+        failures.append(f"開区間+単独参照混在: evaluate_roadmap が SP-9 を取りこぼしている: {violations}")
     return failures
 
 
@@ -745,6 +888,22 @@ def _self_test_violation4_pass_keyword_and_decoration() -> list[str]:
     hit_decorated = [v for v in violations_decorated if v["type"] == "violation4_achieved_but_unchecked"]
     if len(hit_decorated) != 1 or hit_decorated[0]["milestone"] != "M-5":
         failures.append(f"違反4（装飾つき通過済み）: 検出できていない: {violations_decorated}")
+
+    return failures
+
+
+def _self_test_achievement_keyword_negation() -> list[str]:
+    """WARNING1 回帰テスト: 達成宣言キーワードの否定文を誤検出しないこと（陰性ケース最低 2 件）。"""
+    failures = []
+
+    for text in ("達成済みではない", "まだ通過済みとは言えない"):
+        if _has_achievement_keyword(text):
+            failures.append(f"否定文の誤検出: {text!r} で True になった（期待 False）")
+
+    # 肯定文まで巻き込んで False にしてしまう退行も検出する（陰性対照）
+    for text in ("達成済み（`SP-1`〜`SP-5` 完了）", "通過済み（`D-27`・2026-08-20）"):
+        if not _has_achievement_keyword(text):
+            failures.append(f"肯定文が検出されない（過剰に否定判定している）: {text!r}")
 
     return failures
 
