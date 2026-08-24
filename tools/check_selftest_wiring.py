@@ -34,6 +34,32 @@
 （「除外してよいか」を人が判断した形跡を残させることが目的であり、マーカーの存在だけでは
 通さない。`check_duplicate_source_patterns.py` の `dup-ok` マーカーと同じ思想）。
 
+## 誤判定の防止（2026-08-24 の敵対的レビューで発見された 2 つの穴）
+
+本検査自身が「配線されていないのに PASS する」誤判定を起こしうる 2 つの穴が見つかったため、
+以下のとおり修正している。
+
+1. **`run_checks.sh` 側のコメントアウトされた `run_check` 行を「配線済み」と誤認する**:
+   `is_wired()` は生テキストの正規表現検索だったため、`# run_check "..." python3 tools/foo.py
+   --self-test` のようにシェルコメントとして無効化された行も一致してしまい、実際には一度も
+   実行されないスクリプトを「配線済み」と報告していた。対策として、`is_wired()` は検索前に
+   `_strip_shell_comments()`（クォート外の `#` 以降を除去する簡易 bash コメント除去。シングル
+   / ダブルクォートの状態を追跡し、クォート内の `#`（例: `echo "## run_checks 結果"`）は保持
+   する）を通す。ヒアドキュメント（`<<EOF`）は `run_checks.sh` に存在しないため未対応（将来
+   追加されたら本関数も見直しが必要）。
+
+2. **対象スクリプト側の docstring 内でマーカー書式を「説明する地の文」を、本物のマーカーと
+   誤認して除外してしまう**: 旧実装は `_MARKER_RE` をファイル内容全体に対して素朴な正規表現
+   検索していたため、`"""マーカー書式: # selftest-wiring-ok: 理由"""` のような docstring の
+   説明文（実コメントではない）にもマッチし、意図せず自己除外されてしまっていた（本検査自身の
+   docstring がまさにこの形を取っているため、他スクリプトが利用例として書式に言及するだけで
+   誤除外されうるという皮肉な穴だった）。対策として、`marker_reason()` /
+   `has_invalid_empty_marker()` は `tokenize` モジュールで実コメントトークン（`tokenize.COMMENT`）
+   だけを抽出してからマーカーを探す（`_comment_texts()`）。**構文エラー等でトークナイズ自体が
+   失敗した場合はクラッシュせず、安全側＝「マーカーなし」として扱う**（誤って除外されるより、
+   誤って違反扱いされる方が安全 — 除外は人が明示的にマーカーを書かない限り成立しないため）。
+   この場合は `scan()` が stderr に警告を出す（`Verdict.tokenize_failed`）。
+
 使い方:
     python3 tools/check_selftest_wiring.py              # 配線漏れ検査（人間可読レポート）
     python3 tools/check_selftest_wiring.py --json        # 機械可読 JSON
@@ -45,9 +71,11 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import sys
+import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 
