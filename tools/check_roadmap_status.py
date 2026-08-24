@@ -40,12 +40,14 @@
   - なし: 判断ゲート等、束ねる SP-n が無い
 
 【タイトル正規表現と `sprint_backlog_sync.py`（Issue #542）との関係】
-`tools/sprint_backlog_sync.py` の `SP_TITLE_RE`（`^SP-(\\d+):` の 1 パターンのみ）は
-`feat(SP-{n}): ...` / `{type}: SP-{n} ...` の 2 パターンを拾えない（Issue #542 の指摘の実体）。
-本スクリプトは 3 パターンすべてに対応する正規表現を `SP_TITLE_PATTERNS` として
-モジュール定数に切り出した。#542 で `sprint_backlog_sync.py` 側を直すときは、この定数を
-`import` して共有する変更が望ましい（本スクリプトはその共有元候補であるだけで、
-`sprint_backlog_sync.py` 自体の修正は本 Issue のスコープ外）。
+`sprint_backlog_sync.py` 側は #542 で `SP_TITLE_RE`（1 パターン）から独自の `SP_TITLE_PATTERNS`
+（3 パターン）へ移行済みで、**共有はしていない**。理由: 同スクリプトは Ready 条件③（先行 SP-n が
+すべて Closed か）の判定に使うため、`improvement: SP-1 の ...` のような「SP-n に言及するだけの
+副次 Issue」を本体と誤認すると新規スプリント着手が永久にブロックされる。そのため向こうは
+パターン 2・3 の type プレフィックスを `feat` に限定している。
+本スクリプトは roadmap.md と Issue 実態の整合性検査が目的で要求が異なるため、type プレフィックスを
+限定しない（`[A-Za-z]+`）。**この差は意図的な分岐であり、揃えてはならない**（本ファイル側の
+偽陽性リスクの検討は Issue #628）。
 
 【GitHub API アクセス】
 `gh` コマンドはクラウド実行環境に存在しない前提のため使わない。`GH_TOKEN`（無ければ
@@ -115,7 +117,9 @@ def now_jst_str() -> str:
 # いずれも **タイトル先頭に固定** されるため `^` で厳密にアンカーする。「本文中に SP-n が
 # 出てくるだけ」「SP-1 を含むが別の語（espSP-5 等）」を誤って拾わないための境界線でもある。
 SP_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # dup-ok: sprint_backlog_sync.py の SP_TITLE_RE と同一パターン。統合は Issue #612 のスコープ外
+    # パターン 2・3 は本ファイルが type プレフィックス無制限、sprint_backlog_sync.py 側は feat 限定
+    # （#542 の偽陽性対策）と **意図的に分岐している** ため、機械的に揃えない
+    # dup-ok: sprint_backlog_sync.py の SP_TITLE_PATTERNS[0] とのみ同一。統合は Issue #612 のスコープ外
     re.compile(r"^SP-(\d+):"),
     re.compile(r"^[A-Za-z]+\(SP-(\d+)\):"),
     re.compile(r"^[A-Za-z]+:\s*SP-(\d+)\b"),

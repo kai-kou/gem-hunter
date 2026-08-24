@@ -44,7 +44,10 @@ CP-4 の多層防御（論理ロック・discover スクリプトの排他チェ
 終了コード:
     0 = 正常（起票した / 起票不要）
     1 = 起票すべきだが失敗した（API 到達はしたが作成が失敗した等）
-    2 = API 到達不可（gh・REST 直接呼び出しの双方失敗。呼び出し元は MCP で引き取ること）
+    2 = 判定不能。次の 2 種類があり **意味が違う** ため、呼び出し元は理由文字列で切り分けること:
+        (a) API 到達不可（gh・REST 直接呼び出しの双方失敗）→ MCP で引き取る
+        (b) API には到達したが取得件数が上限（`FETCH_LIMIT` 件 / `FETCH_MAX_PAGES` ページ）に達し、
+            全件取得を保証できない → 認証・ネットワークの調査ではなく上限の引き上げが必要
 """
 from __future__ import annotations
 
@@ -89,6 +92,14 @@ SP_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^feat\(SP-(\d+)\):"),
     re.compile(r"^feat:\s*SP-(\d+)\b"),
 )
+# Issue 全件取得の上限（gh 経路・REST 経路で共有する。片方だけ広げると取得漏れが片側に残る）。
+# 300 件上限で古い SP-n Issue を取得漏れし、既存を「未存在」と誤判定して重複起票した実害（#551）の
+# 再発防止として引き上げた。上限に達したときは「取得できた」と偽らず判定不能として返す
+# （github-mcp-fallback-patterns.md §4）。
+FETCH_PER_PAGE = 100
+FETCH_MAX_PAGES = 20
+FETCH_LIMIT = FETCH_PER_PAGE * FETCH_MAX_PAGES
+
 MILESTONE_ISSUE_TITLE = "[Milestone] M-3 到達"
 BUG_ISSUE_TITLE = "[sprint_backlog_sync] user-story-map.md §5.3 のパースに失敗"
 
@@ -528,36 +539,40 @@ def list_all_issues() -> tuple[list[dict], str | None]:
     """
     ok, out = _run_gh([
         "issue", "list", "-R", REPO, "--state", "all",
-        "--json", "number,title,state", "--limit", "2000",
+        "--json", "number,title,state", "--limit", str(FETCH_LIMIT),
     ])
     if ok:
         try:
-            issues = json.loads(out)
-            return [
-                {"title": i.get("title", ""), "state": i.get("state", "")} for i in issues
-            ], None
+            raw = json.loads(out)
         except json.JSONDecodeError:
             ok = False
             out = "gh の JSON 応答が不正"
+        else:
+            # 🔴 返却件数が --limit ちょうどなら「暗黙の打ち切り」を疑う。gh は上限に達しても
+            # エラーを返さないため、この検知が無いと全件取得を保証できないまま「取得完了」と
+            # 誤って返し、取得漏れした SP-n を「未存在」と誤判定して重複起票する（#551 の再発）。
+            if len(raw) >= FETCH_LIMIT:
+                return [], (
+                    f"gh の返却が上限（{FETCH_LIMIT} 件）に達し、全件取得を保証できません"
+                    "（判定不能・FETCH_LIMIT の引き上げが必要）"
+                )
+            return [
+                {"title": i.get("title", ""), "state": i.get("state", "")} for i in raw
+            ], None
     gh_err = out
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
-    # 300 件上限で古い SP-n Issue を取得漏れし、既存を「未存在」と誤判定して重複起票した
-    # 実害（#551）の再発防止。check_roadmap_status.py の fetch_all_issues() と同じ
-    # max_pages=20（100件 x 20ページ = 最大 2000 件）まで走査し、それでも尽きなければ
-    # 「取得できた」と偽らず判定不能として返す（github-mcp-fallback-patterns.md §4）。
-    max_pages = 20
     issues: list[dict] = []
-    for page in range(1, max_pages + 1):
+    for page in range(1, FETCH_MAX_PAGES + 1):
         ok2, out2 = _http_request(
-            f"https://api.github.com/repos/{REPO}/issues?state=all&per_page=100&page={page}",
+            f"https://api.github.com/repos/{REPO}/issues?state=all&per_page={FETCH_PER_PAGE}&page={page}",
             token,
         )
         if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
+            return [], f"gh 失敗（{gh_err}）・REST もページ {page} で失敗（{out2}）"
         try:
             batch = json.loads(out2)
         except json.JSONDecodeError:
@@ -570,9 +585,12 @@ def list_all_issues() -> tuple[list[dict], str | None]:
             for i in batch
             if "pull_request" not in i
         )
-        if len(batch) < 100:
+        if len(batch) < FETCH_PER_PAGE:
             return issues, None
-    return [], f"gh 失敗（{gh_err}）・REST もページネーション上限（{max_pages} ページ）に達しました"
+    return [], (
+        f"gh 失敗（{gh_err}）・REST もページネーション上限（{FETCH_MAX_PAGES} ページ）に達し、"
+        "全件取得を保証できません（判定不能）"
+    )
 
 
 def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
