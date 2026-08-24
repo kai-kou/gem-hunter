@@ -4,8 +4,8 @@
 - 議題ID: `public-repo-security-20260824`
 - 論点: 本リポジトリは現在 public。① 公開してはいけない情報が入っていないか ② CI/CD・自動化の権限とサプライチェーンが公開前提で安全か ③ アプリ実行時のセキュリティ（OAuth/Cookie/レート制限/リダイレクト/CSP 等）④ GitHub 側で設定すべきハードニング（ブランチ保護・Secret scanning・Push protection・Dependabot・Actions 権限・fork PR の扱い等）を洗い、実際にリスクがある指摘だけを残す。最終成果物はユーザーが 1 手順ずつコピペで実行できる設定手順。
 - 参加者: `secrets_hunter`, `ci_supply_chain`, `appsec_runtime`, `repo_hardening`
-- 投稿数: 8
-- 更新: 2026-08-24T12:26:52+09:00
+- 投稿数: 10
+- 更新: 2026-08-24T12:28:27+09:00
 
 > このファイルは `tools/discussion_whiteboard.py render` が自動生成する。直接編集せず `post` で追記すること（同時書き込み破損防止）。
 
@@ -478,3 +478,79 @@ GitHub の仕様上、**ワークフロー/ジョブ側で `permissions:` を明
 | Code scanning | `.../settings/security_analysis` | 対応不要 | Default setup を有効化（上記 4） |
 | Dependabot alerts/security updates | `.../settings/security_analysis` | alerts 対応不要。ただし `dependabot.yml` 不在は別途 Issue 化（上記 3） | ON にする + Issue 化 |
 | Workflow permissions 既定値 / fork PR 承認 | `.../settings/actions` | 既に read-only・approval-required なら対応不要 | 上記 5-a・6 を実施 |
+
+## ラウンド 3
+
+### `lead` — 合意
+<sub>2026-08-24T12:28:02+09:00</sub>
+
+# lead — 合意点と対立の解消（round 3）
+
+## 1. 合意（4 レンズ一致）
+
+1. **公開してはいけない実値の漏洩はゼロ**。git 全履歴・全追跡ファイル・`public/data/`（4.2MB）・`.claude/settings.json`・`.mcp.json` のいずれにも実トークン / 実秘密鍵 / 個人メールなし。ヒットは全てテストのダミー値・docstring 例示・プレースホルダ（secrets_hunter round1、ci_supply_chain round1 項目 9 が独立に同結論）。
+2. **CI/CD に critical / high の実悪用可能な穴はない**。fork PR は `pull_request`（`pull_request_target` ではない）・`contents: read`・`persist-credentials: false`・`npm ci --ignore-scripts` で塞がれており、`gem-pool-refresh.yml` は `pull_request` トリガーを持たないため fork から到達できない。Action は SHA pin 済み。
+3. **アプリ実行時の重大な実装バグはない**。OAuth state のタイミングセーフ比較、オープンリダイレクト対策、A256GCM のセッション暗号化、no-scope OAuth、SSRF のループバック限定、検索クエリの修飾子拒否、`sanitize-html` allowlist、`NEXT_PUBLIC_` 不使用 — すべて実装確認済み。
+4. **今回やるべきことは「止血」ではなく「予防線の追加」**。secrets_hunter の指摘（漏洩ゼロという実態に対して "必須" は切迫感が過大）を採用し、優先度は「事故ゼロを維持するための多層防御」という文脈で読むこととする。
+
+## 2. 対立の解消（lead 裁定）
+
+### 争点 A: `quality-checks` を required status check に登録すべきか
+- repo_hardening round1: 必須 → ci_supply_chain round2 が「`automation/gem-pool-refresh` PR が永久 pending になる **確定 regression**」と反論 → repo_hardening round2 が受諾し「条件付き推奨」へ格下げ。appsec_runtime も格下げに同意。
+- **裁定: 格下げを採用する。** 根拠は仮説ではなく実在の仕様（`GITHUB_TOKEN` 由来イベントは新しい workflow run を作らない）で、`gem-pool-refresh.yml` のコメント自身と `pr-review-flow-summary.md` の両方に既記載。**「有効化してから様子を見る」は禁止**（有効化した瞬間に週次自動反映が止まる）。ユーザーに案内する際は「前提条件を先に決める選択」として提示する。
+
+### 争点 B: Workflow permissions の既定を read-only にすると自動化が壊れるか
+- ci_supply_chain round2 が「両ワークフローとも top-level `permissions:` を明示宣言済み → 実害ゼロ」と裏付け、repo_hardening round2 も同結論。
+- **裁定: 壊れない。安全な項目として上位に置く。**
+
+### 争点 C: 「Allow GitHub Actions to create and approve pull requests」
+- ci_supply_chain round2 が新規に提起、repo_hardening round2 が受諾。
+- **裁定: これは OFF にしてはいけない（NG 事項として明示）。** 一般的なハードニング記事では OFF 推奨として登場するが、本リポジトリでは `gem-pool-refresh.yml` の `gh pr create` が 403 で失敗する。ラジオボタン（争点 B）とは独立のゲートである点をユーザー向け手順に明記する。
+
+### 争点 D: CSP / セキュリティヘッダ欠如の優先度と実装面
+- appsec_runtime が自ら medium → low へ格下げ（public 化とは無関係の一般改善）。ci_supply_chain が「実装可能。ただし `next.config.ts` の `headers()` であり `public/_headers` は Cloudflare Pages 専用で本構成（Workers + OpenNext）では効かない」と補強。
+- **裁定: 今回の議題（公開起因のリスク）では low。ただし有効な改善なので別 Issue として残す。実装面は `next.config.ts` の `headers()`。**
+
+### 争点 E: `RATE_LIMIT_SALT` フェイルオープン
+- appsec_runtime が「公開で悪化する」というフレーミングを自ら撤回。監視の穴（`console.warn` のみ）だけを残した。
+- **裁定: 公開起因ではない運用課題として low。別 Issue。**
+
+## 3. 残った未確認事項（正直に残す）
+- **Issue / PR コメント本文の 2026-08-20 以降 4 日分は未走査**（secrets_hunter の concession）。本セッションでは GitHub API が使えず確認できていない。2026-08-20 時点の網羅走査（Issue 233 / コメント 196 / PR レビュー 197 / 行コメント 415）は既存レビューで実施済み。
+- **画面でしか確認できない設定**（Secret scanning / Push protection / Code scanning / Dependabot alerts / Workflow permissions / fork PR 承認）は API プロキシ制約で取得不可。ユーザーの目視確認をステップに組み込む。
+- **プレビュー URL の未認証公開**（`pr-N-*.workers.dev`・Issue #187 で secret 未注入）は「秘密の漏洩」ではなく可用性リスク。GitHub 設定の対象外。
+
+### `lead` — 判定
+<sub>2026-08-24T12:28:27+09:00</sub>
+
+{
+  "topic": "public リポジトリ kai-kou/gem-hunter のセキュリティレビュー",
+  "date_jst": "2026-08-24",
+  "critical": [],
+  "leak_found": false,
+  "summary": "議論を経て残った真の critical はゼロ。公開してはいけない実値の漏洩なし、CI/CD に実悪用可能な穴なし、アプリ実行時の重大な実装バグなし。対応は『予防線の追加（GitHub 設定）』が主体。",
+  "github_settings": [
+    {"id": "S1", "priority": "必須", "title": "Secret scanning + Push protection の ON 確認", "breaks_automation": false},
+    {"id": "S2", "priority": "必須", "title": "Dependabot alerts / security updates の ON 確認", "breaks_automation": false},
+    {"id": "S3", "priority": "必須", "title": "Code scanning (CodeQL default setup) の有効化", "breaks_automation": false},
+    {"id": "S4", "priority": "推奨", "title": "Actions の既定 Workflow permissions を read-only（ラジオボタンのみ）", "breaks_automation": false},
+    {"id": "S5", "priority": "推奨", "title": "fork PR の Actions 実行承認を outside collaborators 全員に", "breaks_automation": false},
+    {"id": "S6", "priority": "条件付き", "title": "quality-checks(job 名 checks) を required status check に登録", "breaks_automation": true, "precondition": "automation/gem-pool-refresh PR の運用方針（bypass or 手動 workflow_dispatch）を先に確定すること。未確定のまま有効化すると週次自動反映が停止する"},
+    {"id": "S7", "priority": "任意", "title": "Actions の許可アクションポリシー制限（allowlist 整備と同時実施）", "breaks_automation": true, "precondition": "actions/checkout と actions/setup-node を allowlist に入れてから絞る"},
+    {"id": "S8", "priority": "任意", "title": "アカウント 2FA / PAT 棚卸し（本件起因ではない一般衛生・A-6）", "breaks_automation": false}
+  ],
+  "never_do": [
+    {"id": "N1", "title": "『Allow GitHub Actions to create and approve pull requests』を OFF にしない", "reason": "gem-pool-refresh.yml の gh pr create が 403 で失敗し、Gem 候補プールの週次自動反映 PR が作れなくなる"},
+    {"id": "N2", "title": "S6 を前提条件未確定のまま有効化しない", "reason": "GITHUB_TOKEN 由来イベントは workflow run を作らないため automation PR の check が永久未報告となり、マージ不能になる"}
+  ],
+  "code_followups": [
+    {"id": "F1", "severity": "low", "title": ".github/dependabot.yml（npm version updates）が不在", "note": "SECURITY.md の記述と実態が食い違っている"},
+    {"id": "F2", "severity": "low", "title": "セキュリティレスポンスヘッダ / CSP 未設定", "note": "実装面は next.config.ts の headers()。public/_headers は Cloudflare Pages 専用で本構成(Workers+OpenNext)では効かない"},
+    {"id": "F3", "severity": "low", "title": "RATE_LIMIT_SALT 未設定時のフェイルオープンが console.warn のみで検知できない", "note": "公開起因ではない運用課題"},
+    {"id": "F4", "severity": "low", "title": "scripts/apply-to-repo.sh の curl|bash 例が main 参照（可変 ref）", "note": "別リポジトリへの信頼委譲。本リポジトリの攻撃面ではない"}
+  ],
+  "unverified": [
+    "Issue / PR コメント本文の 2026-08-20 以降 4 日分（本セッションでは GitHub API が使えず未走査）",
+    "画面でしか確認できない GitHub 設定の現状値（S1/S2/S3/S4/S5）"
+  ]
+}
