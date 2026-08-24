@@ -176,8 +176,8 @@ flowchart TB
 
 | 経路 | ファイル | レート制限 | キー接頭辞 |
 |---|---|---|---|
-| 検索画面 | `app/[locale]/page.tsx` | ✅ 適用 | `search:` |
-| 検索 API | `app/api/search/route.ts` | ✅ 適用 | `search:` |
+| 検索画面（`prepareSearchKeyword` 経由） | `app/[locale]/page.tsx` | ✅ 適用 | `search:` |
+| 検索 API（`prepareSearchKeyword` 経由） | `app/api/search/route.ts` | ✅ 適用 | `search:` |
 | Gem 一覧 | `app/[locale]/gems/page.tsx` | ✅ 適用 | `gems:` |
 | リポジトリ詳細 | `app/[locale]/repos/[owner]/[repo]/page.tsx` | ❌ 対象外 | — |
 | OG 画像 | `app/[locale]/opengraph-image.tsx` | ❌ 対象外 | — |
