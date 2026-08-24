@@ -7,23 +7,32 @@ name: Quality Checks
 # 機械的な回帰検知を Actions 側にも置く。セッション側の `npm run check` と PR 本文への貼り付けは
 # 引き続き有効で、本ワークフローはそれを置き換えるものではなく **二重の網** として働く。
 #
-# 🔴 E2E（`npm run test:e2e`）と Lighthouse を含めない理由: 実測で E2E が 7.4 分、Lighthouse が
+# 🔴 E2E（`npm run test:e2e`）と Lighthouse を含めない理由: 実測で E2E が 262 秒（112 件・2026-08-24 JST）、Lighthouse が
 # 40 秒台かかり、さらに E2E は Playwright ブラウザのインストール（数分・キャッシュ管理）を要する。
 # PR ごとに毎回回すには遅く、フィードバックループを損なう。本ワークフローは「秒〜数十秒で返る
 # 高速チェック」だけに絞り、E2E / Lighthouse は従来どおりセッション側で実行する。
-# 判断の記録は決定ログを参照（Issue #543）。
+# 判断の記録は docs/02_requirements/open-questions.md の D-42（Issue #543）。
 #
 # 🔴 このワークフローは以下を絶対に行わない:
 #   - main への直接 push（A-1・docs/rules/user-confirmation-minimization.md §1）
 #   - PR の自動マージ（マージは Claude セッションが既存の回収経路で行う）
-#   - Cloudflare へのデプロイ（デプロイのゲート判定は docs/rules/cloudflare-infrastructure.md §8.2 が SSOT）
+#   - Cloudflare へのデプロイ
+#     （デプロイのゲート判定は docs/03_design/infrastructure/cloudflare-infrastructure.md §8.2 が SSOT）
 #
 # 権限は `contents: read` のみ（読み取り専用・最小権限）。
 
+# 🔴 push（main）と pull_request で同一ツリーに run が 2 回走るのは **意図的な冗長化**。
+# main 自体の健全性（マージ後の実際のツリー）を PR の検証とは独立に測るため、重複を許容する。
+# `paths-ignore` は入れない（将来この check を required status check にしたとき、skip された
+# check は required では永久 pending になり PR がマージ不能になるため）。
 on:
   push:
     branches: [main]
   pull_request:
+  # GITHUB_TOKEN 由来のイベントは新しい workflow run を作らない（GitHub 公式仕様）ため、
+  # `gem-pool-refresh.yml` が作る automation/gem-pool-refresh の PR では pull_request が
+  # 発火しない。手動起動の経路を残して明示的に検証できるようにする。
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,7 +41,9 @@ concurrency:
   # PR へ連続 push したとき、古い run を打ち切って最新のコミットだけを検証する
   # （`github.ref` は PR では refs/pull/<N>/merge になるため PR 単位でまとまる）。
   group: quality-checks-${{ github.ref }}
-  cancel-in-progress: true
+  # PR は連続 push で古い run を打ち切る。main は各コミットの結果を残す
+  # （連続マージ時に「どのコミットから赤いか」を辿れなくなるため）。
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
@@ -41,6 +52,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # このワークフローは push しないので、認証情報を .git/config に残さない
+          # （ジョブ内の任意プロセスから読める状態を作らない）。
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -48,9 +63,15 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # 🔴 `--ignore-scripts` を付ける理由: public リポジトリの `pull_request` 契機では
+      # **fork PR 側の lockfile がそのまま `npm ci` される**（untrusted な入力）。素の `npm ci` だと
+      # 依存の postinstall として任意のコードが runner 上で実行できてしまうため、その経路を塞ぐ。
+      # 4 チェック（Prettier / ESLint / `tsc --noEmit` / Vitest）が postinstall なしで通ることは
+      # 実測済み（`esbuild` はプラットフォーム別バイナリが optionalDependencies で入るため動き、
+      # `workerd` は wrangler 用で CI では使わない）。
       - name: Install dependencies
         id: install
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # 🔴 以下 4 ステップには `if: ${{ !cancelled() && steps.install.outcome == 'success' }}` を付ける。
       # 既定では前のステップが失敗した時点で後続がスキップされるが、それだと 1 回の run で

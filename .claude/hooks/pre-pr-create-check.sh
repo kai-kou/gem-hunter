@@ -145,12 +145,14 @@ ${errors}先にすべての変更をコミット＆pushしてから PR 作成（
 手順: git add <ファイル> → git commit → git push -u origin <ブランチ名>"
 fi
 
-# 4.5. run_checks サマリーの貼付検査（Lv3・Actions 制限中の CI 代替・#72）
-# GitHub Actions が制限中で CI が存在しないため、`tools/run_checks.sh` の実行結果を PR 本文へ貼ることが
-# 唯一の機械的証跡になる。貼付が無い PR は「lint / 型 / テストを誰も実行していない」可能性があるためブロックする。
+# 4.5. run_checks サマリーの貼付検査（Lv3・品質チェック二層構成の層 2・#72 / #543・D-42）
+# CI（.github/workflows/quality-checks.yml）は Prettier / ESLint / tsc --noEmit / Vitest の 4 種だけを見る。
+# E2E・Lighthouse・依存規則・CJK Markdown・各 self-test を含む `tools/run_checks.sh` の実行結果を
+# PR 本文へ貼ることは、CI と重複しない層 2 の証跡として引き続き必須である（D-42）。
+# 貼付が無い PR は「E2E / Lighthouse / 依存規則を誰も実行していない」可能性があるためブロックする。
 # 🔴 ここをブロックにする理由: 満たす条件が「本文に結果表を貼る」だけで決定論的（誤検知が構造的に起きない）。
 #    チェッカーの異常終了を fail-open にしたのとは性質が違う（あちらは環境要因、これは手順の省略）。
-#    Actions が復帰しワークフローが CI を担うようになったら本ブロックは撤去する（cloudflare-infrastructure.md §8.4）。
+#    撤去条件: E2E / Lighthouse を CI に載せた時点で再検討する（D-42 により Actions 復帰では撤去しない）。
 if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
   # 許容する見出しパターン（Issue #405・PR #456 Layer 1 指摘で強化）: 見出しレベルは `##` 固定
@@ -188,7 +190,7 @@ if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   if [ "$has_run_checks_result" -ne 1 ]; then
     hook_block "[pre-pr-create-check] PR 作成をブロックしました。PR 本文に run_checks の結果表が見つかりません。
 
-GitHub Actions が制限中で CI が無いため、\`npm run check\`（= tools/run_checks.sh）の結果が唯一の機械的証跡です。
+CI（quality-checks.yml）は Prettier / ESLint / 型 / ユニットの高速チェックのみを実行します。E2E・Lighthouse を含む \`npm run check\`（= tools/run_checks.sh）の結果が層 2 の証跡です（D-42・CI 緑でも省略できません）。
 1. \`npm run check\` を実行する
 2. 出力末尾の Markdown サマリー表を、\`## run_checks 結果\` または \`## npm run check 結果\` という見出しを付けて PR 本文に貼る（run_checks / npm run check の部分はバッククォートで囲んでも囲まなくても可。表記ゆれ・意訳は不可）
 3. 見出しから次の見出し（##）までの間に表（| 区切りの行）を置く（無関係な別セクションの表・コードフェンス内の例示は不可）

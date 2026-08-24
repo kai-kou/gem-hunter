@@ -49,7 +49,7 @@ Cloudflare の無料枠・上限・料金は変動する。本書は **判断に
 あわせて運用方針を 2 つ確定する。
 
 - **CLI（wrangler）が一次経路**。Cloudflare MCP は読み取り 4 ツールのみ（§7.4）
-- ⚠️ **CI/CD は暫定でセッション（Claude）実行**。原則は GitHub Actions + `cloudflare/wrangler-action` だが、Actions が制限中のため一時的に手動実行へ切り替えている（`D-23`。詳細・復帰条件は §8）
+- 🔵 **CI/CD は 2 レーンに分かれる**（2026-08-24 現在）。**品質チェック**（Prettier / ESLint / `tsc --noEmit` / Vitest）は GitHub Actions の `.github/workflows/quality-checks.yml` が `push`（`main`）/ `pull_request` 契機で自動実行する（`D-42`）。**デプロイ** の発火点は **Workers Builds**（`D-31` / `D-32`・§8.2.3）であり、**GitHub Actions は使わない**。セッション（Claude）による `wrangler` 直接実行は、Workers Builds 移行後も **手動フォールバック**（プレビュー URL の取得・デプロイゲート通過後の再デプロイ）として残す（詳細は §8）
 
 ---
 
@@ -97,7 +97,7 @@ flowchart TB
 | `INF-13` 永続ディスクを前提にしない | サーバーレスなので構造的に満たす | ✅ |
 | `INF-14` 単一リージョンで成立 | エッジ実行だが、アプリはどこで動いても同じ（リージョン固有の前提を持たない） | ✅ |
 | `INF-15`〜`INF-19` シークレット | `wrangler versions secret put`（GA・§7.2.1）を環境ごとに使う。Secrets Store は open beta のため採用しない | ✅ |
-| `INF-20` トリガーは git push / マージのみ | 原則は GitHub Actions。⚠️ **Actions 制限中はセッション実行が暫定運用**（`D-23`・§7.5 / §8） | ⚠️ 暫定緩和中 |
+| `INF-20` トリガーは git push / マージのみ | 発火点は **Workers Builds**（`D-31` / `D-32`・§8.2.3）。⚠️ **移行が完全に回りきるまでの間、および完了後も手動フォールバックとして** セッションの `wrangler` 直接実行を許容する（§7.5 / §8.2）。🔵 `D-42`（品質チェックの Actions 化）は **本行の緩和条件に影響しない** | ⚠️ 暫定緩和中（フォールバック経路を保持） |
 | `INF-21` ロールバック | `wrangler rollback` / `wrangler versions deploy` | ✅ |
 | `INF-22` 失敗の通知 | GitHub Actions の失敗通知 | ✅ |
 | `INF-1` 個人情報を保持しない | §9 の設定で満たす。⚠️ アカウント運用ログ（Audit 18 か月等）はアプリの制御外 | ⚠️ 一部のみ |
@@ -512,15 +512,19 @@ npx wrangler versions view <VERSION_ID>   # 投入結果は Secrets 欄で確認
 
 ⚠️ **`deny` は既知ツール名の列挙** であり、`allow` を潰さずにワイルドカードで塞ぐ手段がないため、**MCP サーバー側に新しいツールが増えると未列挙のまま素通りする**。恒久対策（PreToolUse フックによるアローリスト化）は #56。今後 MCP を追加する PR は、許可範囲の `permissions` 反映を **同一 PR に含める**。
 
-### 7.5. ⚠️ `INF-20` の例外（GitHub Actions 制限中の暫定運用・`D-23`）
+### 7.5. ⚠️ `INF-20` の例外（セッションからの手動デプロイ・`D-23` → 復帰先は `D-31` / `D-32` で改訂）
 
 `INF-20` は「デプロイのトリガーは git push / マージのみ」と定めるが、**GitHub Actions がプラットフォーム側の制限により起動できない間に限り、Claude がセッションから直接 `wrangler versions upload` / `wrangler deploy` を叩いてよい**。
 
 **経緯**: 当初はブートストラップ期間限定の例外だったが、`deploy-preview` ワークフローが 4 回とも数秒でジョブごと失敗（ログ 0 バイト・ステップ未開始）し、無関係な `repo-checks` も同様の失敗を示したため調査した結果、**GitHub Actions が制限中であることが確定した**（Issue #65・飼い主回答）。ワークフロー定義・参照アクションのタグはいずれも正しく、Actions 側の問題である。これを受けて `.github/workflows/deploy-preview.yml` と `deploy-production.yml` は **撤去済み**（`D-23`）。起動できない赤いチェックを毎 PR に残すと、本当の失敗が埋もれるため。
 
-🔴 **例外の終了条件は「GitHub Actions の制限が解除され、ワークフローを復帰させた時点」**（旧: 「デプロイ用ワークフローが `main` にマージされた時点」から `D-23` で改定）。これ以降は GitHub Actions 経由のみに一本化し、手動デプロイの経路を残さない。復帰手順は §8.4。
+~~🔴 **例外の終了条件は「GitHub Actions の制限が解除され、ワークフローを復帰させた時点」**（旧: 「デプロイ用ワークフローが `main` にマージされた時点」から `D-23` で改定）。これ以降は GitHub Actions 経由のみに一本化し、手動デプロイの経路を残さない。復帰手順は §8.4。~~
 
-⚠️ **`SP-4`（テスト CI の整備）と混同しない。** テスト CI の整備方針は `tools/run_checks.sh` の導入で別途進む。本例外は **デプロイ CI（Actions）の代替** に限定した話であり、Actions が使えない間はテスト実行もセッション側の `tools/run_checks.sh` 呼び出しで代替する（§8.2）。
+🔵 **一部失効（2026-08-24・`D-42`）**: GitHub Actions の制限解除は **品質チェックの Actions 化にのみ効く**（`.github/workflows/quality-checks.yml`）。🔴 **デプロイの復帰先は Actions ではなく Workers Builds**（`D-31` / `D-32`・§8.2.3）であり、上記の終了条件のうち「ワークフローを復帰させる」「GitHub Actions 経由のみに一本化する」部分は失効している。**§8.4 のワークフロー復元手順は実行しない。**
+
+🔵 **現在の終了条件**: Workers Builds への移行が完了し、デプロイゲート（`D-26`）通過後の再ビルド経路（`tools/trigger_workers_build.py`・§8.2.3「移行後の実測」）で `main` の本番反映が回る状態を維持できていること。🔴 **それ以降も、セッションによる `wrangler` の直接実行は手動フォールバックとして残す**（プレビュー URL の取得は `docs/rules/pr-review-flow-summary.md` の PR 作成手順が要求しており、これを止めると `SD-1`（開けるプレビュー URL）を満たせなくなるため）。
+
+⚠️ **`SP-4`（テスト CI の整備）と混同しない。** 本例外は **デプロイの経路** に限定した話である。品質チェックの側は二層構成になっており、Prettier / ESLint / 型 / Vitest は `.github/workflows/quality-checks.yml` が自動実行し（`D-42`）、E2E と Lighthouse は引き続きセッション側の `tools/run_checks.sh`（= `npm run check`）が担当する（§8.2・`docs/04_development/testing-strategy.md`）。
 
 
 ### 7.6. 🔴 GitHub App の秘密鍵は PKCS#8 で持つ（`D-20` の実装上の必須事項）
@@ -544,13 +548,15 @@ openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt
 
 ## 8. CI/CD
 
-### 8.1. 🔴 現状: GitHub Actions は使用しない（暫定運用・`D-23`）
+### 8.1. 🔴 現状: **デプロイに** GitHub Actions は使用しない（`D-23` → 発火点は `D-31` / `D-32` で Workers Builds へ・品質チェックのみ `D-42` で Actions 化）
 
 > **この切り替えの根拠は飼い主の明示指示（2026-08-19・逐語）**: 「GitHub Actions について、制限中なので自前でチェックする仕組みに切り替えてください。」本番デプロイをセッションから実行することについても同日「本番デプロイについて自動で行えるように許可リストに追加してください。」の指示を受けて `.claude/settings.json` の `permissions.allow` に wrangler の deploy 系を追加済み。**この 2 件を超える範囲（レビュー・セルフレビューの省略等）は認めない。**
 
-**原則（GitHub Actions が復帰したら戻す構成）は「GitHub Actions + `cloudflare/wrangler-action` に一本化・Workers Builds は不採用」だが、GitHub Actions がプラットフォーム側の制限で起動できないため、現在は CI とデプロイの両方を Claude がセッションから直接実行する。**
+~~**原則（GitHub Actions が復帰したら戻す構成）は「GitHub Actions + `cloudflare/wrangler-action` に一本化・Workers Builds は不採用」だが、GitHub Actions がプラットフォーム側の制限で起動できないため、現在は CI とデプロイの両方を Claude がセッションから直接実行する。**~~
 
-`.github/workflows/deploy-preview.yml` と `deploy-production.yml` は撤去済み（起動できない赤いチェックが毎 PR に付くと本当の失敗が埋もれるため）。品質チェックは `tools/run_checks.sh`（詳細は同スクリプトを参照。本書は参照のみ）で行う。
+🔵 **上書き済み（`D-31` / `D-32`・2026-08-21）**: 上の「原則」は **もう有効ではない**。デプロイの発火点は **Workers Builds** であり、🔴 **Actions の制限が解除されても GitHub Actions へは戻さない**（`D-31` の明示決定・移行手順は §8.2.3）。🔵 **品質チェックだけは `D-42`（2026-08-24）で Actions 化済み**（`.github/workflows/quality-checks.yml`）だが、これは **デプロイの経路とは無関係** であり、`D-31` / `D-32` を緩めるものではない。
+
+`.github/workflows/deploy-preview.yml` と `deploy-production.yml` は撤去済みで、🔴 **復元しない**（発火点は Workers Builds へ移した・`D-31`）。品質チェックは二層構成: Prettier / ESLint / `tsc --noEmit` / Vitest は `.github/workflows/quality-checks.yml`（`D-42`）、E2E と Lighthouse を含む残りは `tools/run_checks.sh`（詳細は同スクリプトを参照。本書は参照のみ）で行う。
 
 ### 8.2. セッション実行の手順
 
@@ -614,7 +620,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://gem-hunter.<subdomain>.workers.
 
 - 🔴 **フォールバック経路では `npm run deploy` を使う**（`wrangler deploy` 単独はビルド成果物 `.open-next/worker.js` を更新しないため、**古いビルドを本番へ反映してしまう**）。上記のとおり一次経路は `trigger_workers_build.py` であり、`npm run deploy` は **フォールバック経路でのみ使う**
 - 🔴 **`npm run deploy` は本番 version に `--tag "$(git rev-parse --short=12 HEAD)"` を付ける**（Issue #288）。このタグが `tools/check_prod_drift.py` の厳密判定（SHA 一致）の入力になるため、**`wrangler deploy` を手で叩いてタグを省略しない**（省略すると乖離検知が日時ベースの緩い判定へ後退する）。`git rev-parse` が失敗したときは空タグでデプロイせずコマンド全体が失敗する
-- 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) §3.3 がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の、Actions 制限中の代替。上記のスプリントレビューゲートはこのテストゲートを **置き換えず拡張** する）
+- 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行する**。PR ブランチ単体のチェックでは、複数 PR がマージされた **合成状態** を検証できない（[ADR 0004](../../adr/0004-release-cycle-trunk-based.md) §3.3 がこのリスクの緩和策として挙げた「`main` マージ後のテストゲート」= #39 の代替。🔵 `D-42` で Vitest / Lint / 型は `main` への push でも Actions が回るようになったが、**E2E と Lighthouse は CI 対象外** のため本手順は維持する。上記のスプリントレビューゲートはこのテストゲートを **置き換えず拡張** する）
 - **失敗したら本番へ進まない**（fail-closed）。疎通確認が 5xx なら `npx wrangler rollback` を検討し、判断と結果を記録する
 
 ### 8.2.1. 🔴 プレビュー環境の退役（Sprint Review accepted 後）
@@ -672,7 +678,7 @@ Deploy command をゲート込みの `npm run deploy:ci` にすることで、Wo
    手動で承認・リトライする（🔴 **無人ルーティンでは `/permissions` 画面が存在せず機能しない**。
    有人セッション限定の手段）
 4. 本番デプロイの実行自体を、飼い主自身（または GitHub Actions の制限が解除された場合は CI/CD）が担う
-   運用に切り替える
+   運用に切り替える（🔴 **採らない**。制限が解除された現在も **デプロイに GitHub Actions は使わない**・`D-31` / `D-42`）
 5. ✅ **採用（`D-31`）: [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)（Cloudflare native の Git 連携）へ発火点を移す**
    — Cloudflare ダッシュボードで Worker に GitHub リポジトリを接続すると、**`main` への push ごとに
    Cloudflare 側がビルドしてデプロイする**。Claude は `wrangler deploy` を打つ必要がなくなり、分類器と
@@ -913,13 +919,15 @@ done
 - **主経路は stdout の正規表現抽出**。`WRANGLER_OUTPUT_FILE_PATH` の ND-JSON は **フィールド名が未確認** のため検証専用に留める（§12 の 6）
 - URL を PR へ投稿したあと、**投稿が反映されたことまで確認** して初めて成功とする
 
-### 8.4. 🔴 復帰条件と手順（GitHub Actions の制限が解除されたら）
+### 8.4. ~~🔴 復帰条件と手順（GitHub Actions の制限が解除されたら）~~（廃止・`D-31` により Workers Builds へ移行済み）
 
-1. **ワークフローの復元**: 削除した `deploy-preview.yml` / `deploy-production.yml` の YAML 全文は git 履歴に残っている。`git log -- .github/workflows/` で削除前のコミットを特定し、`git show <commit>:.github/workflows/deploy-preview.yml` 等で内容を復元する（本書には全文を残さない）
-2. **fail-closed 検証の復帰**: §8.3 の URL 抽出・5xx リトライロジックを、CI のステップ（`::error::` + `exit 1` での失敗化）としてワークフローに戻す
-3. **`INF-20` の原則復帰**: §7.5 の暫定緩和を終了し、「デプロイのトリガーは git push / マージのみ」に一本化する。`infrastructure-design.md` の `INF-20` 注記・`open-questions.md` の `D-23` を「復帰済み」に更新する
-4. **セッション実行の手動デプロイ経路を残さない**（`INF-20` の原則に戻す。§8.2 の手動コマンドは以後使わない）
-5. `actions/setup-node` は **`node-version: 22` 以上**（wrangler 4.x の要件）を復元時も維持する
+🔴 **この節の手順は実行しない。** デプロイの発火点は `D-31` / `D-32` で **Workers Builds** に決まっており、GitHub Actions へは戻さない（現行の手順は §8.2.3）。🔵 `D-42`（2026-08-24）で Actions の制限解除が明文化されたが、**それが解禁したのは品質チェックだけ** であり、本節の発火条件（「制限が解除されたら」）を満たすものではない。以下は経緯として取り消し線で残す。
+
+1. ~~**ワークフローの復元**: 削除した `deploy-preview.yml` / `deploy-production.yml` の YAML 全文は git 履歴に残っている。`git log -- .github/workflows/` で削除前のコミットを特定し、`git show <commit>:.github/workflows/deploy-preview.yml` 等で内容を復元する（本書には全文を残さない）~~ — 🔴 **復元しない**（`D-31`）
+2. ~~**fail-closed 検証の復帰**: §8.3 の URL 抽出・5xx リトライロジックを、CI のステップ（`::error::` + `exit 1` での失敗化）としてワークフローに戻す~~ — fail-closed は Workers Builds の Deploy command 側（`npm run deploy:ci`）が担う（`D-32`・§8.2.3）
+3. ~~**`INF-20` の原則復帰**: §7.5 の暫定緩和を終了し、「デプロイのトリガーは git push / マージのみ」に一本化する。`infrastructure-design.md` の `INF-20` 注記・`open-questions.md` の `D-23` を「復帰済み」に更新する~~ — 原則復帰の経路は Workers Builds への移行に置き換わった（§8.2.3）
+4. ~~**セッション実行の手動デプロイ経路を残さない**（`INF-20` の原則に戻す。§8.2 の手動コマンドは以後使わない）~~ — 🔴 **手動フォールバックは残す**（プレビュー URL 取得とゲート通過後の再デプロイに必要・§7.5）
+5. ~~`actions/setup-node` は **`node-version: 22` 以上**（wrangler 4.x の要件）を復元時も維持する~~ — デプロイ用ワークフローを持たないため対象外（`quality-checks.yml` は Node 22 を使用）
 
 ---
 
@@ -1042,6 +1050,6 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 | [Cloudflare インフラ リサーチ](../../01_research/infra/20260818-cloudflare-research.md) | 数値・一次情報の出典 |
 | [ADR 0002](../../adr/0002-cloudflare-workers-infrastructure.md) | 選定判断の記録 |
 | [`prd.md`](../../02_requirements/prd.md) | 要件 ID・環境変数の正本 |
-| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` / `D-23`（GitHub Actions 制限中の CI/CD 暫定運用）/ `D-24`（`D-18` の L2 実装改訂）/ `D-26`（プレビュー環境の退役・デプロイゲート）の決定ログ |
+| [`open-questions.md`](../../02_requirements/open-questions.md) | `D-16` / `D-17` / `D-18` / `D-23`（CI/CD の暫定運用。品質チェック部分は `D-42` で失効）/ `D-24`（`D-18` の L2 実装改訂）/ `D-26`（プレビュー環境の退役・デプロイゲート）/ `D-31` / `D-32`（デプロイ発火点の Workers Builds 移行）/ `D-42`（品質チェックの Actions 化）の決定ログ |
 | [議論記録](../../../content/discussions/cloudflare-infra-20260818/whiteboard.md) | 本設計に至った専門チームの議論 |
 | [議論記録（2026-08-20）](../../../content/discussions/sprint-env-lifecycle-20260820/whiteboard.md) | プレビュー環境の退役・デプロイゲートに関する専門チームの議論 |

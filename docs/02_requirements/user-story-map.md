@@ -204,7 +204,7 @@
 | **E-8** | Server Components を基本とし、`use client` をインタラクション箇所に限定する | `NFR-3` |
 | **E-9** | 🔴 配色の確定（コントラスト比 4.5:1 以上）。トークン構成と検証手順は [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §2 に従い、**実値を実測して確定させる** | `NFR-13` |
 | **E-11** | テスト基盤と外部 API のモック化、コマンド 1 つでの実行。⚠️ **検索・詳細 API のモックは `SP-4`、OAuth フローのモックは `SP-8`**（OAuth の仕様が固まる前にモックを組むと手戻りになる） | `NFR-23`〜`NFR-25` / `AC-10` |
-| **E-12** | CI での自動テスト実行 | `NFR-25` / `AC-10` |
+| **E-12** | CI での自動テスト実行。🔵 **被覆範囲は高速チェックのみ**（`D-42`・`.github/workflows/quality-checks.yml` が回すのは Prettier / ESLint / `tsc --noEmit` / Vitest の 4 件。`tools/run_checks.sh` に配線された 42 チェックの残り（E2E・Lighthouse・各 self-test）は CI に載せず、セッション実行 + PR 本文の結果表で担保する二層構成） | `NFR-25` / `AC-10` |
 | **E-22** | PR ごとの自動プレビューデプロイを設定し、PR 本文からプレビュー URL を辿れるようにする。🔵 **実装先は Cloudflare Workers に確定**（`D-16`。`wrangler versions upload --preview-alias pr-<N>` + GitHub Actions。手順の正本は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §8） | `D-11` / `D-16` / `SD-1` |
 | **E-23** | 認証トークンを用いても取得対象を公開リポジトリに限定する多層防御（① 利用者キーワード中の検索修飾子構文の拒否 ② 検索クエリへの `is:public` 付与 ③ 検索結果マッパーでの `private: true` 除外（`totalCount` は GitHub の値を保つ）④ 詳細応答が `private: true` なら「見つからない」扱い） | `NFR-33` / `AC-12` |
 
@@ -217,8 +217,8 @@
 | ID | イネイブラー | 参照要件 |
 |---|---|---|
 | **E-10** | レート制限対策の実装（直列化 / request coalescing / ETag・条件付きリクエスト / 残量監視） | `NFR-7` |
-| **E-13** | WCAG 2.2 レベル **AA を目標** とすることを宣言し（「完全準拠」とは名乗らない）、自動検証可能な範囲を axe で CI に組み込む。**手動チェックリストは [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §7.7 を使う** | `NFR-10` / `NFR-26` |
-| **E-14** | Lighthouse の CI ゲート化（Accessibility 100 / Performance 90 以上。偽陽性対策込み） | `NFR-27` |
+| **E-13** | WCAG 2.2 レベル **AA を目標** とすることを宣言し（「完全準拠」とは名乗らない）、自動検証可能な範囲を axe で自動検証に組み込む（🔵 実体は `tools/run_checks.sh` 内の E2E axe 検査。GitHub Actions の CI には載せない・`D-42`）。**手動チェックリストは [UI/UX ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §7.7 を使う** | `NFR-10` / `NFR-26` |
+| **E-14** | Lighthouse のゲート化（Accessibility 100 / Performance 90 以上。偽陽性対策込み）。🔵 **ゲートの実行先は `tools/run_checks.sh`**（`tools/run_lighthouse.mjs`）であり、GitHub Actions の CI には載せない（`D-42`） | `NFR-27` |
 | **E-15** | キーボードのみで検索から詳細閲覧まで完走でき、フォーカスが常に可視である。🔴 **ルート変更時のフォーカス移動が必須**（Next.js の route announcer は title が変わらないとアナウンスしない・[ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §7.1） | `NFR-11` / `AC-9` / `AC-8` |
 | **E-16** | レスポンシブ対応（スマートフォン〜デスクトップ、200% 拡大で破綻しない） | `NFR-15` / `AC-9` |
 | **E-17** | 画像の代替テキスト方針の適用（方針は [ガイドライン](../03_design/ui-ux/ui-ux-guidelines.md) §7.4 で確定済み） | `NFR-14` |
@@ -229,7 +229,7 @@
 
 | ID | イネイブラー | 参照要件 |
 |---|---|---|
-| **E-20** | 初期 JS バンドルサイズの CI 可視化（ゲート化はしない） | `NFR-28` |
+| **E-20** | 初期 JS バンドルサイズの可視化（ゲート化はしない）。🔵 可視化の実行先は `tools/run_checks.sh` 側を想定する（GitHub Actions の CI は高速チェック 4 件のみ・`D-42`） | `NFR-28` |
 | **E-21** | 翻訳の **品質仕上げ**（用語統一・言い回しの自然さ・表記ゆれの解消）。⚠️ 動く英語 UI 自体は `E-4` の規律により `SP-8` までに揃っている。ここで行うのは仕上げのみ | `AR-4` |
 
 ### 3.4. Gem 発見（S-3）
@@ -388,7 +388,7 @@
 - **操作レビュー**:
   1. **コマンド 1 つ** でテストが実行でき、全て成功する
   2. ネットワークを遮断した状態でも同じ結果になる（外部 API に依存していない）
-  3. PR を作ると CI でテストが自動実行される（`.github/workflows/quality-checks.yml`・Issue #543 / `D-42`）。🔵 **CI が回すのは Prettier / ESLint / `tsc --noEmit` / Vitest の高速チェックだけ** なので、E2E と Lighthouse は引き続き「PR 作成前にセッションが `bash tools/run_checks.sh`（= `npm run check`）を実行し、結果のサマリー表を PR 本文に貼る」で担保する（`docs/rules/sprint-development-rules.md` `SD-2` 完了条件と同じ二層構成）
+  3. PR を作ると CI でテストが自動実行される（`.github/workflows/quality-checks.yml`・Issue #543 / `D-42`）。🔵 **CI が回すのは Prettier / ESLint / `tsc --noEmit` / Vitest の高速チェック 4 件だけ**（`tools/run_checks.sh` に配線された 42 チェックのうちの 4 件）なので、E2E と Lighthouse は引き続き「PR 作成前にセッションが `bash tools/run_checks.sh`（= `npm run check`）を実行し、結果のサマリー表を PR 本文に貼る」で担保する（`docs/rules/sprint-development-rules.md` `SD-2` 完了条件と同じ二層構成）
 - **対応 `AC`**: `AC-10`（基盤部分）
 - **見積もり**: `sp:5`（手段は [テスト戦略](../04_development/testing-strategy.md) で確定済み（`R-11` クローズ）。残る不確実性は Vitest / Playwright / axe の実機セットアップと CI 組み込み）
 

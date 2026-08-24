@@ -11,7 +11,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings 3",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
