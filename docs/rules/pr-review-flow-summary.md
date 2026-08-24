@@ -78,4 +78,5 @@ python3 tools/check_pending_pr_reviews.py --actionable-only --json          # �
 **公開反映の回収も復帰時の責務（#449）**: `python3 tools/check_publish_drift.py --quiet` が 1（ドリフトあり）/ 2（判定不能）なら、`publish-sync` スキルで反映まで完遂する。`[publish-sync]` の open Issue は「前のセッションが反映できずに残した積み残し」なので最優先で消化してクローズする。
 
 - **自スコープ優先（#47）**: `--mine` は PR 本文の `Session-Id` トレーラーで自 PR を決定論的に識別する。時間ベースの除外を受けないため、圧縮・再起動後も確実に回収できる
+- **bot 自動化 PR も回収対象（`D-43`）**: `automation/gem-pool-refresh`（`github-actions[bot]`）と Dependabot（`dependabot/...` プレフィックス・`dependabot[bot]`）の 2 系統は、`authorAssociation` が信頼集合に入らないが `check_pending_pr_reviews.py` の専用述語（`_is_automation_pr()` / `_is_dependabot_pr()`）が **fork 不可 + ブランチ条件 + 著者ログイン固定の 3 条件 AND** で通すため、`needs_prompt` として出力される。これらも自 PR と同じく Layer 1 セルフレビュー → マージまで進める（放置すると `open-pull-requests-limit` に達して自動化が黙って止まる）
 - **他セッション対応中の PR には介入しない（CP-4・L-109）**: 直近 10 分以内に人間側アクティビティがある PR は `active_session: true` として `--actionable-only` から自動除外される。**出力に現れない PR には触れない**（催促・指摘対応・マージ・subscribe をしない。`--include-active` での強制取得も禁止）
