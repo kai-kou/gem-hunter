@@ -1,6 +1,7 @@
 Draw a left-to-right roadmap timeline:
 - A bold hand-drawn horizontal road/arrow across the middle of the canvas with milestone flags along it, showing the order of the 「到達順序」.
 - The 「マイルストーン」 items are the milestone stations on that road, each as a labelled flag or pin, in order.
-- 「現在地」 is a "YOU ARE HERE" style marker box attached to the road with a small hand-drawn pointer.
+- 「現在地」 is a "YOU ARE HERE" style marker box attached to the road with a small hand-drawn pointer. Anchor that pointer to the LAST milestone that is already reached according to the 「現在地」 block (here: M-6), not to an earlier one, so the marker does not imply the project is still before it.
+- Draw a milestone that the 「現在地」 block marks as 見送り (here: M-3) OFF the main road: place it above or below the road in a dashed grey frame with a short 「見送り」 tag, and do not let the road arrow pass through it.
 - 「削減ルール」 and 「残課題」 sit as two rounded boxes below the road, connected by short thin lines.
 - Use a check mark doodle on achieved milestones and a dashed outline on the not-yet-started ones.
