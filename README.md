@@ -80,10 +80,10 @@ python3 -m http.server 8098 --directory site
 # 1. 標準ゲート（PR 前の唯一の機械的証跡。LP 静的検査 check_site.py もここに含まれる）
 npm run check
 
-# 2. 数値の裏取り（LP に焼いてある「1,061 ケース」の内訳）
-npx vitest run              # → `Tests  954 passed` であること
-npx playwright test --list  # → 末尾 `Total: 107 tests` であること
-                            #    954 + 107 = 1,061 が index.html の「1,061 ケース」と一致する
+# 2. 数値の裏取り（LP に焼いてある「1,062 ケース」の内訳）
+npx vitest run              # → `Tests  953 passed` であること
+npx playwright test --list  # → 末尾 `Total: 109 tests` であること
+                            #    953 + 109 = 1,062 が index.html の「1,062 ケース」と一致する
 ls docs/adr/[0-9]*.md | wc -l   # → 15（index.html の「ADR 15 本」と一致。check_site.py も検査する）
 ```
 
