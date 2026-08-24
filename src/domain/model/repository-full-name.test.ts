@@ -4,9 +4,11 @@ import { DomainValidationError } from '../errors'
 import {
   MAX_OWNER_LENGTH,
   MAX_REPO_LENGTH,
+  isLenientRepositoryFullName,
   ownerOf,
   repoOf,
   repositoryFullName,
+  tryParseLenientRepositoryFullName,
   tryRepositoryFullName,
 } from './repository-full-name'
 
@@ -78,5 +80,54 @@ describe('ownerOf / repoOf', () => {
     const name = repositoryFullName('someone', 'someone.github.io')
     expect(ownerOf(name)).toBe('someone')
     expect(repoOf(name)).toBe('someone.github.io')
+  })
+})
+
+describe('isLenientRepositoryFullName / tryParseLenientRepositoryFullName（許容版）', () => {
+  // 🔴 実データ（GitHub リポジトリ 62,783 件・#141 系の全件突合）に実在する
+  //    「owner が末尾ハイフンで終わる」リポジトリ。厳格版（`tryRepositoryFullName`）は
+  //    これらを拒否するため、許容版が別に必要な理由そのものをここで固定する。
+  const TRAILING_HYPHEN_OWNER_SAMPLES: ReadonlyArray<readonly [string, string]> = [
+    ['Qix-/color-convert', 'Qix-'],
+    ['qix-/node-is-arrayish', 'qix-'],
+    ['main--/rust-timerfd', 'main--'],
+  ]
+
+  it.each(TRAILING_HYPHEN_OWNER_SAMPLES)(
+    '末尾ハイフン owner の実データ %s は許容版で受理し、厳格版で拒否する',
+    (fullName, owner) => {
+      const repo = fullName.slice(owner.length + 1)
+
+      expect(isLenientRepositoryFullName(fullName)).toBe(true)
+      expect(tryParseLenientRepositoryFullName(fullName)).toEqual({ owner, name: repo })
+
+      expect(() => repositoryFullName(owner, repo)).toThrow(DomainValidationError)
+      expect(tryRepositoryFullName(owner, repo)).toBeNull()
+    },
+  )
+
+  it.each(['./x', 'x/..', 'a/.', '../..'])(
+    'ドットセグメントを含む %s は許容版でも拒否する',
+    (value) => {
+      expect(isLenientRepositoryFullName(value)).toBe(false)
+      expect(tryParseLenientRepositoryFullName(value)).toBeNull()
+    },
+  )
+
+  it('通常の値は許容版・厳格版のどちらでも受理する', () => {
+    expect(isLenientRepositoryFullName('facebook/react')).toBe(true)
+    expect(tryParseLenientRepositoryFullName('facebook/react')).toEqual({
+      owner: 'facebook',
+      name: 'react',
+    })
+    expect(tryRepositoryFullName('facebook', 'react')).toBe('facebook/react')
+  })
+
+  it('スラッシュが無い・空白を含む・2 分割できない値は許容版でも拒否する', () => {
+    expect(isLenientRepositoryFullName('owner')).toBe(false)
+    expect(isLenientRepositoryFullName('owner/')).toBe(false)
+    expect(isLenientRepositoryFullName('/repo')).toBe(false)
+    expect(isLenientRepositoryFullName('owner repo')).toBe(false)
+    expect(tryParseLenientRepositoryFullName('a/b/c')).toBeNull()
   })
 })

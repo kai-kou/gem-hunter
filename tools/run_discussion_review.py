@@ -60,8 +60,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 WB_TOOL_ABS = str(REPO_ROOT / "tools" / "discussion_whiteboard.py")
 JST = _dt.timezone(_dt.timedelta(hours=9))
 # discussion_whiteboard.py の author/participant 規約と一致させる（早期に分かりやすく弾く）
+# dup-ok: discussion_whiteboard.py の _AUTHOR_RE と同一パターン。統合は Issue #612 のスコープ外
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 # discussion_whiteboard.py の discussion_id 規約（英数字 + _.-・先頭英数字・最大64）と一致させる
+# dup-ok: discussion_whiteboard.py の _ID_RE と同一パターン。統合は Issue #612 のスコープ外
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 DEFAULT_MODEL = "sonnet"   # エイリアス既定（最新 Sonnet に自動追随・agent-team.md「モデル指定の方針」）

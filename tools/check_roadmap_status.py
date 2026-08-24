@@ -115,6 +115,7 @@ def now_jst_str() -> str:
 # いずれも **タイトル先頭に固定** されるため `^` で厳密にアンカーする。「本文中に SP-n が
 # 出てくるだけ」「SP-1 を含むが別の語（espSP-5 等）」を誤って拾わないための境界線でもある。
 SP_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # dup-ok: sprint_backlog_sync.py の SP_TITLE_RE と同一パターン。統合は Issue #612 のスコープ外
     re.compile(r"^SP-(\d+):"),
     re.compile(r"^[A-Za-z]+\(SP-(\d+)\):"),
     re.compile(r"^[A-Za-z]+:\s*SP-(\d+)\b"),

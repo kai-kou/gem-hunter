@@ -191,6 +191,7 @@ fi
 # 4. 依存規則（クリーンアーキテクチャ）
 if [ -f "$REPO_ROOT/tools/check_architecture_boundaries.py" ]; then
   run_check "依存規則 (check_architecture_boundaries.py)" python3 tools/check_architecture_boundaries.py
+  run_check "依存規則 self-test (check_architecture_boundaries.py --self-test)" python3 tools/check_architecture_boundaries.py --self-test
 else
   skip_check "依存規則 (check_architecture_boundaries.py)" "スクリプトが見つかりません"
 fi
@@ -206,6 +207,7 @@ fi
 # 4.6. カラートークン コントラスト検査（E-9 / NFR-13）
 if [ -f "$REPO_ROOT/tools/check_contrast.py" ]; then
   run_check "配色コントラスト検査 (check_contrast.py)" python3 tools/check_contrast.py
+  run_check "配色コントラスト検査 self-test (check_contrast.py --self-test)" python3 tools/check_contrast.py --self-test
 else
   skip_check "配色コントラスト検査 (check_contrast.py)" "スクリプトが見つかりません"
 fi
@@ -258,6 +260,14 @@ else
   skip_check "副作用 GET のプリフェッチ検査 (check_prefetchable_side_effects.py)" "スクリプトが見つかりません"
 fi
 
+# 4.8.5. 日時 TZ 検査（datetime-rules.md の完了条件が挙げる機械チェック・Issue #80 / #445）
+if [ -f "$REPO_ROOT/tools/check_datetime_tz.py" ]; then
+  run_check "日時 TZ 検査 (check_datetime_tz.py)" python3 tools/check_datetime_tz.py
+  run_check "日時 TZ 検査 self-test (check_datetime_tz.py --self-test)" python3 tools/check_datetime_tz.py --self-test
+else
+  skip_check "日時 TZ 検査 (check_datetime_tz.py)" "スクリプトが見つかりません"
+fi
+
 # 4.9. TS/JSX 字句解析ヘルパーの共通モジュール self-test（Issue #612）
 #      複数の検査スクリプトが共有するため、ここが壊れると検査全体が壊れる
 if [ -f "$REPO_ROOT/tools/ts_source.py" ]; then
@@ -285,6 +295,7 @@ fi
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
+  run_check "CJK Markdown self-test (check_cjk_markdown.py --self-test)" python3 tools/check_cjk_markdown.py --self-test
 else
   skip_check "CJK Markdown (check_cjk_markdown.py --changed)" "スクリプトが見つかりません"
 fi
@@ -292,6 +303,7 @@ fi
 # 6. セルフレビュー機械チェック
 if [ -f "$REPO_ROOT/tools/self_review_check.py" ]; then
   run_check "セルフレビュー機械チェック (self_review_check.py)" python3 tools/self_review_check.py
+  run_check "セルフレビュー機械チェック self-test (self_review_check.py --self-test)" python3 tools/self_review_check.py --self-test
 else
   skip_check "セルフレビュー機械チェック (self_review_check.py)" "スクリプトが見つかりません"
 fi

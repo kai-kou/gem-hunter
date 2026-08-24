@@ -110,16 +110,21 @@ const MAX_INCLUDE_FULL_NAMES_RAW_LENGTH =
 /**
  * `owner/repo` 形式の判定（同伴指定の入口ガード）。
  *
- * 🔴 **3 実装が並存する**（本パターン・`static-gem-index.ts` の `isSafeRepositoryFullName`・
- * `domain/model/repository-full-name.ts` の `tryRepositoryFullName`）。前提が違うため共有
- * モジュール化はしない（別 Issue）: 本パターンは URL から届く利用者入力の防御（1 スラッシュ
- * のみ許可）が目的、`isSafeRepositoryFullName` は配信データ（信頼できる自社バッチ出力）の
- * 防御が目的、`tryRepositoryFullName` は GitHub の命名規則そのものの検証（末尾ハイフン禁止等）
- * が目的、というように前提が異なる。
+ * 🔴 **3 系統が並存する**（本パターン・`domain/model/repository-full-name.ts` の許容版
+ * `isLenientRepositoryFullName` / `tryParseLenientRepositoryFullName`・同ファイルの厳格版
+ * `repositoryFullName` / `tryRepositoryFullName`）。前提が違うため共有モジュール化はしない:
+ * 本パターンは **URL から届く利用者入力の防御**（1 スラッシュのみ許可・`[A-Za-z0-9._-]+` に
+ * 文字種を絞る）が目的で、`static-gem-index.ts` / `static-gem-digest.ts` / `gem-list.tsx` が
+ * 使っていた配信データ（信頼できる自社バッチ出力）向けの緩い判定とは **別の脅威モデル**
+ * （それら 3 箇所は許容版へ統合済み・重複実装ではなくなった）。許容版はさらに緩く、
+ * `[^/\s]+`（スラッシュ・空白以外なら何でも許可）で判定するため、全角文字・`?`・`#` 等を
+ * 含む URL 入力にそのまま使うと通してしまう。本パターンの文字種制限はその防御のために維持する。
+ * `tryRepositoryFullName`（厳格版）は GitHub の命名規則そのものの検証（末尾ハイフン禁止等）が
+ * 目的で、実データに末尾ハイフンの owner が実在するため配信データ・URL 入力のどちらにも使えない。
  *
  * 🔴 パターン **だけでは** ドットだけのセグメント（`.` / `..`）を弾けない（`[A-Za-z0-9._-]+` は
- * `.` を許容するため `..` にも一致する）。`isSafeRepositoryFullName` と同じく、各セグメントが
- * ドットだけでないことを `normalizeIncludeFullNames` 内で別途チェックする。
+ * `.` を許容するため `..` にも一致する）。許容版と同じく、各セグメントがドットだけでないことを
+ * `normalizeIncludeFullNames` 内で別途チェックする。
  */
 const INCLUDE_FULL_NAME_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
 

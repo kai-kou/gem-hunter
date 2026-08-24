@@ -54,6 +54,7 @@ RENDER_PATH = ROOT / "content" / "analytics" / "pr_review_trends.png"
 # matplotlib で日本語が豆腐化しないよう登録するフォント（既存 compose_channel_banner.py と同じ実績パス）
 JP_FONT = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
 # pull_request_url から PR 番号を抽出する正規表現（モジュールレベルで 1 度だけコンパイル）
+# dup-ok: analyze_pr_review_comments.py の pr_re と同一パターン。統合は Issue #612 のスコープ外
 _PR_RE = re.compile(r"/pulls/(\d+)")
 
 # analyze_pr_review_comments.py のロジックを再利用（SSOT・同 tools/ ディレクトリ・sys.path は上で追加済み）
