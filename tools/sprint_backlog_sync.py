@@ -72,8 +72,22 @@ JST = timezone(timedelta(hours=9))
 # 上記 docstring 「設計上の注意」参照）。
 MAX_SYNCABLE_SP = 11
 
-# dup-ok: check_roadmap_status.py の SP_TITLE_PATTERNS[0] と同一パターン。統合は Issue #612 のスコープ外
-SP_TITLE_RE = re.compile(r"^SP-(\d+):")
+# 実在する 3 パターン（check_roadmap_status.py の SP_TITLE_PATTERNS が挙げる根拠と同一・#542）:
+#   1. "SP-{n}: {ゴール}"          例: "SP-11: 何も知らない人が README だけで動かせ..."
+#   2. "feat(SP-{n}): {ゴール}"    例: "feat(SP-14): キーワードを入力しなくても..."
+#   3. "feat: SP-{n} {ゴール}"     例: "feat: SP-17 候補プール生成を..."
+# 🔴 check_roadmap_status.py とは異なり、パターン 2・3 の type プレフィックスを `feat` に
+# **限定する**（統合しない設計は変えないが、正規表現自体は独自に絞り込む）。実測で
+# `improvement: SP-1 の ADR 0001 確定後に...`（#51）・`docs: SP-4 で増えた E2E 関連の
+# 環境変数を...`（#115）のような「SP-n に言及するだけの副次 Issue」が `[A-Za-z]+` 版に
+# ヒットし、Ready 条件③の判定対象へ誤って混入した（新規スプリント着手が永久にブロック
+# される実害）。スプリント本体 Issue（`type:feature`）は実測上すべて `feat` プレフィックス
+# で作られているため、`feat` 限定で本体だけを拾う。
+SP_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^SP-(\d+):"),
+    re.compile(r"^feat\(SP-(\d+)\):"),
+    re.compile(r"^feat:\s*SP-(\d+)\b"),
+)
 MILESTONE_ISSUE_TITLE = "[Milestone] M-3 到達"
 BUG_ISSUE_TITLE = "[sprint_backlog_sync] user-story-map.md §5.3 のパースに失敗"
 
@@ -226,13 +240,23 @@ def sp_numbers(issues: list[dict], *, open_only: bool = False) -> set[int]:
     """
     numbers = set()
     for issue in issues:
-        m = SP_TITLE_RE.match(str(issue.get("title", "")).strip())
-        if not m:
+        n = extract_sp_number_from_title(str(issue.get("title", "")))
+        if n is None:
             continue
         if open_only and str(issue.get("state", "")).lower() == "closed":
             continue
-        numbers.add(int(m.group(1)))
+        numbers.add(n)
     return numbers
+
+
+def extract_sp_number_from_title(title: str) -> int | None:
+    """Issue タイトルから `SP-n` 番号を抽出する（3 パターンのいずれにも一致しなければ None）。"""
+    t = title.strip()
+    for pat in SP_TITLE_PATTERNS:
+        m = pat.match(t)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 # ──────────────────────────────────────────────
@@ -503,7 +527,7 @@ def list_all_issues() -> tuple[list[dict], str | None]:
     """
     ok, out = _run_gh([
         "issue", "list", "-R", REPO, "--state", "all",
-        "--json", "number,title,state", "--limit", "300",
+        "--json", "number,title,state", "--limit", "2000",
     ])
     if ok:
         try:
@@ -520,8 +544,13 @@ def list_all_issues() -> tuple[list[dict], str | None]:
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
+    # 300 件上限で古い SP-n Issue を取得漏れし、既存を「未存在」と誤判定して重複起票した
+    # 実害（#551）の再発防止。check_roadmap_status.py の fetch_all_issues() と同じ
+    # max_pages=20（100件 x 20ページ = 最大 2000 件）まで走査し、それでも尽きなければ
+    # 「取得できた」と偽らず判定不能として返す（github-mcp-fallback-patterns.md §4）。
+    max_pages = 20
     issues: list[dict] = []
-    for page in range(1, 4):  # 100件 x 3ページ = 最大300件（gh 経路と同等の上限）
+    for page in range(1, max_pages + 1):
         ok2, out2 = _http_request(
             f"https://api.github.com/repos/{REPO}/issues?state=all&per_page=100&page={page}",
             token,
@@ -533,7 +562,7 @@ def list_all_issues() -> tuple[list[dict], str | None]:
         except json.JSONDecodeError:
             return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
         if not batch:
-            break
+            return issues, None
         # /issues エンドポイントは PR も含むため pull_request キーで除外する
         issues.extend(
             {"title": i.get("title", ""), "state": i.get("state", "")}
@@ -541,8 +570,8 @@ def list_all_issues() -> tuple[list[dict], str | None]:
             if "pull_request" not in i
         )
         if len(batch) < 100:
-            break
-    return issues, None
+            return issues, None
+    return [], f"gh 失敗（{gh_err}）・REST もページネーション上限（{max_pages} ページ）に達しました"
 
 
 def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
@@ -751,8 +780,29 @@ def _self_test_title() -> list[str]:
     title = build_issue_title(parsed[1])
     if not title.startswith("SP-1: "):
         failures.append(f"タイトル整形: 接頭辞が不正: {title!r}")
-    if not SP_TITLE_RE.match(title):
+    if extract_sp_number_from_title(title) != 1:
         failures.append(f"タイトル整形: 既存判定用の正規表現に一致しない: {title!r}")
+    return failures
+
+
+def _self_test_title_extraction_variants() -> list[str]:
+    """実運用で確認済みの 3 タイトル形式すべてから SP 番号を抽出できることを検証する（#542）。"""
+    failures = []
+    cases = [
+        ("SP-11: 何も知らない人が README だけで動かせ、設計判断が追える", 11),
+        ("feat(SP-14): キーワードを入力しなくても、その日の Gem が一覧で出る", 14),
+        ("feat: SP-19 検索語を引き継いで一覧に戻れる", 19),
+        ("[user-work] SP-16 の仕様分岐 2 件の決定", None),  # 先頭アンカー外は拾わない
+        ("bug: 何かが壊れている", None),
+        # 実測の偽陽性回帰テスト: SP-n に言及するだけの非 feat 副次 Issue は拾わない
+        ("improvement: SP-1 の ADR 0001 確定後に shadcn MCP を追加する", None),
+        ("docs: SP-4 で増えた E2E 関連の環境変数を env-vars.md に記載する", None),
+        ("fix(SP-16): キーワード検索の結果も並べられる", None),
+    ]
+    for title, want in cases:
+        got = extract_sp_number_from_title(title)
+        if got != want:
+            failures.append(f"タイトル抽出: {title!r} → {got}（期待 {want}）")
     return failures
 
 
@@ -872,6 +922,7 @@ def run_self_test() -> int:
         ("次に着手する SP の決定", _self_test_next_sp),
         ("ラベル決定", _self_test_labels),
         ("タイトル整形", _self_test_title),
+        ("タイトル抽出（実運用 3 形式）", _self_test_title_extraction_variants),
         ("ID 抽出", _self_test_id_extraction),
         ("decide 統合", _self_test_decide),
         ("Ready 条件③（先行 SP-n が Closed）", _self_test_ready_condition),
