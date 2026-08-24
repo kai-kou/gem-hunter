@@ -16,6 +16,13 @@ vi.mock('@/src/composition/auth', () => ({
   // このユニットテストでは Host ヘッダをそのまま使う素朴な実装で十分（統合的な検証は
   // src/composition/auth.test.ts の resolveLandingHost 自体のテストが担う）。
   resolveLandingHost: (requestHost: string) => requestHost,
+  // 実装（src/composition/auth.ts の landingUrl）と同じ理由（オープンリダイレクト対策）。
+  // このユニットテストでは resolveLandingHost 同様に Host ヘッダをそのまま使う素朴な実装で十分
+  // （統合的な検証は src/composition/auth.test.ts の landingUrl 自体のテストが担う）。
+  landingUrl: (request: NextRequest) => {
+    const requestHost = request.headers.get('host') ?? request.nextUrl.host
+    return new URL('/', `${request.nextUrl.protocol}//${requestHost}`)
+  },
   // 実装と同じ判定（PR #141 レビュー指摘: secure 属性は接続プロトコル由来）。
   isSecureConnection: (protocol: string) => protocol === 'https:',
   SESSION_COOKIE_NAME: 'gem_hunter_session',

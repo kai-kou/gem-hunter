@@ -83,7 +83,10 @@ function parseDigest(raw: unknown): { candidates: readonly Gem[]; meta: DigestMe
   }
   const source = raw as RawDigestJson
 
-  const meta = parseMeta(source.meta)
+  const meta = parseMeta(source.meta, {
+    notObjectWarning: '候補プール JSON の meta が読めません。既定の帰属表示へフォールバックします。',
+    logFieldWarnings: true,
+  })
   const candidatesRaw = source.candidates
   if (!Array.isArray(candidatesRaw)) {
     warn('候補プール JSON の candidates が配列ではありません。空の候補プールとして継続します。')
@@ -97,29 +100,53 @@ function parseDigest(raw: unknown): { candidates: readonly Gem[]; meta: DigestMe
   return { candidates, meta }
 }
 
-/** meta はフィールド単位でフォールバックする（1 つ壊れても他の帰属情報は活かす）。 */
-function parseMeta(raw: unknown): DigestMeta {
+/**
+ * `parseMeta` の呼び出し元ごとのオプション。呼び出し元（`static-gem-digest.ts` /
+ * `static-gem-index.ts`）でログの文言・要否が異なるため、統合にあたって差し替え可能にした
+ * （重複解消・PR #141 系レビュー指摘の姉妹対応。`static-gem-index.ts` 側は元々フィールド単位の
+ * warn ログを出していなかったため、`logFieldWarnings` の既定値 `false` でその挙動を保つ）。
+ */
+interface ParseMetaOptions {
+  /** `meta` 自体がオブジェクトでない場合に出す警告メッセージ（呼び出し元ごとに文言が異なる）。 */
+  readonly notObjectWarning: string
+  /** 警告出力に使う関数。省略時はこのモジュールの `warn`（`[StaticGemDigest]` プレフィックス）。 */
+  readonly warn?: (message: string) => void
+  /** フィールド単位のフォールバック発生時にも警告を出すか（既定 false）。 */
+  readonly logFieldWarnings?: boolean
+}
+
+/**
+ * `index.json` / `daily-digest.json` の `meta` を出典表示（`D-29`）へ落とす。フィールド単位で
+ * フォールバックする（1 つ壊れても他の帰属情報は活かす）。`static-gem-index.ts` と共有する
+ * （既定値は `StaticGemDigest` と同じもの・出典/ライセンスは同一バッチが書く固定値なので、
+ * 2 か所に別々の既定を置かない）。
+ */
+export function parseMeta(raw: unknown, options: ParseMetaOptions): DigestMeta {
+  const log = options.warn ?? warn
   if (!isObject(raw)) {
-    warn('候補プール JSON の meta が読めません。既定の帰属表示へフォールバックします。')
+    log(options.notObjectWarning)
     return FALLBACK_META
   }
   const source = raw as Partial<Record<keyof DigestMeta, unknown>>
+  const fieldLog = options.logFieldWarnings ? log : undefined
 
   return {
-    source: nonEmptyStringOr(source.source, FALLBACK_META.source, 'meta.source'),
+    source: nonEmptyStringOr(source.source, FALLBACK_META.source, 'meta.source', fieldLog),
     // 🔴 `javascript:` / `data:` スキームは `<a href>` へ流さない（React 19 は
     //    `javascript:` href でレンダリング例外を投げ、ホーム画面全体が 500 になる）。
-    sourceUrl: httpUrlOr(source.sourceUrl, FALLBACK_META.sourceUrl, 'meta.sourceUrl'),
-    license: nonEmptyStringOr(source.license, FALLBACK_META.license, 'meta.license'),
+    sourceUrl: httpUrlOr(source.sourceUrl, FALLBACK_META.sourceUrl, 'meta.sourceUrl', fieldLog),
+    license: nonEmptyStringOr(source.license, FALLBACK_META.license, 'meta.license', fieldLog),
     sourceLicenseUrl: httpUrlOr(
       source.sourceLicenseUrl,
       FALLBACK_META.sourceLicenseUrl,
       'meta.sourceLicenseUrl',
+      fieldLog,
     ),
     generatedAt: nonEmptyStringOr(
       source.generatedAt,
       FALLBACK_META.generatedAt,
       'meta.generatedAt',
+      fieldLog,
     ),
   }
 }
@@ -168,16 +195,26 @@ function isRepositoryFullName(value: string): boolean {
   return value.split('/').every((segment) => segment !== '.' && segment !== '..')
 }
 
-function nonEmptyStringOr(value: unknown, fallback: string, field: string): string {
+function nonEmptyStringOr(
+  value: unknown,
+  fallback: string,
+  field: string,
+  log: ((message: string) => void) | undefined,
+): string {
   if (typeof value === 'string' && value.length > 0) {
     return value
   }
-  warn(`候補プール JSON の ${field} が読めません。既定値へフォールバックします。`)
+  log?.(`候補プール JSON の ${field} が読めません。既定値へフォールバックします。`)
   return fallback
 }
 
 /** `http:` / `https:` のみ許可する（スキーム経由の XSS・レンダリング例外を入口で止める）。 */
-function httpUrlOr(value: unknown, fallback: string, field: string): string {
+function httpUrlOr(
+  value: unknown,
+  fallback: string,
+  field: string,
+  log: ((message: string) => void) | undefined,
+): string {
   if (typeof value === 'string') {
     try {
       const url = new URL(value)
@@ -188,7 +225,7 @@ function httpUrlOr(value: unknown, fallback: string, field: string): string {
       // URL としてパースできない → 下のフォールバックへ落とす。
     }
   }
-  warn(`候補プール JSON の ${field} が http(s) URL ではありません。既定値へフォールバックします。`)
+  log?.(`候補プール JSON の ${field} が http(s) URL ではありません。既定値へフォールバックします。`)
   return fallback
 }
 

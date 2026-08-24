@@ -5,6 +5,13 @@ vi.mock('@/src/composition/auth', () => ({
   SESSION_COOKIE_NAME: 'gem_hunter_session',
   OAUTH_STATE_COOKIE_NAME: 'oauth_state',
   resolveLandingHost: (requestHost: string) => requestHost,
+  // 実装（src/composition/auth.ts の landingUrl）と同じ理由（オープンリダイレクト対策）。
+  // このユニットテストでは resolveLandingHost 同様に Host ヘッダをそのまま使う素朴な実装で十分
+  // （統合的な検証は src/composition/auth.test.ts の landingUrl 自体のテストが担う）。
+  landingUrl: (request: NextRequest) => {
+    const requestHost = request.headers.get('host') ?? request.nextUrl.host
+    return new URL('/', `${request.nextUrl.protocol}//${requestHost}`)
+  },
 }))
 
 describe('POST /api/auth/logout', () => {

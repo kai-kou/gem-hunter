@@ -15,7 +15,7 @@ import type {
 } from '../../domain/ports/gem-index-port'
 
 import { type AssetReader, resolveAssetReader } from './asset-reader'
-import { FALLBACK_META } from './static-gem-digest'
+import { FALLBACK_META, parseMeta } from './static-gem-digest'
 
 /**
  * Gem 候補プールのレジストリ別シャード（静的アセット）を読む `GemIndexPort` 実装
@@ -581,7 +581,10 @@ async function buildPool(read: AssetReader): Promise<PoolBuild> {
   }
 
   const index = tryParseJson(indexRaw, INDEX_PATH)
-  const meta = parseMeta(isObject(index) ? index.meta : undefined)
+  const meta = parseMeta(isObject(index) ? index.meta : undefined, {
+    notObjectWarning: `${INDEX_PATH} の meta が読めません。既定の帰属表示へフォールバックします。`,
+    warn,
+  })
 
   if (!isObject(index) || !Array.isArray(index.shards)) {
     warn(`${INDEX_PATH} の shards が配列ではありません。Gem バッジ・Gem 一覧なしで継続します。`)
@@ -780,46 +783,6 @@ function finiteAt(entry: readonly unknown[], index: number): number {
   }
   const value = entry[index]
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-/**
- * `index.json` の `meta` を出典表示（`D-29`）へ落とす。フィールド単位でフォールバックする
- * （1 つ壊れても他の帰属情報は活かす）。既定値は `StaticGemDigest` と **同じもの** を使う
- * （出典・ライセンスは同一バッチが書く固定値なので、2 か所に別々の既定を置かない）。
- */
-function parseMeta(raw: unknown): DigestMeta {
-  if (!isObject(raw)) {
-    warn(`${INDEX_PATH} の meta が読めません。既定の帰属表示へフォールバックします。`)
-    return FALLBACK_META
-  }
-  return {
-    source: nonEmptyStringOr(raw.source, FALLBACK_META.source),
-    // 🔴 `javascript:` / `data:` スキームは `<a href>` へ流さない（React 19 は
-    //    `javascript:` href でレンダリング例外を投げ、画面全体が 500 になる）。
-    sourceUrl: httpUrlOr(raw.sourceUrl, FALLBACK_META.sourceUrl),
-    license: nonEmptyStringOr(raw.license, FALLBACK_META.license),
-    sourceLicenseUrl: httpUrlOr(raw.sourceLicenseUrl, FALLBACK_META.sourceLicenseUrl),
-    generatedAt: nonEmptyStringOr(raw.generatedAt, FALLBACK_META.generatedAt),
-  }
-}
-
-function nonEmptyStringOr(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.length > 0 ? value : fallback
-}
-
-/** `http:` / `https:` のみ許可する（スキーム経由の XSS・レンダリング例外を入口で止める）。 */
-function httpUrlOr(value: unknown, fallback: string): string {
-  if (typeof value === 'string') {
-    try {
-      const url = new URL(value)
-      if (url.protocol === 'http:' || url.protocol === 'https:') {
-        return value
-      }
-    } catch {
-      // URL としてパースできない → 下のフォールバックへ落とす。
-    }
-  }
-  return fallback
 }
 
 function tryParseJson(raw: string, path: string): unknown {
