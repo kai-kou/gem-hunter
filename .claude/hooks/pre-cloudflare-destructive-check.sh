@@ -59,18 +59,35 @@ Worker 本体の削除が本当に必要な場合は、ユーザーに確認し�
 # ファイルへ書き出すだけで実行しないため、`cat` 起点なら安全に剥がせる）。判定は「`<<` の直前の
 # コマンド区切り（`;` `|` `&` `` ` `` `(` `{`）より後ろの先頭語が `cat` か」で行う（`cat > file <<EOF`
 # のように途中にリダイレクト先を挟む形も拾う）。
+#
+# 🔴 herestring（`<<<"..."`）を heredoc 開始と誤認しない（自己レビューで発見・実測で確認した
+# バグ）。`<<<` の直後 3 文字目が `<` なら herestring であり、単一行で完結して本体（body）も
+# 終端行も持たない。誤って heredoc 開始として扱うと `in_hd` が壊れたまま後続行を `next` で
+# 握りつぶし続け、その中に実際に実行される危険なコマンドが混ざっていても丸ごと検査対象から
+# 消える（例: `cat <<<"x"` の次行に `curl -X DELETE .../workers/scripts/...` があると、
+# 終端行が来ないため最後まで握りつぶされて `allow` になっていた）。
+#
+# 🔵 対応する終端行が最後まで見つからない（heredoc が閉じない）場合も、本文として握りつぶした
+# 行を **最終的に出力へ戻す**（fail-safe）。剥がす／剥がさないの判定を誤った場合でも、
+# 「本文扱いにして見逃す」方向にだけは倒れないようにする（過検知は許容し、見逃しは避ける）。
 strip_heredocs() {
   awk '
-    BEGIN { in_hd = 0; delim = ""; strip_tabs = 0 }
+    BEGIN { in_hd = 0; delim = ""; strip_tabs = 0; nbuf = 0 }
     {
       line = $0
       if (in_hd) {
         cmp = line
         if (strip_tabs) { gsub(/^\t+/, "", cmp) }
-        if (cmp == delim) { in_hd = 0 }
+        if (cmp == delim) { in_hd = 0; nbuf = 0; next }
+        buf[nbuf++] = line
         next
       }
       if (match(line, /<<-?[ \t]*("[^"]*"|'"'"'[^'"'"']*'"'"'|[A-Za-z_][A-Za-z0-9_]*)/)) {
+        if (substr(line, RSTART + 2, 1) == "<") {
+          # herestring（<<<）: heredoc ではないので通常行として扱う
+          print line
+          next
+        }
         prefix = substr(line, 1, RSTART - 1)
         seg = prefix
         cut = 0
@@ -87,11 +104,17 @@ strip_heredocs() {
           gsub(/^["'"'"']|["'"'"']$/, "", tok)
           delim = tok
           in_hd = 1
+          nbuf = 0
           print line
           next
         }
       }
       print line
+    }
+    END {
+      if (in_hd) {
+        for (j = 0; j < nbuf; j++) print buf[j]
+      }
     }
   '
 }
@@ -105,12 +128,20 @@ classify_command() {
 
   # --- ① HTTP クライアントによる DELETE ---
   # -X DELETE / --request DELETE（大文字小文字を問わない）が、workers/scripts を含む URL と
-  # 同一コマンド文字列中に共存するかを見る。curl（`-X` / `--request`）と wget（`--method`）の
-  # どちらの流儀も拾うため特定コマンド名には依存しない。フラグと値の間は空白・`=`・引用符
-  # （`'`/`"`）のどの組み合わせも許容する（`-X DELETE` / `-XDELETE` / `-X "DELETE"` /
+  # 同一コマンド文字列中に共存するかを見る。curl（`-X` / `--request`、`-sfX` のような結合
+  # ショートオプションクラスタの末尾に `X` が来る形も含む）と wget（`--method`）のどちらの
+  # 流儀も拾うため特定コマンド名には依存しない。フラグと値の間は空白・`=`・引用符（`'`/`"`）の
+  # どの組み合わせも許容する（`-X DELETE` / `-XDELETE` / `-sfX DELETE` / `-X "DELETE"` /
   # `--request=DELETE` / `--request='DELETE'` / `--method=DELETE` いずれも同じ意味の呼び出しであり、
-  # 引用符付き・`--method` だけ素通りしては再発防止にならない）。
-  if printf '%s' "$cmd" | grep -qiE -- '(-X|--request|--method)[[:space:]=]*["'"'"']?DELETE["'"'"']?' \
+  # 引用符付き・結合オプション・`--method` だけ素通りしては再発防止にならない）。
+  #
+  # ⚠️ 既知の限界（本フックの守備範囲外・自己レビューで洗い出し済み）: ① curl/wget 以外の
+  # HTTP クライアント（Python `requests.delete()`・Node `fetch(url, {method:'DELETE'})` 等）は
+  # 検知できない ② `DEL"ETE"` のようにキーワードの途中にクォートを割り込ませる難読化や、
+  # `D=DELETE; curl -X "$D" ...` のように値がテキスト上に一切現れない変数展開は検知できない。
+  # これらは字面から実際の実行内容を復元するにはシェル/各言語の語彙解析が要る「意図的な回避」の
+  # 類であり、他の Bash ガード（機密ファイルアクセスガード等）と同じく本層の射程外とする。
+  if printf '%s' "$cmd" | grep -qiE -- '(-[A-Za-z]*X|--request|--method)[[:space:]=]*["'"'"']?DELETE["'"'"']?' \
     && printf '%s' "$cmd" | grep -qE 'workers/scripts'; then
     echo "block:api"
     return
@@ -210,6 +241,9 @@ run_self_test() {
   check '引用符付き wrangler "delete" をブロック' \
     'npx wrangler "delete"' \
     "block:wrangler-delete"
+  check "結合ショートオプション -sfX DELETE をブロック（回帰: 初版は素通りした）" \
+    'curl -sfX DELETE https://api.cloudflare.com/client/v4/accounts/ACC/workers/scripts/gem-hunter' \
+    "block:api"
 
   # --- heredoc 本文中の言及を実コマンドと誤認しない（回帰: このコミット自身が誤検知した） ---
   local heredoc_commit_msg
@@ -245,6 +279,20 @@ run_self_test() {
   bash_heredoc_with_delete=$'bash <<\'HEREDOC\'\ncurl -X DELETE https://api.cloudflare.com/client/v4/accounts/ACC/workers/scripts/gem-hunter\nHEREDOC'
   check "bash <<EOF 経由で実行される DELETE は heredoc でも剥がさずブロックする" \
     "$bash_heredoc_with_delete" \
+    "block:api"
+
+  # --- herestring（<<<）を heredoc 開始と誤認して後続行を握りつぶさない（自己レビューで発見） ---
+  local herestring_then_delete
+  herestring_then_delete=$'cat <<<"payload"\ncurl -X DELETE https://api.cloudflare.com/client/v4/accounts/ACC/workers/scripts/gem-hunter'
+  check "herestring (<<<) の次行にある実コマンドの DELETE を握りつぶさない" \
+    "$herestring_then_delete" \
+    "block:api"
+
+  # --- 終端行が見つからない heredoc は本文を握りつぶさず出力に戻す（fail-safe） ---
+  local unterminated_heredoc_with_delete
+  unterminated_heredoc_with_delete=$'cat <<\'NEVERCLOSES\'\ncurl -X DELETE https://api.cloudflare.com/client/v4/accounts/ACC/workers/scripts/gem-hunter'
+  check "未終端の heredoc は本文を握りつぶさずブロック判定に戻す（fail-safe）" \
+    "$unterminated_heredoc_with_delete" \
     "block:api"
 
   echo "" >&2
