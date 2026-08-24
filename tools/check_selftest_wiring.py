@@ -50,8 +50,8 @@
 
 2. **対象スクリプト側の docstring 内でマーカー書式を「説明する地の文」を、本物のマーカーと
    誤認して除外してしまう**: 旧実装は `_MARKER_RE` をファイル内容全体に対して素朴な正規表現
-   検索していたため、`"""マーカー書式: # selftest-wiring-ok: 理由"""` のような docstring の
-   説明文（実コメントではない）にもマッチし、意図せず自己除外されてしまっていた（本検査自身の
+   検索していたため、docstring の中で「`# selftest-wiring-ok: 理由` と書く」と地の文で説明した
+   だけの文字列（実コメントではない）にもマッチし、意図せず自己除外されてしまっていた（本検査自身の
    docstring がまさにこの形を取っているため、他スクリプトが利用例として書式に言及するだけで
    誤除外されうるという皮肉な穴だった）。対策として、`marker_reason()` /
    `has_invalid_empty_marker()` は `tokenize` モジュールで実コメントトークン（`tokenize.COMMENT`）
@@ -109,28 +109,129 @@ def script_has_selftest_flag(content: str) -> bool:
     return bool(_SELFTEST_FLAG_RE.search(content))
 
 
-def marker_reason(content: str) -> str | None:
-    """有効な `selftest-wiring-ok` マーカーの理由文字列を返す。
+@dataclass
+class _MarkerScan:
+    """1 ファイルぶんのマーカー走査結果（`_scan_markers` の戻り値）。"""
 
-    マーカーが無い、または全てのマーカーの理由が空（無効マーカー）の場合は None を返す
-    （= 除外されない）。複数マーカーがあり、どれか 1 つでも理由が非空なら、その理由を返す。
+    reasons: list[str]  # 実コメントとして書かれた、理由が非空のマーカーの理由文字列（出現順）
+    has_empty: bool  # 理由が空の（無効な）マーカーが 1 つでもあったか
+    tokenize_failed: bool  # `tokenize` が失敗し、安全側で「マーカーなし」にフォールバックしたか
+
+
+def _comment_texts(content: str) -> list[str] | None:
+    """`content` を Python としてトークナイズし、実コメントトークンの文字列だけを返す。
+
+    docstring / 文字列リテラルの中身（マーカー書式を説明する地の文など）はコメントトークン
+    ではないため含まれない。構文エラー・NUL バイト混入等でトークナイズ自体が失敗した場合は
+    クラッシュせず `None` を返す（呼び出し側は「マーカーなし」として安全側に倒す）。
     """
-    for m in _MARKER_RE.finditer(content):
+    try:
+        return [
+            tok.string
+            for tok in tokenize.generate_tokens(io.StringIO(content).readline)
+            if tok.type == tokenize.COMMENT
+        ]
+    except Exception:
+        # tokenize は SyntaxError / IndentationError / tokenize.TokenError / ValueError など
+        # 様々な例外を送出しうる（壊れた入力の形によって変わる）。本検査は「配線漏れ検出」が
+        # 責務であり構文検証ではないため、どんな理由であれクラッシュしてはならない
+        # （datetime-rules.md の check_datetime_tz.py と同じ「解析不能はスキップする」方針）。
+        return None
+
+
+def _scan_markers(content: str) -> _MarkerScan:
+    """`content` の実コメントから `selftest-wiring-ok` マーカーを走査する。"""
+    comments = _comment_texts(content)
+    if comments is None:
+        return _MarkerScan(reasons=[], has_empty=False, tokenize_failed=True)
+    reasons: list[str] = []
+    has_empty = False
+    for comment in comments:
+        m = _MARKER_RE.search(comment)
+        if not m:
+            continue
         reason = m.group(1).strip()
         if reason:
-            return reason
-    return None
+            reasons.append(reason)
+        else:
+            has_empty = True
+    return _MarkerScan(reasons=reasons, has_empty=has_empty, tokenize_failed=False)
+
+
+def marker_reason(content: str) -> str | None:
+    """有効な `selftest-wiring-ok` マーカー（実コメントとして書かれたもの）の理由文字列を返す。
+
+    マーカーが無い、全てのマーカーの理由が空（無効マーカー）、またはトークナイズ自体が
+    失敗した場合は None を返す（= 除外されない・安全側）。複数マーカーがあり、どれか 1 つでも
+    理由が非空なら、その理由を返す。
+    """
+    reasons = _scan_markers(content).reasons
+    return reasons[0] if reasons else None
 
 
 def has_invalid_empty_marker(content: str) -> bool:
     """理由が空の `selftest-wiring-ok` マーカーが（有効な理由付きマーカーとは別に）存在するか。"""
-    return any(not m.group(1).strip() for m in _MARKER_RE.finditer(content))
+    return _scan_markers(content).has_empty
+
+
+def _strip_shell_line_comment(line: str) -> str:
+    """bash の 1 行から、クォート外の `#` 以降（シェルコメント）を取り除く。
+
+    シングルクォート `'...'` とダブルクォート `"..."` の中身は保持する（例:
+    `echo "## run_checks 結果"` の `#` はコメントとして解釈しない）。`#` は「行頭、または
+    直前が空白」のときだけコメント開始とみなす（`foo#bar` のような識別子中の `#` は無視する
+    簡易ヒューリスティックだが、`run_checks.sh` の実際の書き方には十分）。
+    """
+    quote: str | None = None
+    prev: str | None = None
+    out: list[str] = []
+    i, n = 0, len(line)
+    while i < n:
+        ch = line[i]
+        if quote:
+            out.append(ch)
+            if quote == '"' and ch == "\\" and i + 1 < n:
+                out.append(line[i + 1])
+                prev = line[i + 1]
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            prev = ch
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            out.append(ch)
+            prev = ch
+            i += 1
+            continue
+        if ch == "#" and (prev is None or prev in " \t"):
+            break
+        out.append(ch)
+        prev = ch
+        i += 1
+    return "".join(out)
+
+
+def _strip_shell_comments(content: str) -> str:
+    """bash スクリプト全体からシェルコメントを取り除く（行単位。ヒアドキュメント非対応）。"""
+    out: list[str] = []
+    for raw_line in content.splitlines(keepends=True):
+        if raw_line.endswith("\n"):
+            body, eol = raw_line[:-1], "\n"
+        else:
+            body, eol = raw_line, ""
+        out.append(_strip_shell_line_comment(body) + eol)
+    return "".join(out)
 
 
 def is_wired(filename: str, run_checks_content: str) -> bool:
-    """`run_checks.sh` の中に `<filename> ... --self-test` という呼び出しがあるか。"""
+    """`run_checks.sh` の中に `<filename> ... --self-test` という **有効な**（コメントアウト
+    されていない）呼び出しがあるか。"""
+    stripped = _strip_shell_comments(run_checks_content)
     pattern = re.compile(re.escape(filename) + r"\s+--self-test\b")
-    return bool(pattern.search(run_checks_content))
+    return bool(pattern.search(stripped))
 
 
 @dataclass
@@ -141,6 +242,7 @@ class Verdict:
     status: str  # "not_applicable" | "wired" | "excluded" | "violation"
     reason: str | None = None  # excluded のときのマーカー理由
     invalid_marker: bool = False  # violation だが空理由マーカーが存在した場合 True
+    tokenize_failed: bool = False  # tokenize 失敗により「マーカーなし」へ安全側フォールバックしたか
 
 
 def evaluate_script(filename: str, content: str, run_checks_content: str) -> Verdict:
@@ -148,14 +250,24 @@ def evaluate_script(filename: str, content: str, run_checks_content: str) -> Ver
     if not script_has_selftest_flag(content):
         return Verdict(filename, "not_applicable")
 
-    reason = marker_reason(content)
-    if reason:
-        return Verdict(filename, "excluded", reason=reason)
+    marker_scan = _scan_markers(content)
+    if marker_scan.reasons:
+        return Verdict(
+            filename,
+            "excluded",
+            reason=marker_scan.reasons[0],
+            tokenize_failed=marker_scan.tokenize_failed,
+        )
 
     if is_wired(filename, run_checks_content):
-        return Verdict(filename, "wired")
+        return Verdict(filename, "wired", tokenize_failed=marker_scan.tokenize_failed)
 
-    return Verdict(filename, "violation", invalid_marker=has_invalid_empty_marker(content))
+    return Verdict(
+        filename,
+        "violation",
+        invalid_marker=marker_scan.has_empty,
+        tokenize_failed=marker_scan.tokenize_failed,
+    )
 
 
 @dataclass
@@ -188,7 +300,14 @@ def scan(tools_dir: Path, run_checks_content: str) -> Report:
         except OSError as e:
             print(f"⚠️  読み込み失敗のためスキップ: {path.name}（{e}）", file=sys.stderr)
             continue
-        report.add(evaluate_script(path.name, content, run_checks_content))
+        verdict = evaluate_script(path.name, content, run_checks_content)
+        if verdict.tokenize_failed:
+            print(
+                f"⚠️  tokenize 失敗のためマーカーなし扱い（安全側）: {path.name}"
+                "（構文エラー等でコメント解析ができなかった）",
+                file=sys.stderr,
+            )
+        report.add(verdict)
     return report
 
 
@@ -349,6 +468,70 @@ def _self_test() -> int:
     check("I: 複数マーカー中の有効な理由を拾う", marker_reason(src_i) == "有効な理由")
     v_i = evaluate_script("mixed.py", src_i, "")
     check("I: 有効な理由が 1 つでもあれば excluded", v_i.status == "excluded")
+
+    # ── 反例 J（2026-08-24 敵対的レビュー発見）: run_checks.sh 側でコメントアウトされた
+    # `run_check ... --self-test` 呼び出しを「配線済み」と誤認しない ──
+    run_checks_commented_out = (
+        '# run_check "sneaky" python3 tools/sneaky.py\n'
+        '# run_check "sneaky self-test" python3 tools/sneaky.py --self-test\n'
+    )
+    check(
+        "J: コメントアウトされた --self-test 呼び出しは is_wired=False",
+        not is_wired("sneaky.py", run_checks_commented_out),
+    )
+    # 同じ行がコメントでなければ従来どおり検出する（回帰防止）
+    run_checks_active = 'run_check "sneaky self-test" python3 tools/sneaky.py --self-test\n'
+    check(
+        "J: コメントでない同じ行は is_wired=True（回帰防止）",
+        is_wired("sneaky.py", run_checks_active),
+    )
+    # クォート内の `#`（例: echo "## run_checks 結果"）を誤ってコメント開始と扱わない
+    run_checks_quoted_hash = (
+        'echo "## run_checks 結果"\n'
+        'run_check "sneaky self-test" python3 tools/sneaky.py --self-test\n'
+    )
+    check(
+        "J: クォート内の # で後続行の判定が壊れない",
+        is_wired("sneaky.py", run_checks_quoted_hash),
+    )
+
+    # ── 反例 K（2026-08-24 敵対的レビュー発見）: docstring 内でマーカー書式を「説明する
+    # 地の文」（実コメントではない）を、本物のマーカーと誤認して除外しない ──
+    src_k = (
+        "#!/usr/bin/env python3\n"
+        '"""マーカー書式を説明する docstring:\n'
+        "    # selftest-wiring-ok: これは例示であって本物のマーカーではない\n"
+        '"""\n'
+        'p.add_argument("--self-test", action="store_true")\n'
+    )
+    check("K: docstring 内の言及は marker_reason=None", marker_reason(src_k) is None)
+    v_k = evaluate_script("sneaky_doc.py", src_k, "")
+    check("K: 判定は violation（誤って excluded されない）", v_k.status == "violation")
+    # 同じ文言でも実コメントとして書かれていれば従来どおり有効に効く（回帰防止）
+    src_k2 = (
+        "#!/usr/bin/env python3\n"
+        "# selftest-wiring-ok: これは実コメントであり本物のマーカー\n"
+        'p.add_argument("--self-test", action="store_true")\n'
+    )
+    check(
+        "K: 実コメントのマーカーは従来どおり有効（回帰防止）",
+        marker_reason(src_k2) == "これは実コメントであり本物のマーカー",
+    )
+    v_k2 = evaluate_script("real_marker.py", src_k2, "")
+    check("K: 実コメントのマーカーは excluded", v_k2.status == "excluded")
+
+    # ── 反例 L: 構文エラーのある Python ファイルでもクラッシュせず、安全側
+    # （マーカーなし扱い）で判定できる ──
+    src_l = (
+        "#!/usr/bin/env python3\n"
+        "def f(:\n"  # 構文エラー
+        "    pass\n"
+        'p.add_argument("--self-test", action="store_true")\n'
+    )
+    check("L: 構文エラーでも例外を投げず marker_reason=None", marker_reason(src_l) is None)
+    v_l = evaluate_script("broken.py", src_l, "")
+    check("L: 構文エラー時は violation（マーカーなし扱い・クラッシュしない）", v_l.status == "violation")
+    check("L: tokenize_failed フラグが立つ", v_l.tokenize_failed)
 
     if failures:
         print("❌ check_selftest_wiring --self-test FAILED:")

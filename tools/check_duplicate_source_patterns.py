@@ -53,6 +53,18 @@
     コメント・文字列リテラル内の `/.../ ` らしき文字列を誤検出しないよう、走査前に
     `tools/ts_source.py` の `strip_comments`（共通実装・Issue #612）でコメントを除去し、
     文字列・テンプレートリテラルの中身はスキャナ自身がスキップする。
+    あわせて `new RegExp('...')` / `new RegExp("...")` 形式の呼び出しの **第 1 引数**
+    （単純な文字列リテラルの場合のみ）も抽出する（2026-08-24 の敵対的レビューで発見:
+    `iter_ts_regex_literals` は `/pattern/flags` の字句だけを見るため、同じ正規表現を
+    `new RegExp(...)` 経由で複製したコピーを検出できていなかった）。
+    ⚠️ **既知の限界**: `new RegExp(...)` の第 1 引数はテンプレートリテラル（`` `${x}` ``）や
+    変数渡し（`new RegExp(pattern)`）には対応しない（静的に文字列値を確定できないため対象外）。
+    また `new RegExp('...')` は JS の文字列エスケープ処理（`\\s` → `\s` 等）を行わず**生の
+    ソーステキストをそのまま同一性判定に使う**ため、`/pattern/flags` リテラル形式とは
+    **別の名前空間**として扱われる（意味的に同じ正規表現でも綴りが違えば別パターンと判定
+    される。逆に言えば偽陽性にはならない — 誤って同一と判定することはない）。`new` を伴わない
+    関数呼び出し形式 `RegExp('...')` も対象外（元の Issue の実例が `new RegExp(...)` のみ
+    だったため、スコープをそこに絞った）。
   - `tools/**/*.py`: Python には正規表現リテラル構文が無く、`re.compile(...)` 等の呼び出しに
     文字列を渡す形でしか書けない。そのため `ast` モジュールでソースを構文解析し、
     `re.compile` / `re.match` / `re.fullmatch` / `re.search` / `re.sub` / `re.subn` /
@@ -233,6 +245,106 @@ def _ts_pattern_body_length(literal: str) -> int:
     return len(body)
 
 
+# ---------------------------------------------------------------------------
+# TypeScript / TSX 側: `new RegExp('...')` 呼び出しの抽出（2026-08-24 敵対的レビューで追加）
+# ---------------------------------------------------------------------------
+
+_NEW_KEYWORD = "new"
+_REGEXP_IDENT = "RegExp"
+
+
+def _match_new_regexp_call(source: str, pos: int) -> tuple[str, int, int] | None:
+    """`pos` が `new` トークン直後だとして、続きが `RegExp('...')` / `RegExp("...")` 形式の
+    呼び出し（第 1 引数が単純な文字列リテラル）かを判定する。
+
+    一致すれば `(識別用文字列, 引数文字列の本体長, 呼び出し全体の終端オフセット)` を返す。
+    テンプレートリテラル・変数渡し・閉じクォートが見つからない壊れた入力の場合は None を返す
+    （モジュール docstring の「既知の限界」参照）。
+    """
+    n = len(source)
+    i = pos
+    while i < n and source[i] in " \t\r\n":
+        i += 1
+    m = JS_IDENTIFIER_RE.match(source, i)
+    if not m or m.group(0) != _REGEXP_IDENT:
+        return None
+    i = m.end()
+    while i < n and source[i] in " \t\r\n":
+        i += 1
+    if i >= n or source[i] != "(":
+        return None
+    i += 1
+    while i < n and source[i] in " \t\r\n":
+        i += 1
+    if i >= n or source[i] not in "'\"":
+        return None  # テンプレートリテラル・変数渡し等は対象外（既知の限界）
+    quote = source[i]
+    start = i
+    j = i + 1
+    while j < n:
+        if source[j] == "\\":
+            j += 2
+            continue
+        if source[j] == quote:
+            j += 1
+            break
+        j += 1
+    else:
+        return None  # 閉じクォートが見つからない壊れた入力
+    string_literal = source[start:j]
+    literal_id = f"RegExp({string_literal})"
+    body_length = len(string_literal) - 2  # 前後のクォート 2 文字を除く
+    return literal_id, body_length, j
+
+
+def iter_ts_new_regexp_calls(stripped_source: str) -> list[tuple[str, int, int]]:
+    """コメント除去済みの TS/TSX ソースから `new RegExp('...')` 呼び出しを抽出する。
+
+    `(識別用文字列, 本体長, 開始オフセット)` のリストを返す。識別用文字列は
+    `"RegExp(" + クォート付き生テキスト + ")"` の形式で、正規表現リテラル（`/pattern/flags`）
+    とは別の名前空間として扱う（詳細はモジュール docstring）。文字列・テンプレートリテラルの
+    内部にある `new RegExp(...)` らしき記述は、クォート追跡によりスキップされるため誤検出
+    しない（他の擬似コードを含むドキュメント文字列等）。
+    """
+    results: list[tuple[str, int, int]] = []
+    i, n = 0, len(stripped_source)
+    while i < n:
+        ch = stripped_source[i]
+        if ch in " \t\r\n":
+            i += 1
+            continue
+        if ch in "'\"`":
+            # 文字列・テンプレートリテラルの中身は丸ごと読み飛ばす（中の擬似コードを
+            # `new RegExp(...)` として誤検出しない）。
+            quote = ch
+            j = i + 1
+            while j < n:
+                if stripped_source[j] == "\\":
+                    j += 2
+                    continue
+                if stripped_source[j] == quote:
+                    j += 1
+                    break
+                j += 1
+            else:
+                j = n
+            i = j
+            continue
+        m = JS_IDENTIFIER_RE.match(stripped_source, i)
+        if m:
+            if m.group(0) == _NEW_KEYWORD:
+                call = _match_new_regexp_call(stripped_source, m.end())
+                if call:
+                    literal_id, body_length, end = call
+                    results.append((literal_id, body_length, i))
+                    i = end
+                    continue
+            i = m.end()
+            continue
+        i += 1
+    return results
+
+
 def _marker_lines_ts(original_lines: list[str], line_no: int) -> str | None:
     """`line_no`（1-indexed）の行、または直前の行に `dup-ok` マーカーがあれば理由を返す。"""
     for idx in (line_no - 1, line_no - 2):  # 同じ行 → 直前の行の順に見る
@@ -259,6 +371,19 @@ def extract_ts_occurrences(path: str, source: str) -> list[Occurrence]:
                 line=line_no,
                 pattern=literal,
                 body_length=_ts_pattern_body_length(literal),
+                marked=reason is not None,
+                reason=reason,
+            )
+        )
+    for literal_id, body_length, offset in iter_ts_new_regexp_calls(stripped):
+        line_no = stripped.count("\n", 0, offset) + 1
+        reason = _marker_lines_ts(original_lines, line_no)
+        occurrences.append(
+            Occurrence(
+                file=path,
+                line=line_no,
+                pattern=literal_id,
+                body_length=body_length,
                 marked=reason is not None,
                 reason=reason,
             )
@@ -561,6 +686,58 @@ def _run_self_test() -> int:
     )
     groups_short = find_duplicate_groups(occs_short)
     check("below_threshold/excluded", len(groups_short), 0)
+
+    # ---------------- new RegExp('...') の検出（2026-08-24 敵対的レビュー追加） ----------------
+
+    # 必須ケース: Issue #612 の実例そのものを `new RegExp(...)` 構文で書いた複製を検出する
+    file_re_a = "export const OWNER_REPO_RE = new RegExp('^[^/\\s]+\\/[^/\\s]+$')\n"
+    file_re_b = "export const isFullName = (s) => new RegExp('^[^/\\s]+\\/[^/\\s]+$').test(s)\n"
+    occs_new_regexp = extract_ts_occurrences("re_a.ts", file_re_a) + extract_ts_occurrences(
+        "re_b.ts", file_re_b
+    )
+    groups_new_regexp = find_duplicate_groups(occs_new_regexp)
+    check("new_regexp/group_count", len(groups_new_regexp), 1)
+    if groups_new_regexp:
+        check("new_regexp/fully_marked_is_false", groups_new_regexp[0].fully_marked, False)
+
+    # dup-ok マーカーがあれば従来どおり許可される（回帰防止）
+    file_re_c = (
+        "// dup-ok: new RegExp 版の owner/repo 判定（意図的な独立実装・テスト用）\n"
+        "export const C_RE = new RegExp('^[^/\\s]+\\/[^/\\s]+$')\n"
+    )
+    file_re_d = (
+        "export const D_RE = new RegExp('^[^/\\s]+\\/[^/\\s]+$') // dup-ok: 同上\n"
+    )
+    occs_new_regexp_marked = extract_ts_occurrences("re_c.ts", file_re_c) + extract_ts_occurrences(
+        "re_d.ts", file_re_d
+    )
+    groups_new_regexp_marked = find_duplicate_groups(occs_new_regexp_marked)
+    if groups_new_regexp_marked:
+        check("new_regexp/marked_fully_marked_is_true", groups_new_regexp_marked[0].fully_marked, True)
+
+    # 文字列リテラル内の "new RegExp(...)" らしき記述を誤検出しない
+    file_re_in_string = 'const doc = "call new RegExp(\'foo\') like this";\n'
+    occs_re_in_string = extract_ts_occurrences("doc.ts", file_re_in_string)
+    check("new_regexp/inside_string_not_matched", len(occs_re_in_string), 0)
+
+    # テンプレートリテラル引数（静的に解決できない）は対象外（既知の限界）
+    file_re_template = "const re = new RegExp(`^${prefix}$`)\n"
+    occs_re_template = extract_ts_occurrences("tpl.ts", file_re_template)
+    check("new_regexp/template_arg_excluded", len(occs_re_template), 0)
+
+    # 変数渡し（静的に解決できない）は対象外（既知の限界）
+    file_re_var = "const re = new RegExp(userInput)\n"
+    occs_re_var = extract_ts_occurrences("var.ts", file_re_var)
+    check("new_regexp/variable_arg_excluded", len(occs_re_var), 0)
+
+    # `/pattern/flags` リテラル形式とは別の名前空間として扱う（意味は同じでも綴りが異なる
+    # ため同一パターンにはならない = 偽陽性化しないことの確認）
+    file_re_literal_form = "export const E_RE = /^[^/\\s]+\\/[^/\\s]+$/;\n"
+    file_re_call_form = "export const F_RE = new RegExp('^[^/\\s]+\\/[^/\\s]+$')\n"
+    occs_mixed_forms = extract_ts_occurrences(
+        "lit.ts", file_re_literal_form
+    ) + extract_ts_occurrences("call.ts", file_re_call_form)
+    check("new_regexp/different_namespace_from_literal", len(find_duplicate_groups(occs_mixed_forms)), 0)
 
     # ---------------- Python 側 ----------------
 

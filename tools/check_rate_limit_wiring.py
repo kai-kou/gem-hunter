@@ -718,6 +718,34 @@ export async function enforceGemListRateLimit(headers: Headers): Promise<void> {
 }
 """
 
+# 🔴 任務 1 の反例フィクスチャ（本 PR・分割代入パラメータ）: `extract_exported_enforcers` が
+# 分割代入パラメータ（`{ headers }: { headers: Headers }`）を関数本体の開始と誤認しないこと。
+# 誤認すると `find_function_body_end` が分割代入パターン自身の閉じ `}` で本体抽出を打ち切り、
+# 本文（呼び出し・接頭辞リテラル `'gems:'`）が丸ごと欠落する。実装は正しく `'gems:'` を
+# 使っているのに「接頭辞不明」（`None`）と誤判定される偽陰性を再現する。
+_COMPOSITION_DESTRUCTURED_PARAM = """
+export async function enforceGemListRateLimit({ headers }: { headers: Headers }): Promise<void> {
+  await enforceRateLimit(headers, 'gems:')
+}
+"""
+
+# 🔴 任務 1 の反例フィクスチャ（本 PR・分割代入パラメータ）: `extract_composition_wrappers` が
+# 分割代入パラメータを持つラッパー関数を未認識にしないこと。誤認すると本文が丸ごと欠落し、
+# 内部の `await enforceSearchRateLimit(...)` を見つけられず、正しく配線されたラッパーが
+# 「未配線・死蔵」の偽陽性として誤って CI を赤くする（`_WRAPPER_MISATTRIBUTED_HELPER_CALL`
+# の同型バグ・`extract_exported_enforcers` 側の版）。
+_WRAPPER_DESTRUCTURED_PARAM = {
+    "src/composition/search-guard.ts": (
+        "export async function prepareSearchKeyword("
+        "{ rawKeyword, headers }: { rawKeyword: string; headers: Headers }"
+        ") {\n"
+        "  const keyword = parseKeyword(rawKeyword)\n"
+        "  await enforceSearchRateLimit(headers)\n"
+        "  return keyword\n"
+        "}\n"
+    ),
+}
+
 
 def self_test() -> int:
     failures: list[str] = []
@@ -1046,6 +1074,14 @@ def self_test() -> int:
             f"（{misattributed!r}）"
         )
 
+    # 🔴 任務 1（本 PR）の反例: 分割代入パラメータを持つ export の本体が丸ごと欠落しないこと。
+    destructured = extract_exported_enforcers(_COMPOSITION_DESTRUCTURED_PARAM)
+    if destructured.get("enforceGemListRateLimit") != "gems:":
+        failures.append(
+            "extract_exported_enforcers: 分割代入パラメータを持つ export の本体が正しく抽出できて"
+            f"いない（期待 'gems:'、実際 {destructured.get('enforceGemListRateLimit')!r}）"
+        )
+
     # Issue #604: ラッパー抽出・間接呼び出し解決の補助関数の単体検証
     known = {"enforceSearchRateLimit", "enforceGemListRateLimit"}
     wrappers_ok, wrapper_errs_ok = extract_composition_wrappers(_WRAPPER_OK, known)
@@ -1071,6 +1107,19 @@ def self_test() -> int:
             f"（wrappers={wrappers_helper!r} / errors={wrapper_errs_helper!r}）"
         )
 
+    # 🔴 任務 1（本 PR）の反例: 分割代入パラメータを持つラッパーが未認識にならないこと。
+    wrappers_destructured, wrapper_errs_destructured = extract_composition_wrappers(
+        _WRAPPER_DESTRUCTURED_PARAM, known
+    )
+    if (
+        wrappers_destructured != {"prepareSearchKeyword": {"enforceSearchRateLimit"}}
+        or wrapper_errs_destructured
+    ):
+        failures.append(
+            "extract_composition_wrappers: 分割代入パラメータを持つラッパーが未認識になっている"
+            f"（wrappers={wrappers_destructured!r} / errors={wrapper_errs_destructured!r}）"
+        )
+
     raw_matched, raw_awaited, resolved = extract_calls_via_wrappers(
         "await prepareSearchKeyword(k, h)\n", {"prepareSearchKeyword": {"enforceSearchRateLimit"}}
     )
@@ -1088,9 +1137,10 @@ def self_test() -> int:
         print(f"[rate-limit-wiring] self-test NG（{len(failures)} 件）", file=sys.stderr)
         return EXIT_VIOLATION
     print(
-        "[rate-limit-wiring] self-test OK（38 ケース: 正常 9 / 反例 25 / 補助関数・列挙集合 4・"
+        "[rate-limit-wiring] self-test OK（40 ケース: 正常 9 / 反例 25 / 補助関数・列挙集合 4・"
         "間接呼び出し（Issue #604）6 件・ラッパー本文の誤帰属反例（修正項目 1）1 件・"
-        "extract_exported_enforcers の誤帰属反例（本 PR）1 件を含む）"
+        "extract_exported_enforcers の誤帰属反例（本 PR）1 件・分割代入パラメータの反例"
+        "（本 PR・extract_exported_enforcers / extract_composition_wrappers 各 1 件）2 件を含む）"
     )
     return EXIT_OK
 

@@ -63,8 +63,16 @@ JSX タグ終端の検出・関数本文の終端の検出）を **各自で独�
   戻り値の規約は `len(text)`（見つからない場合は「1 つ後ろのインデックス」＝ Python の
   スライスに素直に馴染む規約）に統一した。
 
-  `find_tag_end` / `find_function_body_end`: 元々重複していないため等価性の判定は不要。
-  ロジックは変更せず、そのまま本モジュールへ移植した（コピーであり改善はしていない）。
+  `find_tag_end`: 元々重複していないため等価性の判定は不要。ロジックは変更せず、そのまま
+  本モジュールへ移植した（コピーであり改善はしていない）。
+
+  `find_function_body_end`: 移植時点ではロジックを変更していなかったが、その後のセルフ
+  レビューで「最初に出会った `{` を関数本体の開始とみなす」実装が **分割代入パラメータ
+  （`{ headers }: { headers: Headers }`）・デフォルト値のオブジェクトリテラル（`x = { a: 1 }`）・
+  戻り値型のオブジェクト型注釈（`(): { ok: boolean } {`）を持つ関数**で本体抽出を誤る欠陥が
+  見つかったため追加修正した（詳細は本関数の docstring 参照）。既存の検査結果
+  （`check_rate_limit_wiring.py` / `check_ui_dimensions.py` / `check_prefetchable_side_effects.py`
+  の出力）はこの修正の前後で一致することを確認済み。
 
 使い方（self-test のみ。本体はライブラリとして import される想定）:
   python3 tools/ts_source.py --self-test
@@ -324,31 +332,20 @@ def find_tag_end(text: str, start_idx: int) -> int:
 # ---------------------------------------------------------------------------
 
 
-def find_function_body_end(source: str, start: int, fallback_end: int) -> int:
-    """`start`（export 宣言などの開始位置）から、対応する関数本体の閉じ括弧の直後の
-    オフセットを返す（波括弧の対応を追跡する簡易ブレースカウンタ）。
+def _find_matching_paren(text: str, open_idx: int) -> int:
+    """`text[open_idx] == '('` として、対応する `)` の直後のインデックスを返す。
 
-    🔴 なぜ要るか（Issue #604 フォローアップ）: 「本文の終端 = 次の export 宣言の開始位置」
-    という単純なテキストスライスだと、export と export の間に非 export のトップレベル関数
-    （ヘルパー等）が置かれている場合、そのヘルパーの中身が直前の export の本文として一緒に
-    取り込まれてしまい、ヘルパー側の呼び出しが export のものとして **誤帰属** する
-    （export の本体は実際には呼んでいないのに「配線あり」と誤って認識される＝偽陰性）。
-
-    波括弧の対応を文字単位で数え、**クォート（`'` `"` `` ` ``）の中の `{` `}` は数えない**
-    （文字列リテラル中の中括弧で対応がずれるのを避ける・エスケープ文字も 1 文字読み飛ばす）。
-    完全な字句解析ではないため正規表現リテラル中の `{n,m}` のような量指定子までは判別できないが、
-    それは `strip_comments` と同じ「完璧なパーサは持たない」割り切りに合わせている。
-
-    最初の `{` に到達する前に走査が尽きた場合（例: 本体を持たない一行の `export const x = 5`）は
-    対応する閉じ括弧が無いので `fallback_end`（次の export 宣言の開始位置、無ければソース終端）を返す。
+    クォート（`'` `"` `` ` ``）の中の括弧は数えない。中に現れる `{` `}` はそもそも
+    数えない（分割代入パラメータ・デフォルト値のオブジェクトリテラルはそれ自身で完結して
+    おり、外側の `(` `)` の対応関係を崩さないため、無視してよい）。対応する `)` が
+    見つからない場合は `len(text)` を返す。
     """
-    n = len(source)
-    i = start
+    n = len(text)
     depth = 0
+    i = open_idx
     quote: str | None = None
-    body_started = False
     while i < n:
-        ch = source[i]
+        ch = text[i]
         if quote:
             if ch == "\\" and i + 1 < n:
                 i += 2
@@ -361,19 +358,129 @@ def find_function_body_end(source: str, start: int, fallback_end: int) -> int:
             quote = ch
             i += 1
             continue
-        if ch == "{":
+        if ch == "(":
             depth += 1
-            body_started = True
             i += 1
             continue
-        if ch == "}":
+        if ch == ")":
             depth -= 1
             i += 1
-            if body_started and depth <= 0:
+            if depth == 0:
                 return i
             continue
         i += 1
-    return fallback_end
+    return n
+
+
+def _find_unquoted_char(text: str, start: int, end: int, target: str) -> int:
+    """`text[start:end]` の範囲で、クォート外に現れる最初の `target` のインデックスを返す
+    （見つからなければ `end`）。"""
+    i = start
+    quote: str | None = None
+    while i < end:
+        ch = text[i]
+        if quote:
+            if ch == "\\" and i + 1 < end:
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+            i += 1
+            continue
+        if ch == target:
+            return i
+        i += 1
+    return end
+
+
+# `EXPORT_RE` / `GENERIC_EXPORT_RE`（呼び出し元 `check_rate_limit_wiring.py`）が要求する
+# `export [async] (function|const) NAME` という接頭辞の直後に続く仮引数リストの開始 `(` を
+# 検出する。`export const NAME = someFactory(...)` のような **関数式ではない初期化子**
+# （`=` の直後がいきなり `(` ではなく識別子）には意図的にマッチしない ── 呼び出し式の
+# 引数リストを仮引数リストと誤認し、走査範囲を不当に広げる事故を避けるため。
+_PARAM_LIST_HEAD_RE = re.compile(
+    r"export\s+(?:async\s+)?"
+    r"(?:"
+    r"function\s*\*?\s*[A-Za-z_$][\w$]*\s*(?:<[^(){}]*>)?\s*"
+    r"|"
+    r"const\s+[A-Za-z_$][\w$]*\s*(?::[^=]*)?=\s*(?:async\s+)?"
+    r")\("
+)
+
+
+def _skip_parameter_list(source: str, start: int) -> int:
+    """`start`（`export` の開始位置）に仮引数リスト `(...)` が続く場合、それを読み飛ばした
+    直後のオフセットを返す（続かない場合は `start` をそのまま返す）。
+
+    🔴 なぜ要るか: 仮引数リストが分割代入パターン（`{ headers }: { headers: Headers }`）や
+    デフォルト値のオブジェクトリテラル（`x = { a: 1 }`）を含むと、後続の `find_function_body_end`
+    がそれらの `{` を関数本体の開始と誤認してしまい、対応する `}`（分割代入パターン自身の
+    閉じ括弧）で本体抽出を打ち切ってしまう（本来の本体・呼び出し・接頭辞リテラルが丸ごと
+    欠落する）。仮引数リストの中身は `(` `)` の対応関係だけで丸ごと読み飛ばし、その中の
+    `{` `}` を関数本体探索の対象から外す。
+    """
+    match = _PARAM_LIST_HEAD_RE.match(source, start)
+    if not match:
+        return start
+    open_idx = match.end() - 1  # マッチ末尾の '(' 自身
+    return _find_matching_paren(source, open_idx)
+
+
+def find_function_body_end(source: str, start: int, fallback_end: int) -> int:
+    """`start`（export 宣言などの開始位置）から、対応する関数本体の閉じ括弧の直後の
+    オフセットを返す（波括弧の対応を追跡する簡易ブレースカウンタ）。
+
+    🔴 なぜ要るか（Issue #604 フォローアップ）: 「本文の終端 = 次の export 宣言の開始位置」
+    という単純なテキストスライスだと、export と export の間に非 export のトップレベル関数
+    （ヘルパー等）が置かれている場合、そのヘルパーの中身が直前の export の本文として一緒に
+    取り込まれてしまい、ヘルパー側の呼び出しが export のものとして **誤帰属** する
+    （export の本体は実際には呼んでいないのに「配線あり」と誤って認識される＝偽陰性）。
+
+    🔴 **さらに追加修正（分割代入パラメータ対応）**: 「最初に出会った `{` を関数本体の開始と
+    みなす」だけでは、次の 3 パターンで本体抽出が壊れる。
+      1. 分割代入パラメータ（`function f({ headers }: { headers: Headers }) { ... }`）
+      2. デフォルト値のオブジェクトリテラル（`function f(x = { a: 1 }) { ... }`）
+      3. 戻り値型のオブジェクト型注釈（`function f(): { ok: boolean } { ... }`）
+    いずれも、実際の関数本体より **前** に自己完結した `{...}` が現れ、素朴なブレース
+    カウンタはその閉じ括弧で本体が終わったと誤認する。これに対して 2 段階で対処する:
+      - まず `_skip_parameter_list` で仮引数リスト `(...)` を丸ごと読み飛ばす
+        （パターン 1・2 はこれで解決する。仮引数リスト内の `{` `}` は候補から外れる）。
+      - 続けて見つけた `{...}` 候補について、その閉じ `}` の直後（空白のみ許容）に
+        **さらに `{` が続く場合**、この候補は関数本体ではなく戻り値型のオブジェクト型注釈
+        （パターン 3）とみなし、続く `{` を新たな候補として選び直す。真の関数本体の閉じ `}`
+        の直後に別の `{` が空白のみを挟んで直接続くことは、実在の TypeScript 構文としては
+        事実上起こらない（起きるとすれば次の宣言のキーワード・識別子・コメント等が必ず挟まる）。
+
+    波括弧の対応を文字単位で数え、**クォート（`'` `"` `` ` ``）の中の `{` `}` は数えない**
+    （文字列リテラル中の中括弧で対応がずれるのを避ける・エスケープ文字も 1 文字読み飛ばす）。
+    完全な字句解析ではないため正規表現リテラル中の `{n,m}` のような量指定子までは判別できないが、
+    それは `strip_comments` と同じ「完璧なパーサは持たない」割り切りに合わせている。
+
+    最初の `{` に到達する前に走査が尽きた場合（例: 本体を持たない一行の `export const x = 5`、
+    または `export const x = someFactory(...)` のような関数式ではない初期化子）は対応する
+    閉じ括弧が無いので `fallback_end`（次の export 宣言の開始位置、無ければソース終端）を返す。
+    """
+    n = len(source)
+    i = _skip_parameter_list(source, start)
+    while True:
+        open_idx = _find_unquoted_char(source, i, n, "{")
+        if open_idx >= n:
+            return fallback_end
+        close_idx = find_matching_brace(source, open_idx)
+        if close_idx >= n:
+            return fallback_end
+        k = close_idx + 1
+        while k < n and source[k] in " \t\r\n":
+            k += 1
+        if k < n and source[k] == "{":
+            # 戻り値型のオブジェクト型注釈（パターン 3）とみなし、続く { を選び直す。
+            i = k
+            continue
+        return close_idx + 1
 
 
 # ---------------------------------------------------------------------------
@@ -560,11 +667,61 @@ def _run_self_test() -> int:
     end3 = find_function_body_end(src3, 0, fallback3)
     check("find_function_body_end/no_body_uses_fallback", end3, fallback3)
 
+    # ---------------- find_function_body_end: 分割代入パラメータ等の反例（本 PR） ----------------
+    # 🔴 「最初に出会った { を関数本体の開始とみなす」実装は、実際の本体より前に自己完結した
+    # { ... } が現れるパターンで本体抽出が壊れる（詳細は本関数 docstring）。以下 7 パターンを
+    # 網羅する（末尾の g / h は特にパラメータリストの外側に { が現れる要注意ケース）。
+
+    def body_of(source: str) -> str:
+        start = source.index("export")
+        end = find_function_body_end(source, start, len(source))
+        return source[start:end]
+
+    # a) 通常の関数（回帰確認・分割代入なし）
+    src_a = "export function a(x: string) { return f(x) }\n"
+    check("find_function_body_end/destructure_a_normal", body_of(src_a).strip(), src_a.strip())
+
+    # b) 分割代入パラメータ（実バグ再現。本体が丸ごと欠落していた）
+    src_b = "export function b({ headers }: { headers: Headers }) { return f() }\n"
+    check("find_function_body_end/destructure_b_object_param", body_of(src_b).strip(), src_b.strip())
+
+    # c) 複数の分割代入パラメータ
+    src_c = "export function c({ a, b }: T, { c }: U) { return f() }\n"
+    check(
+        "find_function_body_end/destructure_c_multiple_object_params",
+        body_of(src_c).strip(),
+        src_c.strip(),
+    )
+
+    # d) アロー関数 + 分割代入パラメータ
+    src_d = "export const d = ({ x }: P) => { return f(x) }\n"
+    check(
+        "find_function_body_end/destructure_d_arrow_object_param", body_of(src_d).strip(), src_d.strip()
+    )
+
+    # e) 本体が式（ブロックでない）アロー関数 → { が無いので fallback_end を返す
+    src_e = "export const e = (x) => f(x)\nexport const zNext = 1\n"
+    fallback_e = src_e.index("export", 1)
+    end_e = find_function_body_end(src_e, src_e.index("export"), fallback_e)
+    check("find_function_body_end/destructure_e_arrow_expression_body_uses_fallback", end_e, fallback_e)
+
+    # g) デフォルト値がオブジェクトリテラル（パラメータリスト内側だが分割代入と同型の罠）
+    src_g = "export function g(x = { a: 1 }) { return f(x) }\n"
+    check(
+        "find_function_body_end/destructure_g_default_object_value", body_of(src_g).strip(), src_g.strip()
+    )
+
+    # h) 戻り値型がオブジェクト型（パラメータリストの外側に { が現れる・最重要の要注意ケース）
+    src_h = "export function h(): { ok: boolean } { return f() }\n"
+    check(
+        "find_function_body_end/destructure_h_object_return_type", body_of(src_h).strip(), src_h.strip()
+    )
+
     if failures:
         print("❌ ts_source --self-test FAILED")
         print("\n".join(failures))
         return 1
-    print("✅ ts_source --self-test PASSED（26 ケース）")
+    print("✅ ts_source --self-test PASSED（33 ケース）")
     return 0
 
 

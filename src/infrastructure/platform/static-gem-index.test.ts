@@ -945,15 +945,18 @@ describe('StaticGemIndex: index.json の meta の入口ガード（`F-34`）', (
     ['null', null],
     ['配列', ['not', 'an', 'object']],
     ['文字列', 'not-an-object'],
-  ])('meta 自体がオブジェクトでない（%s）ときは `[StaticGemIndex]` プレフィックス・INDEX_PATH 入りの警告で既定値へ丸ごと倒す', async (_label, meta) => {
-    const port = new StaticGemIndex(stubReader(filesWithMeta(meta)))
+  ])(
+    'meta 自体がオブジェクトでない（%s）ときは `[StaticGemIndex]` プレフィックス・INDEX_PATH 入りの警告で既定値へ丸ごと倒す',
+    async (_label, meta) => {
+      const port = new StaticGemIndex(stubReader(filesWithMeta(meta)))
 
-    const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
+      const result = await port.search({ tokens: [], page: 1, perPage: perPageOf(10) })
 
-    expect(result.meta).toEqual(FALLBACK_META)
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('[StaticGemIndex]'))
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining(INDEX_PATH))
-  })
+      expect(result.meta).toEqual(FALLBACK_META)
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('[StaticGemIndex]'))
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining(INDEX_PATH))
+    },
+  )
 })
 
 describe('StaticGemIndex#search（続き）', () => {
