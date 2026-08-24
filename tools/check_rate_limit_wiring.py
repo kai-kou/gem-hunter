@@ -15,6 +15,18 @@ Cloudflare Rate Limiting binding（`wrangler.jsonc` の `ratelimits`）は **宣
   2. Issue #442 起票時、`src/` 配下だけを grep して「どこからも呼ばれていない」と誤結論した
      （本リポジトリの App Router は **リポジトリルート直下の `app/`**。`src/app/` は存在しない）
 
+【間接呼び出し（ラッパー経由）を認める理由・Issue #604】
+`app/[locale]/page.tsx` と `app/api/search/route.ts` に重複していた「値オブジェクト変換 →
+`enforceSearchRateLimit()`」という順序判断を `src/composition/search-guard.ts` の
+`prepareSearchKeyword()` へ集約するリファクタ（コミット `fd23f99`）が入り、両ファイルから
+`enforce*RateLimit(` の **直接呼び出し** が消えた。文字列一致だけを見ていた本スクリプトは
+これを「配線し忘れ・死蔵」と誤検知した。実際には配線されている（`prepareSearchKeyword` が
+内部で `await enforceSearchRateLimit(headers)` を呼ぶ）ため、`src/composition/*.ts` を走査して
+「`enforce*RateLimit(` を `await` 付きで呼ぶ export 関数」を **ラッパー** として抽出し、
+エントリポイント側のラッパー呼び出しも「配線あり」と認める（詳細は `extract_composition_wrappers`）。
+ラッパー内部の `await` 欠落・呼び出し側の `await` 欠落はいずれも従来どおり ERROR にし、検査の強度は
+落とさない（直接呼び出しと同じ 5 項目の検査を間接呼び出しにも適用する）。
+
 【正本】
 適用経路の正本は `docs/03_design/infrastructure/cloudflare-infrastructure.md` の
 `<!-- rate-limit-wiring:begin -->` 〜 `<!-- rate-limit-wiring:end -->` に囲まれた表。
@@ -39,6 +51,18 @@ Cloudflare Rate Limiting binding（`wrangler.jsonc` の `ratelimits`）は **宣
 使い方:
     python3 tools/check_rate_limit_wiring.py              # 本判定（0=PASS / 1=FAIL）
     python3 tools/check_rate_limit_wiring.py --self-test  # 検査ロジック自身のテスト（実ファイル非依存）
+
+【既知の限界（字句解析のみで完全な静的解析はしていない・Issue #604 レビュー指摘）】
+本スクリプトは AST を持たず正規表現とブレースカウンタによる字句解析だけで判定する。以下 2 点は
+意図的に対応していない（過剰実装を避けるため）。**composition ラッパー（`src/composition/*.ts`
+の export 関数）へ分岐や紛らわしい文字列を持ち込む変更は、この限界により機械検査だけでは
+配線状態を保証できないため、人手レビューが要る**:
+  1. 文字列リテラル内に書かれた `await enforce*RateLimit(...)` のような記述を、実際の呼び出しと
+     誤認しうる（`strip_comments` はコメントだけを取り除き、文字列リテラルの中身はそのまま保つ設計
+     のため）。エラーメッセージ・ログ文言・テストの説明文字列などに関数名をそのまま書くと誤検出しうる。
+  2. 到達可能性解析はしない。`if (false) { await enforce*RateLimit(...) }` のように実行時には
+     絶対に到達しない分岐の内側にあっても、呼び出しが「存在する」というだけで配線ありと数える
+     （直接呼び出しの検査も元々同じ限界を持つ・本改修はこの限界を拡大も縮小もしていない）。
 """
 
 from __future__ import annotations
@@ -53,6 +77,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOC_PATH = REPO_ROOT / "docs" / "03_design" / "infrastructure" / "cloudflare-infrastructure.md"
 APP_DIR = REPO_ROOT / "app"
 COMPOSITION_PATH = REPO_ROOT / "src" / "composition" / "rate-limit.ts"
+# 🔴 ラッパー走査対象（Issue #604）。`prepareSearchKeyword` のような間接呼び出しを認識するため、
+# `src/composition/` 配下全体（テストファイルと `rate-limit.ts` 自身を除く）を走査する。
+COMPOSITION_DIR = REPO_ROOT / "src" / "composition"
 
 BEGIN_MARKER = "<!-- rate-limit-wiring:begin -->"
 END_MARKER = "<!-- rate-limit-wiring:end -->"
@@ -118,6 +145,12 @@ USECASE_CALL_RE = re.compile(r"\b(\w+UseCase)\s*\(")
 EXPORT_RE = re.compile(r"^export\s+(?:async\s+)?(?:function|const)\s+(enforce\w*RateLimit)\b", re.MULTILINE)
 # `'search:'` のようなコロン終わりの文字列リテラル
 PREFIX_LITERAL_RE = re.compile(r"""['"]([A-Za-z0-9_.\-]+:)['"]""")
+
+# 🔴 ラッパー検出用（Issue #604）。`EXPORT_RE` は名前を `enforce\w*RateLimit` に絞っているため
+# `prepareSearchKeyword` のような **任意の名前のラッパー export** を拾えない。ここでは名前を
+# 絞らず export 宣言だけを拾い、本文が実際に `enforce*RateLimit(` を呼んでいるかは
+# `extract_composition_wrappers` 側で判定する。
+GENERIC_EXPORT_RE = re.compile(r"^export\s+(?:async\s+)?(?:function|const)\s+(\w+)\b", re.MULTILINE)
 
 EXIT_OK = 0
 EXIT_VIOLATION = 1
@@ -322,23 +355,35 @@ def extract_awaited_calls(source: str) -> set[str]:
     return set(AWAITED_CALL_RE.findall(strip_comments(source)))
 
 
-def find_ordering_violation(source: str) -> tuple[str, str] | None:
-    """`enforce*RateLimit(` が最初の usecase 呼び出しより後ろなら (呼び出し名, usecase 名) を返す。
+def find_ordering_violation(
+    source: str, wrapper_names: set[str] | None = None
+) -> tuple[str, str] | None:
+    """`enforce*RateLimit(`（または既知のラッパー呼び出し）が最初の usecase 呼び出しより
+    後ろなら (呼び出し名, usecase 名) を返す。
 
     完全な到達性解析はしない（字句解析なしには不可能）。「同じファイルの中で、間引きが重い処理より
     **前に書かれている** こと」だけを文字オフセットで比べる。Issue #442 の事故は「呼び出しが
     usecase の後ろへ移動する / 不到達な分岐の内側へ入る」形で再発しうるが、ファイル内のどこかに
     呼び出しがあるかだけを見る検査ではそれを止められない。
 
+    🔴 Issue #604: `wrapper_names` を渡すと、直接呼び出しに加えてラッパー呼び出し（例
+    `prepareSearchKeyword(`）の位置も比較対象にする（間接呼び出しでも同じ検査を維持する）。
+
     🔴 usecase 呼び出しが 1 つも見つからないファイル（`app/api/search/route.ts` は
     `searchRepositoriesWithCacheStatus()` を呼ぶ等、命名が `*UseCase` でない）ではこの検査を
     **スキップする**（誤検出させない）。
     """
     stripped = strip_comments(source)
-    call = CALL_RE.search(stripped)
+    candidates = [m for m in (CALL_RE.search(stripped),) if m]
+    wrapper_re = _name_call_re(wrapper_names) if wrapper_names else None
+    if wrapper_re:
+        wrapper_match = wrapper_re.search(stripped)
+        if wrapper_match:
+            candidates.append(wrapper_match)
     usecase = USECASE_CALL_RE.search(stripped)
-    if call is None or usecase is None:
+    if not candidates or usecase is None:
         return None
+    call = min(candidates, key=lambda m: m.start())
     if call.start() < usecase.start():
         return None
     return call.group(1), usecase.group(1)
@@ -357,15 +402,175 @@ def extract_exported_enforcers(source: str) -> dict[str, str | None]:
     return result
 
 
+def _name_call_re(names: set[str]) -> re.Pattern[str] | None:
+    """与えた識別子集合のいずれかへの呼び出し（`name(`）にマッチする正規表現を作る。
+
+    `CALL_RE` / `AWAITED_CALL_RE` は `enforce\\w*RateLimit` という **名前の形** に依存しているため、
+    `prepareSearchKeyword` のような任意名のラッパーには使えない。ラッパー名の集合が確定した後に
+    その場で組み立てる（Issue #604）。名前が空集合なら `None`（呼び出し側は「ラッパーなし」として
+    直接呼び出しの検査だけを行う）。
+    """
+    if not names:
+        return None
+    alternation = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+    return re.compile(rf"\b({alternation})\s*\(")
+
+
+def _name_awaited_call_re(names: set[str]) -> re.Pattern[str] | None:
+    """`_name_call_re` の `await` / `void` / `return` 付き版。"""
+    if not names:
+        return None
+    alternation = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+    return re.compile(rf"\b(?:await|void|return)\s+(?:await\s+)?({alternation})\s*\(")
+
+
+def _find_function_body_end(source: str, start: int, fallback_end: int) -> int:
+    """`start`（export 宣言の開始位置）から、対応する関数本体の閉じ括弧の直後の
+    オフセットを返す（波括弧の対応を追跡する簡易ブレースカウンタ）。
+
+    🔴 なぜ要るか（修正項目 1・Issue #604 フォローアップ）: 旧実装は本文の終端を
+    「次の `export` 宣言の開始位置」という **単純なテキストスライス** で決めていた。
+    export と export の間に非 export のトップレベル関数（ヘルパー等）が置かれていると、
+    そのヘルパーの中身が直前の export の本文として一緒に取り込まれてしまい、ヘルパー側の
+    `enforce*RateLimit(` 呼び出しが export のラッパー呼び出しとして **誤帰属** する
+    （export の本体は実際には呼んでいないのに「配線あり」と誤って認識される＝偽陰性）。
+
+    波括弧の対応を文字単位で数え、**クォート（`'` `"` `` ` ``）の中の `{` `}` は数えない**
+    （文字列リテラル中の中括弧で対応がずれるのを避ける・エスケープ文字も 1 文字読み飛ばす）。
+    完全な字句解析ではないため正規表現リテラル中の `{n,m}` のような量指定子までは判別できないが、
+    それは既存の `strip_comments` と同じ「完璧なパーサは持たない」割り切りに合わせている。
+
+    最初の `{` に到達する前に走査が尽きた場合（例: 本体を持たない一行の `export const x = 5`）は
+    対応する閉じ括弧が無いので `fallback_end`（次の export 宣言の開始位置、無ければソース終端）を返す。
+    """
+    n = len(source)
+    i = start
+    depth = 0
+    quote: str | None = None
+    body_started = False
+    while i < n:
+        ch = source[i]
+        if quote:
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+            i += 1
+            continue
+        if ch == "{":
+            depth += 1
+            body_started = True
+            i += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            i += 1
+            if body_started and depth <= 0:
+                return i
+            continue
+        i += 1
+    return fallback_end
+
+
+def extract_composition_wrappers(
+    wrapper_sources: dict[str, str], known_enforcers: set[str]
+) -> tuple[dict[str, set[str]], list[str]]:
+    """`src/composition/*.ts`（`rate-limit.ts` 自身を除く）を走査し、`enforce*RateLimit(` を
+    `await` 付きで呼ぶ export 関数を「ラッパー」として抽出する（Issue #604）。
+
+    `prepareSearchKeyword()` のように、値オブジェクト変換とレート制限の順序判断をまとめて
+    集約した関数がこれに当たる。呼び出し元（`app/` 側）はラッパー名だけを呼び、実体の
+    `enforce*RateLimit` を直接呼ばなくなるため、これを「配線あり」と認識できないと
+    誤って「配線し忘れ・死蔵」を報告してしまう。
+
+    🔴 本文の終端は `_find_function_body_end`（対応する閉じ括弧までのブレースカウンタ）で
+    厳密に決める。export の **外側**（次の export 宣言より前にある非 export のトップレベル
+    ヘルパー等）のコードは本文に含めない（修正項目 1・上記 docstring 参照）。
+
+    Returns:
+        wrappers: {ラッパー関数名: 転送先の `enforce*RateLimit` 名の集合}
+                  （本文中で **確実に `await` されている** 場合のみ登録する）
+        errors: ラッパー本文が `enforce*RateLimit(` を呼んでいるのに `await`/`void`/`return` が
+                付いていない場合の違反（このラッパーは無効として `wrappers` に登録しない。
+                `await` を落としたラッパーを配線済みと認めると、そのラッパーを経由するすべての
+                呼び出し元で unhandled rejection が起きうる）
+    """
+    wrappers: dict[str, set[str]] = {}
+    errors: list[str] = []
+    for path, source in sorted(wrapper_sources.items()):
+        stripped = strip_comments(source)
+        matches = list(GENERIC_EXPORT_RE.finditer(stripped))
+        for i, match in enumerate(matches):
+            name = match.group(1)
+            fallback_end = matches[i + 1].start() if i + 1 < len(matches) else len(stripped)
+            end = _find_function_body_end(stripped, match.start(), fallback_end)
+            body = stripped[match.start() : end]
+            called = set(CALL_RE.findall(body)) & known_enforcers
+            if not called:
+                continue  # enforce*RateLimit を呼んでいない export はラッパーではない
+            awaited = set(AWAITED_CALL_RE.findall(body)) & known_enforcers
+            missing = called - awaited
+            if missing:
+                errors.append(
+                    f"{path}: ラッパー `{name}` が {', '.join(sorted(missing))} を呼んでいるが "
+                    "`await` が付いていない（ラッパー自体が unhandled rejection を起こしうるため、"
+                    "これを経由するファイルを配線済みとして認めない）"
+                    " → ラッパー内部を `await enforce...RateLimit(...)` にする"
+                )
+                continue
+            wrappers[name] = called
+    return wrappers, errors
+
+
+def extract_calls_via_wrappers(
+    source: str, wrappers: dict[str, set[str]]
+) -> tuple[set[str], set[str], set[str]]:
+    """直接の `enforce*RateLimit(` 呼び出しと、既知ラッパー経由の間接呼び出しの両方を認識する。
+
+    Returns:
+        raw_matched: 実際に呼ばれている名前の集合（直接名 or ラッパー名。`await` の有無は問わない）
+        raw_awaited: そのうち `await`/`void`/`return` が付いている名前の集合
+        resolved: `raw_matched` をラッパー経由分も含めて実体の `enforce*RateLimit` 名へ展開した集合
+                  （死蔵検証・キー接頭辞検証はこの実体名で行う）
+    """
+    stripped = strip_comments(source)
+    direct_matched = set(CALL_RE.findall(stripped))
+    direct_awaited = set(AWAITED_CALL_RE.findall(stripped))
+
+    wrapper_names = set(wrappers)
+    wrapper_call_re = _name_call_re(wrapper_names)
+    wrapper_awaited_re = _name_awaited_call_re(wrapper_names)
+    wrapper_matched = set(wrapper_call_re.findall(stripped)) if wrapper_call_re else set()
+    wrapper_awaited = set(wrapper_awaited_re.findall(stripped)) if wrapper_awaited_re else set()
+
+    resolved: set[str] = set(direct_matched)
+    for name in wrapper_matched:
+        resolved |= wrappers[name]
+
+    return direct_matched | wrapper_matched, direct_awaited | wrapper_awaited, resolved
+
+
 def check_wiring(
     doc_markdown: str,
     entrypoint_sources: dict[str, str],
     composition_source: str,
+    wrapper_sources: dict[str, str] | None = None,
 ) -> list[str]:
     """正本表・エントリポイント実装・composition root を突き合わせて違反メッセージを返す。
 
     引数はすべて文字列（＝ファイル I/O から独立）なので、self-test はここを直接叩ける。
     `entrypoint_sources` のキーが「`app/` 配下に実在するエントリポイントの全集合」である。
+
+    🔴 `wrapper_sources`（Issue #604）: `src/composition/*.ts`（`rate-limit.ts` 以外）の
+    {相対パス: ソース}。`enforce*RateLimit(` を `await` 付きで呼ぶ export 関数（例
+    `prepareSearchKeyword`）を「ラッパー」として抽出し、エントリポイント側のラッパー呼び出しも
+    直接呼び出しと同じ 5 項目（存在・`await`・呼び出し順・逆ドリフト・接頭辞）で検査する。
+    省略時は空 dict 扱い（間接呼び出しを一切認めない＝従来どおりの直接呼び出し限定の検査）。
     """
     errors: list[str] = []
 
@@ -386,6 +591,11 @@ def check_wiring(
     implementation_prefixes = set(PREFIX_LITERAL_RE.findall(strip_comments(composition_source)))
     used_by_table: set[str] = set()
 
+    # --- 0. ラッパー抽出（Issue #604・間接呼び出しの認識）----------------------
+    wrappers, wrapper_errors = extract_composition_wrappers(wrapper_sources or {}, set(exported))
+    errors.extend(wrapper_errors)
+    wrapper_names = set(wrappers)
+
     # --- 1 / 2. 表の宣言と実コードの双方向突き合わせ --------------------------
     for path, row in sorted(rows.items()):
         source = entrypoint_sources.get(path)
@@ -396,15 +606,19 @@ def check_wiring(
             )
             continue
 
-        calls = extract_calls(source)
+        # `raw_matched` / `raw_awaited` は「呼ばれている名前」そのもの（直接名 or ラッパー名）。
+        # `calls` はラッパー経由分を実体の `enforce*RateLimit` 名へ展開した集合（死蔵・接頭辞検証用）。
+        raw_matched, raw_awaited, calls = extract_calls_via_wrappers(source, wrappers)
         if row["applied"] and not calls:
             errors.append(
-                f"{path}: 表は「{APPLIED_MARK} 適用」だが `enforce*RateLimit(` の呼び出しが無い（配線し忘れ）"
-                " → 同ファイルで `enforce...RateLimit(...)` を呼ぶか、表を「❌ 対象外」に直す"
+                f"{path}: 表は「{APPLIED_MARK} 適用」だが `enforce*RateLimit(` の呼び出しが無い（配線し忘れ・"
+                "既知のラッパー経由の呼び出しも見つからない）"
+                " → 同ファイルで `enforce...RateLimit(...)` を呼ぶか、"
+                "`src/composition/*.ts` の確実に `await` するラッパー経由で呼ぶか、表を「❌ 対象外」に直す"
             )
         elif row["applied"]:
-            # --- 2. 呼び出しの結果を捨てていないか（`await` 落ち）------------------
-            floating = calls - extract_awaited_calls(source)
+            # --- 2. 呼び出しの結果を捨てていないか（`await` 落ち・直接/間接とも）--------
+            floating = raw_matched - raw_awaited
             if floating:
                 errors.append(
                     f"{path}: {', '.join(sorted(floating))} に `await` が付いていない"
@@ -412,8 +626,8 @@ def check_wiring(
                     "429 を返せないまま一切間引かれない）"
                     " → `await enforce...RateLimit(...)` にする（意図的に捨てるなら `void` / `return`）"
                 )
-            # --- 6. 呼び出し位置（重い処理より前か）------------------------------
-            ordering = find_ordering_violation(source)
+            # --- 6. 呼び出し位置（重い処理より前か・間接呼び出しでも同じ）--------------
+            ordering = find_ordering_violation(source, wrapper_names)
             if ordering:
                 call_name, usecase_name = ordering
                 errors.append(
@@ -423,7 +637,8 @@ def check_wiring(
                 )
         if not row["applied"] and calls:
             errors.append(
-                f"{path}: 表は「{EXCLUDED_MARK} 対象外」だが {', '.join(sorted(calls))} を呼んでいる（逆ドリフト）"
+                f"{path}: 表は「{EXCLUDED_MARK} 対象外」だが {', '.join(sorted(calls))} を呼んでいる（逆ドリフト。"
+                "ラッパー経由の間接呼び出しも含む）"
                 " → 表を「✅ 適用」に直すか、呼び出しを外す"
             )
 
@@ -431,7 +646,7 @@ def check_wiring(
             continue
         used_by_table |= calls
 
-        # --- 5. キー接頭辞の一致 ---------------------------------------------
+        # --- 5. キー接頭辞の一致（直接/間接とも実体の enforce*RateLimit 名で判定）------
         prefix = row["prefix"]
         if prefix is None:
             continue
@@ -455,11 +670,12 @@ def check_wiring(
             f" → {DOC_PATH.name} の {BEGIN_MARKER} 表に 1 行追加する（✅ 適用 / ❌ 対象外 を明記）"
         )
 
-    # --- 4. 死蔵（export したが表のどの ✅ 行からも使われていない）------------
+    # --- 4. 死蔵（export したが表のどの ✅ 行からも使われていない・直接/間接とも）------
     for name in sorted(set(exported) - used_by_table):
         errors.append(
             f"{name}: {COMPOSITION_PATH.name} が export しているが表の「{APPLIED_MARK} 適用」行の"
-            "どこからも呼ばれていない（死蔵） → 対象経路へ配線するか export を削除する"
+            "どこからも呼ばれていない（直接呼び出しにもラッパー経由の間接呼び出しにも到達しない・死蔵）"
+            " → 対象経路へ配線するか export を削除する"
         )
 
     return errors
@@ -488,10 +704,36 @@ def collect_entrypoint_sources(app_dir: Path, repo_root: Path = REPO_ROOT) -> di
     return sources
 
 
+def collect_composition_wrapper_sources(
+    composition_dir: Path = COMPOSITION_DIR,
+    exclude: Path = COMPOSITION_PATH,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, str]:
+    """`src/composition/*.ts`（テストファイルと `exclude`＝`rate-limit.ts` 自身を除く）を
+    列挙して {相対パス: ソース} を返す（Issue #604・間接呼び出しの認識対象）。
+
+    テストファイル（`*.test.ts`）を除くのは、テストコード内のモック呼び出しをラッパーの
+    実体と誤認しないため。`rate-limit.ts` 自身を除くのは、そこは `composition_source` として
+    別途渡され `extract_exported_enforcers` が担当するため（含めても実害は無いが二重管理を避ける）。
+    """
+    sources: dict[str, str] = {}
+    if not composition_dir.is_dir():
+        return sources
+    exclude_resolved = exclude.resolve()
+    for path in sorted(composition_dir.glob("*.ts")):
+        if path.name.endswith(".test.ts"):
+            continue
+        if path.resolve() == exclude_resolved:
+            continue
+        sources[path.relative_to(repo_root).as_posix()] = path.read_text(encoding="utf-8")
+    return sources
+
+
 def run_checks(
     doc_path: Path = DOC_PATH,
     app_dir: Path = APP_DIR,
     composition_path: Path = COMPOSITION_PATH,
+    composition_dir: Path = COMPOSITION_DIR,
 ) -> list[str]:
     """実ファイルを読んで検査する。読めないファイルは違反として報告する（黙って PASS にしない）。"""
     errors: list[str] = []
@@ -517,7 +759,8 @@ def run_checks(
         )
 
     entrypoints = collect_entrypoint_sources(app_dir)
-    return errors + check_wiring(doc_markdown, entrypoints, composition_source)
+    wrapper_sources = collect_composition_wrapper_sources(composition_dir, composition_path)
+    return errors + check_wiring(doc_markdown, entrypoints, composition_source, wrapper_sources)
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +801,50 @@ _SOURCES_OK = {
         "await enforceGemListRateLimit(await headers())\n"
     ),
     "app/api/auth/logout/route.ts": "export async function POST() { return new Response() }\n",
+}
+
+# 🔴 Issue #604: 間接呼び出し（ラッパー経由）の self-test 用フィクスチャ。
+# `src/composition/search-guard.ts` の `prepareSearchKeyword()` を模した、内部で確実に
+# `await enforceSearchRateLimit(...)` するラッパー。
+_WRAPPER_OK = {
+    "src/composition/search-guard.ts": (
+        "import { enforceSearchRateLimit } from './rate-limit'\n\n"
+        "export async function prepareSearchKeyword(rawKeyword: string, headers: Headers) {\n"
+        "  const keyword = parseKeyword(rawKeyword)\n"
+        "  await enforceSearchRateLimit(headers)\n"
+        "  return keyword\n"
+        "}\n"
+    ),
+}
+
+# 同じラッパーだが内部の `enforceSearchRateLimit(` に `await` が付いていない壊れた版。
+_WRAPPER_MISSING_AWAIT = {
+    "src/composition/search-guard.ts": (
+        "export async function prepareSearchKeyword(rawKeyword: string, headers: Headers) {\n"
+        "  const keyword = parseKeyword(rawKeyword)\n"
+        "  enforceSearchRateLimit(headers)\n"  # await 抜け
+        "  return keyword\n"
+        "}\n"
+    ),
+}
+
+# 🔴 修正項目 1 の反例フィクスチャ: export 本体は `enforce*RateLimit` を呼ばず、
+# export の **外側**（次の export より前）にある非 export のヘルパーだけが呼ぶ。
+# 旧実装（本文の終端 = 次の export の開始位置という単純スライス）だと、このヘルパーの
+# 呼び出しが `prepareSearchKeyword` の本文へ誤って取り込まれ、実際には配線していない
+# ラッパーを「配線あり」と誤認していた。
+_WRAPPER_MISATTRIBUTED_HELPER_CALL = {
+    "src/composition/search-guard.ts": (
+        "export async function prepareSearchKeyword(rawKeyword: string, headers: Headers) {\n"
+        "  const keyword = parseKeyword(rawKeyword)\n"
+        "  return keyword\n"
+        "}\n"
+        "\n"
+        "// export の外側にある非 export のヘルパー。prepareSearchKeyword の本文には含まれない。\n"
+        "function debugLogRateLimitProbe(headers: Headers) {\n"
+        "  void enforceSearchRateLimit(headers)\n"
+        "}\n"
+    ),
 }
 
 
@@ -788,6 +1075,80 @@ def self_test() -> int:
         if required_js not in ENTRYPOINT_FILE_NAMES:
             failures.append(f"列挙対象に {required_js} が含まれていない（拡張子の軸に穴がある）")
 
+    # --- Issue #604: 間接呼び出し（ラッパー経由）の検査 ---------------------------
+
+    # 22) 🔴 間接呼び出しを「配線あり」と認識できること（今回の事故そのものの再現・最重要）。
+    #     `app/[locale]/page.tsx` は `enforceSearchRateLimit(` を直接呼ばず、
+    #     `prepareSearchKeyword()`（`src/composition/search-guard.ts`）経由で呼ぶ。
+    indirect_ok = dict(_SOURCES_OK)
+    indirect_ok["app/[locale]/page.tsx"] = (
+        "import { prepareSearchKeyword } from '@/src/composition/search-guard'\n"
+        "const keyword = await prepareSearchKeyword(rawKeyword, await headers())\n"
+    )
+    expect_ok(
+        "間接呼び出し（ラッパー経由）を配線ありと認識",
+        check_wiring(_DOC_OK, indirect_ok, _COMPOSITION_OK, _WRAPPER_OK),
+    )
+
+    # 23) 🔴 ラッパー内部で `await` が抜けていたら落ちること。ラッパー自体が unhandled
+    #     rejection を起こしうるため、これを経由するファイルを配線済みとして認めてはいけない。
+    expect_fail(
+        "ラッパー内部の await 抜け",
+        check_wiring(_DOC_OK, indirect_ok, _COMPOSITION_OK, _WRAPPER_MISSING_AWAIT),
+        "ラッパー",
+    )
+
+    # 24) 🔴 `❌ 対象外` のファイルが間接呼び出し（ラッパー経由）をしていたら落ちること（逆ドリフト）。
+    indirect_stray = dict(_SOURCES_OK)
+    indirect_stray["app/api/auth/logout/route.ts"] = (
+        "import { prepareSearchKeyword } from '@/src/composition/search-guard'\n"
+        "await prepareSearchKeyword(rawKeyword, request.headers)\n"
+    )
+    expect_fail(
+        "❌ 対象外なのに間接呼び出し",
+        check_wiring(_DOC_OK, indirect_stray, _COMPOSITION_OK, _WRAPPER_OK),
+        "逆ドリフト",
+    )
+
+    # 25) 🟡 呼び出し側（エントリポイント）がラッパーを `await` せずに呼んでいたら落ちること
+    #     （ラッパー自体は正常でも、呼び出し側で結果を捨てると unhandled rejection になる）。
+    indirect_floating = dict(_SOURCES_OK)
+    indirect_floating["app/[locale]/page.tsx"] = (
+        "import { prepareSearchKeyword } from '@/src/composition/search-guard'\n"
+        "prepareSearchKeyword(rawKeyword, headers)\n"  # await 抜け
+    )
+    expect_fail(
+        "呼び出し側でラッパーに await が付いていない",
+        check_wiring(_DOC_OK, indirect_floating, _COMPOSITION_OK, _WRAPPER_OK),
+        "`await` が付いていない",
+    )
+
+    # 26) 🟡 間接呼び出しでも usecase 呼び出しより後ろなら落ちること（呼び出し順の検査が
+    #     ラッパー経由でも維持されていること）。
+    indirect_late = dict(_SOURCES_OK)
+    indirect_late["app/[locale]/page.tsx"] = (
+        "import { prepareSearchKeyword } from '@/src/composition/search-guard'\n"
+        "const result = await searchRepositoriesUseCase()({ page })\n"
+        "const keyword = await prepareSearchKeyword(rawKeyword, await headers())\n"
+    )
+    expect_fail(
+        "間接呼び出しが usecase より後ろ",
+        check_wiring(_DOC_OK, indirect_late, _COMPOSITION_OK, _WRAPPER_OK),
+        "より後ろにある",
+    )
+
+    # 27) 🔴 間接呼び出しでも接頭辞の食い違いを検出できること（死蔵・接頭辞検証がラッパー
+    #     経由の実体名まで正しく展開されていることの確認）。
+    doc_indirect_swapped = _DOC_OK.replace(
+        "| 検索画面 | `app/[locale]/page.tsx` | ✅ 適用 | `search:` |",
+        "| 検索画面 | `app/[locale]/page.tsx` | ✅ 適用 | `gems:` |",
+    )
+    expect_fail(
+        "間接呼び出しの接頭辞食い違い",
+        check_wiring(doc_indirect_swapped, indirect_ok, _COMPOSITION_OK, _WRAPPER_OK),
+        "実装は `search:` を使う",
+    )
+
     # 16) 補助関数の単体検証
     if extract_calls("import { enforceSearchRateLimit } from 'x'\n") != set():
         failures.append("extract_calls: import 文を呼び出しとして誤検出している")
@@ -799,12 +1160,51 @@ def self_test() -> int:
     }:
         failures.append("extract_exported_enforcers: export 名と接頭辞の対応を取り出せていない")
 
+    # Issue #604: ラッパー抽出・間接呼び出し解決の補助関数の単体検証
+    known = {"enforceSearchRateLimit", "enforceGemListRateLimit"}
+    wrappers_ok, wrapper_errs_ok = extract_composition_wrappers(_WRAPPER_OK, known)
+    if wrappers_ok != {"prepareSearchKeyword": {"enforceSearchRateLimit"}} or wrapper_errs_ok:
+        failures.append(
+            f"extract_composition_wrappers: 正常なラッパーを抽出できていない（{wrappers_ok!r} / {wrapper_errs_ok!r}）"
+        )
+    wrappers_bad, wrapper_errs_bad = extract_composition_wrappers(_WRAPPER_MISSING_AWAIT, known)
+    if wrappers_bad or not wrapper_errs_bad:
+        failures.append(
+            "extract_composition_wrappers: await 抜けのラッパーを無効化できていない"
+            f"（wrappers={wrappers_bad!r} / errors={wrapper_errs_bad!r}）"
+        )
+
+    # 🔴 修正項目 1（CRITICAL）の反例: export の外側にあるヘルパーの呼び出しを、
+    # 直前の export の本文として誤帰属しないこと（偽陰性の再発防止）。
+    wrappers_helper, wrapper_errs_helper = extract_composition_wrappers(
+        _WRAPPER_MISATTRIBUTED_HELPER_CALL, known
+    )
+    if "prepareSearchKeyword" in wrappers_helper or wrapper_errs_helper:
+        failures.append(
+            "extract_composition_wrappers: export 外側のヘルパー呼び出しを export 本体へ誤帰属している"
+            f"（wrappers={wrappers_helper!r} / errors={wrapper_errs_helper!r}）"
+        )
+
+    raw_matched, raw_awaited, resolved = extract_calls_via_wrappers(
+        "await prepareSearchKeyword(k, h)\n", {"prepareSearchKeyword": {"enforceSearchRateLimit"}}
+    )
+    if raw_matched != {"prepareSearchKeyword"} or raw_awaited != {"prepareSearchKeyword"} or resolved != {
+        "enforceSearchRateLimit"
+    }:
+        failures.append(
+            "extract_calls_via_wrappers: ラッパー経由の呼び出しを実体名へ展開できていない"
+            f"（raw_matched={raw_matched!r} / raw_awaited={raw_awaited!r} / resolved={resolved!r}）"
+        )
+
     if failures:
         for label in failures:
             print(f"[rate-limit-wiring] SELF-TEST FAIL: {label}", file=sys.stderr)
         print(f"[rate-limit-wiring] self-test NG（{len(failures)} 件）", file=sys.stderr)
         return EXIT_VIOLATION
-    print("[rate-limit-wiring] self-test OK（30 ケース: 正常 8 / 反例 19 / 補助関数・列挙集合 3）")
+    print(
+        "[rate-limit-wiring] self-test OK（37 ケース: 正常 9 / 反例 25 / 補助関数・列挙集合 3・"
+        "間接呼び出し（Issue #604）6 件・ラッパー本文の誤帰属反例（修正項目 1）1 件を含む）"
+    )
     return EXIT_OK
 
 

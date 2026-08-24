@@ -8,14 +8,13 @@ import {
   lookupGemIndexes,
   searchRepositoriesUseCase,
 } from '@/src/composition/container'
-import { enforceSearchRateLimit } from '@/src/composition/rate-limit'
+import { prepareSearchKeyword } from '@/src/composition/search-guard'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { tryParse as tryDateSeed } from '@/src/domain/model/date-seed'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { DEFAULT_PAGE, tryPageNumber } from '@/src/domain/model/page-number'
 import { DEFAULT_PER_PAGE, tryParse as tryPerPage } from '@/src/domain/model/per-page'
 import type { SearchResult } from '@/src/domain/model/repository'
-import { searchKeyword } from '@/src/domain/model/search-keyword'
 import { DEFAULT_SORT_ORDER, tryParse as trySortOrder } from '@/src/domain/model/sort-order'
 import { formatMessage } from '@/src/shared/i18n/format-message'
 import { toIntlLocaleTag } from '@/src/ui/i18n/intl-locale-tag'
@@ -69,16 +68,15 @@ async function runSearch(
     //    （`react is:private` 等）は `DomainValidationError`（kind: 'validation'）になるので、
     //    下の catch で「検索キーワードを確認してください」相当として画面に出す。null へ倒すと
     //    未入力と同じ idle 表示になり、拒否された事実がユーザーに伝わらない。
-    const keyword = searchKeyword(rawKeyword)
-    const sort = trySortOrder(rawSort)
-
-    // Issue #122: 自リクエストの間引き（RateLimitPort）。未入力（idle・上の early return）
-    // では枠を消費せず、値オブジェクトへの変換が通った（= 400 にならない）キーワードだけを
-    // 対象にする。超過時は `RateLimitExceededError` を投げ、下の catch がそのまま
-    // ローカライズ済み表示（`toErrorPresentation`）に繋げる（新しい分岐は足さない）。
+    //
+    // 「変換 → Issue #122 の自リクエスト間引き（RateLimitPort）」の順序自体が仕様（未入力は
+    // 枠を消費しない・400 で弾かれる入力にも枠を使わせない）で、この画面と API route の
+    // 両方に重複していたため `prepareSearchKeyword`（composition root）へ集約した。理由の
+    // 全文は同関数の JSDoc（`src/composition/search-guard.ts`）を参照。
     // `headers()` の呼び出しでこのページは動的レンダリングになるが、既に `searchParams`
     // を使っているため元から動的である（新たな制約ではない）。
-    await enforceSearchRateLimit(await headers())
+    const keyword = await prepareSearchKeyword(rawKeyword, await headers())
+    const sort = trySortOrder(rawSort)
 
     // SP-8: ログイン中はユーザー自身のアクセストークンで叩く（レート枠の切替）。トークンの
     // 供給元が変わっても経路は `GithubRepositoryQuery`（ACL）のままなので、`is:public` 付与と
