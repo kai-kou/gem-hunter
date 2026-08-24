@@ -63,6 +63,11 @@ EXIT_PRECONDITION = 2
 # alias 名から PR 番号を取り出すパターン（`pr-<N>` 形式のみを PR 由来とみなす）
 PR_ALIAS_RE = re.compile(r"^pr-(\d+)$")
 
+# select_closed_pr_aliases() が退役対象とみなす状態（#613）。
+# "issue:closed" は `pr-<N>` の N が実際には PR ではなく Issue 番号として起票された
+# ケース（`/pulls/<N>` が 404 で `/issues/<N>` にフォールバックした結果）を指す。
+RETIRABLE_STATES = ("closed", "merged", "issue:closed")
+
 
 class Precondition(Exception):
     """前提を満たさないときに送出する（終了コード 2 に対応）。"""
@@ -123,6 +128,8 @@ def select_closed_pr_aliases(
     - `pr-<N>` 形式でない alias（`sp1` 等）は自動選別の対象にしない（`--alias` で明示指定する）
     - PR が open のものは対象にしない（レビュー中のプレビューを壊さないため）
     - PR 状態が取得できなかったものは対象にしない（fail-closed）
+    - `<N>` が PR ではなく Issue として起票されていた場合（`issue:closed` / `issue:open`）も、
+      Issue が closed なら対象にする（open なら PR の open と同じく対象にしない・#613）
     - 現在の指し先の tag が `retired-` で始まる alias は退役済みとみなして再実行しない
     """
     targets = []
@@ -131,7 +138,7 @@ def select_closed_pr_aliases(
         if number is None:
             continue
         state = pr_states.get(number)
-        if state not in ("closed", "merged"):
+        if state not in RETIRABLE_STATES:
             continue
         if info.get("tag", "").startswith(retired_prefix):
             continue
@@ -226,7 +233,15 @@ def fetch_versions(account_id: str, token: str, worker: str) -> list[dict[str, A
 
 
 def fetch_pr_states(repo: str, numbers: list[int]) -> dict[int, str]:
-    """GitHub API で PR の状態を取得する（取得できなかった番号は結果に入れない）。"""
+    """GitHub API で PR の状態を取得する（取得できなかった番号は結果に入れない）。
+
+    `pr-<N>` 形式の alias でも、`<N>` が実際には PR ではなく **Issue 番号**として起票された
+    作業単位を指すことがある（本プロジェクトの運用上、`SP-n` の作業が PR ではなく Issue 単位で
+    完結するケース。#613 の実測で `pr-442` / `pr-388` 等 5 件が該当し、`/pulls/<N>` の 404 で
+    fail-closed のまま退役対象から永久に外れていた）。`/pulls/<N>` が 404 のときだけ
+    `/issues/<N>` へフォールバックする（PR が本当に存在しない番号を Issue 扱いするだけなので、
+    PR が open/closed どちらであってもフォールバックしない＝誤判定の余地はない）。
+    """
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "retire-preview-aliases"}
     if token:
@@ -235,13 +250,33 @@ def fetch_pr_states(repo: str, numbers: list[int]) -> dict[int, str]:
     for number in numbers:
         try:
             data = _http_json(f"{GH_API_BASE}/repos/{repo}/pulls/{number}", headers)
-        except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                issue_state = _fetch_issue_state(repo, number, headers)
+                if issue_state is not None:
+                    states[number] = issue_state
+            continue
+        except (urllib.error.URLError, ValueError, OSError):
             continue
         if data.get("merged_at"):
             states[number] = "merged"
         else:
             states[number] = str(data.get("state") or "")
     return states
+
+
+def _fetch_issue_state(repo: str, number: int, headers: dict[str, str]) -> str | None:
+    """`/pulls/<N>` が 404 のとき、`<N>` が Issue として起票されていないか確認する。
+
+    Issue が見つかれば `"issue:<state>"`（例: `"issue:closed"`）、見つからない・取得できない
+    ときは None を返す（従来どおり fail-closed のまま）。
+    """
+    try:
+        data = _http_json(f"{GH_API_BASE}/repos/{repo}/issues/{number}", headers)
+    except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
+        return None
+    state = str(data.get("state") or "")
+    return f"issue:{state}" if state else None
 
 
 def git_head_sha() -> str:
@@ -300,8 +335,11 @@ def run_retire(alias: str, tag: str, dry_run: bool) -> dict[str, Any]:
 
 def self_test() -> int:
     failures: list[str] = []
+    check_count = 0
 
     def check(label: str, actual: Any, expected: Any) -> None:
+        nonlocal check_count
+        check_count += 1
         if actual != expected:
             failures.append(f"{label}: 期待 {expected!r} / 実際 {actual!r}")
 
@@ -340,7 +378,7 @@ def self_test() -> int:
     check("PR 由来でない alias は None", alias_pr_number("sp1"), None)
     check("末尾に余計な語が付く alias は None", alias_pr_number("pr-212-old"), None)
 
-    states = {96: "merged", 212: "open", 143: "closed"}
+    states = {96: "merged", 212: "open", 143: "closed", 442: "issue:closed", 388: "issue:open"}
     wide_map = {
         "pr-96": {"version_id": "bbb", "created_on": "x", "tag": ""},
         "pr-212": {"version_id": "ccc", "created_on": "x", "tag": ""},
@@ -348,12 +386,28 @@ def self_test() -> int:
         "pr-999": {"version_id": "fff", "created_on": "x", "tag": ""},
         "sp1": {"version_id": "ggg", "created_on": "x", "tag": ""},
         "pr-88": {"version_id": "hhh", "created_on": "x", "tag": "retired-0123456789ab"},
+        "pr-442": {"version_id": "iii", "created_on": "x", "tag": ""},
+        "pr-388": {"version_id": "jjj", "created_on": "x", "tag": ""},
     }
     selected = select_closed_pr_aliases(wide_map, states)
-    check("open PR と PR 由来でない alias と退役済みを除く", selected, ["pr-96", "pr-143"])
+    check(
+        "open PR / PR 由来でない alias / 退役済み / Issue open を除く",
+        selected,
+        ["pr-96", "pr-143", "pr-442"],
+    )
     check(
         "状態を取得できなかった PR は対象外（fail-closed）",
         "pr-999" in select_closed_pr_aliases(wide_map, states),
+        False,
+    )
+    check(
+        "N が Issue 番号で closed なら退役対象にする（#613）",
+        "pr-442" in selected,
+        True,
+    )
+    check(
+        "N が Issue 番号でも open なら退役対象にしない",
+        "pr-388" in selected,
         False,
     )
 
@@ -451,7 +505,7 @@ def self_test() -> int:
         for failure in failures:
             print(f"  - {failure}")
         return EXIT_FAILED
-    print("セルフテスト: 全 26 ケース PASS")
+    print(f"セルフテスト: 全 {check_count} ケース PASS")
     return EXIT_OK
 
 

@@ -45,6 +45,17 @@ if echo "$COMMAND" | grep -qE '(gh\s+pr\s+create|poll_pr_reviews)'; then
   exit $?
 fi
 
+# Cloudflare Workers スクリプトへの破壊的操作チェック（Issue #613 / #615・本番 Worker 誤削除の再発防止）
+# 🔴 "delete" は汎用語（コミットメッセージ・rm のコメント等にも出現しうる）なので、
+# git push / PR 作成チェックと違い **ブロック時のみ** router を終了する（allow ならそのまま
+# 下の機密ファイルチェックへフォールスルーする。誤って早期 exit すると以降の全チェックを
+# 素通りさせてしまうため、無条件 `exit $?` にしない）。
+if echo "$COMMAND" | grep -qiE 'delete'; then
+  if ! echo "$INPUT" | "$HOOK_DIR/pre-cloudflare-destructive-check.sh"; then
+    exit 2
+  fi
+fi
+
 # 機密ファイルへの Bash 経由アクセスをブロックする共通判定（#384 / 下流監査で全面刷新）
 #
 # 🔴 なぜ permissions.deny があるのに必要か（射程差）:

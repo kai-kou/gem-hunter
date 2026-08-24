@@ -389,9 +389,11 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 🔴 **プレビューに `[env.*]`（Wrangler Environments）を使わない**。`[env.*]` は `<name>-<env>` という **別 Worker** を作るため、PR ごとに使うと Free の Worker 数上限（100/アカウント）と棚卸しコストに直結する。**versions + preview alias なら Worker は増えない**。
 
-🔴 **preview alias は削除できない**（wrangler CLI・Cloudflare REST API のいずれにも delete 系エンドポイントが存在しないことを実測で確認済み）。能動的に効く唯一のレバーは Worker 全体の `previews_enabled` トグル（全 PR のプレビューを一括で無効化する。PR 単位の選択削除は不可能）だが、並行中の他 PR のプレビューも巻き添えにするため `SD-1`（プレビュー URL 必須）と両立せず、通常のスプリント後始末には使わない（インシデント対応で全プレビューを緊急停止したいときだけの手動 killswitch として想定する）。唯一の自動的な後始末は **1000-alias LRU 自動失効**（受動的。最近デプロイされた 1000 件の alias だけが保持され、それを超えた分は最古の alias から自動的に消える）。
+🔴 **preview alias は削除できない**（wrangler CLI・Cloudflare REST API のいずれにも delete 系エンドポイントが存在しないことを実測で確認済み。**2026-08-24 に再検証済み**（Issue #613/#615）: `wrangler versions` サブコマンドは `upload`/`deploy`/`list`/`view`/`secret` のみ、`DELETE .../versions/<id>` は実 API で HTTP 405 `10405 Method not allowed for this authentication scheme` を返す）。能動的に効く唯一のレバーは Worker 全体の `previews_enabled` トグル（全 PR のプレビューを一括で無効化する。PR 単位の選択削除は不可能）だが、並行中の他 PR のプレビューも巻き添えにするため `SD-1`（プレビュー URL 必須）と両立せず、通常のスプリント後始末には使わない（インシデント対応で全プレビューを緊急停止したいときだけの手動 killswitch として想定する）。唯一の自動的な後始末は **1000-alias LRU 自動失効**（受動的。最近デプロイされた 1000 件の alias だけが保持され、それを超えた分は最古の alias から自動的に消える）。
 
 → 「削除」ではなく **退役（retire）** で対応する: 完了したスプリントの alias に対して、そのときの本番ビルドと同じ成果物を `wrangler versions upload --preview-alias <name>` で再アップロードし、実効ルーティング先を張り替える。alias URL 自体は生き続けるが、古いスプリントのコードを配信し続ける状態は解消される（version オブジェクト自体は削除されず残る）。手順は §8.2.1。決定の経緯は [議論記録](../../../content/discussions/sprint-env-lifecycle-20260820/whiteboard.md)、決定ログは [`open-questions.md`](../../02_requirements/open-questions.md) `D-26`。
+
+🔴 **`workers/scripts/<name>` 配下への `DELETE` は、末尾に未知のサブリソース名を付けても 404 にならない**（実測・Issue #615）。Cloudflare API はパス末尾の未知セグメントを黙って切り捨て、`DELETE /accounts/{account_id}/workers/scripts/{name}` （**Worker 本体の削除**）として処理する。個別 version・alias を削除する経路を探索するために `DELETE .../workers/scripts/<name>/<存在しないサブリソース>` を実 API へ投げると、本番 Worker ごと消える。**Cloudflare API を裏取りする調査で破壊的メソッドを試す場合、対象パスに `workers/scripts/<本番 Worker 名>` を含めてはならない**（存在しないダミーの script 名や、影響のない読み取り専用エンドポイントに限定する）。再発防止のガードは `.claude/hooks/pre-cloudflare-destructive-check.sh`（`DELETE` × `workers/scripts` パス、および `wrangler delete` を PreToolUse でブロック）。
 
 ### 6.2. OAuth とプレビューの相性（`infrastructure-design.md` §8.1 の Cloudflare 版）
 
@@ -637,6 +639,7 @@ python3 tools/retire_preview_aliases.py --closed-prs --alias sp1 --alias sp7   #
 - 実体は `wrangler versions upload --preview-alias <name>` で **本番と同じビルド成果物を再アップロード** し、alias の実効ルーティング先を張り替えること。alias URL 自体は残り続けるが、古いスプリントのコードは配信されなくなる（version オブジェクト自体は削除されず残る・§6.1）
 - 🔴 **`--closed-prs` は Sprint Review 判定を見ない**（`tools/retire_preview_aliases.py` の `select_closed_pr_aliases()` を確認）。判定基準は **PR の open/closed/merged だけ**（`pr-<N>` 形式の alias に紐づく PR がクローズ済みか）であり、`rejected` かどうかは判定に入らない。**`rejected` 判定の保護は Step 7（スプリントレビュー）からの自動退役の経路が担う** もので、`--closed-prs` の一括退役自体には効かない。squash マージ（Step 5）は Sprint Review（Step 7）より前に起きるため、差し戻し検証中（`rejected` で再検証待ち）のスプリントでも PR 自体は既にクローズ済みとなり、`--closed-prs` の対象に入ってしまう。**差し戻し検証中のスプリントがあるときは `--closed-prs` を使わず、対象を `--alias` で個別指定する**
 - `--closed-prs` と `--alias` は併用でき、対象は和集合になる（`sorted(set(targets) | set(args.alias))`）。`pr-<N>` 形式でない alias（`sp1` / `sp7` / `form-uiux` 等）は `--closed-prs` の自動選別対象にならないため、これらを退役するには併用時の `--alias` 指定が実際の使い道になる
+- 🔵 **`pr-<N>` の `N` が PR ではなく Issue 番号のケースにも対応済み**（Issue #613）。`/pulls/<N>` が 404 のときは `/issues/<N>` へフォールバックし、Issue が closed なら退役対象に含める（`issue:closed`）。open のままなら PR の open と同じく対象外にする（`issue:open`）。それでも Issue としても見つからない番号は従来どおり fail-closed で対象外
 - 退役の実行結果（対象 alias・成否）は Issue / PR コメントに記録する
 
 ### 8.2.2. 🔴 本番デプロイは auto mode classifier にブロックされることがある（非決定的・2026-08-20 初出 / 2026-08-21 訂正・Issue #288 / #300）
