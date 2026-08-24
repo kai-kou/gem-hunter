@@ -22,7 +22,7 @@ lead の実測値（whiteboard 記載）はそのまま前提として使い、�
 
 ## B. 古いが嘘ではない（＝画像再生成の理由にはならない）
 
-- slide 12「954 ケース / 107 ケース」（実測 960/112）— **「2026-08-23 時点の実行結果」と明記済み**のため、値のズレは日々の実装進行の当然の結果であり嘘ではない
+- slide 12「954 ケース / 107 ケース」（実測 960/112）— **「2026-08-23 時点の実行結果」と明記済み** のため、値のズレは日々の実装進行の当然の結果であり嘘ではない
 - slide 15「マージ済み PR は 120 件」（本セッションでは再検証不能・GitHub MCP 未接続）— 同じく「2026-08-23 時点」と明記済み。E 扱いも兼ねる（下記）
 - slide 9 の Next.js 16 / Tailwind v4 / Vitest 4 / MSW 2 / Playwright は `package.json` 実値（next 16.3.1・tailwindcss ^4・vitest ^4.1.11・msw ^2.15.0・@playwright/test 1.56.1）とメジャーバージョン一致。README.md 技術スタック表とも一致。**変更不要**
 - slide 10 の L-129 / L-130 の内容（redirects の validate 差異・拡張子付きパス 404・npm install スクリプトブロック・wrangler deploy 実測 5 回失敗/2 回成功）は `docs/rules/lessons/cloud-environment.md` L-129/L-130 の現行本文と完全一致。**変更不要**
