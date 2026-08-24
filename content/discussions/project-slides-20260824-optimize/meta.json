@@ -1,0 +1,14 @@
+{
+  "id": "project-slides-20260824-optimize",
+  "topic": "gem-hunter プロジェクト解説スライド（現行 21 枚）を、最新のドキュメント・仕様・実装・画面に照らして構成ごと最適化する",
+  "brief": "ユーザー指示（2026-08-24）: 最新のドキュメント・仕様・実装・画面を把握したうえで構成含めて最適化する。画像スライドは修整が必要なものだけ再生成する。争点 A〜E はスペック tools/discussion_specs/project_slides_optimize_spec.json 参照。現行の正本は content/slides/project-explanation-20260822/content/slides_plan.json（21 枚・前回改訂 2026-08-23 / #517 / 06fbdcf）。",
+  "participants": [
+    "narrative_design",
+    "project_truth",
+    "dev_audience",
+    "visual_assets",
+    "workflow_compliance"
+  ],
+  "created_at": "2026-08-24T09:21:49+09:00",
+  "updated_at": "2026-08-24T09:21:49+09:00"
+}
