@@ -27,16 +27,19 @@ import { makeSearchRepositories, type SearchRepositories } from '../usecases/sea
  */
 
 /**
- * 検索結果のキャッシュ TTL（秒）。60 秒は暫定値（`R-5` のレート枠逆算が未確定のため）。
- * `R-5` が確定したら本値を見直す（現時点では「同じキーワードで数十秒以内に連打しても
- * GitHub API を叩かない」を満たす最小の値として置いている）。
+ * 検索結果のキャッシュ TTL（秒）。`R-5`（レート枠の逆算）を 2026-08-20 に実施した結果、
+ * 60 秒のままで必要枠を満たすことを確認し、**確定値** とした（暫定値からの変更なし）。
+ * 逆算の前提・計算は `docs/05_release/repository-publication-review.md` §7.2、決定の記録は
+ * `docs/adr/0005-cache-port-yagni-exception-and-ttl.md` §3.4 の追補が正本。
+ * 想定利用規模（`D-3`）が変わったら再逆算する。
  */
 const TTL_SEARCH_SECONDS = 60
 
 /**
  * リポジトリ詳細のキャッシュ TTL（秒）。詳細情報は検索結果より更新頻度が低いと見なし
- * 検索より長め（5 分）に設定した暫定値。根拠・再決定条件は `TTL_SEARCH_SECONDS` と同じ
- * （`R-5` 確定待ち）。
+ * 検索より長い 5 分とした。`R-5` の逆算では検索 API（30 req/分）が先に枯れるため詳細側は
+ * 律速にならず、300 秒のままで必要枠を満たすことを確認済み（**確定値**）。
+ * 根拠の所在・再逆算の条件は `TTL_SEARCH_SECONDS` と同じ。
  */
 const TTL_DETAIL_SECONDS = 300
 

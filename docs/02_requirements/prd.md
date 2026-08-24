@@ -657,7 +657,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 | 項目 | 決定に必要なもの | 関連 |
 |---|---|---|
-| キャッシュ TTL の具体値（検索 / 詳細） | レート枠の逆算（1 検索あたりの API 呼び出し数 × 想定利用者数） | `NFR-5` / `R-5` |
+| ~~キャッシュ TTL の具体値（検索 / 詳細）~~ | ✅ **決定済み（2026-08-20・`R-5` 実施）**: 律速は検索 API の 30 req/分で、1 検索あたりの上流呼び出しは 1 回。1 利用者あたり約 1.3 検索/分と置くと **同時実利用者 23 名** が上限と逆算でき、`D-3` で想定する規模はこれを大きく下回る。したがって **検索 60 秒 / 詳細 300 秒を確定値とする**（暫定値からの変更なし）。逆算の前提・計算・残余リスクは [パブリック化レビュー](../05_release/repository-publication-review.md) §7.2 が正本で、決定の記録は [ADR 0005](../adr/0005-cache-port-yagni-exception-and-ttl.md) §3.4 の追補 | `NFR-5` / `R-5` |
 | ~~テストのレイヤー分担と手段~~ | ✅ **決定済み（2026-08-18・`R-11` クローズ）**: 正本は [テスト戦略](../04_development/testing-strategy.md) | `NFR-23`〜`NFR-25` |
 | ~~i18n ライブラリの選定~~ | ✅ **決定済み（2026-08-19）**: `next-intl` は不採用とし、依存を増やさない自前実装（`src/domain/model/locale.ts` のロケール定義 + `src/shared/i18n/messages.ts` のメッセージカタログ + `next.config.ts` の `redirects()`（リダイレクト判定は `src/ui/url/locale-redirect.ts`）による既定ロケールへのパスリダイレクト）で確定。根拠は Next.js 16 で `proxy.ts` が Node.js ランタイム固定になり OpenNext Cloudflare アダプタ（Edge 実行）と両立できないため（詳細は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §3.2） | `AR-4` / `R-7` |
 | `use cache` / `cacheLife` / `cacheTag` の適用範囲 | 外部 API レスポンスのキャッシュという用途での実挙動が未検証 | `NFR-5` / `R-7` |
