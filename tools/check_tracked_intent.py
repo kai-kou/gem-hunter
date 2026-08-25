@@ -17,7 +17,6 @@
 終了コード: 0=OK / 1=違反あり / 2=ツール異常
 """
 import argparse
-import re
 import subprocess
 import sys
 from pathlib import Path
