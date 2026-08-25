@@ -60,12 +60,16 @@ def check_git_tracked(repo_root: Path, path: str) -> bool:
     # パスの末尾スラッシュを削除（ディレクトリの場合）
     target = path.rstrip("/")
 
-    # 1. git ls-files で追跡対象を確認
-    #    - 末尾に / が付いていると git ls-files がディレクトリ配下を展開してくれる
-    #    - その代わり複数行返却されるため、1 件以上あれば追跡対象と判定
+    # パストラバーサル対策: .gitignore 由来の未検証パスをそのまま git コマンドへ渡さない
+    if not target or ".." in Path(target).parts or target.startswith("/"):
+        return False
+
+    # git ls-files で追跡対象を確認
+    #    - 末尾に / を付けて渡すと git ls-files がディレクトリ配下を展開してくれる
+    #    - ファイル・ディレクトリのどちらでも 1 件以上マッチすれば追跡対象と判定
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--cached", f"{target}"],
+            ["git", "ls-files", "--cached", f"{target}/", target],
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -76,13 +80,6 @@ def check_git_tracked(repo_root: Path, path: str) -> bool:
             return True
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
-
-    # 2. 末尾が / だったら再度 / 付きで試す（ディレクトリ扱い）
-    if path.endswith("/"):
-        return False  # 既に / で試済みなのでここで false
-
-    # 3. 最後の手段: ファイルシステム上に存在するか確認（committed でなくても working tree にあれば引っかかる）
-    #    → ただし検査対象は「committed」なので、ここで True にはしない（False で OK）
 
     return False
 
