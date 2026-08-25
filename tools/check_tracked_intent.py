@@ -22,17 +22,19 @@ import sys
 from pathlib import Path
 
 
-def read_gitignore(repo_root: Path) -> list[str]:
+def read_gitignore(repo_root: Path) -> list[str] | None:
     """リポジトリルートの .gitignore を読み込み、否定パターン行を返す。
 
     Returns:
         「! で始まり、パスを示す行」のリスト。コメント・空行は除外。
         各行は「!path/to/file」という形式。
+        .gitignore 自体が読み込めない場合（ツール異常）は None
+        （否定パターンが実際に 0 件のケースと区別するため空リストは返さない）。
     """
     gitignore_path = repo_root / ".gitignore"
     if not gitignore_path.is_file():
         print(f"[check_tracked_intent] エラー: {gitignore_path} が見つかりません", file=sys.stderr)
-        return []
+        return None
 
     negations = []
     with open(gitignore_path, encoding="utf-8") as f:
@@ -52,24 +54,29 @@ def check_git_tracked(repo_root: Path, path: str) -> bool:
 
     Args:
         repo_root: リポジトリルート
-        path: 確認対象のパス（"!path/to/file" から "!" を削除した形）
+        path: 確認対象のパス（"!path/to/file" から "!" を削除した形。
+              gitignore 仕様上のルートアンカー表記 "/path" も入力されうる）
 
     Returns:
         True = 追跡対象（committed） / False = 追跡対象外（ignored または存在しない）
     """
-    # パスの末尾スラッシュを削除（ディレクトリの場合）
-    target = path.rstrip("/")
+    # gitignore のルートアンカー表記（先頭 "/"）はリポジトリルート基準を意味するだけで
+    # パストラバーサルではないため、判定前に取り除く（誤って絶対パス扱いしない）。
+    # パスの末尾スラッシュも削除（ディレクトリの場合）。
+    target = path.lstrip("/").rstrip("/")
 
     # パストラバーサル対策: .gitignore 由来の未検証パスをそのまま git コマンドへ渡さない
-    if not target or ".." in Path(target).parts or target.startswith("/"):
+    if not target or ".." in Path(target).parts:
         return False
 
     # git ls-files で追跡対象を確認
     #    - 末尾に / を付けて渡すと git ls-files がディレクトリ配下を展開してくれる
     #    - ファイル・ディレクトリのどちらでも 1 件以上マッチすれば追跡対象と判定
+    #    - "--" で pathspec 開始位置を明示し、"-" 始まりのパスがオプションと
+    #      誤解釈されるのを防ぐ
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--cached", f"{target}/", target],
+            ["git", "ls-files", "--cached", "--", f"{target}/", target],
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -102,20 +109,19 @@ def main():
     repo_root = Path.cwd()
     negations = read_gitignore(repo_root)
 
+    if negations is None:
+        # .gitignore 自体が読めない = ツール異常（呼び出し元の cwd 誤り等）
+        return 2
+
     if not negations:
-        print("[check_tracked_intent] 警告: .gitignore に否定パターンが見つかりません")
+        print("[check_tracked_intent] 否定パターンはありません")
         return 0  # 違反なし
 
     violations = []
     for neg_line in negations:
-        # "!path" -> "path"
-        target = neg_line[1:]  # "!" を削除
-
-        # パスの後ろのコメント・空白を処理（`! path # comment` の形式に対応）
-        if "#" in target:
-            target = target[: target.index("#")].strip()
-        else:
-            target = target.strip()
+        # "!path" -> "path"（gitignore の行中 "#" はコメント区切りではなくパターンの
+        # 一部なので、行頭コメント除外は read_gitignore 側にすでに任せてありここでは触らない）
+        target = neg_line[1:].strip()  # "!" を削除
 
         if not target:
             continue  # "!" だけの行はスキップ
@@ -158,13 +164,31 @@ node_modules/
         if line and not line.startswith("#") and line.startswith("!"):
             test_negations.append(line)
 
-    # セルフテストでは、抽出ロジックのみ検証（git コマンドの実行は避ける）
-    if len(test_negations) == 3:
-        print(f"  ✓ 否定パターン抽出: {test_negations}")
-        print(f"[check_tracked_intent] セルフテスト成功: {len(test_negations)} パターンを認識しました")
+    checks = []
+    checks.append(("否定パターン抽出", len(test_negations) == 3))
+
+    # check_git_tracked() の境界値（実装本体を直接呼ぶ・自リポジトリ内で完結するため安全）
+    repo_root = Path.cwd()
+    checks.append(("パストラバーサル拒否 (../etc/passwd)", check_git_tracked(repo_root, "../etc/passwd") is False))
+    checks.append(("空文字列拒否", check_git_tracked(repo_root, "") is False))
+    checks.append(("存在しないパスは False", check_git_tracked(repo_root, "__definitely_not_exists__/") is False))
+    checks.append(("ルートアンカー表記 (/tools) を追跡対象と判定", check_git_tracked(repo_root, "/tools") is True))
+
+    # read_gitignore() の異常系（存在しないディレクトリ → None）
+    checks.append(("read_gitignore は不在時 None を返す", read_gitignore(Path("/__no_such_dir__")) is None))
+
+    passed = 0
+    for name, ok in checks:
+        mark = "✓" if ok else "✗"
+        print(f"  {mark} {name}")
+        if ok:
+            passed += 1
+
+    if passed == len(checks):
+        print(f"[check_tracked_intent] セルフテスト成功: {passed}/{len(checks)}")
         return 0
     else:
-        print(f"[check_tracked_intent] セルフテスト失敗: {len(test_negations)} パターン（期待値: 3）", file=sys.stderr)
+        print(f"[check_tracked_intent] セルフテスト失敗: {passed}/{len(checks)}", file=sys.stderr)
         return 2
 
 

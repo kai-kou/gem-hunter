@@ -40,7 +40,7 @@ def check_gh_available() -> bool:
             timeout=5,
         )
         return result.returncode == 0 and "gh version" in result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except (subprocess.TimeoutExpired, OSError):
         return False
 
 
@@ -81,7 +81,7 @@ def get_open_issues(repo_owner: str, repo_name: str) -> list[dict] | None:
             print(f"[check_issue_labels] エラー: gh issue list が失敗しました", file=sys.stderr)
             print(result.stderr, file=sys.stderr)
             return None
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
         print(f"[check_issue_labels] エラー: {e}", file=sys.stderr)
         return None
 
@@ -110,8 +110,12 @@ def check_issue_labels(repo_owner: str, repo_name: str) -> tuple[int, list[dict]
         violations: [{"number": N, "missing": ["type", "status"]}, ...]
     """
     issues = get_open_issues(repo_owner, repo_name)
+    if issues is None:
+        print("[check_issue_labels] エラー: open Issue の取得に失敗しました", file=sys.stderr)
+        return 2, []
+
     if not issues:
-        print("[check_issue_labels] 警告: open Issue が取得できません", file=sys.stderr)
+        print("[check_issue_labels] open Issue は 0 件です")
         return 0, []
 
     required_prefixes = ["type", "status", "sp"]
@@ -173,6 +177,9 @@ def main():
 
     exit_code, violations = check_issue_labels(args.repo_owner, args.repo_name)
 
+    if exit_code == 2:
+        return 2
+
     if violations:
         print(f"[check_issue_labels] 違反検出: {len(violations)} 件の Issue に必須ラベルが欠落しています")
         for v in violations:
@@ -231,11 +238,33 @@ def self_test():
         else:
             print(f"  ✗ Issue #{test['number']}: 期待 {test['expected_missing']}, 実測 {missing}", file=sys.stderr)
 
-    if passed == len(test_cases):
-        print(f"[check_issue_labels] セルフテスト成功: {passed}/{len(test_cases)} テストケース")
+    # check_issue_labels() の異常系: API 取得失敗（None）と実際に 0 件（[]）を
+    # 区別できているか（get_open_issues をモンキーパッチして検証）
+    global get_open_issues
+    original_get_open_issues = get_open_issues
+
+    get_open_issues = lambda repo_owner, repo_name: None  # noqa: E731
+    exit_code, violations = check_issue_labels("dummy", "dummy")
+    ok = exit_code == 2 and violations == []
+    print(f"  {'✓' if ok else '✗'} API 取得失敗（None）は exit_code=2 を返す")
+    if ok:
+        passed += 1
+    total_cases = len(test_cases) + 2
+
+    get_open_issues = lambda repo_owner, repo_name: []  # noqa: E731
+    exit_code, violations = check_issue_labels("dummy", "dummy")
+    ok = exit_code == 0 and violations == []
+    print(f"  {'✓' if ok else '✗'} open Issue 0 件（[]）は exit_code=0 を返す")
+    if ok:
+        passed += 1
+
+    get_open_issues = original_get_open_issues
+
+    if passed == total_cases:
+        print(f"[check_issue_labels] セルフテスト成功: {passed}/{total_cases} テストケース")
         return 0
     else:
-        print(f"[check_issue_labels] セルフテスト失敗: {passed}/{len(test_cases)} テストケース", file=sys.stderr)
+        print(f"[check_issue_labels] セルフテスト失敗: {passed}/{total_cases} テストケース", file=sys.stderr)
         return 2
 
 

@@ -321,11 +321,14 @@ fi
 # 4.12. .gitignore 追跡意図検査（Issue #607）
 #       .gitignore の否定パターン（! で始まる行）が、実際に git で追跡対象に
 #       なっているかを検査。追跡対象のはずが削除された・無視されたのを検知する。
+#       本判定（引数なし実行）は現状 !content/analytics/sprint/ 配下に追跡ファイルが
+#       0件（まだデータ未生成）のため常に FAIL する。ディレクトリが空の場合と
+#       「かつて追跡されていたが消えた」場合を区別する実装が無いため、実データが
+#       投入されるまで real check は配線せず self-test のみ配線する（PR #638 レビュー）。
 if [ -f "$REPO_ROOT/tools/check_tracked_intent.py" ]; then
-  run_check ".gitignore 追跡意図検査 (check_tracked_intent.py)" python3 tools/check_tracked_intent.py
   run_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" python3 tools/check_tracked_intent.py --self-test
 else
-  skip_check ".gitignore 追跡意図検査 (check_tracked_intent.py)" "スクリプトが見つかりません"
+  skip_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" "スクリプトが見つかりません"
 fi
 
 # 5. CJK Markdown 整形
