@@ -455,7 +455,8 @@ def t_issue_view(real_gh: str, slug: str, args: Args) -> None:
         if "_comments" in item:
             table["comments"] = lambda i: [
                 {"author": _actor(c.get("user")), "body": c.get("body") or "",
-                 "createdAt": c.get("created_at"), "url": c.get("html_url", "")}
+                 "createdAt": c.get("created_at"), "url": c.get("html_url", ""),
+                 "authorAssociation": c.get("author_association") or ""}
                 for c in i["_comments"]]
         emit(map_fields(item, fields, table), first(flags, "--jq", "-q"))
     else:
@@ -818,6 +819,28 @@ def self_test() -> None:
     mi = map_fields(issue, ["number", "state", "comments"], ISSUE_FIELDS)
     check("issue.state=OPEN", mi["state"] == "OPEN")
     check("issue.comments", mi["comments"] == 2)
+
+    # #236: check_deploy_gate.py の投稿者権限フィルタが依存するフィールド。
+    # `issue view --json comments` の各コメントが authorAssociation を含まないと、
+    # latest_verdict() が正当な OWNER の判定コメントまで全除外しゲートが恒久的に閉じる。
+    issue_with_comments = {
+        "number": 1, "title": "i", "state": "open",
+        "_comments": [
+            {"user": {"login": "u"}, "body": "b", "created_at": "c", "html_url": "https://x",
+             "author_association": "OWNER"},
+            {"user": {"login": "v"}, "body": "b2", "created_at": "c2", "html_url": "https://y",
+             "author_association": None},
+        ],
+    }
+    table_with_comments = dict(ISSUE_FIELDS)
+    table_with_comments["comments"] = lambda i: [
+        {"author": _actor(c.get("user")), "body": c.get("body") or "",
+         "createdAt": c.get("created_at"), "url": c.get("html_url", ""),
+         "authorAssociation": c.get("author_association") or ""}
+        for c in i["_comments"]]
+    mc = map_fields(issue_with_comments, ["comments"], table_with_comments)
+    check("issue.comments[].authorAssociation", mc["comments"][0]["authorAssociation"] == "OWNER")
+    check("issue.comments[].authorAssociation missing → ''", mc["comments"][1]["authorAssociation"] == "")
 
     # 引数パーサ
     a = Args(["--state", "open", "--label", "a", "--label", "b", "--json", "number,title", "--limit", "5"])
