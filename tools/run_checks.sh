@@ -474,6 +474,16 @@ else
   skip_check "ロードマップ状態検査 self-test (check_roadmap_status.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Issue 必須ラベル検査（Issue #449）も「--self-test だけ」を配線する。本判定（--check）は GitHub API
+# への実疎通に依存するため、本番乖離検知 self-test と同じ理由（Issue #288）で配線しない
+# （run_checks.sh はオフラインで完走できることを保つ）。手動実行時は
+# `python3 tools/check_issue_labels.py --check` で実行する。
+if [ -f "$REPO_ROOT/tools/check_issue_labels.py" ]; then
+  run_check "Issue 必須ラベル検査 self-test (check_issue_labels.py --self-test)" python3 tools/check_issue_labels.py --self-test
+else
+  skip_check "Issue 必須ラベル検査 self-test (check_issue_labels.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # Workers Builds 再トリガーの self-test（Issue #451）。本判定（引数なし実行）は Cloudflare API への
 # 実疎通とデプロイゲート判定に依存するため配線しない（本番乖離検知 self-test と同じ理由・Issue #288）。
 if [ -f "$REPO_ROOT/tools/trigger_workers_build.py" ]; then
