@@ -15,7 +15,7 @@ Open Issue が必須ラベル（type:* / status:* / sp:*）を持っているか
 使い方:
   python3 tools/check_issue_labels.py --check              # GitHub API で open Issue を取得し検査
   python3 tools/check_issue_labels.py --self-test          # セルフテスト
-  python3 tools/check_issue_labels.py --repo-root ./.     # リポジトリルート指定
+  python3 tools/check_issue_labels.py --check --repo-owner foo --repo-name bar  # 対象リポジトリ指定
 
 注意：
   GitHub API（`gh` コマンド経由）を呼び出すため、認証と ネットワーク接続が必要。
@@ -44,7 +44,7 @@ def check_gh_available() -> bool:
         return False
 
 
-def get_open_issues(repo_owner: str, repo_name: str) -> list[dict]:
+def get_open_issues(repo_owner: str, repo_name: str) -> list[dict] | None:
     """GitHub API (gh) で open Issue を全件取得。
 
     Args:
@@ -53,6 +53,8 @@ def get_open_issues(repo_owner: str, repo_name: str) -> list[dict]:
 
     Returns:
         Issue 情報のリスト: [{"number": N, "labels": [...]}, ...]
+        取得自体に失敗した場合（gh 異常終了・タイムアウト・JSON 不正等）は None
+        （open Issue が実際に 0 件のケースと区別するため空リストは返さない）。
     """
     try:
         result = subprocess.run(
@@ -78,10 +80,10 @@ def get_open_issues(repo_owner: str, repo_name: str) -> list[dict]:
         else:
             print(f"[check_issue_labels] エラー: gh issue list が失敗しました", file=sys.stderr)
             print(result.stderr, file=sys.stderr)
-            return []
+            return None
     except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
         print(f"[check_issue_labels] エラー: {e}", file=sys.stderr)
-        return []
+        return None
 
 
 def has_label_prefix(labels: list[dict], prefix: str) -> bool:
