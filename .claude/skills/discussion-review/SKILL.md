@@ -52,6 +52,9 @@ effort: high
   本文が複数行なら必ず `--body-file` か stdin） ④ 「whiteboard.md を直接編集しない」
   ⑤ 「最終出力は post 済みの旨 + 1 行サマリーのみ（分析全文を返さない）」
   ⑥ 「後続ラウンドはオーケストレーターからのメッセージで再開される。自分からポーリング・待機しない」
+  ⑦ 🔴 **「対象リポジトリの編集・コミット・push を行わない（絶対禁止）。指摘はホワイトボードへの投稿でのみ行う」**
+  （議論フェーズの参加者が担当外でリポジトリを直接編集し、統合フェーズ（fan-out 実装）の別担当と作業が
+  二重化した実例あり・Issue #200）
 
 全参加者の完了通知を待つ（`sleep` ポーリング禁止）。揃ったら `render` を実行し投稿を確認する
 （`list <id> --round 1 --json` で participant 全員分の post があること）。
@@ -86,6 +89,17 @@ python3 tools/discussion_whiteboard.py render <id>
 python3 tools/discussion_whiteboard.py list <id> --json   # verdict の存在確認
 git add content/discussions/<id>/ && git commit -m "discussion: <id> 議論記録" && git push
 ```
+
+🔴 **役割境界の事後検知（Issue #200）**: 参加者は書き込み系ツールを持つ `Agent` として起動するため、
+Step 1（Step 0 完了直後）の禁止事項（上記 ⑦）は実行時に強制されていない。統合フェーズ（fan-out 実装）
+へ進む前に、Step 0 実行時刻以降に対象パス配下へのコミットが発生していないかを確認する:
+
+```bash
+git log --since="<Step 0 実行時刻>" --oneline -- <targets>
+```
+
+出力があれば、議論フェーズ中に参加者がリポジトリを直接編集した可能性がある。統合フェーズの担当割り当てと
+重複しないか確認してから続行する（重複していれば、後発のコミットを破棄せず統合計画側を合わせる）。
 
 verdict JSON を呼び出し元（スキル・ユーザー報告）へ返す。
 
