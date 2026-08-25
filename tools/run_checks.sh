@@ -128,6 +128,13 @@ else
   skip_check "E2E スタブ外部 URL 検査 (check_e2e_stub_external_urls.py)" "スクリプトが見つかりません"
 fi
 
+# 3.46. 居残り E2E サーバークリーンアップの self-test（実行本体は 3.54 で E2E 直前に呼ぶ）。
+if [ -f "$REPO_ROOT/tools/clear_stale_e2e_ports.py" ]; then
+  run_check "居残り E2E サーバークリーンアップ self-test (clear_stale_e2e_ports.py --self-test)" python3 tools/clear_stale_e2e_ports.py --self-test
+else
+  skip_check "居残り E2E サーバークリーンアップ self-test (clear_stale_e2e_ports.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 3.5. E2E テスト (Playwright)
 # 🔴 ビルドを含み重いため Vitest とは別ステップにし、専用タイムアウトを持つ。
 #    RUN_CHECKS_TIMEOUT（既定 300 秒）を流用すると Lint/型/vitest と取り合いになるため個別の env を持つ。
@@ -147,6 +154,16 @@ elif [ ! -d "$REPO_ROOT/node_modules/@playwright/test" ]; then
   RESULTS+=("E2E (playwright test)|FAIL|0")
   OVERALL_EXIT=1
 else
+  # 3.54. 居残り E2E サーバーのクリーンアップ（Issue #204 / SP-10 レトロ）。
+  #       playwright.config.ts の webServer は `reuseExistingServer: !process.env.CI` で
+  #       既存サーバーを再利用するため、別セッションが停止し損ねた next-server が対象ポート
+  #       （3100・8788）を掴んだままだと、E2E が旧コードを検証してしまい誤って失敗する。
+  #       検査ではなく前処理のため FAIL 扱いにはしない（自リポジトリ配下の既知コマンドに
+  #       一致するプロセスのみ対象・他セッションを巻き込まない判定は本体側にある）。
+  if [ -f "$REPO_ROOT/tools/clear_stale_e2e_ports.py" ]; then
+    python3 tools/clear_stale_e2e_ports.py --repo-root "$REPO_ROOT" || true
+  fi
+
   # 3.55. OpenNext アセット鮮度チェック（Issue #454 / #455 / #457 の再発防止）。
   #       E2E は `next build && next start`（Node.js ランタイム）でアプリを起動するが、
   #       `getCloudflareContext({ async: true })` は NEXT_RUNTIME=nodejs でも wrangler の
