@@ -318,6 +318,19 @@ else
   skip_check "正規表現重複検査 (check_duplicate_source_patterns.py)" "スクリプトが見つかりません"
 fi
 
+# 4.12. .gitignore 追跡意図検査（Issue #607）
+#       .gitignore の否定パターン（! で始まる行）が、実際に git で追跡対象に
+#       なっているかを検査。追跡対象のはずが削除された・無視されたのを検知する。
+#       本判定（引数なし実行）は現状 !content/analytics/sprint/ 配下に追跡ファイルが
+#       0件（まだデータ未生成）のため常に FAIL する。ディレクトリが空の場合と
+#       「かつて追跡されていたが消えた」場合を区別する実装が無いため、実データが
+#       投入されるまで real check は配線せず self-test のみ配線する（PR #638 レビュー）。
+if [ -f "$REPO_ROOT/tools/check_tracked_intent.py" ]; then
+  run_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" python3 tools/check_tracked_intent.py --self-test
+else
+  skip_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
@@ -462,6 +475,16 @@ if [ -f "$REPO_ROOT/tools/check_roadmap_status.py" ]; then
   run_check "ロードマップ状態検査 self-test (check_roadmap_status.py --self-test)" python3 tools/check_roadmap_status.py --self-test
 else
   skip_check "ロードマップ状態検査 self-test (check_roadmap_status.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# Issue 必須ラベル検査（Issue #449）も「--self-test だけ」を配線する。本判定（--check）は GitHub API
+# への実疎通に依存するため、本番乖離検知 self-test と同じ理由（Issue #288）で配線しない
+# （run_checks.sh はオフラインで完走できることを保つ）。手動実行時は
+# `python3 tools/check_issue_labels.py --check` で実行する。
+if [ -f "$REPO_ROOT/tools/check_issue_labels.py" ]; then
+  run_check "Issue 必須ラベル検査 self-test (check_issue_labels.py --self-test)" python3 tools/check_issue_labels.py --self-test
+else
+  skip_check "Issue 必須ラベル検査 self-test (check_issue_labels.py --self-test)" "スクリプトが見つかりません"
 fi
 
 # Workers Builds 再トリガーの self-test（Issue #451）。本判定（引数なし実行）は Cloudflare API への
