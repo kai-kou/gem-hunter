@@ -16,13 +16,15 @@ round 3・lead 判定「B: 本番デプロイの発火点」「C: 判定別の�
 【判定ロジック】
   1. open かつ `status:in-progress` ラベルの Issue を列挙する。
   2. その中から「スプリント対象」を判定する: タイトルが `SP-\\d+` を含む、
-     または Issue コメントに `## 🏃 Session Sprint Planning` があるもの
+     または **信頼できる投稿者**（`TRUSTED_VERDICT_AUTHOR_ASSOCIATIONS`）による
+     Issue コメントに `## 🏃 Session Sprint Planning` があるもの
      （本文中の `SP-\\d+` 単純一致は判定に使わない。過去スプリントへの言及だけで
      誤ってゲート対象になる誤検知を防ぐ・Issue #218）。
   3. スプリント対象 Issue ごとに、`## 🔍 Sprint Review 判定` を含み
-     `**結果**: accepted|accepted_with_conditions|rejected` の行を持つコメントのうち
-     最新のもの（`created_at` 最大）を採用する。
-       - 判定コメントが無い → ゲートを塞ぐ（レビュー未実施）
+     `**結果**: accepted|accepted_with_conditions|rejected` の行を持つ **かつ投稿者権限が
+     `TRUSTED_VERDICT_AUTHOR_ASSOCIATIONS`（OWNER/MEMBER/COLLABORATOR）のいずれかである**
+     （#236）コメントのうち最新のもの（`created_at` 最大）を採用する。
+       - 判定コメントが無い、または権限のない投稿者のものしかない → ゲートを塞ぐ（レビュー未実施）
        - 最新判定が `rejected` → ゲートを塞ぐ
        - 最新判定が `accepted` / `accepted_with_conditions` → 塞がない
   4. 塞ぐ Issue が 1 件でもあれば「待機」、無ければ「デプロイ可」。
@@ -74,6 +76,9 @@ REPO = resolve_repo_slug()
 SPRINT_ID_RE = re.compile(r"SP-\d+")
 SPRINT_PLANNING_MARKER = "## 🏃 Session Sprint Planning"
 VERDICT_MARKER = "## 🔍 Sprint Review 判定"
+# Sprint Review 判定コメントとして信頼する投稿者権限（#236）。
+# これ以外（NONE/CONTRIBUTOR/FIRST_TIME_CONTRIBUTOR 等）の投稿者による判定コメントは無視する。
+TRUSTED_VERDICT_AUTHOR_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 # accepted_with_conditions は "accepted" を部分文字列として含むため、
 # 先に置かないと "accepted_with_conditions" 行が "accepted" と誤判定される。
 VERDICT_RESULT_RE = re.compile(
@@ -194,15 +199,24 @@ def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
 
 
 def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
-    """Issue のコメント一覧（body / created_at）を取得する。順序は保証しないため、
-    利用側（`latest_verdict`）で `created_at` によるソートを行う。
+    """Issue のコメント一覧（body / created_at / author_association）を取得する。
+    順序は保証しないため、利用側（`latest_verdict`）で `created_at` によるソートを行う。
+    `author_association` は投稿者権限検証（#236）に使う。取得できない場合は空文字を返し、
+    `latest_verdict` 側で「信頼できない投稿者」として扱う（fail-closed）。
     """
-    ok, out = _run_gh(["issue", "view", str(number), "-R", REPO, "--json", "comments"])
+    ok, out = _run_gh([
+        "issue", "view", str(number), "-R", REPO,
+        "--json", "comments",
+    ])
     if ok:
         try:
             data = json.loads(out)
             return [
-                {"body": c.get("body", ""), "created_at": c.get("createdAt", "")}
+                {
+                    "body": c.get("body", ""),
+                    "created_at": c.get("createdAt", ""),
+                    "author_association": c.get("authorAssociation", ""),
+                }
                 for c in data.get("comments", [])
             ], None
         except (json.JSONDecodeError, AttributeError):
@@ -230,7 +244,11 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
         if not batch:
             break
         comments.extend(
-            {"body": c.get("body", ""), "created_at": c.get("created_at", "")}
+            {
+                "body": c.get("body", ""),
+                "created_at": c.get("created_at", ""),
+                "author_association": c.get("author_association", ""),
+            }
             for c in batch
         )
         if len(batch) < 100:
@@ -247,18 +265,26 @@ def is_sprint_issue(title: str, body: str, comments: list[dict]) -> bool:
     """スプリント対象 Issue かどうか（次の 2 条件のどちらかで判定する）。
 
     1. タイトルが `SP-n` を含む（例: `feat(SP-10): ...`）
-    2. Issue コメントに `## 🏃 Session Sprint Planning` がある
-       （＝実際にスプリントとして着手された Issue）
+    2. 信頼できる投稿者（`TRUSTED_VERDICT_AUTHOR_ASSOCIATIONS`）による Issue コメントに
+       `## 🏃 Session Sprint Planning` がある（＝実際にスプリントとして着手された Issue）
 
     本文（`body`）中の `SP-n` 単純一致は判定に使わない: 過去スプリントに *言及しているだけ*
     の Issue（コメント 0 件）まで誤ってスプリント対象にしてしまい、Sprint Review 判定コメントが
     構造上つかないため open の間ずっとデプロイゲートを塞ぎ続ける（Issue #218 で実際に発生）。
     `body` 引数はシグネチャ互換のため残すが判定には使わない。
+
+    権限のない投稿者による Sprint Planning マーカーは無視する（#236: 権限のない投稿者が
+    任意の `status:in-progress` Issue をスプリント対象化し、正当な判定コメントが付かないまま
+    デプロイゲートを恒久的に塞げてしまう欠陥の防止。`latest_verdict` の権限フィルタと対）。
     """
     del body  # 判定には使わない（本文の部分一致は撤廃。docstring 参照）
     if SPRINT_ID_RE.search(title):
         return True
-    return any(SPRINT_PLANNING_MARKER in (c.get("body") or "") for c in comments)
+    return any(
+        SPRINT_PLANNING_MARKER in (c.get("body") or "")
+        and c.get("author_association") in TRUSTED_VERDICT_AUTHOR_ASSOCIATIONS
+        for c in comments
+    )
 
 
 def latest_verdict(comments: list[dict]) -> str | None:
@@ -267,11 +293,16 @@ def latest_verdict(comments: list[dict]) -> str | None:
     `created_at` 昇順に安定ソートしてから走査し、最後に見つかった判定を採用する
     （`created_at` が空文字のコメントは取得順の相対位置を維持したまま先頭側に寄る。
     GitHub API は常に `created_at` を返すため実運用では欠落しない想定）。
+
+    投稿者の `author_association` が `TRUSTED_VERDICT_AUTHOR_ASSOCIATIONS` に含まれない
+    コメントは判定対象から除外する（#236: 権限のない投稿者がデプロイ可否を左右できる欠陥の修正）。
     """
     verdicts = []
     for c in sorted(comments, key=lambda c: c.get("created_at") or ""):
         body = c.get("body") or ""
         if VERDICT_MARKER not in body:
+            continue
+        if c.get("author_association") not in TRUSTED_VERDICT_AUTHOR_ASSOCIATIONS:
             continue
         m = VERDICT_RESULT_RE.search(body)
         if m:
@@ -326,10 +357,15 @@ def _issue(number: int = 1, title: str = "SP-1: 何かをする", body: str = ""
     return {"number": number, "title": title, "body": body}
 
 
-def _verdict_comment(result: str, created_at: str = "2026-08-20T10:00:00Z") -> dict:
+def _verdict_comment(
+    result: str,
+    created_at: str = "2026-08-20T10:00:00Z",
+    author_association: str = "OWNER",
+) -> dict:
     return {
         "body": f"{VERDICT_MARKER}\n\n**結果**: {result}\n",
         "created_at": created_at,
+        "author_association": author_association,
     }
 
 
@@ -342,9 +378,16 @@ def _self_test_is_sprint_issue() -> list[str]:
     if not is_sprint_issue("feat(SP-10): 何かを追加", "", []):
         failures.append("is_sprint_issue: feat(SP-n) 形式のタイトルを検知できていない")
     # コメントに Sprint Planning マーカー（タイトルに SP-n が無くても対象・#231 の形）
-    comments = [{"body": f"{SPRINT_PLANNING_MARKER}\n- ゴール: ...", "created_at": ""}]
+    # 信頼できる投稿者（OWNER）によるものであること（#236）
+    comments = [{"body": f"{SPRINT_PLANNING_MARKER}\n- ゴール: ...", "created_at": "",
+                 "author_association": "OWNER"}]
     if not is_sprint_issue("改善: 何か", "", comments):
         failures.append("is_sprint_issue: Session Sprint Planning コメントを検知できていない")
+    # #236: 権限のない投稿者による Sprint Planning マーカーは無視する
+    untrusted_comments = [{"body": f"{SPRINT_PLANNING_MARKER}\n- ゴール: ...", "created_at": "",
+                            "author_association": "CONTRIBUTOR"}]
+    if is_sprint_issue("改善: 何か", "", untrusted_comments):
+        failures.append("is_sprint_issue: 権限のない投稿者の Sprint Planning コメントで誤検知している")
     # 本文で SP-n に言及しているだけ・コメント 0 件は対象外（#218 の再現・本文の部分一致は撤廃）
     if is_sprint_issue("improvement: MVP 後の開発方針を決める", "過去の SP-11 / SP-12 を踏まえて…", []):
         failures.append("is_sprint_issue: 本文の SP-n 言及だけで誤検知している（#218 再現ケース）")
@@ -410,6 +453,43 @@ def _self_test_latest_verdict_order() -> list[str]:
     ]
     if latest_verdict(comments_rejected_last) != "rejected":
         failures.append("latest_verdict: 新しい rejected が古い accepted に負けている")
+
+    return failures
+
+
+def _self_test_verdict_author_guard() -> list[str]:
+    """#236: 権限のない投稿者の判定コメントは無視されることを保証する。"""
+    failures = []
+
+    # 権限のない投稿者（CONTRIBUTOR）の判定コメントのみ → 判定なし扱い（None）
+    r = latest_verdict([_verdict_comment("accepted", author_association="CONTRIBUTOR")])
+    if r is not None:
+        failures.append(f"latest_verdict: CONTRIBUTOR の判定コメントが採用された（{r!r}）")
+
+    # NONE（無関係な外部ユーザー）が rejected を投稿しても正当な accepted を覆せない
+    comments = [
+        _verdict_comment("accepted", "2026-08-20T09:00:00Z", author_association="OWNER"),
+        _verdict_comment("rejected", "2026-08-20T15:00:00Z", author_association="NONE"),
+    ]
+    if latest_verdict(comments) != "accepted":
+        failures.append("latest_verdict: 権限のない投稿者の rejected が正当な accepted を覆した")
+
+    # author_association が空文字（フィールド取得に失敗した場合の既定値）→ fail-closed で除外
+    r = latest_verdict([_verdict_comment("accepted", author_association="")])
+    if r is not None:
+        failures.append(f"latest_verdict: author_association 空文字の判定コメントが採用された（{r!r}）")
+
+    # author_association キー自体が欠落（フォールバック実装の想定外入力）→ fail-closed で除外
+    comment_missing_key = _verdict_comment("accepted")
+    del comment_missing_key["author_association"]
+    if latest_verdict([comment_missing_key]) is not None:
+        failures.append("latest_verdict: author_association キー欠落の判定コメントが採用された")
+
+    # 信頼される権限（MEMBER / COLLABORATOR）の判定は引き続き採用される
+    for assoc in ("MEMBER", "COLLABORATOR"):
+        r = latest_verdict([_verdict_comment("accepted", author_association=assoc)])
+        if r != "accepted":
+            failures.append(f"latest_verdict: {assoc} の判定コメントが採用されなかった（{r!r}）")
 
     return failures
 
@@ -484,6 +564,7 @@ def run_self_test() -> int:
         ("スプリント対象判定", _self_test_is_sprint_issue),
         ("判定コメントのパース（accepted_with_conditions 優先）", _self_test_verdict_result_re),
         ("最新判定の優先順位", _self_test_latest_verdict_order),
+        ("判定コメントの投稿者権限検証", _self_test_verdict_author_guard),
         ("Issue 単位のゲート判定", _self_test_evaluate_issue),
         ("集約判定と終了コードのマッピング", _self_test_decide_and_exit_code),
     ]
