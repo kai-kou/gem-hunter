@@ -318,6 +318,16 @@ else
   skip_check "正規表現重複検査 (check_duplicate_source_patterns.py)" "スクリプトが見つかりません"
 fi
 
+# 4.12. .gitignore 追跡意図検査（Issue #607）
+#       .gitignore の否定パターン（! で始まる行）が、実際に git で追跡対象に
+#       なっているかを検査。追跡対象のはずが削除された・無視されたのを検知する。
+if [ -f "$REPO_ROOT/tools/check_tracked_intent.py" ]; then
+  run_check ".gitignore 追跡意図検査 (check_tracked_intent.py)" python3 tools/check_tracked_intent.py
+  run_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" python3 tools/check_tracked_intent.py --self-test
+else
+  skip_check ".gitignore 追跡意図検査 (check_tracked_intent.py)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
