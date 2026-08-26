@@ -202,14 +202,26 @@ fi
 
 # 4.6. Step 4-1.5（並行安全性判定）の実行痕跡検査（非ブロッキング・警告のみ・Issue #228）
 # sprint-cycle-router SKILL.md §4-1.5 は新規スプリント着手前に check_parallel_safety.py を
-# 実行し、実行コマンドと判定結果を Sprint Planning コメント（または PR 本文の編成欄）に記載
-# すると定めているが、実行するかどうかがセッションの自発性に依存し機械担保がなかった。
-# Sprint Goal: を含む PR（＝新規スプリント）に限り、本文に実行痕跡（スクリプト名の記載）が
-# あるかを機械的に見る。誤検知の余地があるため Error 化せず Warning に留める。
+# 実行し、実行コマンドと判定結果を PR 本文の編成欄に記載すると定めているが、実行するかどうかが
+# セッションの自発性に依存し機械担保がなかった。Sprint Goal: を含む PR（＝新規スプリント）に限り、
+# 本文に実行痕跡（スクリプト名 + --candidate / 判定結果語の併記）があるかを機械的に見る。
+# 誤検知の余地があるため Error 化せず Warning に留める。
 parallel_safety_warning=""
 _repo_root_46=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
 if [ "$tool_name" = "mcp__github__create_pull_request" ] && [ -f "$_repo_root_46/tools/check_parallel_safety.py" ]; then
-  parallel_safety_warning=$(printf '%s' "$pr_body" | python3 "$_repo_root_46/tools/check_parallel_safety.py" --verify-pr-body 2>/dev/null || true)
+  _pswc_exit=0
+  if command -v timeout >/dev/null 2>&1; then
+    parallel_safety_warning=$(printf '%s' "$pr_body" | timeout 10 python3 "$_repo_root_46/tools/check_parallel_safety.py" --verify-pr-body 2>&1) || _pswc_exit=$?
+  else
+    parallel_safety_warning=$(printf '%s' "$pr_body" | python3 "$_repo_root_46/tools/check_parallel_safety.py" --verify-pr-body 2>&1) || _pswc_exit=$?
+  fi
+  if [ "$_pswc_exit" -ne 0 ]; then
+    # 異常終了（timeout・python3 不在等）はサイレントに握り潰さず可視化する（5 節の
+    # self_review_check.py 異常終了ハンドリングと対称）。この場合 Warning は出さない
+    # （判定結果が信頼できないため false 出力より無出力を優先する）。
+    parallel_safety_warning="[pre-pr-create-check] check_parallel_safety.py --verify-pr-body が exit ${_pswc_exit} で異常終了しました（並行安全性判定の記載漏れ検知が実質未実行です）。原因を確認してください。"
+  fi
+  unset _pswc_exit
 fi
 unset _repo_root_46
 

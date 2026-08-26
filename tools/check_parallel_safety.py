@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -229,23 +230,35 @@ def decide_exit_code(verdicts: list[str]) -> int:
     return 0
 
 
+# pr_body_records_check の実行痕跡判定パターン（Layer 1 レビュー指摘: 単純な部分文字列一致だと
+# 「check_parallel_safety.py は未実行」のような否定文脈や、テンプレート例のコードフェンス内引用でも
+# 誤って「記載あり」と判定してしまう）。--candidate フラグ、または判定結果語
+# （parallel_safe/conflict/undetermined）のいずれかが併記されている場合のみ「実行痕跡あり」とみなす。
+_EXECUTION_TRACE_RE = re.compile(
+    r"check_parallel_safety\.py\b.*?(--candidate|parallel_safe|conflict|undetermined)",
+    re.DOTALL,
+)
+
+
 def pr_body_records_check(pr_body: str) -> str | None:
     """PR 本文に Sprint Goal: があるのに Step 4-1.5（並行安全性判定）の実行痕跡が
     記載されていない場合、Warning メッセージを返す（Issue #228・単体テスト可能な純粋関数）。
 
-    Sprint Goal: を含まない一般 PR は判定対象外（None）。SKILL.md §4-3 は判定コマンドと
-    結果を Sprint Planning コメントまたは PR 本文の編成欄に記載すると定めており、
-    ここでは実行痕跡として本スクリプト名の記載有無だけを機械的に見る。
+    Sprint Goal: を含まない一般 PR は判定対象外（None）。SKILL.md §4-1.5 / §4-3 は判定コマンドと
+    結果を Sprint Planning コメントまたは PR 本文の編成欄に記載すると定めており、ここでは
+    PR 本文側の実行痕跡（本スクリプト名 + フラグ/判定結果語の併記）だけを機械的に見る
+    （Sprint Planning コメント側にのみ記載され PR 本文に無いケースは検知できない既知の限界。
+    SKILL.md 側で「PR 本文の編成欄にも記載する」運用へ寄せることで整合させている）。
     """
     if "Sprint Goal:" not in pr_body:
         return None
-    if "check_parallel_safety.py" in pr_body:
+    if _EXECUTION_TRACE_RE.search(pr_body):
         return None
     return (
         "PR 本文に Sprint Goal: があるのに Step 4-1.5（並行安全性判定）の実行痕跡"
-        "（check_parallel_safety.py の実行コマンド・判定結果）が見つかりません。"
-        "sprint-cycle-router SKILL.md §4 の 4-1.5 / 4-3 に従い、実行コマンドと判定結果を"
-        "Sprint Planning コメントまたは本 PR 本文の編成欄に記載してください。"
+        "（check_parallel_safety.py の実行コマンドまたは判定結果 parallel_safe/conflict/undetermined）"
+        "が見つかりません。sprint-cycle-router SKILL.md §4 の 4-1.5 / 4-3 に従い、実行コマンドと"
+        "判定結果を本 PR 本文の編成欄に記載してください。"
     )
 
 
@@ -395,6 +408,20 @@ def run_self_test() -> int:
         "pr_body_records_check: Sprint Goal: ありで実行痕跡なしは Warning 文字列",
         isinstance(missing_warning, str) and "check_parallel_safety.py" in missing_warning,
         str(missing_warning),
+    )
+    check(
+        "pr_body_records_check: 判定結果語（parallel_safe 等）の併記だけでも実行痕跡ありと判定",
+        pr_body_records_check(
+            "Sprint Goal: 何かする\ncheck_parallel_safety.py の判定: parallel_safe"
+        ) is None,
+    )
+    check(
+        "pr_body_records_check: スクリプト名を未実行の文脈で言及しただけでは実行痕跡なしのまま"
+        "（Layer 1 レビュー指摘・単純部分一致からの強化）",
+        isinstance(
+            pr_body_records_check("Sprint Goal: 何かする\nTODO: check_parallel_safety.py を後で実行する"),
+            str,
+        ),
     )
 
     # ── _extract_filenames_from_json ──
