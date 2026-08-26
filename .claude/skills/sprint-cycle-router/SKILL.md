@@ -275,6 +275,9 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
         - `0`（parallel_safe）→ 4-2 へ進む。ただし着手後に想定外のファイルが必要と判明したら
           **その時点で再実行する**（判定は着手前の一度きりではない）
      5. 実行コマンドと判定結果を 4-3 の Sprint Planning コメントに含める。
+        🔴 **記載漏れは `pre-pr-create-check.sh`（4.6 節）が機械検知する**（Issue #228）:
+        `Sprint Goal:` を含む PR 本文に `check_parallel_safety.py` の実行痕跡が無いと
+        Warning として Layer 1 セルフレビューの文脈に注入される（非ブロッキング）。
 
 4-2. `status:in-progress` 付与（処理の最初のアクション・CP-4 論理ロック）。
 

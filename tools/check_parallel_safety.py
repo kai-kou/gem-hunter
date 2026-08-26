@@ -229,6 +229,26 @@ def decide_exit_code(verdicts: list[str]) -> int:
     return 0
 
 
+def pr_body_records_check(pr_body: str) -> str | None:
+    """PR 本文に Sprint Goal: があるのに Step 4-1.5（並行安全性判定）の実行痕跡が
+    記載されていない場合、Warning メッセージを返す（Issue #228・単体テスト可能な純粋関数）。
+
+    Sprint Goal: を含まない一般 PR は判定対象外（None）。SKILL.md §4-3 は判定コマンドと
+    結果を Sprint Planning コメントまたは PR 本文の編成欄に記載すると定めており、
+    ここでは実行痕跡として本スクリプト名の記載有無だけを機械的に見る。
+    """
+    if "Sprint Goal:" not in pr_body:
+        return None
+    if "check_parallel_safety.py" in pr_body:
+        return None
+    return (
+        "PR 本文に Sprint Goal: があるのに Step 4-1.5（並行安全性判定）の実行痕跡"
+        "（check_parallel_safety.py の実行コマンド・判定結果）が見つかりません。"
+        "sprint-cycle-router SKILL.md §4 の 4-1.5 / 4-3 に従い、実行コマンドと判定結果を"
+        "Sprint Planning コメントまたは本 PR 本文の編成欄に記載してください。"
+    )
+
+
 def check_parallel_safety(
     in_flight: dict[str, set[str]],
     candidates: dict[str, list[str] | None],
@@ -357,6 +377,25 @@ def run_self_test() -> int:
     check("exit code: conflict と undetermined 混在→1（衝突優先）", decide_exit_code(["conflict", "undetermined"]) == 1)
     check("exit code: 全 safe→0", decide_exit_code(["parallel_safe", "parallel_safe"]) == 0)
     check("exit code: 候補ゼロ→0", decide_exit_code([]) == 0)
+
+    # ── pr_body_records_check（Issue #228） ──
+    check(
+        "pr_body_records_check: Sprint Goal: なしは対象外（None）",
+        pr_body_records_check("普通の PR です。特に記載なし。") is None,
+    )
+    check(
+        "pr_body_records_check: Sprint Goal: ありで実行痕跡もあれば None",
+        pr_body_records_check(
+            "Sprint Goal: 何かする\n"
+            "check_parallel_safety.py --candidate '#1:src/a.py' --json → parallel_safe"
+        ) is None,
+    )
+    missing_warning = pr_body_records_check("Sprint Goal: 何かする\nsp:2")
+    check(
+        "pr_body_records_check: Sprint Goal: ありで実行痕跡なしは Warning 文字列",
+        isinstance(missing_warning, str) and "check_parallel_safety.py" in missing_warning,
+        str(missing_warning),
+    )
 
     # ── _extract_filenames_from_json ──
     obj_array = [{"filename": "a.py"}, {"filename": "b.py"}]
@@ -573,6 +612,27 @@ def run_self_test() -> int:
         f"returncode={cli_no_candidate.returncode}",
     )
 
+    cli_verify_missing = subprocess.run(
+        [sys.executable, script_path, "--verify-pr-body"],
+        cwd=cli_cwd, capture_output=True, text=True, timeout=30,
+        input="Sprint Goal: 何かする\nsp:2",
+    )
+    check(
+        "CLI e2e: --verify-pr-body は実行痕跡なしでも exit 0（非ブロッキング）で Warning を出力",
+        cli_verify_missing.returncode == 0 and "check_parallel_safety.py" in cli_verify_missing.stdout,
+        f"returncode={cli_verify_missing.returncode} stdout={cli_verify_missing.stdout!r}",
+    )
+    cli_verify_ok = subprocess.run(
+        [sys.executable, script_path, "--verify-pr-body"],
+        cwd=cli_cwd, capture_output=True, text=True, timeout=30,
+        input="Sprint Goal: 何かする\ncheck_parallel_safety.py --candidate '#1:src/a.py' --json",
+    )
+    check(
+        "CLI e2e: --verify-pr-body は実行痕跡ありで無出力",
+        cli_verify_ok.returncode == 0 and cli_verify_ok.stdout.strip() == "",
+        f"returncode={cli_verify_ok.returncode} stdout={cli_verify_ok.stdout!r}",
+    )
+
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")
     return 0 if failed == 0 else 1
 
@@ -590,10 +650,22 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
     # selftest-wiring-ok: 進行中 PR/スプリントとの並行着手判定でのみ起動する運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
+    parser.add_argument(
+        "--verify-pr-body", action="store_true",
+        help="標準入力から PR 本文を読み、Sprint Goal: があるのに Step 4-1.5 の実行痕跡が"
+             "無ければ Warning を出力する（Issue #228・非ブロッキング。Sprint Goal: 無しは exit 0）",
+    )
     args = parser.parse_args()
 
     if args.self_test:
         return run_self_test()
+
+    if args.verify_pr_body:
+        pr_body = sys.stdin.read()
+        warning = pr_body_records_check(pr_body)
+        if warning:
+            print(f"⚠️  {warning}")
+        return 0
 
     if not args.candidate:
         parser.print_help()
