@@ -200,6 +200,31 @@ CI（quality-checks.yml）は Prettier / ESLint / 型 / ユニットの高速チ
   fi
 fi
 
+# 4.6. Step 4-1.5（並行安全性判定）の実行痕跡検査（非ブロッキング・警告のみ・Issue #228）
+# sprint-cycle-router SKILL.md §4-1.5 は新規スプリント着手前に check_parallel_safety.py を
+# 実行し、実行コマンドと判定結果を PR 本文の編成欄に記載すると定めているが、実行するかどうかが
+# セッションの自発性に依存し機械担保がなかった。Sprint Goal: を含む PR（＝新規スプリント）に限り、
+# 本文に実行痕跡（スクリプト名 + --candidate / 判定結果語の併記）があるかを機械的に見る。
+# 誤検知の余地があるため Error 化せず Warning に留める。
+parallel_safety_warning=""
+_repo_root_46=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+if [ "$tool_name" = "mcp__github__create_pull_request" ] && [ -f "$_repo_root_46/tools/check_parallel_safety.py" ]; then
+  _pswc_exit=0
+  if command -v timeout >/dev/null 2>&1; then
+    parallel_safety_warning=$(printf '%s' "$pr_body" | timeout 10 python3 "$_repo_root_46/tools/check_parallel_safety.py" --verify-pr-body 2>&1) || _pswc_exit=$?
+  else
+    parallel_safety_warning=$(printf '%s' "$pr_body" | python3 "$_repo_root_46/tools/check_parallel_safety.py" --verify-pr-body 2>&1) || _pswc_exit=$?
+  fi
+  if [ "$_pswc_exit" -ne 0 ]; then
+    # 異常終了（timeout・python3 不在等）はサイレントに握り潰さず可視化する（5 節の
+    # self_review_check.py 異常終了ハンドリングと対称）。この場合 Warning は出さない
+    # （判定結果が信頼できないため false 出力より無出力を優先する）。
+    parallel_safety_warning="[pre-pr-create-check] check_parallel_safety.py --verify-pr-body が exit ${_pswc_exit} で異常終了しました（並行安全性判定の記載漏れ検知が実質未実行です）。原因を確認してください。"
+  fi
+  unset _pswc_exit
+fi
+unset _repo_root_46
+
 # 5. セルフレビュー機械チェック（docs/rules/self-review-checklist.md・Lv3）
 # Error 検出時のみブロック。チェッカー自体の異常（python 不在等・exit>1）ではブロックしない。
 # サブディレクトリから gh pr create が実行されてもスキップされないようリポジトリルートで実行する
@@ -266,6 +291,10 @@ fi
 if [ -n "$wip_commit_warning" ]; then
   _ctx="${_ctx}
 ${wip_commit_warning}"
+fi
+if [ -n "$parallel_safety_warning" ]; then
+  _ctx="${_ctx}
+[pre-pr-create-check] ${parallel_safety_warning}"
 fi
 jq -n --arg ctx "$_ctx" '{
   "systemMessage": "[pre-pr-create-check] Layer 0 機械ゲート通過（Layer 1 リマインダーと Warning は Claude のコンテキストに注入済み）。",

@@ -274,7 +274,13 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
           宣言し直すか、実装調査そのものを先に進めてから再実行する
         - `0`（parallel_safe）→ 4-2 へ進む。ただし着手後に想定外のファイルが必要と判明したら
           **その時点で再実行する**（判定は着手前の一度きりではない）
-     5. 実行コマンドと判定結果を 4-3 の Sprint Planning コメントに含める。
+     5. 実行コマンドと判定結果を 4-3 の Sprint Planning コメントに含め、**4-5 の PR 本文にも
+        同じ内容を記載する**（`Team:` トレーラーと同じ「Issue コメント→PR 本文」の同期コピー
+        パターン）。🔴 **PR 本文側の記載漏れは `pre-pr-create-check.sh`（4.6 節）が機械検知する**
+        （Issue #228）: `Sprint Goal:` を含む PR 本文に `check_parallel_safety.py` の実行痕跡
+        （`--candidate` フラグまたは判定結果語 `parallel_safe`/`conflict`/`undetermined` の併記）が
+        無いと Warning として Layer 1 セルフレビューの文脈に注入される（非ブロッキング。Sprint
+        Planning コメント側にのみ記載し PR 本文に書き忘れた場合も検知される既知の設計）。
 
 4-2. `status:in-progress` 付与（処理の最初のアクション・CP-4 論理ロック）。
 
@@ -308,6 +314,8 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
        実行対象を切り替える）。
 
 4-5. PR 本文の必須項目: `Sprint Goal:` 1 行 / `sp:N` / `Team:` トレーラー（`編成` 欄の同期コピー） /
+     **4-1.5 の並行安全性判定（実行コマンド + 判定結果。4-3 の Sprint Planning コメントの同期コピー。
+     `pre-pr-create-check.sh` 4.6 節が `check_parallel_safety.py` の記載有無を機械検知する・#228）** /
      `Session-Id: $CLAUDE_CODE_SESSION_ID` /
      **`tools/run_checks.sh` の結果（PASS / FAIL）** / プレビュー URL（`wrangler versions upload
      --preview-alias pr-<N>` で取得。出せない場合は理由とローカル起動手順） / 参照要件 ID（既存必須項目そのまま。
