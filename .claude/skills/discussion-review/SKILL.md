@@ -43,6 +43,11 @@ effort: high
 
 ### Step 1: Round 1（独立分析・並列）
 
+🔴 **対象が検査ツール（`tools/check_*.py`・hooks・quality gate 等）の新設・改修議論の場合**、
+participants のうち 1 名に **専任の「反例作成」レンズ**（`lens: "反例作成"` 等）を必ず割り当てる。
+指示文は「提案された抽出・判定ロジックを打ち破ることを目的に設計し、実際に通る具体的な入力例を作る」。
+他レンズと兼務させない（設計者 1 名だけが検査ロジックを作り事後レビューする構成では反例を見逃す・#429・詳細は `agent-team-summary.md`）。
+
 各 participant を **1 つの Agent 呼び出しにつき 1 名**、同一メッセージ内で並列起動する:
 
 - `name`: spec の participant name（そのまま。SendMessage の宛先になる）
