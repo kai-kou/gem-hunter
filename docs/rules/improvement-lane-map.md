@@ -16,15 +16,15 @@
 `skill-audit`（Agent Skills 資産の構造監査）・`audit-runner`（外部監査プロトコルによるセットアップ構成監査）は
 上記 3 レーンのいずれにも属さない **単発オペレーション** で、本マップの対象外。
 
-> **振り返りレーンの起動元は現時点で `pr-review-watcher`（`SP-n` スコープ）のみ実装済み**。他パイプライン
-> （`self-improvement-loop` / `workflow-health-check` / `retro-try-handler`）の最終ステップからの
-> `retrospective` 起動は未実装であり、別 Issue で対応する（事実を隠さない・`sp1-review-retro-20260819`
-> 議論・争点 C）。
+> **振り返りレーンの起動元は `pr-review-watcher`（`SP-n` スコープ）に加え、`self-improvement-loop`
+> （消化モード・整理モード）/ `workflow-health-check`（週次レポート後の Step 4-e）/
+> `retro-try-handler`（Try 実装 PR のマージ後）の各完了エンドポイントにも実装済み**（Issue #68）。
+> いずれも「commit + PR + マージまで完了した場合のみ」`retrospective` を起動し、変更なしのサイクルでは
+> 起動しない。
 >
-> ⚠️ **混同注意**: この note が指すのは上流の `retrospective`（KPT 生成）の呼び出し元であって、
+> ⚠️ **混同注意**: 上記は上流の `retrospective`（KPT 生成）の呼び出し元の話であって、
 > 下流の `retro-try-handler`（Try の実装）の起動経路ではない。後者は #377 で
-> `sprint-cycle-router` の決定木 **Step 5.5** として実装済み。両者は振り返りレーンの中の
-> 別スキルなので、Step 5.5 の追加はこの note のギャップを解消しない。
+> `sprint-cycle-router` の決定木 **Step 5.5** として実装済み（両者は振り返りレーンの中の別スキル）。
 
 ### 1.1. 第 4 レーン（スプリント開発レーン）
 

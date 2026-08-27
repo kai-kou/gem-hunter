@@ -44,6 +44,32 @@ classify_text() {
   echo "nudge"
 }
 
+# ── Sprint Review / Retrospective 証跡判定（Issue #69）──────────────────────
+# transcript 全文（改行結合済みの文字列）を受け取り、以下のいずれかを返す。
+# API 呼び出しなしのキーワード一致のみ。
+#   ok            : 証跡あり、または Sprint Goal: 自体が無い、またはマージ未検知
+#   missing:both  : Sprint Review 判定・retrospective 起動の両方の証跡が無い
+#   missing:review: Sprint Review 判定の証跡だけが無い
+#   missing:retro : retrospective 起動の証跡だけが無い
+# has_review/has_retro の判定を呼び出し元と二重実装しない（同期漏れ防止）。
+classify_sprint_evidence() {
+  local text="$1"
+  printf '%s' "$text" | grep -qF "Sprint Goal:" || { echo "ok"; return; }
+  printf '%s' "$text" | grep -qE 'merged.{0,20}true|マージしました|マージした|マージ済' || { echo "ok"; return; }
+  local has_review=0 has_retro=0
+  printf '%s' "$text" | grep -qF 'Sprint Review' && has_review=1
+  printf '%s' "$text" | grep -qE 'retrospective|レトロスペクティブ' && has_retro=1
+  if [[ "$has_review" -eq 1 && "$has_retro" -eq 1 ]]; then
+    echo "ok"; return
+  elif [[ "$has_review" -eq 0 && "$has_retro" -eq 0 ]]; then
+    echo "missing:both"; return
+  elif [[ "$has_review" -eq 0 ]]; then
+    echo "missing:review"; return
+  else
+    echo "missing:retro"; return
+  fi
+}
+
 # ── セルフテスト ──
 if [[ "${1:-}" == "--self-test" ]]; then
   fail=0
@@ -64,6 +90,21 @@ if [[ "${1:-}" == "--self-test" ]]; then
   assert "ファイルを編集したにゃ" "ok"
   # 未完了文脈の squash（誤検知しないこと）
   assert "PR #123 は squash merge 予定にゃ" "ok"
+
+  assert_evidence() { # $1=text $2=expected
+    local got; got=$(classify_sprint_evidence "$1")
+    if [[ "$got" != "$2" ]]; then
+      echo "FAIL(evidence): expected=$2 got=$got text=[$1]"; fail=1
+    fi
+  }
+  assert_evidence "Sprint Goal: 完了報告の改善\nマージしました\nSprint Review 判定\nretrospective スキル起動" "ok"
+  assert_evidence "Sprint Goal: 完了報告の改善\nマージしました" "missing:both"
+  assert_evidence "Sprint Goal: 完了報告の改善\nマージしました\nSprint Review 判定のみ" "missing:retro"
+  assert_evidence "Sprint Goal: 完了報告の改善\nマージしました\nretrospective スキル起動のみ" "missing:review"
+  assert_evidence "Sprint Goal: 完了報告の改善\nマージしました\nレトロスペクティブ起動" "missing:review"
+  assert_evidence "Sprint Goal: 完了報告の改善（未マージ）" "ok"
+  assert_evidence "通常の作業。Sprint Goal は無関係" "ok"
+
   if [[ $fail -eq 0 ]]; then echo "stop-completion-report-check: self-test PASS"; fi
   exit $fail
 fi
@@ -87,10 +128,31 @@ last_text=$(tail -n 400 "$transcript" 2>/dev/null | jq -rs '
   ] | last // ""
 ' 2>/dev/null || echo "")
 
-if [[ -z "$last_text" ]]; then exit 0; fi
-
-if [[ "$(classify_text "$last_text")" == "nudge" ]]; then
+if [[ -n "$last_text" ]] && [[ "$(classify_text "$last_text")" == "nudge" ]]; then
   hook_block "📋 完了報告フォーマット確認: 直前の報告が「PR マージの詳細」中心になっているにゃ。ユーザーがチャットを遡らずに済むよう、**先頭に「ご依頼（最初に頼まれたことの再掲）→ アウトカム（何ができるようになったか）」** を置いて報告し直してにゃ。PR 番号・マージ・レビュー対応は補足に回すか省略する（SSOT: docs/rules/completion-report-rules.md）。"
+  exit 0
+fi
+
+# ── Sprint Review / Retrospective 記録漏れ検知（Issue #69）──────────────────
+# セッション内のどこかで "Sprint Goal:" を含む PR マージが行われたのに、
+# Sprint Review 判定コメント・retrospective スキル起動の証跡が transcript に無いまま
+# セッションが終わろうとしている場合だけ 1 回 Warning を出す（非ブロッキング・exit 0）。
+transcript_text=$(tail -n 2000 "$transcript" 2>/dev/null | jq -rs '
+  [ .[]
+    | (.. | strings?)
+  ] | join("\n")
+' 2>/dev/null || echo "")
+
+sprint_evidence=""
+[[ -n "$transcript_text" ]] && sprint_evidence="$(classify_sprint_evidence "$transcript_text")"
+if [[ "$sprint_evidence" == missing:* ]]; then
+  missing=""
+  case "$sprint_evidence" in
+    missing:both) missing="Sprint Review 判定コメント / retrospective スキル起動" ;;
+    missing:review) missing="Sprint Review 判定コメント" ;;
+    missing:retro) missing="retrospective スキル起動" ;;
+  esac
+  hook_block "🔄 Sprint Goal: を含む PR のマージを検知しましたが、${missing} の証跡が今セッションの記録に見当たらないにゃ。pr-review-watcher SKILL.md Step 7 に従い、マージ後の Sprint Review + Retrospective を実施・記録してから終了してにゃ（Issue #69）。"
 fi
 
 exit 0

@@ -249,6 +249,8 @@ python3 tools/check_cjk_markdown.py --fix --changed   # 変更した .md を一�
 python3 tools/check_cjk_markdown.py --changed          # 検出のみ（違反があれば exit 1）
 ```
 
+🔴 **並行委譲中は `--under <担当パス>` で範囲を絞る**（例 `--fix --changed --under docs/`）。無指定の `--changed` は git 変更検知ベースのため、他サブエージェントが並行編集中のファイルまで巻き込む（#85）。
+
 `tools/self_review_check.py`（`pre-pr-create-check.sh` フックが自動実行）も変更 .md を検査し、
 違反を Warning で報告する。
 
