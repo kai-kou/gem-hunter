@@ -6,3 +6,8 @@
 {"date": "2026-08-24 JST", "title": "haiku サブエージェントの返り値に日本語以外の言語が混入することがある（今回 1 件・親が統合時に日本語へ是正し、ユーザー向け出力には到達していない）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date":"2026-08-27 JST","title":"REFUTED指摘の記録フォーマット定義","q1":"NO","q2":"NO","defer_reason":"low_single_file","related_issue":"L-138"}
 {"date":"2026-08-27 JST","title":"修正コミット後のインラインコメント投稿フロー明文化","q1":"NO","q2":"NO","defer_reason":"low_single_file","related_issue":"L-138"}
+{"date":"2026-08-28 JST","title":"run_checks.sh完了待ちポーリング戦略の抜本改革","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"sp:N規模に応じた段階的run_checks.sh実行の設計","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"validate_selftest_falsifiability.py新規作成（機械検査）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":"#154"}
+{"date":"2026-08-28 JST","title":"discussion-reviewにself-test論理強度検証レンズを定義","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"PR作成前のself-reviewerスキル実施を工程に明記","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
