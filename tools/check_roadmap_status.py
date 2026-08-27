@@ -1027,7 +1027,6 @@ def _self_test_secondary_issue_no_false_positive() -> list[str]:
     見逃し方向にしか働かない）。
     """
     failures = []
-    parsed = parse_roadmap(_FIXTURE_ROADMAP_OK)
 
     # M-1（SP-1〜SP-3）: 本体 Issue は全件 Closed だが、副次 Issue（同じ SP-1 に言及）が Open のまま
     # 残っている状態。build_sp_state_index はタイトル無制限マッチにより副次 Issue も SP-1 の索引に
@@ -1039,17 +1038,15 @@ def _self_test_secondary_issue_no_false_positive() -> list[str]:
         {"title": "SP-3: 三番目のスプリント", "state": "closed"},
     ]
     index = build_sp_state_index(items)
-    if index.get(1) != ["closed", "open"]:
+    if sorted(index.get(1, [])) != ["closed", "open"]:
         failures.append(f"索引混入前提が崩れている: index[1]={index.get(1)}")
 
-    # フィクスチャの M-1 状態欄は「達成済み（`SP-1`〜`SP-3` 完了）」（未着手ではない）ため、
-    # 副次 Issue の混入があっても violation3（全件 Closed なのに未着手）は誤検出されないはず。
-    violations, _ = evaluate_roadmap(parsed, sp_state_index=index)
-    if any(v["type"] == "violation3_all_closed_but_not_started" for v in violations):
-        failures.append(f"副次 Issue 混入で violation3 が偽陽性化: {violations}")
-
-    # 状態欄を「未着手」に変えた場合でも、副次 Issue の Open 混入により all_closed が False になり
-    # violation3 は検出されない（見逃し方向・偽陽性ではないことの確認）。
+    # 🔴 状態欄が「達成済み」（未着手を含まない）のフィクスチャに対する検証は、violation3 の
+    # 発火条件（all_closed and "未着手" in state_text）のうち "未着手" 側で必ず弾かれるため
+    # index の中身（副次 Issue 混入の有無）を一切問わない恒真アサーションになる（偽陽性を主張
+    # できない・レビュー指摘で削除）。実質的な検証は状態欄を「未着手」にした下記ブロックのみが
+    # 担う: 副次 Issue（Open）混入により all_closed が False になり、violation3 は検出されない
+    # （見逃し方向にしか作用しない＝偽陽性ではないことの確認）。
     broken_fixture = _FIXTURE_ROADMAP_OK.replace(
         "| `M-1` 歩く骨格 | — | 達成済み（`SP-1`〜`SP-3` 完了） |",
         "| `M-1` 歩く骨格 | — | 未着手 |",
