@@ -17,6 +17,7 @@
 - **ゴール**: {1 文}
 - **対象**: #{Issue 番号}（sp:{N}）
 - **編成**: {メイン + サブエージェント役割}
+- **解消する Issue**: {該当する Issue がある場合は番号一覧と各 Issue の完了条件を記載。スプリント着手時に各 Issue 本文の完了条件を転記する}
 ```
 
 PR 本文に必須: `Sprint Goal:` 1 行・`sp:N`・`Session-Id: {UUID}`（`echo $CLAUDE_CODE_SESSION_ID`）。
