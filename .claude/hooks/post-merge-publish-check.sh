@@ -150,6 +150,8 @@ run_self_test() {
     '{"tool_input":{"commit_message":"Sprint Goal: 完了報告の改善\nsp:2"}}'
   _sprint "Sprint Goal: を含まない" "no-match" \
     '{"tool_input":{"commit_message":"通常の修正"}}'
+  _sprint "tool_response の深いネストに Sprint Goal: を含む" "match" \
+    '{"tool_response":{"api":{"data":{"message":"Sprint Goal: 完了報告の改善"}}}}'
 
   echo "[post-merge-publish-check --self-test] PASS=$pass FAIL=$fail"
   [[ "$fail" -eq 0 ]]
