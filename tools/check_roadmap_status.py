@@ -662,6 +662,11 @@ def _self_test_title_extraction() -> list[str]:
         ("feat: SP-17 候補プール生成を刷新する", 17),
         ("fix(SP-2): 直す", 2),
         ("docs: SP-100 テスト", 100),
+        # 副次 Issue（type プレフィックス無制限は意図的な仕様・Issue #628）:
+        # roadmap.md との整合性検査という用途では、本体 Issue に限らず SP-n に言及する
+        # Issue を拾うことが正しい設計であり「誤判定」ではない。マッチすること自体を期待する。
+        ("improvement: SP-1 の ADR 0001 確定後に shadcn MCP を追加する", 1),
+        ("docs: SP-4 で増えた E2E 関連の環境変数を env-vars.md に記載する", 4),
     ]
     for title, want in cases_positive:
         got = extract_sp_number_from_title(title)
@@ -1012,6 +1017,52 @@ def _self_test_suppression_marker_redos() -> list[str]:
     return failures
 
 
+def _self_test_secondary_issue_no_false_positive() -> list[str]:
+    """副次 Issue（SP-n に言及するだけの Issue）が混入しても違反3/4 が偽陽性化しないことを確認する（Issue #628）。
+
+    `SP_TITLE_PATTERNS` は type プレフィックス無制限のため、`improvement: SP-1 の...` のような
+    副次 Issue もタイトル抽出でマッチする（これは意図的な仕様・`_self_test_title_extraction` 参照）。
+    本テストは、その混入が `build_sp_state_index` を経由しても「本来違反でないものを違反ありと
+    誤判定する」方向には作用しないことを検証する（`all()` による安全側判定のため、混入は
+    見逃し方向にしか働かない）。
+    """
+    failures = []
+    parsed = parse_roadmap(_FIXTURE_ROADMAP_OK)
+
+    # M-1（SP-1〜SP-3）: 本体 Issue は全件 Closed だが、副次 Issue（同じ SP-1 に言及）が Open のまま
+    # 残っている状態。build_sp_state_index はタイトル無制限マッチにより副次 Issue も SP-1 の索引に
+    # 混ぜ込むため、all_closed 判定には Open が 1 件混じる。
+    items = [
+        {"title": "SP-1: 何も知らない人が README だけで動かせる", "state": "closed"},
+        {"title": "improvement: SP-1 の ADR 0001 確定後に shadcn MCP を追加する", "state": "open"},
+        {"title": "SP-2: 二番目のスプリント", "state": "closed"},
+        {"title": "SP-3: 三番目のスプリント", "state": "closed"},
+    ]
+    index = build_sp_state_index(items)
+    if index.get(1) != ["closed", "open"]:
+        failures.append(f"索引混入前提が崩れている: index[1]={index.get(1)}")
+
+    # フィクスチャの M-1 状態欄は「達成済み（`SP-1`〜`SP-3` 完了）」（未着手ではない）ため、
+    # 副次 Issue の混入があっても violation3（全件 Closed なのに未着手）は誤検出されないはず。
+    violations, _ = evaluate_roadmap(parsed, sp_state_index=index)
+    if any(v["type"] == "violation3_all_closed_but_not_started" for v in violations):
+        failures.append(f"副次 Issue 混入で violation3 が偽陽性化: {violations}")
+
+    # 状態欄を「未着手」に変えた場合でも、副次 Issue の Open 混入により all_closed が False になり
+    # violation3 は検出されない（見逃し方向・偽陽性ではないことの確認）。
+    broken_fixture = _FIXTURE_ROADMAP_OK.replace(
+        "| `M-1` 歩く骨格 | — | 達成済み（`SP-1`〜`SP-3` 完了） |",
+        "| `M-1` 歩く骨格 | — | 未着手 |",
+    )
+    parsed_broken = parse_roadmap(broken_fixture)
+    violations_broken, _ = evaluate_roadmap(parsed_broken, sp_state_index=index)
+    hit = [v for v in violations_broken if v["type"] == "violation3_all_closed_but_not_started"]
+    if hit:
+        failures.append(f"副次 Issue（Open）混入時は all_closed=False になるべきだが検出された: {hit}")
+
+    return failures
+
+
 def _self_test_no_false_positive() -> list[str]:
     """陰性対照: 違反の無いフィクスチャでは何も検出しない。"""
     failures = []
@@ -1040,6 +1091,7 @@ def run_self_test() -> int:
         ("抑制マーカー（§5.1 行/§3 節/空理由/陰性対照）", _self_test_suppression_marker),
         ("抑制マーカーの ReDoS 耐性（WARNING2 回帰）", _self_test_suppression_marker_redos),
         ("陰性対照（誤検出なし）", _self_test_no_false_positive),
+        ("副次 Issue 混入時の偽陽性なし（Issue #628）", _self_test_secondary_issue_no_false_positive),
     ]
     failed_groups = 0
     total_failures = 0
