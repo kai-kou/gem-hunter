@@ -4,3 +4,5 @@
 {"date": "2026-08-24 JST", "title": "リサーチ後に同一症状の Issue 重複を機械検出して統合を促す（今回 4 件の重複を手動で発見した）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "393"}
 {"date": "2026-08-24 JST", "title": "レトロの Try 起票で影響ファイル一覧の精度が役割ごとにばらつく（存在しないパスが混ざる）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-24 JST", "title": "haiku サブエージェントの返り値に日本語以外の言語が混入することがある（今回 1 件・親が統合時に日本語へ是正し、ユーザー向け出力には到達していない）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date":"2026-08-27 JST","title":"REFUTED指摘の記録フォーマット定義","q1":"NO","q2":"NO","defer_reason":"low_single_file","related_issue":"L-138"}
+{"date":"2026-08-27 JST","title":"修正コミット後のインラインコメント投稿フロー明文化","q1":"NO","q2":"NO","defer_reason":"low_single_file","related_issue":"L-138"}
