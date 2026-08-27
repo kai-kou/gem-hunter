@@ -441,6 +441,20 @@ Next.js の route announcer は **document title が変化しないと何もア�
 - 🔴 **透明度は CSS 変数側に埋め込み、Tailwind ユーティリティ側の `/NN` サフィックスを `ring`/`outline` に使わない**（例: `focus-visible:ring-ring/50` は禁止。半透明にしたいなら `--ring: oklch(L C H / A%)` のように変数の宣言値へ alpha を埋め込む）。`tools/check_contrast.py` は CSS 変数の宣言値しか読まないため、ユーティリティ側 opacity を使うと機械検査が値を読めなくなる
 - sticky ヘッダーを置くなら、フォーカス移動先に **`scroll-margin-top`** をヘッダー高さ分設定する（WCAG 2.2 の 2.4.11）
 
+#### フォーカスリング実装パターン別ガイド（Issue #208）
+
+CSS プロパティ選択による実効値の違いを以下に示す。要件「2px 相当以上 + コントラスト 3:1 以上」の充足判定に使う。
+
+| 実装方法 | CSS プロパティ | 実効値（ピクセル） | 実装例 | 推奨度 |
+|---------|---------------|------------------|--------|--------|
+| **Tailwind ring** | `focus-visible:ring-3`（Tailwind `ring` は両側の合計値） | **3px**（効果的） | `<button className="focus-visible:ring-3 focus-visible:ring-ring">` | ✅ **推奨** |
+| **outline（ブラウザ既定）** | `outline: auto`（ブラウザ依存） | 1px（Safari / Chrome） | `<select />` のネイティブ要素 | ⚠️ 要実測（要件未達の可能性） |
+| **outline（明示指定）** | `outline: 2px solid`（手書き）| 2px | `focus-visible:outline-2 focus-visible:outline-ring` | ✅ 可 |
+| **box-shadow** | `box-shadow: 0 0 0 2px` | 2px | Tailwind には未実装・カスタム CSS 必須 | ✅ 可 |
+| **border** | `border: 2px`（toggle） | 2px | ボタンサイズが変わるため、`box-sizing: border-box` 必須 | ⚠️ 実装コストあり |
+
+🔴 **ネイティブ `<select />` 等でブラウザ既定の `outline: auto` に依存する場合は、実測で要件充足を確認する**（1px で要件未達になるケースあり・Issue #208）。
+
 ### 7.3a. スキップリンク（WCAG 2.4.1 Bypass Blocks・Issue #354）
 
 - 共通ヘッダー（`site-header.tsx`）の `<header>` **直前** に `#main-content` へ飛ぶスキップリンクを置く。`sr-only`（既定は非表示）+ `focus-visible:not-sr-only`（キーボードフォーカス時のみ可視化）とし、可視化時は他要素と同じ `focus-visible:ring-*` の枠を使う（§7.3）

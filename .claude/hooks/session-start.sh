@@ -427,4 +427,8 @@ fi
 #   例: DB 起動 / 言語ランタイム導入 / ローカルサービス起動 / MCP 疎通確認 など
 # ======================================================================
 
+# Lighthouse（tools/run_lighthouse.mjs）実行に必要な CHROME_PATH を明示する
+# ローカル実行または CI 環境で Playwright Chromium を使う場合に指定
+env_persist "export CHROME_PATH=/opt/pw-browsers/chromium"
+
 echo "Session start hook completed." >&2
