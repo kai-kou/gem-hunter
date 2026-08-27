@@ -172,7 +172,7 @@ python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json
 
 `status:in-progress` の論理ロック（レイヤー 2）は「`waiting-claude` → `in-progress`」の遷移だけを想定しており、**「`blocked` → 解除 → 誰かが拾う」の経路にロックが存在しない**。解除した時点ではまだ `in-progress` ではないため、解除から `in-progress` 付与までの間（飼い主への確認・別 Issue の並行対応等を挟むと数時間に及びうる）が無防備な競合ウィンドウになる（実害: `SP-16` で 2 セッションが同一スプリントを丸ごと実装し、片方の PR が完全に無駄になった・#263）。
 
-**対応 A（解除は着手表明とみなす）**: `status:blocked` を解除するセッションは、**解除と同時に `status:in-progress` も付与する**（着手する意思がないなら解除しない）。着手せずに解除だけしたい場合（例: 前提条件が解消されたことだけを記録したい）は `status:blocked` → `status:waiting-claude` にし、Issue コメントで「解除したが着手しない（誰かが拾ってよい）」と明記する。これにより「解除 = 誰かのもの」か「解除 = 自分が着手する」かが常にラベルとコメントだけで一意に判定できる。
+**対応 A（解除は着手表明とみなす）**: `status:blocked` を解除するセッションは、**解除と同時に `status:in-progress` も付与する**（着手する意思がないなら解除しない）。着手せずに解除だけしたい場合（例: 前提条件が解消されたことだけを記録したい）は `status:blocked` → `status:waiting-claude` にし、Issue コメントで「解除したが着手しない（誰かが拾ってよい）」と明記する。これにより「解除 = 誰かのもの」か「解除 = 自分が着手する」かが常にラベルとコメントだけで一意に判定できる。飼い主が GitHub UI から手動で `status:blocked` だけを外し `in-progress` を伴わない場合もありうるが、その場合は対応 D（着手前の重複再チェック）が次に着手するセッションの安全網として機能する。
 
 **対応 D（レイヤー 3 の前倒し）**: レイヤー 3（PR 作成前の再チェック）は「PR 作成直前」に置かれているため、**実装コストを丸ごと捨てる前提の設計** になっている（実装後に重複が発覚すると成果物が全損する）。`status:in-progress` を付与し実装に着手する **前**（Sprint Planning コメント投稿の直前、または設計に着手する直前）にも、レイヤー 3 と同じ内容（同一 Issue／同一対象に紐づく open PR・リモートブランチの存在確認）を実施する。
 
@@ -183,7 +183,7 @@ python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json
 # ローカル代替:
 gh pr list -R kai-kou/gem-hunter --state open --json title,number,body \
   --jq '.[] | select(.title | test("#NNN")) | .number'
-gh branch -r --list "*NNN*" 2>/dev/null   # 対象番号を含むリモートブランチの有無も確認
+git branch -r --list "*NNN*" 2>/dev/null   # 対象番号を含むリモートブランチの有無も確認
 ```
 
 存在すればレイヤー 3 と同じ扱い（PR 作成をスキップし、既存 PR に合流するか着手自体を取りやめる）。これにより「捨てるコスト」が実装済みの成果物ではなく着手判断だけに縮む。
