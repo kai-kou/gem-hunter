@@ -1058,6 +1058,7 @@ def main() -> int:
             warnings.append(
                 "スプリントメタを PR 本文に記載してください（session-sprint-rules.md §2/§5）: "
                 f"{sid_hint} ＋ sp:N ラベル（project-mission.md 工程別標準値 + Dynamic 補正）"
+                "＋ Team: トレーラー（例 `Team: fan-out(3)`・sprint-development-rules.md §1・Issue #70）"
             )
 
     if warnings:
