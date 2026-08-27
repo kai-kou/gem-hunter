@@ -181,6 +181,8 @@ git commit -m "[Retro] {カテゴリ}: {Issue タイトルの要約}（Closes #{
 
 Issue クローズは PR 本文の `Closes #N` が `main` マージ時に自動処理する（マージ前は `status:in-progress` のまま維持）。自動クローズが働かない場合のみ `mcp__github__issue_write(method="update", owner, repo, issue_number={N}, state="closed", state_reason="completed")` で手動クローズする。
 
+PR がマージされた場合、続けて **`retrospective` スキルを起動** する（KPT 生成と Try の Issue 化。`pr-review-watcher` SKILL.md Step 7 と同じ呼び出し方。マージが発生しなかった場合は起動しない）。
+
 ## Step 5.5: lessons 昇格フロー（昇格=物理削除）
 
 Issue クローズ後、対応する lessons エントリを確認する。手順・prune コマンドは `reference.md` E を参照
