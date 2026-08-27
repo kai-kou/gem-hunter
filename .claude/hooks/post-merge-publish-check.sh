@@ -78,6 +78,16 @@ detect_merge() {
   echo "match"
 }
 
+# ── Sprint Review / Retro 記録リマインド判定（Issue #69）───────────────────
+# マージ関連の JSON（tool_input / tool_response）のどこかに "Sprint Goal:" という
+# 文字列が含まれるかを、追加の API 呼び出しなしで判定する。実施有無そのものは検証しない
+# （それは stop-completion-report-check.sh 側が transcript を見て担当する）。
+# キーワード一致のみのため false negative はありうる（Warning 用途なので許容する）。
+has_sprint_goal() {
+  local input="$1"
+  printf '%s' "$input" | jq -e '[.. | strings? | select(test("Sprint Goal:"))] | length > 0' >/dev/null 2>&1
+}
+
 # ── 自己テスト（検知ロジックのみ・ネットワーク非依存）──────────────────────
 run_self_test() {
   local pass=0 fail=0
@@ -125,6 +135,22 @@ run_self_test() {
   _slug "ssh 形式" "acme/widgets" "git@github.com:acme/widgets.git"
   _slug "末尾スラッシュ" "acme/widgets" "https://github.com/acme/widgets/"
 
+  # Sprint Goal: リマインド判定（Issue #69）
+  _sprint() {
+    local desc="$1" want="$2" json="$3" got="fail"
+    if has_sprint_goal "$json"; then got="match"; else got="no-match"; fi
+    if [[ "$got" == "$want" ]]; then
+      pass=$((pass + 1))
+    else
+      fail=$((fail + 1))
+      echo "  ✗ $desc: want=$want got=$got"
+    fi
+  }
+  _sprint "commit_message に Sprint Goal: を含む" "match" \
+    '{"tool_input":{"commit_message":"Sprint Goal: 完了報告の改善\nsp:2"}}'
+  _sprint "Sprint Goal: を含まない" "no-match" \
+    '{"tool_input":{"commit_message":"通常の修正"}}'
+
   echo "[post-merge-publish-check --self-test] PASS=$pass FAIL=$fail"
   [[ "$fail" -eq 0 ]]
 }
@@ -155,26 +181,35 @@ verdict=$(detect_merge "$input" "$expected_owner" "$expected_repo")
 if [[ -n "$DETECT_ONLY" ]]; then echo "$verdict"; exit 0; fi
 [[ "$verdict" == "match" ]] || exit 0
 
-DRIFT_SCRIPT="$REPO_ROOT/tools/check_publish_drift.py"
-if [[ ! -f "$DRIFT_SCRIPT" ]] || ! command -v python3 >/dev/null 2>&1; then exit 0; fi
-
-drift_exit=0
-timeout 60s python3 "$DRIFT_SCRIPT" --quiet >/dev/null 2>&1 || drift_exit=$?
-
-# 同期済み（0）なら何も言わない。それ以外（ドリフトあり=1・判定不能=2・タイムアウト=124）は
-# 反映を指示する。判定不能を「反映不要」と読み替えないのが本レーンの安全側（publish-sync-rules.md §5）。
-[[ "$drift_exit" -eq 0 ]] && exit 0
-
-if [[ "$drift_exit" -eq 1 ]]; then
-  reason="公開リポジトリへ未反映の差分を検知しました（ドリフトあり）。"
-else
-  reason="公開リポジトリとのドリフト判定が完了しませんでした（exit ${drift_exit}）。安全側に倒して反映を試みてください。"
+# Sprint Review / Retro 記録リマインド（Issue #69・API 呼び出しゼロ・キーワード一致のみ）
+sprint_msg=""
+if has_sprint_goal "$input"; then
+  sprint_msg="🔄 Sprint Goal: を含む PR のマージを検知しました。Sprint Review + Retrospective の実施と記録が必須です（pr-review-watcher SKILL.md Step 7・retrospective スキル・Issue #69）。"
 fi
 
-msg="📦 main へのマージを検知しました。${reason}
+drift_msg=""
+DRIFT_SCRIPT="$REPO_ROOT/tools/check_publish_drift.py"
+if [[ -f "$DRIFT_SCRIPT" ]] && command -v python3 >/dev/null 2>&1; then
+  drift_exit=0
+  timeout 60s python3 "$DRIFT_SCRIPT" --quiet >/dev/null 2>&1 || drift_exit=$?
+
+  # 同期済み（0）なら何も言わない。それ以外（ドリフトあり=1・判定不能=2・タイムアウト=124）は
+  # 反映を指示する。判定不能を「反映不要」と読み替えないのが本レーンの安全側（publish-sync-rules.md §5）。
+  if [[ "$drift_exit" -ne 0 ]]; then
+    if [[ "$drift_exit" -eq 1 ]]; then
+      reason="公開リポジトリへ未反映の差分を検知しました（ドリフトあり）。"
+    else
+      reason="公開リポジトリとのドリフト判定が完了しませんでした（exit ${drift_exit}）。安全側に倒して反映を試みてください。"
+    fi
+    drift_msg="📦 main へのマージを検知しました。${reason}
 このマージで生まれた差分を放置せず、**このセッションの中で** \`publish-sync\` スキル（.claude/skills/publish-sync/SKILL.md）を実行して公開リポジトリ kai-kou/claude-code-repository-base への反映まで完遂してください。ユーザー確認は不要です（publish-sync-rules.md §3 の恒久委任）。
 反映できない事情（\`add_repo\` が提供されない自動タスク実行モード等・L-117）があるときは、黙って終わらせず SKILL.md §5 に従って \`[publish-sync]\` Issue に失敗段階とエラー全文を記録してください。マージした本セッションが記録を残さないと、次にインタラクティブセッションが実行されるまで反映が滞留します（Issue #449 の再発）。"
+  fi
+fi
 
-jq -n --arg ctx "$msg" \
+if [[ -z "$sprint_msg" && -z "$drift_msg" ]]; then exit 0; fi
+
+combined=$(printf '%s\n\n%s' "$sprint_msg" "$drift_msg" | sed '/^$/d')
+jq -n --arg ctx "$combined" \
   '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $ctx}}'
 exit 0
