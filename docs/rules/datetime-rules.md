@@ -26,6 +26,8 @@ Python は表示・記録用に `datetime.now(timezone(timedelta(hours=9)))`、�
 
 日時テンプレートに時刻を含めるときは必ず ` JST` を付ける（`{YYYY-MM-DD HH:MM JST}`）。日付のみのテンプレートは `$(TZ=Asia/Tokyo date +%Y-%m-%d)` で生成し、コンテナ TZ に依存させない。
 
+**テスト実行環境は本番と同じ UTC に固定する（表示は JST・実行環境は UTC・Issue #175）**: コンテナ既定 TZ が `Asia/Tokyo` のため、`timeZone: 'Asia/Tokyo'` の明示指定漏れがローカル/CI では検知できず、UTC で動く本番 Workers だけ 9 時間ずれる退行を見逃す。`vitest.config.mts` の各 project に `test.env.TZ = 'UTC'`、`playwright.config.ts` に `use.timezoneId = 'UTC'`（ブラウザコンテキスト）+ `webServer.env.TZ = 'UTC'`（Node プロセス）を設定し、テストプロセス全体を UTC で走らせる。
+
 **レビュー済みの例外（`# tz-ok`）**: `tools/check_datetime_tz.py` が誤検出する、あるいは意図的に naive datetime を使う正当な理由がある場合、該当する呼び出しの **開始行〜終了行のいずれかの行** に `# tz-ok` を書くと検査から除外できる。複数行にまたがる呼び出しなら閉じ括弧の行に書いても抑制される（同じ行に書かないと効かない、という制約ではない・Issue #445）。乱用しない（レビュー済みの正当な例外のみ）。
 
 ## 3. 完了・成功の定義

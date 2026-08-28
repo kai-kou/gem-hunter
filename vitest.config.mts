@@ -18,6 +18,8 @@ export default defineConfig({
           setupFiles: ['./vitest.setup.ts'],
           include: ['{app,src}/**/*.{test,spec}.{ts,tsx}'],
           globals: true,
+          // 🔴 #175: プロセス TZ を本番 Workers と同じ UTC に固定する（JST 明示指定漏れの検知）
+          env: { TZ: 'UTC' },
         },
       },
       {
@@ -29,6 +31,8 @@ export default defineConfig({
           setupFiles: [],
           include: ['tools/**/*.{test,spec}.mjs'],
           globals: true,
+          // 🔴 #175: プロセス TZ を本番 Workers と同じ UTC に固定する（JST 明示指定漏れの検知）
+          env: { TZ: 'UTC' },
         },
       },
     ],
