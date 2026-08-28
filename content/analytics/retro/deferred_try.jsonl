@@ -11,3 +11,8 @@
 {"date":"2026-08-28 JST","title":"validate_selftest_falsifiability.py新規作成（機械検査）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":"154"}
 {"date":"2026-08-28 JST","title":"discussion-reviewにself-test論理強度検証レンズを定義","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-28 JST","title":"PR作成前のself-reviewerスキル実施を工程に明記","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"E2E既存障害判定の検証手順をチェックリスト化する（diff内容確認・既知Issue照合）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"推定工数見積もり乖離対策として選定後・実装前に工数再見積もりゲートを設ける","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"バンドルPRの理由と独立性をPR本文に明示するテンプレート化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"実装中に発見した副次Issueへ優先度ラベルを自動分類する運用ルール化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"dto.tsのZodスキーマとdomain-model.mdの変換表の食い違いを機械検査する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
