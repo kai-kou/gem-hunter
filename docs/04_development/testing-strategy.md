@@ -50,6 +50,22 @@
 
 > **配置の規約**: テストは **実装と併置**（`foo.ts` の隣に `foo.test.ts`）。E2E だけ `e2e/` に置く。この 2 つは `tools/self_review_check.py` の `TEST_PATH_GLOBS` と一致している（TDD コミット順序の機械チェックが効く）。
 
+### 3.1 検査層の死角カタログ（「通った」≠「満たした」の実例）
+
+🔴 **各検査層は「何を見て・何を見ないか」が固定されている**。上表の「やらないこと」列だけでは把握しきれない、実インシデントで判明した死角をここに集約する。新しい死角を見つけたら追記する（新しい SSOT を作らない・`SP-10` レトロ #201 / #350 統合）。
+
+| 検査層 | 見ているもの | 見ていないもの（死角） | 実例 |
+|---|---|---|---|
+| `tools/check_contrast.py` | `app/globals.css` の CSS カスタムプロパティの **宣言値** | ブラウザが実際に描画するコントラスト比。`:root` / `.dark` 固定パースのため、新規トークン・派生変数（`--tw-prose-*` 等）に追随しない | `SP-10`: フォーカスリングのコントラスト不足が宣言値レベルでは検出できなかった |
+| E2E（Playwright）の構造チェック | DOM 属性・スタイルの **構造**（例: `box-shadow !== 'none'`） | 実際に描画された色・コントラスト比そのもの | `SP-10`: `box-shadow` が「ある」ことは確認できても、色のコントラストは見ていない |
+| Lighthouse / axe | 静的な DOM 構造・ARIA 属性 | `:focus-visible` は自然なキーボード操作でしか発火せず、自動化ツールは発火させない | `SP-10`: フォーカスリング自体が axe/Lighthouse の検査対象に上がらない |
+| Playwright `setViewportSize` | ブラウザのビューポート寸法 | OS/ブラウザの `devicePixelRatio` には依存しない（実機の見え方とズレうる） | `SP-10` |
+| Next.js 16.3.1 の `viewport` export | 明示的に指定した viewport meta | `viewport` export が無くても Next.js が既定の meta タグを自動出力するため、「未指定 = meta 無し」という前提が崩れる | `SP-10` |
+| SSR (`generateMetadata`) | サーバー側で確定した値（例: タイトル） | クライアント側の hydration 後処理（`SetDocumentTitle` 等）が SSR の値を上書きする経路 | `SP-10`: `generateMetadata` で設定したタイトルをクライアント側処理が hydration 後に上書き |
+| `check_architecture_boundaries.py` | import 方向のみ | 「正本を自称する表」（`application-architecture.md` §2 ポート一覧・`domain-model.md` §2.1 等）に実装側の要素（新規ポート・新規ドメイン語）が追記されているか | `SP-19`: `GemIndexPort.search()` 追加漏れ・`GemPoolEntry` 等の新規ドメイン語が `domain-model.md` に未反映のまま `npm run check` 全 PASS（#450 に機械検査の起票あり） |
+
+> **運用**: 新しいスプリントで検査層のすり抜けに気づいたら、この表に 1 行追記する（レトロスペクティブの Try Issue 化とは別に、カタログ自体を更新する）。
+
 ---
 
 ## 4. テストダブルの方針（優先順位を固定する）
