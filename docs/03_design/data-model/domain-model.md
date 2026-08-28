@@ -68,18 +68,19 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 
 **外部の語をそのままドメインへ持ち込まない。** 変換は `src/infrastructure/github/mapper.ts` の 1 箇所だけで行う。
 
-| GitHub API のフィールド | ドメインの名前 | 🔴 注意 |
-|---|---|---|
-| `subscribers_count` | `watcherCount` | **これが「Watcher 数」の正体**（`FR-4`）。`watchers` / `watchers_count` は star と同値であり、使うと表示が間違う |
-| `stargazers_count` | `starCount` | 「人気」と呼ばない（偽 star の存在がミッションの出発点） |
-| `forks_count` | `forkCount` | |
-| `open_issues_count` | `openIssueCount` | **PR を含む**（GitHub の仕様）。UI 文言もこの事実に合わせる |
-| `full_name` | `RepositoryId`（分解して保持） | 文字列のまま持ち回らない |
-| `owner.avatar_url` | `Owner.avatarUrl` | |
-| `pushed_at` / `updated_at` | `lastPushedAt` / `lastUpdatedAt` | 「最終更新日」（`AR-1`）は **`pushed_at`** を使う（メタデータ更新で動く `updated_at` ではない）。🔵 **この規則は `RepositoryDetail.lastPushedAt` にも同様に適用する**（`pushed_at ?? updated_at` のフォールバックも一覧側の `toSearchResult` と同一・Issue #334 F-3） |
-| `topics` | `topics` | |
-| `language` | `primaryLanguage` | 「言語」だけだと `Locale` と紛れる |
-| `total_count` | `SearchResult.totalCount` | GitHub 検索は上限があるため **概算**。UI で「約」と表現する余地を残す |
+| GitHub API のフィールド | ドメインの名前 | nullable？（`dto.ts` の Zod スキーマが正） | 🔴 注意 |
+|---|---|---|---|
+| `subscribers_count` | `watcherCount` | 非 nullable（`z.number()`） | **これが「Watcher 数」の正体**（`FR-4`）。`watchers` / `watchers_count` は star と同値であり、使うと表示が間違う |
+| `stargazers_count` | `starCount` | 非 nullable（`z.number()`） | 「人気」と呼ばない（偽 star の存在がミッションの出発点） |
+| `forks_count` | `forkCount` | 非 nullable（`z.number()`） | |
+| `open_issues_count` | `openIssueCount` | 非 nullable（`z.number()`） | **PR を含む**（GitHub の仕様）。UI 文言もこの事実に合わせる |
+| `full_name` | `RepositoryId`（分解して保持） | 非 nullable（`z.string()`） | 文字列のまま持ち回らない |
+| `owner.avatar_url` | `Owner.avatarUrl` | 非 nullable（`z.string()`） | |
+| `pushed_at` | `lastPushedAt` | **nullable**（`z.string().nullable()`。コミットが一度もない空リポジトリで `null`。`SP-6` Issue #129 の実インシデント） | 「最終更新日」（`AR-1`）は **`pushed_at`** を使う（メタデータ更新で動く `updated_at` ではない）。🔵 **この規則は `RepositoryDetail.lastPushedAt` にも同様に適用する**（`pushed_at ?? updated_at` のフォールバックも一覧側の `toSearchResult` と同一・Issue #334 F-3） |
+| `updated_at` | `lastUpdatedAt` | 現状の実装は非 nullable（`z.string()`）として扱っている。GitHub API 一次情報を継続確認しない限り将来変更されうる前提で扱う（`CP-2`） | 同上（`pushed_at` の代替としてのみ使う） |
+| `topics` | `topics` | optional（`z.array(z.string()).optional()`） | |
+| `language` | `primaryLanguage` | **nullable**（`z.string().nullable()`） | 「言語」だけだと `Locale` と紛れる |
+| `total_count` | `SearchResult.totalCount` | 非 nullable（`z.number()`） | GitHub 検索は上限があるため **概算**。UI で「約」と表現する余地を残す |
 
 🔴 **`starCount` と `Gem.stars` の名前の衝突について（`SP-14`）**: 上表の `starCount` は **GitHub API → `RepositorySummary` / `RepositoryDetail`** の変換規則であり、`src/infrastructure/github/mapper.ts` の 1 箇所だけに適用される。一方 `Gem.stars`（`src/domain/model/gem.ts`）は **Gem Index の候補プール（Ecosyste.ms 由来の静的 JSON）** から来る別コンテキストの値で（§6 の **Gem Index コンテキスト**）、変換箇所も供給元も異なる。したがって現状は「同じ概念に 2 つの名前がある」のではなく「**別コンテキストの同名概念が別の識別子を持っている**」状態である。
 
