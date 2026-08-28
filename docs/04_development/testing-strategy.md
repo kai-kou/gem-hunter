@@ -17,6 +17,7 @@
 | 外部 API に依存しない再現性が要る | `NFR-24` | ネットワークは **既定で遮断**。モックの位置は §4 で層ごとに決める |
 | コマンド 1 つで実行でき CI で回る | `NFR-25` / `AC-10` | `npm test`（ユニット・結合）と `npm run test:e2e` の 2 本に固定する |
 | 実行環境は Cloudflare Workers | `D-16` | 事業者バインディングに触れるアダプタだけ Workers ランタイムで検証する（§3 の任意層） |
+| 🔴 **Workers ランタイムでしか観測できない振る舞い**（`RATE_LIMITER` binding 等） | `Issue #188`（PR #184 レビュー指摘・`next start` では binding が常に `undefined` でフェイルオープンする） | 既定の `npm run test:e2e`（`next start`）では踏めない。`playwright.workers.config.ts`（`wrangler dev` を webServer に使う）を **別コマンド**（`npm run test:e2e:workers`）として用意し、`e2e/workers/*.spec.ts` に置く（§8「Workers ランタイム E2E」） |
 
 ---
 
@@ -47,6 +48,7 @@
 | `app/`（同期 Server Component・Route Handler） | ユニット | Vitest | `app/**/*.test.tsx` | ロジックを持たせない（持たせたら設計側を直す） |
 | `app/`（`async` Server Component・画面遷移・URL 状態） | **E2E** | Playwright | `e2e/*.spec.ts` | ユニットで描画しようとしない（公式に未対応・§1） |
 | アクセシビリティ | E2E | Playwright + axe | `e2e/*.spec.ts` | 手動チェックだけで済ませない（`NFR-26`） |
+| Workers ランタイム依存の振る舞い（`RATE_LIMITER` / KV / D1 / Durable Objects 等の binding） | **E2E（`wrangler dev`）** | Playwright（別 config） | `e2e/workers/*.spec.ts` | 既定の E2E（`next start`）で代替しようとしない（binding が常に `undefined` になり検証が空振りする・`Issue #188`） |
 
 > **配置の規約**: テストは **実装と併置**（`foo.ts` の隣に `foo.test.ts`）。E2E だけ `e2e/` に置く。この 2 つは `tools/self_review_check.py` の `TEST_PATH_GLOBS` と一致している（TDD コミット順序の機械チェックが効く）。
 
@@ -143,10 +145,11 @@
 ## 8. コマンド（`NFR-25`）
 
 ```bash
-npm test              # Vitest（ユニット + 結合）
-npm run test:e2e      # Playwright（E2E + axe。e2e/a11y.spec.ts を含む）
-npm run check          # bash tools/run_checks.sh。Lint/型/vitest/E2E 等をまとめて実行し、
-                        # PR 本文に貼る Markdown サマリー表を末尾に出力する
+npm test                 # Vitest（ユニット + 結合）
+npm run test:e2e         # Playwright（E2E + axe。e2e/a11y.spec.ts を含む）
+npm run test:e2e:workers # Playwright（Workers ランタイム依存の E2E。wrangler dev 経由・下記参照）
+npm run check             # bash tools/run_checks.sh。Lint/型/vitest/E2E 等をまとめて実行し、
+                           # PR 本文に貼る Markdown サマリー表を末尾に出力する
 ```
 
 ### E2E の実行方法
@@ -180,6 +183,26 @@ npm run check          # bash tools/run_checks.sh。Lint/型/vitest/E2E 等を�
   コールド約 70 秒・ウォーム約 8 秒まで縮むが、テスト本体（合計 85.6s）が支配的なためコールド/
   ウォームの差は小さい。再計測する場合は上記コマンドを同条件（テスト削除・追加なし）で実行し、
   この表を書き換える
+
+### Workers ランタイム E2E（`Issue #188`）
+
+`playwright.config.ts`（既定）は `next start`（Node.js ランタイム）でアプリを起動するため、
+`rateLimiterBinding()`（`src/infrastructure/platform/cloudflare-bindings.ts`）は常に `undefined` を返し
+フェイルオープンで即 return する（Workers 実行環境の外）。`RATE_LIMITER` binding のように **Workers
+ランタイム上でしか観測できない振る舞い**は、既定の E2E では 1 つも守れない。
+
+- 設定は `playwright.workers.config.ts`（別ファイル・既定の `playwright.config.ts` とは分離）。
+  webServer は `npx wrangler dev`（workerd・ローカル実行）で、`env.RATE_LIMITER` / `env.ASSETS` を
+  実際に配線する（起動前に `tools/ensure_open_next_assets.mjs` で `.open-next` の鮮度チェックと
+  必要なビルドを行う。**src の変更は自動検知しない** ため、`app/` `src/` を触った後にこのコマンドを
+  走らせる場合は `npx opennextjs-cloudflare build` で明示的に再ビルドすること）
+- テストは `e2e/workers/*.spec.ts` に置く（既定の `e2e/*.spec.ts` とは別ディレクトリ）
+- 実行: `npm run test:e2e:workers`
+- 🔴 **`tools/run_checks.sh` には未配線**（既定の E2E に比べ `wrangler dev` の起動コストが追加で乗るため。
+  実行時間の見積もりが済み、既定 CI 経路に混ぜる判断が付いたら配線する）
+- ⚠️ **プレビュー環境（Cloudflare Workers 実機）に対する secret 供給ギャップ**（`Issue #187`）は本節の
+  対象外。本節はあくまで **ローカル `wrangler dev` での binding 検証** であり、PR プレビュー版
+  （`wrangler versions upload`）に secret / binding が実際に届くかどうかの検証は別問題として残る
 
 ### スタブ API のキーワード規約
 
