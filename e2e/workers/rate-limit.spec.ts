@@ -59,8 +59,11 @@ test.describe('レート制限（Workers ランタイム）', () => {
 
     // 枠を使い切るまでは API へ流し込み（同じ search: バケットを共有する・
     // `src/composition/rate-limit.ts` のキー接頭辞）、最後の 1 回だけブラウザで画面を開く。
+    // 🔴 ちょうど RATE_LIMIT 件ではなく余裕を持たせる（1本目のテストと同じ考え方・Layer 1 指摘）:
+    // 固定窓の境界とフラッドの実行タイミングが完全に一致する保証はなく、ちょうど RATE_LIMIT 件だと
+    // 窓のロールオーバー次第で枠を使い切れず画面側が 429 にならない flaky リスクがある。
     await Promise.all(
-      Array.from({ length: RATE_LIMIT }, (_, i) =>
+      Array.from({ length: RATE_LIMIT + 10 }, (_, i) =>
         request.get(`/api/search?q=throttle-screen-probe-${i}`, {
           headers: { 'cf-connecting-ip': ip },
         }),
