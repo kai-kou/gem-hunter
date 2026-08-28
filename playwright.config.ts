@@ -21,6 +21,11 @@ const stubPort = process.env.E2E_STUB_PORT ?? '8788'
 export default defineConfig({
   testDir: 'e2e',
   testMatch: '**/*.spec.ts',
+  // `e2e/workers/**` は Workers ランタイム依存（`wrangler dev`）専用の別スイート
+  // （`playwright.workers.config.ts` / `npm run test:e2e:workers`・Issue #188）。
+  // 既定の webServer（`next start`）では binding が常に undefined でフェイルオープンし、
+  // これらのテストは意図どおり落ちるため既定の実行対象から外す。
+  testIgnore: '**/workers/**',
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
