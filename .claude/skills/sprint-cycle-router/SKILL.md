@@ -77,11 +77,11 @@ effort: medium
    中途半端なローカル state ファイルを新設しない）。
 ```
 
-🔴 **複合ラベル条件（例:「`status:in-progress` かつ `type:retro-try`」）を `mcp__github__list_issues` /
-`search_issues` の `labels` 配列に複数値をまとめて渡して判定しない**（`labels=[A,B]` は AND ではなく
-OR で返る・実測 #654）。§2 の a/c・§3 の Step 3/5/5.5・§5 のエージング判定など、本スキルの複合ラベル
-条件は全て **最も絞り込み効果が高い単一ラベルで取得し、応答の `labels` 配列を見て残りの条件を
-client-side で AND 判定する**（`docs/rules/github-mcp-fallback-patterns.md` §2.1 のフォールバックパターンに従う）。
+🔴 **複合ラベル条件（例:「`status:in-progress` かつ `type:retro-try`」）を `mcp__github__list_issues` の
+`labels` 配列に複数値をまとめて渡して判定しない**（`labels=[A,B]` は AND ではなく OR で返る・実測 #654）。
+§2 の a/c・§3 の Step 3/5/5.5・§5 のエージング判定など、本スキルの複合ラベル条件は全て **最も絞り込み
+効果が高い単一ラベルで取得し、応答の `labels` 配列を見て残りの条件を client-side で AND 判定する**
+（`docs/rules/github-mcp-fallback-patterns.md` §2.1 のフォールバックパターンに従う）。
 
 ---
 
