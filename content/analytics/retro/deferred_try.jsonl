@@ -16,3 +16,7 @@
 {"date":"2026-08-28 JST","title":"バンドルPRの理由と独立性をPR本文に明示するテンプレート化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-28 JST","title":"実装中に発見した副次Issueへ優先度ラベルを自動分類する運用ルール化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-28 JST","title":"dto.tsのZodスキーマとdomain-model.mdの変換表の食い違いを機械検査する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"SKILL.md冒頭に複合ラベル誤判定を含む実装前チェックリスト・落とし穴ガイドを追加する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"github-mcp-fallback-patterns.md §2.1の視認性改善（強調見出しへの昇格）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"CIポーリング戦略の標準化・上限設定（Monitor/pr-review-watcherの役割分担明確化）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-28 JST","title":"訓練データへの過度な依存パターンをlessonsへ記録する（confabulationの対象をドキュメント記述まで拡張）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":660}
