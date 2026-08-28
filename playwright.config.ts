@@ -10,6 +10,11 @@ import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
  * `E2E_BASE_URL` が設定されていれば webServer を起動しない（プレビュー URL に対してそのまま実行できるようにする・
  * `sprint-development-rules-detail.md` §2.6）。
  */
+// 🔴 #175 Layer1 指摘: config 評価時点で設定することで Playwright ランナー自身（*.spec.ts を実行する
+// Node プロセス）の TZ も UTC 固定する。use.timezoneId（ブラウザコンテキスト）/ webServer.env.TZ
+// （アプリの子プロセス）だけでは、テストコード側で Date を直接扱うアサーションの TZ が固定されない。
+process.env.TZ = 'UTC'
+
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3100'
 const stubPort = process.env.E2E_STUB_PORT ?? '8788'
 

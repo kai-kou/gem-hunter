@@ -17,6 +17,7 @@
 - 内部の経過時間・stale 判定（`datetime.now(timezone.utc)` の差分）— 表示しないため基準が一貫していれば正しい
 - エポック秒・mtime 差分（`date +%s`）— TZ 非依存
 - UTC↔JST↔PT 換算表（`token-optimization-rules.md`）— 換算が目的なので UTC 併記が正しい
+- テスト実行プロセスの TZ（`vitest.config.mts` の `test.env.TZ` / `playwright.config.ts` の `process.env.TZ`・`use.timezoneId`・`webServer.env.TZ`）— 本番 Workers（UTC）と同条件で走らせ、`timeZone: 'Asia/Tokyo'` 明示指定漏れによる JST 表示退行を検知するため（Issue #175・詳細は §2）
 
 **判定基準**: 「その日時を **人間が読む / 記録として残す** か？」→ YES なら JST。「機械が解釈する / 内部計算にのみ使う（表示しない）」→ UTC 維持で可。
 
@@ -26,7 +27,7 @@ Python は表示・記録用に `datetime.now(timezone(timedelta(hours=9)))`、�
 
 日時テンプレートに時刻を含めるときは必ず ` JST` を付ける（`{YYYY-MM-DD HH:MM JST}`）。日付のみのテンプレートは `$(TZ=Asia/Tokyo date +%Y-%m-%d)` で生成し、コンテナ TZ に依存させない。
 
-**テスト実行環境は本番と同じ UTC に固定する（表示は JST・実行環境は UTC・Issue #175）**: コンテナ既定 TZ が `Asia/Tokyo` のため、`timeZone: 'Asia/Tokyo'` の明示指定漏れがローカル/CI では検知できず、UTC で動く本番 Workers だけ 9 時間ずれる退行を見逃す。`vitest.config.mts` の各 project に `test.env.TZ = 'UTC'`、`playwright.config.ts` に `use.timezoneId = 'UTC'`（ブラウザコンテキスト）+ `webServer.env.TZ = 'UTC'`（Node プロセス）を設定し、テストプロセス全体を UTC で走らせる。
+**テスト実行環境は本番と同じ UTC に固定する（表示は JST・実行環境は UTC・§1 参照・Issue #175）**: コンテナ既定 TZ が `Asia/Tokyo` のため、`timeZone: 'Asia/Tokyo'` の明示指定漏れがローカル/CI では検知できず、UTC で動く本番 Workers だけ 9 時間ずれる退行を見逃す。`vitest.config.mts` の各 project に `test.env.TZ = 'UTC'`、`playwright.config.ts` に **`process.env.TZ = 'UTC'`（テストランナー自身の Node プロセス。config 評価時点で設定する）** + `use.timezoneId = 'UTC'`（ブラウザコンテキスト）+ `webServer.env.TZ = 'UTC'`（アプリの子プロセス）を設定し、テストプロセス全体を UTC で走らせる。
 
 **レビュー済みの例外（`# tz-ok`）**: `tools/check_datetime_tz.py` が誤検出する、あるいは意図的に naive datetime を使う正当な理由がある場合、該当する呼び出しの **開始行〜終了行のいずれかの行** に `# tz-ok` を書くと検査から除外できる。複数行にまたがる呼び出しなら閉じ括弧の行に書いても抑制される（同じ行に書かないと効かない、という制約ではない・Issue #445）。乱用しない（レビュー済みの正当な例外のみ）。
 
