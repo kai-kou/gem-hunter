@@ -14,6 +14,11 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     // 本リポジトリ固有（アプリコード以外は Lint 対象外）
     '.open-next/**',
+    // `wrangler dev`（Issue #188 の Workers ランタイム E2E・`npm run test:e2e:workers`）が
+    // ローカルに残す一時バンドル。`.gitignore` 済みだが ESLint の flat config は `.gitignore` を
+    // 自動で見ないため、明示的に無視しないと `npx wrangler dev` 実行後の `npm run lint` が
+    // このディレクトリの生成物（warning 3 件超）で FAIL する。
+    '.wrangler/**',
     'content/**',
     'docs/**',
     // 🔴 `tools/**` は原則 Lint 対象外だが、Gem Index の中核アルゴリズム（`tools/gem-pool/**`）と
