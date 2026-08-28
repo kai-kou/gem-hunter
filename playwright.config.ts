@@ -10,6 +10,11 @@ import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
  * `E2E_BASE_URL` が設定されていれば webServer を起動しない（プレビュー URL に対してそのまま実行できるようにする・
  * `sprint-development-rules-detail.md` §2.6）。
  */
+// 🔴 #175 Layer1 指摘: config 評価時点で設定することで Playwright ランナー自身（*.spec.ts を実行する
+// Node プロセス）の TZ も UTC 固定する。use.timezoneId（ブラウザコンテキスト）/ webServer.env.TZ
+// （アプリの子プロセス）だけでは、テストコード側で Date を直接扱うアサーションの TZ が固定されない。
+process.env.TZ = 'UTC'
+
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3100'
 const stubPort = process.env.E2E_STUB_PORT ?? '8788'
 
@@ -24,6 +29,10 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'retain-on-failure',
+    // 🔴 #175: テストプロセスの TZ を本番 Workers と同じ UTC に固定する。
+    // コンテナ既定 TZ（Asia/Tokyo）のままだと `timeZone: 'Asia/Tokyo'` 明示指定漏れが
+    // ローカル/CI では検知できず、UTC で動く本番だけ 9 時間ずれる退行を見逃す。
+    timezoneId: 'UTC',
   },
   projects: [
     {
@@ -63,6 +72,8 @@ export default defineConfig({
             // 個別に複製しない（SP-10・GitGuardian 誤検知の再発防止）。
             ...buildDummyGitHubEnv({ stubPort, appUrl: baseURL }),
             PORT: '3100',
+            // 🔴 #175: サーバープロセスも UTC 固定（本番 Workers と同条件で JST 表示ロジックを検証する）
+            TZ: 'UTC',
           },
           url: baseURL,
           reuseExistingServer: !process.env.CI,

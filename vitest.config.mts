@@ -6,6 +6,11 @@ import { defineConfig } from 'vitest/config'
 //    （`tools/**`）は実行時と同じ Node ランタイムで走らせる。両者を 1 つの environment に
 //    混ぜると、Node 22 専用のツールが jsdom 上で実行され、`fetch` / `URL` / `Buffer` の
 //    実装差に依存する退行がテストをすり抜ける（`SP-17` / PR #416 セルフレビュー指摘）。
+
+// 🔴 #175: プロセス TZ を本番 Workers と同じ UTC に固定する（JST 明示指定漏れの検知）。
+// 両 project で共有し、変更箇所を 1 箇所に保つ。
+const TIMEZONE_LOCKED_ENV = { TZ: 'UTC' }
+
 export default defineConfig({
   test: {
     projects: [
@@ -18,6 +23,7 @@ export default defineConfig({
           setupFiles: ['./vitest.setup.ts'],
           include: ['{app,src}/**/*.{test,spec}.{ts,tsx}'],
           globals: true,
+          env: TIMEZONE_LOCKED_ENV,
         },
       },
       {
@@ -29,6 +35,7 @@ export default defineConfig({
           setupFiles: [],
           include: ['tools/**/*.{test,spec}.mjs'],
           globals: true,
+          env: TIMEZONE_LOCKED_ENV,
         },
       },
     ],
