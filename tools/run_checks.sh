@@ -10,6 +10,17 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 
+# 排他ロック（#404）: 同一セッションで run_checks.sh を並走させると、固定ポート（Playwright 3100 等）を
+# 取り合って差分と無関係な FAIL が出る。即座に非ゼロ終了して理由を出す（待機はタイムアウトと区別しにくいため）。
+# 終了コード 3 = 既に別の run_checks が実行中（PASS=0 / FAIL=1 とは別の値）。
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$REPO_ROOT/.git/run_checks.lock"
+  if ! flock -n 9; then
+    echo "[run_checks] 既に別の run_checks が実行中です。完了を待ってから再実行してください"
+    exit 3
+  fi
+fi
+
 TIMEOUT_SEC="${RUN_CHECKS_TIMEOUT:-300}"
 
 # 集計用配列（"name|status|seconds"）
