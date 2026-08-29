@@ -199,8 +199,8 @@ npm run check             # bash tools/run_checks.sh。Lint/型/vitest/E2E 等�
   走らせる場合は `npx opennextjs-cloudflare build` で明示的に再ビルドすること）
 - テストは `e2e/workers/*.spec.ts` に置く（既定の `e2e/*.spec.ts` とは別ディレクトリ）
 - 実行: `npm run test:e2e:workers`
-- 🔴 **`tools/run_checks.sh` には未配線**（既定の E2E に比べ `wrangler dev` の起動コストが追加で乗るため。
-  実行時間の見積もりが済み、既定 CI 経路に混ぜる判断が付いたら配線する）
+- 🔵 **`tools/run_checks.sh` に配線済み**（実測 約50秒・既定 E2E（82秒）/ Lighthouse（34秒）と同程度のため
+  既定ゲートに組み込んだ・Issue #669）。個別スキップは `SKIP_E2E_WORKERS=1`
 - ⚠️ **プレビュー環境（Cloudflare Workers 実機）に対する secret 供給ギャップ**（`Issue #187`）は本節の
   対象外。本節はあくまで **ローカル `wrangler dev` での binding 検証** であり、PR プレビュー版
   （`wrangler versions upload`）に secret / binding が実際に届くかどうかの検証は別問題として残る

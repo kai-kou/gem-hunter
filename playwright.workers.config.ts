@@ -10,8 +10,8 @@ import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
  * （workerd・ローカル実行）を webServer に使うことで、`RATE_LIMITER` binding を実際に経由させる。
  *
  * 🔴 既定の `npm run test:e2e` からは分離する（実行時間・ポートの衝突を避けるため）。
- * `npm run test:e2e:workers` で単独実行する。`tools/run_checks.sh` には未配線
- * （実行時間の見積もりが済むまで既定の CI 経路に混ぜない・Issue #188 完了条件）。
+ * `npm run test:e2e:workers` で単独実行できる。`tools/run_checks.sh` にも配線済み
+ * （実測 約50秒・E2E/Lighthouse と同程度のため既定ゲートに組み込んだ・Issue #669）。
  */
 process.env.TZ = 'UTC'
 
