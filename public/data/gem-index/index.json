@@ -4,191 +4,191 @@
     "sourceUrl": "https://ecosyste.ms/",
     "license": "CC BY-SA 4.0",
     "sourceLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "generatedAt": "2026-08-22T06:04:21.791Z"
+    "generatedAt": "2026-08-29T21:22:50.327Z"
   },
-  "totalCount": 62483,
+  "totalCount": 62589,
   "shards": [
     {
       "registry": "cran.r-project.org",
       "ecosystem": "cran",
       "fileName": "cran-r-project-org.json",
-      "count": 3132
+      "count": 3148
     },
     {
       "registry": "crates.io",
       "ecosystem": "cargo",
       "fileName": "crates-io.json",
-      "count": 6767
+      "count": 6776
     },
     {
       "registry": "hex.pm",
       "ecosystem": "hex",
       "fileName": "hex-pm.json",
-      "count": 2094
+      "count": 2092
     },
     {
       "registry": "metacpan.org",
       "ecosystem": "cpan",
       "fileName": "metacpan-org.json",
-      "count": 969
+      "count": 970
     },
     {
       "registry": "npmjs.org",
       "ecosystem": "npm",
       "fileName": "npmjs-org.json",
-      "count": 9677
+      "count": 9673
     },
     {
       "registry": "nuget.org",
       "ecosystem": "nuget",
       "fileName": "nuget-org.json",
-      "count": 3208
+      "count": 3223
     },
     {
       "registry": "packagist.org",
       "ecosystem": "packagist",
       "fileName": "packagist-org.json",
-      "count": 7662
+      "count": 7663
     },
     {
       "registry": "proxy.golang.org",
       "ecosystem": "go",
       "fileName": "proxy-golang-org.json",
-      "count": 8427
+      "count": 8449
     },
     {
       "registry": "pub.dev",
       "ecosystem": "pub",
       "fileName": "pub-dev.json",
-      "count": 4161
+      "count": 4176
     },
     {
       "registry": "pypi.org",
       "ecosystem": "pypi",
       "fileName": "pypi-org.json",
-      "count": 9326
+      "count": 9358
     },
     {
       "registry": "repo1.maven.org",
       "ecosystem": "maven",
       "fileName": "repo1-maven-org.json",
-      "count": 2949
+      "count": 2953
     },
     {
       "registry": "rubygems.org",
       "ecosystem": "rubygems",
       "fileName": "rubygems-org.json",
-      "count": 4111
+      "count": 4108
     }
   ],
   "stats": {
     "byRegistry": {
       "npmjs.org": {
-        "collected": 14217,
-        "missingStars": 396,
-        "filtered": 654,
-        "deduped": 3490,
-        "kept": 9677
+        "collected": 14220,
+        "missingStars": 399,
+        "filtered": 665,
+        "deduped": 3483,
+        "kept": 9673
       },
       "pypi.org": {
-        "collected": 13068,
-        "missingStars": 224,
-        "filtered": 1532,
-        "deduped": 1986,
-        "kept": 9326
+        "collected": 13067,
+        "missingStars": 210,
+        "filtered": 1522,
+        "deduped": 1977,
+        "kept": 9358
       },
       "crates.io": {
-        "collected": 13840,
-        "missingStars": 227,
-        "filtered": 1485,
-        "deduped": 5361,
-        "kept": 6767
+        "collected": 13841,
+        "missingStars": 226,
+        "filtered": 1484,
+        "deduped": 5355,
+        "kept": 6776
       },
       "rubygems.org": {
-        "collected": 14171,
-        "missingStars": 8538,
+        "collected": 14168,
+        "missingStars": 8546,
         "filtered": 1206,
-        "deduped": 316,
-        "kept": 4111
+        "deduped": 308,
+        "kept": 4108
       },
       "packagist.org": {
         "collected": 14510,
-        "missingStars": 291,
+        "missingStars": 292,
         "filtered": 6187,
-        "deduped": 370,
-        "kept": 7662
+        "deduped": 368,
+        "kept": 7663
       },
       "proxy.golang.org": {
-        "collected": 14423,
-        "missingStars": 274,
-        "filtered": 2949,
-        "deduped": 2773,
-        "kept": 8427
+        "collected": 14414,
+        "missingStars": 240,
+        "filtered": 2958,
+        "deduped": 2767,
+        "kept": 8449
       },
       "repo1.maven.org": {
-        "collected": 12191,
-        "missingStars": 375,
-        "filtered": 552,
-        "deduped": 8315,
-        "kept": 2949
+        "collected": 12180,
+        "missingStars": 369,
+        "filtered": 551,
+        "deduped": 8307,
+        "kept": 2953
       },
       "nuget.org": {
-        "collected": 9639,
-        "missingStars": 1037,
-        "filtered": 1275,
-        "deduped": 4119,
-        "kept": 3208
+        "collected": 9632,
+        "missingStars": 1002,
+        "filtered": 1280,
+        "deduped": 4127,
+        "kept": 3223
       },
       "hex.pm": {
-        "collected": 12685,
-        "missingStars": 847,
-        "filtered": 9627,
+        "collected": 12719,
+        "missingStars": 814,
+        "filtered": 9696,
         "deduped": 117,
-        "kept": 2094
+        "kept": 2092
       },
       "pub.dev": {
-        "collected": 13299,
-        "missingStars": 911,
-        "filtered": 5559,
-        "deduped": 2668,
-        "kept": 4161
+        "collected": 13315,
+        "missingStars": 903,
+        "filtered": 5564,
+        "deduped": 2672,
+        "kept": 4176
       },
       "metacpan.org": {
-        "collected": 8178,
-        "missingStars": 415,
-        "filtered": 6711,
+        "collected": 8174,
+        "missingStars": 416,
+        "filtered": 6705,
         "deduped": 83,
-        "kept": 969
+        "kept": 970
       },
       "cran.r-project.org": {
-        "collected": 7306,
-        "missingStars": 215,
-        "filtered": 3918,
+        "collected": 6323,
+        "missingStars": 111,
+        "filtered": 3023,
         "deduped": 41,
-        "kept": 3132
+        "kept": 3148
       }
     },
-    "totalCollected": 147527,
-    "totalUnique": 62483,
+    "totalCollected": 146563,
+    "totalUnique": 62589,
     "droppedByReason": {
-      "missing-stars": 13750,
-      "no-dependents": 14344,
-      "suspicious-zero-star": 27311,
-      "duplicate-repository": 29639
+      "missing-stars": 13528,
+      "no-dependents": 13519,
+      "suspicious-zero-star": 27322,
+      "duplicate-repository": 29605
     },
     "registryShare": {
-      "npmjs.org": 15.49,
-      "pypi.org": 14.93,
+      "npmjs.org": 15.45,
+      "pypi.org": 14.95,
       "crates.io": 10.83,
-      "rubygems.org": 6.58,
-      "packagist.org": 12.26,
-      "proxy.golang.org": 13.49,
+      "rubygems.org": 6.56,
+      "packagist.org": 12.24,
+      "proxy.golang.org": 13.5,
       "repo1.maven.org": 4.72,
-      "nuget.org": 5.13,
-      "hex.pm": 3.35,
-      "pub.dev": 6.66,
+      "nuget.org": 5.15,
+      "hex.pm": 3.34,
+      "pub.dev": 6.67,
       "metacpan.org": 1.55,
-      "cran.r-project.org": 5.01
+      "cran.r-project.org": 5.03
     }
   }
 }
