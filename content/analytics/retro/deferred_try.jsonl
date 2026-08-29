@@ -32,3 +32,6 @@
 {"date":"2026-08-29 JST","title":"sprint-cycle-router の在庫閾値（30件で処理上限5件）の根拠をSKILL.mdに明記する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-29 JST","title":"CI完了待ちのScheduleWakeup遅延秒数の根拠（p95実行時間ベース）を明文化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-29 JST","title":"code-reviewスキルのPLAUSIBLE指摘に対する『即修正 vs 別Issue化』の判定基準を明文化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"Try Issue在庫の機械フィルタリング（構造化メタデータ導入）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"Try Issue優先度判定マトリクスをself-improvement-loop-rulesへ新設","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"tools/ の exit code体系を一元ドキュメント化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
