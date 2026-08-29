@@ -9,7 +9,7 @@
 実装 → セルフレビュー（self-reviewer）→ PR 作成 → Slack 通知
   → Layer 0 機械ゲート + Layer 1 観点別フレッシュ文脈セルフレビュー（主軸・全 PR 必須・自己実行）
   → 指摘対応（修正コミット or スキップ + 返信 + Resolve）→ Layer 0+1 通過で自動マージ（squash）
-  → **公開反映（publish-sync・マージした同一セッションで完遂）**
+  → 公開反映（`publish-sync` レーン。本リポジトリでは `check_publish_drift.py` / `publish-sync` スキル未実装のため `post-merge-publish-check.sh` は無害に不発する）
   → 🔴 **本番デプロイはゲート判定を経由**（一次経路 `trigger_workers_build.py`・フォールバック `npm run deploy` とも無条件では呼ばない。発火条件・終了コードの意味は `cloudflare-infrastructure.md` §8.2 が SSOT）
   → Slack 完了通知
 ```
@@ -51,7 +51,7 @@
 | PR 作成直後 | Layer 1 セルフレビュー → **指摘を行単位インラインコメントで投稿** → 指摘対応（修正コミット or スキップ + **同一スレッドへの返信** + Resolve） |
 | **マージ前** | 🔴 **`quality-checks.yml` の check run が緑であることを確認する**（`mcp__github__pull_request_read` の `method="get_check_runs"` または `method="get_status"`。`mcp__github__get_check_run` は check run ID を引数に取るため PR からは引けない）。**赤いままマージしない**（強制力は未配線＝`main` の required status check には未登録なので、運用規律として守る）。⚠️ **例外**: `gem-pool-refresh.yml` が `secrets.GITHUB_TOKEN` で作る `automation/gem-pool-refresh` PR には、GitHub 公式仕様（`GITHUB_TOKEN` 由来のイベントは新しい workflow run を作らない）により **check run が生成されない**。この PR は check run 不在をもって赤とみなさず、同ワークフロー自身の QA ステップが品質を担保する（必要なら `workflow_dispatch` で明示起動して検証できる） |
 | Layer 0+1 通過後 | **上記の CI が緑であることを確認したうえで** `mcp__github__merge_pull_request`（`merge_method="squash"`）で即マージ |
-| **マージ直後** | 🔵 **`site/`（LP）を変更していたら `gh-pages` ブランチへ同期する**（手順の正本は [`site/README.md`](../../site/README.md)・決定は `D-35`）。続けて **公開リポジトリへ反映（`publish-sync`）**。`post-merge-publish-check.sh` がドリフトを判定して指示を注入する。反映できないセッション（`add_repo` 不在・L-117）は `[publish-sync]` Issue に記録して終える（沈黙禁止・#449）。続けて 🔴 **本番デプロイの発火条件をゲート判定**（`Sprint Goal:` 行ありなら Step 7 のスプリントレビュー判定へ委譲・無ければ `tools/check_deploy_gate.py` の結果に従う。判断基準・終了コードは `cloudflare-infrastructure.md` §8.2 が SSOT・実行手順は `pr-review-watcher` スキル Step 6/7）→ Slack 完了通知 |
+| **マージ直後** | 🔵 **`site/`（LP）を変更していたら `gh-pages` ブランチへ同期する**（手順の正本は [`site/README.md`](../../site/README.md)・決定は `D-35`）。続けて **公開リポジトリへの反映（`publish-sync` レーン）を試みる**。ただし本リポジトリでは `tools/check_publish_drift.py` と `publish-sync` スキルが未実装で、`post-merge-publish-check.sh` はこれらの不在時は無害に不発する（該当ツールが将来実装されるまで、本行は実質 no-op）。続けて 🔴 **本番デプロイの発火条件をゲート判定**（`Sprint Goal:` 行ありなら Step 7 のスプリントレビュー判定へ委譲・無ければ `tools/check_deploy_gate.py` の結果に従う。判断基準・終了コードは `cloudflare-infrastructure.md` §8.2 が SSOT・実行手順は `pr-review-watcher` スキル Step 6/7）→ Slack 完了通知 |
 | 任意 | 人手コメントがあれば対応してからマージ |
 
 サーキットブレーカー: 修正サイクル 2 回超で STOP → ユーザー報告（A-4）。
@@ -75,7 +75,7 @@ python3 tools/check_pending_pr_reviews.py --actionable-only --json          # �
 
 `needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `awaiting_review` → 作成セッションが実行中（待機）。
 
-**公開反映の回収も復帰時の責務（#449）**: `python3 tools/check_publish_drift.py --quiet` が 1（ドリフトあり）/ 2（判定不能）なら、`publish-sync` スキルで反映まで完遂する。`[publish-sync]` の open Issue は「前のセッションが反映できずに残した積み残し」なので最優先で消化してクローズする。
+**公開反映の回収（#449）**: 本リポジトリでは `tools/check_publish_drift.py` と `publish-sync` スキルが未実装のため、本節は実質非該当である。`[publish-sync]` の open Issue（`check_prod_drift.py` 等の他レーンが誤って同名で起票したものを除く）があれば、実装済みになるまで回収不要として扱う。
 
 - **自スコープ優先（#47）**: `--mine` は PR 本文の `Session-Id` トレーラーで自 PR を決定論的に識別する。時間ベースの除外を受けないため、圧縮・再起動後も確実に回収できる
 - **bot 自動化 PR も回収対象（`D-43`）**: `automation/gem-pool-refresh`（`github-actions[bot]`）と Dependabot（`dependabot/...` プレフィックス・`dependabot[bot]`）の 2 系統は、`authorAssociation` が信頼集合に入らないが `check_pending_pr_reviews.py` の専用述語（`_is_automation_pr()` / `_is_dependabot_pr()`）が **fork 不可 + ブランチ条件 + 著者ログイン固定の 3 条件 AND** で通すため、`needs_prompt` として出力される。これらも自 PR と同じく Layer 1 セルフレビュー → マージまで進める（放置すると `open-pull-requests-limit` に達して自動化が黙って止まる）
