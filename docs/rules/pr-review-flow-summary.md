@@ -23,7 +23,7 @@
 > 🔴 **品質チェックは二層構成**（`D-42`・Issue #543）。**GitHub Actions は本番デプロイには使わない**（`D-31` / `D-32` の Workers Builds が正本・不変）。
 > - **層 1（CI・自動）**: `push`（`main`）と `pull_request` を契機に `.github/workflows/quality-checks.yml` が
 >   Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を自動実行する（読み取り権限のみ・自動マージもデプロイもしない）。
->   🔴 **層 1 の被覆はごく一部**: CI が見るのは `tools/run_checks.sh` に定義された 60 件（実測・`grep -cE '^\s*run_check(_timeout)? ' tools/run_checks.sh`・2026-08-24 時点。PR #619 で `check_app_thinness.py` / `check_duplicate_source_patterns.py` / `check_selftest_wiring.py` の 3 本が増え 42 件から増加）のチェックのうち **4 件だけ**。
+>   🔴 **層 1 の被覆はごく一部**: CI が見るのは `tools/run_checks.sh` に定義された 65 件（実測・`grep -cE '^\s*run_check(_timeout)? ' tools/run_checks.sh`・2026-08-29 時点。PR #670 で Workers E2E（Issue #669）が増え 60 件から増加）のチェックのうち **4 件だけ**。
 >   残り（E2E・Lighthouse・依存規則 `check_architecture_boundaries.py`・CJK Markdown・LP 静的検査・各 self-test など）は層 2 が唯一の担保であり、
 >   **CI 緑は層 2 の省略理由にならない**。※ `.prettierignore` が `docs/` `content/` `site/` `public/data/` を除外しているため、
 >   **ドキュメントのみの PR では CI が実質空振りの緑を返す**（層 2 の CJK Markdown 検査などが本当の担保になる）。

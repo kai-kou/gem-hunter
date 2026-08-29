@@ -188,6 +188,28 @@ else
   run_check_timeout "E2E (playwright test)" "$E2E_TIMEOUT_SEC" npx playwright test
 fi
 
+# 3.58. Workers ランタイム E2E（`wrangler dev` 経由・Issue #188 / #669）
+# 🔴 RATE_LIMITER 等の binding は Workers ランタイムでしか観測できないため、既定の E2E
+#    （3.5・Node.js ランタイムの `next start`）では一度も踏めない（PR #184 レビュー指摘）。
+#    実行時間は実測 約50秒（playwright.workers.config.ts）で E2E・Lighthouse と同程度のため
+#    既定のゲートに組み込む。専用の SKIP フラグは既存 SKIP_E2E に倣う。
+#    既定値の根拠: 内側の webServer（`wrangler dev`）起動上限 180 秒（playwright.workers.config.ts）
+#    + テスト実行時間の余裕を足した 300 秒。既定 E2E（3.5）が内側 180 秒に対し外側 600 秒（3倍超の
+#    マージン）を取っているのと同じ理由で、内側と同値の外側タイムアウトはキャッシュ冷え時に
+#    webServer 準備完了前後で先に発火し、正常なテストを FAIL(timeout) と誤報告しうる（PR #670 レビュー指摘）。
+WORKERS_E2E_TIMEOUT_SEC="${RUN_CHECKS_WORKERS_E2E_TIMEOUT:-300}"
+if [ "${SKIP_E2E_WORKERS:-0}" = "1" ]; then
+  skip_check "Workers E2E (test:e2e:workers)" "SKIP_E2E_WORKERS=1 が指定されたためスキップしました。黙って緑にしないための明示表示"
+elif [ "$HAS_NODE_PROJECT" -eq 0 ]; then
+  skip_check "Workers E2E (test:e2e:workers)" "package.json が無い（アプリコード導入前）"
+elif [ ! -d "$REPO_ROOT/node_modules/@playwright/test" ]; then
+  echo "[run_checks] FAIL: Workers E2E (test:e2e:workers)（@playwright/test が未インストールのため実行できません。'npm ci' を実行してください）"
+  RESULTS+=("Workers E2E (test:e2e:workers)|FAIL|0")
+  OVERALL_EXIT=1
+else
+  run_check_timeout "Workers E2E (test:e2e:workers)" "$WORKERS_E2E_TIMEOUT_SEC" npm run test:e2e:workers
+fi
+
 # 3.6. Lighthouse（Accessibility ゲート・SP-10 / Issue #181）
 # 🔴 Accessibility = 100 は blocking、Performance は記録のみ（run_checks.sh 内で判定に使わない）。
 #    E2E とは別ステップ・別タイムアウト（RUN_CHECKS_TIMEOUT を流用すると Lint/型/vitest と取り合いになる
