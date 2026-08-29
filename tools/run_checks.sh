@@ -10,6 +10,21 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 
+# 排他ロック（#404）: 同一セッションで run_checks.sh を並走させると、固定ポート（Playwright 3100 等）を
+# 取り合って差分と無関係な FAIL が出る。即座に非ゼロ終了して理由を出す（待機はタイムアウトと区別しにくいため）。
+# 終了コード 4 = 既に別の run_checks が実行中（PASS=0 / FAIL=1 とは別の値。3 は check_pending_pr_reviews.py 等が
+# 「GH_UNAVAILABLE」の意味で既に使っているため衝突を避けて 4 を使う）。
+if command -v flock >/dev/null 2>&1; then
+  if ! exec 9>"$REPO_ROOT/.git/run_checks.lock"; then
+    echo "[run_checks] LOCK: ロックファイルを作成できません（.git/ が書き込み不可かもしれません）。排他制御なしで続行します" >&2
+  elif ! flock -n 9; then
+    echo "[run_checks] LOCK: 既に別の run_checks が実行中です。完了を待ってから再実行してください"
+    exit 4
+  fi
+else
+  echo "[run_checks] LOCK: flock コマンドが見つかりません。排他制御なしで続行します（並走時にポート競合の恐れがあります）" >&2
+fi
+
 TIMEOUT_SEC="${RUN_CHECKS_TIMEOUT:-300}"
 
 # 集計用配列（"name|status|seconds"）
@@ -126,6 +141,14 @@ if [ -f "$REPO_ROOT/tools/check_e2e_stub_external_urls.py" ]; then
   run_check "E2E スタブ外部 URL 検査 self-test (check_e2e_stub_external_urls.py --self-test)" python3 tools/check_e2e_stub_external_urls.py --self-test
 else
   skip_check "E2E スタブ外部 URL 検査 (check_e2e_stub_external_urls.py)" "スクリプトが見つかりません"
+fi
+
+# 3.47. flaky-tests.md の登録要件・賞味期限切れ検査（#223）
+if [ -f "$REPO_ROOT/tools/check_flaky_registry.py" ]; then
+  run_check "flaky レジストリ検査 (check_flaky_registry.py)" python3 tools/check_flaky_registry.py
+  run_check "flaky レジストリ検査 self-test (check_flaky_registry.py --self-test)" python3 tools/check_flaky_registry.py --self-test
+else
+  skip_check "flaky レジストリ検査 (check_flaky_registry.py)" "スクリプトが見つかりません"
 fi
 
 # 3.46. 居残り E2E サーバークリーンアップの self-test（実行本体は 3.54 で E2E 直前に呼ぶ）。
