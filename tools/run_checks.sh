@@ -139,6 +139,14 @@ else
   skip_check "E2E スタブ外部 URL 検査 (check_e2e_stub_external_urls.py)" "スクリプトが見つかりません"
 fi
 
+# 3.47. flaky-tests.md の登録要件・賞味期限切れ検査（#223）
+if [ -f "$REPO_ROOT/tools/check_flaky_registry.py" ]; then
+  run_check "flaky レジストリ検査 (check_flaky_registry.py)" python3 tools/check_flaky_registry.py
+  run_check "flaky レジストリ検査 self-test (check_flaky_registry.py --self-test)" python3 tools/check_flaky_registry.py --self-test
+else
+  skip_check "flaky レジストリ検査 (check_flaky_registry.py)" "スクリプトが見つかりません"
+fi
+
 # 3.46. 居残り E2E サーバークリーンアップの self-test（実行本体は 3.54 で E2E 直前に呼ぶ）。
 if [ -f "$REPO_ROOT/tools/clear_stale_e2e_ports.py" ]; then
   run_check "居残り E2E サーバークリーンアップ self-test (clear_stale_e2e_ports.py --self-test)" python3 tools/clear_stale_e2e_ports.py --self-test
