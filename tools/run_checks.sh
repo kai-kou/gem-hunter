@@ -193,7 +193,11 @@ fi
 #    （3.5・Node.js ランタイムの `next start`）では一度も踏めない（PR #184 レビュー指摘）。
 #    実行時間は実測 約50秒（playwright.workers.config.ts）で E2E・Lighthouse と同程度のため
 #    既定のゲートに組み込む。専用の SKIP フラグは既存 SKIP_E2E に倣う。
-WORKERS_E2E_TIMEOUT_SEC="${RUN_CHECKS_WORKERS_E2E_TIMEOUT:-180}"
+#    既定値の根拠: 内側の webServer（`wrangler dev`）起動上限 180 秒（playwright.workers.config.ts）
+#    + テスト実行時間の余裕を足した 300 秒。既定 E2E（3.5）が内側 180 秒に対し外側 600 秒（3倍超の
+#    マージン）を取っているのと同じ理由で、内側と同値の外側タイムアウトはキャッシュ冷え時に
+#    webServer 準備完了前後で先に発火し、正常なテストを FAIL(timeout) と誤報告しうる（PR #670 レビュー指摘）。
+WORKERS_E2E_TIMEOUT_SEC="${RUN_CHECKS_WORKERS_E2E_TIMEOUT:-300}"
 if [ "${SKIP_E2E_WORKERS:-0}" = "1" ]; then
   skip_check "Workers E2E (test:e2e:workers)" "SKIP_E2E_WORKERS=1 が指定されたためスキップしました。黙って緑にしないための明示表示"
 elif [ "$HAS_NODE_PROJECT" -eq 0 ]; then
