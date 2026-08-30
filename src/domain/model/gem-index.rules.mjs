@@ -34,7 +34,9 @@ export const RANK_MAX = 100
  * @returns {boolean}
  */
 export function isValidRank(value) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= RANK_MIN && value <= RANK_MAX
+  return (
+    typeof value === 'number' && Number.isFinite(value) && value >= RANK_MIN && value <= RANK_MAX
+  )
 }
 
 /**

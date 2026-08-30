@@ -113,7 +113,7 @@ MVP は **DB を持たない読み取り専用アプリ**（`D-5`）。したが
 | `Locale` | `ja` / `en`（`AR-4`） | 既定ロケールに倒す |
 | `CacheKey` | 名前空間 + 正規化済みの構成要素（`NFR-18`） | 生成関数以外で組み立てない |
 | `DateSeed` | 🔴 **`YYYYMMDD` の 8 桁数字**（UTC）かつ **実在する日付**（`20260231` は不可・`Date.UTC` の往復一致で検証）。日次ダイジェストの唯一のシード（[ADR 0014](../../adr/0014-zero-query-daily-digest.md) §2.2・`src/domain/model/date-seed.ts`） | `parse` は `DomainValidationError`。`tryParse(raw, now)` は **不正値・未指定を当日（UTC）へ倒す**（URL の `?date=` 改変で 500 にしない・ADR 0014 §2.2） |
-| `GemIndex` | **被依存数のパーセンタイル順位 − star のパーセンタイル順位**（`ADR 0009` §2.1・`src/domain/model/gem-index.ts`）。`gemIndex(value)` は有限数のみ、`computeGemIndex(dependentRank, starRank)` は入力を **0〜100** に制限する（Ecosyste.ms の `rankings` の値域） | `DomainValidationError`。🔴 **値が小さいほど上位**（`rankings` は 0 が最上位。並べ替えは昇順）。健全性（`criticality_score` / Scorecard）と 1 つのスコアに合算しない（`ADR 0009` §2.2） |
+| `GemIndex` | **被依存数のパーセンタイル順位 − star のパーセンタイル順位**（`ADR 0009` §2.1・`src/domain/model/gem-index.ts`）。`gemIndex(value)` は有限数のみ、`computeGemIndex(dependentRank, starRank)` は入力を **0〜100** に制限する（Ecosyste.ms の `rankings` の値域）。🔴 **算出式と値域規則の実体は `src/domain/model/gem-index.rules.mjs`（依存ゼロの純関数）が単一正本**（#276）。本番の候補プール生成（`tools/gem-pool/pipeline.mjs`）も同じファイルを import するため、規則を写した第 2 の実装を作らない | `DomainValidationError`。🔴 **値が小さいほど上位**（`rankings` は 0 が最上位。並べ替えは昇順）。健全性（`criticality_score` / Scorecard）と 1 つのスコアに合算しない（`ADR 0009` §2.2） |
 | ~~`GemFacet`~~ | 🔴 **`D-33`（2026-08-21）により撤去**（`{ gemIndex: GemIndex; dependentCount: number }`・旧 `src/domain/model/gem.ts`）。`SP-16` が検索結果（`RepositorySummary`）を候補プール（`Gem`）と突合し Gem Index 順に並べ替えるために持っていた型で、`gemFacetKey` / `toGemFacetMap` / `sortByGemIndex`（旧 `src/domain/model/gem-index.ts`）とともに削除済み。並べ替え適用先（検索結果一覧）が撤去されたため、突合専用のこの型に存在理由がなくなった。**`GemIndex` 型・`computeGemIndex` は撤去しない**（「今日の Gem」＝日次ダイジェストが使い続ける） | （撤去済み） |
 
 **実装の型（決定）**: **ブランド型 + スマートコンストラクタ** を使う。クラスで包むのは振る舞いを持つものだけにし、単純な識別子・数値はブランド型で軽量に保つ。
@@ -175,7 +175,7 @@ repository:v2:vercel/next.js
 
 | サービス | 責務 | 状態 |
 |---|---|---|
-| `GemIndex` | 被依存数と star の乖離から Gem 度（過小評価度）を算出する | ✅ **`SP-14` で実装済み**。🔴 **置き場所は `src/domain/model/gem-index.ts`**（値オブジェクト + 算出関数 `computeGemIndex`）。**専用のサービス層（`src/domain/services/`）は作らない** — 実体は状態を持たない純粋関数 1 本であり、値オブジェクトのスマートコンストラクタと同じファイルに置くのが最も単純だから（`architecture-rules.md` の YAGNI）。当初 `src/domain/services/` に置き場所を確保する計画だったが、実装時に不要と判断して撤回した |
+| `GemIndex` | 被依存数と star の乖離から Gem 度（過小評価度）を算出する | ✅ **`SP-14` で実装済み**。🔴 **置き場所は `src/domain/model/gem-index.ts`**（値オブジェクト + 算出関数 `computeGemIndex`）。🔴 **式と値域規則そのものは同じディレクトリの `gem-index.rules.mjs` が単一正本**（#276。`node` で直接実行される候補プール生成バッチが TypeScript を import できないため、両者が共有できる依存ゼロの純関数として切り出してある。`.ts` 側はそこへ型・ブランド・`DomainValidationError` を被せる層）。**専用のサービス層（`src/domain/services/`）は作らない** — 実体は状態を持たない純粋関数 1 本であり、値オブジェクトのスマートコンストラクタと同じファイルに置くのが最も単純だから（`architecture-rules.md` の YAGNI）。当初 `src/domain/services/` に置き場所を確保する計画だったが、実装時に不要と判断して撤回した |
 
 | 照合規則（`gem-keyword`） | 検索語と候補プールのエントリを **単語境界一致** で突き合わせる規則を持つ（`tokenizeQuery` / `tokenizeIdentifier` / `matchesAllTokens` / `selectMostSelectiveToken`・`D-37`） | ✅ **`SP-19` で実装済み**。🔴 **置き場所は `src/domain/model/gem-keyword.ts`**（`GemIndex` と同じく **値オブジェクト脇の純粋関数** として置き、`src/domain/services/` は作らない）。🔴 **本ファイルが照合規則の唯一の正本** — `GemIndexPort#search` の実装はここの純粋関数だけを使い、infra 層・UI 層で独自の照合（部分一致・あいまい一致）を再実装しない。依存なし・例外なしの純粋関数だけを置く（`ARCH-1`） |
 

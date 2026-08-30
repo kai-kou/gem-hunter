@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  RANK_MAX,
-  RANK_MIN,
-  computeGemIndexValue,
-  isValidRank,
-} from './gem-index.rules.mjs'
+import { RANK_MAX, RANK_MIN, computeGemIndexValue, isValidRank } from './gem-index.rules.mjs'
 
 describe('gem-index.rules（算出式と値域規則の単一正本）', () => {
   describe('isValidRank', () => {
