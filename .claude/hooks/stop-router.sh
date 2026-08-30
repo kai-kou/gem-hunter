@@ -81,7 +81,7 @@ run_hook() {
 
 # 1. Git 未コミットチェック
 run_hook "stop-git-check.sh"
-# git-check「専用」の終了コードを退避する（#483）。
+# git-check「専用」の終了コードを退避する（base#483）。
 # run_hook はサブシェルではなく同一プロセスの bash 関数のため、ここで得た結果を
 # 同一 Stop 呼び出し内で後段（3. の WIP 自動コミット）へ確定的に渡せる
 # （プラットフォームの再発火セマンティクス = stop_hook_active に依存しない）。
@@ -91,7 +91,7 @@ GIT_CHECK_EXIT=$LAST_HOOK_EXIT
 run_hook "stop-pr-check.sh"
 
 # 3. Slack 通知 + WIP 自動コミット
-# git-check が差し戻し中かどうかを環境変数で **stop-slack-notify.sh にだけ** 渡す（#483）。
+# git-check が差し戻し中かどうかを環境変数で **stop-slack-notify.sh にだけ** 渡す（base#483）。
 # 渡さないと、差し戻しと同一の Stop 呼び出しの中で WIP 自動コミットが先に確定してしまい、
 # Claude が意味のあるコミットを作る機会が構造的に奪われる（実測済み）。
 # 見送るか撃つかの最終判断（上限つきフェイルセーフ）は stop-slack-notify.sh 側が持つ。

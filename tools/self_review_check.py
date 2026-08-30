@@ -516,7 +516,7 @@ def base_sync_state_reminder() -> str | None:
 
 
 def rule_deletion_citation_reminder(files: list[str]) -> str | None:
-    """docs/rules/*.md の削除行を検出したら PR 本文への実ケース記載をリマインドする（Issue #469）。
+    """docs/rules/*.md の削除行を検出したら PR 本文への実ケース記載をリマインドする（Issue base#469）。
 
     削減の品質バー（token-optimization-rules.md「削減の品質バーを先に固定する」）は、ルール文書の
     削除・降格・要約に「実際に適用されたはずの直近の実ケース」1 件以上を PR 本文へ記載することを
@@ -557,7 +557,7 @@ def rule_deletion_citation_reminder(files: list[str]) -> str | None:
 
 
 def hot_budget_reminder(files: list[str]) -> str | None:
-    """Hot 層（`.claude/rules/` 実体・`token-optimization-rules.md`）変更時に予算超過を機械検証する（Issue #469）。"""
+    """Hot 層（`.claude/rules/` 実体・`token-optimization-rules.md`）変更時に予算超過を機械検証する（Issue base#469）。"""
     hot_dir = Path(".claude/rules")
     hot_names = {p.name for p in hot_dir.glob("*.md")} if hot_dir.is_dir() else set()
     touches_hot = any(
@@ -1058,12 +1058,12 @@ def main() -> int:
     if state_warn:
         warnings.append(state_warn)
 
-    # docs/rules/*.md 削除行の実ケース記載リマインド（Issue #469・削減の品質バー）
+    # docs/rules/*.md 削除行の実ケース記載リマインド（Issue base#469・削減の品質バー）
     citation_warn = rule_deletion_citation_reminder(files)
     if citation_warn:
         warnings.append(citation_warn)
 
-    # Hot 層予算チェック（Issue #469・実測とログの乖離・再棚卸しの合図を機械判定）
+    # Hot 層予算チェック（Issue base#469・実測とログの乖離・再棚卸しの合図を機械判定）
     budget_warn = hot_budget_reminder(files)
     if budget_warn:
         warnings.append(budget_warn)

@@ -71,7 +71,7 @@ Usage:
     python3 tools/check_pending_pr_reviews.py --mine --json            # 自セッション所有 PR のみ
     python3 tools/check_pending_pr_reviews.py --mine --actionable-only # 自 PR で要対応のもの
     python3 tools/check_pending_pr_reviews.py --self-test              # Session-Id 解析テスト
-    python3 tools/check_pending_pr_reviews.py --verify-layer1 <PR番号> # Layer 1 投稿済みか機械検証（#462）
+    python3 tools/check_pending_pr_reviews.py --verify-layer1 <PR番号> # Layer 1 投稿済みか機械検証（base#462）
 """
 
 import argparse
@@ -229,7 +229,7 @@ def get_pr_reviews(pr_number: int, critical: bool = False) -> list[dict]:
     `critical=True` は gh 到達不可（コマンド失敗・JSON 破損とも）を `GhUnavailableError` として
     呼び出し元に伝播する（`verify_layer1_review` が「レビュー0件」と「gh失敗による空リスト」を
     区別するために使う）。`commit_id` はレビュー投稿時点の PR head SHA（force-push 後の
-    古いレビューを「最新コミットに対する実施」と誤認しないための判定材料・#462）。
+    古いレビューを「最新コミットに対する実施」と誤認しないための判定材料・base#462）。
     """
     output = run_gh([
         "api", f"repos/{REPO}/pulls/{pr_number}/reviews",
@@ -635,14 +635,14 @@ def get_pr_head_sha(pr_number: int, critical: bool = False) -> str:
 def _layer1_verdict(review_count: int, inline_count: int) -> int:
     """レビュー件数・インラインコメント件数から Layer 1 実施の終了コードを決める純粋関数。
 
-    I/O から分離することで `_run_self_test()` が gh 非依存で判定ロジックを検証できる（#462）。
+    I/O から分離することで `_run_self_test()` が gh 非依存で判定ロジックを検証できる（base#462）。
     返り値は 0（LAYER1_VERIFIED）/ 1（LAYER1_MISSING）のいずれか。
     """
     return 0 if (review_count > 0 or inline_count > 0) else 1
 
 
 def verify_layer1_review(pr_number: int) -> int:
-    """マージ直前に Layer 1 セルフレビューが投稿済みかを機械検証する（#462）。
+    """マージ直前に Layer 1 セルフレビューが投稿済みかを機械検証する（base#462）。
 
     Layer 0（`self_review_check.py`）は PR 作成前の静的チェックで、Layer 1（観点別フレッシュ文脈
     セルフレビュー・`Skill(code-review)`）の実施有無までは検出しない。#461 により指摘ゼロでも
@@ -654,7 +654,7 @@ def verify_layer1_review(pr_number: int) -> int:
     ただし件数を数える対象は **現在の PR head コミットに対するレビュー/コメントのみ**
     （`commit_id == head_sha`）に絞る。force-push や追加コミット後も古いレビューが
     残り続けるため、絞り込まないと「最新差分は未レビューなのに件数だけで PASS する」
-    誤判定が起こる（レビューレビュー指摘・#462）。
+    誤判定が起こる（レビューレビュー指摘・base#462）。
 
     返り値は終了コード:
       0 = LAYER1_VERIFIED（現行コミットへのレビューまたはインラインコメントが1件以上・マージ続行可）
@@ -671,6 +671,17 @@ def verify_layer1_review(pr_number: int) -> int:
             "LAYER1_UNKNOWN: gh 経由の取得に失敗しました（クラウドの 403 等）。"
             "mcp__github__pull_request_read(method=\"get_reviews\") で件数を直接確認してから"
             "マージ判断してください（誤ブロックを避けるためこの終了コードだけではマージを止めない）。",
+        )
+        return 2
+
+    if not head_sha:
+        # gh は成功したが head SHA が空（API 応答の欠落・jq のフィールド不在）。空文字と
+        # commit_id を比較すると全件が「古いレビュー」に落ち、実施済みでも MISSING になる。
+        # 誤ブロックを避けて UNKNOWN に倒す（判定不能は 2 で表す・base#462）。
+        print(
+            "LAYER1_UNKNOWN: PR head SHA を取得できませんでした。"
+            'mcp__github__pull_request_read(method="get_reviews") で件数を直接確認してから'
+            "マージ判断してください。",
         )
         return 2
 
@@ -925,7 +936,7 @@ def _run_self_test() -> None:
             "  _is_dependabot_pr('automation/gem-pool-refresh', 'github-actions[bot]', False) = True (expected False)"
         )
 
-    # Layer 1 検証の判定ロジック（#462）。I/O から分離した純粋関数なので gh 非依存でテストできる。
+    # Layer 1 検証の判定ロジック（base#462）。I/O から分離した純粋関数なので gh 非依存でテストできる。
     verdict_cases: list[tuple[int, int, int]] = [
         (0, 0, 1),   # 両方0件 → LAYER1_MISSING
         (1, 0, 0),   # レビューのみ1件 → LAYER1_VERIFIED
@@ -1003,7 +1014,7 @@ def main():
         default=None,
         help=(
             "指定 PR に Layer 1 セルフレビュー（レビュー本体 or 行単位インラインコメント）が "
-            "1 件以上投稿されているかをマージ直前に機械検証する（#462）。"
+            "1 件以上投稿されているかをマージ直前に機械検証する（base#462）。"
             "終了コード: 0=LAYER1_VERIFIED / 1=LAYER1_MISSING(ブロック) / 2=LAYER1_UNKNOWN(判定不能)"
         ),
     )

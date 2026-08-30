@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check_hot_budget.py（汎用ベース）
 
-Hot 層（`.claude/rules/`）の実測サイズを機械チェックするツール（Issue #469）。
+Hot 層（`.claude/rules/`）の実測サイズを機械チェックするツール（Issue base#469）。
 
 背景: `.claude/rules/` の実測が記載予算を 16% 超過した状態が数週間、誰にも検知されず
 放置されていた（#467 の作業中に偶然発覚）。増減ログ（`docs/rules/token-optimization-rules.md`
@@ -9,7 +9,7 @@ Hot 層（`.claude/rules/`）の実測サイズを機械チェックするツー
 だけに依存しており、守られなくても誰も気づけなかった（今回と同じ「超過が見えない」の再発）。
 
 また `.claude/rules/` だけを数えていたため、**毎ターン常駐するもう一方のコスト**が見えていなかった
-（Issue #493）。`.claude/skills/*/SKILL.md` と `.claude/commands/*.md` の frontmatter `description` は
+（Issue base#493）。`.claude/skills/*/SKILL.md` と `.claude/commands/*.md` の frontmatter `description` は
 セッション冒頭の一覧に全件展開されるため常時コンテキストに乗るが、集計対象外だった。その結果
 「スキルを増やしても Hot 予算に影響しない」という誤った前提が実際の採否判断を歪めた。
 本ツールはこれを **参考値として併記** する（rules 側の予算判定の挙動は変えない）。
@@ -235,7 +235,7 @@ def main() -> int:
 
     out(f"[hot-budget] 実測: {actual:,}B / 基準: {baseline:,}B / ログ最新行: {latest_logged:,}B / ログ行数: {len(rows)}")
 
-    # 参考値: skills / commands の description も毎ターン常駐する（#493）。
+    # 参考値: skills / commands の description も毎ターン常駐する（base#493）。
     # rules 側の予算判定には影響させない（閾値を設けるかは実測を見てから判断する）。
     desc_bytes, desc_count = measured_description_bytes()
     if desc_count:

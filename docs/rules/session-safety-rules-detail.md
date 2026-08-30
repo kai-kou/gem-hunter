@@ -163,7 +163,7 @@ git log origin/main --oneline | head -3                  # 自分のマージコ
 
 `state=MERGED` を確認できるまで「マージ済み」と報告しない（クラウドの gh は 403 のため MCP で確認する・ルール5）。
 
-### G-4: 自動保全コミット（WIP）の位置づけと残余リスク（#483）
+### G-4: 自動保全コミット（WIP）の位置づけと残余リスク（base#483）
 
 Stop フック（`stop-slack-notify.sh`）と圧縮フック（`pre-compact.sh` / `post-compact.sh`）が作る `[wip]` コミットは
 **作業を消さないためのセーフティネットであって、履歴に残す前提のコミットではない**。

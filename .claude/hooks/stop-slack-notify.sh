@@ -7,7 +7,7 @@ input=$(cat)
 
 # 再帰防止フラグ（jq 失敗時は "false" にフォールバック）
 #
-# 【#483】かつてはここでスクリプト全体を早期 return していたが 2 つの問題があった:
+# 【base#483】かつてはここでスクリプト全体を早期 return していたが 2 つの問題があった:
 #   1. 廃止済み Slack 通知の多重発火防止のために書かれたガードが、その後も残り続け、
 #      日次コスト集計まで巻き添えでスキップしていた。
 #   2. WIP 自動コミットまで止まるため「差し戻し後の 2 巡目で必ず保全する」という
@@ -34,7 +34,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 #   2. --flush --rotate: 追記済み cost_log.jsonl から月次 JSON を生成・古い行を削除
 # ※ --summary-only を --flush に置換すると early return でセッションデータが欠落するため禁止。
 #
-# 再帰防止: 差し戻し後の再発火（stop_hook_active=true）では二重計上を避けるためスキップする（#483）。
+# 再帰防止: 差し戻し後の再発火（stop_hook_active=true）では二重計上を避けるためスキップする（base#483）。
 _calc_script="${REPO_ROOT}/tools/calc_daily_cost.py"
 if [[ "$stop_hook_active" != "true" ]] && [[ -f "$_calc_script" ]] && command -v python3 &>/dev/null; then
   timeout 15s python3 "$_calc_script" --summary-only <<< "$input" >/dev/null 2>&1 || true
@@ -105,7 +105,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
     elif [ "$_mutation_guard" = true ]; then
       : # 抑止理由は wip_guard_active が stderr に出力済み
     elif [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)" ]; then
-      # 【差し戻し 1 巡猶予・#483】
+      # 【差し戻し 1 巡猶予・base#483】
       #   同一の Stop 呼び出しの中で stop-git-check.sh が「コミットして push してください」と
       #   差し戻しているにもかかわらず、ここで無条件に自動コミットを確定させると、Claude が
       #   意味のあるコミット（意味あるメッセージ・意味ある粒度）を作る機会が構造的に消える
@@ -149,7 +149,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
           fi
           unset _tmp_index _snap_tree _snap_commit 2>/dev/null || true
         fi
-        echo "[Stop] 未コミット変更の差し戻し中のため WIP 自動コミットを 1 巡だけ見送ります（#483）。" >&2
+        echo "[Stop] 未コミット変更の差し戻し中のため WIP 自動コミットを 1 巡だけ見送ります（base#483）。" >&2
         echo "[Stop] → 意味のある単位・意味のあるメッセージでコミットしてください。対応がなければ次の Stop で無条件に自動保全します。" >&2
         echo "[Stop] 保険として refs/claude-wip/${_session_id} にスナップショットを保存しました（復元: git checkout refs/claude-wip/${_session_id} -- .）。" >&2
       else
@@ -167,7 +167,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
         git -C "$REPO_ROOT" add -u -- . ':(exclude)content/analytics/cost_monthly/' 2>/dev/null || true
         # cost_monthly 以外に変更が無ければ何もコミットしない（空コミットを避ける）
         #
-        # メッセージは意図的に `[wip]` プレフィックスを維持する（#483）。差分から機械生成した件名は
+        # メッセージは意図的に `[wip]` プレフィックスを維持する（base#483）。差分から機械生成した件名は
         # 情報量ゼロで、かつ「意図的なコミット」に偽装する分だけ可読性が後退する。正しい振る舞いは
         # 「これは自動保全であって意味あるコミットではない」と正直に名乗り、pre-pr-create-check.sh の
         # 件名ガードに確実に引っかかって書き換えを強制させることである。

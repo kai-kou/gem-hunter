@@ -595,7 +595,7 @@ else
   skip_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" "スクリプトが見つかりません"
 fi
 
-# WIP 自動保全（差し戻し 1 巡猶予 + スナップショット + PR 件名ガード）の振る舞いテスト（#483）
+# WIP 自動保全（差し戻し 1 巡猶予 + スナップショット + PR 件名ガード）の振る舞いテスト（base#483）
 if [ -f "$REPO_ROOT/tools/test_wip_commit_deferral.sh" ]; then
   run_check "WIP 自動保全の振る舞いテスト (test_wip_commit_deferral.sh)" \
     bash tools/test_wip_commit_deferral.sh

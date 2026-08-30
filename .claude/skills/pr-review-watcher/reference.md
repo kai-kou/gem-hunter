@@ -151,7 +151,7 @@ gh api graphql -f query='
 - Layer 1（観点別フレッシュ文脈セルフレビュー）を実行し、指摘を全て解消（対応 or スキップ記録）した
 - 条件付き Layer 2 が必要な PR は verdict を解消した
 
-**Layer 1 実施の機械検証（#462）**: Step 1 の実行を自己申告のまま信じず、マージ実行の直前に
+**Layer 1 実施の機械検証（base#462）**: Step 1 の実行を自己申告のまま信じず、マージ実行の直前に
 `python3 tools/check_pending_pr_reviews.py --verify-layer1 <PR番号>` を必ず通す
 （Layer 0 は PR 作成前の静的チェックで、Layer 1 の実施有無までは検出しないため別ゲートとして追加）。
 
