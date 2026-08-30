@@ -236,7 +236,7 @@
 
 | ID | イネイブラー | 参照要件 |
 |---|---|---|
-| **E-24** | Gem Index の算出パイプライン（**Ecosyste.ms の REST 一覧 API 巡回による収集 → レジストリ別成層化 → 汚染フィルタ → repo 単位 dedupe → 静的 JSON の生成**・`D-37`）。Cloudflare の外（セッション / Routine の cron）で実行し、生成した JSON を Static Assets として差し替える。🔴 **S3 バルクダンプ（63.7GB・更新が不定期で repos ダンプは陳腐化）と OpenSSF Scorecard は使わない**（[リサーチ記録](../01_research/data/20260822-dependency-data-sources.md) §2「API 巡回のほうが速く新しい」・`SP-17` の実装がそのとおり REST 一覧 API のみを叩く） | `NFR-16` / `NFR-19` / `NFR-21` |
+| **E-24** | Gem Index の算出パイプライン（**Ecosyste.ms の REST 一覧 API 巡回による収集 → レジストリ別成層化 → 汚染フィルタ → repo 単位 dedupe → 静的 JSON の生成**・`D-37`）。Cloudflare の外（GitHub Actions [`gem-pool-refresh.yml`](../../.github/workflows/gem-pool-refresh.yml)・日次実行 / 週次反映・`D-40`）で実行し、生成した JSON を Static Assets として差し替える。🔴 **S3 バルクダンプ（63.7GB・更新が不定期で repos ダンプは陳腐化）と OpenSSF Scorecard は使わない**（[リサーチ記録](../01_research/data/20260822-dependency-data-sources.md) §2「API 巡回のほうが速く新しい」・`SP-17` の実装がそのとおり REST 一覧 API のみを叩く） | `NFR-16` / `NFR-19` / `NFR-21` |
 | **E-25** | 配信データの鮮度チェックと自己修復（既存の衛生スロットに載せる）。バッチが止まっても配信自体は止めず、劣化するのは鮮度のみとする | `NFR-8` |
 
 ---
