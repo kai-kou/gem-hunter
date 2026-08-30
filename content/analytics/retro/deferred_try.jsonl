@@ -46,3 +46,6 @@
 {"date": "2026-08-30 JST", "title": "waiting-claude Issue の着手時に起票時仕様の陳腐化再検査を必須化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-30 JST", "title": "open-questions.md の D-28 に「D-40 で具体化」の追記を入れる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-30 JST", "title": "run_checks.sh が既存の赤と新規の赤を区別できない（既存 Issue へ再発を追記）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 214}
+{"date":"2026-08-31 JST","title":"層別テスト範囲表（check_ui_dimensions.py の config）から code-review 二重指摘禁止セクションを自動生成する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-31 JST","title":"判定ロジック観点の起動要否を差分から機械判定し、起動記録を残す","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-31 JST","title":"ベース由来 hooks の publish-sync 非採用コメントを短縮 variant として自動展開する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
