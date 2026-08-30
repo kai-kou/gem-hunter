@@ -142,10 +142,8 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 `D-31` の理念（マージ＝本番反映・セッションが `wrangler deploy` を打たない）に戻す変更であり、
 `npm run deploy` の手動実行は L-130（auto mode classifier ブロック）対策のフォールバックに降格する。
 
-🔴 **公開リポジトリへの反映（`publish-sync` レーン）は本リポジトリでは採用しない**（#407）。本リポジトリ
-自体が公開リポジトリであり、`tools/check_publish_drift.py` / `publish-sync` スキルは **実装予定ではなく
-不要**（ベース由来の `post-merge-publish-check.sh` はツール不在時に何も出力せず exit 0 する）。存在しない
-ツール・スキルを呼ぼうとしないこと。本ステップで実行するのは以下のデプロイゲート判定だけである。
+🔴 **[#407] publish-sync は非採用**（SSOT: `docs/rules/pr-review-flow-summary.md`）。`tools/check_publish_drift.py` /
+`publish-sync` スキルは存在しないので呼ぼうとしないこと。本ステップで実行するのは以下のデプロイゲート判定だけである。
 
 - 🔴 **本番デプロイの発火点は PR 種別で分岐する**（`sprint-env-lifecycle-20260820`
   議論・lead 判定「B: 本番デプロイの発火点」・飼い主の明示指示 2026-08-19・`D-23`。`permissions.allow` に登録済み）:
