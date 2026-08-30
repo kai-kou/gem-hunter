@@ -369,3 +369,37 @@ MCP が接続されたセッション、または人間が GitHub UI から直�
 
 **保持理由**: L-113（捏造禁止）と直結する新規の環境制約。「PR は完成しているのにマージだけできない」
 という状態を正しく報告できないと、虚偽の完了報告につながる。
+
+## L-140: Workers Builds の build trigger が 0 件になると、デプロイ系スクリプト 2 本が別々の理由で「判定不能」になる（2026-08-30・Issue #626 / #693 / #694）
+
+**症状**: 本番デプロイ関連の 2 スクリプトが、それぞれ別の顔をした失敗を返す。
+
+```
+$ python3 tools/check_prod_drift.py
+ERROR: 判定不能: 本番デプロイ情報の取得に失敗しました
+       （本番への実デプロイ実績（triggered_by=deployment）が見つかりません）   # exit 2
+
+$ python3 tools/trigger_workers_build.py
+ERROR: branch_includes に 'main' を含む trigger が見つかりません              # exit 2
+```
+
+前者は「デプロイ **履歴** が無い」、後者は「**branch 設定** のミス」に読める。**どちらも同じ一次事実（Cloudflare の build trigger が 0 件）の言い換えでしかない。**
+
+**原因**: Workers Builds の GitHub 接続（Cloudflare GitHub App の認可）が外れると build trigger が消える。trigger が無いので `main` への push で自動ビルドが発火せず、deployment 由来のビルド実績も生まれない。**認証・アカウント ID・Worker 自体はすべて正常なまま** なので、トークン権限を疑う方向へ切り分けが逸れる。
+
+**診断手順（原因まで 1 発で到達する）**: エラー文言から推測せず、**trigger の件数を直接数える**。
+
+```python
+# CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN はセッション env から取れる
+scripts = fetch_worker_scripts(account_id, token)          # ここが通れば認証は正常
+tag = worker_tag_from_scripts(scripts, "gem-hunter")       # ここが通れば Worker も正常
+triggers = fetch_build_triggers(account_id, token, tag)    # ← 0 件ならこれが根本原因
+```
+
+段階的に切り分けると、どこまでが正常でどこから壊れているかが 1 回で確定する（実測: scripts 13 件 ✅ / worker tag ✅ / **trigger 0 件** 🔴 / build token 1 件 ✅）。
+
+**復旧の可否**: 公式 API に `POST /accounts/{id}/builds/triggers`（trigger 作成）と `PUT /accounts/{id}/builds/repos/connections`（repo connection 作成）はある。ただし *"Before using the API, you must first install the Cloudflare GitHub App through the dashboard"* と明記されており、**GitHub App のインストール自体が外れていればダッシュボード操作（A-6）が必要**。build token は API で作成できない（ダッシュボードのみ）ので、**残っているうちは温存する**。
+
+**暫定の回避経路**: trigger が復旧するまで、本番反映は `npm run deploy`（`wrangler deploy` 直実行）で継続できる（`pr-review-flow-summary.md` のフォールバック）。ただし L-130 のとおり auto mode classifier にブロックされることがある。
+
+**保持理由**: この症状は #626 / #640 / #672 / #679 と **4 回起票されながら 3 週間以上原因未特定のまま** で、その間ずっと本番デプロイが止まっていた。エラー文言が根本原因の層を指していないため、毎回別方向の仮説から切り分けをやり直していたのが原因。恒久対策（メッセージ統一 = #693 / 判定不能の escalate = #694）が入るまでは、本エントリの診断手順が最短経路になる。

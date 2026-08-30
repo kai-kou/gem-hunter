@@ -41,3 +41,8 @@
 {"date":"2026-08-30 JST","title":"self-improvement-loop の「out < in が 3 日続いたら発見モードへエスカレーション」が実装・配線されているか確認する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-30 JST","title":"Layer 1 セルフレビューの並列観点数とモデル配分のトークンコストを計測し、観点ごとに haiku/sonnet を出し分ける","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-30 JST","title":"E2E が既知の環境障害で常に exit 1 になる状態の扱いを決める（run_checks の緑/赤の情報量が失われている）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date": "2026-08-30 JST", "title": "全 Issue の陳腐化スキャンを定期実行する（起票時の前提が生きているかの生存確認）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "Layer 1 セルフレビューの「差分外 desync」指摘を PR 上で明示的に区別する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "waiting-claude Issue の着手時に起票時仕様の陳腐化再検査を必須化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "open-questions.md の D-28 に「D-40 で具体化」の追記を入れる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "run_checks.sh が既存の赤と新規の赤を区別できない（既存 Issue へ再発を追記）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 214}
