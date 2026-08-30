@@ -54,9 +54,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# パスらしきトークン: 英数字/アンダースコアで始まり、スラッシュ・ドット・ハイフンを含み、
+# パスらしきトークン: 英数字/アンダースコアで始まり、スラッシュ・ドット・ハイフン・角括弧を含み、
 # 最後に "." + 拡張子で終わる文字列。
-_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9_]+")
+# 角括弧（`[` `]`）は Next.js App Router の動的セグメント（`app/[locale]/page.tsx` 等）で
+# 実際にこのリポジトリのパスに使われているため必須（Issue #712）。`git ls-files` で確認した限り
+# 本リポジトリのパスに現れる記号は `[` `]` `.` `-` `_` `/` のみで、`(` `)` `@` `+` `~` 等は
+# 使われていない（含めると日本語文中の記号を誤って拾うリスクが増すため見送る）。
+_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+")
 _URL_RE = re.compile(r"https?://\S+")  # ドメイン名がパストークンとして誤抽出されるのを防ぐため事前に除去する
 
 
@@ -213,6 +217,23 @@ def run_self_test() -> int:
             "docs/rules/agent-team-summary.md",
         },
         str(got3),
+    )
+
+    # extract_claimed_paths: 角括弧を含む Next.js App Router 動的セグメントパスを
+    # 切り詰めずに、かつ 2 件を同じ文字列に潰さず別々に抽出できること（Issue #712）
+    bracket_report_text = (
+        "役3（#549）新規作成: app/[locale]/page.test.tsx\n"
+        "役3（#549）新規作成: app/[locale]/repos/[owner]/[repo]/page.test.tsx\n"
+    )
+    got_bracket = extract_claimed_paths(bracket_report_text)
+    check(
+        "extract_claimed_paths 角括弧パスを切り詰めず別々に抽出（#712）",
+        got_bracket
+        == {
+            "app/[locale]/page.test.tsx",
+            "app/[locale]/repos/[owner]/[repo]/page.test.tsx",
+        },
+        str(got_bracket),
     )
 
     # compare: 一致
