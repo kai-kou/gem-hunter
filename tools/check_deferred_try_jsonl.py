@@ -33,6 +33,13 @@
   7. date が `YYYY-MM-DD JST` 形式でない、または実在しない日付（2026-13-45 JST 等）
   8. title が文字列でない、または空文字
   9. related_issue の型違反（**存在する場合のみ** 検査。下記「採用した仮定」を参照）
+  10. reevaluated_at の型違反（**存在する場合のみ** 検査。null または `YYYY-MM-DD HH:MM JST`
+      形式の実在日時以外は違反。Issue #707: 空文字・JST 抜けだと `jq 'select(.reevaluated_at
+      == null)'` が false になり over_quota Try が「消費済み」と誤判定され永久に合流しなくなる）
+
+さらに **違反ではなく WARNING**（exit code には影響しない）として、既知フィールド集合の外に
+あるキー（`reevaluted_at` のような typo）を報告する（Issue #707・値域は締めるがキー集合は
+締めない現行方針は維持）。
 
 **空行の扱い**: 空白のみの行は「行の区切り」として **スキップする**（違反にしない）。JSONL の
 末尾改行を違反にしないため。ただし有効行が 1 件も無ければ違反 2 として検出する（空ファイルを
@@ -53,6 +60,11 @@
     弾く（Python では `bool` が `int` の派生であるため明示的に除外している）。
   - `date` は実データ 51 行すべてが `YYYY-MM-DD JST`（14 文字）だったため、この形式を必須とする
     （`docs/rules/datetime-rules.md`: 記録に残る日時は JST 表記）。
+  - `reevaluated_at`（Issue #707）は SKILL.md §3 フィールド表どおり **任意** とする（省略 = 未再評価）。
+    存在するときだけ null / `YYYY-MM-DD HH:MM JST`（日付のみの `date` と違い時刻まで必須）を検査する。
+  - 既知フィールド集合の外側のキー（typo）は **違反にはせず WARNING に留める**。値域は締めるが
+    キー集合までは締めない、という `related_issue` に対する既存方針を typo 検知にも一貫させるため
+    （fail-closed にすると将来の正当な拡張フィールドまで巻き込んで壊す）。
 
 ## 終了コード
 
@@ -89,6 +101,16 @@ YES_NO = ("YES", "NO")
 DEFER_REASONS = ("medium", "over_quota", "low_single_file")
 DATE_SUFFIX = " JST"
 DATE_FORMAT = "%Y-%m-%d"
+DATETIME_FORMAT = "%Y-%m-%d %H:%M"
+# SSOT: .claude/skills/retrospective/SKILL.md §「見送りログのフィールド」表 の reevaluated_at 行
+# （"持ち越しを合流・再評価した日時（未再評価なら省略。ある行は「消費済み」の印）"）。
+# 任意フィールドは REQUIRED_FIELDS に含めない（存在するときだけ形式検査する）。
+OPTIONAL_DATETIME_FIELDS = ("reevaluated_at",)
+# キー集合の外側を検出する対象（typo 検知）。値域は締めるがキー集合まで締めない現行方針は
+# 維持しつつ、未知キーは「壊れ」ではなく「気づき」として WARNING（exit 0 のまま）で報告する
+# （採用した判断: fail-closed にすると実データの将来の正当な拡張フィールドまで巻き込んで
+# 壊すため、typo 検知は違反ではなく警告に留める・#707）。
+KNOWN_FIELDS = frozenset(REQUIRED_FIELDS) | {"related_issue", *OPTIONAL_DATETIME_FIELDS}
 
 EXIT_OK = 0
 EXIT_VIOLATION = 1
@@ -118,6 +140,24 @@ def is_valid_jst_date(value: object) -> bool:
         return False
     try:
         datetime.strptime(head, DATE_FORMAT)
+    except ValueError:
+        return False
+    return True
+
+
+def is_valid_jst_datetime(value: object) -> bool:
+    """`YYYY-MM-DD HH:MM JST` 形式で、かつ実在する日時なら True（`reevaluated_at` 用）。
+
+    `is_valid_jst_date`（日付のみ・`date` フィールド用）とは長さ・フォーマット文字列が違うため
+    分離する（16 文字固定で strptime による桁不足・存在しない時刻の混入を防ぐ）。
+    """
+    if not isinstance(value, str) or not value.endswith(DATE_SUFFIX):
+        return False
+    head = value[: -len(DATE_SUFFIX)]
+    if len(head) != 16:  # "2026-08-30 14:23" 固定長（"2026-8-3 4:5" のような桁不足を弾く）
+        return False
+    try:
+        datetime.strptime(head, DATETIME_FORMAT)
     except ValueError:
         return False
     return True
@@ -170,17 +210,46 @@ def check_record(obj: object, lineno: int) -> list[str]:
             f"{_fmt(obj['related_issue'])}"
         )
 
+    # reevaluated_at は任意フィールド（Issue #707）。存在する場合のみ、null または
+    # `YYYY-MM-DD HH:MM JST` 実在日時を要求する。空文字・JST 抜け・非文字列は
+    # retrospective スキル Step 3-0 の `jq 'select(.reevaluated_at == null)'` を false のまま
+    # 通してしまい、over_quota の Try が「消費済み」と誤判定されて永久に合流しなくなるため。
+    if "reevaluated_at" in obj:
+        reevaluated_at = obj["reevaluated_at"]
+        if reevaluated_at is not None and not is_valid_jst_datetime(reevaluated_at):
+            violations.append(
+                f"L{lineno}: reevaluated_at は null または `YYYY-MM-DD HH:MM JST` 形式の実在日時"
+                f"である必要があります: {_fmt(reevaluated_at)}（SSOT: {SKILL_FIELD_SSOT}）"
+            )
+
     return violations
 
 
-def check_text(text: str) -> tuple[list[str], int]:
-    """JSONL 本文を検査し (違反メッセージ一覧, 有効行数) を返す。
+def unknown_field_warnings(obj: object, lineno: int) -> list[str]:
+    """既知フィールド集合の外にあるキーを WARNING として返す（typo 検知・違反にはしない）。
+
+    値域は締めるがキー集合は締めない、という現行の設計判断は変えない（`related_issue` の
+    docstring と同じ「実データと矛盾する仕様を先に決めない」方針）。ただし typo（例:
+    `reevaluted_at`）は無音のまま無限に合流し続ける実害があるため、気づけるように WARNING
+    だけは出す（exit code には影響させない・#707）。
+    """
+    if not isinstance(obj, dict):
+        return []
+    extra = sorted(set(obj) - KNOWN_FIELDS)
+    if not extra:
+        return []
+    return [f"L{lineno}: 未知フィールド（typo の可能性）: {', '.join(extra)}"]
+
+
+def check_text(text: str) -> tuple[list[str], int, list[str]]:
+    """JSONL 本文を検査し (違反メッセージ一覧, 有効行数, 警告メッセージ一覧) を返す。
 
     行分割は `str.splitlines()` ではなく `split("\\n")` を使う（`splitlines()` は U+2028 /
     U+2029 / U+0085 等でも分割するため、それらを値に含む整形式の 1 レコードが 2 行に割れて
     偽陽性になり、以降の行番号もずれる）。CRLF 互換のため各行末の `\\r` だけ取り除く。
     """
     violations: list[str] = []
+    warnings: list[str] = []
     valid_lines = 0
     for lineno, raw_line in enumerate(text.split("\n"), start=1):
         line = raw_line.rstrip("\r")
@@ -197,10 +266,11 @@ def check_text(text: str) -> tuple[list[str], int]:
             # 判定不能（exit 2）へ振り分ける（生 traceback で落として違反に化けさせない）。
             raise Undetermined(f"L{lineno}: JSON のネストが深すぎて解析できません: {e}") from e
         violations.extend(check_record(obj, lineno))
+        warnings.extend(unknown_field_warnings(obj, lineno))
 
     if valid_lines == 0:
         violations.append("有効なレコードが 1 件もありません（空ファイル / 空行のみ）")
-    return violations, valid_lines
+    return violations, valid_lines, warnings
 
 
 def check_tracked(path: Path, runner=subprocess.run, repo_root: Path = REPO_ROOT) -> list[str]:
@@ -252,7 +322,9 @@ def check_file(path: Path, runner=subprocess.run, repo_root: Path = REPO_ROOT) -
         # 判定できなかったことを黙らせず 1 行出力する（exit 2 にはしない）。
         print(f"ℹ️ {path} はリポジトリ外のため git 追跡検査をスキップします")
         violations = []
-    text_violations, _ = check_text(text)
+    text_violations, _, warnings = check_text(text)
+    for w in warnings:
+        print(f"⚠️ {w}")
     return violations + text_violations
 
 
@@ -304,7 +376,7 @@ def _run_self_test() -> None:
     cases = 0  # ケース数はハードコードせず実測で数える
 
     # --- check_text: 正常系 ---
-    v, n = check_text(VALID_LINE + "\n")
+    v, n, _ = check_text(VALID_LINE + "\n")
     assert v == [] and n == 1, f"正常系 失敗: {v} / {n}"
     cases += 1
 
@@ -318,31 +390,31 @@ def _run_self_test() -> None:
         '"defer_reason":"over_quota","related_issue":660}\n'
         "\n"
     )
-    v, n = check_text(mixed)
+    v, n, _ = check_text(mixed)
     assert v == [] and n == 3, f"記法混在 失敗: {v} / {n}"
     cases += 1
 
     # related_issue は必須ではない（キーごと無い行も PASS・仕様は 5 フィールド）
     no_related = dict(VALID_RECORD)
     del no_related["related_issue"]
-    v, n = check_text(json.dumps(no_related, ensure_ascii=False) + "\n")
+    v, n, _ = check_text(json.dumps(no_related, ensure_ascii=False) + "\n")
     assert v == [] and n == 1, f"related_issue 省略 失敗: {v}"
     cases += 1
 
     # CRLF 改行でも行が壊れない
-    v, n = check_text(VALID_LINE + "\r\n")
+    v, n, _ = check_text(VALID_LINE + "\r\n")
     assert v == [] and n == 1, f"CRLF 失敗: {v} / {n}"
     cases += 1
 
     # U+2028 / U+2029 / U+0085 を値に含む 1 レコードを 2 行に割らない（splitlines 過剰一致の回帰）
     for sep in ("\u2028", "\u2029", "\u0085"):  # 見えない文字はエスケープで明示する
-        v, n = check_text(_line(title=f"行内{sep}区切り") + "\n")
+        v, n, _ = check_text(_line(title=f"行内{sep}区切り") + "\n")
         assert v == [] and n == 1, f"行分割 失敗({sep!r}): {v} / {n}"
     cases += 1
 
     # --- 入力バリアント: 壊れ方を変えて実証する ---
     # (a) クォート抜け（JSON パース不能）
-    v, _ = check_text('{"date": "2026-08-24 JST", title: "x"}\n')
+    v, _, _w = check_text('{"date": "2026-08-24 JST", title: "x"}\n')
     assert len(v) == 1 and "パースできません" in v[0], f"パース不能 失敗: {v}"
     cases += 1
 
@@ -359,26 +431,26 @@ def _run_self_test() -> None:
     for field in REQUIRED_FIELDS:
         broken = dict(VALID_RECORD)
         del broken[field]
-        v, _ = check_text(json.dumps(broken, ensure_ascii=False) + "\n")
+        v, _, _w = check_text(json.dumps(broken, ensure_ascii=False) + "\n")
         assert len(v) == 1 and field in v[0], f"必須欠落 失敗({field}): {v}"
         cases += 1
 
     # (c) 値域外: q1 / q2 / defer_reason を 1 件ずつ単独で壊す（まとめず分離する）
     for field, bad in (("q1", "no"), ("q2", "yes"), ("defer_reason", "high")):
-        v, _ = check_text(_line(**{field: bad}) + "\n")
+        v, _, _w = check_text(_line(**{field: bad}) + "\n")
         assert len(v) == 1 and field in v[0], f"値域違反 失敗({field}): {v}"
         cases += 1
 
     # (d) 日付形式違反（JST 無し / 実在しない日 / 桁不足 / 別 TZ / 非文字列）
     for bad_date in ("2026-08-24", "2026-13-45 JST", "2026-8-3 JST", "2026-08-24 UTC", 20260824):
-        v, _ = check_text(_line(date=bad_date) + "\n")
+        v, _, _w = check_text(_line(date=bad_date) + "\n")
         assert len(v) == 1 and "date" in v[0], f"日付違反 失敗({bad_date}): {v}"
         cases += 1
 
     # (e) title 空文字・非文字列（数値 / null）
     for bad_title in ("   ", 123, None):
         try:
-            v, _ = check_text(_line(title=bad_title) + "\n")
+            v, _, _w = check_text(_line(title=bad_title) + "\n")
         except Exception as e:  # 非文字列 title で例外が漏れる実装退行を FAIL として表面化する
             raise AssertionError(f"title 違反 失敗({bad_title!r}): 例外が漏れました: {e!r}") from e
         assert len(v) == 1 and "title" in v[0], f"title 違反 失敗({bad_title!r}): {v}"
@@ -386,23 +458,61 @@ def _run_self_test() -> None:
 
     # (f) related_issue の型違反（bool / 配列）
     for bad in (True, [1]):
-        v, _ = check_text(_line(related_issue=bad) + "\n")
+        v, _, _w = check_text(_line(related_issue=bad) + "\n")
         assert len(v) == 1 and "related_issue" in v[0], f"related_issue 違反 失敗({bad!r}): {v}"
         cases += 1
 
     # (g) トップレベルが配列 / 文字列
-    v, _ = check_text('[{"date": "2026-08-24 JST"}]\n')
+    v, _, _w = check_text('[{"date": "2026-08-24 JST"}]\n')
     assert len(v) == 1 and "オブジェクトではありません" in v[0], f"非オブジェクト 失敗: {v}"
     cases += 1
 
+    # (f-2) reevaluated_at: 無い行・null は従来どおり PASS（未再評価 = 消費前）
+    v, _, _w = check_text(VALID_LINE + "\n")  # VALID_LINE に reevaluated_at キー自体が無い
+    assert v == [], f"reevaluated_at 省略 失敗: {v}"
+    cases += 1
+    v, _, _w = check_text(_line(reevaluated_at=None) + "\n")
+    assert v == [], f"reevaluated_at null 失敗: {v}"
+    cases += 1
+
+    # (f-3) reevaluated_at: 正しい `YYYY-MM-DD HH:MM JST` は PASS
+    v, _, _w = check_text(_line(reevaluated_at="2026-08-30 14:23 JST") + "\n")
+    assert v == [], f"reevaluated_at 正常系 失敗: {v}"
+    cases += 1
+
+    # (f-4) reevaluated_at: Issue #707 が挙げた実害パターンを個別に FAIL させる
+    #       ①空文字 ②JST 抜け ③非文字列(数値) ④日付のみ(時刻無し・桁不足) ⑤存在しない日時
+    #       ⑥別 TZ ⑦キー名 typo は「別フィールド」として無視される（このテストでは検査不要、
+    #       typo 検知は下の (f-5) 未知フィールド WARNING で別途担保する）
+    for bad in (
+        "", "2026-08-30 14:23", 20260830, "2026-08-30 JST", "2026-08-30 25:99 JST",
+        "2026-08-30 14:23 UTC", "2026-8-3 4:5 JST",  # 桁不足（strptime は許容するため長さ検査必須）
+    ):
+        v, _, _w = check_text(_line(reevaluated_at=bad) + "\n")
+        assert len(v) == 1 and "reevaluated_at" in v[0], f"reevaluated_at 違反 失敗({bad!r}): {v}"
+        cases += 1
+
+    # (f-5) 未知フィールド（typo `reevaluted_at` 等）は違反にはせず WARNING として報告する
+    typo_line = dict(VALID_RECORD)
+    typo_line["reevaluted_at"] = "2026-08-30 14:23 JST"  # わざと typo
+    v, _, w = check_text(json.dumps(typo_line, ensure_ascii=False) + "\n")
+    assert v == [], f"未知フィールド 違反として検出してしまった: {v}"
+    assert len(w) == 1 and "reevaluted_at" in w[0], f"未知フィールド WARNING 失敗: {w}"
+    cases += 1
+
+    # 既知フィールドのみなら WARNING はゼロ件
+    v, _, w = check_text(_line(reevaluated_at="2026-08-30 14:23 JST") + "\n")
+    assert w == [], f"既知フィールドのみで WARNING が出た: {w}"
+    cases += 1
+
     # (h) 行番号の採番: 2 行目だけを壊し L2 として報告されることを確認（start=1 の回帰）
-    v, _ = check_text(VALID_LINE + "\n" + _line(q1="no") + "\n")
+    v, _, _w = check_text(VALID_LINE + "\n" + _line(q1="no") + "\n")
     assert len(v) == 1 and v[0].startswith("L2:"), f"行番号 失敗: {v}"
     cases += 1
 
     # (i) 空ファイル・空行のみ → fail-closed（違反 0 件で PASS させない）
     for empty in ("", "\n", "   \n\n"):
-        v, n = check_text(empty)
+        v, n, _ = check_text(empty)
         assert n == 0 and len(v) == 1 and "1 件もありません" in v[0], f"空ファイル 失敗({empty!r}): {v}"
         cases += 1
 
