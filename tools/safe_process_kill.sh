@@ -3,8 +3,8 @@
 #
 # `pkill -f <パターン>` は **フルコマンドライン照合** のため、パターン文字列を直書きした
 # 自分自身のシェル（`bash -c "pkill -f 'next start --port 3100'"`）にもマッチし、
-# セッションごと落ちる（実測 exit 144）。本ヘルパーは自分自身と祖先プロセスを
-# 除外してから終了シグナルを送る。
+# セッションごと落ちる（実測 exit 144）。本ヘルパーは自分自身・祖先プロセス・
+# **自分が fork した子孫プロセス**・PID 1 を除外してから終了シグナルを送る。
 #
 #   bash tools/safe_process_kill.sh 'next start --port 3100'          # 一致プロセスを終了
 #   bash tools/safe_process_kill.sh --dry-run 'next start'            # 対象 PID を出すだけ
@@ -17,9 +17,12 @@ set -uo pipefail
 SIGNAL="KILL"
 DRY_RUN=0
 
-# 自分自身と祖先プロセス（親・祖父…）の PID 集合を返す（1 行 1 件）。
-# これらを除外しないと「掃除コマンド自身」を殺して自滅する。
+# 自分自身・祖先プロセス（親・祖父…）・PID 1 の PID 集合を返す（1 行 1 件）。
+# これらを除外しないと「掃除コマンド自身」や init を殺して自滅する。
 excluded_pids() {
+  # PID 1（init）は何があっても対象にしない。コンテナでは init を落とすと
+  # セッションごと消える（祖先チェーンは pid > 1 で止まるため明示的に足す）。
+  echo 1
   local pid=$$
   local guard=0
   while [ "$pid" -gt 1 ] && [ "$guard" -lt 32 ]; do
@@ -41,20 +44,42 @@ is_excluded() {
   esac
 }
 
-# パターンに一致し、かつ除外集合に含まれない PID を 1 行 1 件で出力する。
+# PID が自分自身（$$）の子孫かどうかを ps スナップショットから判定する。
+# 🔴 これが無いと自滅が残る: コマンド置換・パイプラインで fork した子シェルは
+# 親と同じコマンドライン（＝パターン文字列を含む）を持つため、祖先除外だけでは
+# 素通りして自分の一部を kill する（実測: 一致プロセスが無いパターンでも 2 件出る）。
+is_descendant() {
+  local pid="$1" snapshot="$2" guard=0 parent
+  while [ "$pid" -gt 1 ] && [ "$guard" -lt 32 ]; do
+    parent="$(printf '%s\n' "$snapshot" | awk -v p="$pid" '$1 == p { print $2; exit }')"
+    [ -z "$parent" ] && return 1
+    [ "$parent" = "$$" ] && return 0
+    pid="$parent"
+    guard=$((guard + 1))
+  done
+  return 1
+}
+
+# パターンに一致し、かつ除外集合・自分の子孫に含まれない PID を 1 行 1 件で出力する。
 list_targets() {
   local pattern="$1"
-  local excluded
+  local snapshot excluded pid ppid args
+  snapshot="$(ps -eo pid=,ppid=,args= 2>/dev/null)"
   excluded="$(excluded_pids | tr '\n' ' ')"
-  ps -eo pid=,args= 2>/dev/null | while read -r pid args; do
+  # パイプではなく here-string で回す（パイプだと本体が subshell になり、
+  # その subshell 自身が親と同じコマンドラインを持って自己マッチの温床になる）
+  while read -r pid ppid args; do
+    [ -z "$pid" ] && continue
     case "$args" in
       *"$pattern"*) ;;
       *) continue ;;
     esac
-    # 除外集合（自分と祖先）に一致したらスキップ
+    # 除外集合（自分・祖先・PID 1）に一致したらスキップ
     is_excluded "$pid" "$excluded" && continue
+    # 自分が fork した子孫（同じコマンドラインを持つ）もスキップ
+    is_descendant "$pid" "$snapshot" && continue
     echo "$pid"
-  done
+  done <<< "$snapshot"
 }
 
 # パターンが広すぎる（ほぼ全プロセスに当たる）指定を弾く。
@@ -142,6 +167,39 @@ self_test() {
     echo "[PASS] 不正なシグナル名を実行前に拒否した"
   fi
 
+  # ケース 5: 自分が fork した子シェル（親と同じコマンドラインを持つ）を対象にしない。
+  # 子プロセスのコマンドラインにしか現れないパターンを渡し、対象 0 件になることを確かめる
+  local phantom_probe phantom_out
+  phantom_probe="safe-kill-phantom-probe-$$"
+  phantom_out="$(bash "$0" --dry-run "$phantom_probe" 2>&1)"
+  if printf '%s' "$phantom_out" | grep -q "dry-run"; then
+    echo "[FAIL] 自分が fork した子シェルを対象に含めた（自滅する）: ${phantom_out}" >&2
+    failures=$((failures + 1))
+  else
+    echo "[PASS] 自分が fork した子シェルを対象から除外した"
+  fi
+
+  # ケース 6: PID 1（init）を対象にしない
+  if is_excluded 1 "$excluded_set"; then
+    echo "[PASS] PID 1 を除外集合に含めた"
+  else
+    echo "[FAIL] PID 1 が除外集合に入っていない（init を落としうる）" >&2
+    failures=$((failures + 1))
+  fi
+
+  # ケース 7: `--signal` の値省略は即エラー終了する（無限ループしない）
+  local sig_rc=0
+  timeout 5 bash "$0" --signal >/dev/null 2>&1 || sig_rc=$?
+  if [ "$sig_rc" -eq 124 ]; then
+    echo "[FAIL] '--signal' の値省略で無限ループした（タイムアウト）" >&2
+    failures=$((failures + 1))
+  elif [ "$sig_rc" -eq 0 ]; then
+    echo "[FAIL] '--signal' の値省略をエラーにしなかった" >&2
+    failures=$((failures + 1))
+  else
+    echo "[PASS] '--signal' の値省略を即エラーにした"
+  fi
+
   if [ "$failures" -gt 0 ]; then
     echo "❌ self-test: ${failures} 件失敗" >&2
     return 1
@@ -154,8 +212,14 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) self_test; exit $? ;;
     --dry-run) DRY_RUN=1; shift ;;
-    --signal) SIGNAL="${2:-KILL}"; shift 2 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --signal)
+      # 🔴 `shift 2` は残り 1 引数だと失敗して $# が減らず、while が無限ループする（実測）
+      if [ $# -lt 2 ]; then
+        echo "[safe-process-kill] --signal には値が必要です（例: --signal TERM）" >&2
+        exit 1
+      fi
+      SIGNAL="$2"; shift 2 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
     *) break ;;
   esac
 done
