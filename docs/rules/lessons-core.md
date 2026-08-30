@@ -15,6 +15,7 @@
 | これまで `Skill` ツールで呼べていたビルトイン機能が `disable-model-invocation` で失敗する（起動経路の移動） | `docs/rules/lessons/skill-routing.md`（L-123）・`native-fallback-rules.md` §2.5 |
 | 外部 API に認証を足す・トークン種別を変える（レート枠だけでなく取得できるデータの可視範囲が変わる） | `docs/rules/lessons/api-integration.md`（L-128） |
 | 実装をわざと壊す検証（変異テスト）中に、意図しない一時改変が commit / push されてしまう・Stop フックがコミットを迫る・**変異を戻す `git checkout --` で未コミットの実装ごと消える** | `docs/rules/lessons/session-safety.md`（L-131 / **L-133**・`tools/mutation_guard.sh`） |
+| 居残りプロセスを `pkill -f` / `pgrep -f` で掃除しようとしている・掃除コマンドを打ったらセッションが `exit 144` で落ちた | `docs/rules/lessons/session-safety.md`（**L-139**・`tools/safe_process_kill.sh`） |
 | PR レビュー・CI 系 | `docs/rules/lessons/pr-review.md` / `ci-cd.md` |
 | その他カテゴリ | `docs/rules/lessons/<category>.md` |
 
