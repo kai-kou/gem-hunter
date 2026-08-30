@@ -131,7 +131,8 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
 ```
 
 新規ラベル・新規 state ファイルは作らない（`[prod-drift]` Issue の open/closed 状態だけで滞留を判定する。
-`[publish-sync]` Issue と同じ作法・`pr-review-flow-summary.md` 参照）。
+`[publish-sync]` Issue と同じ作法・`pr-review-flow-summary.md` 参照。publish-sync レーン自体は
+本リポジトリでは不採用（#407）で、ここでは **Issue 命名と重複起票防止の作法** だけを引き継ぐ）。
 
 ---
 

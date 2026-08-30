@@ -18,6 +18,8 @@ set -euo pipefail
 #   → 本実装は `cd <path> && git push ...` / `git -C <path> push ...` で cwd が
 #     この開発リポジトリ以外に移動しているかを解決し、他リポジトリなら対象外にする。
 #     判定できない場合（cd 先が解決不能・変数展開を含む等）は fail-closed でブロックする。
+#   ※ publish-sync レーン自体は本リポジトリでは不採用（#407）。上記は他リポジトリへの push を
+#     誤ブロックしないという汎用ガードの設計根拠として維持する（歴史的経緯の記録）。
 #
 # 検証: `bash .claude/hooks/pre-git-push-check.sh --self-test`
 
