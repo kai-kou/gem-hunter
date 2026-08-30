@@ -406,6 +406,8 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 - Workers の Custom Domain には **active な Cloudflare zone とその所有が必要**（公式の要件・[リサーチ §6.1.1](../../01_research/infra/20260818-cloudflare-research.md)）→ レジストラでのネームサーバー変更（人間作業・§11.2 の `H-4`。**未実施**）が発生する
 - ポートフォリオ用途（`D-3`）では `*.workers.dev` で足りる
 
+⚠️ **`H-n` の採番は本書（§11）とリサーチ文書（[`20260818-cloudflare-research.md`](../../01_research/infra/20260818-cloudflare-research.md) §6.1）で独立している。** リサーチ側の `H-3`（ネームサーバー変更）は本書の `H-4` に対応する（本書の `H-3` は GitHub App の設定で別件・🟢 対応済み）。リサーチ文書は 2026-08-18 時点のスナップショットなので採番は揃えず、参照するときに読み替える。
+
 ⚠️ Cloudflare 公式は workers.dev を「Free website 扱いで、business-critical でない個人・ホビー用途を想定したもの」と明記し、本番は Workers route か Custom Domain で動かすことを推奨している（[リサーチ §6.1.1](../../01_research/infra/20260818-cloudflare-research.md) に原文）。**独自ドメインの要否は `M-4`（公開判断ゲート）で決める**。
 
 ---

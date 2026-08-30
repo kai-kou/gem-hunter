@@ -145,7 +145,7 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 🔴 **公開反映（`publish-sync` レーン）は本リポジトリでは採用しない（#407）**（SSOT: `docs/rules/pr-review-flow-summary.md`）:
 本リポジトリ自体が公開リポジトリであり、別の公開リポジトリへ反映するレーンを持たない。したがって
 `tools/check_publish_drift.py` / `publish-sync` スキルは **実装予定ではなく不要** であり、いずれも実在しないので
-呼ぼうとしないこと（ベース由来の `post-merge-publish-check.sh` はツール不在時に何も出力せず exit 0 する）。
+呼ぼうとしないこと（ベース由来の `post-merge-publish-check.sh` は `tools/check_publish_drift.py` 不在時に publish-sync の指示を出さないだけである。同フックは `Sprint Goal:` を含む PR のマージに対して **Sprint Review + Retrospective の実施リマインド**（Issue #69・Step 7）を注入する役割を持つため、🔴 **残骸とみなして `.claude/settings.json` の配線ごと削除しないこと**）。
 本ステップで実行するのは以下のデプロイゲート判定だけである。
 
 - 🔴 **本番デプロイの発火点は PR 種別で分岐する**（`sprint-env-lifecycle-20260820`
