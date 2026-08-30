@@ -1,3 +1,6 @@
+// @ts-check
+// 🔴 本ファイルは `tsconfig.json` の `include`（`**/*.ts` / `**/*.tsx` / `**/*.mts`）に載らず
+//    `tsc --noEmit` の対象外になるため、`@ts-check` で JSDoc 型を検証させる（PR #689 レビュー）。
 /**
  * Gem Index の **算出式と値域規則の単一正本**（Issue #276）。
  *
@@ -34,6 +37,9 @@ export const RANK_MAX = 100
  * @returns {boolean}
  */
 export function isValidRank(value) {
+  // 🔵 `typeof` と `Number.isFinite` は範囲比較だけでも代替できる（`NaN >= 0` も `'50' >= 0` の
+  //    型強制も最終的には弾ける）。それでも明示しているのは、**外部 API 由来の値がここへ直接来る**
+  //    ことを読み手に示すため。「冗長な条件」として削らないこと。
   return (
     typeof value === 'number' && Number.isFinite(value) && value >= RANK_MIN && value <= RANK_MAX
   )
