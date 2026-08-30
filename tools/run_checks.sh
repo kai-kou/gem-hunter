@@ -385,6 +385,17 @@ else
   skip_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 4.13. 見送り Try ログ（deferred_try.jsonl）の整形性検査（Issue #704）
+#        retrospective スキル Step 3-0（Q1 再発判定）が読み戻す唯一の記録なので、
+#        1 行でも壊れると判定材料が静かに脱落する。ローカルファイルと git check-ignore しか
+#        見ないためネットワーク非依存（本判定も self-test も両方配線する）。
+if [ -f "$REPO_ROOT/tools/check_deferred_try_jsonl.py" ]; then
+  run_check "見送り Try ログ検査 (check_deferred_try_jsonl.py)" python3 tools/check_deferred_try_jsonl.py
+  run_check "見送り Try ログ検査 self-test (check_deferred_try_jsonl.py --self-test)" python3 tools/check_deferred_try_jsonl.py --self-test
+else
+  skip_check "見送り Try ログ検査 (check_deferred_try_jsonl.py)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
