@@ -35,3 +35,4 @@
 {"date":"2026-08-30 JST","title":"Try Issue在庫の機械フィルタリング（構造化メタデータ導入）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-30 JST","title":"Try Issue優先度判定マトリクスをself-improvement-loop-rulesへ新設","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-30 JST","title":"tools/ の exit code体系を一元ドキュメント化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"safe_process_kill.sh と clear_stale_e2e_ports.py の役割分担を文書化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
