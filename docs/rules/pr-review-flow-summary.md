@@ -36,6 +36,7 @@
 
 0. **PR 作成前チェック（層 2 の証跡・CI と重複しても省略しない）**: `npm run check`（= `bash tools/run_checks.sh`）を実行し、**結果の Markdown サマリー表を PR 本文に貼る**（貼っていないと `pre-pr-create-check.sh` が PR 作成をブロックする）（`tools/run_checks.sh` 自体の中身は別レーンの持ち物・本ファイルは呼び出し方のみ規定する）。**見出しは `##` 固定で `run_checks` または `npm run check` を含める（`pre-pr-create-check.sh` の検出仕様が SSOT・Issue #405 / PR #456）**: `## run_checks 結果` / `## npm run check 結果` のいずれか（`run_checks` / `npm run check` の部分はバッククォートで囲んでも囲まなくても良い）。同じ見出しが複数回出てきても構わない（いずれか 1 か所が満たしていれば可）。その見出しから次の `##` 見出しまでの間（無関係な別セクションの表・コードフェンス内の例示は不可）に表（`|` 区切り行）があること
 0.5. **プレビュー URL の取得**: プレビューデプロイに GitHub Actions は使わず、**セッションが `npx opennextjs-cloudflare build` → `npx wrangler versions upload --preview-alias pr-<N>` を実行** して取得したプレビュー URL を PR 本文へ貼る（`sprint-development-rules.md` `SD-1` の「開けるプレビュー URL」要件をこの経路で満たす）
+0.7. **自動保全コミットの書き換え（必須・base#483）**: ブランチに `[wip]` 件名の自動保全コミットが残っていたら、PR 作成前に自分の作業記憶から **意味のある粒度・意味のあるメッセージ** へ書き換える（件名だけなら `git commit --amend`、粒度が潰れているなら `git reset --soft origin/main` → 論理単位ごとに再コミット → `git push --force-with-lease`）。squash タイトルは単一コミットブランチでその件名を継承するため、放置すると main の履歴が意味を成さなくなる。`pre-pr-create-check.sh` が機械ブロックする
 1. `mcp__github__create_pull_request`（`head`={作業ブランチ} / `base`=main）。本文に **`Session-Id: $CLAUDE_CODE_SESSION_ID`**・`Sprint Goal:` 1 行・`sp:N`・**`Team:` トレーラー**（例 `Team: fan-out(3)`・Issue の `編成` 欄の同期コピー）を必ず含める（`--mine` 所有判定と done_sp 計測の前提）。🔴 **`SP-n` のスプリント PR には `Closes #N` を書かない**（Issue のクローズは `pr-review-watcher` Step 7 の最終アクション）
 2. **PR 存在確認（必須・L-050）**: `mcp__github__list_pull_requests` で `head` を指定して実在を確認する（作成の成否をレスポンスだけで判断しない）
 3. Slack 通知: `python3 tools/slack_notify.py pr --pr-url ... --pr-title "[PR作成] ..." --branch ...`
@@ -62,7 +63,7 @@
 
 - **記録先は PR の行単位インラインコメント（必須・#461）**: 指摘は確度（CONFIRMED / PLAUSIBLE）を問わず全件インライン化し、対応結論は **同一スレッドへの返信** で残す（新規コメントに分離しない）。指摘ゼロでもレビューを 1 件投稿する。手順・テンプレート・フォールバックの SSOT は `.claude/skills/code-review/SKILL.md` Step 3-A
 - **サイレント原則（L-102）**: AI レビュー指摘対応は **ユーザーに報告しない**。記録は PR スレッド返信・Resolve・Issue コメントのみ（Slack `--outcome` にセルフレビュー実施・指摘件数を書くのも違反）。チャット逐次報告・Slack `@mention`・完了報告アウトカムへの混入は禁止。例外は A-1〜A-6 のみ
-- **`<github-webhook-activity>` は抑制対象ではない（#61）**: これは **ハーネスが配信する入力**（購読中は必ず履歴に出る作業キュー）であり、L-102 が禁じる「assistant のナレーション」とは別物
+- **`<github-webhook-activity>` は抑制対象ではない（#61・詳細は `pr-review-flow.md`「入力とチャット出力の区別」）**: ハーネスが配信する入力であり L-102 の対象外
 - 対応した場合: 「対応しました。{修正概要}（{commit_sha}）」を返信してから Resolve
 - スキップした場合: 「スキップします。理由: {理由}」を返信してから Resolve（製品名・API 仕様は公式ドキュメントで確認してから記録する）
 
@@ -73,10 +74,8 @@ python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json   # �
 python3 tools/check_pending_pr_reviews.py --actionable-only --json          # ② 他保護込みの全体ビュー（孤児 PR 救済）
 ```
 
-`needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `awaiting_review` → 作成セッションが実行中（待機）。
+`needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `awaiting_review` → 作成セッションが実行中（待機）。**自スコープ優先（#47）・他セッション対応中 PR への不介入（CP-4・L-109）** の判定ロジック全文は `pr-review-flow.md`「セッション復帰フロー」を参照。
 
 **公開反映の回収（#449）**: 本リポジトリでは `tools/check_publish_drift.py` と `publish-sync` スキルが未実装のため、本節は実質非該当である。`[publish-sync]` の open Issue（`check_prod_drift.py` 等の他レーンが誤って同名で起票したものを除く）があれば、実装済みになるまで回収不要として扱う。
 
-- **自スコープ優先（#47）**: `--mine` は PR 本文の `Session-Id` トレーラーで自 PR を決定論的に識別する。時間ベースの除外を受けないため、圧縮・再起動後も確実に回収できる
 - **bot 自動化 PR も回収対象（`D-43`）**: `automation/gem-pool-refresh`（`github-actions[bot]`）と Dependabot（`dependabot/...` プレフィックス・`dependabot[bot]`）の 2 系統は、`authorAssociation` が信頼集合に入らないが `check_pending_pr_reviews.py` の専用述語（`_is_automation_pr()` / `_is_dependabot_pr()`）が **fork 不可 + ブランチ条件 + 著者ログイン固定の 3 条件 AND** で通すため、`needs_prompt` として出力される。これらも自 PR と同じく Layer 1 セルフレビュー → マージまで進める（放置すると `open-pull-requests-limit` に達して自動化が黙って止まる）
-- **他セッション対応中の PR には介入しない（CP-4・L-109）**: 直近 10 分以内に人間側アクティビティがある PR は `active_session: true` として `--actionable-only` から自動除外される。**出力に現れない PR には触れない**（催促・指摘対応・マージ・subscribe をしない。`--include-active` での強制取得も禁止）
