@@ -58,8 +58,11 @@ Issue #27 で報告された「送信していないバッククォートが本�
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -69,7 +72,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 INLINE_MD_LINK_RE = re.compile(r"\[[^\]\n]*\]\([^()\s]*\.md(?:#[^()\s]*)?\)")
 
 # フェンスドコードブロックの開始 / 終了（``` または ~~~）。
-FENCE_RE = re.compile(r"^\s*(?:```|~~~)")
+# 🔴 単純なトグルにすると、4 連バッククォートで囲んだブロックの内側にある 3 連フェンスを
+# 「閉じ」と誤認して以降の内外判定が反転する（本リポジトリの SKILL.md に実在する書式）。
+# CommonMark に合わせ「開いたフェンスと同種で、同じ長さ以上のフェンスだけが閉じる」を実装する。
+FENCE_RE = re.compile(r"^\s*(?P<fence>(?P<char>`|~)(?P=char){2,})")
 
 
 # レビュー済みの例外マーカー（check_datetime_tz.py の `# tz-ok` と同型）。
@@ -88,12 +94,21 @@ def find_violations_in_text(text: str, *, fenced_only: bool) -> list[tuple[int, 
     （SKILL.md の本文リンクではなく、そこに書かれた本文テンプレートだけを見るため）。
     """
     violations: list[tuple[int, str]] = []
-    in_fence = False
+    open_fence: str | None = None  # 開いているフェンスの文字列（None なら外側）
 
     for lineno, line in enumerate(text.splitlines(), start=1):
-        if FENCE_RE.match(line):
-            in_fence = not in_fence
-            continue
+        fence_match = FENCE_RE.match(line)
+        if fence_match:
+            fence = fence_match.group("fence")
+            if open_fence is None:
+                open_fence = fence
+                continue
+            # 閉じるのは同種かつ同じ長さ以上のフェンスだけ（内側の短いフェンスは本文扱い）。
+            if fence[0] == open_fence[0] and len(fence) >= len(open_fence):
+                open_fence = None
+                continue
+
+        in_fence = open_fence is not None
         if fenced_only and not in_fence:
             continue
         if ALLOW_MARKER in line:
@@ -111,7 +126,7 @@ def find_violations_in_text(text: str, *, fenced_only: bool) -> list[tuple[int, 
 def default_targets() -> list[Path]:
     targets: list[Path] = []
     targets.extend(sorted((REPO_ROOT / "tools").glob("*.py")))
-    targets.extend(sorted((REPO_ROOT / ".claude" / "skills").glob("*/SKILL.md")))
+    targets.extend(sorted((REPO_ROOT / ".claude" / "skills").rglob("SKILL.md")))
     github_dir = REPO_ROOT / ".github"
     if github_dir.is_dir():
         targets.extend(sorted(p for p in github_dir.rglob("*.md") if "TEMPLATE" in p.name.upper()))
@@ -133,7 +148,12 @@ def check_files(paths: list[Path]) -> int:
 
         for lineno, line in find_violations_in_text(text, fenced_only=fenced_only):
             total += 1
-            rel = path.relative_to(REPO_ROOT)
+            # リポジトリ外のファイルを明示指定された場合は relative_to が ValueError になるため、
+            # 表示だけの用途で絶対パスへフォールバックする（検査自体は継続する）。
+            try:
+                rel: Path = path.relative_to(REPO_ROOT)
+            except ValueError:
+                rel = path
             print(f"❌ {rel}:{lineno}: .md への行内リンクの直後に非 ASCII の文が続いています", file=sys.stderr)
             print(f"    {line}", file=sys.stderr)
 
@@ -197,6 +217,28 @@ def self_test() -> int:
     # 未閉じフェンスでも例外にならず、フェンス内として扱われること
     if len(find_violations_in_text("```\n" + broken[1], fenced_only=True)) != 1:
         failures.append("未閉じフェンス内の違反を拾えていない")
+
+    # 4 連バッククォートで囲んだブロック内の 3 連フェンスを「閉じ」と誤認しないこと。
+    # 誤認すると以降の内外判定が反転し、テンプレート本文の違反を丸ごと取りこぼす。
+    nested = "\n".join(["````", "```", broken[0], "```", "````", broken[1]])
+    nested_hits = find_violations_in_text(nested, fenced_only=True)
+    if [n for n, _ in nested_hits] != [3]:
+        failures.append(f"4 連フェンス内の 3 連フェンスで内外判定が反転している: {nested_hits}")
+
+    # リポジトリ外のファイルを指定してもクラッシュせず違反として報告できること
+    with tempfile.TemporaryDirectory() as tmp:
+        outside = Path(tmp) / "outside.md"
+        outside.write_text(broken[3] + "\n", encoding="utf-8")
+        sink = io.StringIO()  # self-test の出力に検査結果を混ぜない
+        try:
+            with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                rc = check_files([outside])
+            if rc != 1:
+                failures.append("リポジトリ外ファイルの違反を exit 1 で報告できていない")
+            if str(outside) not in sink.getvalue():
+                failures.append("リポジトリ外ファイルのパスが報告に出ていない")
+        except ValueError as exc:
+            failures.append(f"リポジトリ外ファイルの指定でクラッシュした: {exc}")
 
     # レビュー済み例外マーカーが効くこと（効きすぎないこと＝マーカー無しでは検出されること）
     if find_violations_in_text(broken[3] + f"  # {ALLOW_MARKER}", fenced_only=False):
