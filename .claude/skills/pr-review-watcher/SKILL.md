@@ -131,27 +131,26 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 | 3    | 指摘への自動対応（修正コミット or スキップ → スレッド返信 → **Resolve 必須**）                                                                                                                                                                                                                                                                                                                                               |
 | 4    | Layer 0（機械ゲート）+ Layer 1 通過の確認。**`check_pending_pr_reviews.py --verify-layer1 <PR番号>` で Layer 1 投稿済みかを機械検証**（base#462・挙動は reference.md Step 4）。**あわせて `quality-checks.yml` の check run が緑であることを `mcp__github__pull_request_read`（`method="get_check_runs"` / `method="get_status"`）で確認する**（赤ならマージしない。check run が付かない例外は本ファイル冒頭の二層構成の節） |
 | 5    | 自動マージ（squash・外部レビュアー応答待ちなし）                                                                                                                                                                                                                                                                                                                                                                             |
-| 6    | **公開リポジトリへの反映（`publish-sync`）は常に実行**。**本番デプロイはゲート判定を経由し、一次経路は Workers Builds の再トリガー**（`tools/trigger_workers_build.py`。`npm run deploy` の直叩きはフォールバック）: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は同スクリプトが内部でゲートを確認し、開いているときだけトリガーする（fail-closed）。詳細は下記         |
+| 6    | **本番デプロイはゲート判定を経由し、一次経路は Workers Builds の再トリガー**（`tools/trigger_workers_build.py`。`npm run deploy` の直叩きはフォールバック）: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は同スクリプトが内部でゲートを確認し、開いているときだけトリガーする（fail-closed）。詳細は下記         |
 | 7    | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）ならデプロイ → 疎通確認 → プレビュー環境の退役（`tools/retire_preview_aliases.py`）まで実行。詳細は下記                                                                                                                                     |
 | 8    | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102）                                                                                                                                                                                                                                                                                                                                                       |
 | 9    | マージ後フィードバックループ → `docs/rules/lessons/pr-review.md` に教訓追記（必須・`lessons-management.md` に従う）                                                                                                                                                                                                                                                                                                          |
 
-### Step 6: マージ直後の公開反映とデプロイゲート（#449・`sprint-env-lifecycle-20260820` 決定）
+### Step 6: マージ直後のデプロイゲート（`sprint-env-lifecycle-20260820` 決定）
 
 🔵 **一次経路を `wrangler deploy` の直叩きから Workers Builds の再トリガーへ変更**（Issue #451）:
 `D-31` の理念（マージ＝本番反映・セッションが `wrangler deploy` を打たない）に戻す変更であり、
 `npm run deploy` の手動実行は L-130（auto mode classifier ブロック）対策のフォールバックに降格する。
 
-マージした瞬間が、公開リポジトリとのドリフトが生まれる瞬間である。**反映をセッション終了時や次回の
-定期ルーティンに先送りしない**（先送りが実際に 13〜17 時間の滞留を生んだ・#449）。
+🔴 **公開リポジトリへの反映（`publish-sync` レーン）は本リポジトリでは採用しない**（#407）。本リポジトリ
+自体が公開リポジトリであり、`tools/check_publish_drift.py` / `publish-sync` スキルは **実装予定ではなく
+不要**（ベース由来の `post-merge-publish-check.sh` はツール不在時に何も出力せず exit 0 する）。存在しない
+ツール・スキルを呼ぼうとしないこと。本ステップで実行するのは以下のデプロイゲート判定だけである。
 
-- `post-merge-publish-check.sh`（PostToolUse・matcher `mcp__github__merge_pull_request`）が
-  マージ成功を検知してドリフトを判定し、反映が要るときだけ指示を注入する。指示が来たら
-  `publish-sync` スキルに従って **push まで完遂する**（ユーザー確認は不要・PR 種別によらず常に実行）。
 - 🔴 **本番デプロイの発火点は PR 種別で分岐する**（`sprint-env-lifecycle-20260820`
   議論・lead 判定「B: 本番デプロイの発火点」・飼い主の明示指示 2026-08-19・`D-23`。`permissions.allow` に登録済み）:
   - **スプリント PR（`Sprint Goal:` 行あり）**: このステップではデプロイしない。判定は Step 7 の
-    スプリントレビュー結果に委ねる（下記）。push（公開反映）だけ完遂して Step 7 へ進む。
+    スプリントレビュー結果に委ねる（下記）。このステップでは何もせず Step 7 へ進む。
   - **非スプリント PR**（改善 Issue・retro-try・docs 等）: 🔴 **一次経路は `python3
 tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部で `tools/check_deploy_gate.py`
     を確認し、ゲートが開いているときだけトリガーする）。終了コード 0 = トリガー成功 / 1 = ゲート待機中
@@ -167,13 +166,8 @@ tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部�
   deploy 後は本番 URL の疎通を確認する。**手順の実体（コマンド列）は `cloudflare-infrastructure.md` §8.2
   が SSOT**（本項では参照と判断基準のみを持ち、再掲しない）。⚠️ **これは「デプロイ実行」の委任であって、
   Layer 1 セルフレビュー・指摘対応・マージ条件を省略してよいという意味ではない**（レビュー規律は従来どおり）。
-- **反映できないセッションでも黙って終わらせない**。`add_repo` が提供されない自動タスク実行モード
-  （scheduled trigger・GitHub Issue/PR 起動・L-117）では push が 403 になるため、その場で
-  `publish-sync` スキルの §5 に従って `[publish-sync]` Issue に失敗段階を記録する。
-- ローカル実行で `gh pr merge` を使った場合はフックの matcher（MCP ツール）に掛からない。
-  セッション終了時の `stop-publish-check.sh` が backstop として拾う。
 
-### Step 7: スプリントレビュー + レトロスペクティブ（マージ + 公開反映の直後・完了報告の前・必須）
+### Step 7: スプリントレビュー + レトロスペクティブ（マージ直後・完了報告の前・必須）
 
 `sp1-review-retro-20260819` 議論（争点 C・lead 判定）の決定に基づく。判定後のデプロイ・退役は
 `sprint-env-lifecycle-20260820` 議論（lead 判定 B/C/D）の決定に基づく。**発火条件**: マージした PR 本文に

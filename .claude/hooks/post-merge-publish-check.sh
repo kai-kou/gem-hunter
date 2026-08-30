@@ -26,6 +26,12 @@
 # 下流（公開レーンを持たないプロジェクト）での挙動: 本フックは配布物に含まれるが、
 # tools/check_publish_drift.py が無い環境では何も出力せず exit 0 する（無害に不発する）。
 #
+# 🔴 本リポジトリ（gem-hunter）での扱い（Issue #407）: publish-sync レーンは **採用しない**。
+# 本リポジトリ自体が公開リポジトリであり、別の公開リポジトリへ反映する必要が無いため、
+# tools/check_publish_drift.py も publish-sync スキルも **実装予定ではなく不要** である。
+# 本フックはベース（claude-code-repository-base）由来の配布物として残しているだけで、
+# 上記のとおり常に不発する。ルール・スキル側の正本は docs/rules/pr-review-flow-summary.md。
+#
 # 入力 (stdin JSON): { "tool_name": "...", "tool_input": {...}, "tool_response": {...} }
 # 自己テスト: bash .claude/hooks/post-merge-publish-check.sh --self-test
 set -uo pipefail
