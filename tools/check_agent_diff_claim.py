@@ -54,9 +54,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# パスらしきトークン: 英数字/アンダースコアで始まり、スラッシュ・ドット・ハイフンを含み、
-# 最後に "." + 拡張子で終わる文字列。
-_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9_]+")
+# パスらしきトークン: 英数字/アンダースコア/開き角括弧で始まり、スラッシュ・ドット・ハイフン・
+# 角括弧を含み、最後に "." + 拡張子で終わる文字列。
+# 角括弧（`[` `]`）は Next.js App Router の動的セグメント（`app/[locale]/page.tsx` 等）で
+# 実際にこのリポジトリのパスに使われているため必須（Issue #712）。`git ls-files` で確認した限り
+# 本リポジトリのパスに現れる記号は `[` `]` `.` `-` `_` `/` のみで、`(` `)` `@` `+` `~` 等は
+# 使われていない（含めると日本語文中の記号を誤って拾うリスクが増すため見送る）。
+# 先頭にも `[` を許すのは、報告が先頭ディレクトリを省いて `[locale]/page.tsx` と書いた場合に
+# 開き括弧を落とした `locale]/page.tsx` を生まないため（PR #716 Layer 1 レビュー）。
+#
+# 既知の限界（いずれも `missing_from_diff` = 余分な警告側にしか倒れない）:
+#   - `list[0].name` のような配列アクセス表記が 1 トークンとして拾われる
+#   - `a[b.c` のように括弧が閉じない断片がそのまま候補に残る
+# 一方、`][` で連結された 2 パス（`[a/x.py][b/y.py]`）は 1 トークンに融合すると
+# **両方のパスが `missing_from_report` 側へ落ちる**（見落とし方向）ため、
+# `extract_claimed_paths` が後処理で明示的に分割する。
+_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_\[][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+")
 _URL_RE = re.compile(r"https?://\S+")  # ドメイン名がパストークンとして誤抽出されるのを防ぐため事前に除去する
 
 
@@ -70,16 +83,38 @@ def extract_claimed_paths(text: str) -> set[str]:
     """
     text = _URL_RE.sub(" ", text)
     candidates: set[str] = set()
-    for tok in _PATH_TOKEN_RE.findall(text):
-        tok = tok.strip("`'\"()[],;:")
-        tok = tok.lstrip("./")
-        if not tok:
-            continue
-        ext = tok.rsplit(".", 1)[-1]
-        if ext.isdigit():
-            continue
-        candidates.add(tok)
+    for raw in _PATH_TOKEN_RE.findall(text):
+        # `[a/x.py][b/y.py]` のように区切りなしで並べられた 2 パスを分割する。
+        # 融合したままだと実 diff のどちらとも一致せず、両方が missing_from_report
+        # （見落とし方向のより重い警告）に落ちるため、ここだけは後処理で必ず割る。
+        for tok in raw.split("]["):
+            tok = tok.strip("`'\"(),;:")
+            tok = _trim_unpaired_brackets(tok)
+            tok = tok.lstrip("./")
+            if not tok:
+                continue
+            ext = tok.rsplit(".", 1)[-1]
+            if ext.isdigit():
+                continue
+            candidates.add(tok)
     return candidates
+
+
+def _trim_unpaired_brackets(tok: str) -> str:
+    """端に付いた対応相手のいない角括弧だけを落とす（対応が取れているものは残す）。
+
+    `split("][")` で割った断片は端に片方の括弧だけが残ることがある。動的セグメント
+    （`app/[locale]/page.tsx`）の括弧は対応が取れているので落とさない。
+    """
+    while tok.startswith("]"):
+        tok = tok[1:]
+    while tok.endswith("["):
+        tok = tok[:-1]
+    if tok.startswith("[") and "]" not in tok[1:]:
+        tok = tok[1:]
+    if tok.endswith("]") and "[" not in tok[:-1]:
+        tok = tok[:-1]
+    return tok
 
 
 def run_git(args: list[str], cwd: Path) -> str:
@@ -213,6 +248,65 @@ def run_self_test() -> int:
             "docs/rules/agent-team-summary.md",
         },
         str(got3),
+    )
+
+    # extract_claimed_paths: 角括弧を含む Next.js App Router 動的セグメントパスを
+    # 切り詰めずに、かつ 2 件を同じ文字列に潰さず別々に抽出できること（Issue #712）
+    bracket_report_text = (
+        "役3（#549）新規作成: app/[locale]/page.test.tsx\n"
+        "役3（#549）新規作成: app/[locale]/repos/[owner]/[repo]/page.test.tsx\n"
+    )
+    got_bracket = extract_claimed_paths(bracket_report_text)
+    check(
+        "extract_claimed_paths 角括弧パスを切り詰めず別々に抽出（#712）",
+        got_bracket
+        == {
+            "app/[locale]/page.test.tsx",
+            "app/[locale]/repos/[owner]/[repo]/page.test.tsx",
+        },
+        str(got_bracket),
+    )
+
+    # extract_claimed_paths: 区切りなしで隣接した 2 パス（`][`）を融合させないこと。
+    # 融合すると両方が missing_from_report（見落とし方向）へ落ちるため、
+    # 上の角括弧ケースより実害が重い（PR #716 Layer 1 レビュー）
+    got_adjacent = extract_claimed_paths("参照: [a/x.py][b/y.py]")
+    check(
+        "extract_claimed_paths 隣接した角括弧パスを融合させない（#716）",
+        got_adjacent == {"a/x.py", "b/y.py"},
+        str(got_adjacent),
+    )
+
+    # extract_claimed_paths: 動的セグメントから書き始めた報告でも開き括弧を落とさないこと
+    got_leading = extract_claimed_paths("新規作成: [locale]/page.tsx")
+    check(
+        "extract_claimed_paths 先頭の動的セグメントの開き括弧を落とさない（#716）",
+        got_leading == {"[locale]/page.tsx"},
+        str(got_leading),
+    )
+
+    # compare: Issue #712 の再現ケースを end-to-end で検証する。
+    # 抽出単体ではなく compare まで通し、報告と実 diff が一致（mismatch=False）することを見る
+    # （元の症状は「報告 4 件 / 実 diff 5 件」という件数の食い違いだった）
+    issue712_report = (
+        "役3（#549）新規作成: app/[locale]/page.test.tsx\n"
+        "役3（#549）新規作成: app/[locale]/repos/[owner]/[repo]/page.test.tsx\n"
+        "役3（#549）新規作成: app/[locale]/repos/[owner]/page.test.tsx\n"
+        "役3（#549）修正: src/ui/repo-card.tsx\n"
+        "役3（#549）修正: tools/check_agent_diff_claim.py\n"
+    )
+    issue712_real = {
+        "app/[locale]/page.test.tsx",
+        "app/[locale]/repos/[owner]/[repo]/page.test.tsx",
+        "app/[locale]/repos/[owner]/page.test.tsx",
+        "src/ui/repo-card.tsx",
+        "tools/check_agent_diff_claim.py",
+    }
+    r_issue712 = compare(extract_claimed_paths(issue712_report), issue712_real)
+    check(
+        "compare #712 再現ケース（5 ファイル）で不一致 0 件（#712 完了条件）",
+        r_issue712["mismatch"] is False,
+        str(r_issue712),
     )
 
     # compare: 一致
