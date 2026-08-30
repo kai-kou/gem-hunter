@@ -155,8 +155,10 @@ node tools/generate_gem_digest.mjs --report content/analytics/gem-pool-report.js
 
 ## データ更新頻度
 
-- 更新は `D-28` の方針どおり **Cloudflare の外**（セッション or Routine の cron）で行い、生成した JSON を git commit → デプロイで Static Assets ごと差し替える
-- 本 CLI は「更新の実行手段」を用意するだけで、CI やスケジューラでの自動実行は **別レーン**（本 CLI 自体は cron からは呼ばれない）
+- 更新は `D-28` の方針どおり **Cloudflare の外** で行い、生成した JSON を git commit → デプロイで Static Assets ごと差し替える
+- 🔴 **起動経路は 1 つに定まっている（`D-40`・Issue #458 / #482）**: [`.github/workflows/gem-pool-refresh.yml`](../.github/workflows/gem-pool-refresh.yml) が **日次で本 CLI を実行**（`cron: '17 21 * * *'` = JST 06:17）し、**`main` への反映（PR 作成）は直近の反映コミットから 7 日以上経過した回だけ** に絞る（生成・QA は毎日走らせてパイプラインの健全性を検証し、反映頻度だけを週次に落とす。反映の要否は `tools/gem_pool_qa.mjs --should-publish` が判定する）。手動での即時反映は同ワークフローの `workflow_dispatch`（`force_publish: true`）から行う
+- 🔴 **セッションが手で実行する運用は残っていない**（放置される経路を作らないため）。ワークフローは PR を作るところまでを担い、**マージは Claude セッションの既存 PR 回収経路**（`pr-review-flow-summary.md` の `D-43`）が行う。`main` への直接 push・自動マージ・デプロイはワークフロー側では行わない（A-1）
+- **鮮度監視も実データに接続済み**: `project-sync` スキル Step 3.85 が `python3 tools/check_digest_freshness.py --json --max-age-hours 192` を実データに対して実行し、stale なら `--heal` で再生成を試行、失敗時は Slack へ FYI 通知する（`E-25` / `NFR-8`）。`run_checks.sh` から呼ばれる `--self-test` は検査ロジックの回帰テストであり、鮮度監視の経路ではない
 
 ## ライセンス表示義務（`D-29`）
 
