@@ -175,7 +175,7 @@ Q1 または Q2 が YES？（Q3 は判定に使わない）
 
 配置・フォーマットは既存の `content/analytics/sprint/*.jsonl`（`docs/rules/session-sprint-rules-detail.md` §5・「日次メトリクスは JSONL に追記してコミット対象にする」という既存の作法）に倣い、**追記専用の JSONL・1 行 1 レコード** とする。
 
-🔴 **このログは追跡対象でなければ意味がない。** `.gitignore` は `content/analytics/*` を除外しているため、`!content/analytics/retro/` の再包含を入れてある（`content/analytics/sprint/` と同じ扱い・#417）。追跡されないとクラウドではコンテナ破棄でログごと消え、`Q1` の判定材料が永久に貯まらず、Step 3-0 が「初回は必ず見送り、記録が残らないので次回も見送る」自己ロックに戻る。`git check-ignore content/analytics/retro/deferred_try.jsonl` が **何も出力しない**（＝無視されない）ことが前提条件にゃ。
+🔴 **このログは追跡対象でなければ意味がない。** `.gitignore` は `content/analytics/*` を除外しているため、`!content/analytics/retro/` の再包含を入れてある（`content/analytics/sprint/` と同じ扱い・#417）。追跡されないとクラウドではコンテナ破棄でログごと消え、`Q1` の判定材料が永久に貯まらず、Step 3-0 が「初回は必ず見送り、記録が残らないので次回も見送る」自己ロックに戻る。`git check-ignore content/analytics/retro/deferred_try.jsonl` が **何も出力しない**（＝無視されない）ことが前提条件にゃ。**この前提と各行の整形性は `tools/check_deferred_try_jsonl.py` が機械検査する**（`npm run check` に配線済み・検査の中身はツール側が正本なのでここに書き写さない）。
 
 ```jsonl
 {
@@ -204,10 +204,16 @@ mkdir -p content/analytics/retro
 DATE="$(TZ=Asia/Tokyo date +%Y-%m-%d) JST"
 echo "{\"date\":\"${DATE}\",\"title\":\"{try.title}\",\"q1\":\"NO\",\"q2\":\"NO\",\"defer_reason\":\"medium\",\"related_issue\":null}" \
   >> content/analytics/retro/deferred_try.jsonl
+
+# 🔴 追記したら必ず整形性を機械検査してからコミットする（exit 0 を確認する）
+python3 tools/check_deferred_try_jsonl.py
+
 git add content/analytics/retro/deferred_try.jsonl
 git commit -m "docs: retro 見送り Try ログ追記（{pipeline} {entity_id}）"
 git push
 ```
+
+🔴 **`python3 tools/check_deferred_try_jsonl.py` が非 0 を返したらコミットしない。** 上の追記コマンドはシェルで組み立てた JSON なので、`{try.title}` に `"` や `\` が含まれると壊れた行がそのまま追記される。壊れた行を commit すると、その場では誰も気づかず **数時間後の無関係な PR が `npm run check` で赤くなる**（本検査は PR 作成必須ゲートに配線済み）。非 0 のときは追記した行を修正し、再実行して exit 0 になってから `git add` へ進む。
 
 **追記が失敗した場合のフォールバック（握り潰し禁止）**: `git add` / `commit` / `push` のいずれかが失敗した場合、その Try を見送りのまま終わらせず、**その場で Step 3-C（新規 Issue 作成）にフォールバックして起票する**（quota 上限は超えてよい。記録が残らないリスクより、Issue として確実に残すことを優先する）。
 

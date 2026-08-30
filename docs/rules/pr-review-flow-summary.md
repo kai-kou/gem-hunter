@@ -22,7 +22,7 @@
 > 🔴 **品質チェックは二層構成**（`D-42`・Issue #543）。**GitHub Actions は本番デプロイには使わない**（`D-31` / `D-32` の Workers Builds が正本・不変）。
 > - **層 1（CI・自動）**: `push`（`main`）と `pull_request` を契機に `.github/workflows/quality-checks.yml` が
 >   Prettier `format:check` → ESLint `lint` → `tsc --noEmit` → Vitest `test` を自動実行する（読み取り権限のみ・自動マージもデプロイもしない）。
->   🔴 **層 1 の被覆はごく一部**: CI が見るのは `tools/run_checks.sh` に定義された 65 件（実測・`grep -cE '^\s*run_check(_timeout)? ' tools/run_checks.sh`・2026-08-29 時点。PR #670 で Workers E2E（Issue #669）が増え 60 件から増加）のチェックのうち **4 件だけ**。
+>   🔴 **層 1 の被覆はごく一部**: CI が見るのは `tools/run_checks.sh` に定義された **70 件規模**（実測 74 件・2026-08-31 JST 時点。件数は増え続けるので、正確な数は `grep -cE '^\s*run_check(_timeout)? ' tools/run_checks.sh` でその場で数える）のチェックのうち **4 件だけ**。
 >   残り（E2E・Lighthouse・依存規則 `check_architecture_boundaries.py`・CJK Markdown・LP 静的検査・各 self-test など）は層 2 が唯一の担保であり、
 >   **CI 緑は層 2 の省略理由にならない**。※ `.prettierignore` が `docs/` `content/` `site/` `public/data/` を除外しているため、
 >   **ドキュメントのみの PR では CI が実質空振りの緑を返す**（層 2 の CJK Markdown 検査などが本当の担保になる）。
@@ -75,6 +75,6 @@ python3 tools/check_pending_pr_reviews.py --actionable-only --json          # �
 
 `needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `awaiting_review` → 作成セッションが実行中（待機）。**自スコープ優先（#47）・他セッション対応中 PR への不介入（CP-4・L-109）** の判定ロジック全文は `pr-review-flow.md`「セッション復帰フロー」を参照。
 
-**公開反映（`publish-sync` レーン）は本リポジトリでは採用しない（#407）**: 本リポジトリ自体が公開リポジトリであり、別の公開リポジトリへ反映するレーンを持たない。したがって `tools/check_publish_drift.py` / `publish-sync` スキルは **実装予定ではなく不要** であり、セッション復帰時に `[publish-sync]` Issue を回収する責務も無い（ベース由来の `post-merge-publish-check.sh` はツール不在時に何も出力せず exit 0 する）。
+**公開反映（`publish-sync` レーン）は本リポジトリでは採用しない（#407）**: 本リポジトリ自体が公開リポジトリであり、別の公開リポジトリへ反映するレーンを持たない。したがって `tools/check_publish_drift.py` / `publish-sync` スキルは **実装予定ではなく不要** であり、セッション復帰時に `[publish-sync]` Issue を回収する責務も無い（ベース由来の `post-merge-publish-check.sh` は `tools/check_publish_drift.py` 不在時に publish-sync の指示を出さないだけで、`Sprint Goal:` を含む PR のマージでは Sprint Review + Retrospective の実施リマインド（Issue #69）を注入する。配線を削除しないこと）。
 
 - **bot 自動化 PR も回収対象（`D-43`）**: `automation/gem-pool-refresh`（`github-actions[bot]`）と Dependabot（`dependabot/...` プレフィックス・`dependabot[bot]`）の 2 系統は、`authorAssociation` が信頼集合に入らないが `check_pending_pr_reviews.py` の専用述語（`_is_automation_pr()` / `_is_dependabot_pr()`）が **fork 不可 + ブランチ条件 + 著者ログイン固定の 3 条件 AND** で通すため、`needs_prompt` として出力される。これらも自 PR と同じく Layer 1 セルフレビュー → マージまで進める（放置すると `open-pull-requests-limit` に達して自動化が黙って止まる）
