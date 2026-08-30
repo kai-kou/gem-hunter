@@ -18,11 +18,19 @@ CLAUDE.md「Markdown 出力ルール」の機械チェック＆自動整形ツ�
   python3 tools/check_cjk_markdown.py --changed                    # 変更された .md を対象に検出
   python3 tools/check_cjk_markdown.py --fix --changed              # 変更された .md を自動整形
   python3 tools/check_cjk_markdown.py --changed --under docs/      # 変更された .md のうち docs/ 配下だけ対象
+  python3 tools/check_cjk_markdown.py --under docs/rules/          # --under 単独: 配下の .md を再帰的に全件対象
   python3 tools/check_cjk_markdown.py --self-test                  # セルフテスト
 
 Issue #85: 並行サブエージェント実行中に `--changed`（git 変更検知ベース）だけで一括整形すると、
 自分が担当していない・他エージェントが並行編集中のファイルまで書き換えてしまう事故があった。
 `--under DIR`（複数指定可）でパスを絞り込むことで、担当ディレクトリ配下だけを対象にできる。
+
+Issue #706: `--under` は当初 `--changed` 併用時の絞り込みフィルタとしてしか機能せず、
+`--under` 単独指定は「対象ファイルがありません」で exit 0（fail-open・黙って 0 ファイル検査で
+PASS に見える）だった。`--under` 単独指定は **そのディレクトリ配下の .md を再帰的に選択する
+ファイル選択** として扱う（`resolve_targets()` / `walk_md_under()`）。それでも対象 0 件なら
+typo 等の可能性が高いため exit 1 で警告する（`--changed` 側の「変更 .md が無い」という
+日常的な 0 件とは区別し、そちらは従来どおり exit 0 を維持する）。
 
 設計（誤検出を避けるための厳格化）:
   - フェンスドコードブロック（``` / ~~~）内は一切触らない
@@ -194,6 +202,57 @@ def changed_md_files() -> list[str]:
     return out
 
 
+def walk_md_under(unders: list[str]) -> list[str]:
+    """unders の各ディレクトリ配下を再帰的に走査し、.md / .markdown ファイル一覧を返す（Issue #706）。
+
+    `--under` が単独指定されたときのファイル選択に使う（`filter_under` は既存パス集合を
+    絞り込むだけで、それ自体はファイル選択にならない＝#706 の fail-open の原因だった）。
+    存在しないディレクトリは黙ってスキップする（typo 検出は呼び出し側の 0 件警告に任せる）。
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for d in unders:
+        dd = d.strip().rstrip("/")
+        if not dd:
+            continue
+        base = Path(dd)
+        if not base.is_dir():
+            continue
+        matches = sorted(base.rglob("*.md")) + sorted(base.rglob("*.markdown"))
+        for p in sorted(matches):
+            if not p.is_file():
+                continue
+            s = str(p)
+            if s in seen or is_excluded(s):
+                continue
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def resolve_targets(files: list[str], changed: bool, unders: list[str]) -> tuple[list[str], str]:
+    """files / --changed / --under の指定から検査対象パス一覧と選択モードを決定する（Issue #706）。
+
+    戻り値: (paths, mode)
+      - mode == "none":       ファイル指定も --changed も --under も無い（明確な誤用）
+      - mode == "under-only": --under だけが指定された（ディレクトリ配下を再帰的にファイル選択する。
+                              #706 で追加した新挙動。0 件なら typo 等の可能性が高いので警告対象）
+      - mode == "other":      files / --changed が絡む在来ロジック。0 件（変更 .md が無い等）は
+                              日常的に起こる正常系のため、呼び出し側は静かに exit 0 にしてよい
+    """
+    if unders and not files and not changed:
+        return walk_md_under(unders), "under-only"
+
+    paths = list(files)
+    if changed:
+        paths += changed_md_files()
+    if unders:
+        paths = filter_under(paths, unders)
+    if not files and not changed:
+        return [], "none"
+    return paths, "other"
+
+
 def filter_under(paths: list[str], unders: list[str]) -> list[str]:
     """paths のうち、unders のいずれかのディレクトリ配下にあるものだけを残す（Issue #85）。
 
@@ -358,6 +417,121 @@ def self_test() -> int:
             failed += 1
             print(f"FAIL(excluded-exists): EXCLUDED_PATHS の {rel} が存在しない（リネーム漏れ？）")
 
+    # --under 単独指定はディレクトリ配下を再帰的にファイル選択する（Issue #706）
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "a.md").write_text("dummy", encoding="utf-8")
+        (tmp_path / "sub" / "b.md").write_text("dummy", encoding="utf-8")
+        (tmp_path / "sub" / "c.markdown").write_text("dummy", encoding="utf-8")
+        (tmp_path / "sub" / "d.txt").write_text("dummy", encoding="utf-8")  # .md 以外は対象外
+
+        got = sorted(walk_md_under([str(tmp_path)]))
+        expected = sorted(
+            str(p)
+            for p in (
+                tmp_path / "a.md",
+                tmp_path / "sub" / "b.md",
+                tmp_path / "sub" / "c.markdown",
+            )
+        )
+        if got == expected:
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(walk_md_under): expected={expected!r}\n  got:      {got!r}")
+
+        # 存在しないディレクトリは黙ってスキップ（0 件の判定は呼び出し側の責務）
+        got_missing = walk_md_under([str(tmp_path / "does-not-exist")])
+        if got_missing == []:
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(walk_md_under-missing): got={got_missing!r}")
+
+    # resolve_targets: モード判定（Issue #706 の核心 — --under 単独が fail-open しないこと）
+    resolve_cases = [
+        # (files, changed, unders, 期待 mode)
+        ([], False, [], "none"),                       # 何も指定なし → 誤用
+        (["a.md"], False, [], "other"),                # ファイル明示指定
+        ([], True, [], "other"),                       # --changed のみ
+        ([], False, ["/nonexistent-dir-706"], "under-only"),  # --under 単独 → ファイル選択モード
+        ([], True, ["docs"], "other"),                 # --changed + --under 併用 → 従来の絞り込み
+        (["a.md"], False, ["docs"], "other"),           # files + --under 併用 → 従来の絞り込み
+    ]
+    for files_in, changed_in, unders_in, expected_mode in resolve_cases:
+        _, got_mode = resolve_targets(files_in, changed_in, unders_in)
+        if got_mode == expected_mode:
+            passed += 1
+        else:
+            failed += 1
+            print(
+                f"FAIL(resolve_targets-mode): files={files_in!r} changed={changed_in!r} "
+                f"unders={unders_in!r}\n  expected: {expected_mode!r}\n  got:      {got_mode!r}"
+            )
+
+    # resolve_targets: --under 単独指定が実際にディレクトリ配下のファイルを返すこと
+    with tempfile.TemporaryDirectory() as tmp2:
+        tmp2_path = Path(tmp2)
+        (tmp2_path / "x.md").write_text("dummy", encoding="utf-8")
+        paths_got, mode_got = resolve_targets([], False, [str(tmp2_path)])
+        if mode_got == "under-only" and paths_got == [str(tmp2_path / "x.md")]:
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(resolve_targets-underonly-files): mode={mode_got!r} paths={paths_got!r}")
+
+    # main() の exit code 分岐を CLI 経由で直接確認する（Issue #706 の核心）。
+    # resolve_targets() の mode 判定だけでは main() 側の分岐（return 0/1/2）まで
+    # 検証できないため、実際にサブプロセスとして起動し終了コードを突合する。
+    import tempfile as _tf
+
+    with _tf.TemporaryDirectory() as tmp3:
+        tmp3_path = Path(tmp3)
+        cli_cases = [
+            # (args, 期待終了コード, 説明)
+            (["--under", str(tmp3_path / "no-such-dir")], 1, "--under 単独・0 件 → 失敗扱い"),
+            ([], 2, "引数なし → 誤用エラー"),
+        ]
+        for extra_args, expected_code, desc in cli_cases:
+            r = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), *extra_args],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                cwd=str(tmp3_path),
+            )
+            if r.returncode == expected_code:
+                passed += 1
+            else:
+                failed += 1
+                print(
+                    f"FAIL(cli-exitcode): {desc} args={extra_args!r}"
+                    f"\n  expected exit={expected_code} got exit={r.returncode}"
+                    f"\n  stderr={r.stderr!r}"
+                )
+
+        # --under 単独指定・実際に .md がある場合は exit 0 で検査自体が走ること
+        (tmp3_path / "z.md").write_text("これは" + "**重要**" + "です", encoding="utf-8")
+        r_detect = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--under", str(tmp3_path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=str(tmp3_path),
+        )
+        # 半角スペース違反を仕込んだので検出モードは exit 1（かつ 0 件警告文言は出ない）
+        if r_detect.returncode == 1 and "1 件もありません" not in r_detect.stderr:
+            passed += 1
+        else:
+            failed += 1
+            print(
+                "FAIL(cli-underonly-detects-file): "
+                f"exit={r_detect.returncode} stderr={r_detect.stderr!r} stdout={r_detect.stdout!r}"
+            )
+
     print(f"\n[cjk-md] self-test: {passed} passed / {failed} failed")
     return 0 if failed == 0 else 1
 
@@ -380,13 +554,39 @@ def main() -> int:
     if args.self_test:
         return self_test()
 
-    paths = list(args.files)
-    if args.changed:
-        paths += changed_md_files()
-    if args.under:
-        paths = filter_under(paths, args.under)
+    paths, mode = resolve_targets(args.files, args.changed, args.under)
+
     if not paths:
-        print("対象ファイルがありません（ファイル指定または --changed が必要）", file=sys.stderr)
+        if mode == "none":
+            # 誤用（ファイル指定・--changed・--under のいずれも無い）。呼び出し元は必ず
+            # いずれかを渡すため、ここに到達するのは想定外の使い方＝usage error として扱う
+            # （Issue #706: 0 件を黙って PASS にしない）。
+            print(
+                "[cjk-md] エラー: 対象ファイルが指定されていません"
+                "（ファイル指定 / --changed / --under のいずれかが必要）",
+                file=sys.stderr,
+            )
+            return 2
+        if mode == "under-only":
+            # --under 単独指定でディレクトリ配下を再帰選択したが 1 件も .md が無かった。
+            # ディレクトリ typo の可能性が高く、他モードと違って「0 件が日常的に起こる
+            # 正常系」ではないため、明示的に失敗として扱う（Issue #706 の本丸）。
+            print(
+                f"[cjk-md] 警告: --under で指定した配下に .md ファイルが 1 件もありません: {args.under}",
+                file=sys.stderr,
+            )
+            print(
+                "[cjk-md]   → パス指定の誤りがないか確認してください（黙って PASS 扱いにしない）",
+                file=sys.stderr,
+            )
+            return 1
+        # mode == "other"（files / --changed 経由）: --changed で変更 .md が 0 件なのは
+        # 日常的な正常系（多くの PR は .md を変更しない）。run_checks.sh 等の既存呼び出し元を
+        # 壊さないため exit 0 を維持しつつ、メッセージで「0 件は正常」と明示する（Issue #706）。
+        print(
+            "[cjk-md] 対象ファイルなし（変更された .md が無い、または --under の絞り込みで 0 件・OK）",
+            file=sys.stderr,
+        )
         return 0
 
     return check_files(paths, args.fix)
