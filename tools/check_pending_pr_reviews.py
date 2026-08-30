@@ -190,7 +190,18 @@ def run_gh(args: list[str], critical: bool = False) -> str:
     部分的な情報欠落として空リストにフォールバックしてよい。
     """
     cmd = ["gh"] + args
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        # クラウド実行環境には gh がプリインストールされておらず、PATH にシムも無い構成がある
+        # （CLAUDE.md「gh CLI / GitHub 操作」・L-114）。ここで素の例外を投げると呼び出し元まで
+        # トレースバックで抜け、終了コード 1 = LAYER1_MISSING と区別できなくなる（＝誤ブロック）。
+        # 「gh に到達できない」は critical なら GhUnavailableError（呼び出し元が UNKNOWN に倒す）、
+        # 補助取得なら空文字にフォールバックする。
+        print(f"WARNING: gh を実行できません: {' '.join(cmd)}（{e.__class__.__name__}）", file=sys.stderr)
+        if critical:
+            raise GhUnavailableError(f"gh を実行できません: {e}") from e
+        return ""
     if result.returncode != 0:
         stderr_msg = result.stderr.strip()
         print(f"WARNING: gh command failed: {' '.join(cmd)}", file=sys.stderr)
