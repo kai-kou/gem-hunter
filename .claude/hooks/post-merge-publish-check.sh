@@ -26,6 +26,9 @@
 # 下流（公開レーンを持たないプロジェクト）での挙動: 本フックは配布物に含まれるが、
 # tools/check_publish_drift.py が無い環境では何も出力せず exit 0 する（無害に不発する）。
 #
+# [#407] publish-sync は非採用（SSOT: docs/rules/pr-review-flow-summary.md）。
+# 本フックはベース由来の配布物として残しているだけで、上記のとおり常に不発する。
+#
 # 入力 (stdin JSON): { "tool_name": "...", "tool_input": {...}, "tool_response": {...} }
 # 自己テスト: bash .claude/hooks/post-merge-publish-check.sh --self-test
 set -uo pipefail

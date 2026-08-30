@@ -408,6 +408,8 @@ unset _ctx_file _ctx_gen
 # 「マージしたセッションが反映する」だけでは滞留が残る。そこで **インタラクティブセッションの
 # 冒頭** を回収点として明示する。ここでドリフト判定そのものは走らせない（公開側の clone を伴い
 # 毎セッション数秒〜数十秒かかるため）。判定はセッション側が最初のツール呼び出しで行う。
+# [#407] publish-sync は非採用（SSOT: docs/rules/pr-review-flow-summary.md）。
+# tools/check_publish_drift.py が存在しないため下の -f ガードが常に偽になり、本ブロックは指示を注入しない。
 if [ -f "${PROJECT_DIR}/tools/check_publish_drift.py" ]; then
   printf '\n📦 【公開リポジトリ反映レーン】このセッションが公開リポジトリを attach できる（`add_repo` が使える）インタラクティブセッションなら、作業の早い段階で `python3 tools/check_publish_drift.py --quiet` を実行し、終了コードが 1 または 2 のときは `publish-sync` スキルで反映まで完遂すること（ユーザー確認は不要）。無人セッションでは push が 403 になるため、`[publish-sync]` Issue への記録までで止めてよい。\n\n'
 fi
