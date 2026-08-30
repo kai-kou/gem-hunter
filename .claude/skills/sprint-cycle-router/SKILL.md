@@ -119,6 +119,11 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
      （A-1〜A-6 に該当しない・`user-notification-triage.md`）。
    - 2（判定不能）→ fail-closed。`type:bug` Issue（`lane:cloudflare-deploy` 等の既存ラベル体系が
      あれば流用）に判定不能の事実とエラー内容を記録し、握り潰さずに §2 へ進む。
+     🔴 **起票前に必ず重複チェックする**（#675・実測: 既存 #626 があるのに #672 を重複起票し、
+     duplicate クローズの手戻りが発生した）。`mcp__github__search_issues` で同種の Issue
+     （対象スクリプト名 + エラー種別。例 `repo:{owner}/{repo} is:issue is:open check_prod_drift`）を
+     検索し、**既存 open Issue があれば追記コメント・無ければ新規起票する**（Step 3.5 や
+     §9 の `[Milestone] M-3 到達` と同じ作法）。
 5. 2（`check_prod_drift.py` 自体が判定不能）→ 4 の「2（判定不能）」と同じ扱いで fail-closed 記録し、
    §2 へ進む。
 6. `trigger_workers_build.py` が存在しない場合（未デプロイ環境等）はスキップし、記録も起票もせず
