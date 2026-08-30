@@ -330,6 +330,15 @@ else
   skip_check "日時 TZ 検査 (check_datetime_tz.py)" "スクリプトが見つかりません"
 fi
 
+# 4.8.6. Hot 層予算チェックの self-test（増減ログのテーブル書式が変わったときの沈黙失敗を検知する）。
+#        本体（引数なし実行）は tools/self_review_check.py が Hot 層変更時に Warning として回すため、
+#        ここでは self-test だけを配線する（PR ごとに増減ログの記録漏れでブロックしない）。
+if [ -f "$REPO_ROOT/tools/check_hot_budget.py" ]; then
+  run_check "Hot 層予算チェック self-test (check_hot_budget.py --self-test)" python3 tools/check_hot_budget.py --self-test
+else
+  skip_check "Hot 層予算チェック self-test (check_hot_budget.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 4.9. TS/JSX 字句解析ヘルパーの共通モジュール self-test（Issue #612）
 #      複数の検査スクリプトが共有するため、ここが壊れると検査全体が壊れる
 if [ -f "$REPO_ROOT/tools/ts_source.py" ]; then
@@ -584,6 +593,14 @@ if [ -f "$REPO_ROOT/.claude/hooks/pre-cloudflare-destructive-check.sh" ]; then
     bash .claude/hooks/pre-cloudflare-destructive-check.sh --self-test
 else
   skip_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" "スクリプトが見つかりません"
+fi
+
+# WIP 自動保全（差し戻し 1 巡猶予 + スナップショット + PR 件名ガード）の振る舞いテスト（#483）
+if [ -f "$REPO_ROOT/tools/test_wip_commit_deferral.sh" ]; then
+  run_check "WIP 自動保全の振る舞いテスト (test_wip_commit_deferral.sh)" \
+    bash tools/test_wip_commit_deferral.sh
+else
+  skip_check "WIP 自動保全の振る舞いテスト (test_wip_commit_deferral.sh)" "スクリプトが見つかりません"
 fi
 
 # --- サマリー表 ---

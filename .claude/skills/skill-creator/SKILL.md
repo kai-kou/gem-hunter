@@ -73,11 +73,11 @@ Based on the user interview, fill in these components:
 
 スキルは必ずどちらかになる。既定は **model-invoked** で、本リポジトリは現在 20 スキルすべてがこれ。
 
-| | model-invoked（既定） | user-invoked（`disable-model-invocation: true`） |
-|---|---|---|
-| 起動できる主体 | 人間 + Claude 自身 + 他スキル | **人間だけ** |
-| description | 常時コンテキストに載る（毎ターン課金） | エージェントから見えない（常駐コスト 0） |
-| 代わりに払うもの | コンテキスト負荷 | 人間側の記憶負荷（どのスキルがあるか人間が索引になる） |
+|                  | model-invoked（既定）                  | user-invoked（`disable-model-invocation: true`）       |
+| ---------------- | -------------------------------------- | ------------------------------------------------------ |
+| 起動できる主体   | 人間 + Claude 自身 + 他スキル          | **人間だけ**                                           |
+| description      | 常時コンテキストに載る（毎ターン課金） | エージェントから見えない（常駐コスト 0）               |
+| 代わりに払うもの | コンテキスト負荷                       | 人間側の記憶負荷（どのスキルがあるか人間が索引になる） |
 
 > 🔴 **`disable-model-invocation: true` は「description を隠す」だけでなく、`Skill` ツール経由の
 > 起動そのものを塞ぐ**。他スキルの本文に「`Skill(そのスキル)` を呼べ」と書いても届かず、自律
@@ -92,7 +92,7 @@ Based on the user interview, fill in these components:
 
 #### leading word（1 語に畳んで繰り返す）
 
-**leading word** は、モデルの事前学習に既にある圧縮された概念（*lesson* / *fog of war* / *tracer bullet*）を、
+**leading word** は、モデルの事前学習に既にある圧縮された概念（_lesson_ / _fog of war_ / _tracer bullet_）を、
 文ではなく **語として繰り返し使う** もの。定義が分散して蓄積され、最小のトークンで振る舞いの一領域を
 固定できる。**既存語を先に探す**（造語は priors を呼べないので、既存語なら無料で手に入る定義を
 自分のトークンで書く羽目になる）。
@@ -103,8 +103,8 @@ Based on the user interview, fill in these components:
 書き終えたら「3 箇所で言い換えている三つ組」「1 文かけて概念を指しているだけの参照」を探す。
 そこは 1 語に畳める:
 
-- 「速く・決定的で・軽い」→ *tight*（*tight* なループ）
-- 「信用できるループ」→ *red*（ループがバグで *red* になる、という二値の観測可能な状態に変わる）
+- 「速く・決定的で・軽い」→ _tight_（_tight_ なループ）
+- 「信用できるループ」→ _red_（ループがバグで _red_ になる、という二値の観測可能な状態に変わる）
 
 ### Skill Writing Guide
 

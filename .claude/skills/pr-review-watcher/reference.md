@@ -155,11 +155,11 @@ gh api graphql -f query='
 `python3 tools/check_pending_pr_reviews.py --verify-layer1 <PR番号>` を必ず通す
 （Layer 0 は PR 作成前の静的チェックで、Layer 1 の実施有無までは検出しないため別ゲートとして追加）。
 
-| 終了コード | 意味 | 挙動 |
-|---|---|---|
-| 0（`LAYER1_VERIFIED`） | レビュー本体 or 行単位インラインコメントが 1 件以上存在 | マージ続行 |
-| 1（`LAYER1_MISSING`） | 0 件（Layer 1 未実施の可能性） | **マージをブロック**。`Skill(code-review)` を実行してから再検証する |
-| 2（`LAYER1_UNKNOWN`） | gh 到達不可で判定不能（クラウドの 403 等） | この終了コード単体ではブロックしない。`mcp__github__pull_request_read(method="get_reviews")` で件数を直接確認してから判断する |
+| 終了コード             | 意味                                                    | 挙動                                                                                                                          |
+| ---------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 0（`LAYER1_VERIFIED`） | レビュー本体 or 行単位インラインコメントが 1 件以上存在 | マージ続行                                                                                                                    |
+| 1（`LAYER1_MISSING`）  | 0 件（Layer 1 未実施の可能性）                          | **マージをブロック**。`Skill(code-review)` を実行してから再検証する                                                           |
+| 2（`LAYER1_UNKNOWN`）  | gh 到達不可で判定不能（クラウドの 403 等）              | この終了コード単体ではブロックしない。`mcp__github__pull_request_read(method="get_reviews")` で件数を直接確認してから判断する |
 
 > **クラウド無人セッションでは常に `LAYER1_UNKNOWN` になる**（gh 未導入が既定・L-114）。
 > この場合は必ず `mcp__github__pull_request_read(method="get_reviews")` を実行して現行コミットへの
