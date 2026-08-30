@@ -53,7 +53,7 @@
 {"date": "2026-08-31 JST", "title": "並列委譲の完了待ちを sleep ポーリングから通知ハンドラへ変える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "委譲プロンプトに run_checks.sh の全チェック項目を列挙する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "同一事象の再発確認コメントを新規追加ではなく回数カウンタ方式に変える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-08-31 JST", "title": "SKILL.md 内の節参照・呼称定義の実在を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "718"}
+{"date": "2026-08-31 JST", "title": "SKILL.md 内の節参照・呼称定義の実在を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "PR 作成前と指摘反映後の 2 回 run_checks.sh を実行するルールを機械化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "Step 0.2 で既存 Issue への追記を省略してよい条件をルール化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "完了条件をどの関数呼び出しで検証するかを委譲プロンプトに明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
