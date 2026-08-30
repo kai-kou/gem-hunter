@@ -164,6 +164,15 @@ def _branch_matches(branch: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(branch, p) for p in patterns)
 
 
+# `GET /builds/workers/{tag}/triggers` が空配列を返す状態（= Workers Builds の Git 連携そのものが
+# 外れている）を、「trigger はあるが対象ブランチに一致しない」状態と **別のメッセージ** で報告するための
+# 目印。前者の復旧はダッシュボードでの GitHub App 認可（A-6・`cloudflare-infrastructure.md` §8.2.3）で、
+# 後者は `--branch` の指定ミスであり、対処が全く異なる（#626 で切り分けに数セッションを要した）。
+# ⚠️ もう一方（`check_prod_drift.py` の `REASON_NO_DEPLOYMENT_FOUND`）との文言統一は #693 の担当で、
+# ここでは扱っていない（trigger 0 件のとき 2 本のスクリプトが別々の言い回しを返す状態は残る・L-140）。
+NO_TRIGGERS_REGISTERED_HINT = "build trigger が 1 件も登録されていません"
+
+
 def select_production_trigger(triggers: list[dict[str, Any]], branch: str) -> dict[str, Any] | None:
     """`branch_includes` に branch を含み、`branch_excludes` には含まれない trigger を選ぶ。
 
@@ -429,9 +438,20 @@ def resolve_trigger(
     if worker_tag is None:
         raise ApiError(f"Worker '{worker_name}' が workers/scripts 一覧に見つかりません")
     triggers = fetch_triggers(account_id, token, worker_tag)
+    if not triggers:
+        raise ApiError(
+            f"Worker '{worker_name}' に {NO_TRIGGERS_REGISTERED_HINT}"
+            "（Workers Builds の Git 連携が未接続、または接続が外れています）。"
+            "復旧にはダッシュボードでの GitHub App 認可が必要で、API 経路は存在しません"
+            "（A-6・docs/03_design/infrastructure/cloudflare-infrastructure.md §8.2.3）"
+        )
     trigger = select_production_trigger(triggers, branch)
     if trigger is None:
-        raise ApiError(f"branch_includes に '{branch}' を含む trigger が見つかりません")
+        raise ApiError(
+            f"branch_includes に '{branch}' を含む trigger が見つかりません"
+            f"（登録済み trigger は {len(triggers)} 件。ブランチ条件の不一致であり、"
+            "Git 連携そのものは生きています）"
+        )
     return {"worker_name": worker_name, "worker_tag": worker_tag, "trigger": trigger}
 
 
@@ -635,6 +655,68 @@ def _self_test_resolve_trigger_branch_wiring() -> list[str]:
         failures.append(f"resolve_trigger: 一致しないブランチで例外を送出していない: {got}")
     except ApiError:
         pass
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return failures
+
+
+def _self_test_resolve_trigger_empty_triggers() -> list[str]:
+    """trigger が **0 件** のときに「対象ブランチ向けが無い」ではなく「1 件も登録されていない」と
+    区別して報告できているかを検証する（#626）。
+
+    実測（2026-08-31 JST）で `GET /builds/workers/{tag}/triggers` が `[]` を返す状態が判明した。
+    この状態は「Workers Builds の Git 連携そのものが外れている」ことを意味し、復旧手段は
+    ダッシュボードでの GitHub App 認可（A-6）で、`--branch` の指定ミス（trigger はあるが
+    ブランチ条件が一致しない）とは対処が全く異なる。同じメッセージに畳むと切り分けに数セッションかかる。
+    """
+    failures: list[str] = []
+
+    def fake_scripts(account_id: str, token: str) -> list[dict[str, Any]]:  # noqa: ARG001
+        return [{"id": "gem-hunter", "tag": "worker-tag-x"}]
+
+    def fake_empty_triggers(account_id: str, token: str, worker_tag: str) -> list[dict[str, Any]]:  # noqa: ARG001
+        return []
+
+    def fake_mismatched_triggers(account_id: str, token: str, worker_tag: str) -> list[dict[str, Any]]:  # noqa: ARG001
+        return [{"trigger_uuid": "uuid-preview", "branch_includes": ["pr-*"]}]
+
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonc", delete=False) as handle:
+        handle.write('{"name": "gem-hunter"}')
+        tmp_path = Path(handle.name)
+    try:
+        try:
+            resolve_trigger(
+                "main", "acc", "tok", tmp_path,
+                fetch_scripts=fake_scripts, fetch_triggers=fake_empty_triggers,
+            )
+            failures.append("resolve_trigger: trigger 0 件で例外を送出していない")
+        except ApiError as error:
+            message = str(error)
+            if NO_TRIGGERS_REGISTERED_HINT not in message:
+                failures.append(
+                    "resolve_trigger: trigger 0 件のとき専用メッセージ "
+                    f"'{NO_TRIGGERS_REGISTERED_HINT}' を含んでいない: {message}"
+                )
+
+        try:
+            resolve_trigger(
+                "main", "acc", "tok", tmp_path,
+                fetch_scripts=fake_scripts, fetch_triggers=fake_mismatched_triggers,
+            )
+            failures.append("resolve_trigger: ブランチ不一致で例外を送出していない")
+        except ApiError as error:
+            message = str(error)
+            if NO_TRIGGERS_REGISTERED_HINT in message:
+                failures.append(
+                    "resolve_trigger: trigger はあるがブランチが一致しないケースを "
+                    f"「0 件」と誤って報告している: {message}"
+                )
+            if "1 件" not in message:
+                failures.append(
+                    "resolve_trigger: ブランチ不一致のメッセージに登録済み trigger 件数が無い"
+                    f"（0 件との切り分けができない）: {message}"
+                )
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -869,6 +951,7 @@ def run_self_test() -> int:
         ("ゲート終了コード ↔ 行動 ↔ 最終終了コードの写像", _self_test_gate_outcome_and_exit_code),
         ("fail-closed 判定（should_call_api）", _self_test_should_call_api),
         ("trigger 解決の branch 伝搬（resolve_trigger）", _self_test_resolve_trigger_branch_wiring),
+        ("trigger 0 件と branch 不一致の区別（resolve_trigger）", _self_test_resolve_trigger_empty_triggers),
         ("_http_json の異常系（不正 JSON / HTTPError）", _self_test_http_json_error_handling),
         ("workers/scripts ページング判定", _self_test_should_fetch_next_worker_scripts_page),
         ("ビルド結果の判定（build_wait_outcome）", _self_test_build_wait_outcome),
