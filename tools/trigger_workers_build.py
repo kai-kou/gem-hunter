@@ -168,6 +168,8 @@ def _branch_matches(branch: str, patterns: list[str]) -> bool:
 # 外れている）を、「trigger はあるが対象ブランチに一致しない」状態と **別のメッセージ** で報告するための
 # 目印。前者の復旧はダッシュボードでの GitHub App 認可（A-6・`cloudflare-infrastructure.md` §8.2.3）で、
 # 後者は `--branch` の指定ミスであり、対処が全く異なる（#626 で切り分けに数セッションを要した）。
+# ⚠️ もう一方（`check_prod_drift.py` の `REASON_NO_DEPLOYMENT_FOUND`）との文言統一は #693 の担当で、
+# ここでは扱っていない（trigger 0 件のとき 2 本のスクリプトが別々の言い回しを返す状態は残る・L-140）。
 NO_TRIGGERS_REGISTERED_HINT = "build trigger が 1 件も登録されていません"
 
 

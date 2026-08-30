@@ -12,7 +12,7 @@ import LocaleHome from './page'
  * 固定するテスト。
  *
  * 🔴 **なぜここで検証するのか**（`testing-strategy.md` §3 は `async` Server Component を
- * E2E の担当としている）: `docs/rules/lessons/*`（#629 / #681）によりこの実行環境では
+ * E2E の担当としている）: GitHub Issue #629 / #681（未解決・lessons 未昇格）のとおりこの実行環境では
  * Playwright がブラウザ不一致で全滅するため、E2E での担保が取れない。一方 `toErrorPresentation()`
  * の呼び出し元（本ファイル）に `isAuthConfigured` を配線し忘れても、純関数テスト
  * （`error-message.test.ts`）は呼び出し元の配線ミスを検知しない。`app/[locale]/gems/page.test.tsx`
