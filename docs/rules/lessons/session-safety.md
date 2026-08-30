@@ -132,3 +132,29 @@ E2E と Lighthouse が大量に落ちる。失敗はすべて `net::ERR_CONNECTI
 **判定基準**: 「これから `git checkout --` / `git restore` / `git reset` を叩く。**そのファイルに、まだコミットしていない自分の変更が入っていないか？**」 入っているなら先にコミットする。
 
 **保持理由**: 変異テストは SD-2（テストが退行を本当に捕まえるかの確認）で推奨されており、実施するたびに再発しうる。Issue #410 で `mutation_guard.sh` の射程明示または自動 stash 化を追跡中。
+
+---
+
+## L-134: `pkill -f` / `pgrep -f` がパターンを書いた自分自身にマッチしてセッションごと落ちる（2026-08-30）
+
+**症状**: 居残りプロセスを掃除しようと `pkill -f 'next start --port 3100'` を実行すると、対象プロセスだけでなく **そのコマンドを実行しているシェル自身** も落ちる。セッションが `exit 144`（SIGKILL）で終了し、未コミットの作業ごと会話が切れる。
+
+**根本原因**: `-f` は **フルコマンドライン照合**。`bash -c "pkill -f 'next start --port 3100'"` のコマンドラインには照合パターンそのものが含まれるため、掃除コマンド自身（およびそれを起動した親シェル）がヒットする。L-132 の対策（文字クラスで自己マッチを外す・`run_check[s]\.sh`）は `pgrep` の待機ループには効くが、**掃除対象の名前をそのまま打つ `pkill` では書き換えようがない**（パターンを崩すと本来の対象にも当たらなくなる）。
+
+**対策**:
+
+```
+❌ pkill -f 'next start --port 3100'
+✅ bash tools/safe_process_kill.sh 'next start --port 3100'
+   bash tools/safe_process_kill.sh --dry-run 'next start'     # 対象 PID を確認するだけ
+   bash tools/safe_process_kill.sh --signal TERM 'vitest'     # 既定は KILL
+```
+
+- `tools/safe_process_kill.sh` は **自分自身と祖先プロセス（親・祖父…）の PID を除外集合に入れてから** シグナルを送る。自己マッチによる自滅が構造的に起きない
+- 除外集合の判定に `excluded_pids | grep -q` を使わない（`set -o pipefail` 下で grep の早期終了が上流に SIGPIPE を送り、一致していてもパイプライン全体が非ゼロになる）。同スクリプトは `case` によるパターン照合で判定している
+- 掃除の前に何が当たるかを見たいときは `--dry-run` を使う。パターンを広く取りすぎていないかはここで気づける
+- self-test（`bash tools/safe_process_kill.sh --self-test`）は `tools/run_checks.sh` に配線済み。自己除外・祖先除外・無関係プロセスの検出と終了の 3 ケースを実測する
+
+**判定基準**: 「これから `pkill -f` / `pgrep -f` に **自分のコマンドラインに現れる文字列** を渡そうとしていないか？」 渡しているなら `safe_process_kill.sh`（待機ループなら L-132 の文字クラス）に切り替える。
+
+**保持理由**: 居残りサーバー（E2E の固定ポート）の掃除は品質チェックの再実行時に頻出する定型作業で、被害は「セッション消滅 + 未コミット作業の消失」と大きい。Issue #490。

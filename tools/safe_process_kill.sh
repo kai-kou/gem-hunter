@@ -57,6 +57,25 @@ list_targets() {
   done
 }
 
+# パターンが広すぎる（ほぼ全プロセスに当たる）指定を弾く。
+# 照合は `*"$pattern"*` の部分一致なので、短すぎる語・空文字は無差別 kill になる。
+validate_pattern() {
+  local pattern="$1"
+  if [ ${#pattern} -lt 3 ]; then
+    echo "[safe-process-kill] パターンが短すぎます（3 文字以上）: '${pattern}'" >&2
+    return 1
+  fi
+  return 0
+}
+
+# シグナル名・番号が実在するか（kill -l で解決できるか）を確認する。
+validate_signal() {
+  local sig="$1"
+  kill -l "$sig" >/dev/null 2>&1 && return 0
+  echo "[safe-process-kill] 不明なシグナルです: '${sig}'" >&2
+  return 1
+}
+
 self_test() {
   local failures=0
 
@@ -109,6 +128,20 @@ self_test() {
     fi
   fi
 
+  # ケース 4: 広すぎるパターン・不正シグナルは実行前に弾く
+  if bash "$0" --dry-run "ab" >/dev/null 2>&1; then
+    echo "[FAIL] 短すぎるパターン 'ab' を弾けなかった" >&2
+    failures=$((failures + 1))
+  else
+    echo "[PASS] 広すぎるパターンを実行前に拒否した"
+  fi
+  if bash "$0" --signal NOPE "safe-process-kill-nomatch" >/dev/null 2>&1; then
+    echo "[FAIL] 不正シグナル 'NOPE' を弾けなかった" >&2
+    failures=$((failures + 1))
+  else
+    echo "[PASS] 不正なシグナル名を実行前に拒否した"
+  fi
+
   if [ "$failures" -gt 0 ]; then
     echo "❌ self-test: ${failures} 件失敗" >&2
     return 1
@@ -133,6 +166,8 @@ if [ $# -lt 1 ]; then
 fi
 
 PATTERN="$1"
+validate_pattern "$PATTERN" || exit 1
+validate_signal "$SIGNAL" || exit 1
 TARGETS="$(list_targets "$PATTERN")"
 
 if [ -z "$TARGETS" ]; then
