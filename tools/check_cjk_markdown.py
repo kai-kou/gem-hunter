@@ -32,6 +32,18 @@ PASS に見える）だった。`--under` 単独指定は **そのディレク�
 typo 等の可能性が高いため exit 1 で警告する（`--changed` 側の「変更 .md が無い」という
 日常的な 0 件とは区別し、そちらは従来どおり exit 0 を維持する）。
 
+Issue #711（PR #711 Layer 1 セルフレビュー指摘）:
+  - CRITICAL: 明示ファイル指定（または `--changed`）と `--under` を併用したとき、指定ファイルが
+    `--under` 配下と 1 件も一致しないと `filter_under()` が 0 件を返し、「日常的な 0 件」
+    （`--changed` で変更 .md が無い）と区別できずに exit 0（fail-open）していた。
+    `resolve_targets()` は「フィルタ前に候補が 1 件以上あったか」を追跡し、フィルタ後に
+    0 件へ落ちた場合は `mode="filtered-to-zero"` として exit 1 で警告する
+    （フィルタ前から候補が 0 件だった場合のみ従来どおり `mode="other"` で exit 0 を維持）。
+  - WARNING: `walk_md_under()` の `base.rglob("*.md")` が `.git/` `node_modules/` `.next/` 等の
+    生成物・サードパーティ製ディレクトリを除外せず、`--fix --under .` 的な使い方で
+    第三者著作物（例: `node_modules/**/README.md`）まで書き換えうる状態だった（#233 の方針と矛盾）。
+    `walk_md_under()` は `os.walk()` + `EXCLUDED_DIRS` によるディレクトリ単位のプルーニングへ変更。
+
 設計（誤検出を避けるための厳格化）:
   - フェンスドコードブロック（``` / ~~~）内は一切触らない
   - YAML フロントマター（先頭 --- ... ---）は触らない
@@ -46,6 +58,7 @@ typo 等の可能性が高いため exit 1 で警告する（`--changed` 側の�
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -75,6 +88,25 @@ CJK_WORD_RE = re.compile(f"[{CJK_WORD}]")
 #    パスはリポジトリルートからの相対で書く（前方一致ではなく完全一致で判定する）。
 EXCLUDED_PATHS = frozenset({
     "docs/02_requirements/minimum-requirements.md",
+})
+
+# --- 整形対象外（生成物・サードパーティ製ディレクトリ・#711）-----------------
+# `walk_md_under()` がこれらのディレクトリ配下へ再帰しないようにする（ディレクトリ名の
+# 完全一致で判定＝`os.walk` の `dirnames` から除外）。`.gitignore` に実在が確認できる
+# 生成物ディレクトリ + 慣習的なサードパーティ格納ディレクトリを列挙する。
+EXCLUDED_DIRS = frozenset({
+    ".git",
+    "node_modules",
+    ".next",
+    ".open-next",
+    "dist",
+    "build",
+    "out",
+    "coverage",
+    "playwright-report",
+    "test-results",
+    ".venv",
+    "venv",
 })
 
 
@@ -208,6 +240,11 @@ def walk_md_under(unders: list[str]) -> list[str]:
     `--under` が単独指定されたときのファイル選択に使う（`filter_under` は既存パス集合を
     絞り込むだけで、それ自体はファイル選択にならない＝#706 の fail-open の原因だった）。
     存在しないディレクトリは黙ってスキップする（typo 検出は呼び出し側の 0 件警告に任せる）。
+
+    Issue #711: `EXCLUDED_DIRS`（`.git` / `node_modules` / `.next` 等）配下へは
+    再帰しない（`os.walk` の `dirnames` をその場でプルーニングする＝ディレクトリ単位の
+    除外。以前の `Path.rglob("*.md")` はディレクトリ除外を一切持たず、`--fix --under .`
+    的な使い方で第三者著作物 [`node_modules/**/README.md` 等] まで書き換えうる状態だった）。
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -218,11 +255,16 @@ def walk_md_under(unders: list[str]) -> list[str]:
         base = Path(dd)
         if not base.is_dir():
             continue
-        matches = sorted(base.rglob("*.md")) + sorted(base.rglob("*.markdown"))
-        for p in sorted(matches):
-            if not p.is_file():
+        matches: list[str] = []
+        for dirpath, dirnames, filenames in os.walk(base):
+            # dirnames をその場で書き換えると os.walk がその配下へ降りなくなる（公式仕様）
+            dirnames[:] = [dn for dn in dirnames if dn not in EXCLUDED_DIRS]
+            for fn in filenames:
+                if fn.lower().endswith((".md", ".markdown")):
+                    matches.append(str(Path(dirpath) / fn))
+        for s in sorted(matches):
+            if not Path(s).is_file():
                 continue
-            s = str(p)
             if s in seen or is_excluded(s):
                 continue
             seen.add(s)
@@ -231,14 +273,20 @@ def walk_md_under(unders: list[str]) -> list[str]:
 
 
 def resolve_targets(files: list[str], changed: bool, unders: list[str]) -> tuple[list[str], str]:
-    """files / --changed / --under の指定から検査対象パス一覧と選択モードを決定する（Issue #706）。
+    """files / --changed / --under の指定から検査対象パス一覧と選択モードを決定する（Issue #706 / #711）。
 
     戻り値: (paths, mode)
-      - mode == "none":       ファイル指定も --changed も --under も無い（明確な誤用）
-      - mode == "under-only": --under だけが指定された（ディレクトリ配下を再帰的にファイル選択する。
-                              #706 で追加した新挙動。0 件なら typo 等の可能性が高いので警告対象）
-      - mode == "other":      files / --changed が絡む在来ロジック。0 件（変更 .md が無い等）は
-                              日常的に起こる正常系のため、呼び出し側は静かに exit 0 にしてよい
+      - mode == "none":            ファイル指定も --changed も --under も無い（明確な誤用）
+      - mode == "under-only":      --under だけが指定された（ディレクトリ配下を再帰的にファイル
+                                   選択する。#706 で追加した新挙動。0 件なら typo 等の可能性が
+                                   高いので警告対象）
+      - mode == "filtered-to-zero": files / --changed 由来の候補が 1 件以上あったのに、--under の
+                                   絞り込みで 0 件になった（#711 の CRITICAL 指摘: 明示ファイル指定と
+                                   --under の対象ディレクトリが噛み合っていない fail-open のサイン。
+                                   `--changed` で真に変更 .md が無いケースとは区別し、警告対象にする）
+      - mode == "other":           files / --changed が絡む在来ロジック。フィルタ前から候補が
+                                   0 件（例: --changed で変更 .md が無い）なのは日常的に起こる
+                                   正常系のため、呼び出し側は静かに exit 0 にしてよい
     """
     if unders and not files and not changed:
         return walk_md_under(unders), "under-only"
@@ -246,10 +294,16 @@ def resolve_targets(files: list[str], changed: bool, unders: list[str]) -> tuple
     paths = list(files)
     if changed:
         paths += changed_md_files()
-    if unders:
-        paths = filter_under(paths, unders)
     if not files and not changed:
         return [], "none"
+
+    had_candidates = bool(paths)
+    if unders:
+        paths = filter_under(paths, unders)
+        if had_candidates and not paths:
+            # files / --changed 由来の候補は存在したが、--under の絞り込みで全滅した。
+            # 「フィルタ前から 0 件」（日常的な正常系）と区別し、fail-open させない。
+            return [], "filtered-to-zero"
     return paths, "other"
 
 
@@ -451,18 +505,45 @@ def self_test() -> int:
             failed += 1
             print(f"FAIL(walk_md_under-missing): got={got_missing!r}")
 
+    # walk_md_under: EXCLUDED_DIRS 配下（.git / node_modules / .next 等）へは再帰しない（Issue #711）
+    with tempfile.TemporaryDirectory() as tmp_excl:
+        tmp_excl_path = Path(tmp_excl)
+        (tmp_excl_path / "keep.md").write_text("dummy", encoding="utf-8")
+        for d in ("node_modules/some-pkg", ".git/refs", ".next/cache", "dist", "coverage"):
+            sub = tmp_excl_path / d
+            sub.mkdir(parents=True)
+            (sub / "README.md").write_text("dummy", encoding="utf-8")
+
+        got_excl = sorted(walk_md_under([str(tmp_excl_path)]))
+        expected_excl = [str(tmp_excl_path / "keep.md")]
+        if got_excl == expected_excl:
+            passed += 1
+        else:
+            failed += 1
+            print(
+                f"FAIL(walk_md_under-excluded-dirs): expected={expected_excl!r}\n  got:      {got_excl!r}"
+            )
+
     # resolve_targets: モード判定（Issue #706 の核心 — --under 単独が fail-open しないこと）
+    # 注意: changed=True の行は実 git を叩く changed_md_files() の結果に依存しうるため、
+    # ここでは unders と組み合わせても常に "other" になる（unders=[] でフィルタ自体が
+    # 走らない）行だけを置く。changed + --under の組み合わせ（フィルタ結果に依存する分岐）は
+    # 下の monkeypatch ブロックで実 git 状態から切り離して決定的に検証する（#711）。
     resolve_cases = [
         # (files, changed, unders, 期待 mode)
         ([], False, [], "none"),                       # 何も指定なし → 誤用
-        (["a.md"], False, [], "other"),                # ファイル明示指定
-        ([], True, [], "other"),                       # --changed のみ
+        (["a.md"], False, [], "other"),                # ファイル明示指定・フィルタなし
+        ([], True, [], "other"),                       # --changed のみ・フィルタなし
         ([], False, ["/nonexistent-dir-706"], "under-only"),  # --under 単独 → ファイル選択モード
-        ([], True, ["docs"], "other"),                 # --changed + --under 併用 → 従来の絞り込み
-        (["a.md"], False, ["docs"], "other"),           # files + --under 併用 → 従来の絞り込み
+        (["docs/a.md"], False, ["docs"], "other"),      # files + --under が一致 → 従来どおり絞り込み
+        # 🔴 #711 CRITICAL の核心: files はあるが --under 配下と 1 件も一致しない
+        # → 以前は黙って mode="other"（0 件・exit 0・fail-open）だったが、
+        #   候補が存在したのにフィルタで全滅したケースは "filtered-to-zero" で警告する
+        (["a.md"], False, ["docs"], "filtered-to-zero"),
+        (["docs/a.md", "content/b.md"], False, ["docs"], "other"),  # 一部一致なら絞り込み結果を返す
     ]
     for files_in, changed_in, unders_in, expected_mode in resolve_cases:
-        _, got_mode = resolve_targets(files_in, changed_in, unders_in)
+        got_paths, got_mode = resolve_targets(files_in, changed_in, unders_in)
         if got_mode == expected_mode:
             passed += 1
         else:
@@ -471,6 +552,41 @@ def self_test() -> int:
                 f"FAIL(resolve_targets-mode): files={files_in!r} changed={changed_in!r} "
                 f"unders={unders_in!r}\n  expected: {expected_mode!r}\n  got:      {got_mode!r}"
             )
+        if expected_mode == "filtered-to-zero" and got_paths != []:
+            failed += 1
+            print(f"FAIL(resolve_targets-filtered-to-zero-paths): got_paths={got_paths!r}")
+
+    # resolve_targets: changed + --under の組み合わせを実 git 状態から切り離して決定的に検証する。
+    # changed_md_files() はこのモジュールの module-level 関数なので、self_test 内で一時的に
+    # 差し替えて元に戻す（並行実行中の他エージェントの .md 変更で self-test がフレーキーに
+    # ならないようにするための隔離。#711）。
+    _orig_changed_md_files = globals()["changed_md_files"]
+    try:
+        globals()["changed_md_files"] = lambda: ["docs/x.md", "content/y.md"]
+        _, mode_hit = resolve_targets([], True, ["docs"])
+        if mode_hit == "other":
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(resolve_targets-changed-under-hit): expected='other' got={mode_hit!r}")
+
+        globals()["changed_md_files"] = lambda: ["content/y.md"]  # docs/ 配下は 1 件も無い
+        _, mode_miss = resolve_targets([], True, ["docs"])
+        if mode_miss == "filtered-to-zero":
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(resolve_targets-changed-under-miss): expected='filtered-to-zero' got={mode_miss!r}")
+
+        globals()["changed_md_files"] = lambda: []  # 真に変更 .md が 0 件 → 従来どおり 'other'（exit 0 維持）
+        _, mode_genuine_zero = resolve_targets([], True, ["docs"])
+        if mode_genuine_zero == "other":
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL(resolve_targets-changed-genuine-zero): expected='other' got={mode_genuine_zero!r}")
+    finally:
+        globals()["changed_md_files"] = _orig_changed_md_files
 
     # resolve_targets: --under 単独指定が実際にディレクトリ配下のファイルを返すこと
     with tempfile.TemporaryDirectory() as tmp2:
@@ -490,10 +606,21 @@ def self_test() -> int:
 
     with _tf.TemporaryDirectory() as tmp3:
         tmp3_path = Path(tmp3)
+        # #711 CRITICAL の反例そのもの: 明示ファイル指定と --under の対象ディレクトリが
+        # 一致しない（outside.md は rules/ 配下に無い）→ 修正前は 0 件検査で exit 0（fail-open）。
+        outside_md = tmp3_path / "outside.md"
+        outside_md.write_text("これは" + "**重要**" + "です", encoding="utf-8")
+        rules_dir = tmp3_path / "rules"
+        rules_dir.mkdir()
         cli_cases = [
             # (args, 期待終了コード, 説明)
             (["--under", str(tmp3_path / "no-such-dir")], 1, "--under 単独・0 件 → 失敗扱い"),
             ([], 2, "引数なし → 誤用エラー"),
+            (
+                [str(outside_md), "--under", str(rules_dir)],
+                1,
+                "#711 反例: 明示ファイル + --under 不一致 → fail-open せず失敗扱い",
+            ),
         ]
         for extra_args, expected_code, desc in cli_cases:
             r = subprocess.run(
@@ -577,6 +704,21 @@ def main() -> int:
             )
             print(
                 "[cjk-md]   → パス指定の誤りがないか確認してください（黙って PASS 扱いにしない）",
+                file=sys.stderr,
+            )
+            return 1
+        if mode == "filtered-to-zero":
+            # 明示ファイル指定 / --changed 由来の候補は存在したのに、--under の絞り込みで
+            # 全滅した。「対象自体が無い」日常的な 0 件（mode=="other"）とは異なり、
+            # 指定ミス（fail-open）の可能性が高いため明示的に失敗として扱う（Issue #711）。
+            print(
+                "[cjk-md] 警告: 明示ファイル指定 / --changed 由来の対象は存在しましたが、"
+                f"--under {args.under} の絞り込みで 0 件になりました",
+                file=sys.stderr,
+            )
+            print(
+                "[cjk-md]   → 明示ファイル指定 / --changed の対象と --under のディレクトリが"
+                " 一致しているか確認してください（黙って PASS 扱いにしない）",
                 file=sys.stderr,
             )
             return 1
