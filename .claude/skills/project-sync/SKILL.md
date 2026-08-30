@@ -163,8 +163,10 @@ Step 3.7: Abandoned ブランチ検出（月曜 07:00 のみ）— CP-3 準拠
 
 Step 3.85: 配信データ鮮度チェック（全実行時）— E-25 / NFR-8
   ├─ python3 tools/check_digest_freshness.py --json --max-age-hours 192 を実行
-  │     （192h = 週次スケジュール 168h + 遅延の余裕。一次経路は Actions の週次スケジュールで、
-  │      `--heal` はワークフローが 1 週間以上失敗し続けたときだけ動く真のフォールバック）
+  │     （一次経路は Actions の **日次実行・週次反映**（`D-40`・`gem-pool-refresh.yml`）。生成・QA は毎日
+  │      走るが `generatedAt` が更新されるのは反映日だけなので、192h = 反映間隔 168h + 遅延の余裕。
+  │      `--heal` は反映が 1 週間以上滞ったときだけ動く真のフォールバック。192h を超えたら、まず
+  │      `automation/gem-pool-refresh` の bot PR が未マージで滞留していないかを疑う・`D-43`）
   │     → fresh（0）: 何もしない
   │     → stale（1）: python3 tools/check_digest_freshness.py --heal で自己修復を試行
   │          → 成功: ログのみ（次回配信で新しい generatedAt になる）
