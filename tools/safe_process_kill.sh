@@ -101,6 +101,15 @@ validate_signal() {
   return 1
 }
 
+# PID が「生きている」か（ゾンビは死んだ扱い）。self-test 専用のヘルパー。
+# 🔴 `kill -0` では判定できない: このコンテナの PID 1 は孤児を刈り取らないため、
+# kill -9 済みのプロセスがゾンビ（stat=Z）のまま残り `kill -0` が成功し続ける。
+process_alive() {
+  local stat
+  stat="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ')"
+  [ -n "$stat" ] && [ "${stat#Z}" = "$stat" ]
+}
+
 self_test() {
   local failures=0
 
@@ -129,27 +138,36 @@ self_test() {
     echo "[PASS] 親プロセスを除外集合に含めた"
   fi
 
-  # ケース 3: 無関係な他プロセスは正しく検出して終了できる
+  # ケース 3: 無関係な他プロセス（自分の子孫でないもの）を検出して終了できる
+  # 🔴 `( ... ) &` で起こすと自分（$$）の子孫になり、ケース 5 の子孫除外に正しく弾かれて
+  #    「検出できるか」の検査にならない。setsid で起こして init（PID 1）に里子に出す。
   local marker="safe-process-kill-selftest-$$"
-  ( exec -a "$marker" sleep 30 ) &
-  local victim=$!
-  disown "$victim" 2>/dev/null || true
-  sleep 0.3
-  local found
-  found="$(list_targets "$marker")"
-  if ! is_excluded "$victim" "$(printf '%s' "$found" | tr '\n' ' ')"; then
-    echo "[FAIL] テスト用プロセス ($victim) を検出できなかった" >&2
+  # `--fork` は必須: 非対話シェルではバックグラウンドジョブがプロセスグループリーダーに
+  # ならないため setsid が fork せず、PID がそのまま自分の子として残る（＝子孫除外に当たる）
+  setsid --fork bash -c "exec -a '$marker' sleep 30" >/dev/null 2>&1 &
+  sleep 1.2
+  local victim
+  victim="$(ps -eo pid=,args= 2>/dev/null | awk -v m="$marker" '$2 == m { print $1; exit }')"
+  if [ -z "$victim" ]; then
+    echo "[FAIL] テスト用プロセスを起動できなかった（marker=${marker}）" >&2
     failures=$((failures + 1))
-    kill -9 "$victim" 2>/dev/null
   else
-    printf '%s\n' "$found" | while read -r p; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done
-    sleep 0.3
-    if kill -0 "$victim" 2>/dev/null; then
-      echo "[FAIL] テスト用プロセス ($victim) を終了できなかった" >&2
+    local found
+    found="$(list_targets "$marker")"
+    if ! is_excluded "$victim" "$(printf '%s' "$found" | tr '\n' ' ')"; then
+      echo "[FAIL] テスト用プロセス ($victim) を検出できなかった" >&2
       failures=$((failures + 1))
       kill -9 "$victim" 2>/dev/null
     else
-      echo "[PASS] 対象プロセスを検出して終了した"
+      printf '%s\n' "$found" | while read -r p; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done
+      sleep 0.3
+      if process_alive "$victim"; then
+        echo "[FAIL] テスト用プロセス ($victim) を終了できなかった" >&2
+        failures=$((failures + 1))
+        kill -9 "$victim" 2>/dev/null
+      else
+        echo "[PASS] 対象プロセスを検出して終了した"
+      fi
     fi
   fi
 
