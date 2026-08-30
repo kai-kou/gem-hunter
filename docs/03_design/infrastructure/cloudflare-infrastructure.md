@@ -403,7 +403,7 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 **MVP は `*.workers.dev` で運用する**（独自ドメイン不要）。理由:
 
-- Workers の Custom Domain には **active な Cloudflare zone とその所有が必要**（公式の要件・[リサーチ §6.1.1](../../01_research/infra/20260818-cloudflare-research.md)）→ レジストラでのネームサーバー変更（人間作業・`H-3`）が発生する
+- Workers の Custom Domain には **active な Cloudflare zone とその所有が必要**（公式の要件・[リサーチ §6.1.1](../../01_research/infra/20260818-cloudflare-research.md)）→ レジストラでのネームサーバー変更（人間作業・§11.2 の `H-4`。**未実施**）が発生する
 - ポートフォリオ用途（`D-3`）では `*.workers.dev` で足りる
 
 ⚠️ Cloudflare 公式は workers.dev を「Free website 扱いで、business-critical でない個人・ホビー用途を想定したもの」と明記し、本番は Workers route か Custom Domain で動かすことを推奨している（[リサーチ §6.1.1](../../01_research/infra/20260818-cloudflare-research.md) に原文）。**独自ドメインの要否は `M-4`（公開判断ゲート）で決める**。
