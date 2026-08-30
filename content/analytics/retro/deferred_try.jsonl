@@ -49,3 +49,5 @@
 {"date":"2026-08-31 JST","title":"層別テスト範囲表（check_ui_dimensions.py の config）から code-review 二重指摘禁止セクションを自動生成する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-31 JST","title":"判定ロジック観点の起動要否を差分から機械判定し、起動記録を残す","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-31 JST","title":"ベース由来 hooks の publish-sync 非採用コメントを短縮 variant として自動展開する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date": "2026-08-31 JST", "title": "検査ツール群の除外ディレクトリ（EXCLUDED_DIRS）を共有定数に集約する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "並列委譲の完了待ちを sleep ポーリングから通知ハンドラへ変える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
