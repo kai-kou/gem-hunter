@@ -135,55 +135,84 @@ def _tokens_from_text(text: str) -> set[str]:
     return candidates
 
 
-def _find_changed_files_block(text: str) -> str | None:
-    """`CHANGED_FILES:` ヘッダー以降の行を明示リストブロックとして切り出す（課題1・#717）。
+def _find_changed_files_blocks(text: str) -> list[str] | None:
+    """`CHANGED_FILES:` ヘッダーごとの明示リストブロックを **全件** 切り出す（課題1・#717 / PR #723 指摘2）。
 
-    ヘッダー行が見つからなければ `None`（＝呼び出し側はフォールバックする）。
-    ヘッダー行はあるが本文が空（次行が空行 / コードフェンス終端 / EOF）なら
-    `""` を返す（「ブロックはあるが claim はゼロ件」を明示的に表す。フォールバックとは区別する）。
-    ブロックの終端は「空行」「コードフェンス終端（```）」「次の `CHANGED_FILES:` ヘッダー行」の
+    ヘッダー行が 1 つも見つからなければ `None`（＝呼び出し側はフォールバックする）。
+    見つかった場合は、各ヘッダーに対応する本文（複数あれば複数件）を list で返す。
+    本文が空（次行が空行 / コードフェンス終端 / 次ヘッダー / EOF）のブロックは `""` として含める
+    （「ブロックはあるが claim はゼロ件」を明示的に表す。フォールバックとは区別する）。
+    各ブロックの終端は「空行」「コードフェンス終端（```）」「次の `CHANGED_FILES:` ヘッダー行」の
     いずれか（先に来たもの）。これによりブロック前後の空行・インデント・コードフェンス内配置を
     素通しできる（大文字小文字はヘッダー正規表現側で吸収）。
+
+    複数ヘッダーを 1 つしか採用しない旧実装は、① 複数役の完了報告を連結して 1 回の `--stdin` に
+    流す運用（`agent-team-summary.md` が「全サブエージェントの完了報告を受け取ったら実行する」と
+    定めている）、② 委譲プロンプト中の書式例をサブエージェントが引用してから本題を書く運用の
+    どちらでも、最初の 1 ブロック以外を握りつぶし `missing_from_report`（報告漏れ・より重い警告）
+    を誤検出させていた（PR #723 レビュー指摘2）。本関数は全ブロックを収集し、呼び出し側で
+    和集合を取ることでこれを解消する。
     """
     lines = text.split("\n")
-    header_idx = None
-    for i, line in enumerate(lines):
-        if _CHANGED_FILES_HEADER_LINE_RE.match(line):
-            header_idx = i
-            break
-    if header_idx is None:
+    header_indices = [i for i, line in enumerate(lines) if _CHANGED_FILES_HEADER_LINE_RE.match(line)]
+    if not header_indices:
         return None
-    body: list[str] = []
-    for line in lines[header_idx + 1 :]:
-        if line.strip() == "":
-            break
-        if line.strip().startswith("```"):
-            break
-        if _CHANGED_FILES_HEADER_LINE_RE.match(line):
-            break
-        body.append(line)
-    return "\n".join(body)
+    blocks: list[str] = []
+    for header_idx in header_indices:
+        body: list[str] = []
+        for line in lines[header_idx + 1 :]:
+            if line.strip() == "":
+                break
+            if line.strip().startswith("```"):
+                break
+            if _CHANGED_FILES_HEADER_LINE_RE.match(line):
+                break
+            body.append(line)
+        blocks.append("\n".join(body))
+    return blocks
 
 
-def extract_claimed_paths(text: str) -> tuple[set[str], bool]:
+def extract_claimed_paths(text: str, max_fallback_chars: int | None = None) -> tuple[set[str], bool]:
     """完了報告テキストから claim されたパス集合を抽出する。
 
     戻り値は `(パス集合, 明示ブロックを使ったか)`。
 
-    - 明示ブロック（`CHANGED_FILES:` ヘッダー以降の行）が **ある** 場合: そのブロックの
-      内容だけを走査する。ブロック外の本文（否定文脈の言及等）は一切見ないため、
-      「テキスト中の言及＝claim」という旧方式の fail-open（課題1・#717）が構造的に起きない。
+    - 明示ブロック（`CHANGED_FILES:` ヘッダー以降の行）が **ある** 場合: 全ブロックの
+      内容の **和集合** を走査する（PR #723 指摘2）。ブロック外の本文（否定文脈の言及等）は
+      一切見ないため、「テキスト中の言及＝claim」という旧方式の fail-open（課題1・#717）が
+      構造的に起きない。ヘッダーが複数見つかった場合は連結報告 or 引用の疑いを stderr に
+      警告する（呼び出し側が判断できるよう握りつぶさない）。**ヘッダー検索は `max_fallback_chars`
+      を無視して常に全文に対して行う**（指摘1・PR #723）: ヘッダー正規表現は行アンカーの単純な
+      照合でカタストロフィックバックトラックしないため、切り詰めより先に全文を検索してもコスト
+      問題は生じない。切り詰めるとヘッダーが切り詰め位置より後ろにある報告でブロックごと
+      消えてしまう（実測: 240,043 文字・末尾に正当なブロックを持つ入力で claimed が消失していた）。
     - 明示ブロックが **無い** 場合: 従来どおり全文をヒューリスティックスキャンする
-      （後方互換フォールバック）。呼び出し側は `used_block=False` を見て、フォールバックした
-      事実をユーザー / ログに明示すること（黙って劣化させない）。
+      （後方互換フォールバック）。`max_fallback_chars` を指定した場合は **この経路でのみ**
+      走査対象を先頭 `max_fallback_chars` 文字に切り詰める（課題2・#717 の安全弁はフォールバック
+      経路にのみ適用し、明示ブロック経路には適用しない。ブロック本文は `_tokens_from_text` 内で
+      既にトークン単位で頭打ちされるため追加の切り詰めは不要）。呼び出し側は `used_block=False`
+      を見て、フォールバックした事実をユーザー / ログに明示すること（黙って劣化させない）。
 
     バージョン番号（"2.1.198" や "v2.1.198"）は拡張子相当の末尾セグメントが数字のみ
     （`ext.isdigit()`）になるため `_tokens_from_text` 内で除外される。URL は事前に除去する。
     """
-    block = _find_changed_files_block(text)
-    if block is not None:
-        return _tokens_from_text(_URL_RE.sub(" ", block)), True
-    return _tokens_from_text(_URL_RE.sub(" ", text)), False
+    blocks = _find_changed_files_blocks(text)
+    if blocks is not None:
+        if len(blocks) > 1:
+            print(
+                f"⚠️  CHANGED_FILES: ヘッダーが{len(blocks)}件検出されました。"
+                "全ブロックの和集合を claim として扱います"
+                "（複数役の完了報告の連結、または委譲プロンプト中の書式例の引用が疑われます・PR #723 指摘2）",
+                file=sys.stderr,
+            )
+        claimed: set[str] = set()
+        for block in blocks:
+            claimed |= _tokens_from_text(_URL_RE.sub(" ", block))
+        return claimed, True
+    fallback_text = text
+    if max_fallback_chars is not None and len(text) > max_fallback_chars:
+        fallback_text = text[:max_fallback_chars]
+    return _tokens_from_text(_URL_RE.sub(" ", fallback_text)), False
 
 
 def _trim_unpaired_brackets(tok: str) -> str:
@@ -481,6 +510,140 @@ def run_self_test() -> int:
         f"{_elapsed:.3f}s / 抽出結果={_got_perf}",
     )
 
+    # ── PR #723 指摘1: ヘッダーが切り詰め位置（MAX_STDIN_CHARS）より後ろにある報告でも
+    # ブロックが消えないこと（実測: 240,043 文字・末尾に正当なブロックを持つ入力で
+    # claimed が消失していた不具合の再現ケース）
+    late_block_text = ("報告本文の水増しです。" * 20000) + "\nCHANGED_FILES:\ntools/late_block_marker.py\n"
+    assert len(late_block_text) > MAX_STDIN_CHARS, "テスト前提: 総文字数が MAX_STDIN_CHARS を超えていること"
+    _t0 = _time.perf_counter()
+    got_late, used_late = extract_claimed_paths(late_block_text, max_fallback_chars=MAX_STDIN_CHARS)
+    _elapsed_late = _time.perf_counter() - _t0
+    check(
+        f"指摘1: 切り詰め位置({MAX_STDIN_CHARS}文字)より後ろのブロックも検出する・1秒未満（実測{_elapsed_late:.3f}s・PR #723）",
+        got_late == {"tools/late_block_marker.py"} and used_late is True and _elapsed_late < 1.0,
+        f"len={len(late_block_text)} / {(got_late, used_late)} / {_elapsed_late:.3f}s",
+    )
+
+    # ── PR #723 指摘2: 複数 CHANGED_FILES ブロックの和集合（複数役の報告を連結する運用）──
+    concat_text = (
+        "役A の完了報告です。\n"
+        "CHANGED_FILES:\n"
+        "tools/role_a_file.py\n"
+        "\n"
+        "役B の完了報告です。\n"
+        "CHANGED_FILES:\n"
+        "tools/role_b_file.py\n"
+    )
+    got_concat, used_concat = extract_claimed_paths(concat_text)
+    check(
+        "指摘2: 連結された複数ブロックの和集合を claim とする（PR #723）",
+        got_concat == {"tools/role_a_file.py", "tools/role_b_file.py"} and used_concat is True,
+        str((got_concat, used_concat)),
+    )
+    r_concat = compare(got_concat, {"tools/role_a_file.py", "tools/role_b_file.py"})
+    check(
+        "指摘2: 連結報告 end-to-end で missing_from_report が誤検出されない（PR #723）",
+        r_concat["mismatch"] is False,
+        str(r_concat),
+    )
+
+    # ── PR #723 指摘2: 委譲プロンプトの書式例を引用してから本題を書くケース ──
+    # 引用された例のパスは実 diff に無いので missing_from_diff（軽い警告）側にだけ出る。
+    # 本物のパスは union に含まれるため missing_from_report（報告漏れ・重い警告）は誤検出されない。
+    quoted_example_text = (
+        "書式例として以下を参考にしました:\n"
+        "CHANGED_FILES:\n"
+        "tools/example_from_prompt.py\n"
+        "docs/rules/agent-team-summary.md\n"
+        "\n"
+        "実際に変更したのは次のとおりです。\n"
+        "CHANGED_FILES:\n"
+        "tools/real_change.py\n"
+    )
+    got_quoted, used_quoted = extract_claimed_paths(quoted_example_text)
+    r_quoted = compare(got_quoted, {"tools/real_change.py"})
+    check(
+        "指摘2: 引用例のパスは missing_from_diff 側のみ・本物パスの報告漏れは誤検出されない（PR #723）",
+        r_quoted["missing_from_report"] == []
+        and set(r_quoted["missing_from_diff"]) == {"tools/example_from_prompt.py", "docs/rules/agent-team-summary.md"}
+        and used_quoted is True,
+        str((r_quoted, used_quoted)),
+    )
+
+    # 入力バリアント: 空ブロック + 実ブロックの併存（和集合は空でない側だけ反映される）
+    empty_plus_real_text = "CHANGED_FILES:\n\n何もしていません。\nCHANGED_FILES:\ntools/real_after_empty.py\n"
+    got_ep, used_ep = extract_claimed_paths(empty_plus_real_text)
+    check(
+        "バリアント: 空ブロック + 実ブロックの併存で実ブロックのみ claim に入る（PR #723）",
+        got_ep == {"tools/real_after_empty.py"} and used_ep is True,
+        str((got_ep, used_ep)),
+    )
+
+    # 指摘2: 複数ヘッダー検出時のみ stderr 警告が出ること（単一ヘッダーでは出ない）
+    import contextlib as _contextlib
+    import io as _io
+
+    _stderr_multi = _io.StringIO()
+    with _contextlib.redirect_stderr(_stderr_multi):
+        extract_claimed_paths(concat_text)
+    check(
+        "指摘2: 複数ヘッダー検出時に stderr へ警告する（PR #723）",
+        "ヘッダーが2件検出されました" in _stderr_multi.getvalue(),
+        _stderr_multi.getvalue(),
+    )
+
+    _stderr_single = _io.StringIO()
+    with _contextlib.redirect_stderr(_stderr_single):
+        extract_claimed_paths("CHANGED_FILES:\ntools/a.py\n")
+    check(
+        "指摘2: 単一ヘッダーでは複数ヘッダー警告を出さない（PR #723）",
+        "ヘッダーが" not in _stderr_single.getvalue(),
+        _stderr_single.getvalue(),
+    )
+
+    # ── PR #723 指摘4: main() の切り詰め分岐をエントリポイントから実際に貫通させる ──
+    def _run_main(stdin_text: str) -> tuple[int, str, str]:
+        proc = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--stdin", "--json"],
+            input=stdin_text,
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            timeout=30,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+
+    # A: ヘッダーが MAX_STDIN_CHARS より後ろにある報告 → main() 経由でも claim に残ること
+    _late_stdin = ("水増し行です。" * 35000) + "\nCHANGED_FILES:\ntools/main_late_block_marker.py\n"
+    assert len(_late_stdin) > MAX_STDIN_CHARS
+    _t0 = _time.perf_counter()
+    _rc_a, _out_a, _err_a = _run_main(_late_stdin)
+    _elapsed_a = _time.perf_counter() - _t0
+    try:
+        _json_a = json.loads(_out_a)
+    except json.JSONDecodeError:
+        _json_a = {}
+    check(
+        f"指摘4: main() 経由でも切り詰め位置より後ろのブロックが claim に残る（実測{_elapsed_a:.3f}s・PR #723）",
+        "tools/main_late_block_marker.py" in _json_a.get("claimed", [])
+        and _json_a.get("fallback_used") is False
+        and _elapsed_a < 5.0,
+        f"rc={_rc_a} stdout={_out_a[:300]!r} stderr={_err_a[:300]!r}",
+    )
+
+    # B: ヘッダーが一切無い巨大入力 → フォールバック経路の切り詰め警告が stderr に出ること
+    _fallback_stdin = "x" * 250_000
+    _rc_b, _out_b, _err_b = _run_main(_fallback_stdin)
+    try:
+        _json_b = json.loads(_out_b)
+    except json.JSONDecodeError:
+        _json_b = {}
+    check(
+        "指摘4: 明示ブロックが無い巨大入力は main() 経由でも切り詰め警告が出てフォールバックする（PR #723）",
+        _json_b.get("fallback_used") is True and "切り詰めました" in _err_b,
+        f"rc={_rc_b} stdout={_out_b[:300]!r} stderr={_err_b[:300]!r}",
+    )
+
     # compare: 一致
     r_match = compare({"a.py", "b.py"}, {"a.py", "b.py"})
     check("compare 一致で mismatch=False", r_match["mismatch"] is False, str(r_match))
@@ -501,7 +664,7 @@ def run_self_test() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--stdin", action="store_true", help="標準入力から完了報告テキストを読みパスらしき文字列を抽出する")
+    parser.add_argument("--stdin", action="store_true", help="標準入力から完了報告を読み、CHANGED_FILES: 明示ブロック（無ければ全文ヒューリスティック）から変更ファイルを抽出する")
     parser.add_argument("--json", action="store_true", help="結果を JSON で出力する")
     # selftest-wiring-ok: サブエージェント委譲直後に親が手動で叩く運用ツールで、PR 前の品質ゲートではない
     parser.add_argument("--self-test", action="store_true", help="セルフテストを実行")
@@ -515,14 +678,19 @@ def main() -> int:
         return 2
 
     raw_stdin = sys.stdin.read()
-    if len(raw_stdin) > MAX_STDIN_CHARS:
+
+    # 指摘1（PR #723）: `extract_claimed_paths` は切り詰めより先に `CHANGED_FILES:` ヘッダーを
+    # 常に全文に対して検索する。`max_fallback_chars` は「明示ブロックが見つからなかった場合の
+    # ヒューリスティックフォールバック経路」にのみ適用される安全弁（課題2・#717）であり、
+    # 明示ブロックが切り詰め位置より後ろにある報告でもブロックごと消えることはない。
+    if len(raw_stdin) > MAX_STDIN_CHARS and _find_changed_files_blocks(raw_stdin) is None:
         print(
-            f"⚠️  stdin が {len(raw_stdin)} 文字と大きいため先頭 {MAX_STDIN_CHARS} 文字に切り詰めました（課題2・#717）",
+            f"⚠️  stdin が {len(raw_stdin)} 文字と大きいため先頭 {MAX_STDIN_CHARS} 文字に切り詰めました"
+            "（CHANGED_FILES: 明示ブロックが見つからずフォールバック経路のため・課題2・#717）",
             file=sys.stderr,
         )
-        raw_stdin = raw_stdin[:MAX_STDIN_CHARS]
 
-    claimed, used_block = extract_claimed_paths(raw_stdin)
+    claimed, used_block = extract_claimed_paths(raw_stdin, max_fallback_chars=MAX_STDIN_CHARS)
     if not used_block:
         print(
             "⚠️  CHANGED_FILES: 明示ブロックが見つからないため、全文ヒューリスティックスキャンにフォールバックしました"
