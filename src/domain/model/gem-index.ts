@@ -1,4 +1,5 @@
 import { DomainValidationError } from '../errors'
+import { RANK_MAX, RANK_MIN, computeGemIndexValue, isValidRank } from './gem-index.rules.mjs'
 
 /**
  * 過小評価度スコア `Gem Index`（`ADR 0009` §2.1）。
@@ -7,6 +8,9 @@ import { DomainValidationError } from '../errors'
  *
  * ブランド型 + スマートコンストラクタ（`domain-model.md` §4）。値そのものは算出済みの数値を
  * 運ぶだけで、算出（パーセンタイル順位 → 差）は `computeGemIndex` が行う。
+ *
+ * 🔴 **算出式と値域規則の実体は [`gem-index.rules.mjs`](./gem-index.rules.mjs) が単一正本**
+ * （Issue #276）。本ファイルはそこへ型・ブランド・ドメイン例外を被せる層で、規則を写さない。
  */
 
 declare const brand: unique symbol
@@ -56,15 +60,20 @@ export function gemIndexValue(value: GemIndex): number {
 export function computeGemIndex(dependentRank: number, starRank: number): GemIndex {
   assertRank('dependentRank', dependentRank)
   assertRank('starRank', starRank)
-  return gemIndex(dependentRank - starRank)
+  return gemIndex(computeGemIndexValue(dependentRank, starRank))
 }
 
+/**
+ * 🔴 **値域の判定そのものは `gem-index.rules.mjs` の `isValidRank` が正本**（Issue #276）。
+ * ここが持つのは「違反をドメインの例外型で表現する」という契約だけで、規則を写さない
+ * （本番の候補プール生成 `tools/gem-pool/pipeline.mjs` も同じ `isValidRank` を使う）。
+ */
 function assertRank(name: string, value: number): void {
-  if (!Number.isFinite(value) || value < 0 || value > 100) {
+  if (!isValidRank(value)) {
     throw new DomainValidationError(
       'GemIndex',
       value,
-      `${name} は 0〜100 の有限数で指定してください（rankings は 0 が最上位）`,
+      `${name} は ${RANK_MIN}〜${RANK_MAX} の有限数で指定してください（rankings は 0 が最上位）`,
     )
   }
 }

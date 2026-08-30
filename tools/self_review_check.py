@@ -854,7 +854,9 @@ def _self_test_tdd_commit_order_warnings() -> list[str]:
     return failures
 
 
-ARCH_CODE_SUFFIXES = (".ts", ".tsx", ".mts", ".cts")
+# 🔴 `check_architecture_boundaries.py` の `CODE_SUFFIXES` と同じ集合に保つ（PR #689）。
+#    片方だけ狭いと、ドメイン層の `.mjs` が PR 前チェックの候補から落ちて検査が呼ばれない。
+ARCH_CODE_SUFFIXES = (".ts", ".tsx", ".mts", ".cts", ".mjs", ".cjs")
 
 
 def subcheck_outcome(stdout: str, returncode: int) -> tuple[list[str], list[str], str | None]:

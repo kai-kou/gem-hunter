@@ -5,6 +5,8 @@
  * Gem Index の母集団は **(1) レジストリ別成層化 + (2) 汚染フィルタ + (3) repo 単位 dedupe** を必須とする。
  * Gem Index の定義は [`ADR 0009`](../../docs/adr/0009-hidden-gem-score-definition.md) §2.1 と
  * `src/domain/model/gem-index.ts`（`Gem Index = 被依存数の順位 − star の順位`・**値が小さいほど過小評価度が高い**）。
+ * 🔴 算出式と値域規則の実体は `src/domain/model/gem-index.rules.mjs` が **単一正本**（Issue #276）。
+ * 本モジュールと domain の両方がそこから import するため、規則をここへ写さないこと。
  *
  * 本モジュールは **すべて純粋関数** で構成する（`fetch` も `fs` も使わない）。収集（I/O）は収集側の
  * モジュールが担い、ここは「取ってきた生データ → 配信用レコード」の変換だけを持つ。
@@ -24,6 +26,13 @@
  * @property {number} [minStars=1]                     この値未満の star を「疑わしい」とみなす下限
  * @property {number} [highDependentRankPercentile=10] 「高被依存帯」とみなす `dependentRank` の上限
  */
+
+import {
+  RANK_MAX,
+  RANK_MIN,
+  computeGemIndexValue,
+  isValidRank,
+} from '../../src/domain/model/gem-index.rules.mjs'
 
 /** `dropped` に載る除外理由。 */
 const DROP_REASONS = /** @type {const} */ ([
@@ -206,15 +215,17 @@ function assignPercentileRanks(records, valueOf) {
 }
 
 /**
- * 順位の不変条件（0〜100 の有限数・0 が最上位）を検証する。
+ * 順位の不変条件（`RANK_MIN`〜`RANK_MAX` の有限数・0 が最上位）を検証する。
  *
- * 🔴 domain の `computeGemIndex`（`src/domain/model/gem-index.ts` の `assertRank`）と **同一規則**。
- * **変更するときは両方**（片方だけ緩めると、静かに壊れた `gemIndex` がそのまま配信される）。
+ * 🔴 判定そのものは `src/domain/model/gem-index.rules.mjs` の `isValidRank` が **単一正本**
+ * （Issue #276）。domain の `computeGemIndex` も同じ関数を使うため、値域を変えるときに
+ * 片方だけ取り残されることは起こらない。ここが持つのは「違反をバッチの例外型（`RangeError`）と
+ * 対象レコードつきのメッセージで表現する」という契約だけ。
  */
 function assertRank(name, value, record) {
-  if (!Number.isFinite(value) || value < 0 || value > 100) {
+  if (!isValidRank(value)) {
     throw new RangeError(
-      `${name} は 0〜100 の有限数でなければならない（rankings は 0 が最上位）: ` +
+      `${name} は ${RANK_MIN}〜${RANK_MAX} の有限数でなければならない（rankings は 0 が最上位）: ` +
         `${record.registry}/${record.packageName} = ${value}`,
     )
   }
@@ -268,7 +279,7 @@ export function restratifyByRegistry(records) {
         ...record,
         dependentRank,
         starRank,
-        gemIndex: round2(dependentRank - starRank),
+        gemIndex: round2(computeGemIndexValue(dependentRank, starRank)),
       })
     }
   }

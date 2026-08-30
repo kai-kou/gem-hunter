@@ -41,7 +41,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-CODE_SUFFIXES = (".ts", ".tsx", ".mts", ".cts")
+# 🔴 `.mjs` / `.cjs` を含める（PR #689）: `src/domain/model/gem-index.rules.mjs` のように
+#    `node` から直接 import される純 JS をドメイン層へ置く構成があり、拡張子で落とすと
+#    そのファイルの依存規則違反（外部ライブラリの import 等）が検査を丸ごと素通りする。
+CODE_SUFFIXES = (".ts", ".tsx", ".mts", ".cts", ".mjs", ".cjs")
 EXCLUDE_DIR_PARTS = {"node_modules", ".next", "dist", "build", ".git", "__tests__", "e2e"}
 ALLOW_MARKER = "// arch-ok"
 MAX_FILE_BYTES = 1_000_000  # 生成物・巨大ファイルは読まない（ゲート全体のハングを防ぐ）
@@ -328,6 +331,13 @@ CASES: list[tuple[str, str, int, int]] = [
     ("src/usecases/search.ts", "import {\n  GithubQuery,\n} from '@/infrastructure/github/query'\n", 1, 0),
     ("src/domain/model/repo.ts", "import {\n  z,\n} from 'zod'\n", 1, 0),
     ("src/domain/model/repo.ts", "import a from './a'; import { z } from 'zod'\n", 1, 0),
+    # ARCH-1: ドメイン層の `.mjs`（PR #689・拡張子で検査を素通りしないこと）
+    ("src/domain/model/gem-index.rules.mjs", "export const RANK_MIN = 0\n", 0, 0),
+    ("src/domain/model/gem-index.rules.mjs", "import { z } from 'zod'\n", 1, 0),
+    # CJS の `require` も同じ IMPORT_RE が拾う（依存としては同じなので検査されるのが正しい）
+    ("src/domain/model/gem-index.rules.cjs", "const { z } = require('zod')\n", 1, 0),
+    # `.test.mjs` はテストコードなので対象外（既存の除外規則が拡張子追加後も効くこと）
+    ("src/domain/model/gem-index.rules.test.mjs", "import { z } from 'zod'\n", 0, 0),
     # ARCH-2: ユースケース
     ("src/usecases/search.ts", "import type { RepositoryQueryPort } from '@/domain/ports/query'\n", 0, 0),
     ("src/usecases/search.ts", "import { cookies } from 'next/headers'\n", 1, 0),
@@ -377,6 +387,28 @@ def run_self_test() -> int:
                 f"  {rel}: want errors={want_e} warnings={want_w}, "
                 f"got errors={len(errs)} warnings={len(warns)} :: {errs + warns}"
             )
+    # 🔴 収集フィルタ（`CODE_SUFFIXES`）の検証。`check_file` の単体ケースだけでは
+    #    「そもそも収集されない拡張子」を検知できない（PR #689 の変異テストで実測: `.mjs` を
+    #    `CODE_SUFFIXES` から外しても上の 42 ケースは全通過した）。実在ファイルを明示指定で
+    #    渡し、拡張子が収集の入口で落とされないことを確かめる。
+    for required in (".ts", ".tsx", ".mts", ".cts", ".mjs", ".cjs"):
+        if required not in CODE_SUFFIXES:
+            failures.append(
+                f"  収集フィルタ: CODE_SUFFIXES に {required} が含まれていません"
+                "（src/ app/ 配下の同拡張子が依存規則の検査を素通りします）"
+            )
+    probe = "src/domain/model/gem-index.rules.mjs"
+    if (REPO_ROOT / probe).is_file():
+        collected, _ = collect_targets([probe])
+        if probe not in collected:
+            failures.append(f"  収集フィルタ: {probe} が検査対象に含まれていません")
+        walked, _ = collect_targets([])
+        if probe not in walked:
+            failures.append(
+                f"  収集フィルタ: 全走査（引数なし）で {probe} が拾われていません"
+                "（拡張子フィルタが .mjs を落としています）"
+            )
+
     # cwd 非依存の固定（サブディレクトリから起動しても同じ判定になること）
     cwd_case = ("src/usecases/search.ts", "import { q } from '../infrastructure/github/query'\n")
     original = os.getcwd()
@@ -393,7 +425,7 @@ def run_self_test() -> int:
         print("❌ check_architecture_boundaries --self-test FAILED")
         print("\n".join(failures))
         return 1
-    print(f"✅ check_architecture_boundaries --self-test PASSED（{len(CASES) + 1} ケース）")
+    print(f"✅ check_architecture_boundaries --self-test PASSED（{len(CASES) + 2} ケース）")
     return 0
 
 
