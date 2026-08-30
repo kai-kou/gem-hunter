@@ -85,6 +85,7 @@ import argparse
 import contextlib
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -127,40 +128,47 @@ def _fmt(value: object) -> str:
     return text if len(text) <= 60 else text[:57] + "..."
 
 
-def is_valid_jst_date(value: object) -> bool:
-    """`YYYY-MM-DD JST` 形式で、かつ実在する日付なら True。
+# `strptime` はフォーマット文字列中のリテラル空白を内部で `\s+`（Unicode 空白クラス）として
+# コンパイルするため、全角スペース（U+3000）・タブ・NBSP（\xa0）・改行等の非 ASCII 空白でも
+# 区切りとして通してしまう（`DATETIME_FORMAT` の "%Y-%m-%d %H:%M" が該当。`DATE_FORMAT` は
+# リテラル空白を含まないため対象外）。`strptime` へ渡す前に `re.fullmatch` で
+# 「ASCII 数字 + ASCII ハイフン/コロン + リテラル半角スペース」の構造そのものを固定して
+# この見逃しを塞ぐ（PR #711 レビュー指摘・実測: 全角スペース/タブ/NBSP/改行のいずれも旧実装では
+# `is_valid_jst_datetime` を通過していた）。`[0-9]` を使い `\d`（Unicode 数字も一致しうる）を
+# 避けているのは念のための二重の締め（全角数字は strptime 自体の内部パターンでも弾かれるが、
+# 判定を fullmatch 単体で完結させるため）。
+_DATE_HEAD_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+_DATETIME_HEAD_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$")
 
-    正規表現だけだと `2026-13-45 JST` を通してしまうため `strptime` で実在日まで検証する
-    （見逃し経路: 形式一致 = 妥当という思い込み）。
+
+def _is_valid_jst_string(value: object, head_pattern: re.Pattern[str], fmt: str) -> bool:
+    """`{head_pattern にマッチする head} JST` 形式で、かつ head が fmt で実在する日時/日付なら True。
+
+    `is_valid_jst_date` / `is_valid_jst_datetime` の共通実装（PR #711 レビュー指摘: 両者は
+    サフィックス確認 → 構造チェック → `strptime` という同一構造で、違うのは正規表現と
+    フォーマット文字列だけだったため、将来 JST サフィックスの扱いを片方だけ変えて `date` と
+    `reevaluated_at` の判定が食い違う事故を防ぐために一本化する）。
     """
     if not isinstance(value, str) or not value.endswith(DATE_SUFFIX):
         return False
     head = value[: -len(DATE_SUFFIX)]
-    if len(head) != 10:  # strptime は "2026-8-3" のような桁不足も通すため長さを固定する
+    if not head_pattern.fullmatch(head):
         return False
     try:
-        datetime.strptime(head, DATE_FORMAT)
+        datetime.strptime(head, fmt)
     except ValueError:
         return False
     return True
+
+
+def is_valid_jst_date(value: object) -> bool:
+    """`YYYY-MM-DD JST` 形式で、かつ実在する日付なら True。"""
+    return _is_valid_jst_string(value, _DATE_HEAD_RE, DATE_FORMAT)
 
 
 def is_valid_jst_datetime(value: object) -> bool:
-    """`YYYY-MM-DD HH:MM JST` 形式で、かつ実在する日時なら True（`reevaluated_at` 用）。
-
-    `is_valid_jst_date`（日付のみ・`date` フィールド用）とは長さ・フォーマット文字列が違うため
-    分離する（16 文字固定で strptime による桁不足・存在しない時刻の混入を防ぐ）。
-    """
-    if not isinstance(value, str) or not value.endswith(DATE_SUFFIX):
-        return False
-    head = value[: -len(DATE_SUFFIX)]
-    if len(head) != 16:  # "2026-08-30 14:23" 固定長（"2026-8-3 4:5" のような桁不足を弾く）
-        return False
-    try:
-        datetime.strptime(head, DATETIME_FORMAT)
-    except ValueError:
-        return False
-    return True
+    """`YYYY-MM-DD HH:MM JST` 形式で、かつ実在する日時なら True（`reevaluated_at` 用）。"""
+    return _is_valid_jst_string(value, _DATETIME_HEAD_RE, DATETIME_FORMAT)
 
 
 def is_valid_related_issue(value: object) -> bool:
@@ -487,6 +495,12 @@ def _run_self_test() -> None:
     for bad in (
         "", "2026-08-30 14:23", 20260830, "2026-08-30 JST", "2026-08-30 25:99 JST",
         "2026-08-30 14:23 UTC", "2026-8-3 4:5 JST",  # 桁不足（strptime は許容するため長さ検査必須）
+        # ⑧⑨⑩⑪: strptime のリテラル空白が `\s+` 扱いになる穴（PR #711 レビュー指摘・実測で
+        # 旧実装は全て通過していた）。日付と時刻の区切りを非 ASCII 空白に差し替えた反例。
+        "2026-08-30　14:23 JST",  # 全角スペース（U+3000）
+        "2026-08-30\t14:23 JST",  # タブ
+        "2026-08-30\xa014:23 JST",  # NBSP（U+00A0）
+        "2026-08-30\n14:23 JST",  # 改行
     ):
         v, _, _w = check_text(_line(reevaluated_at=bad) + "\n")
         assert len(v) == 1 and "reevaluated_at" in v[0], f"reevaluated_at 違反 失敗({bad!r}): {v}"
@@ -574,6 +588,31 @@ def _run_self_test() -> None:
         rc = main(["--path", str(bin_path)])
         assert rc == EXIT_UNDETERMINED, f"main 非 UTF-8 失敗（exit {rc}）"
 
+        # WARNING（未知フィールド typo）が main() → check_file() → stdout の print まで実際に
+        # 配線されていることの確認（PR #711 レビュー指摘: check_file() の `for w in warnings:
+        # print(...)` を丸ごと削除しても --self-test は緑のままだった＝未貫通だった箇所）。
+        # 外側の redirect_stdout に混ぜると内容を検証できないため、このケースだけ別の
+        # StringIO へ内側で捕り直す。
+        warn_path = tmp_root / "warn.jsonl"
+        typo_record = dict(VALID_RECORD)
+        typo_record["reevaluted_at"] = "2026-08-30 14:23 JST"  # わざと typo
+        warn_path.write_text(json.dumps(typo_record, ensure_ascii=False) + "\n", encoding="utf-8")
+        warn_buf = io.StringIO()
+        with contextlib.redirect_stdout(warn_buf):
+            rc = main(["--path", str(warn_path)])
+        warn_output = warn_buf.getvalue()
+        assert rc == EXIT_OK, f"main WARNING系 失敗（違反ではないはずが exit {rc}）"
+        assert "⚠️" in warn_output and "reevaluted_at" in warn_output, (
+            f"WARNING が main() 経由で stdout まで届いていません: {warn_output!r}"
+        )
+    cases += 5  # ok / ng / missing / bin / warn の 5 グループ
+
+    with tempfile.TemporaryDirectory() as tmp, \
+            contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        tmp_root = Path(tmp).resolve()
+        ok_path = tmp_root / "ok.jsonl"
+        ok_path.write_text(VALID_LINE + "\n", encoding="utf-8")
+
         # git 追跡検査が main まで配線されていることの確認（呼び出しごと消す変異を殺す）:
         # 一時ディレクトリを repo_root に見立て、fake runner が「未追跡」を返したら
         # 内容が正常でも違反終了すること・runner が実際に呼ばれたことを確認する。
@@ -585,7 +624,7 @@ def _run_self_test() -> None:
         tracked_runner = _RecordingRunner(0)
         rc = main(["--path", str(ok_path)], runner=tracked_runner, repo_root=tmp_root)
         assert tracked_runner.calls and rc == EXIT_OK, f"main 追跡済み 失敗（exit {rc}）"
-    cases += 6
+    cases += 2  # untracked / tracked の 2 グループ
 
     print(f"[deferred-try-jsonl] self-test OK（{cases} ケース）")
 
