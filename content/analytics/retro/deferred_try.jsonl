@@ -36,8 +36,8 @@
 {"date":"2026-08-30 JST","title":"Try Issue優先度判定マトリクスをself-improvement-loop-rulesへ新設","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-30 JST","title":"tools/ の exit code体系を一元ドキュメント化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-08-30 JST","title":"safe_process_kill.sh と clear_stale_e2e_ports.py の役割分担を文書化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date": "2026-08-30 JST", "title": "computeGemIndexValue → round2 の丸め境界を明示検証するテストを足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-08-30 JST", "title": "CI の層 1 が .mjs をどのゲートで拾うかを PR / Issue に 1 行記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-08-30 JST", "title": "self-improvement-loop の「out < in が 3 日続いたら発見モードへエスカレーション」が実装・配線されているか確認する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-08-30 JST", "title": "Layer 1 セルフレビューの並列観点数とモデル配分のトークンコストを計測し、観点ごとに haiku/sonnet を出し分ける", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-08-30 JST", "title": "E2E が既知の環境障害で常に exit 1 になる状態の扱いを決める（run_checks の緑/赤の情報量が失われている）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 681}
+{"date":"2026-08-30 JST","title":"computeGemIndexValue → round2 の丸め境界を明示検証するテストを足す","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"CI の層 1 が .mjs をどのゲートで拾うかを PR / Issue に 1 行記録する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"self-improvement-loop の「out < in が 3 日続いたら発見モードへエスカレーション」が実装・配線されているか確認する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"Layer 1 セルフレビューの並列観点数とモデル配分のトークンコストを計測し、観点ごとに haiku/sonnet を出し分ける","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-08-30 JST","title":"E2E が既知の環境障害で常に exit 1 になる状態の扱いを決める（run_checks の緑/赤の情報量が失われている）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
