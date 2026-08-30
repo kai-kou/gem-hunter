@@ -8,6 +8,8 @@
 
 import { describe, expect, it } from 'vitest'
 
+import { computeGemIndexValue } from '../../src/domain/model/gem-index.rules.mjs'
+
 import {
   applyPollutionFilter,
   buildPool,
@@ -353,6 +355,29 @@ describe('restratifyByRegistry（レジストリ別成層化）', () => {
     expect(byName.a.gemIndex).toBe(-100)
     expect(byName.b.gemIndex).toBe(0)
     expect(byName.c.gemIndex).toBe(100)
+  })
+
+  it('🔴 本番の gemIndex は domain と共有の正本（gem-index.rules.mjs）で算出される', () => {
+    // Issue #276 の回帰テスト。かつては本ファイルの算出（`dependentRank - starRank`）と
+    // domain の `computeGemIndex` が別実装で、片方を変えても他方は静かに旧規則のまま動いた。
+    // `computeGemIndexValue` を独立に適用した値と一致することで、本番経路が共有正本を
+    // 通っていることを確認する（別実装へ戻すと、式を変えた瞬間にここが落ちる）。
+    const input = Array.from({ length: 5 }, (_, i) => ({
+      registry: 'npm',
+      packageName: `p${i}`,
+      repositoryFullName: `o/p${i}`,
+      dependentCount: 100 - i * 7,
+      stars: 3 + i * 11,
+    }))
+    const records = restratifyByRegistry(input)
+    expect(records).toHaveLength(5)
+    for (const record of records) {
+      const expected =
+        Math.round(computeGemIndexValue(record.dependentRank, record.starRank) * 100) / 100
+      expect(record.gemIndex).toBe(expected)
+    }
+    // 向きの正本（値が小さいほど過小評価度が高い）も同時に押さえる。
+    expect(records.some((r) => r.gemIndex < 0)).toBe(true)
   })
 
   it('小数第 2 位に丸められる（7 件で 1/6 刻みになるケース）', () => {
