@@ -595,7 +595,7 @@ else
   skip_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" "スクリプトが見つかりません"
 fi
 
-# 安全なプロセス掃除ヘルパー self-test（Issue #490 / L-134）。
+# 安全なプロセス掃除ヘルパー self-test（Issue #490 / L-139）。
 # 自分自身・祖先プロセスを除外集合に入れているか、無関係なプロセスは検出して終了できるかを実測する。
 if [ -f "$REPO_ROOT/tools/safe_process_kill.sh" ]; then
   run_check_timeout "安全なプロセス掃除 self-test (safe_process_kill.sh --self-test)" 30 \

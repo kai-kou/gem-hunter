@@ -1,5 +1,5 @@
 #!/bin/bash
-# 安全なプロセス掃除ヘルパー（Issue #490 / L-134）
+# 安全なプロセス掃除ヘルパー（Issue #490 / L-139）
 #
 # `pkill -f <パターン>` は **フルコマンドライン照合** のため、パターン文字列を直書きした
 # 自分自身のシェル（`bash -c "pkill -f 'next start --port 3100'"`）にもマッチし、
@@ -10,6 +10,10 @@
 #   bash tools/safe_process_kill.sh --dry-run 'next start'            # 対象 PID を出すだけ
 #   bash tools/safe_process_kill.sh --signal TERM 'vitest'            # 既定は KILL
 #   bash tools/safe_process_kill.sh --self-test                       # 自己テスト
+#
+# ⚠️ 除外するのは「自分・祖先・自分の子孫・PID 1」だけである。並行して動く **他セッション**
+#    のプロセスは除外されないため、'claude' や 'npm' のような汎用パターンを渡すと巻き添えに
+#    なる。まず --dry-run で対象を確認してから実行すること（CP-4）。
 #
 # 終了コード: 0 = 正常終了（対象 0 件でも 0）/ 1 = 引数不正・self-test 失敗
 set -uo pipefail
@@ -64,7 +68,9 @@ is_descendant() {
 list_targets() {
   local pattern="$1"
   local snapshot excluded pid ppid args
-  snapshot="$(ps -eo pid=,ppid=,args= 2>/dev/null)"
+  # 🔴 COLUMNS が export されていると ps は args 列を端末幅で切り詰め、長いコマンドラインの
+  # 後方にしかパターンが無いプロセスを取りこぼす。`ww` と大きな COLUMNS で幅依存を断つ。
+  snapshot="$(COLUMNS=32767 ps ww -eo pid=,ppid=,args= 2>/dev/null)"
   excluded="$(excluded_pids | tr '\n' ' ')"
   # パイプではなく here-string で回す（パイプだと本体が subshell になり、
   # その subshell 自身が親と同じコマンドラインを持って自己マッチの温床になる）
@@ -96,6 +102,15 @@ validate_pattern() {
 # シグナル名・番号が実在するか（kill -l で解決できるか）を確認する。
 validate_signal() {
   local sig="$1"
+  # 🔴 ダッシュ始まりを先に弾く: bash 組み込みの `kill -l -9` は '-9' を値ではなく
+  # `-l` への未知オプション扱いにしてシグナル一覧を出力し rc=0 を返すため、
+  # `kill -l` だけでは '-9' を「妥当」と誤判定する。後段は `kill "--9"` になって必ず失敗する。
+  case "$sig" in
+    -*)
+      echo "[safe-process-kill] シグナルは '-' なしで指定してください（例: TERM, KILL, 9）: '${sig}'" >&2
+      return 1
+      ;;
+  esac
   kill -l "$sig" >/dev/null 2>&1 && return 0
   echo "[safe-process-kill] 不明なシグナルです: '${sig}'" >&2
   return 1
@@ -159,14 +174,25 @@ self_test() {
       failures=$((failures + 1))
       kill -9 "$victim" 2>/dev/null
     else
-      printf '%s\n' "$found" | while read -r p; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done
+      # --dry-run が実マッチ PID を出力するか（ゼロ件時の無出力だけでは検証にならない）
+      local dry_out
+      dry_out="$(bash "$0" --dry-run "$marker" 2>&1)"
+      if ! printf '%s' "$dry_out" | grep -q "\\b${victim}\\b"; then
+        echo "[FAIL] --dry-run が実マッチ PID ($victim) を出力しなかった: ${dry_out}" >&2
+        failures=$((failures + 1))
+      else
+        echo "[PASS] --dry-run が実マッチ PID を出力した"
+      fi
+      # 🔴 終了の検証は必ず実 CLI 経由で行う（末尾の kill ループを実際に通す）。
+      # ここでハーネスが直接 kill -9 を叩くと、本番の実行パスが壊れても self-test が緑のままになる。
+      bash "$0" --signal KILL "$marker" >/dev/null 2>&1
       sleep 0.3
       if process_alive "$victim"; then
-        echo "[FAIL] テスト用プロセス ($victim) を終了できなかった" >&2
+        echo "[FAIL] 実 CLI 経由でテスト用プロセス ($victim) を終了できなかった" >&2
         failures=$((failures + 1))
         kill -9 "$victim" 2>/dev/null
       else
-        echo "[PASS] 対象プロセスを検出して終了した"
+        echo "[PASS] 実 CLI 経由で対象プロセスを検出して終了した"
       fi
     fi
   fi
@@ -183,6 +209,14 @@ self_test() {
     failures=$((failures + 1))
   else
     echo "[PASS] 不正なシグナル名を実行前に拒否した"
+  fi
+  # ダッシュ始まりのシグナル（kill -l が誤って rc=0 を返す形）を弾けるか。
+  # 通せば `kill "--9"` になり、対象が生きたまま無出力 exit 0 になる（サイレント失敗）。
+  if bash "$0" --signal -9 "safe-process-kill-nomatch" >/dev/null 2>&1; then
+    echo "[FAIL] ダッシュ始まりのシグナル '-9' を弾けなかった" >&2
+    failures=$((failures + 1))
+  else
+    echo "[PASS] ダッシュ始まりのシグナル指定を実行前に拒否した"
   fi
 
   # ケース 5: 自分が fork した子シェル（親と同じコマンドラインを持つ）を対象にしない。
@@ -263,8 +297,29 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-printf '%s\n' "$TARGETS" | while read -r pid; do
+# 🔴 パイプの `while` はサブシェルになり失敗件数を親へ返せないため here-string で読む。
+# 送信失敗を握り潰すと「対象が生きているのに出力ゼロ・exit 0」になり、呼び出し元が
+# 掃除成功と誤認する（本ツールが排除しようとしているサイレント失敗そのもの）。
+FAILED=0
+while read -r pid; do
   [ -z "$pid" ] && continue
-  kill "-${SIGNAL}" "$pid" 2>/dev/null && echo "[safe-process-kill] killed pid=${pid} (SIG${SIGNAL})"
-done
+  # 検出から送信までの間に対象が終了し、同じ PID が別プロセスへ再利用される可能性がある
+  # （TOCTOU）。送信直前にコマンドラインを取り直し、まだパターンに一致する場合だけ送る。
+  current="$(COLUMNS=32767 ps ww -o args= -p "$pid" 2>/dev/null)"
+  case "$current" in
+    *"$PATTERN"*) ;;
+    *)
+      echo "[safe-process-kill] 対象が入れ替わったため送信しません pid=${pid}" >&2
+      continue
+      ;;
+  esac
+  if kill "-${SIGNAL}" "$pid" 2>/dev/null; then
+    echo "[safe-process-kill] killed pid=${pid} (SIG${SIGNAL})"
+  else
+    echo "[safe-process-kill] 送信失敗 pid=${pid} (SIG${SIGNAL})" >&2
+    FAILED=$((FAILED + 1))
+  fi
+done <<< "$TARGETS"
+
+[ "$FAILED" -gt 0 ] && exit 1
 exit 0
