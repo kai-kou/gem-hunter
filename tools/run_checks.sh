@@ -393,6 +393,14 @@ else
   skip_check "CJK Markdown (check_cjk_markdown.py --changed)" "スクリプトが見つかりません"
 fi
 
+# 5.1 GitHub 本文 Markdown（送信経路が壊す行内リンク書式・Issue #27）
+if [ -f "$REPO_ROOT/tools/check_github_body_markdown.py" ]; then
+  run_check "GitHub 本文 Markdown (check_github_body_markdown.py)" python3 tools/check_github_body_markdown.py
+  run_check "GitHub 本文 Markdown self-test (check_github_body_markdown.py --self-test)" python3 tools/check_github_body_markdown.py --self-test
+else
+  skip_check "GitHub 本文 Markdown (check_github_body_markdown.py)" "スクリプトが見つかりません"
+fi
+
 # 6. セルフレビュー機械チェック
 if [ -f "$REPO_ROOT/tools/self_review_check.py" ]; then
   run_check "セルフレビュー機械チェック (self_review_check.py)" python3 tools/self_review_check.py
