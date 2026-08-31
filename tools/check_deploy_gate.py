@@ -258,7 +258,23 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
+    # 【#237】GitHub の issue comments は古い順に返る。長大スレッドで 300 件
+    # （100 件 x 3 ページ）を超えると、最新の Sprint Review 判定コメントが打ち切りの外側に
+    # 落ち、latest_verdict が「判定コメントが無い」と誤読して待機（exit 1）に倒れうる。
+    # 3 ページ目が「まだ続きがある」ことを示す満杯（100 件）で終わったときは、「0 件」や
+    # 「全件取得できた」と区別できないため、fail-closed としてエラーを返し呼び出し側で
+    # 判定不能（exit 2）へ倒す。境界（入力境界表）:
+    #   件数 0        → page1 が空 batch → 早期 break・エラーなし（[] を返す）
+    #   件数 1〜99    → page1 が満杯未満 → 早期 break・エラーなし
+    #   件数 100      → page1 満杯 → page2 取得、page2 が空 → 早期 break・エラーなし（100件）
+    #   件数 101〜299 → 最終ページが満杯未満 → 早期 break・エラーなし
+    #   件数 300      → page3 も満杯（100）のままループ終了 → 打ち切り疑い → エラー
+    #                    （実際には 300 件ちょうどの可能性もあるが、REST 応答だけでは
+    #                    「ちょうど 300 件」と「301 件以上」を区別できないため安全側でエラー扱い）
+    #   件数 301 以上 → page3 も満杯（100）のままループ終了 → 打ち切り → エラー
     comments: list[dict] = []
+    last_batch_len = 0
+    broke_early = False
     for page in range(1, 4):
         ok2, out2 = _http_get(
             f"https://api.github.com/repos/{REPO}/issues/{number}/comments"
@@ -272,6 +288,7 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
         except json.JSONDecodeError:
             return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
         if not batch:
+            broke_early = True
             break
         comments.extend(
             {
@@ -281,8 +298,16 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
             }
             for c in batch
         )
+        last_batch_len = len(batch)
         if len(batch) < 100:
+            broke_early = True
             break
+    if not broke_early and last_batch_len == 100:
+        return [], (
+            f"コメント件数がページング上限（300 件）に到達した可能性があります"
+            f"（取得済み {len(comments)} 件・3 ページ目も満杯で終了）。"
+            "判定不能として扱います（最新の Sprint Review 判定コメントを取りこぼす恐れがあるため）"
+        )
     return comments, None
 
 
@@ -1228,6 +1253,250 @@ def _self_test_fetch_open_pr_numbers() -> list[str]:
     return failures
 
 
+def _self_test_fetch_in_progress_sprint_candidates() -> list[str]:
+    """#237: fetch_in_progress_sprint_candidates を gh→REST フォールバック込みで
+    エントリポイントから実測する（`_run_gh` / `_http_get` をモック差し替え）。
+
+    入力バリアント: ① gh 成功 ② gh 失敗 + token 無し ③ gh 失敗 + REST 失敗
+    ④ gh 失敗 + REST 成功（pull_request キーを持つ行を除外することも確認）。
+    """
+    failures = []
+    orig_run_gh = _run_gh
+    orig_http_get = _http_get
+    orig_gh_token = os.environ.get("GH_TOKEN")
+    orig_github_token = os.environ.get("GITHUB_TOKEN")
+
+    def clear_tokens():
+        os.environ.pop("GH_TOKEN", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+
+    try:
+        # ① gh 成功
+        globals()["_run_gh"] = lambda args: (True, json.dumps([
+            {"number": 1, "title": "SP-1: 何か", "body": "本文"},
+        ]))
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is not None or issues != [{"number": 1, "title": "SP-1: 何か", "body": "本文"}]:
+            failures.append(f"① gh成功: {(issues, err)!r}")
+
+        # ② gh 失敗 + token 無し → エラー（issues は空リスト）
+        globals()["_run_gh"] = lambda args: (False, "認証エラー")
+        clear_tokens()
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is None or issues != []:
+            failures.append(f"② gh失敗+token無し: エラーかつ issues=[] を期待したが {(issues, err)!r}")
+
+        os.environ["GH_TOKEN"] = "dummy-token-for-selftest"
+
+        # ③ gh 失敗 + REST 失敗 → エラー
+        globals()["_http_get"] = lambda url, token: (False, "HTTP 502")
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is None:
+            failures.append(f"③ REST失敗: エラーを期待したが {(issues, err)!r}")
+
+        # ④ gh 失敗 + REST 成功（PR 行は pull_request キーで除外される）
+        globals()["_http_get"] = lambda url, token: (True, json.dumps([
+            {"number": 2, "title": "SP-2: 何か", "body": ""},
+            {"number": 3, "title": "PR風", "body": "", "pull_request": {}},
+        ]))
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is not None or issues != [{"number": 2, "title": "SP-2: 何か", "body": ""}]:
+            failures.append(f"④ REST成功: {(issues, err)!r}（PR 行の除外を確認）")
+    finally:
+        globals()["_run_gh"] = orig_run_gh
+        globals()["_http_get"] = orig_http_get
+        clear_tokens()
+        if orig_gh_token is not None:
+            os.environ["GH_TOKEN"] = orig_gh_token
+        if orig_github_token is not None:
+            os.environ["GITHUB_TOKEN"] = orig_github_token
+
+    return failures
+
+
+def _self_test_fetch_issue_comments() -> list[str]:
+    """#237: fetch_issue_comments を gh→REST フォールバック込みでエントリポイントから実測する。
+
+    入力バリアント: ① gh 成功 ② gh 失敗 + token 無し ③ gh 失敗 + REST 失敗
+    ④ gh 失敗 + REST 成功（0 件） ⑤ 99 件（打ち切りなし） ⑥ ちょうど 100 件（打ち切りなし）
+    ⑦ 101 件（打ち切りなし） ⑧ ちょうど 300 件（3 ページとも満杯 → 打ち切り疑いでエラー）
+    ⑨ 301 件超（同じくエラー）。境界の根拠は関数内コメントの入力境界表を参照。
+    """
+    failures = []
+    orig_run_gh = _run_gh
+    orig_http_get = _http_get
+    orig_gh_token = os.environ.get("GH_TOKEN")
+    orig_github_token = os.environ.get("GITHUB_TOKEN")
+
+    def clear_tokens():
+        os.environ.pop("GH_TOKEN", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+
+    def make_rest_pager(total: int):
+        """`total` 件のコメントを 100 件区切りでページング応答するダミー _http_get。"""
+        def http_get(url, token):
+            # "per_page=100" にも "page=" が部分一致するため `[?&]` 境界で区切って誤マッチを防ぐ
+            m = re.search(r"[?&]page=(\d+)", url)
+            page = int(m.group(1)) if m else 1
+            start = (page - 1) * 100
+            end = min(start + 100, total)
+            if start >= total:
+                return True, json.dumps([])
+            batch = [
+                {"body": f"comment {i}", "created_at": f"2026-08-{(i % 28) + 1:02d}T00:00:00Z",
+                 "author_association": "OWNER"}
+                for i in range(start, end)
+            ]
+            return True, json.dumps(batch)
+        return http_get
+
+    try:
+        # ① gh 成功
+        globals()["_run_gh"] = lambda args: (True, json.dumps({
+            "comments": [
+                {"body": "c1", "createdAt": "2026-08-20T00:00:00Z", "authorAssociation": "OWNER"},
+            ]
+        }))
+        comments, err = fetch_issue_comments(1)
+        if err is not None or len(comments) != 1:
+            failures.append(f"① gh成功: {(comments, err)!r}")
+
+        # ② gh 失敗 + token 無し → エラー
+        globals()["_run_gh"] = lambda args: (False, "認証エラー")
+        clear_tokens()
+        comments, err = fetch_issue_comments(2)
+        if err is None or comments != []:
+            failures.append(f"② gh失敗+token無し: エラーかつ comments=[] を期待したが {(comments, err)!r}")
+
+        os.environ["GH_TOKEN"] = "dummy-token-for-selftest"
+
+        # ③ gh 失敗 + REST 失敗 → エラー
+        globals()["_http_get"] = lambda url, token: (False, "HTTP 502")
+        comments, err = fetch_issue_comments(3)
+        if err is None:
+            failures.append(f"③ REST失敗: エラーを期待したが {(comments, err)!r}")
+
+        # ④〜⑨: gh は失敗のまま、REST 側の件数を境界表どおりに変えて確認する
+        boundary_cases = [
+            (0, False), (1, False), (99, False), (100, False),
+            (101, False), (300, True), (301, True),
+        ]
+        for total, expect_truncated in boundary_cases:
+            globals()["_http_get"] = make_rest_pager(total)
+            comments, err = fetch_issue_comments(100 + total)
+            if expect_truncated:
+                if err is None:
+                    failures.append(
+                        f"件数{total}: 打ち切り疑いでエラーを期待したが {(len(comments), err)!r}"
+                    )
+            else:
+                if err is not None or len(comments) != total:
+                    failures.append(
+                        f"件数{total}: エラーなし・{total}件取得を期待したが {(len(comments), err)!r}"
+                    )
+    finally:
+        globals()["_run_gh"] = orig_run_gh
+        globals()["_http_get"] = orig_http_get
+        clear_tokens()
+        if orig_gh_token is not None:
+            os.environ["GH_TOKEN"] = orig_gh_token
+        if orig_github_token is not None:
+            os.environ["GITHUB_TOKEN"] = orig_github_token
+
+    return failures
+
+
+def _self_test_main_unhandled_exception() -> list[str]:
+    """#313: main() 内の未捕捉例外が exit 2（判定不能）になり、正常な待機（exit 1）や
+    デプロイ可（exit 0）と区別できることを、エントリポイント `main()` から実測する。
+    あわせて `except Exception` が `SystemExit`（正常系の `sys.exit`）を飲み込んでいない
+    ことも、独自の終了コードを使って確認する（`except BaseException` へのミスの検知）。
+    """
+    import contextlib
+    import io
+
+    failures = []
+    orig_argv = sys.argv
+    orig_fetch = fetch_in_progress_sprint_candidates
+    orig_repo = REPO
+
+    def restore():
+        sys.argv = orig_argv
+        globals()["fetch_in_progress_sprint_candidates"] = orig_fetch
+        global REPO
+        REPO = orig_repo
+
+    def run_main() -> tuple[int | None, str, str]:
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        code = None
+        try:
+            with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+                main()
+        except SystemExit as e:
+            code = e.code
+        return code, buf_out.getvalue(), buf_err.getvalue()
+
+    try:
+        # ケース1: 未捕捉例外（--json）→ exit 2・can_deploy: null・例外型がメッセージに含まれる
+        globals()["fetch_in_progress_sprint_candidates"] = (
+            lambda: (_ for _ in ()).throw(ValueError("boom"))
+        )
+        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
+        code, out, _err = run_main()
+        if code != 2:
+            failures.append(f"main(): 未捕捉例外は exit 2 を期待したが {code!r}")
+        try:
+            payload = json.loads(out.strip().splitlines()[-1]) if out.strip() else {}
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("can_deploy") is not None:
+            failures.append(
+                f"main(): 未捕捉例外時の can_deploy は null を期待したが {payload.get('can_deploy')!r}"
+            )
+        if "ValueError" not in (payload.get("error") or ""):
+            failures.append(f"main(): 未捕捉例外の型が error メッセージに含まれない: {payload.get('error')!r}")
+
+        # ケース2: 同じ例外を非 --json で発生させる → stderr に出て exit 2
+        sys.argv = ["check_deploy_gate.py", "--repo", "owner/name"]
+        code, _out, err = run_main()
+        if code != 2:
+            failures.append(f"main(): 非JSON時の未捕捉例外は exit 2 を期待したが {code!r}")
+        if "ValueError" not in err:
+            failures.append(f"main(): 非JSON時の未捕捉例外が stderr に出ていない: {err!r}")
+
+        # ケース3: 既存の正常なエラー応答（sys.exit(2) 直呼び）は変わらず exit 2
+        globals()["fetch_in_progress_sprint_candidates"] = lambda: ([], "取得失敗テスト")
+        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
+        code, _out, _err = run_main()
+        if code != 2:
+            failures.append(f"main(): fetch のエラー応答は exit 2 を期待したが {code!r}")
+
+        # ケース4: 正常系（issues 0 件）は exit 0 のまま（例外ハンドラが正常終了を握り潰さない）
+        globals()["fetch_in_progress_sprint_candidates"] = lambda: ([], None)
+        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
+        code, _out, _err = run_main()
+        if code != 0:
+            failures.append(f"main(): 正常系（塞ぐIssueなし）は exit 0 を期待したが {code!r}")
+
+        # ケース5: fetch 内で明示的な sys.exit(5)（本実装には無いが「except Exception を
+        # except BaseException にすり替えていないか」を検知する回帰ケース）→ 5 のまま伝播する
+        def raise_system_exit_5():
+            sys.exit(5)
+
+        globals()["fetch_in_progress_sprint_candidates"] = raise_system_exit_5
+        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
+        code, _out, _err = run_main()
+        if code != 5:
+            failures.append(
+                f"main(): SystemExit(5) は素通りして exit 5 を期待したが {code!r}"
+                "（except Exception が except BaseException にすり替わっていないか確認）"
+            )
+    finally:
+        restore()
+
+    return failures
+
+
 def _self_test_decide_and_exit_code() -> list[str]:
     failures = []
     always_merged = lambda title: True  # noqa: E731
@@ -1284,6 +1553,9 @@ def run_self_test() -> int:
         ("main 祖先判定・fetch メモ化（git 呼び出しのモック差し替え・#471/#723）", _self_test_is_ancestor_of_main),
         ("merged PR 検索の gh/REST フォールバック（#723 指摘3）", _self_test_fetch_merged_pr_commit_shas),
         ("open PR 検索の gh/REST フォールバック（#723 指摘1）", _self_test_fetch_open_pr_numbers),
+        ("in-progress スプリント候補の gh/REST フォールバック（#237）", _self_test_fetch_in_progress_sprint_candidates),
+        ("Issue コメント取得の gh/REST フォールバックとページング打ち切り（#237）", _self_test_fetch_issue_comments),
+        ("main() の未捕捉例外→exit 2 写像（#313）", _self_test_main_unhandled_exception),
         ("集約判定と終了コードのマッピング", _self_test_decide_and_exit_code),
     ]
     failed_groups = 0
@@ -1325,36 +1597,51 @@ def main() -> None:
     global REPO
     if args.repo:
         REPO = args.repo
-    _validate_repo()
 
-    issues, err = fetch_in_progress_sprint_candidates()
-    if err is not None:
-        _emit_error(f"Issue 一覧の取得に失敗しました（{err}）", args.json)
-        sys.exit(2)
+    # 【#313】判定処理中の未捕捉例外は CPython 既定の exit 1 に化け、正常な「待機」（exit 1）と
+    # 区別できなくなる（fail-closed の 3 値契約 0/1/2 が壊れる）。ここで捕捉し exit 2（判定不能）
+    # へ写像する。`SystemExit`（正常な `sys.exit(0/1/2)`）は `Exception` の派生ではないため
+    # 本節では捕捉されず、そのまま呼び出し元へ伝播する（`except Exception` を `except BaseException`
+    # に変えると SystemExit まで飲み込んでしまうため、そのミスを行わないこと）。
+    try:
+        _validate_repo()
 
-    issues_with_comments: list[tuple[dict, list[dict]]] = []
-    for issue in issues:
-        comments, cerr = fetch_issue_comments(issue["number"])
-        if cerr is not None:
-            _emit_error(f"Issue #{issue['number']} のコメント取得に失敗しました（{cerr}）", args.json)
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is not None:
+            _emit_error(f"Issue 一覧の取得に失敗しました（{err}）", args.json)
             sys.exit(2)
-        issues_with_comments.append((issue, comments))
 
-    result = decide(issues_with_comments)
-    result["checked_at"] = now_jst_str()
-    result["repo"] = REPO
+        issues_with_comments: list[tuple[dict, list[dict]]] = []
+        for issue in issues:
+            comments, cerr = fetch_issue_comments(issue["number"])
+            if cerr is not None:
+                _emit_error(f"Issue #{issue['number']} のコメント取得に失敗しました（{cerr}）", args.json)
+                sys.exit(2)
+            issues_with_comments.append((issue, comments))
 
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False))
-    else:
-        if result["can_deploy"]:
-            print("デプロイ可: ゲートを塞いでいる Issue はありません")
+        result = decide(issues_with_comments)
+        result["checked_at"] = now_jst_str()
+        result["repo"] = REPO
+
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False))
         else:
-            print("デプロイ待機: 以下の Issue がゲートを塞いでいます")
-            for b in result["blocking_issues"]:
-                print(f"  #{b['number']} {b['title']} — {b['reason']}")
+            if result["can_deploy"]:
+                print("デプロイ可: ゲートを塞いでいる Issue はありません")
+            else:
+                print("デプロイ待機: 以下の Issue がゲートを塞いでいます")
+                for b in result["blocking_issues"]:
+                    print(f"  #{b['number']} {b['title']} — {b['reason']}")
 
-    sys.exit(exit_code_for(result["can_deploy"]))
+        sys.exit(exit_code_for(result["can_deploy"]))
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 — 未捕捉例外を fail-closed の exit 2 へ写像する（#313）
+        # GH_TOKEN / GITHUB_TOKEN の値は例外メッセージに含めない（ファイル冒頭の規約）。
+        # 例外型 + str(e) のみを出す（トークンを組み立てる経路は _http_get 内で完結しており、
+        # そこで送出される例外も urllib のものでトークン文字列は含まれない）。
+        _emit_error(f"未捕捉の例外が発生しました（{type(e).__name__}: {e}）", args.json)
+        sys.exit(2)
 
 
 def _emit_error(message: str, as_json: bool) -> None:
