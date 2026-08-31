@@ -38,6 +38,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from issue_marker_counter import (  # noqa: E402
+    count_consecutive as _count_consecutive,
+    extract_bodies,
+)
 
 INDETERMINATE_MARKER = "[prod-drift][判定不能]"
 NOT_CONFIGURED_MARKER = "[prod-drift][経路未構成]"
@@ -49,38 +56,14 @@ ALL_MARKERS = (INDETERMINATE_MARKER, NOT_CONFIGURED_MARKER, RESOLVED_MARKER)
 ESCALATION_THRESHOLD = 3
 
 
-def extract_bodies(data: object) -> list[str]:
-    """コメント JSON から本文の配列を取り出す（古い順のまま）。"""
-    if not isinstance(data, list):
-        raise ValueError("コメント JSON は配列である必要があります")
-    bodies: list[str] = []
-    for item in data:
-        if isinstance(item, str):
-            bodies.append(item)
-        elif isinstance(item, dict):
-            bodies.append(str(item.get("body") or ""))
-        else:
-            raise ValueError(f"想定外のコメント要素です: {item!r}")
-    return bodies
-
-
 def count_consecutive(bodies: list[str], marker: str) -> int:
     """末尾から数えて `marker` が連続している回数を返す。
 
-    - 他の `[prod-drift]` マーカー（解消・別種の症状）が挟まったらそこで打ち切る
-      （症状が変わった＝連続ではない）。
-    - `[prod-drift]` マーカーを持たないコメント（人手のメモ等）は **カウントを壊さない**
-      （無視して読み飛ばす）。人がコメントしただけで通知が先送りされるのを防ぐため。
+    数え方（**行頭一致・引用行の除外**・無関係コメントの読み飛ばし）は
+    `issue_marker_counter` が正本。他の `[prod-drift]` マーカー（解消・別種の症状）が
+    挟まったらそこで打ち切る（症状が変わった＝連続ではない）。
     """
-    count = 0
-    for body in reversed(bodies):
-        if marker in body:
-            count += 1
-            continue
-        if any(other in body for other in ALL_MARKERS):
-            break
-        # マーカーの無いコメントは判定に関与しない
-    return count
+    return _count_consecutive(bodies, (marker,), ALL_MARKERS)
 
 
 def decide(bodies: list[str], marker: str, threshold: int = ESCALATION_THRESHOLD) -> dict:
@@ -187,20 +170,35 @@ def _self_test_unrelated_comment_is_ignored() -> list[str]:
     return failures
 
 
-def _self_test_extract_bodies() -> list[str]:
+def _self_test_quoted_marker_does_not_reset() -> list[str]:
+    """🔴 引用・言及しただけのコメントで連続カウントが壊れない（Layer 1 CRITICAL・fail-open）。"""
     failures: list[str] = []
-    if extract_bodies([{"body": "a"}, {"body": "b"}]) != ["a", "b"]:
-        failures.append("dict 形式の抽出に失敗")
-    if extract_bodies(["a"]) != ["a"]:
-        failures.append("文字列配列の抽出に失敗")
-    if extract_bodies([{"id": 1}]) != [""]:
-        failures.append("body 欠落は空文字に落とす必要がある")
-    for bad in ({"body": "a"}, "abc", 3):
-        try:
-            extract_bodies(bad)
-        except ValueError:
-            continue
-        failures.append(f"配列でない入力を弾いていない: {bad!r}")
+    bodies = [
+        f"{INDETERMINATE_MARKER} 1",
+        f"{INDETERMINATE_MARKER} 2",
+        f"調査メモ:\n> {RESOLVED_MARKER} 再トリガー成功\nを引用しただけで、まだ解消していない",
+        f"{INDETERMINATE_MARKER} 3",
+        f"{INDETERMINATE_MARKER} 4",
+    ]
+    result = decide(bodies, INDETERMINATE_MARKER)
+    if result["consecutive"] != 4:
+        failures.append(f"引用行で連続が打ち切られている: got={result['consecutive']}")
+    if not result["escalate"]:
+        failures.append("引用行を挟んでも 4 連続なら escalate する")
+
+    mentioned = [
+        f"{INDETERMINATE_MARKER} 1",
+        f"{INDETERMINATE_MARKER} 2",
+        f"`{RESOLVED_MARKER}` はまだ一度も出ていない",
+        f"{INDETERMINATE_MARKER} 3",
+    ]
+    if count_consecutive(mentioned, INDETERMINATE_MARKER) != 3:
+        failures.append("行中の言及で連続が打ち切られている")
+
+    # 逆向き: マーカーを行頭に持たないコメントは「症状の発生」としても数えない
+    inline_claim = [f"本文中に {INDETERMINATE_MARKER} と書いただけのコメント"]
+    if count_consecutive(inline_claim, INDETERMINATE_MARKER) != 0:
+        failures.append("行頭にないマーカーを症状として数えている")
     return failures
 
 
@@ -211,7 +209,7 @@ def run_self_test() -> int:
         ("経路未構成は A-6 として @mention", _self_test_not_configured_mentions),
         ("解消・別症状でリセット", _self_test_resolved_resets),
         ("無関係コメントは無視", _self_test_unrelated_comment_is_ignored),
-        ("コメント JSON の抽出", _self_test_extract_bodies),
+        ("引用・言及ではリセットしない", _self_test_quoted_marker_does_not_reset),
     ]
     failed = 0
     total = 0

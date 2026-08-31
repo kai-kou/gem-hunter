@@ -65,14 +65,18 @@ tag/message とも空**（`wrangler versions view` の出力で `Tag: -` / `Mess
 from __future__ import annotations
 
 import argparse
+import io
 import json
+import os
 import subprocess
 import sys
+from typing import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mask_secrets import mask_text  # noqa: E402
+from workers_build_diagnostics import no_triggers_message  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JST = timezone(timedelta(hours=9))
@@ -222,6 +226,58 @@ def select_latest_deployment(data: object) -> tuple[dict | None, str | None]:
     if not version_id:
         return None, "最新デプロイに version_id が含まれていません"
     return {"version_id": version_id, "created_on": latest.get("created_on")}, None
+
+
+def count_build_triggers() -> tuple[int, str | None, str | None] | None:
+    """Cloudflare の build trigger 件数を実測する（読み取り専用・#693）。
+
+    判定材料が揃わないとき（トークン未供給・API 失敗・wrangler.jsonc 不在）は
+    **`None` を返して「分からない」と表明する**。0 件と混同すると、単なる権限不足を
+    「デプロイ経路が構成されていない」と誤って断定してしまう（fail-safe）。
+    """
+    account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+    if not account_id or not token:
+        return None
+    try:
+        from trigger_workers_build import (
+            fetch_build_triggers,
+            fetch_worker_scripts,
+            worker_tag_from_scripts,
+        )
+        from wrangler_config import parse_worker_name
+
+        wrangler_path = REPO_ROOT / "wrangler.jsonc"
+        worker_name = parse_worker_name(wrangler_path.read_text(encoding="utf-8"))
+        worker_tag = worker_tag_from_scripts(fetch_worker_scripts(account_id, token), worker_name)
+        if worker_tag is None:
+            return None
+        return len(fetch_build_triggers(account_id, token, worker_tag)), worker_name, worker_tag
+    except Exception:  # noqa: BLE001 — 診断の精緻化は本判定を止めてまで行わない
+        return None
+
+
+def refine_no_deployment_reason(
+    reason: str | None,
+    *,
+    count_triggers: Callable[[], tuple[int, str | None, str | None] | None] = count_build_triggers,
+) -> tuple[str | None, bool]:
+    """「実デプロイ実績なし」を build trigger の実件数で切り分ける（#693）。
+
+    Returns (reason, trigger_not_configured)。**trigger が 0 件と実測できたときだけ**
+    共通診断（`workers_build_diagnostics.no_triggers_message`）へ差し替える。
+    件数を取れなかった場合（`None`）は従来文言のまま返す — 「引けなかった」と
+    「0 件だった」は別の事実であり、混同すると誤った断定になる。
+    """
+    if reason != REASON_NO_DEPLOYMENT_FOUND:
+        return reason, False
+    counted = count_triggers()
+    if counted is None:
+        return reason, False
+    count, worker_name, worker_tag = counted
+    if count == 0:
+        return no_triggers_message(worker_name, worker_tag), True
+    return reason, False
 
 
 def sha_matches(tag: str, head_sha: str) -> bool:
@@ -456,6 +512,62 @@ def _self_test_fetch_deployment_filters_non_deployment() -> list[str]:
     return failures
 
 
+def _self_test_refine_no_deployment_reason() -> list[str]:
+    """🔴 #693 完了条件: trigger 0 件のとき専用メッセージが選ばれる（両スクリプト共通文言）。"""
+    from workers_build_diagnostics import NO_TRIGGERS_REGISTERED_HINT
+
+    failures: list[str] = []
+
+    reason, flag = refine_no_deployment_reason(
+        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (0, "gem-hunter", "tag-1"),
+    )
+    if NO_TRIGGERS_REGISTERED_HINT not in reason:
+        failures.append(f"trigger 0 件で共通診断へ差し替わっていない: {reason!r}")
+    if "worker=gem-hunter" not in reason:
+        failures.append(f"worker / tag のコンテキストが伝わっていない: {reason!r}")
+    if not flag:
+        failures.append("trigger 0 件で trigger_not_configured フラグが立っていない")
+
+    reason, flag = refine_no_deployment_reason(
+        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (2, "gem-hunter", "tag-1"),
+    )
+    if reason != REASON_NO_DEPLOYMENT_FOUND or flag:
+        failures.append(f"trigger 1 件以上では従来文言のままにする: {reason!r} flag={flag}")
+
+    # 「引けなかった」を「0 件だった」と混同しない（fail-safe）
+    reason, flag = refine_no_deployment_reason(
+        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: None,
+    )
+    if reason != REASON_NO_DEPLOYMENT_FOUND or flag:
+        failures.append(f"件数を取れないときは従来文言のままにする: {reason!r} flag={flag}")
+
+    other = "本番デプロイが段階昇格中のため判定不能です"
+    reason, flag = refine_no_deployment_reason(other, count_triggers=lambda: (0, "w", "t"))
+    if reason != other or flag:
+        failures.append(f"別の理由まで差し替えてはいけない: {reason!r} flag={flag}")
+
+    return failures
+
+
+def _self_test_emit_error_trigger_flag() -> list[str]:
+    """判定不能 JSON に `trigger_not_configured` が載る／載らないことを固定する（#694）。"""
+    import contextlib
+
+    failures: list[str] = []
+    for flag, expected in ((True, True), (False, False)):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            _emit_error("テスト", True, trigger_not_configured=flag)
+        payload = json.loads(buffer.getvalue())
+        if payload.get("trigger_not_configured", False) != expected:
+            failures.append(
+                f"trigger_not_configured={flag} のとき JSON が {payload!r}"
+            )
+        if payload.get("drifted", "missing") is not None:
+            failures.append(f"判定不能では drifted=None を維持する: {payload!r}")
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("SHA 短縮形/完全形の突合", _self_test_sha_matches),
@@ -465,6 +577,8 @@ def run_self_test() -> int:
         ("判定不能 → exit 2（fail-closed）", _self_test_indeterminate_exit_code),
         ("wrangler stdout の JSON 抽出", _self_test_extract_json),
         ("deployment/version_upload の判別", _self_test_fetch_deployment_filters_non_deployment),
+        ("trigger 0 件の共通診断への切り替え（#693）", _self_test_refine_no_deployment_reason),
+        ("判定不能 JSON の trigger_not_configured フラグ（#694）", _self_test_emit_error_trigger_flag),
     ]
     failed_groups = 0
     total_failures = 0
@@ -489,12 +603,18 @@ def run_self_test() -> int:
 # ──────────────────────────────────────────────
 
 
-def _emit_error(message: str, as_json: bool) -> None:
+def _emit_error(message: str, as_json: bool, *, trigger_not_configured: bool = False) -> None:
+    """判定不能を出力する。
+
+    `trigger_not_configured=True` のときは JSON に機械可読フラグを載せる（#694）。
+    `trigger_workers_build.py` の `_emit_error` と同じフィールド名にしてあるので、
+    呼び出し側（`sprint-cycle-router` Step 0.2）は 2 本のスクリプトを同じ形で扱える。
+    """
     if as_json:
-        print(json.dumps(
-            {"drifted": None, "error": message, "checked_at": now_jst_str()},
-            ensure_ascii=False,
-        ))
+        payload = {"drifted": None, "error": message, "checked_at": now_jst_str()}
+        if trigger_not_configured:
+            payload["trigger_not_configured"] = True
+        print(json.dumps(payload, ensure_ascii=False))
     else:
         print(f"ERROR: 判定不能: {message}", file=sys.stderr)
 
@@ -524,7 +644,12 @@ def main() -> None:
 
     deployment, derr = fetch_latest_production_deployment()
     if derr is not None:
-        _emit_error(f"本番デプロイ情報の取得に失敗しました（{derr}）", args.json)
+        derr, not_configured = refine_no_deployment_reason(derr)
+        _emit_error(
+            f"本番デプロイ情報の取得に失敗しました（{derr}）",
+            args.json,
+            trigger_not_configured=not_configured,
+        )
         sys.exit(2)
 
     tag, terr = fetch_version_tag(deployment["version_id"])

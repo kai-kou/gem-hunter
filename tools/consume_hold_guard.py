@@ -41,6 +41,14 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from issue_marker_counter import (  # noqa: E402
+    count_consecutive,
+    extract_bodies,
+    has_marker,
+)
 
 HOLD_MARKER = "[consume-hold] 保留"
 START_MARKER = "[consume-start]"
@@ -65,41 +73,50 @@ FORCED_CHOICES = (
 
 # 保留コメントの必須項目（省略禁止・整理モードの「取り組むへ移る条件」と同じ規律）。
 _CONDITION_RE = re.compile(r"着手へ移る条件\s*[:：]\s*\S")
-# 「状況の変化なし」だけで閉じさせないための禁止語（条件として無内容なもの）。
-_EMPTY_CONDITION_RE = re.compile(r"着手へ移る条件\s*[:：]\s*(状況の?変化なし|様子を見る|特になし|なし)\s*$")
+_CONDITION_VALUE_RE = re.compile(r"着手へ移る条件\s*[:：]\s*(.+)")
+
+# 条件として無内容な言い回し。🔴 **末尾アンカーで固定一致させない**（Layer 1 セルフレビュー
+# CRITICAL）。`着手へ移る条件: 状況の変化なし。` のように句点を 1 つ足すだけで検査を
+# すり抜けられては、#690 が問題視した「無内容な保留の無限反復」を防げない。
+_BANNED_CONDITION_SUFFIXES = (
+    "状況の変化なし",
+    "状況変化なし",
+    "変化なし",
+    "様子を見る",
+    "様子見",
+    "変わらず",
+)
+# 短い語は末尾一致だと誤検知する（「見積もりに問題なし」等）ため完全一致で見る。
+_BANNED_CONDITION_EXACT = frozenset({"なし", "無し", "特になし", "特に無し", "未定", "不明"})
 
 
-def extract_bodies(data: object) -> list[str]:
-    """コメント JSON から本文の配列を取り出す（古い順のまま）。"""
-    if not isinstance(data, list):
-        raise ValueError("コメント JSON は配列である必要があります")
-    bodies: list[str] = []
-    for item in data:
-        if isinstance(item, str):
-            bodies.append(item)
-        elif isinstance(item, dict):
-            bodies.append(str(item.get("body") or ""))
-        else:
-            raise ValueError(f"想定外のコメント要素です: {item!r}")
-    return bodies
+def _normalize_condition(value: str) -> str:
+    """条件文から比較用の中核部分を取り出す（句読点・括弧書き・後続項目を落とす）。"""
+    head = value.split("/")[0]
+    head = re.sub(r"[（(][^）)]*[）)]", "", head)
+    return head.strip().strip("。.、,!！?？ \u3000")
+
+
+def _is_empty_condition(body: str) -> bool:
+    """『着手へ移る条件』が実質的に無内容か判定する。"""
+    match = _CONDITION_VALUE_RE.search(body)
+    if not match:
+        return False
+    normalized = _normalize_condition(match.group(1))
+    if not normalized:
+        return True
+    if normalized in _BANNED_CONDITION_EXACT:
+        return True
+    return any(normalized.endswith(suffix) for suffix in _BANNED_CONDITION_SUFFIXES)
 
 
 def count_consecutive_holds(bodies: list[str]) -> int:
     """末尾から数えて保留コメントが連続している回数を返す。
 
-    - `[consume-start]`（着手）が挟まったらそこで打ち切る（保留の連鎖が切れている）。
-    - どちらのマーカーも持たないコメント（人手のメモ・AI レビュー通知等）は **カウントを壊さない**
-      （無視して読み飛ばす）。人がコメントしただけで上限判定が先送りされるのを防ぐため。
+    数え方（**行頭一致・引用行の除外**・無関係コメントの読み飛ばし）は
+    `issue_marker_counter` が正本。`[consume-start]`（着手）が挟まったら打ち切る。
     """
-    count = 0
-    for body in reversed(bodies):
-        if any(marker in body for marker in ALL_HOLD_MARKERS):
-            count += 1
-            continue
-        if START_MARKER in body:
-            break
-        # マーカーの無いコメントは判定に関与しない
-    return count
+    return count_consecutive(bodies, ALL_HOLD_MARKERS, (START_MARKER,))
 
 
 def decide(bodies: list[str], limit: int = HOLD_LIMIT) -> dict:
@@ -118,11 +135,11 @@ def decide(bodies: list[str], limit: int = HOLD_LIMIT) -> dict:
 def validate_hold_comment(body: str) -> list[str]:
     """保留コメントが必須項目を満たしているか検証する（違反理由の配列を返す）。"""
     problems: list[str] = []
-    if HOLD_MARKER not in body:
-        problems.append(f"保留コメントは '{HOLD_MARKER}(N 回目):' で始める必要があります")
+    if not has_marker(body, (HOLD_MARKER,)):
+        problems.append(f"保留コメントは '{HOLD_MARKER}(N 回目):' の行で始める必要があります")
     if not _CONDITION_RE.search(body):
         problems.append("『着手へ移る条件: {条件}』が必須です（省略禁止）")
-    elif _EMPTY_CONDITION_RE.search(body):
+    elif _is_empty_condition(body):
         problems.append("『着手へ移る条件』が無内容です（何が決まれば着手できるかを具体化する）")
     return problems
 
@@ -213,20 +230,58 @@ def _self_test_validate_hold_comment() -> list[str]:
     return failures
 
 
-def _self_test_extract_bodies() -> list[str]:
+def _self_test_quoted_marker_does_not_reset() -> list[str]:
+    """🔴 引用・言及しただけのコメントで連続カウントが壊れない（Layer 1 CRITICAL・fail-open）。"""
     failures: list[str] = []
-    if extract_bodies([{"body": "a"}, {"body": "b"}]) != ["a", "b"]:
-        failures.append("dict 形式の抽出に失敗")
-    if extract_bodies(["a"]) != ["a"]:
-        failures.append("文字列配列の抽出に失敗")
-    if extract_bodies([{"id": 1}]) != [""]:
-        failures.append("body 欠落は空文字に落とす必要がある")
-    for bad in ({"body": "a"}, "abc", 3):
-        try:
-            extract_bodies(bad)
-        except ValueError:
-            continue
-        failures.append(f"配列でない入力を弾いていない: {bad!r}")
+    bodies = [
+        _hold(1),
+        _hold(2),
+        f"監査メモ: この Issue は `{START_MARKER}` されたことが一度もない",
+        _hold(3),
+    ]
+    result = decide(bodies)
+    if result["consecutive_holds"] != 3:
+        failures.append(f"行中の言及でリセットされている: got={result['consecutive_holds']}")
+    if result["can_hold"]:
+        failures.append("言及コメントを挟んでも上限到達なら保留を選べてはいけない")
+
+    quoted = [_hold(1), _hold(2), f"引用:\n> {START_MARKER} 着手（過去のコメント）", _hold(3)]
+    if count_consecutive_holds(quoted) != 3:
+        failures.append("引用行でリセットされている（fail-open）")
+
+    inline_hold = [f"本文中に {HOLD_MARKER} と書いただけのコメント"]
+    if count_consecutive_holds(inline_hold) != 0:
+        failures.append("行頭にないマーカーを保留として数えている")
+    return failures
+
+
+def _self_test_empty_condition_variants() -> list[str]:
+    """🔴 句読点・括弧書きを足すだけで無内容判定をすり抜けられない（Layer 1 CRITICAL）。"""
+    failures: list[str] = []
+    banned = [
+        "状況の変化なし",
+        "状況の変化なし。",
+        "前回から状況の変化なし",
+        "特になし（初回のため）",
+        "特に無し",
+        "様子を見る。",
+        "なし",
+    ]
+    for value in banned:
+        body = f"{HOLD_MARKER}(2 回目): 変化なし / 着手へ移る条件: {value}"
+        if not validate_hold_comment(body):
+            failures.append(f"無内容な条件をすり抜けさせている: {value!r}")
+
+    allowed = [
+        "対象モジュールの一覧が確定すること",
+        "#123 の API 仕様が確定し、レスポンス形式が決まること",
+        "Cloudflare の trigger が 1 件以上に復旧すること",
+        "見積もりに問題なしと PO が判断すること",
+    ]
+    for value in allowed:
+        body = f"{HOLD_MARKER}(1 回目): 射程が未確定 / 着手へ移る条件: {value}"
+        if validate_hold_comment(body):
+            failures.append(f"具体的な条件を弾いてはいけない: {value!r}")
     return failures
 
 
@@ -238,7 +293,8 @@ def run_self_test() -> int:
         ("着手でリセット", _self_test_start_resets),
         ("無関係コメントは無視", _self_test_unrelated_comment_is_ignored),
         ("保留コメントの必須項目検証", _self_test_validate_hold_comment),
-        ("コメント JSON の抽出", _self_test_extract_bodies),
+        ("引用・言及ではリセットしない", _self_test_quoted_marker_does_not_reset),
+        ("無内容な条件のバリアント", _self_test_empty_condition_variants),
     ]
     failed = 0
     total = 0
@@ -301,7 +357,14 @@ def main() -> None:
         parser.error("--limit は 1 以上で指定してください")
 
     raw = sys.stdin.read() if args.comments_file == "-" else open(args.comments_file, encoding="utf-8").read()
-    result = decide(extract_bodies(json.loads(raw)), limit=args.limit)
+    try:
+        bodies = extract_bodies(json.loads(raw))
+    except (ValueError, json.JSONDecodeError) as error:
+        # 🔴 exit 1（保留不可）と混ざると、入力破損を「上限到達」と誤読して強制着手へ進む。
+        # 判定不能は専用の exit 2 で区別する（`prod_drift_escalation.py` と同じ規約）。
+        print(f"ERROR: コメント JSON を読めません: {error}", file=sys.stderr)
+        sys.exit(2)
+    result = decide(bodies, limit=args.limit)
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -17,6 +17,14 @@ build trigger が 0 件 = Workers Builds の Git 連携が外れている）に�
 **文言はこのモジュールにだけ定義する**（2 箇所へ複製しない）。呼び出し側は
 `no_triggers_message()` を呼び、`TriggerNotConfiguredError` を送出・捕捉する。
 
+現在の参照元は 2 本とも移行済み:
+
+- `trigger_workers_build.py`: trigger 0 件を `TriggerNotConfiguredApiError` として送出する
+- `check_prod_drift.py`: 「実デプロイ実績なし」と判定する前に trigger 件数を実測し、
+  0 件だったときだけこの文言へ差し替える（`refine_no_deployment_reason`）。件数を
+  引けなかったとき（トークン未供給・API 失敗）は従来文言のまま返す — 「引けなかった」と
+  「0 件だった」を混同しないため
+
 self-test: `python3 tools/workers_build_diagnostics.py --self-test`
 """
 

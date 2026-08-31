@@ -584,6 +584,14 @@ else
   skip_check "本番ドリフト escalate 判定 self-test (prod_drift_escalation.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Issue コメントのマーカー連続回数を数える共通ロジックの self-test（Layer 1 セルフレビュー CRITICAL）。
+# prod_drift_escalation.py / consume_hold_guard.py の両方がここに依存するため、単体で守る。
+if [ -f "$REPO_ROOT/tools/issue_marker_counter.py" ]; then
+  run_check "マーカー連続回数の共通ロジック self-test (issue_marker_counter.py --self-test)" python3 tools/issue_marker_counter.py --self-test
+else
+  skip_check "マーカー連続回数の共通ロジック self-test (issue_marker_counter.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 消化モードの保留サーキットブレーカー self-test（Issue #690）。本判定は Issue コメント JSON 依存のため配線しない。
 if [ -f "$REPO_ROOT/tools/consume_hold_guard.py" ]; then
   run_check "消化モード保留ガード self-test (consume_hold_guard.py --self-test)" python3 tools/consume_hold_guard.py --self-test

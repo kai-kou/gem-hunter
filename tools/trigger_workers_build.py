@@ -992,6 +992,33 @@ def _self_test_emit_error_trigger_flag() -> list[str]:
     return failures
 
 
+def _self_test_emit_resolve_failure_wiring() -> list[str]:
+    """🔴 `resolve_trigger` の例外種別が JSON のフラグまで伝搬しているか（#694・Layer 1 CRITICAL）。
+
+    `_emit_error` を直接叩くテストだけでは、例外種別 → フラグの **対応付け** が壊れても
+    検知できない。ここでは `resolve_trigger` が実際に送出する例外オブジェクトを渡す。
+    """
+    import contextlib
+    import io as _io
+
+    failures: list[str] = []
+    cases = [
+        (TriggerNotConfiguredApiError(no_triggers_message("w", "t")), True, "trigger 0 件"),
+        (ApiError("branch_includes に 'main' を含む trigger が見つかりません"), False, "ブランチ不一致"),
+        (ValueError("wrangler.jsonc をパースできません"), False, "設定パース失敗"),
+    ]
+    for error, expected, label in cases:
+        buffer = _io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            emit_resolve_failure(error, True)
+        payload = json.loads(buffer.getvalue())
+        if payload.get("trigger_not_configured", False) != expected:
+            failures.append(f"{label}: trigger_not_configured が {payload!r}")
+        if not payload.get("error"):
+            failures.append(f"{label}: error メッセージが欠落している")
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("Worker 名読み取りの例外 wrap", _self_test_read_worker_name_wraps_error),
@@ -1008,6 +1035,7 @@ def run_self_test() -> int:
         ("ビルド結果の判定（build_wait_outcome）", _self_test_build_wait_outcome),
         ("ビルド完了待ち（wait_for_build）", _self_test_wait_for_build),
         ("エラー JSON の trigger 未構成フラグ", _self_test_emit_error_trigger_flag),
+        ("例外種別 → JSON フラグの配線", _self_test_emit_resolve_failure_wiring),
     ]
     failed_groups = 0
     total_failures = 0
@@ -1047,6 +1075,21 @@ def _emit_error(message: str, as_json: bool, *, trigger_not_configured: bool = F
         print(json.dumps(payload, ensure_ascii=False))
     else:
         print(f"ERROR: {message}", file=sys.stderr)
+
+
+def emit_resolve_failure(error: Exception, as_json: bool) -> None:
+    """`resolve_trigger` の失敗を出力する（例外種別 → `trigger_not_configured` の対応はここが正本）。
+
+    🔴 この対応を `main()` に直書きすると self-test から到達できず、フラグを `False` に
+    固定する変異が全 PASS のまま通る（Layer 1 セルフレビュー CRITICAL）。フラグが落ちると
+    `sprint-cycle-router` Step 0.2 の trigger 0 件判定が永久に「判定不能」へ倒れ、
+    #694 の escalation（A-6 通知）がサイレントに機能しなくなる。
+    """
+    _emit_error(
+        str(error),
+        as_json,
+        trigger_not_configured=isinstance(error, TriggerNotConfiguredError),
+    )
 
 
 def _emit_gate_blocked(gate_outcome: str, gate_returncode: int | None, as_json: bool) -> None:
@@ -1179,11 +1222,7 @@ def main() -> None:
     try:
         resolved = resolve_trigger(args.branch, account_id, token, WRANGLER_PATH)
     except (ApiError, OSError, ValueError) as error:
-        _emit_error(
-            str(error),
-            args.json,
-            trigger_not_configured=isinstance(error, TriggerNotConfiguredError),
-        )
+        emit_resolve_failure(error, args.json)
         sys.exit(exit_code_for("error"))
 
     worker_name = resolved["worker_name"]
