@@ -69,6 +69,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import git_diff_utils
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # パスらしきトークン: 英数字/アンダースコア/開き角括弧で始まり、スラッシュ・ドット・ハイフン・
@@ -233,15 +235,14 @@ def _trim_unpaired_brackets(tok: str) -> str:
 
 
 def run_git(args: list[str], cwd: Path) -> str:
-    try:
-        proc = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, check=True,
-        )
-        return proc.stdout
-    except FileNotFoundError as e:
-        raise RuntimeError("git コマンドが見つかりません") from e
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"git {' '.join(args)} が失敗: {e.stderr.strip()}") from e
+    """git を実行し stdout を返す。失敗時は RuntimeError を送出する。
+
+    #195: git 実行 + エラーハンドリング部分は `tools/git_diff_utils.py` の
+    `run_git_or_raise()` に統合済み（本ツールは作業ツリーの実差分のみ・`RuntimeError` 送出という
+    性質が他 3 ツールと違うため、収集ロジック本体は統合せずここに残す）。例外型・メッセージ書式は
+    `--self-test` が検証しているため変えていない。
+    """
+    return git_diff_utils.run_git_or_raise(args, cwd)
 
 
 def parse_status_short(output: str) -> set[str]:

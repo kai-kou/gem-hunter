@@ -39,6 +39,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import git_diff_utils
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # 🔴 `.mjs` / `.cjs` を含める（PR #689）: `src/domain/model/gem-index.rules.mjs` のように
@@ -264,16 +266,20 @@ def check_file(rel: str, text: str) -> tuple[list[str], list[str], int]:
 
 
 def changed_files() -> list[str]:
-    def sh(args: list[str]) -> str:
-        try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=20, cwd=REPO_ROOT)
-        except (OSError, subprocess.SubprocessError):
-            return ""
-        return r.stdout if r.returncode == 0 else ""
+    """変更ファイル一覧（base range + worktree・存在チェックなし・ソート済み）。
 
-    base = "origin/main"
-    out = sh(["git", "diff", "--name-only", f"{base}...HEAD"]) + sh(["git", "diff", "--name-only"])
-    return sorted({f for f in out.splitlines() if f.strip()})
+    #195: 収集ロジック本体は `tools/git_diff_utils.py` の `collect_changed_files()` に統合済み。
+    元実装は `origin/main` 固定だったが、`default_branch()`（`symbolic-ref` 解決・失敗時 `main`
+    フォールバック）へ寄せる。フォールバック先が `main` のため既存挙動は壊れない（意図的な統一・#195）。
+    cached / untracked は元実装どおり見ない（アーキ境界検査は追跡差分のみで十分なため）。
+    """
+    return git_diff_utils.collect_changed_files(
+        include_cached=False,
+        include_untracked=False,
+        require_existing=False,
+        sort=True,
+        cwd=REPO_ROOT,
+    )
 
 
 def collect_targets(argv: list[str]) -> tuple[list[str], list[str]]:
