@@ -339,6 +339,14 @@ else
   skip_check "Hot 層予算チェック self-test (check_hot_budget.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 4.8.7. CLAUDE.md 破壊対策検査（next dev の自動 upsert 汚染検知・Issue #50 T-3）
+if [ -f "$REPO_ROOT/tools/check_claude_md_integrity.py" ]; then
+  run_check "CLAUDE.md 破壊対策検査 (check_claude_md_integrity.py)" python3 tools/check_claude_md_integrity.py
+  run_check "CLAUDE.md 破壊対策検査 self-test (check_claude_md_integrity.py --self-test)" python3 tools/check_claude_md_integrity.py --self-test
+else
+  skip_check "CLAUDE.md 破壊対策検査 (check_claude_md_integrity.py)" "スクリプトが見つかりません"
+fi
+
 # 4.9. TS/JSX 字句解析ヘルパーの共通モジュール self-test（Issue #612）
 #      複数の検査スクリプトが共有するため、ここが壊れると検査全体が壊れる
 if [ -f "$REPO_ROOT/tools/ts_source.py" ]; then

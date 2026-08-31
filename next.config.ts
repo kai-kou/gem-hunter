@@ -21,6 +21,13 @@ import {
  * 一本化されている。他ファイルに同等の判定ロジックは存在しない。
  */
 const nextConfig: NextConfig = {
+  // `next dev` は AI コーディングエージェントを検知すると `AGENTS.md` / `CLAUDE.md` へ
+  // 管理ブロックを自動 upsert する（Next.js 16.3〜）。本リポジトリの `CLAUDE.md` は精緻に
+  // 設計済みのプロジェクト正本であり、上書きされると規律全体が壊れるため最初のコミットから
+  // 抑止する（Issue #50 T-3。一次情報:
+  // node_modules/next/dist/docs/01-app/02-guides/ai-agents.md "Opting out" 節）。
+  // 抑止設定そのものの残存は tools/check_claude_md_integrity.py が機械検査する。
+  agentRules: false,
   async redirects() {
     return [
       {
