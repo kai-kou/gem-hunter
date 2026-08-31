@@ -255,6 +255,15 @@ def _self_test_collect_changed_files_sources() -> list[str]:
     if "d.py" in got_no_cached:
         failures.append(f"include_cached=False で d.py が混入: got={got_no_cached!r}")
 
+    # include_base_range=False の単独ケース。他 3 ソースと違い「base range のみ」ケース
+    # （残り 3 つを同時に False にする）では base range 側の分岐を壊しても緑のまま通るため、
+    # このケースが無いと include_base_range のガードがテストされない（#195 の敵対的検証で検出）
+    got_no_base = collect_changed_files(
+        include_base_range=False, require_existing=False, runner=runner
+    )
+    if got_no_base != ["b.py", "c.py", "d.py", "e.py"]:
+        failures.append(f"include_base_range=False: got={got_no_base!r}")
+
     return failures
 
 
