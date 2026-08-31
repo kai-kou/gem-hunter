@@ -187,3 +187,35 @@ For example, a `code-review` skill in your project's `.claude/skills/` replaces 
 **対策**: この 2 点（修正後投稿の許容・REFUTED は報告対象外）は SKILL.md の既存記述から読み取れる
 範囲だが、次回セッションが「先に投稿すべきでは」「却下理由も記録すべきでは」と毎回迷わないよう、
 迷った場合はこのまま踏襲してよい（cf. #648 で運用基準の明文化を別途検討中）。
+
+---
+
+## L-141: CodeQL アラートの詳細は check-run annotations API で取れる（code-scanning API が 403 でも）（2026-08-31・PR #728）
+
+**症状**: PR の `CodeQL` チェックが failure になり、サマリーは
+`1 new alert including 1 high severity security vulnerability` としか出ない。**どのファイルの
+どの行が指摘されたか** はサマリーに含まれず、`GET /repos/{owner}/{repo}/code-scanning/alerts` は
+クラウド実行環境のトークンでは `403 Resource not accessible by integration` を返す
+（`mcp__github__*` にも code scanning の読み取りツールは無い）。
+
+**対処**: **check-run の annotations API は同じトークンで 200 が返る**。`get_check_runs` で
+`CodeQL` の check run ID を取り、次を叩けばファイル・行・列・クエリ名・メッセージが取れる。
+
+```bash
+curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/kai-kou/gem-hunter/check-runs/{CHECK_RUN_ID}/annotations"
+# → [{"path": "tools/check_prod_drift.py", "start_line": 621, ...,
+#     "title": "Clear-text logging of sensitive information", "message": "..."}]
+```
+
+**やってはいけないこと**: 詳細を取れないまま「差分を読んで原因を推測 → 直して push → CI を見る」を
+繰り返す（1 サイクル数分かかるうえ、A-4 のサーキットブレーカーを空振りで消費する）。**推測で直す前に
+annotations を取る**。
+
+**あわせて（実例）**: このとき指摘された 3 つの source は `mask_secrets.mask_text()` が既定で読む
+`CLOUDFLARE_API_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` で、置換先に `mask_value()`（先頭・末尾 4 文字を
+残す）を使っていたため、**マスクしたつもりの文字列に実値の断片が 8 文字残っていた**。
+**任意テキストへのマスク（出力が Issue / PR コメント・CI ログへ転記される経路）では、置換先に実値由来の
+文字列を一切使わない**。先頭・末尾を残すヒント表示が妥当なのは、運用者が自分の環境変数を確認する用途に限る。
+あわせて **複数の秘匿値は長さの降順で置換する**（短い値を先に消すと、それを部分文字列に含む長い値が
+分断され、長い方の断片が平文で残る）。
