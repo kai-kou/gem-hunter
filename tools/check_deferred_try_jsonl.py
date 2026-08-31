@@ -44,6 +44,12 @@
       これらが付いていたら矛盾。**q1 / q2 / defer_reason のいずれかが既に値域違反（違反 6）の
       行は、この整合性検査の対象外とする**（値が不正な状態で high 相当か否かを判定すると
       二重に誤った違反メッセージを出すため。値域違反として既に検出済みなので見逃しにはならない）
+  12. `defer_reason` が `high_commented`（既存 Issue へ追記して完了）なのに `related_issue` が
+      空（Issue #727 のフォローアップ）: `related_issue` フィールドの欠落・`null`・空文字
+      （空白のみを含む）のいずれも「空」として検出する。`high_commented` は「既存 Issue へ
+      追記した」ことを表す値であり、追記先 Issue 番号（`related_issue`）を伴わない
+      `high_commented` は値の意味そのものと矛盾する（SKILL.md Step 3-0 見送りログのフィールド表）。
+      **defer_reason が値域違反（違反 6）の行は、この検査の対象外とする**（違反 11 と同じ理由）
 
 さらに **違反ではなく WARNING**（exit code には影響しない）として、既知フィールド集合の外に
 あるキー（`reevaluted_at` のような typo）を報告する（Issue #707・値域は締めるがキー集合は
@@ -79,6 +85,11 @@
     見送られた」という誤った履歴が残り Q1 の再発カウントが壊れるため、defer_reason と q1/q2 の
     組み合わせを整合性検査する（実データ 75 行は全て q1/q2 が NO のため、既存行は本検査を
     無改修で通過する・2026-08-31 JST 時点で実測）。
+  - `defer_reason: "high_commented"` は `related_issue` を必須とする（違反 12・Issue #727 フォロー
+    アップ）。「既存 Issue へ追記して完了した」という値の意味が追記先 Issue 番号を要求するため、
+    `related_issue` が欠落 / `null` / 空文字（空白のみ含む）のいずれかだと矛盾する行として検出する。
+    実データ 75 行の `high_commented` 該当行はいずれも `related_issue` が非 null のため、既存行は
+    本検査を無改修で通過する（2026-08-31 JST 時点で実測）。
 
 ## 終了コード
 
@@ -199,6 +210,20 @@ def is_valid_related_issue(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def is_empty_related_issue(obj: dict) -> bool:
+    """`high_commented` の related_issue 必須検査で使う「空」判定（違反 12）。
+
+    欠落・`None`・空文字（空白のみ含む）のいずれも「空」として扱う。「空文字も空とみなす」判定を
+    `None` のみに緩めると、`"related_issue": ""` の行を見逃す（Issue #727 フォローアップ）。
+    """
+    if "related_issue" not in obj:
+        return True
+    value = obj["related_issue"]
+    if value is None:
+        return True
+    return isinstance(value, str) and not value.strip()
+
+
 def check_record(obj: object, lineno: int) -> list[str]:
     """1 レコード分の違反メッセージ一覧を返す（違反なしなら空リスト）。"""
     if not isinstance(obj, dict):
@@ -262,6 +287,15 @@ def check_record(obj: object, lineno: int) -> list[str]:
         violations.append(
             f"L{lineno}: related_issue は null / 文字列 / 整数のいずれかである必要があります: "
             f"{_fmt(obj['related_issue'])}"
+        )
+
+    # Issue #727 フォローアップ（違反 12）: defer_reason が値域内で high_commented のときだけ
+    # related_issue の必須性を検査する（defer_reason 自体が値域違反の行は違反 6 で既に検出済みの
+    # ため対象外・違反 11 と同じ理由）。
+    if defer_valid and defer_reason == "high_commented" and is_empty_related_issue(obj):
+        violations.append(
+            f"L{lineno}: defer_reason が high_commented のとき related_issue は必須です"
+            f"（欠落 / null / 空文字は不可）: {_fmt(obj.get('related_issue'))}（SSOT: {SKILL_FIELD_SSOT}）"
         )
 
     # reevaluated_at は任意フィールド（Issue #707）。存在する場合のみ、null または
@@ -567,15 +601,18 @@ def _run_self_test() -> None:
 
     # (g-2) Issue #727: defer_reason と q1/q2 の組み合わせ整合性
     # 正常系: high 相当（YES）× over_quota / high_commented、非 high 相当（NO/NO）× medium /
-    # low_single_file はいずれも PASS
-    for q1, q2, reason in (
-        ("YES", "NO", "over_quota"),
-        ("NO", "YES", "over_quota"),
-        ("YES", "YES", "high_commented"),
-        ("NO", "NO", "medium"),
-        ("NO", "NO", "low_single_file"),
+    # low_single_file はいずれも PASS。high_commented は違反 12（related_issue 必須）も
+    # 同時に満たす必要があるため related_issue を明示する。
+    for q1, q2, reason, related_issue in (
+        ("YES", "NO", "over_quota", None),
+        ("NO", "YES", "over_quota", None),
+        ("YES", "YES", "high_commented", "727"),
+        ("NO", "NO", "medium", None),
+        ("NO", "NO", "low_single_file", None),
     ):
-        v, _, _w = check_text(_line(q1=q1, q2=q2, defer_reason=reason) + "\n")
+        v, _, _w = check_text(
+            _line(q1=q1, q2=q2, defer_reason=reason, related_issue=related_issue) + "\n"
+        )
         assert v == [], f"defer_reason 整合性 正常系 失敗({q1},{q2},{reason}): {v}"
         cases += 1
 
@@ -592,8 +629,12 @@ def _run_self_test() -> None:
         cases += 1
 
     # 異常系: non-high なのに high 専用の defer_reason（over_quota / high_commented を誤用）
+    # related_issue は非空にしておき、違反 12（related_issue 必須）と混ざらず違反 11 だけを
+    # 検証する（両者は独立した違反のため、混ぜるとどちらの検出漏れも見えなくなる）。
     for reason in ("over_quota", "high_commented"):
-        v, _, _w = check_text(_line(q1="NO", q2="NO", defer_reason=reason) + "\n")
+        v, _, _w = check_text(
+            _line(q1="NO", q2="NO", defer_reason=reason, related_issue="1") + "\n"
+        )
         assert len(v) == 1 and "priority:high 相当ではありません" in v[0], (
             f"defer_reason 整合性 異常系(非 high) 失敗({reason}): {v}"
         )
@@ -603,6 +644,42 @@ def _run_self_test() -> None:
     # （二重の誤ったメッセージを出さない・docstring 違反 11 の注記）
     v, _, _w = check_text(_line(q1="maybe", defer_reason="medium") + "\n")
     assert len(v) == 1 and "q1" in v[0], f"defer_reason 整合性 境界(q1 値域外) 失敗: {v}"
+    cases += 1
+
+    # (g-3) Issue #727 フォローアップ（違反 12）: high_commented は related_issue が必須
+    # 正常系: 文字列 / 整数のいずれでも related_issue が非空なら PASS
+    for related_issue in ("660", 660, "L-138"):
+        v, _, _w = check_text(
+            _line(q1="YES", q2="NO", defer_reason="high_commented", related_issue=related_issue) + "\n"
+        )
+        assert v == [], f"high_commented related_issue 正常系 失敗({related_issue!r}): {v}"
+        cases += 1
+
+    # 異常系: 欠落 / null / 空文字 / 空白のみ のいずれも FAIL（「空文字も空とみなす」を実証）
+    missing_related = dict(VALID_RECORD)
+    missing_related.update(q1="YES", q2="NO", defer_reason="high_commented")
+    del missing_related["related_issue"]
+    v, _, _w = check_text(json.dumps(missing_related, ensure_ascii=False) + "\n")
+    assert len(v) == 1 and "related_issue" in v[0] and "必須" in v[0], (
+        f"high_commented related_issue 欠落 失敗: {v}"
+    )
+    cases += 1
+
+    for bad_related in (None, "", "   "):
+        v, _, _w = check_text(
+            _line(q1="YES", q2="NO", defer_reason="high_commented", related_issue=bad_related) + "\n"
+        )
+        assert len(v) == 1 and "related_issue" in v[0] and "必須" in v[0], (
+            f"high_commented related_issue 異常系 失敗({bad_related!r}): {v}"
+        )
+        cases += 1
+
+    # 境界: defer_reason が値域違反のとき（例: "high"）は違反 12 の検査対象外
+    # （related_issue が null でも二重の違反にならず、値域違反 1 件だけが出る）
+    v, _, _w = check_text(_line(defer_reason="high", related_issue=None) + "\n")
+    assert len(v) == 1 and "defer_reason" in v[0], (
+        f"high_commented related_issue 境界(defer_reason 値域外) 失敗: {v}"
+    )
     cases += 1
 
     # (h) 行番号の採番: 2 行目だけを壊し L2 として報告されることを確認（start=1 の回帰）
