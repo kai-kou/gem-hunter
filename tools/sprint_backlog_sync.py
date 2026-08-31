@@ -844,6 +844,174 @@ def _self_test_title_extraction_variants() -> list[str]:
     return failures
 
 
+def _run_main_capture_exit_code(argv: list[str]) -> int:
+    """`main()` を呼び出し `sys.exit()` のコードだけを整数で返す（ネットワーク不要のセルフテスト用）。
+
+    `main()` はエントリポイントとして `sys.exit()` を呼ぶため、実プロセスを起動せずに
+    終了コードまで検証するにはこの形で `SystemExit` を捕捉する必要がある。
+    """
+    old_argv = sys.argv
+    sys.argv = ["sprint_backlog_sync.py"] + argv
+    try:
+        main()
+        code: object = 0
+    except SystemExit as e:
+        code = e.code
+    finally:
+        sys.argv = old_argv
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return code
+    return 1  # 文字列等が渡された場合（本スクリプトでは通常発生しない）
+
+
+def _self_test_api_channel_gh_fail_rest_success() -> list[str]:
+    """API チャネル①: `gh` 失敗 → `urllib` + `GH_TOKEN`（REST）成功にフォールバックする（#29）。
+
+    `tools/self_review_check.py` の `sh()` モック方式（`global` で module 関数を差し替え、
+    `finally` で必ず元に戻す）に倣い、`_run_gh` / `_http_request` を差し替える。
+    実ネットワークには一切触れない。
+    """
+    failures: list[str] = []
+    global _run_gh, _http_request, _read_doc_text
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    issues_json = json.dumps([
+        {"title": "SP-1: a", "state": "closed"},
+        {"title": "SP-2: b", "state": "open"},
+    ])
+
+    def _fake_http_ok(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+        if payload is None:
+            return True, issues_json
+        return True, json.dumps({"html_url": "https://github.com/example/repo/issues/999"})
+
+    old_run_gh, old_http, old_read = _run_gh, _http_request, _read_doc_text
+    old_env = dict(os.environ)
+    os.environ["GH_TOKEN"] = "test-token-not-real"
+    os.environ.pop("GITHUB_TOKEN", None)
+    _run_gh = _fake_run_gh_fail
+    _http_request = _fake_http_ok
+    try:
+        # ① list_all_issues() 単体: gh 失敗 → REST 成功で issues が正しく組み立つ
+        issues, err = list_all_issues()
+        want_issues = [{"title": "SP-1: a", "state": "closed"}, {"title": "SP-2: b", "state": "open"}]
+        if err is not None:
+            failures.append(f"gh失敗→REST成功: list_all_issues がエラーを返した: {err}")
+        elif issues != want_issues:
+            failures.append(f"gh失敗→REST成功: list_all_issues の結果が不一致: {issues}")
+
+        # ② create_issue() 単体: gh 失敗 → REST 成功で issue_url が返る
+        ok, result = create_issue("SP-3: c", "本文", ["type:feature"])
+        if not ok or result != "https://github.com/example/repo/issues/999":
+            failures.append(f"gh失敗→REST成功: create_issue の結果が不一致: ok={ok} result={result}")
+
+        # ③ main() まで貫通させ、正常終了（exit 0）することを確認する
+        _read_doc_text = lambda: _FIXTURE_MD_OK  # noqa: E731
+        code = _run_main_capture_exit_code(["--dry-run", "--json"])
+        if code != 0:
+            failures.append(f"gh失敗→REST成功: main() の終了コードが 0 を期待したが {code}")
+    finally:
+        _run_gh, _http_request, _read_doc_text = old_run_gh, old_http, old_read
+        os.environ.clear()
+        os.environ.update(old_env)
+    return failures
+
+
+def _self_test_exit_code_both_channels_fail() -> list[str]:
+    """API チャネル②: `gh` 失敗 → REST も失敗 → `main()` が exit 2 で終わる（#29）。"""
+    failures: list[str] = []
+    global _run_gh, _http_request, _read_doc_text
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    def _fake_http_fail(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+        return False, "接続失敗（テスト用スタブ）"
+
+    old_run_gh, old_http, old_read = _run_gh, _http_request, _read_doc_text
+    old_env = dict(os.environ)
+    os.environ["GH_TOKEN"] = "test-token-not-real"
+    os.environ.pop("GITHUB_TOKEN", None)
+    _run_gh = _fake_run_gh_fail
+    _http_request = _fake_http_fail
+    _read_doc_text = lambda: _FIXTURE_MD_OK  # noqa: E731
+    try:
+        code = _run_main_capture_exit_code([])
+        if code != 2:
+            failures.append(f"gh失敗かつREST失敗: main() の終了コードが 2 を期待したが {code}")
+    finally:
+        _run_gh, _http_request, _read_doc_text = old_run_gh, old_http, old_read
+        os.environ.clear()
+        os.environ.update(old_env)
+    return failures
+
+
+def _self_test_exit_code_create_issue_4xx() -> list[str]:
+    """API チャネル③: 起票 API（REST POST）が 4xx を返すと `main()` が exit 1 で終わる（#29）。"""
+    failures: list[str] = []
+    global _run_gh, _http_request, _read_doc_text
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    def _fake_http(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+        if payload is None:
+            return True, "[]"  # 既存 Issue なし → SP-1 を起票しにいく
+        return False, "HTTP 422"  # 起票 API（POST）が 4xx
+
+    old_run_gh, old_http, old_read = _run_gh, _http_request, _read_doc_text
+    old_env = dict(os.environ)
+    os.environ["GH_TOKEN"] = "test-token-not-real"
+    os.environ.pop("GITHUB_TOKEN", None)
+    _run_gh = _fake_run_gh_fail
+    _http_request = _fake_http
+    _read_doc_text = lambda: _FIXTURE_MD_OK  # noqa: E731
+    try:
+        code = _run_main_capture_exit_code([])
+        if code != 1:
+            failures.append(f"起票API 4xx: main() の終了コードが 1 を期待したが {code}")
+    finally:
+        _run_gh, _http_request, _read_doc_text = old_run_gh, old_http, old_read
+        os.environ.clear()
+        os.environ.update(old_env)
+    return failures
+
+
+def _self_test_exit_code_no_credentials() -> list[str]:
+    """API チャネル④: `gh` 失敗かつ `GH_TOKEN`/`GITHUB_TOKEN` 未設定で `main()` が exit 2 で終わる（#29）。"""
+    failures: list[str] = []
+    global _run_gh, _http_request, _read_doc_text
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    def _fail_if_called(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+        raise AssertionError("認証情報なしのはずなのに _http_request（REST）が呼ばれた")
+
+    old_run_gh, old_http, old_read = _run_gh, _http_request, _read_doc_text
+    old_env = dict(os.environ)
+    os.environ.pop("GH_TOKEN", None)
+    os.environ.pop("GITHUB_TOKEN", None)
+    _run_gh = _fake_run_gh_fail
+    _http_request = _fail_if_called
+    _read_doc_text = lambda: _FIXTURE_MD_OK  # noqa: E731
+    try:
+        code = _run_main_capture_exit_code([])
+        if code != 2:
+            failures.append(f"認証情報なし: main() の終了コードが 2 を期待したが {code}")
+    except AssertionError as e:
+        failures.append(str(e))
+    finally:
+        _run_gh, _http_request, _read_doc_text = old_run_gh, old_http, old_read
+        os.environ.clear()
+        os.environ.update(old_env)
+    return failures
+
+
 def _issue(title: str, state: str = "closed") -> dict:
     """セルフテスト用の Issue スタブ（既定は Closed = Ready 条件③を満たす側）。"""
     return {"title": title, "state": state}
@@ -981,6 +1149,10 @@ def run_self_test() -> int:
         ("ID 抽出", _self_test_id_extraction),
         ("decide 統合", _self_test_decide),
         ("Ready 条件③（先行 SP-n が Closed）", _self_test_ready_condition),
+        ("APIチャネル: gh失敗→REST成功", _self_test_api_channel_gh_fail_rest_success),
+        ("APIチャネル: gh失敗→REST失敗でexit2", _self_test_exit_code_both_channels_fail),
+        ("APIチャネル: 起票4xxでexit1", _self_test_exit_code_create_issue_4xx),
+        ("APIチャネル: 認証情報なしでexit2", _self_test_exit_code_no_credentials),
     ]
     failed_groups = 0
     total_failures = 0
