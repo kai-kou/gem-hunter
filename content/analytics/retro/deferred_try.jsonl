@@ -60,3 +60,5 @@
 {"date": "2026-08-31 JST", "title": "実装後にドキュメントの逆参照テスト（mock 状態でのドライラン）を行う", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "run_checks.sh から除外されている運用ツールの self-test を定期実行する仕組みを作る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 164}
 {"date": "2026-08-31 JST", "title": "決定ログ D-46 に派生 Issue #724 へのリンクを追記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 724}
+{"date": "2026-08-31 JST", "title": "check_hot_budget.py が Hot 層未変更の PR でも増減ログ追記だけで『再棚卸しの合図』を誤発火する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "MCP ツールのパラメータ名を別ツールの命名規則から類推して連続失敗する（commentID vs commentId）", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-122"}

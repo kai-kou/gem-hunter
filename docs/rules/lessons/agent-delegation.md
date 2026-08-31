@@ -77,3 +77,18 @@
 ❌ 判定不能なときに「異常」と報告する（Claude の観測を偽情報で汚す）
 ✅ 異常と断定できるシグナルがあるときだけ発話し、未知・空は無音にする（fail-safe）
 ```
+
+**姉妹ケース（2026-08-31・PR #730 のレトロ）**: 同じ「識別子を記憶で書く」根から、**MCP ツールの
+パラメータ名** でも失敗した。`mcp__github__add_reply_to_pull_request_comment` を `commentID`（大文字 D）
+で 5 件連続呼び出し、全て `missing required parameter: commentId` で失敗した（正しくは `commentId`）。
+同じセッション内の別ツール `add_comment_to_pending_review` が `pullNumber` を使うため、命名規則を
+類推してしまったのが原因。
+
+こちらは fail-closed（即エラー）なので偽の観測は生まれず、実害は往復コストだけで済む。**復旧手順が
+確立している点が本エントリの L-122 本体と違う**: `ToolSearch` で `select:<ツール名>` を投げれば
+スキーマが返るので、1 回失敗したら記憶で直さずスキーマを取り直す。
+
+```
+❌ 別ツールの命名規則から類推してパラメータ名を書く（pullNumber → commentID のような取り違え）
+✅ 1 回でも「missing required parameter」が出たら ToolSearch でスキーマを取り直してから再実行する
+```
