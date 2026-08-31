@@ -78,6 +78,11 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mask_secrets import mask_text  # noqa: E402
 from wrangler_config import parse_worker_name  # noqa: E402
+from workers_build_diagnostics import (  # noqa: E402
+    NO_TRIGGERS_REGISTERED_HINT,
+    TriggerNotConfiguredError,
+    no_triggers_message,
+)
 
 JST = timezone(timedelta(hours=9))
 
@@ -93,6 +98,11 @@ _EXIT_CODES = {"proceed": 0, "waiting": 1, "error": 2}
 
 class ApiError(Exception):
     """外部 API 呼び出しの失敗（fail-closed で exit 2 に写像する）。"""
+
+
+class TriggerNotConfiguredApiError(TriggerNotConfiguredError, ApiError):
+    """trigger 0 件（共通診断・#693）。既存の `except ApiError` でもそのまま捕捉できるよう
+    多重継承にし、`check_prod_drift.py` からは `TriggerNotConfiguredError` として識別できる。"""
 
 
 def now_jst_str() -> str:
@@ -165,12 +175,11 @@ def _branch_matches(branch: str, patterns: list[str]) -> bool:
 
 
 # `GET /builds/workers/{tag}/triggers` が空配列を返す状態（= Workers Builds の Git 連携そのものが
-# 外れている）を、「trigger はあるが対象ブランチに一致しない」状態と **別のメッセージ** で報告するための
-# 目印。前者の復旧はダッシュボードでの GitHub App 認可（A-6・`cloudflare-infrastructure.md` §8.2.3）で、
+# 外れている）を、「trigger はあるが対象ブランチに一致しない」状態と **別のメッセージ** で報告する。
+# 前者の復旧はダッシュボードでの GitHub App 認可（A-6・`cloudflare-infrastructure.md` §8.2.3）で、
 # 後者は `--branch` の指定ミスであり、対処が全く異なる（#626 で切り分けに数セッションを要した）。
-# ⚠️ もう一方（`check_prod_drift.py` の `REASON_NO_DEPLOYMENT_FOUND`）との文言統一は #693 の担当で、
-# ここでは扱っていない（trigger 0 件のとき 2 本のスクリプトが別々の言い回しを返す状態は残る・L-140）。
-NO_TRIGGERS_REGISTERED_HINT = "build trigger が 1 件も登録されていません"
+# 文言の定義は `tools/workers_build_diagnostics.py` にのみ置き、`check_prod_drift.py` と共有する
+# （#693。以前は 2 本のスクリプトが同じ根本原因に別々の言い回しを返していた・L-140）。
 
 
 def select_production_trigger(triggers: list[dict[str, Any]], branch: str) -> dict[str, Any] | None:
@@ -439,12 +448,7 @@ def resolve_trigger(
         raise ApiError(f"Worker '{worker_name}' が workers/scripts 一覧に見つかりません")
     triggers = fetch_triggers(account_id, token, worker_tag)
     if not triggers:
-        raise ApiError(
-            f"Worker '{worker_name}' に {NO_TRIGGERS_REGISTERED_HINT}"
-            "（Workers Builds の Git 連携が未接続、または接続が外れています）。"
-            "復旧にはダッシュボードでの GitHub App 認可が必要で、API 経路は存在しません"
-            "（A-6・docs/03_design/infrastructure/cloudflare-infrastructure.md §8.2.3）"
-        )
+        raise TriggerNotConfiguredApiError(no_triggers_message(worker_name, worker_tag))
     trigger = select_production_trigger(triggers, branch)
     if trigger is None:
         raise ApiError(
@@ -691,13 +695,20 @@ def _self_test_resolve_trigger_empty_triggers() -> list[str]:
                 fetch_scripts=fake_scripts, fetch_triggers=fake_empty_triggers,
             )
             failures.append("resolve_trigger: trigger 0 件で例外を送出していない")
-        except ApiError as error:
+        except TriggerNotConfiguredError as error:
             message = str(error)
             if NO_TRIGGERS_REGISTERED_HINT not in message:
                 failures.append(
                     "resolve_trigger: trigger 0 件のとき専用メッセージ "
                     f"'{NO_TRIGGERS_REGISTERED_HINT}' を含んでいない: {message}"
                 )
+            if "#626" not in message:
+                failures.append(
+                    f"resolve_trigger: trigger 0 件のメッセージに復旧導線が無い: {message}"
+                )
+            # 既存の `except ApiError` 経路（main の fail-closed）が壊れていないこと。
+            if not isinstance(error, ApiError):
+                failures.append("resolve_trigger: trigger 0 件の例外が ApiError として捕捉できない")
 
         try:
             resolve_trigger(
@@ -707,6 +718,11 @@ def _self_test_resolve_trigger_empty_triggers() -> list[str]:
             failures.append("resolve_trigger: ブランチ不一致で例外を送出していない")
         except ApiError as error:
             message = str(error)
+            if isinstance(error, TriggerNotConfiguredError):
+                failures.append(
+                    "resolve_trigger: ブランチ不一致を TriggerNotConfiguredError で報告している"
+                    "（check_prod_drift 側が『trigger 0 件』と誤認する）"
+                )
             if NO_TRIGGERS_REGISTERED_HINT in message:
                 failures.append(
                     "resolve_trigger: trigger はあるがブランチが一致しないケースを "
