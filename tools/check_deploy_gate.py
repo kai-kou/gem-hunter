@@ -126,6 +126,12 @@ REASON_REJECTED = "直近の Sprint Review 判定が rejected です"
 # する（無制限に走査すると 1 Issue あたりの API 呼び出し数に上限が無くなるため）。
 MAX_COMMENT_PAGES = 10  # 100 件 x 10 ページ = 最大 1000 件
 
+# `fetch_in_progress_sprint_candidates` の REST フォールバックが走査するページ数の上限
+# （レビュー指摘 WARNING 4）。実運用で同時に `status:in-progress` の Issue が 300 件を超える
+# ことは通常運用の破綻シグナルであり、`MAX_COMMENT_PAGES` ほど緩める必要はないと判断し
+# 300 件のまま維持する（用途が違うため定数名は分ける）。
+MAX_IN_PROGRESS_ISSUE_PAGES = 3  # 100 件 x 3 ページ = 最大 300 件
+
 
 def now_jst_str() -> str:
     """表示・記録用の現在時刻（JST）。機械処理には使わない（datetime-rules.md）。"""
@@ -183,6 +189,49 @@ def _http_get(url: str, token: str) -> tuple[bool, str]:
         return False, "リクエストがタイムアウトしました"
 
 
+def _fetch_paginated(url_template: str, token: str, max_pages: int) -> tuple[list, str | None]:
+    """`url_template.format(page=N)` を `max_pages` ページまで REST 取得し、各ページの
+    list を結合して返す（レビュー指摘 WARNING 4: `fetch_in_progress_sprint_candidates` と
+    `fetch_issue_comments` で個別に実装していたページング打ち切り検知を共通化する）。
+
+    Returns (items, error_reason)。次のいずれかで `error_reason` が非 None になる
+    （fail-closed。「取得失敗／打ち切り」と「0 件」を混同しない）:
+      - いずれかのページで REST 呼び出し自体が失敗した
+      - いずれかのページの応答が JSON としてパースできない
+      - いずれかのページの応答が list ではない（`{}` / `null` / 文字列等）
+      - 最終ページ（`max_pages` ページ目）まで各ページが満杯（100 件）のまま終わった
+        （＝続きがある可能性を排除できない・打ち切り疑い）
+    """
+    items: list = []
+    last_batch_len = 0
+    broke_early = False
+    for page in range(1, max_pages + 1):
+        ok, out = _http_get(url_template.format(page=page), token)
+        if not ok:
+            return [], f"REST も失敗（{out}）"
+        try:
+            batch = json.loads(out)
+        except json.JSONDecodeError:
+            return [], "REST 応答のパースに失敗"
+        if not isinstance(batch, list):
+            return [], f"REST 応答が配列ではありません（{type(batch).__name__}）"
+        if not batch:
+            broke_early = True
+            break
+        items.extend(batch)
+        last_batch_len = len(batch)
+        if len(batch) < 100:
+            broke_early = True
+            break
+    if not broke_early and last_batch_len == 100:
+        return [], (
+            f"件数がページング上限（{max_pages * 100} 件）に到達した可能性があります"
+            f"（取得済み {len(items)} 件・最終ページも満杯で終了）。"
+            "判定不能として扱います（取りこぼしを避けるため）"
+        )
+    return items, None
+
+
 def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
     """open かつ `status:in-progress` の Issue 一覧（number/title/body）を取得する。
 
@@ -196,6 +245,12 @@ def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
     if ok:
         try:
             issues = json.loads(out)
+            # レビュー指摘 CRITICAL 2: `issues` が list 以外（`{}` や `""` 等）だと、
+            # 直後の内包表記が 0 回反復して例外を送出せず `([], None)` を返してしまう
+            # （gh が exit 0 で想定外スキーマを返した場合に「0 件」へ fail-open する）。
+            # 明示的に isinstance で弾き、下の except 節で REST フォールバックへ倒す。
+            if not isinstance(issues, list):
+                raise TypeError("gh issue list の応答が配列ではありません")
             return [
                 {"number": i["number"], "title": i.get("title", ""), "body": i.get("body") or ""}
                 for i in issues
@@ -209,36 +264,38 @@ def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
+    # 【レビュー指摘 WARNING 4】gh 経路の `--limit 100` については打ち切り検知を実装しない。
+    # gh の JSON 出力には総件数・次ページトークンが含まれないため超過を判別する手段が無く、
+    # 実装するなら REST 経路と同様に追加のページング呼び出しが要る。gh 経路は `gh` CLI 自体が
+    # 正常に動作している健全な経路であり、そこで in-progress Issue が 100 件ちょうどに達する
+    # 事態は Issue 運用そのものが破綻しているシグナルと判断し、本関数のスコープ外として
+    # 対象外にする（黙って見送るのではなく理由を明記。必要になれば別 Issue で対応する）。
+    #
+    # REST フォールバック側は打ち切り検知込みの共通ヘルパー `_fetch_paginated` を使う
+    # （レビュー指摘 WARNING 4: 従来は `fetch_issue_comments` にしかこの検知が無く、REST
+    # フォールバック時に 301 件目以降が無警告で捨てられる fail-open が残っていた）。
+    # 入力境界表（MAX_IN_PROGRESS_ISSUE_PAGES=3 前提。ロジックは fetch_issue_comments の
+    # 境界表と同型で、対象が Issue コメントではなく in-progress Issue 自体である点のみ異なる）:
+    #   件数 0           → page1 が空 batch → 早期 break・エラーなし（[] を返す）
+    #   件数 1〜99       → page1 が満杯未満 → 早期 break・エラーなし
+    #   件数 100         → page1 満杯 → page2 が空 → 早期 break・エラーなし（100件）
+    #   件数 101〜299    → 最終ページが満杯未満 → 早期 break・エラーなし
+    #   件数 300         → 3 ページ目も満杯（100）のままループ終了 → 打ち切り疑い → エラー
+    #   件数 301 以上    → 同上・エラー
     label_q = urllib.parse.quote("status:in-progress", safe="")
-    issues: list[dict] = []
-    for page in range(1, 4):  # 100件 x 3ページ = 最大300件
-        ok2, out2 = _http_get(
-            f"https://api.github.com/repos/{REPO}/issues"
-            f"?state=open&labels={label_q}&per_page=100&page={page}",
-            token,
-        )
-        if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
-        try:
-            batch = json.loads(out2)
-        except json.JSONDecodeError:
-            return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
-        # レビュー指摘 CONFIRMED 2: `if not batch:` は truthy 判定のため、`batch` が `[]` だけ
-        # でなく `{}` や `None`（JSON `null`）でも真になり「0 件・エラーなし」に誤読して
-        # fail-open してしまう（#237 の「取得失敗」と「0 件」を混同しない設計意図に反する）。
-        # list 以外は明示的にエラー扱いにする。
-        if not isinstance(batch, list):
-            return [], f"gh 失敗（{gh_err}）・REST 応答が配列ではありません（{type(batch).__name__}）"
-        if not batch:
-            break
-        # /issues エンドポイントは PR も含むため pull_request キーで除外する
-        issues.extend(
-            {"number": i["number"], "title": i.get("title", ""), "body": i.get("body") or ""}
-            for i in batch
-            if "pull_request" not in i
-        )
-        if len(batch) < 100:
-            break
+    url_template = (
+        f"https://api.github.com/repos/{REPO}/issues"
+        f"?state=open&labels={label_q}&per_page=100&page={{page}}"
+    )
+    batch_items, perr = _fetch_paginated(url_template, token, MAX_IN_PROGRESS_ISSUE_PAGES)
+    if perr is not None:
+        return [], f"gh 失敗（{gh_err}）・REST 側で失敗（{perr}）"
+    # /issues エンドポイントは PR も含むため pull_request キーで除外する
+    issues = [
+        {"number": i["number"], "title": i.get("title", ""), "body": i.get("body") or ""}
+        for i in batch_items
+        if isinstance(i, dict) and "pull_request" not in i
+    ]
     return issues, None
 
 
@@ -255,6 +312,11 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
     if ok:
         try:
             data = json.loads(out)
+            # レビュー指摘 CRITICAL 2: `data` が dict 以外（list/文字列/null 等）だと
+            # `.get` が無く AttributeError で既に捕捉されていたが、明示的な isinstance で
+            # 意図を明確にする（fetch_in_progress_sprint_candidates 側と対にする）。
+            if not isinstance(data, dict):
+                raise TypeError("gh issue view の応答がオブジェクトではありません")
             return [
                 {
                     "body": c.get("body", ""),
@@ -263,7 +325,7 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
                 }
                 for c in data.get("comments", [])
             ], None
-        except (json.JSONDecodeError, AttributeError):
+        except (json.JSONDecodeError, AttributeError, TypeError):
             ok = False
             out = "gh の JSON 応答が不正"
     gh_err = out
@@ -289,45 +351,24 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
     #   件数 1001 以上   → 同上・エラー
     # REST 応答が list 以外（`{}` / `null` / 文字列等）のときは「0 件」と誤読せず即エラーにする
     # （レビュー指摘 CONFIRMED 2: `if not batch:` の truthy 判定は `{}`/`None` も真になり
-    # 「取得失敗」と「0 件」を区別できていなかった）。
-    comments: list[dict] = []
-    last_batch_len = 0
-    broke_early = False
-    for page in range(1, MAX_COMMENT_PAGES + 1):
-        ok2, out2 = _http_get(
-            f"https://api.github.com/repos/{REPO}/issues/{number}/comments"
-            f"?per_page=100&page={page}",
-            token,
-        )
-        if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
-        try:
-            batch = json.loads(out2)
-        except json.JSONDecodeError:
-            return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
-        if not isinstance(batch, list):
-            return [], f"gh 失敗（{gh_err}）・REST 応答が配列ではありません（{type(batch).__name__}）"
-        if not batch:
-            broke_early = True
-            break
-        comments.extend(
-            {
-                "body": c.get("body", ""),
-                "created_at": c.get("created_at", ""),
-                "author_association": c.get("author_association", ""),
-            }
-            for c in batch
-        )
-        last_batch_len = len(batch)
-        if len(batch) < 100:
-            broke_early = True
-            break
-    if not broke_early and last_batch_len == 100:
-        return [], (
-            f"コメント件数がページング上限（{MAX_COMMENT_PAGES * 100} 件）に到達した可能性が"
-            f"あります（取得済み {len(comments)} 件・最終ページも満杯で終了）。"
-            "判定不能として扱います（最新の Sprint Review 判定コメントを取りこぼす恐れがあるため）"
-        )
+    # 「取得失敗」と「0 件」を区別できていなかった）。打ち切り検知は共通ヘルパー
+    # `_fetch_paginated`（レビュー指摘 WARNING 4）に委譲する。
+    url_template = (
+        f"https://api.github.com/repos/{REPO}/issues/{number}/comments"
+        f"?per_page=100&page={{page}}"
+    )
+    raw_items, perr = _fetch_paginated(url_template, token, MAX_COMMENT_PAGES)
+    if perr is not None:
+        return [], f"gh 失敗（{gh_err}）・REST 側で失敗（{perr}）"
+    comments = [
+        {
+            "body": c.get("body", ""),
+            "created_at": c.get("created_at", ""),
+            "author_association": c.get("author_association", ""),
+        }
+        for c in raw_items
+        if isinstance(c, dict)
+    ]
     return comments, None
 
 
@@ -1281,6 +1322,11 @@ def _self_test_fetch_in_progress_sprint_candidates() -> list[str]:
     ④ gh 失敗 + REST 成功（pull_request キーを持つ行を除外することも確認）
     ⑤〜⑦ gh 失敗 + REST が list 以外（`{}` / `null` / 文字列）を返す
     （レビュー指摘 CONFIRMED 2: 「0 件」への誤読 fail-open の再発防止）。
+    ⑧〜⑩ **gh 自体が exit 0 で** `{}` / `""` / `[]` を返す（gh 成功パスの isinstance 検査
+    ・レビュー指摘 CRITICAL 2 の再発防止。`[]` は正当な「0 件」であり誤ってエラー扱いに
+    ならないことも固定する）。
+    ⑪〜⑬ gh 失敗 + REST 側でページング打ち切り境界（299/300/301 件・レビュー指摘 WARNING 4
+    の再発防止。従来はこの関数にだけ打ち切り検知が無かった）。
     """
     failures = []
     orig_run_gh = _run_gh
@@ -1337,6 +1383,64 @@ def _self_test_fetch_in_progress_sprint_candidates() -> list[str]:
                 failures.append(
                     f"{label}: 「取得失敗」と区別できるエラー・issues=[] を期待したが {(issues, err)!r}"
                 )
+
+        # ⑧〜⑩ gh **自体**が exit 0 で想定外スキーマを返すケース（CRITICAL 2 の再発防止）。
+        # token を未設定にしておき、gh のスキーマ異常が REST フォールバックへ正しく倒れて
+        # from-there エラーになる（`[]` だけは倒れず正常終了する）ことを確認する。
+        clear_tokens()
+        for label, gh_body, expect_error in (
+            ("⑧ gh応答が{}", "{}", True),
+            ('⑨ gh応答が""', '""', True),
+            ("⑩ gh応答が[]（正当な0件）", "[]", False),
+        ):
+            globals()["_run_gh"] = lambda args, gh_body=gh_body: (True, gh_body)
+            issues, err = fetch_in_progress_sprint_candidates()
+            if expect_error:
+                if err is None or issues != []:
+                    failures.append(
+                        f"{label}: gh 成功パスの型検査でエラーになることを期待したが {(issues, err)!r}"
+                    )
+            else:
+                if err is not None or issues != []:
+                    failures.append(
+                        f"{label}: 正当な 0 件（エラーなし）を期待したが {(issues, err)!r}"
+                    )
+
+        # ⑪〜⑬ gh は失敗のまま、REST 側の件数を境界表（MAX_IN_PROGRESS_ISSUE_PAGES=3）
+        # どおりに変えて打ち切り検知を確認する（WARNING 4 の再発防止）。
+        globals()["_run_gh"] = lambda args: (False, "認証エラー")
+        os.environ["GH_TOKEN"] = "dummy-token-for-selftest"
+
+        def make_issue_rest_pager(total: int):
+            def http_get(url, token):
+                m = re.search(r"[?&]page=(\d+)", url)
+                page = int(m.group(1)) if m else 1
+                start = (page - 1) * 100
+                end = min(start + 100, total)
+                if start >= total:
+                    return True, json.dumps([])
+                batch = [
+                    {"number": 1000 + i, "title": f"SP-{i}: 何か", "body": ""}
+                    for i in range(start, end)
+                ]
+                return True, json.dumps(batch)
+            return http_get
+
+        for total, expect_truncated in ((299, False), (300, True), (301, True)):
+            globals()["_http_get"] = make_issue_rest_pager(total)
+            issues, err = fetch_in_progress_sprint_candidates()
+            if expect_truncated:
+                if err is None:
+                    failures.append(
+                        f"件数{total}（in-progress候補）: 打ち切り疑いでエラーを期待したが "
+                        f"{(len(issues), err)!r}"
+                    )
+            else:
+                if err is not None or len(issues) != total:
+                    failures.append(
+                        f"件数{total}（in-progress候補）: エラーなし・{total}件取得を期待したが "
+                        f"{(len(issues), err)!r}"
+                    )
     finally:
         globals()["_run_gh"] = orig_run_gh
         globals()["_http_get"] = orig_http_get
@@ -1356,7 +1460,10 @@ def _self_test_fetch_issue_comments() -> list[str]:
     ④〜⑩ gh 失敗 + REST 成功で件数を境界表どおりに変える（0/1/99/100/101/999 件は打ち切り
     なし、300 件は中間値として非境界であることも確認、1000/1001 件は打ち切り疑いでエラー）。
     ⑪〜⑬ gh 失敗 + REST が list 以外（`{}` / `null` / 文字列）を返す（レビュー指摘
-    CONFIRMED 2 の再発防止）。境界の根拠は関数内コメントの入力境界表（MAX_COMMENT_PAGES）を参照。
+    CONFIRMED 2 の再発防止）。
+    ⑭〜⑯ **gh 自体が exit 0** で想定外スキーマ（トップレベルが list / 空文字列）を返す
+    （レビュー指摘 CRITICAL 2 の再発防止）。`{"comments": []}`（正当な 0 件）は誤ってエラー
+    扱いにならないことも固定する。境界の根拠は関数内コメントの入力境界表（MAX_COMMENT_PAGES）を参照。
     """
     failures = []
     orig_run_gh = _run_gh
@@ -1444,6 +1551,28 @@ def _self_test_fetch_issue_comments() -> list[str]:
                 failures.append(
                     f"{label}: 「取得失敗」と区別できるエラー・comments=[] を期待したが {(comments, err)!r}"
                 )
+
+        # ⑭〜⑯ gh **自体**が exit 0 で想定外スキーマを返すケース（CRITICAL 2 の再発防止）。
+        # token 未設定にして REST フォールバックへ正しく倒れることを確認する
+        # （`{"comments": []}` は正当な 0 件で、倒れずそのまま終わることも確認する）。
+        clear_tokens()
+        for label, gh_body, expect_error in (
+            ("⑭ gh応答がlist", "[]", True),
+            ('⑮ gh応答が""', '""', True),
+            ('⑯ gh応答が{"comments": []}（正当な0件）', json.dumps({"comments": []}), False),
+        ):
+            globals()["_run_gh"] = lambda args, gh_body=gh_body: (True, gh_body)
+            comments, err = fetch_issue_comments(1000)
+            if expect_error:
+                if err is None or comments != []:
+                    failures.append(
+                        f"{label}: gh 成功パスの型検査でエラーになることを期待したが {(comments, err)!r}"
+                    )
+            else:
+                if err is not None or comments != []:
+                    failures.append(
+                        f"{label}: 正当な 0 件（エラーなし）を期待したが {(comments, err)!r}"
+                    )
     finally:
         globals()["_run_gh"] = orig_run_gh
         globals()["_http_get"] = orig_http_get
@@ -1584,6 +1713,13 @@ def _self_test_main_token_sanitization() -> list[str]:
     `_http_get` の `except`（HTTPError/URLError/TimeoutError）を素通りして `main()` の
     未捕捉例外ハンドラまで届く実測済みの経路・CONFIRMED 1 の再現ケース）。
     `--json`（stdout）・非 JSON（stderr）の両方の出力経路を検査する。
+
+    あわせて次の再発防止ケースを含む:
+      - トークン自体に実際の CR/LF を埋め込み、`http.client.putheader` が送出する
+        bytes repr 形式のメッセージを忠実に再現するケース（CRITICAL 1: 値そのものの
+        単純 `str.replace` だけでは、エスケープ済み表現との不一致で空振りしていた）
+      - 短い値・空白のみの値では無関係なメッセージ全文を巻き添えにしないケース
+        （WARNING 3: `MIN_SECRET_LEN` 未満は対象外にする）
     """
     import contextlib
     import io
@@ -1665,6 +1801,81 @@ def _self_test_main_token_sanitization() -> list[str]:
             failures.append(
                 f"トークン漏洩再現(GITHUB_TOKEN): カナリアが出力に残っている（stdout={out!r}）"
             )
+
+        # 【レビュー指摘 CRITICAL 1 の実測再現】トークン自体に CR/LF を埋め込み、
+        # `http.client.putheader` が実際に送出する bytes repr（`%r`）形式のメッセージを
+        # 忠実に再現する。生の値（実 CR/LF を含む）のままではエスケープ済みテキストと
+        # 部分文字列一致しないため、旧実装（値そのものの `str.replace` のみ）はここで
+        # 空振りしていた。既存ケース（メッセージ文字列側に既にエスケープ済みテキストを
+        # 手書きで足すだけ）はこの不一致を踏まないため区別して追加する。
+        os.environ.pop("GITHUB_TOKEN", None)
+        canary_with_crlf = CANARY + "\r\nX-Evil: 1"
+        os.environ["GH_TOKEN"] = canary_with_crlf
+
+        def raise_putheader_style_error():
+            header_bytes = f"Bearer {canary_with_crlf}".encode()
+            raise ValueError("Invalid header value %r" % (header_bytes,))
+
+        globals()["fetch_in_progress_sprint_candidates"] = raise_putheader_style_error
+
+        for argv, stream_label in (
+            (["check_deploy_gate.py", "--json", "--repo", "owner/name"], "--json"),
+            (["check_deploy_gate.py", "--repo", "owner/name"], "非JSON"),
+        ):
+            sys.argv = argv
+            code, out, err = run_main()
+            combined = out + err
+            if code != 2:
+                failures.append(f"CR/LF実測再現({stream_label}): exit 2 を期待したが {code!r}")
+            if CANARY in combined:
+                failures.append(
+                    f"CR/LF実測再現({stream_label}): カナリアが出力に残っている（{combined!r}）"
+                )
+            if "***" not in combined:
+                failures.append(
+                    f"CR/LF実測再現({stream_label}): 伏字 '***' が出力に見つからない（{combined!r}）"
+                )
+
+        # 【レビュー指摘 WARNING 3】短い値・空白のみの値では無関係なメッセージ全文を
+        # 巻き添えにして破壊しないことを確認する（`MIN_SECRET_LEN` 未満は対象外にする）。
+        os.environ.pop("GH_TOKEN", None)
+        for label, short_token, message_text in (
+            ("空白のみ", " ", "normal message with spaces here"),
+            ("1文字", "e", "ValueError: some message here"),
+            (f"{MIN_SECRET_LEN - 1}文字（MIN_SECRET_LEN未満）", "short12", "value=short12 embedded in message"),
+        ):
+            os.environ["GH_TOKEN"] = short_token
+            globals()["fetch_in_progress_sprint_candidates"] = (
+                lambda message_text=message_text: (_ for _ in ()).throw(ValueError(message_text))
+            )
+            sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
+            code, out, err = run_main()
+            try:
+                payload = json.loads(out.strip().splitlines()[-1]) if out.strip() else {}
+            except json.JSONDecodeError:
+                payload = {}
+            expected = f"未捕捉の例外が発生しました（ValueError: {message_text}）"
+            if payload.get("error") != expected:
+                failures.append(
+                    f"WARNING3({label}): 短い/空白トークンでメッセージが破壊された: "
+                    f"{payload.get('error')!r}（期待 {expected!r}）"
+                )
+            os.environ.pop("GH_TOKEN", None)
+
+        # 境界値ちょうど（MIN_SECRET_LEN 文字）は引き続き伏字化されることも確認する
+        # （下限ガードが必要以上に広く効いて正当な長さのトークンまで見逃していないか）
+        boundary_token = "x" * MIN_SECRET_LEN
+        os.environ["GH_TOKEN"] = boundary_token
+        globals()["fetch_in_progress_sprint_candidates"] = (
+            lambda: (_ for _ in ()).throw(ValueError(f"token={boundary_token} leaked"))
+        )
+        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
+        code, out, err = run_main()
+        if boundary_token in out:
+            failures.append(
+                f"MIN_SECRET_LEN境界: {MIN_SECRET_LEN}文字ちょうどのトークンが伏字化されていない: {out!r}"
+            )
+        os.environ.pop("GH_TOKEN", None)
 
         # 空文字・未設定のトークンでは全文置換が事故を起こさないことも確認する
         # （`value.replace("", "***")` のような空文字一致で本文が壊れていないか）
@@ -1849,16 +2060,58 @@ def main() -> None:
         sys.exit(2)
 
 
+# GH_TOKEN/GITHUB_TOKEN の実値としてあまりに短い文字列（誤設定・空白のみ・テスト値等）まで
+# 伏字化の対象にすると、その短い文字列がメッセージ中の無関係な単語と偶然部分一致して全文が
+# 判読不能になる（レビュー指摘 WARNING 3・実測: `GH_TOKEN=" "` で通常メッセージの単語の
+# 隙間が軒並み `***` に置換された）。実運用の GitHub トークンは数十文字あるため、
+# この長さ未満の値・セグメントは伏字化の対象外にする。
+MIN_SECRET_LEN = 8
+
+
+def _collect_secret_candidates(value: str, candidates: set[str]) -> None:
+    """`value`（環境変数の生値）から、メッセージ中に現れうる表現の候補を `candidates` へ
+    集める（レビュー指摘 CRITICAL 1 の再発防止）。
+
+      - 生の値そのもの（値に制御文字を含まない通常のケースでの一致用）
+      - `unicode_escape` でエスケープした表現: `http.client.putheader` が送出する
+        `ValueError` の `str(e)` は bytes repr（`b'...'`）であり、値に含まれる CR/LF 等の
+        制御文字が `\\r` `\\n` という 2 文字テキストへ変換されて現れる。生の値のままでは
+        この表示形と部分文字列一致しない（CRITICAL 1 の実測再現ケースそのもの）。
+      - 制御文字・空白で分割した各セグメント（生・エスケープ済みの両方）: 値自体にヘッダ
+        インジェクション用の制御文字が混ざっている場合、値全体のエスケープ表現がメッセージの
+        実際の表示形と完全一致しない可能性がある defense-in-depth。
+
+    `MIN_SECRET_LEN` 未満の候補（前後の空白を除いた長さで判定）は追加しない
+    （レビュー指摘 WARNING 3: 短い候補による無関係テキストの巻き添え破壊を防ぐ）。
+    """
+    def add(candidate: str) -> None:
+        if len(candidate.strip()) >= MIN_SECRET_LEN:
+            candidates.add(candidate)
+            candidates.add(candidate.encode("unicode_escape").decode("ascii"))
+
+    add(value)
+    for segment in re.split(r"[\s\x00-\x1f\x7f]+", value):
+        if segment:
+            add(segment)
+
+
 def _sanitize_secrets(message: str) -> str:
     """`GH_TOKEN` / `GITHUB_TOKEN` の実値がメッセージ中に含まれていたら伏字（`***`）へ
-    置換する（レビュー指摘 CONFIRMED 1）。`Bearer <値>` の形や `b'...'` bytes repr に
-    埋め込まれていても、値そのものの部分文字列一致で潰せるため両方カバーする。
-    値が空文字・未設定の環境変数は対象にしない（空文字の部分一致で全文が壊れる事故を防ぐ）。
+    置換する（レビュー指摘 CONFIRMED 1）。`Bearer <値>` の形や `b'...'` bytes repr、値の
+    途中に制御文字が混ざって別表現へエスケープされている場合も含めて潰す
+    （候補の集め方は `_collect_secret_candidates` を参照）。
+    値が空文字・未設定の環境変数、および `MIN_SECRET_LEN` 未満の値は対象にしない
+    （空文字・短い値の部分一致で無関係なテキストごと壊す事故を防ぐ・WARNING 3）。
     """
+    candidates: set[str] = set()
     for env_name in ("GH_TOKEN", "GITHUB_TOKEN"):
         value = os.environ.get(env_name)
         if value:
-            message = message.replace(value, "***")
+            _collect_secret_candidates(value, candidates)
+    # 長い候補から順に置換する（短い候補を先に置換すると、それを含む長い候補が部分的に
+    # 欠けて一致しなくなり、置換漏れが起きるため）。
+    for candidate in sorted(candidates, key=len, reverse=True):
+        message = message.replace(candidate, "***")
     return message
 
 
