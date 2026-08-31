@@ -69,6 +69,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import git_diff_utils
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # パスらしきトークン: 英数字/アンダースコア/開き角括弧で始まり、スラッシュ・ドット・ハイフン・
@@ -233,15 +235,17 @@ def _trim_unpaired_brackets(tok: str) -> str:
 
 
 def run_git(args: list[str], cwd: Path) -> str:
-    try:
-        proc = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, check=True,
-        )
-        return proc.stdout
-    except FileNotFoundError as e:
-        raise RuntimeError("git コマンドが見つかりません") from e
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"git {' '.join(args)} が失敗: {e.stderr.strip()}") from e
+    """git を実行し stdout を返す。失敗時は RuntimeError を送出する。
+
+    #195: git 実行 + エラーハンドリング部分は `tools/git_diff_utils.py` の
+    `run_git_or_raise()` に統合済み（本ツールは作業ツリーの実差分のみ・`RuntimeError` 送出という
+    性質が他 3 ツールと違うため、収集ロジック本体は統合せずここに残す）。**検証の分担**
+    （#195 指摘5）: 例外型・メッセージ書式そのものは `git_diff_utils.py --self-test`
+    （`_self_test_run_git_or_raise`）が検証済みで変えていない。本ツールの `--self-test`
+    （`_self_test_get_real_diff_files_wiring`）は `run_git()` → `git_diff_utils.run_git_or_raise()`
+    への配線（`args` / `cwd` の引数順）が壊れていないかを検証する。
+    """
+    return git_diff_utils.run_git_or_raise(args, cwd)
 
 
 def parse_status_short(output: str) -> set[str]:
@@ -656,6 +660,45 @@ def run_self_test() -> int:
         and r_mismatch["missing_from_report"] == ["c.py"]
         and r_mismatch["mismatch"] is True,
         str(r_mismatch),
+    )
+
+    # ── #195 指摘3: get_real_diff_files() → run_git() → git_diff_utils.run_git_or_raise()
+    # への配線が壊れていないことを確認する（引数順の入れ替え等の回帰を検知する）──
+    # `run_self_test()` は `run_git()`/`get_real_diff_files()` を一度も呼ばないため、
+    # 配線ミス（引数順の入れ替え等）を検知できない、という指摘への対応。
+    _wiring_calls: list[tuple[list[str], object]] = []
+
+    def _fake_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        # git_diff_utils.run_git_or_raise の呼び出しシグネチャ（args, cwd）をそのまま模す。
+        # 呼び出し側で args/cwd が入れ替わっていれば、ここで受け取る args は
+        # list[str] ではなく Path になり、下の分岐が一致せず assertion で検出できる。
+        _wiring_calls.append((args, cwd))
+        if args == ["status", "--short"]:
+            return " M tools/wiring_marker.py\n"
+        if args == ["diff", "--stat"]:
+            return ""
+        if args == ["diff", "--cached", "--stat"]:
+            return ""
+        return ""
+
+    _orig_run_git_or_raise = git_diff_utils.run_git_or_raise
+    git_diff_utils.run_git_or_raise = _fake_run_git_or_raise
+    try:
+        fake_root = Path("/fake/wiring/root")
+        wiring_result = get_real_diff_files(fake_root)
+    finally:
+        git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+
+    check(
+        "get_real_diff_files() 配線: run_git() 経由で run_git_or_raise(args, cwd) を正しい順で呼ぶ（#195 指摘3）",
+        wiring_result["files"] == {"tools/wiring_marker.py"}
+        and _wiring_calls
+        == [
+            (["status", "--short"], fake_root),
+            (["diff", "--stat"], fake_root),
+            (["diff", "--cached", "--stat"], fake_root),
+        ],
+        f"result={wiring_result} calls={_wiring_calls}",
     )
 
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")

@@ -600,6 +600,15 @@ else
   skip_check "マーカー連続回数の共通ロジック self-test (issue_marker_counter.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 変更ファイル一覧を git から取る共通ロジックの self-test（Issue #195）。
+# self_review_check.py / check_architecture_boundaries.py / check_cjk_markdown.py /
+# check_agent_diff_claim.py の 4 本がここに依存するため、単体で守る。
+if [ -f "$REPO_ROOT/tools/git_diff_utils.py" ]; then
+  run_check "git 差分収集の共通ロジック self-test (git_diff_utils.py --self-test)" python3 tools/git_diff_utils.py --self-test
+else
+  skip_check "git 差分収集の共通ロジック self-test (git_diff_utils.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 消化モードの保留サーキットブレーカー self-test（Issue #690）。本判定は Issue コメント JSON 依存のため配線しない。
 if [ -f "$REPO_ROOT/tools/consume_hold_guard.py" ]; then
   run_check "消化モード保留ガード self-test (consume_hold_guard.py --self-test)" python3 tools/consume_hold_guard.py --self-test

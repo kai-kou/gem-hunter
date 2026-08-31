@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import git_diff_utils
+
 MAX_MB = float(os.environ.get("SELF_REVIEW_MAX_MB", "5"))
 CONFLICT_MARKERS = ("<<<<<<< ", "=======", ">>>>>>> ")
 
@@ -429,33 +431,17 @@ def sh(args, timeout=20):
 
 
 def default_branch() -> str:
-    r = sh(["git", "symbolic-ref", "refs/remotes/origin/HEAD"])
-    if r.returncode == 0 and r.stdout.strip():
-        return r.stdout.strip().split("/")[-1]
-    return "main"
+    return git_diff_utils.default_branch()
 
 
 def changed_files() -> list[str]:
-    base = f"origin/{default_branch()}"
-    r = sh(["git", "diff", "--name-only", f"{base}...HEAD"])
-    # split() ではなく splitlines()。スペースを含むパスを 1 件として扱う
-    files = r.stdout.splitlines() if r.returncode == 0 else []
-    # ステージ済み・作業ツリーの変更も含める
-    for extra in (["git", "diff", "--name-only"], ["git", "diff", "--cached", "--name-only"]):
-        rr = sh(extra)
-        if rr.returncode == 0:
-            files += rr.stdout.splitlines()
-    # 未追跡（git add 前の新規ファイル）も含める。git diff は untracked を出さないため、
-    # これが無いと新規 .md が CJK 検査から漏れて AI レビュー指摘が再発する（#63）
-    ru = sh(["git", "ls-files", "--others", "--exclude-standard"])
-    if ru.returncode == 0:
-        files += ru.stdout.splitlines()
-    # 実在する追跡対象ファイルのみ、重複排除
-    seen, out = set(), []
-    for f in files:
-        if f not in seen and Path(f).is_file():
-            seen.add(f); out.append(f)
-    return out
+    """変更ファイル一覧（base range + worktree + cached + untracked・実在チェックあり・出現順維持）。
+
+    #195: 収集ロジック本体は `tools/git_diff_utils.py` の `collect_changed_files()` に統合済み。
+    既定引数がここの旧実装（base range → worktree → cached → untracked・`require_existing=True`・
+    `sort=False`）とそのまま一致するため、引数なしで呼ぶだけで既存挙動を維持できる。
+    """
+    return git_diff_utils.collect_changed_files()
 
 
 def update_notes_reminder(files: list[str]) -> str | None:

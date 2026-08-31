@@ -64,6 +64,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import git_diff_utils
+
 # CJK「単語文字」: ひらがな・カタカナ・漢字・全角英数など。約物は意図的に除外する。
 CJK_WORD = (
     r"ぁ-ゖ"   # ひらがな
@@ -204,28 +206,14 @@ def process_text(text: str, fix: bool) -> tuple[str, list[tuple[int, str]]]:
 
 
 def changed_md_files() -> list[str]:
-    """git diff から変更された .md ファイル一覧を取得（origin/<default>...HEAD + 作業ツリー）。"""
-    def sh(args):
-        return subprocess.run(args, capture_output=True, text=True, timeout=20)
+    """git diff から変更された .md ファイル一覧を取得（origin/<default>...HEAD + 作業ツリー）。
 
-    base = "main"
-    r = sh(["git", "symbolic-ref", "refs/remotes/origin/HEAD"])
-    if r.returncode == 0 and r.stdout.strip():
-        base = r.stdout.strip().split("/")[-1]
-
-    files: list[str] = []
-    for args in (
-        ["git", "diff", "--name-only", f"origin/{base}...HEAD"],
-        ["git", "diff", "--name-only"],
-        ["git", "diff", "--cached", "--name-only"],
-        # 未追跡（git add 前の新規ファイル）も対象に含める。git diff は untracked を
-        # 出力しないため、これが無いと新規 .md が PR 前整形から漏れる（#63）
-        ["git", "ls-files", "--others", "--exclude-standard"],
-    ):
-        rr = sh(args)
-        if rr.returncode == 0:
-            # split() ではなく splitlines()。スペースを含むパスを 1 件として扱う
-            files += rr.stdout.splitlines()
+    #195: 収集ロジック本体（4 ソースの合算・出現順維持）は `tools/git_diff_utils.py` の
+    `collect_changed_files()` に統合済み。ここでは `require_existing=False` で生の一覧を受け取り、
+    `.md` フィルタ・`is_excluded()`・実在チェックは従来どおり本関数側で行う（`.md` でないファイルの
+    存在確認を無駄にしないため・元実装と最終的な集合は同一）。
+    """
+    files = git_diff_utils.collect_changed_files(require_existing=False)
     seen, out = set(), []
     for f in files:
         if f.endswith(".md") and f not in seen and not is_excluded(f) and Path(f).is_file():
