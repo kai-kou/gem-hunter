@@ -90,6 +90,14 @@ _BEARER_RE = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
 # 任意テキストへのマスク適用で既定の対象にするセッション環境変数
 DEFAULT_SECRET_VARS = ("CLOUDFLARE_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
 
+# `mask_text()` が秘匿値を置き換える完全不透明なプレースホルダ。
+# 🔴 ここに `mask_value()`（先頭・末尾 4 文字を残す）を使ってはいけない。`mask_text()` の出力は
+# Issue / PR コメント・CI ログへ転記される経路であり、実値の断片を 8 文字残すと「秘匿情報の
+# 平文出力」そのものになる（CodeQL `py/clear-text-logging-sensitive-data` が high で検知した）。
+# 先頭・末尾を残すヒント表示が有用なのは、運用者が自分の環境変数を確認する `mask_value()` /
+# `mask_if_sensitive()` の用途に限る。
+REDACTED = "****"
+
 
 def mask_text(text: str, secrets: dict[str, str] | None = None) -> str:
     """任意テキスト（外部コマンドの stdout/stderr 等）から既知の秘匿値を除去する。
@@ -106,8 +114,14 @@ def mask_text(text: str, secrets: dict[str, str] | None = None) -> str:
         return text
     if secrets is None:
         secrets = {name: os.environ.get(name, "") for name in DEFAULT_SECRET_VARS}
+    # 🔴 長い値から先に消す。短い値を先に置換すると、それを部分文字列として含む長い値が
+    # 分断され、長い方の残り断片が平文のまま出力へ残る（例: GH_TOKEN="abc" /
+    # GITHUB_TOKEN="abcdef" → "****def"）。長さの降順にすると、長い値が先に丸ごと消えるため
+    # 短い値が断片を作れない。
+    values = sorted({value for value in secrets.values() if value}, key=len, reverse=True)
     masked = text
-    for value in secrets.values():
-        if value:
-            masked = masked.replace(value, mask_value(value))
+    for value in values:
+        # 実値を検索パターンとしてのみ使い、置換後の文字列には一切持ち込まない
+        # （`str.replace(value, mask_value(value))` は実値の断片を出力へ残す）。
+        masked = re.sub(re.escape(value), REDACTED, masked)
     return _BEARER_RE.sub("Bearer ****", masked)

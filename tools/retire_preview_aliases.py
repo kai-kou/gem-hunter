@@ -47,7 +47,7 @@ import urllib.request
 from typing import Any, Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mask_secrets import mask_text, mask_value  # noqa: E402
+from mask_secrets import REDACTED, mask_text  # noqa: E402
 from repo_slug import resolve_repo_slug  # noqa: E402
 from wrangler_config import parse_worker_name  # noqa: E402
 
@@ -565,7 +565,35 @@ def self_test() -> int:
         mask_output(
             "error: token=abcdef123456 invalid", secrets={"CLOUDFLARE_API_TOKEN": "abcdef123456"}
         ),
-        f"error: token={mask_value('abcdef123456')} invalid",
+        f"error: token={REDACTED} invalid",
+    )
+    # 🔴 実値の断片（先頭・末尾 4 文字）を出力へ残さない。残すと Issue / PR コメントへ転記される
+    # 経路がそのまま「秘匿情報の平文出力」になる（CodeQL py/clear-text-logging-sensitive-data）。
+    check(
+        "マスク後のテキストに実値の断片が残らない",
+        any(
+            fragment in mask_output(
+                "error: token=abcdef123456 invalid",
+                secrets={"CLOUDFLARE_API_TOKEN": "abcdef123456"},
+            )
+            for fragment in ("abcd", "3456", "abcdef123456")
+        ),
+        False,
+    )
+    check(
+        "正規表現メタ文字を含む秘匿値もリテラルとして扱う",
+        mask_output("error: key=a+b(c) invalid", secrets={"GH_TOKEN": "a+b(c)"}),
+        f"error: key={REDACTED} invalid",
+    )
+    # 🔴 短い秘匿値が長い秘匿値の部分文字列になっている場合でも断片を残さない
+    # （短い方を先に置換すると長い方が分断され "****def" のように実値が残る）。
+    check(
+        "部分文字列関係にある複数の秘匿値でも断片が残らない",
+        mask_output(
+            "token is abcdef here",
+            secrets={"GH_TOKEN": "abc", "GITHUB_TOKEN": "abcdef"},
+        ),
+        f"token is {REDACTED} here",
     )
     check(
         "Bearer <token> 形式を除去する",
