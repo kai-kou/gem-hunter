@@ -35,6 +35,18 @@ else
   exit 0
 fi
 
+# PR 本文（`tool_input.body`）は MCP 経路だけが構造化して持つ。Bash（`gh pr create`）経路の
+# 本文は `tool_input.command` の中（`--body` 引数・ヒアドキュメント）にあり確実には取り出せない
+# ため取得しない。ここで既定値を置かないと、Bash 経路が後段（4.6 / 5 節）の `$pr_body` 参照で
+# `set -u` の unbound variable に落ち、self_review_check.py の判定と無関係に PR 作成が
+# 常時ブロックされる（PR #742 Layer 1 レビューで実測）。
+pr_body=""
+have_pr_body=0
+if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
+  pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
+  have_pr_body=1
+fi
+
 # --- poll_pr_reviews.sh 引数バリデーション（Lv3 ハードコンストレイント・Bash 経路のみ） ---
 # poll_pr_reviews.sh が呼び出される場合、引数の順序を事前チェック
 # 実行位置アンカー付き（bash/sh 経由の起動のみ）。アンカーなしだと
@@ -154,7 +166,6 @@ fi
 #    チェッカーの異常終了を fail-open にしたのとは性質が違う（あちらは環境要因、これは手順の省略）。
 #    撤去条件: E2E / Lighthouse を CI に載せた時点で再検討する（D-42 により Actions 復帰では撤去しない）。
 if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
-  pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
   # 許容する見出しパターン（Issue #405・PR #456 Layer 1 指摘で強化）: 見出しレベルは `##` 固定
   # ＝ docs/rules/pr-review-flow-summary.md の例示と一致させる。キーワードは run_checks /
   # npm run check のどちらでもよく、各キーワードはバッククォートで囲んでも囲まなくても良い
@@ -303,12 +314,20 @@ check_output=""
 if [ -f "$repo_root/tools/self_review_check.py" ]; then
   cd "$repo_root" || exit 0
   check_exit=0
+  # PR 本文を取れるのは MCP 経路だけ（上部の have_pr_body 参照）。Bash 経路で空文字列を
+  # `--pr-body-stdin` に流すと「本文はあるが Session-Id: が無い」と誤判定するため、
+  # 本文が無いときはフラグを付けずに従来どおり一般リマインドを出させる。
+  _srx_args=()
+  if [ "$have_pr_body" -eq 1 ]; then
+    _srx_args=(--pr-body-stdin)
+  fi
   if command -v timeout >/dev/null 2>&1; then
-    check_output=$(printf '%s' "$pr_body" | timeout 60 python3 tools/self_review_check.py --pr-body-stdin 2>&1) || check_exit=$?
+    check_output=$(printf '%s' "$pr_body" | timeout 60 python3 tools/self_review_check.py ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
   else
     # macOS 等 timeout 不在環境のフォールバック
-    check_output=$(printf '%s' "$pr_body" | python3 tools/self_review_check.py --pr-body-stdin 2>&1) || check_exit=$?
+    check_output=$(printf '%s' "$pr_body" | python3 tools/self_review_check.py ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
   fi
+  unset _srx_args
   if [ "$check_exit" -eq 1 ]; then
     hook_block "[pre-pr-create-check] セルフレビュー機械チェックで Error を検出したため PR 作成をブロックしました。
 
