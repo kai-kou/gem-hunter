@@ -87,6 +87,28 @@ GitHub API アクセス付きでセッションに attach されていないこ�
 > （`gh --shim-doctor` は実 gh の導入が前提のため、既定のクラウドセッションでは使えない）。
 > 挙動変化を検知したら本表と L-114 を更新すること（CP-2）。
 
+### 1.1 再検証（2026-08-31・#684 / PR #729）— repo スコープ REST 直叩きが 200 へ回帰
+
+🔴 **上表の「`curl` / `urllib` で `api.github.com/repos/...` 直叩き = ❌ 403」は、2026-08-31 時点では成立しない。**
+`sprint-cycle-router` の firing 中に同一セッションから実測した結果は次のとおり（同じ `Authorization: Bearer $GH_TOKEN` ヘッダ・同じ `Accept: application/vnd.github+json`）。
+
+| 直叩きしたパス | 2026-07-26 | 2026-08-31 実測 |
+|---|---|---|
+| `GET /repos/{o}/{r}` | ❌ 403 | ✅ **200** |
+| `GET /repos/{o}/{r}/pulls?state=open` | ❌ 403 | ✅ **200** |
+| `GET /repos/{o}/{r}/issues` | ❌ 403 | ✅ **200** |
+| `GET /repos/{o}/{r}/actions/runs` | ❌ | ✅ **200** |
+| `GET /repos/{o}/{r}/commits/{sha}/check-runs` | ❌ | ✅ **200** |
+| `GET /repos/{o}/{r}/check-runs/{id}/annotations` | （未計測） | ✅ **200** |
+| `GET /repos/{o}/{r}/code-scanning/alerts` | （未計測） | ❌ **403**「Resource not accessible by integration」 |
+
+**読み取り方（重要）**:
+
+- 🔴 **これは「直叩きを一次経路にしてよい」という意味ではない**。可否は 1 か月に 5 回変わった実績があり（上表の見出し参照）、**次の firing では 403 に戻っていてもおかしくない**。一次経路は引き続き `mcp__github__*`（API プロキシを通らないため変動の影響を受けない）。
+- ✅ **直叩きが役に立つのは「MCP にツールが無い読み取り」だけ**。実例: CodeQL の指摘箇所は `check-runs/{id}/annotations` にしか無く、MCP にも `gh` にも該当ツールが無い（`mcp__github__get_check_run` は `output.summary` までで annotations を返さない）。
+- ❌ **`code-scanning/*` は 403 のまま**。プロキシではなく **GitHub App トークンの権限不足**（`Resource not accessible by integration`）なので、直叩きでもシムでも解決しない。
+- **使う前に必ずその場で計測する**（暗記しない）: `curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/{o}/{r}/...`
+
 ## 1.5 gh シム（`tools/gh_shim.py`・Issue #254）— ローカル互換 + MCP 誘導シグナル
 
 **クラウドの gh 403 を「事前変換 + 事後ガイダンス」で排除する PATH ラッパー**。SessionStart フック
