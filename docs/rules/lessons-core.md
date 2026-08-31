@@ -12,6 +12,7 @@
 |------|--------|
 | `git push` だけが 403/413/502・`gh` が 403・`E2BIG` で Bash 全停止・tool call parse error・スコープ外リポジトリへの clone が 403・OpenNext Cloudflare プレビューでのみリダイレクト / パス解決が期待どおりにならない・本番デプロイ系コマンド（`wrangler deploy` 等）が auto mode classifier にブロックされることがある（毎回ではない）・デプロイ系スクリプトが「判定不能」で終わり本番が更新されない | `docs/rules/lessons/cloud-environment.md`（L-079/L-080/L-101/L-106/L-114/L-117/L-129/L-130/L-140） |
 | サブエージェント / Agent Teams の回答が空・期待外の形式で返る・フックが偽の観測を注入する | `docs/rules/lessons/agent-delegation.md`（L-121/L-122） |
+| 委譲先の変異テスト報告と親の実測が食い違う・多層防御の 1 層だけ潰した結果の解釈に迷う | `docs/rules/lessons/agent-delegation.md`（L-143） |
 | これまで `Skill` ツールで呼べていたビルトイン機能が `disable-model-invocation` で失敗する（起動経路の移動） | `docs/rules/lessons/skill-routing.md`（L-123）・`native-fallback-rules.md` §2.5 |
 | 外部 API に認証を足す・トークン種別を変える（レート枠だけでなく取得できるデータの可視範囲が変わる） | `docs/rules/lessons/api-integration.md`（L-128） |
 | 実装をわざと壊す検証（変異テスト）中に、意図しない一時改変が commit / push されてしまう・Stop フックがコミットを迫る・**変異を戻す `git checkout --` で未コミットの実装ごと消える** | `docs/rules/lessons/session-safety.md`（L-131 / **L-133**・`tools/mutation_guard.sh`） |

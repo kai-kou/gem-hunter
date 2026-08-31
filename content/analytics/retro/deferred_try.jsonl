@@ -73,3 +73,8 @@
 {"date": "2026-08-31 JST", "title": "priority:high が全件 type:retro-try である理由を監査し、優先度付与の SSOT を確認する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "Issue #626（Workers Builds 連携断）の blocking 関係を Issue 間で明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 626}
 {"date": "2026-08-31 JST", "title": "Stop フックの PR 存在確認をサブエージェント完了待ちのターンで重複させない", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "検査ツール新設時に既存ツールの緩和策・作法を継承する仕組みを作る", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 590}
+{"date": "2026-09-01 JST", "title": "self-test にエントリポイント→exit code の貫通と「実装本体を呼ぶこと」を必須化する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 710}
+{"date": "2026-09-01 JST", "title": "多層防御に対する変異テストの扱い（全層同時に潰す・単層 PASS の理由を記録）を SD-2 に明記する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 686}
+{"date": "2026-09-01 JST", "title": "background subtask 実行中は Stop フックのコミット要求と WIP 自動コミットを抑止するマーカーを実装する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-01 JST", "title": "修正サイクルのカウント基準（A-4 の集計単位）を共有化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
