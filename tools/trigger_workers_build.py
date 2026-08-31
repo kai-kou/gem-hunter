@@ -957,6 +957,41 @@ def _self_test_wait_for_build() -> list[str]:
     return failures
 
 
+def _self_test_emit_error_trigger_flag() -> list[str]:
+    """`--json` のエラー出力が trigger 0 件を機械可読フラグで区別することを固定する（#694）。
+
+    呼び出し側は文言の grep ではなく `trigger_not_configured` フィールドで分岐するため、
+    ここが落ちると Step 0.2 の exit 2 枝が「本番デプロイ経路が構成されていない」を
+    検出できなくなる。
+    """
+    failures: list[str] = []
+
+    def capture(message: str, *, flag: bool) -> dict[str, Any]:
+        buffer = io.StringIO()
+        original = sys.stdout
+        sys.stdout = buffer
+        try:
+            _emit_error(message, True, trigger_not_configured=flag)
+        finally:
+            sys.stdout = original
+        return json.loads(buffer.getvalue())
+
+    configured = capture("trigger が 0 件です", flag=True)
+    if configured.get("trigger_not_configured") is not True:
+        failures.append(
+            f"trigger 0 件のとき trigger_not_configured=True を期待: got={configured!r}"
+        )
+
+    other = capture("API が 500 を返しました", flag=False)
+    if "trigger_not_configured" in other:
+        failures.append(
+            f"trigger 0 件以外でフラグを立ててはいけない: got={other!r}"
+        )
+    if not other.get("error"):
+        failures.append(f"error フィールドが欠落している: got={other!r}")
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("Worker 名読み取りの例外 wrap", _self_test_read_worker_name_wraps_error),
@@ -972,6 +1007,7 @@ def run_self_test() -> int:
         ("workers/scripts ページング判定", _self_test_should_fetch_next_worker_scripts_page),
         ("ビルド結果の判定（build_wait_outcome）", _self_test_build_wait_outcome),
         ("ビルド完了待ち（wait_for_build）", _self_test_wait_for_build),
+        ("エラー JSON の trigger 未構成フラグ", _self_test_emit_error_trigger_flag),
     ]
     failed_groups = 0
     total_failures = 0
@@ -996,9 +1032,19 @@ def run_self_test() -> int:
 # ──────────────────────────────────────────────
 
 
-def _emit_error(message: str, as_json: bool) -> None:
+def _emit_error(message: str, as_json: bool, *, trigger_not_configured: bool = False) -> None:
+    """エラーを出力する。
+
+    `trigger_not_configured=True` のときは JSON に機械可読フラグを載せる（#694）。
+    呼び出し側（`sprint-cycle-router` Step 0.2 の exit 2 枝）が「判定不能」と
+    「本番デプロイ経路が構成されていない（trigger 0 件）」を **文言の grep ではなく
+    フィールドで** 区別できるようにするため。
+    """
     if as_json:
-        print(json.dumps({"error": message, "checked_at": now_jst_str()}, ensure_ascii=False))
+        payload: dict[str, Any] = {"error": message, "checked_at": now_jst_str()}
+        if trigger_not_configured:
+            payload["trigger_not_configured"] = True
+        print(json.dumps(payload, ensure_ascii=False))
     else:
         print(f"ERROR: {message}", file=sys.stderr)
 
@@ -1133,7 +1179,11 @@ def main() -> None:
     try:
         resolved = resolve_trigger(args.branch, account_id, token, WRANGLER_PATH)
     except (ApiError, OSError, ValueError) as error:
-        _emit_error(str(error), args.json)
+        _emit_error(
+            str(error),
+            args.json,
+            trigger_not_configured=isinstance(error, TriggerNotConfiguredError),
+        )
         sys.exit(exit_code_for("error"))
 
     worker_name = resolved["worker_name"]

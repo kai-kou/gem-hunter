@@ -124,8 +124,34 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
      （対象スクリプト名 + エラー種別。例 `repo:{owner}/{repo} is:issue is:open check_prod_drift`）を
      検索し、**既存 open Issue があれば追記コメント・無ければ新規起票する**（Step 3.5 や
      §9 の `[Milestone] M-3 到達` と同じ作法）。
-5. 2（`check_prod_drift.py` 自体が判定不能）→ 4 の「2（判定不能）」と同じ扱いで fail-closed 記録し、
-   §2 へ進む。
+5. 2（`check_prod_drift.py` 自体が判定不能）→ 🔴 **「判定不能」で止めず、根本原因まで踏み込む**（#694）:
+   5-1. `python3 tools/trigger_workers_build.py --dry-run --json --skip-gate-check` を実行し、
+        build trigger を実際に解決できるか確かめる（`--dry-run` は POST を止める安全な確認モード）。
+        出力 JSON に `"trigger_not_configured": true` があれば **trigger が 0 件**、すなわち
+        本番デプロイ経路そのものが繋がっていない（#626 の根本原因・診断文言の SSOT は
+        `tools/workers_build_diagnostics.py`）。
+   5-2. `[prod-drift]` の open Issue（無ければ 4 と同じ重複チェックを経て 1 件だけ起票）へ、
+        **機械可読マーカーで始まる 1 行** を含む追記コメントを書く。文言ではなくこのマーカーで
+        回数を数えるため、表現を変えない:
+        - trigger 0 件だった → `[prod-drift][経路未構成] Cloudflare の build trigger が 0 件です`
+          （検知日時 JST・worker 名・`check_prod_drift.py` のエラー内容を続けて書く）
+        - trigger は解決できた（原因未特定）→ `[prod-drift][判定不能] {エラー内容}`
+   5-3. そのコメント履歴を `mcp__github__issue_read(method="get_comments")` で取得して JSON 保存し、
+        `python3 tools/prod_drift_escalation.py --comments-file <path> --marker "<5-2 のマーカー>" --json`
+        を実行する。**新規 state ファイルは作らない**（判定材料はコメント履歴だけ・§0 の ephemeral 前提）。
+        - `escalate: false` → 記録だけで §2 へ進む（**単発の API エラーで通知しない**）。
+        - `escalate: true` → `python3 tools/slack_notify.py` で通知する。
+          `mention: true`（= `[prod-drift][経路未構成]` が閾値到達）のときだけ `@mention` する:
+          Cloudflare ダッシュボードで Workers Builds を接続し直す以外に復旧手段がなく、
+          飼い主のアカウント権限が物理的に必要なため **A-6** に該当する
+          （`user-notification-triage.md` §3 の必須要件 4 点を満たして書く: 具体的ユーザーアクション /
+          該当境界 A-6 / 取らない場合の結果 = main への push が本番に反映され続けない /
+          Claude 側の状態）。`mention: false` の判定不能は A 区分ではないので `@mention` しない。
+   5-4. 連続回数の閾値は **3 回**（`ESCALATION_THRESHOLD`）。根拠: 本ルーティンの cron 間隔は
+        2 時間（`docs/routines/sprint-cycle-routine.md`）なので 3 連続 ≒ 6 時間。一過性の
+        Cloudflare API エラーはこの窓を跨いで残らない一方、構成断線は何度 firing しても直らず
+        必ず 3 回に到達する。ドリフト解消・再トリガー成功時に 4 が書く進捗コメントは
+        `[prod-drift][解消]` で始め、連続カウントをリセットできるようにする。
 6. `trigger_workers_build.py` が存在しない場合（未デプロイ環境等）はスキップし、記録も起票もせず
    §2 へ進む（本ステップは #451 対策の一部であり、存在しない前提で決定木全体を止めない）。
 ```
