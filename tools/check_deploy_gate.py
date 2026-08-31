@@ -190,14 +190,20 @@ def _http_get(url: str, token: str) -> tuple[bool, str]:
     # 分岐し、トークンの値そのものはこのエラーメッセージへ一切含めない）。
     if _has_invalid_header_chars(token):
         return False, "GH_TOKEN/GITHUB_TOKEN にヘッダとして使えない文字（改行等）が含まれています"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "gem-hunter-check-deploy-gate",
-    }
-    req = urllib.request.Request(url, headers=headers, method="GET")
+    # 🔴 ヘッダの組み立て（トークンが式に現れる唯一の箇所）を `try` の **内側** に置く。
+    # 外に置くと、`Request()` が送出した例外がこの関数の外まで伝播し、main() の
+    # `except BaseException` が `str(e)` を出力する経路（＝トークンが平文で出うる経路）が
+    # 残る。下の総括 `except Exception` と合わせて、**この関数から出る値はすべて定数・
+    # 例外型名・HTTP ステータスだけ** になり、トークン由来の文字列は外へ出ない
+    # （`tools/check_prod_drift.py` の `count_build_triggers()` と同じ設計判断）。
     try:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "gem-hunter-check-deploy-gate",
+        }
+        req = urllib.request.Request(url, headers=headers, method="GET")
         with urllib.request.urlopen(req, timeout=30) as res:
             return True, res.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
@@ -206,6 +212,8 @@ def _http_get(url: str, token: str) -> tuple[bool, str]:
         return False, f"接続失敗（{type(e).__name__}）"
     except TimeoutError:
         return False, "リクエストがタイムアウトしました"
+    except Exception as e:  # noqa: BLE001 — 例外の「型名」だけを返し、値は外へ出さない
+        return False, f"REST 呼び出しに失敗しました（{type(e).__name__}）"
 
 
 def _fetch_paginated(url_template: str, token: str, max_pages: int) -> tuple[list, str | None]:
@@ -1789,7 +1797,7 @@ def _self_test_sanitize_secrets_patterns() -> list[str]:
     failures = []
     CANARY = "ghp_CANARY_MUST_NOT_LEAK_1234"
     # `gh[pousr]_` プレフィックスに一致しない不透明な秘匿値（②の保険パターンでは拾えず、
-    # ①③ が本当に `_BEARER_TOKEN_RE` 側の効果を検証していることを保証するため分離する）。
+    # ①③ が本当に `mask_secrets.mask_text()` 側（`Bearer` 表現）の効果を検証していることを保証するため分離する）。
     OPAQUE_SECRET = "XOPAQUE_SECRET_VALUE_1234567890"
 
     # ① Bearer 形式（gh プレフィックスに依らない不透明な値で、Bearer パターン単独の効果を確認）
@@ -2080,7 +2088,12 @@ def main() -> None:
 # 潰す。より本質的な対策は _http_get 側の源流検証（_has_invalid_header_chars で CR/LF
 # を含むトークンをヘッダ組み立て前に弾く）であり、そちらが唯一の現実的な混入経路自体を
 # 塞ぐ本命の対策になる（本関数はその上に重ねる保険）。
-_BEARER_TOKEN_RE = re.compile(r"Bearer\s+\S+")
+#
+# 🔴 `Bearer <値>` の伏字化は **自前で正規表現を持たず** `mask_secrets.mask_text()` を使う。
+# 同じパターンを 2 ファイルに置くと `tools/check_duplicate_source_patterns.py --strict` が
+# 未許可の重複として弾くうえ、片方だけ直したときに伏字化の強さが静かにずれる。
+# `secrets={}` を明示的に渡すと **環境変数を読まない純粋関数** として振る舞うため
+# （`mask_secrets.mask_text` の docstring）、CodeQL の source を持ち込まずに再利用できる。
 _GH_TOKEN_PREFIX_RE = re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}")
 _GH_PAT_PREFIX_RE = re.compile(r"github_pat_[A-Za-z0-9_]{20,}")
 
@@ -2089,11 +2102,15 @@ def _sanitize_secrets(message: str) -> str:
     """メッセージ中に紛れ込みうるトークン表現をパターンベースで伏字化する
     （レビュー指摘 CONFIRMED 1 / CodeQL 対応 2 サイクル目・詳細は本関数直前のコメント）。
     `os.environ.get(...)` を一切呼ばない（CodeQL の source そのものを関数から無くすため）。
+    `Bearer` 表現は `mask_secrets.mask_text(..., secrets={})` に委譲する（同上）。
     """
-    message = _BEARER_TOKEN_RE.sub("Bearer ***", message)
+    from mask_secrets import mask_text
+
+    message = mask_text(message, secrets={})
     message = _GH_TOKEN_PREFIX_RE.sub("***", message)
     message = _GH_PAT_PREFIX_RE.sub("***", message)
     return message
+
 
 def _emit_error(message: str, as_json: bool) -> None:
     # `_emit_error` は main() の複数箇所（fetch エラー・未捕捉例外の両方）から呼ばれる
