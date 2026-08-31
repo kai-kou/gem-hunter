@@ -569,6 +569,28 @@ else
   skip_check "Workers Builds 再トリガー self-test (trigger_workers_build.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# build trigger 診断メッセージの共通モジュール self-test（Issue #693）。文書とロジックだけで完結する。
+if [ -f "$REPO_ROOT/tools/workers_build_diagnostics.py" ]; then
+  run_check "build trigger 診断メッセージ self-test (workers_build_diagnostics.py --self-test)" python3 tools/workers_build_diagnostics.py --self-test
+else
+  skip_check "build trigger 診断メッセージ self-test (workers_build_diagnostics.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# 本番ドリフト escalate 判定の self-test（Issue #694）。本判定は [prod-drift] Issue のコメント JSON を
+# 引数に取るため配線しない（GitHub API 依存・trigger_workers_build.py と同じ理由）。
+if [ -f "$REPO_ROOT/tools/prod_drift_escalation.py" ]; then
+  run_check "本番ドリフト escalate 判定 self-test (prod_drift_escalation.py --self-test)" python3 tools/prod_drift_escalation.py --self-test
+else
+  skip_check "本番ドリフト escalate 判定 self-test (prod_drift_escalation.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# 消化モードの保留サーキットブレーカー self-test（Issue #690）。本判定は Issue コメント JSON 依存のため配線しない。
+if [ -f "$REPO_ROOT/tools/consume_hold_guard.py" ]; then
+  run_check "消化モード保留ガード self-test (consume_hold_guard.py --self-test)" python3 tools/consume_hold_guard.py --self-test
+else
+  skip_check "消化モード保留ガード self-test (consume_hold_guard.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # レーン定義のスキルが実装（決定木・他スキルの手順・hooks）から到達可能かの検査（Issue #377）。
 # 本判定（引数なし実行）も文書だけで完結しネットワークに出ないため、self-test と両方を配線する。
 # これが赤いときは「レーンマップに書いてあるのに誰も呼ばない」断絶が生まれている。

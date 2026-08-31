@@ -356,8 +356,10 @@ ELSE（{{...}} 雛形のまま＝bootstrap 直後のプロジェクト）:
 コメントを残す。旧表記（`[consume-batch] 保留:` / `## 消化モード: 設計判断の記録`）は使わない。
 
 ```
+
 [consume-hold] 保留(N 回目): {理由 1 文} / 着手へ移る条件: {条件}
-```
+
+````
 
 🔴 **「着手へ移る条件」は必須**。「何が決まれば着手できるか」を具体化する（「状況の変化なし」
 「様子を見る」のような無内容な条件は書かない）。着手したときは `[consume-start] 着手（{根拠}）` を
@@ -370,7 +372,7 @@ ELSE（{{...}} 雛形のまま＝bootstrap 直後のプロジェクト）:
 # 対象 Issue のコメントを mcp__github__issue_read(method="get_comments") で取得して JSON 保存 → 判定
 python3 tools/consume_hold_guard.py --comments-file /tmp/comments.json --json   # exit 1 = 保留不可
 python3 tools/consume_hold_guard.py --validate-comment-file - <<< "$body"       # 投稿前に必須項目を検証
-```
+````
 
 `can_hold: false`（保留 2 回に到達済み）なら 3 回目の保留は選べない。次のいずれかを実行する:
 
@@ -378,15 +380,16 @@ python3 tools/consume_hold_guard.py --validate-comment-file - <<< "$body"       
 2. **`@owner` に priority / sp の再査定を諮る**（整理モードの「取り組む」出口と同じ扱い）
 3. **`status:waiting-user` へ移す**（ユーザー判断が要る点を 1 文で名指しする）
 
-3. 放置検出:
+4. 放置検出:
    - type:improvement / retro-try で7日以上 updatedAt が古いものを検出
    - サーキットブレーカー: 3サイクル試行しても進まないものは status:blocked + 理由コメント
    - **在庫が 30 件を超えたら整理モードを先に実行する**（「多すぎて選べない」状態の解消）
 
-4. 報告: 消化件数・残数・放置検出結果（**在庫増加率 vs 消化率**を明記）:
+5. 報告: 消化件数・残数・放置検出結果（**在庫増加率 vs 消化率**を明記）:
    - 当日 created（status:waiting-claude 付与）件数 = in flow
    - 当日 closed もしくは status:waiting-claude 解除 件数 = out flow
    - out < in が3日続く場合は CP-3 衛生アラートとして発見モードにエスカレーション
+
 ```
 
 ---
@@ -417,3 +420,4 @@ python3 tools/consume_hold_guard.py --validate-comment-file - <<< "$body"       
 | `.claude/skills/discussion-review/SKILL.md` | Step G-6 のグレーゾーン精査（専門チーム議論）の実行手段                                                                                                                                              |
 | `docs/rules/session-sprint-rules.md`        | SP 基準（§3）・PO=@owner（§4）                                                                                                                                                                       |
 | `.claude/agents/owner.md`                   | PO ロール定義（`priority:` / `sp:` ホワイトリスト）                                                                                                                                                  |
+```
