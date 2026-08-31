@@ -262,20 +262,23 @@ Layer 1 セルフレビュー（観点「判定ロジックの適用範囲」）
 
 ---
 
-## L-144: Dependabot のグループ分割は、どちらの PR 単体でも解決できない peer 競合を作る（2026-09-01・PR #755 / #756）
+## L-144: Dependabot のグループ分割は、後発 PR 単体では解決できない peer 競合を作る（2026-09-01・PR #755 / #756）
 
 **症状**: Dependabot が `npm-production` と `npm-development` の 2 グループに分けて PR を作ると、
 **片方のグループの更新がもう片方の peer 制約を要求する** 組み合わせで、後発 PR の CI が
 `npm ci` の `ERESOLVE` で赤くなる。実測（PR #756・head `6899b7f`）:
 
 ```
-peer next@">=15.5.24 <16 || >=16.3.3" from @opennextjs/cloudflare@1.20.4
-Found: next@16.3.2
+npm error Found: next@16.3.2
+npm error peer next@">=15.5.24 <16 || >=16.3.3" from @opennextjs/cloudflare@1.20.4
+npm error Conflicting peer dependency: next@16.3.4
 ```
 
 `@opennextjs/cloudflare` 1.20.4（dev グループ・#756）が `next >= 16.3.3` を要求する一方、
 `next` 16.3.2 → 16.3.3 は **production グループ（#755）** にあった。各 PR はそれぞれの
-base（`main`）に対して lock を生成するため、**どちらを単体で見ても解決不能** な状態になる。
+base（`main`）に対して lock を生成するため、**後発（依存する側）の PR は自分の base だけを見ている
+限り解決不能** になる（依存される側の更新が `main` に入るまで直しようがない）。逆に **依存される側の
+#755 は単体で CI 緑** であり、この非対称性こそが下の対策 1（先にマージする）の根拠になっている。
 
 **やってはいけないこと**: この赤を「Dependabot の壊れた PR」とみなして close する・
 `--legacy-peer-deps` / `--force` を足して通す・lock を手で書き換える。いずれも
