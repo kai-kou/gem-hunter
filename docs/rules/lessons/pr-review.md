@@ -198,8 +198,10 @@ For example, a `code-review` skill in your project's `.claude/skills/` replaces 
 クラウド実行環境のトークンでは `403 Resource not accessible by integration` を返す
 （`mcp__github__*` にも code scanning の読み取りツールは無い）。
 
-**対処**: **check-run の annotations API は同じトークンで 200 が返る**。`get_check_runs` で
-`CodeQL` の check run ID を取り、次を叩けばファイル・行・列・クエリ名・メッセージが取れる。
+**対処**: **check-run の annotations API は同じトークンで 200 が返る**（2026-08-31 実測）。
+`mcp__github__pull_request_read`（`method="get_check_runs"`）で `CodeQL` の check run ID を取り、
+次を叩けばファイル・行・列・クエリ名・メッセージが取れる（annotations を返す MCP ツールは無い。
+`mcp__github__get_check_run` は `output.summary` までで、指摘箇所は含まれない）。
 
 ```bash
 curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
@@ -211,6 +213,13 @@ curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+
 **やってはいけないこと**: 詳細を取れないまま「差分を読んで原因を推測 → 直して push → CI を見る」を
 繰り返す（1 サイクル数分かかるうえ、A-4 のサーキットブレーカーを空振りで消費する）。**推測で直す前に
 annotations を取る**。
+
+🔴 **直叩きを一次経路と読み替えないこと**。`github-mcp-fallback-patterns.md` §1 は長らく
+「`curl` 直叩きは 403 でフォールバックにならない」と記録しており、2026-08-31 の再検証で 200 へ
+回帰したことを同 §1.1 と `cloud-environment.md` L-114 に反映した（#684）。**可否は 1 か月に 5 回
+変わった実績がある**ため、暗記せずその場で HTTP コードを計測してから使う。直叩きが要るのは
+本件のように **MCP にツールが無い読み取り** だけで、それ以外は従来どおり `mcp__github__*` が一次経路。
+なお `code-scanning/*` は 2026-08-31 時点でも 403（プロキシではなく GitHub App トークンの権限不足）。
 
 **あわせて（実例）**: このとき指摘された 3 つの source は `mask_secrets.mask_text()` が既定で読む
 `CLOUDFLARE_API_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` で、置換先に `mask_value()`（先頭・末尾 4 文字を

@@ -91,6 +91,7 @@ bash 停止中も MCP（GitHub 操作）・Write/Edit・コミットは `mcp__gi
   An org admin must connect the Claude GitHub App for this organization.」
 - ❌ GraphQL は 403「only the pinned set of PR-review operations is served」
 - ❌ `curl`/`urllib` 直叩きは `Authorization` 有無・`Bearer proxy-injected`・実 `GH_TOKEN` とも同一 403
+  - 🔴 **2026-08-31 再検証で repo スコープ REST の直叩きは 200 へ回帰した**（`/repos/{o}/{r}`・`/pulls`・`/issues`・`/actions/runs`・`/commits/{sha}/check-runs`・`/check-runs/{id}/annotations`）。ただし `code-scanning/*` は 403 のまま（プロキシではなくトークン権限不足）。**可否は 1 か月に 5 回変わっており、直叩きを一次経路にしない**（一次経路は MCP のまま）。使うのは「MCP にツールが無い読み取り」に限り、使う前にその場で HTTP コードを計測する。実測表は `github-mcp-fallback-patterns.md` §1.1（#684 / PR #729）
 - ✅ **MCP（`mcp__github__*`）と git 操作は生存**（どちらも API プロキシを通らない別系統）
 
 **根本原因**: プロキシは GitHub API リクエストを **セッションに attach されたリポジトリに限定** する
