@@ -228,12 +228,18 @@ def select_latest_deployment(data: object) -> tuple[dict | None, str | None]:
     return {"version_id": version_id, "created_on": latest.get("created_on")}, None
 
 
-def count_build_triggers() -> tuple[int, str | None] | None:
-    """Cloudflare の build trigger 件数を実測する（読み取り専用・#693）。
+def count_build_triggers() -> int | None:
+    """Cloudflare の build trigger 件数 **だけ** を返す（読み取り専用・#693）。
 
     判定材料が揃わないとき（トークン未供給・API 失敗・wrangler.jsonc 不在）は
     **`None` を返して「分からない」と表明する**。0 件と混同すると、単なる権限不足を
     「デプロイ経路が構成されていない」と誤って断定してしまう（fail-safe）。
+
+    🔴 **worker 名・tag のような値を返さない**。この関数は API トークンを扱うため、
+    ここから返した値を診断メッセージへ載せると「秘匿値を扱う経路から出力へ値が流れる」
+    形になり、静的解析（CodeQL の clear-text logging）が high として検知する。
+    診断メッセージ側は `workers_build_diagnostics.no_triggers_message()` の定数文言
+    だけで成立する（worker 名は `wrangler.jsonc` を見れば分かる）。
     """
     account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
     token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
@@ -252,11 +258,7 @@ def count_build_triggers() -> tuple[int, str | None] | None:
         worker_tag = worker_tag_from_scripts(fetch_worker_scripts(account_id, token), worker_name)
         if worker_tag is None:
             return None
-        # 🔴 worker_tag（API 応答由来）は返さない。診断メッセージへ持ち込むと、
-        # 秘匿値を扱う経路から出力へ値が流れる形になり、静的解析（CodeQL の
-        # clear-text logging）が検知する。件数（int）と wrangler.jsonc 由来の
-        # worker 名だけで診断は十分成り立つ。
-        return len(fetch_build_triggers(account_id, token, worker_tag)), worker_name
+        return len(fetch_build_triggers(account_id, token, worker_tag))
     except Exception:  # noqa: BLE001 — 診断の精緻化は本判定を止めてまで行わない
         return None
 
@@ -264,7 +266,7 @@ def count_build_triggers() -> tuple[int, str | None] | None:
 def refine_no_deployment_reason(
     reason: str | None,
     *,
-    count_triggers: Callable[[], tuple[int, str | None] | None] = count_build_triggers,
+    count_triggers: Callable[[], int | None] = count_build_triggers,
 ) -> tuple[str | None, bool]:
     """「実デプロイ実績なし」を build trigger の実件数で切り分ける（#693）。
 
@@ -275,12 +277,11 @@ def refine_no_deployment_reason(
     """
     if reason != REASON_NO_DEPLOYMENT_FOUND:
         return reason, False
-    counted = count_triggers()
-    if counted is None:
+    count = count_triggers()
+    if count is None:
         return reason, False
-    count, worker_name = counted
     if count == 0:
-        return no_triggers_message(worker_name), True
+        return no_triggers_message(), True
     return reason, False
 
 
@@ -522,21 +523,15 @@ def _self_test_refine_no_deployment_reason() -> list[str]:
 
     failures: list[str] = []
 
-    reason, flag = refine_no_deployment_reason(
-        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (0, "gem-hunter"),
-    )
+    reason, flag = refine_no_deployment_reason(REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: 0)
     if NO_TRIGGERS_REGISTERED_HINT not in reason:
         failures.append(f"trigger 0 件で共通診断へ差し替わっていない: {reason!r}")
-    if "worker=gem-hunter" not in reason:
-        failures.append(f"worker 名のコンテキストが伝わっていない: {reason!r}")
-    if "tag=" in reason:
-        failures.append(f"API 応答由来の worker_tag を診断へ持ち込んではいけない: {reason!r}")
+    if "#626" not in reason:
+        failures.append(f"復旧導線（次に何をすればよいか）が失われている: {reason!r}")
     if not flag:
         failures.append("trigger 0 件で trigger_not_configured フラグが立っていない")
 
-    reason, flag = refine_no_deployment_reason(
-        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (2, "gem-hunter"),
-    )
+    reason, flag = refine_no_deployment_reason(REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: 2)
     if reason != REASON_NO_DEPLOYMENT_FOUND or flag:
         failures.append(f"trigger 1 件以上では従来文言のままにする: {reason!r} flag={flag}")
 
@@ -548,7 +543,7 @@ def _self_test_refine_no_deployment_reason() -> list[str]:
         failures.append(f"件数を取れないときは従来文言のままにする: {reason!r} flag={flag}")
 
     other = "本番デプロイが段階昇格中のため判定不能です"
-    reason, flag = refine_no_deployment_reason(other, count_triggers=lambda: (0, "w"))
+    reason, flag = refine_no_deployment_reason(other, count_triggers=lambda: 0)
     if reason != other or flag:
         failures.append(f"別の理由まで差し替えてはいけない: {reason!r} flag={flag}")
 
