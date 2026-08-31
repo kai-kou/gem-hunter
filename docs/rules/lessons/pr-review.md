@@ -259,3 +259,39 @@ Layer 1 セルフレビュー（観点「判定ロジックの適用範囲」）
 「正しい記述が書けなくなる」「本物の警告が埋もれる」という実害があるため放置しない。
 
 **関連**: #244（コードブロック内の例示を実値と誤認した先行事例）/ #590（初版に毎回同じ欠陥が入る）/ #695（非スプリント PR での誤発火）
+
+---
+
+## L-144: Dependabot のグループ分割は、どちらの PR 単体でも解決できない peer 競合を作る（2026-09-01・PR #755 / #756）
+
+**症状**: Dependabot が `npm-production` と `npm-development` の 2 グループに分けて PR を作ると、
+**片方のグループの更新がもう片方の peer 制約を要求する** 組み合わせで、後発 PR の CI が
+`npm ci` の `ERESOLVE` で赤くなる。実測（PR #756・head `6899b7f`）:
+
+```
+peer next@">=15.5.24 <16 || >=16.3.3" from @opennextjs/cloudflare@1.20.4
+Found: next@16.3.2
+```
+
+`@opennextjs/cloudflare` 1.20.4（dev グループ・#756）が `next >= 16.3.3` を要求する一方、
+`next` 16.3.2 → 16.3.3 は **production グループ（#755）** にあった。各 PR はそれぞれの
+base（`main`）に対して lock を生成するため、**どちらを単体で見ても解決不能** な状態になる。
+
+**やってはいけないこと**: この赤を「Dependabot の壊れた PR」とみなして close する・
+`--legacy-peer-deps` / `--force` を足して通す・lock を手で書き換える。いずれも
+peer 制約の実体（本当に新しい `next` が要る）を消さない。
+
+**対策（順序が全て）**:
+
+1. **依存される側のグループを先にマージする**（この例では production の #755）
+2. 後発 PR の **ブランチを `main` で更新する**（`mcp__github__update_pull_request_branch`。
+   lock は領域が離れているため通常は自動マージできる。競合したときだけ `@dependabot rebase`）
+3. 更新後の head で **CI と層 2（`bash tools/run_checks.sh`）を測り直す**。
+   前の head の結果を流用しない（測った対象が別のツリーになっている・L-113）
+
+**判定のヒント**: `checks` が 10 秒前後で failure に終わっていたら、テスト失敗ではなく
+依存解決（`npm ci`）の失敗を疑う。ログ末尾の `npm error Conflicting peer dependency:` が決定打。
+
+**関連**: `D-43`（bot 自動化 PR も回収対象）/ `docs/rules/pr-review-flow-summary.md`
+「セッション復帰（PR 放置検出）」。放置すると `open-pull-requests-limit` に達して
+Dependabot が黙って止まるため、赤いまま寝かせない。
