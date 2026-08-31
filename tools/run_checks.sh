@@ -302,6 +302,14 @@ else
   skip_check "ADR / README 記載検査 (check_adr_coverage.py)" "スクリプトが見つかりません"
 fi
 
+# 4.71. 決定 ID（D-n）の参照が open-questions.md に実在するかの検査（Issue #724 の再発防止）。
+if [ -f "$REPO_ROOT/tools/check_decision_ids.py" ]; then
+  run_check "決定 ID 参照検査 (check_decision_ids.py)" python3 tools/check_decision_ids.py
+  run_check "決定 ID 参照検査 self-test (check_decision_ids.py --self-test)" python3 tools/check_decision_ids.py --self-test
+else
+  skip_check "決定 ID 参照検査 (check_decision_ids.py)" "スクリプトが見つかりません"
+fi
+
 # 4.75. レート制限の配線検査（Issue #442 の再発防止）。
 #       Cloudflare Rate Limiting は binding 宣言だけでは何も起きず、しかもフェイルオープン設計のため
 #       「配線し忘れ」と「正常」が実行時に区別できない。cloudflare-infrastructure.md の適用経路表

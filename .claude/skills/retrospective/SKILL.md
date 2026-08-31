@@ -156,7 +156,7 @@ reproducible な YES/NO 問い。`try.priority` フィールドの値をその�
 ```
 Q1 または Q2 が YES？（Q3 は判定に使わない）
   ├─ YES（priority:high 相当）→ Step 3-A（重複チェック。quota と無関係に常時実行）
-  │      ├─ 類似 Issue あり → Step 3-B（既存 Issue へコメント追記。quota を消費しない）
+  │      ├─ 類似 Issue あり → Step 3-B（既存 Issue へコメント追記。quota を消費しない）**かつ** 見送りログに `defer_reason: "high_commented"` で追記（Issue化しない。優先度は高いが既存 Issue への追記で完了した旨を記録する・#727）
   │      └─ 類似 Issue なし → 起票上限ゲート（1 回のレトロ実行あたり新規 Issue 作成は最大 5 件）
   │             ├─ 上限内 → Step 3-C（新規 Issue 作成。quota を 1 消費）
   │             └─ 上限到達 → 見送りログに `defer_reason: "over_quota"` で追記（Issue化しない。今回は起票せず次回へ持ち越す）
@@ -190,14 +190,23 @@ Q1 または Q2 が YES？（Q3 は判定に使わない）
 }
 ```
 
-| フィールド       | 内容                                                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `date`           | 見送り判定日（JST・`YYYY-MM-DD JST`）                                                                                          |
-| `title`          | `try.title`                                                                                                                    |
-| `q1` / `q2`      | 判定結果（`"YES"` / `"NO"`）                                                                                                   |
-| `defer_reason`   | `"medium"`（優先度不足・重複なし）/ `"over_quota"`（上限超過）/ `"low_single_file"`（lessons 直記載と併記）                    |
-| `related_issue`  | 既存 Issue へコメント追記した場合はその番号、無ければ `null`（`low_single_file` の場合は lessons の `L-{N}` を文字列で入れる） |
-| `reevaluated_at` | 持ち越しを合流・再評価した日時（未再評価なら省略。ある行は「消費済み」の印）                                                   |
+| フィールド       | 内容                                                                                                                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `date`           | 見送り判定日（JST・`YYYY-MM-DD JST`）                                                                                                                                                                                                 |
+| `title`          | `try.title`                                                                                                                                                                                                                           |
+| `q1` / `q2`      | 判定結果（`"YES"` / `"NO"`）                                                                                                                                                                                                          |
+| `defer_reason`   | `"medium"`（優先度不足・重複なし）/ `"over_quota"`（上限超過）/ `"low_single_file"`（lessons 直記載と併記）/ `"high_commented"`（priority:high 相当だが既存 Issue へ追記して完了・#727）                                              |
+| `related_issue`  | 既存 Issue へコメント追記した場合はその番号、無ければ `null`（`low_single_file` の場合は lessons の `L-{N}` を文字列で入れる）。🔴 `defer_reason` が `high_commented` のときは **必須**（`null` 不可・追記先 Issue 番号を必ず入れる） |
+| `reevaluated_at` | 持ち越しを合流・再評価した日時（未再評価なら省略。ある行は「消費済み」の印）                                                                                                                                                          |
+
+🔴 **`defer_reason` と `q1`/`q2` の組み合わせ整合性（#727・`tools/check_deferred_try_jsonl.py` が機械検査する）**: `defer_reason` は「Q1/Q2 が high 相当（YES）だったか」を裏切ってはならない。
+
+| `defer_reason`                  | 許可される `q1`/`q2`               | 意味                                                               |
+| ------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `medium` / `low_single_file`    | `q1 == "NO"` かつ `q2 == "NO"`     | priority:high 相当ではなかった見送り                               |
+| `over_quota` / `high_commented` | `q1 == "YES"` または `q2 == "YES"` | priority:high 相当だった見送り（上限超過 / 既存 Issue 追記で完了） |
+
+🔴 **`high_commented` は `related_issue` も必須**（`null` 不可）。「既存 Issue へ追記して完了した」という値の意味そのものが追記先 Issue 番号を要求するため（`tools/check_deferred_try_jsonl.py` が機械検査する）。
 
 追記コマンド:
 
