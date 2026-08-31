@@ -228,7 +228,7 @@ def select_latest_deployment(data: object) -> tuple[dict | None, str | None]:
     return {"version_id": version_id, "created_on": latest.get("created_on")}, None
 
 
-def count_build_triggers() -> tuple[int, str | None, str | None] | None:
+def count_build_triggers() -> tuple[int, str | None] | None:
     """Cloudflare の build trigger 件数を実測する（読み取り専用・#693）。
 
     判定材料が揃わないとき（トークン未供給・API 失敗・wrangler.jsonc 不在）は
@@ -252,7 +252,11 @@ def count_build_triggers() -> tuple[int, str | None, str | None] | None:
         worker_tag = worker_tag_from_scripts(fetch_worker_scripts(account_id, token), worker_name)
         if worker_tag is None:
             return None
-        return len(fetch_build_triggers(account_id, token, worker_tag)), worker_name, worker_tag
+        # 🔴 worker_tag（API 応答由来）は返さない。診断メッセージへ持ち込むと、
+        # 秘匿値を扱う経路から出力へ値が流れる形になり、静的解析（CodeQL の
+        # clear-text logging）が検知する。件数（int）と wrangler.jsonc 由来の
+        # worker 名だけで診断は十分成り立つ。
+        return len(fetch_build_triggers(account_id, token, worker_tag)), worker_name
     except Exception:  # noqa: BLE001 — 診断の精緻化は本判定を止めてまで行わない
         return None
 
@@ -260,7 +264,7 @@ def count_build_triggers() -> tuple[int, str | None, str | None] | None:
 def refine_no_deployment_reason(
     reason: str | None,
     *,
-    count_triggers: Callable[[], tuple[int, str | None, str | None] | None] = count_build_triggers,
+    count_triggers: Callable[[], tuple[int, str | None] | None] = count_build_triggers,
 ) -> tuple[str | None, bool]:
     """「実デプロイ実績なし」を build trigger の実件数で切り分ける（#693）。
 
@@ -274,9 +278,9 @@ def refine_no_deployment_reason(
     counted = count_triggers()
     if counted is None:
         return reason, False
-    count, worker_name, worker_tag = counted
+    count, worker_name = counted
     if count == 0:
-        return no_triggers_message(worker_name, worker_tag), True
+        return no_triggers_message(worker_name), True
     return reason, False
 
 
@@ -519,17 +523,19 @@ def _self_test_refine_no_deployment_reason() -> list[str]:
     failures: list[str] = []
 
     reason, flag = refine_no_deployment_reason(
-        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (0, "gem-hunter", "tag-1"),
+        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (0, "gem-hunter"),
     )
     if NO_TRIGGERS_REGISTERED_HINT not in reason:
         failures.append(f"trigger 0 件で共通診断へ差し替わっていない: {reason!r}")
     if "worker=gem-hunter" not in reason:
-        failures.append(f"worker / tag のコンテキストが伝わっていない: {reason!r}")
+        failures.append(f"worker 名のコンテキストが伝わっていない: {reason!r}")
+    if "tag=" in reason:
+        failures.append(f"API 応答由来の worker_tag を診断へ持ち込んではいけない: {reason!r}")
     if not flag:
         failures.append("trigger 0 件で trigger_not_configured フラグが立っていない")
 
     reason, flag = refine_no_deployment_reason(
-        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (2, "gem-hunter", "tag-1"),
+        REASON_NO_DEPLOYMENT_FOUND, count_triggers=lambda: (2, "gem-hunter"),
     )
     if reason != REASON_NO_DEPLOYMENT_FOUND or flag:
         failures.append(f"trigger 1 件以上では従来文言のままにする: {reason!r} flag={flag}")
@@ -542,7 +548,7 @@ def _self_test_refine_no_deployment_reason() -> list[str]:
         failures.append(f"件数を取れないときは従来文言のままにする: {reason!r} flag={flag}")
 
     other = "本番デプロイが段階昇格中のため判定不能です"
-    reason, flag = refine_no_deployment_reason(other, count_triggers=lambda: (0, "w", "t"))
+    reason, flag = refine_no_deployment_reason(other, count_triggers=lambda: (0, "w"))
     if reason != other or flag:
         failures.append(f"別の理由まで差し替えてはいけない: {reason!r} flag={flag}")
 
@@ -610,6 +616,9 @@ def _emit_error(message: str, as_json: bool, *, trigger_not_configured: bool = F
     `trigger_workers_build.py` の `_emit_error` と同じフィールド名にしてあるので、
     呼び出し側（`sprint-cycle-router` Step 0.2）は 2 本のスクリプトを同じ形で扱える。
     """
+    # 秘匿値（API トークン等）が外部コマンドのエラー文言経由で混ざりうるため、
+    # 印字の直前で必ずマスクする（`_run` の 1 箇所だけに頼らない）。
+    message = mask_text(message) or message
     if as_json:
         payload = {"drifted": None, "error": message, "checked_at": now_jst_str()}
         if trigger_not_configured:
