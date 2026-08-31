@@ -167,10 +167,29 @@ def _run_gh(args: list[str]) -> tuple[bool, str]:
     return True, result.stdout.strip()
 
 
+def _has_invalid_header_chars(token: str) -> bool:
+    """`token` が HTTP ヘッダ値として不正な文字（CR/LF）を含むかどうかを判定する。
+
+    【CodeQL 対応・源流対策（PR #735・2 サイクル目）】戻り値は **bool のみ**。
+    呼び出し側はこの bool だけを使い、`token` の値自体をメッセージ・例外へは一切渡さない
+    （bool を経由する分には CodeQL の taint source から出力への経路が構築されない）。
+    CR/LF を含むトークンをそのまま `Authorization` ヘッダへ渡すと、`http.client.putheader`
+    が `ValueError: Invalid header value b'Bearer <トークン全文>...'` を送出し、その例外の
+    `str(e)` にトークン実値がそのまま埋まる（CONFIRMED 1 で実測した唯一の現実的な平文
+    漏洩経路）。ここで事前に弾いて `urlopen` を呼ばせなければ、その例外自体が発生しなくなる。
+    """
+    return any(c in token for c in "\r\n")
+
+
 def _http_get(url: str, token: str) -> tuple[bool, str]:
     """GitHub REST を GET する。token をサブプロセス引数に載せず Python プロセス内で
     ヘッダを組み立てる（`ps` / `/proc/<pid>/cmdline` 経由の露出防止・既存パターン踏襲）。
     """
+    # 【CodeQL 対応・源流対策】トークンに CR/LF が混ざっている場合はヘッダを組み立てず、
+    # `urlopen` を呼ぶ前にここで弾く（`_has_invalid_header_chars` の bool 判定のみで
+    # 分岐し、トークンの値そのものはこのエラーメッセージへ一切含めない）。
+    if _has_invalid_header_chars(token):
+        return False, "GH_TOKEN/GITHUB_TOKEN にヘッダとして使えない文字（改行等）が含まれています"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -1704,38 +1723,143 @@ def _self_test_main_unhandled_exception() -> list[str]:
     return failures
 
 
-def _self_test_main_token_sanitization() -> list[str]:
-    """レビュー指摘 CONFIRMED 1: `GH_TOKEN` の実値が未捕捉例外のメッセージに埋まっていても、
-    `main()` の出力（stdout の JSON / stderr のテキスト）にトークン実値が 1 文字も現れない
-    ことをエントリポイントから実測する（`_http_get` が `Authorization: Bearer <token>` を
-    組み立てる際、トークンに不正な文字が混ざっていると `http.client` が
-    `ValueError: Invalid header value b'Bearer <トークン全文>...'` を送出し、この例外は
-    `_http_get` の `except`（HTTPError/URLError/TimeoutError）を素通りして `main()` の
-    未捕捉例外ハンドラまで届く実測済みの経路・CONFIRMED 1 の再現ケース）。
-    `--json`（stdout）・非 JSON（stderr）の両方の出力経路を検査する。
+def _self_test_http_get_header_validation() -> list[str]:
+    """CodeQL 対応 2 サイクル目・源流対策（PR #735）: `_http_get` はトークンに CR/LF が
+    混ざっている場合、`urlopen` を呼ばずに（＝ `http.client.putheader` の `ValueError` を
+    発生させる前に）エラーを返す。判定は `_has_invalid_header_chars` の bool のみに
+    基づき、返すエラーメッセージにトークンの値を一切含めない。
+    正常なトークン（制御文字なし）は従来どおり `urlopen` まで到達することも確認する
+    （事前検証が過剰に広く効いて正常系まで弾いていないか）。
+    """
+    failures = []
+    orig_urlopen = urllib.request.urlopen
+    CANARY = "ghp_CANARY_MUST_NOT_LEAK_1234"
 
-    あわせて次の再発防止ケースを含む:
-      - トークン自体に実際の CR/LF を埋め込み、`http.client.putheader` が送出する
-        bytes repr 形式のメッセージを忠実に再現するケース（CRITICAL 1: 値そのものの
-        単純 `str.replace` だけでは、エスケープ済み表現との不一致で空振りしていた）
-      - 短い値・空白のみの値では無関係なメッセージ全文を巻き添えにしないケース
-        （WARNING 3: `MIN_SECRET_LEN` 未満は対象外にする）
+    try:
+        for bad_token, label in (
+            (CANARY + "\r\nX-Evil: 1", "CR+LF+ヘッダ注入"),
+            (CANARY + "\r", "CRのみ（末尾）"),
+            (CANARY + "\n", "LFのみ（末尾）"),
+        ):
+            called = {"count": 0}
+
+            def fail_if_called(*args, **kwargs):
+                called["count"] += 1
+                raise AssertionError("urlopen が呼ばれた（事前検証をすり抜けた）")
+
+            urllib.request.urlopen = fail_if_called
+            ok, msg = _http_get("https://api.github.com/x", bad_token)
+            if ok:
+                failures.append(f"{label}: ok=True になった（CR/LF を弾けていない）")
+            if CANARY in msg:
+                failures.append(f"{label}: エラーメッセージにトークンが含まれている: {msg!r}")
+            if called["count"] != 0:
+                failures.append(f"{label}: urlopen が {called['count']} 回呼ばれた（弾けていない）")
+
+        # 正常なトークン（制御文字なし）は urlopen まで到達することを確認する
+        # （実際のネットワーク呼び出しはせず、到達したことだけを検知して例外で打ち切る）
+        reached = {"yes": False}
+
+        def mark_reached_then_fail(*args, **kwargs):
+            reached["yes"] = True
+            raise urllib.error.URLError("selftest: ネットワークは呼ばない")
+
+        urllib.request.urlopen = mark_reached_then_fail
+        _http_get("https://api.github.com/x", CANARY)
+        if not reached["yes"]:
+            failures.append("正常トークン: 事前検証が誤って正常系まで弾いた（urlopen 未到達）")
+    finally:
+        urllib.request.urlopen = orig_urlopen
+
+    return failures
+
+
+def _self_test_sanitize_secrets_patterns() -> list[str]:
+    """CodeQL 対応 2 サイクル目（PR #735）: `_sanitize_secrets` は `os.environ.get(...)` を
+    一切読まず、出力に紛れうるトークン表現を正規表現パターンで伏字化する。
+
+    ① `Bearer <トークン>` 形式（唯一の現実的な混入経路・CONFIRMED 1 の再現形）
+    ② GitHub トークンの既知プレフィックス（`Bearer` が無くても伏字化される保険）
+    ③ 同一表現の複数出現がすべて伏字化される（`re.sub` は既定でグローバル置換）
+    ④ env を一切読まないことの確認: `GH_TOKEN`/`GITHUB_TOKEN` にどんな値（空白のみ・
+       1文字等）を設定しても、パターンに一致しない無関係なメッセージは変化しない
+       （旧実装の「短い env 値が無関係なテキストと部分一致して全文を破壊する」という
+       事故クラスは、この関数が env を読まなくなったことで構造的に起こりえない）
+    """
+    failures = []
+    CANARY = "ghp_CANARY_MUST_NOT_LEAK_1234"
+    # `gh[pousr]_` プレフィックスに一致しない不透明な秘匿値（②の保険パターンでは拾えず、
+    # ①③ が本当に `_BEARER_TOKEN_RE` 側の効果を検証していることを保証するため分離する）。
+    OPAQUE_SECRET = "XOPAQUE_SECRET_VALUE_1234567890"
+
+    # ① Bearer 形式（gh プレフィックスに依らない不透明な値で、Bearer パターン単独の効果を確認）
+    msg = f"Invalid header value b'Bearer {OPAQUE_SECRET}'"
+    out = _sanitize_secrets(msg)
+    if OPAQUE_SECRET in out or "Bearer ***" not in out:
+        failures.append(f"①Bearer形式: 伏字化できていない: {out!r}")
+
+    # ② 既知プレフィックス（Bearer を伴わない単独出現でも伏字化される）
+    for prefix_token in (
+        "ghp_" + "A" * 30, "gho_" + "B" * 30, "ghu_" + "C" * 30,
+        "ghs_" + "D" * 30, "ghr_" + "E" * 30, "github_pat_" + "F" * 30,
+    ):
+        msg2 = f"token={prefix_token} leaked"
+        out2 = _sanitize_secrets(msg2)
+        if prefix_token in out2:
+            failures.append(f"②既知プレフィックス {prefix_token[:8]}...: 伏字化できていない: {out2!r}")
+
+    # ③ 複数出現の全置換（Bearer パターン単独の効果を確認するため OPAQUE_SECRET を使う）
+    msg3 = f"Bearer {OPAQUE_SECRET} ... again Bearer {OPAQUE_SECRET}"
+    out3 = _sanitize_secrets(msg3)
+    if OPAQUE_SECRET in out3:
+        failures.append(f"③複数出現: 秘匿値が残っている: {out3!r}")
+
+    # ③b CANARY（gh プレフィックス込み）でも複数出現が全置換されることを確認する
+    msg3b = f"Bearer {CANARY} ... again Bearer {CANARY}"
+    out3b = _sanitize_secrets(msg3b)
+    if CANARY in out3b:
+        failures.append(f"③bカナリア複数出現: カナリアが残っている: {out3b!r}")
+
+    # ④ env 非依存（短い/空白の env 値を設定しても無関係なメッセージは壊れない）
+    orig_gh_token = os.environ.get("GH_TOKEN")
+    orig_github_token = os.environ.get("GITHUB_TOKEN")
+    try:
+        os.environ["GH_TOKEN"] = " "
+        os.environ["GITHUB_TOKEN"] = "e"
+        plain = "normal message with spaces and the letter e here"
+        out4 = _sanitize_secrets(plain)
+        if out4 != plain:
+            failures.append(f"④env非依存: 短い/空白の env 設定下で無関係メッセージが変化した: {out4!r}")
+    finally:
+        os.environ.pop("GH_TOKEN", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+        if orig_gh_token is not None:
+            os.environ["GH_TOKEN"] = orig_gh_token
+        if orig_github_token is not None:
+            os.environ["GITHUB_TOKEN"] = orig_github_token
+
+    return failures
+
+
+def _self_test_main_crlf_token_end_to_end() -> list[str]:
+    """CodeQL 対応 2 サイクル目（PR #735）: CR/LF 入りトークンでも `main()` の出力
+    （stdout/stderr）にカナリアが一切現れないことをエンドツーエンドで実測する
+    （gh 失敗 → REST フォールバック → `_http_get` の事前検証で弾かれる経路）。
     """
     import contextlib
     import io
 
     failures = []
     orig_argv = sys.argv
-    orig_fetch = fetch_in_progress_sprint_candidates
+    orig_run_gh = _run_gh
     orig_repo = REPO
     orig_gh_token = os.environ.get("GH_TOKEN")
     orig_github_token = os.environ.get("GITHUB_TOKEN")
-
     CANARY = "ghp_CANARY_MUST_NOT_LEAK_1234"
 
     def restore():
         sys.argv = orig_argv
-        globals()["fetch_in_progress_sprint_candidates"] = orig_fetch
+        globals()["_run_gh"] = orig_run_gh
         global REPO
         REPO = orig_repo
         os.environ.pop("GH_TOKEN", None)
@@ -1757,68 +1881,11 @@ def _self_test_main_token_sanitization() -> list[str]:
 
     try:
         os.environ.pop("GITHUB_TOKEN", None)
-        os.environ["GH_TOKEN"] = CANARY
+        os.environ["GH_TOKEN"] = CANARY + "\r\nX-Evil: 1"
+        # gh 経路は必ず失敗させて REST フォールバック（_http_get の事前検証）を通す
+        globals()["_run_gh"] = lambda args: (False, "認証エラー")
 
-        # CONFIRMED 1 の実測経路を模す: putheader が送出する ValueError にはトークン実値が
-        # `Bearer <値>` の形（bytes repr 込み）で埋まる。
-        def raise_header_value_error():
-            raise ValueError(
-                f"Invalid header value b'Bearer {CANARY}\\r\\n'"
-            )
-
-        globals()["fetch_in_progress_sprint_candidates"] = raise_header_value_error
-
-        # --json（stdout）
-        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
-        code, out, err = run_main()
-        if code != 2:
-            failures.append(f"トークン漏洩再現(--json): exit 2 を期待したが {code!r}")
-        if CANARY in out or CANARY in err:
-            failures.append(
-                f"トークン漏洩再現(--json): カナリアが出力に残っている（stdout={out!r} / stderr={err!r}）"
-            )
-        if "***" not in out:
-            failures.append(f"トークン漏洩再現(--json): 伏字 '***' が stdout に見つからない: {out!r}")
-
-        # 非 JSON（stderr）
-        sys.argv = ["check_deploy_gate.py", "--repo", "owner/name"]
-        code, out, err = run_main()
-        if code != 2:
-            failures.append(f"トークン漏洩再現(非JSON): exit 2 を期待したが {code!r}")
-        if CANARY in out or CANARY in err:
-            failures.append(
-                f"トークン漏洩再現(非JSON): カナリアが出力に残っている（stdout={out!r} / stderr={err!r}）"
-            )
-        if "***" not in err:
-            failures.append(f"トークン漏洩再現(非JSON): 伏字 '***' が stderr に見つからない: {err!r}")
-
-        # GITHUB_TOKEN 側でも同様に伏字化されることを確認する
-        os.environ.pop("GH_TOKEN", None)
-        os.environ["GITHUB_TOKEN"] = CANARY
-        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
-        code, out, err = run_main()
-        if CANARY in out or CANARY in err:
-            failures.append(
-                f"トークン漏洩再現(GITHUB_TOKEN): カナリアが出力に残っている（stdout={out!r}）"
-            )
-
-        # 【レビュー指摘 CRITICAL 1 の実測再現】トークン自体に CR/LF を埋め込み、
-        # `http.client.putheader` が実際に送出する bytes repr（`%r`）形式のメッセージを
-        # 忠実に再現する。生の値（実 CR/LF を含む）のままではエスケープ済みテキストと
-        # 部分文字列一致しないため、旧実装（値そのものの `str.replace` のみ）はここで
-        # 空振りしていた。既存ケース（メッセージ文字列側に既にエスケープ済みテキストを
-        # 手書きで足すだけ）はこの不一致を踏まないため区別して追加する。
-        os.environ.pop("GITHUB_TOKEN", None)
-        canary_with_crlf = CANARY + "\r\nX-Evil: 1"
-        os.environ["GH_TOKEN"] = canary_with_crlf
-
-        def raise_putheader_style_error():
-            header_bytes = f"Bearer {canary_with_crlf}".encode()
-            raise ValueError("Invalid header value %r" % (header_bytes,))
-
-        globals()["fetch_in_progress_sprint_candidates"] = raise_putheader_style_error
-
-        for argv, stream_label in (
+        for argv, label in (
             (["check_deploy_gate.py", "--json", "--repo", "owner/name"], "--json"),
             (["check_deploy_gate.py", "--repo", "owner/name"], "非JSON"),
         ):
@@ -1826,74 +1893,9 @@ def _self_test_main_token_sanitization() -> list[str]:
             code, out, err = run_main()
             combined = out + err
             if code != 2:
-                failures.append(f"CR/LF実測再現({stream_label}): exit 2 を期待したが {code!r}")
+                failures.append(f"CR/LFトークンE2E({label}): exit 2 を期待したが {code!r}")
             if CANARY in combined:
-                failures.append(
-                    f"CR/LF実測再現({stream_label}): カナリアが出力に残っている（{combined!r}）"
-                )
-            if "***" not in combined:
-                failures.append(
-                    f"CR/LF実測再現({stream_label}): 伏字 '***' が出力に見つからない（{combined!r}）"
-                )
-
-        # 【レビュー指摘 WARNING 3】短い値・空白のみの値では無関係なメッセージ全文を
-        # 巻き添えにして破壊しないことを確認する（`MIN_SECRET_LEN` 未満は対象外にする）。
-        os.environ.pop("GH_TOKEN", None)
-        for label, short_token, message_text in (
-            ("空白のみ", " ", "normal message with spaces here"),
-            ("1文字", "e", "ValueError: some message here"),
-            (f"{MIN_SECRET_LEN - 1}文字（MIN_SECRET_LEN未満）", "short12", "value=short12 embedded in message"),
-        ):
-            os.environ["GH_TOKEN"] = short_token
-            globals()["fetch_in_progress_sprint_candidates"] = (
-                lambda message_text=message_text: (_ for _ in ()).throw(ValueError(message_text))
-            )
-            sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
-            code, out, err = run_main()
-            try:
-                payload = json.loads(out.strip().splitlines()[-1]) if out.strip() else {}
-            except json.JSONDecodeError:
-                payload = {}
-            expected = f"未捕捉の例外が発生しました（ValueError: {message_text}）"
-            if payload.get("error") != expected:
-                failures.append(
-                    f"WARNING3({label}): 短い/空白トークンでメッセージが破壊された: "
-                    f"{payload.get('error')!r}（期待 {expected!r}）"
-                )
-            os.environ.pop("GH_TOKEN", None)
-
-        # 境界値ちょうど（MIN_SECRET_LEN 文字）は引き続き伏字化されることも確認する
-        # （下限ガードが必要以上に広く効いて正当な長さのトークンまで見逃していないか）
-        boundary_token = "x" * MIN_SECRET_LEN
-        os.environ["GH_TOKEN"] = boundary_token
-        globals()["fetch_in_progress_sprint_candidates"] = (
-            lambda: (_ for _ in ()).throw(ValueError(f"token={boundary_token} leaked"))
-        )
-        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
-        code, out, err = run_main()
-        if boundary_token in out:
-            failures.append(
-                f"MIN_SECRET_LEN境界: {MIN_SECRET_LEN}文字ちょうどのトークンが伏字化されていない: {out!r}"
-            )
-        os.environ.pop("GH_TOKEN", None)
-
-        # 空文字・未設定のトークンでは全文置換が事故を起こさないことも確認する
-        # （`value.replace("", "***")` のような空文字一致で本文が壊れていないか）
-        os.environ.pop("GH_TOKEN", None)
-        os.environ.pop("GITHUB_TOKEN", None)
-        globals()["fetch_in_progress_sprint_candidates"] = (
-            lambda: (_ for _ in ()).throw(ValueError("通常のメッセージ"))
-        )
-        sys.argv = ["check_deploy_gate.py", "--json", "--repo", "owner/name"]
-        code, out, err = run_main()
-        try:
-            payload = json.loads(out.strip().splitlines()[-1]) if out.strip() else {}
-        except json.JSONDecodeError:
-            payload = {}
-        if payload.get("error") != "未捕捉の例外が発生しました（ValueError: 通常のメッセージ）":
-            failures.append(
-                f"トークン未設定時: メッセージが不必要に伏字化されていないか確認: {payload.get('error')!r}"
-            )
+                failures.append(f"CR/LFトークンE2E({label}): カナリアが出力に残っている: {combined!r}")
     finally:
         restore()
 
@@ -1944,57 +1946,6 @@ def _self_test_decide_and_exit_code() -> list[str]:
     return failures
 
 
-def _self_test_mask_occurrences() -> list[str]:
-    """CI 指摘（CodeQL "Clear-text logging of sensitive information"・PR #735）対応の
-    `_mask_occurrences` / `_sanitize_secrets` の置換順序・全件置換を実測する。
-
-    既存の `_self_test_main_token_sanitization` は「単一の秘匿値がメッセージ中に 1 回だけ
-    現れる」ケースしか踏んでおらず、次の 2 つの実害シナリオを検知できなかった:
-      - 同一の秘匿値がメッセージ中に **複数回** 現れる（後段の出現が伏字化されない）
-      - **短い候補が、より長い候補の部分文字列になっている**（`GH_TOKEN` の値の中に
-        `GITHUB_TOKEN` の値がそのまま埋まっている等）ときに短い方を先に置換すると、
-        長い方の置換が「もう一致しない」ため素通りし、**秘匿値の断片が平文で残る**
-        （`_sanitize_secrets` が候補を長い順に処理する理由そのもの）。
-    """
-    failures = []
-
-    # ① _mask_occurrences 単体: 同一 needle の複数出現を全て置換する
-    masked = _mask_occurrences("token=SECRETVALUE end SECRETVALUE end2", "SECRETVALUE")
-    if "SECRETVALUE" in masked or masked.count(SECRET_PLACEHOLDER) != 2:
-        failures.append(
-            f"_mask_occurrences: 複数出現を全置換できていない: {masked!r}"
-        )
-
-    # ② _sanitize_secrets の統合シナリオ: GITHUB_TOKEN の値が GH_TOKEN の値の
-    # 部分文字列になっている（実運用でも「片方がもう片方を内包する」誤設定は起こりうる）。
-    # 短い候補（GITHUB_TOKEN 由来）を先に処理すると、長い候補（GH_TOKEN 由来）の
-    # 置換が素通りし "SECRET" と "5" という秘匿値の断片が平文で残る。
-    orig_gh_token = os.environ.get("GH_TOKEN")
-    orig_github_token = os.environ.get("GITHUB_TOKEN")
-    try:
-        os.environ["GH_TOKEN"] = "SECRETVALUE12345"  # 長い候補（17文字）
-        os.environ["GITHUB_TOKEN"] = "VALUE1234"      # 短い候補（9文字）。上の値の部分文字列
-        message = "leaked: SECRETVALUE12345 end"
-        sanitized = _sanitize_secrets(message)
-        if "SECRET" in sanitized or "VALUE1234" in sanitized or "12345" in sanitized:
-            failures.append(
-                f"_sanitize_secrets: 長い候補優先の順序が壊れ秘匿値の断片が残った: {sanitized!r}"
-            )
-        if sanitized != "leaked: *** end":
-            failures.append(
-                f"_sanitize_secrets: 長い候補を単一の '***' に丸ごと置換できていない: {sanitized!r}"
-            )
-    finally:
-        os.environ.pop("GH_TOKEN", None)
-        os.environ.pop("GITHUB_TOKEN", None)
-        if orig_gh_token is not None:
-            os.environ["GH_TOKEN"] = orig_gh_token
-        if orig_github_token is not None:
-            os.environ["GITHUB_TOKEN"] = orig_github_token
-
-    return failures
-
-
 def run_self_test() -> int:
     groups = [
         ("スプリント対象判定", _self_test_is_sprint_issue),
@@ -2010,8 +1961,9 @@ def run_self_test() -> int:
         ("in-progress スプリント候補の gh/REST フォールバック（#237）", _self_test_fetch_in_progress_sprint_candidates),
         ("Issue コメント取得の gh/REST フォールバックとページング打ち切り（#237）", _self_test_fetch_issue_comments),
         ("main() の未捕捉例外→exit 2 写像（#313・BaseException 拡張含む）", _self_test_main_unhandled_exception),
-        ("main() 未捕捉例外時のトークンサニタイズ（CONFIRMED 1）", _self_test_main_token_sanitization),
-        ("_mask_occurrences の全件置換・長い候補優先の順序（PR #735 CodeQL 対応）", _self_test_mask_occurrences),
+        ("_http_get のヘッダ不正文字事前検証（PR #735 CodeQL 対応・源流対策）", _self_test_http_get_header_validation),
+        ("_sanitize_secrets のパターンベース伏字化（PR #735 CodeQL 対応・env非依存）", _self_test_sanitize_secrets_patterns),
+        ("CR/LFトークンのmain()エンドツーエンド（CONFIRMED 1 / PR #735）", _self_test_main_crlf_token_end_to_end),
         ("集約判定と終了コードのマッピング", _self_test_decide_and_exit_code),
     ]
     failed_groups = 0
@@ -2112,91 +2064,36 @@ def main() -> None:
         sys.exit(2)
 
 
-# GH_TOKEN/GITHUB_TOKEN の実値としてあまりに短い文字列（誤設定・空白のみ・テスト値等）まで
-# 伏字化の対象にすると、その短い文字列がメッセージ中の無関係な単語と偶然部分一致して全文が
-# 判読不能になる（レビュー指摘 WARNING 3・実測: `GH_TOKEN=" "` で通常メッセージの単語の
-# 隙間が軒並み `***` に置換された）。実運用の GitHub トークンは数十文字あるため、
-# この長さ未満の値・セグメントは伏字化の対象外にする。
-MIN_SECRET_LEN = 8
-
-
-def _collect_secret_candidates(value: str, candidates: set[str]) -> None:
-    """`value`（環境変数の生値）から、メッセージ中に現れうる表現の候補を `candidates` へ
-    集める（レビュー指摘 CRITICAL 1 の再発防止）。
-
-      - 生の値そのもの（値に制御文字を含まない通常のケースでの一致用）
-      - `unicode_escape` でエスケープした表現: `http.client.putheader` が送出する
-        `ValueError` の `str(e)` は bytes repr（`b'...'`）であり、値に含まれる CR/LF 等の
-        制御文字が `\\r` `\\n` という 2 文字テキストへ変換されて現れる。生の値のままでは
-        この表示形と部分文字列一致しない（CRITICAL 1 の実測再現ケースそのもの）。
-      - 制御文字・空白で分割した各セグメント（生・エスケープ済みの両方）: 値自体にヘッダ
-        インジェクション用の制御文字が混ざっている場合、値全体のエスケープ表現がメッセージの
-        実際の表示形と完全一致しない可能性がある defense-in-depth。
-
-    `MIN_SECRET_LEN` 未満の候補（前後の空白を除いた長さで判定）は追加しない
-    （レビュー指摘 WARNING 3: 短い候補による無関係テキストの巻き添え破壊を防ぐ）。
-    """
-    def add(candidate: str) -> None:
-        if len(candidate.strip()) >= MIN_SECRET_LEN:
-            candidates.add(candidate)
-            candidates.add(candidate.encode("unicode_escape").decode("ascii"))
-
-    add(value)
-    for segment in re.split(r"[\s\x00-\x1f\x7f]+", value):
-        if segment:
-            add(segment)
-
-
-SECRET_PLACEHOLDER = "***"
-
-
-def _mask_occurrences(message: str, needle: str) -> str:
-    """`message` 中の `needle`（秘匿値由来の候補文字列）の出現箇所を `SECRET_PLACEHOLDER`
-    へ置き換える（CI 指摘: CodeQL "Clear-text logging of sensitive information" 対応・PR #735）。
-
-    🔴 戻り値は `message` のスライスと定数 `SECRET_PLACEHOLDER` だけから組み立てる。
-    `str.replace(needle, ...)` のように `needle`（秘匿値そのもの）を戻り値の組み立てに
-    使う API へ渡すと、CodeQL の文字列モデルは taint（秘匿値 → 戻り値）を伝播させ、
-    その戻り値が `print` に渡る経路を「平文でのログ出力」として検知する（`str.replace`
-    はサニタイザとして認識されない）。ここでは `needle` を `str.find`/`len` という
-    **int を返す** 演算にしか使わず、出力文字列そのものの組み立てには一切関与させない
-    （`tools/check_prod_drift.py` の `count_build_triggers()` と同じ設計判断: 秘匿値を
-    扱う関数から秘匿値由来の文字列を返さない）。
-    """
-    if not needle:
-        return message
-    parts: list[str] = []
-    start = 0
-    while True:
-        idx = message.find(needle, start)
-        if idx == -1:
-            parts.append(message[start:])
-            return "".join(parts)
-        parts.append(message[start:idx])
-        parts.append(SECRET_PLACEHOLDER)
-        start = idx + len(needle)
+# 【CodeQL 対応・2 サイクル目（PR #735）】
+# 1 サイクル目は「秘匿値を str.replace に渡さず index 演算だけで置換する」形に変えたが
+# CodeQL の HIGH は消えなかった（実測: HEAD b5c6b75 の CodeQL run で source 経路が 2→3 に
+# 増加）。CodeQL の py/clear-text-logging-sensitive-data は os.environ.get("GH_TOKEN")
+# という「秘匿値らしい env 読み取り」自体を source として分類しており、そこから読んだ値は
+# str.find の戻り値（int）を経由しても taint を追跡し続ける。つまり「経路の書き方」を
+# 変えても消えない。この関数から env 読み取りそのものを無くす構造に変更した:
+# 実値を読まず、出力に載りうるトークン表現をパターン（正規表現）で伏字化する。
+#
+# なぜこれで弱くならないか: 実値を読まないぶん未知形式のトークンは取りこぼしうる。ただし
+# 実際に発生する唯一の現実的な混入経路は http.client が送出する
+# "Invalid header value b'Bearer <値>...'"（CONFIRMED 1）であり、Bearer ヘッダ表現は
+# 値の形式に依らず正規表現で潰せる。加えて GitHub トークンの既知プレフィックスも保険で
+# 潰す。より本質的な対策は _http_get 側の源流検証（_has_invalid_header_chars で CR/LF
+# を含むトークンをヘッダ組み立て前に弾く）であり、そちらが唯一の現実的な混入経路自体を
+# 塞ぐ本命の対策になる（本関数はその上に重ねる保険）。
+_BEARER_TOKEN_RE = re.compile(r"Bearer\s+\S+")
+_GH_TOKEN_PREFIX_RE = re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}")
+_GH_PAT_PREFIX_RE = re.compile(r"github_pat_[A-Za-z0-9_]{20,}")
 
 
 def _sanitize_secrets(message: str) -> str:
-    """`GH_TOKEN` / `GITHUB_TOKEN` の実値がメッセージ中に含まれていたら伏字（`***`）へ
-    置換する（レビュー指摘 CONFIRMED 1）。`Bearer <値>` の形や `b'...'` bytes repr、値の
-    途中に制御文字が混ざって別表現へエスケープされている場合も含めて潰す
-    （候補の集め方は `_collect_secret_candidates` を参照）。
-    値が空文字・未設定の環境変数、および `MIN_SECRET_LEN` 未満の値は対象にしない
-    （空文字・短い値の部分一致で無関係なテキストごと壊す事故を防ぐ・WARNING 3）。
-    置換そのものは `_mask_occurrences`（`str.replace` に秘匿値を渡さない実装）に委譲する。
+    """メッセージ中に紛れ込みうるトークン表現をパターンベースで伏字化する
+    （レビュー指摘 CONFIRMED 1 / CodeQL 対応 2 サイクル目・詳細は本関数直前のコメント）。
+    `os.environ.get(...)` を一切呼ばない（CodeQL の source そのものを関数から無くすため）。
     """
-    candidates: set[str] = set()
-    for env_name in ("GH_TOKEN", "GITHUB_TOKEN"):
-        value = os.environ.get(env_name)
-        if value:
-            _collect_secret_candidates(value, candidates)
-    # 長い候補から順に置換する（短い候補を先に置換すると、それを含む長い候補が部分的に
-    # 欠けて一致しなくなり、置換漏れが起きるため）。
-    for candidate in sorted(candidates, key=len, reverse=True):
-        message = _mask_occurrences(message, candidate)
+    message = _BEARER_TOKEN_RE.sub("Bearer ***", message)
+    message = _GH_TOKEN_PREFIX_RE.sub("***", message)
+    message = _GH_PAT_PREFIX_RE.sub("***", message)
     return message
-
 
 def _emit_error(message: str, as_json: bool) -> None:
     # `_emit_error` は main() の複数箇所（fetch エラー・未捕捉例外の両方）から呼ばれる
