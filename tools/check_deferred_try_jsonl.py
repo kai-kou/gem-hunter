@@ -29,13 +29,21 @@
   4. トップレベルが JSON オブジェクトでない行（配列・文字列・数値）
   5. 必須フィールド（date / title / q1 / q2 / defer_reason）の欠落
   6. 値域違反: q1 / q2 が "YES" / "NO" 以外、defer_reason が
-     medium / over_quota / low_single_file 以外
+     medium / over_quota / low_single_file / high_commented 以外
   7. date が `YYYY-MM-DD JST` 形式でない、または実在しない日付（2026-13-45 JST 等）
   8. title が文字列でない、または空文字
   9. related_issue の型違反（**存在する場合のみ** 検査。下記「採用した仮定」を参照）
   10. reevaluated_at の型違反（**存在する場合のみ** 検査。null または `YYYY-MM-DD HH:MM JST`
       形式の実在日時以外は違反。Issue #707: 空文字・JST 抜けだと `jq 'select(.reevaluated_at
       == null)'` が false になり over_quota Try が「消費済み」と誤判定され永久に合流しなくなる）
+  11. defer_reason と q1/q2 の組み合わせ矛盾（Issue #727）: `medium` / `low_single_file` は
+      priority:high 相当ではなかった見送り（`q1 == "NO"` かつ `q2 == "NO"`）を表すため、
+      どちらかが `"YES"` なのにこれらの defer_reason が付いていたら矛盾（「high 相当だったのに
+      優先度不足として見送った」という誤った履歴になる）。逆に `over_quota` / `high_commented` は
+      priority:high 相当だった見送り（`q1` または `q2` が `"YES"`）を表すため、両方 `"NO"` なのに
+      これらが付いていたら矛盾。**q1 / q2 / defer_reason のいずれかが既に値域違反（違反 6）の
+      行は、この整合性検査の対象外とする**（値が不正な状態で high 相当か否かを判定すると
+      二重に誤った違反メッセージを出すため。値域違反として既に検出済みなので見逃しにはならない）
 
 さらに **違反ではなく WARNING**（exit code には影響しない）として、既知フィールド集合の外に
 あるキー（`reevaluted_at` のような typo）を報告する（Issue #707・値域は締めるがキー集合は
@@ -65,6 +73,12 @@
   - 既知フィールド集合の外側のキー（typo）は **違反にはせず WARNING に留める**。値域は締めるが
     キー集合までは締めない、という `related_issue` に対する既存方針を typo 検知にも一貫させるため
     （fail-closed にすると将来の正当な拡張フィールドまで巻き込んで壊す）。
+  - `defer_reason: "high_commented"`（Issue #727・SKILL.md Step 3-0 判定フロー「YES → Step 3-A →
+    類似 Issue あり → Step 3-B」の出口）は、priority:high 相当（Q1 または Q2 が YES）だが
+    既存 Issue への追記で完了したケースを表す。`medium`（優先度不足）と混同すると「高優先だったのに
+    見送られた」という誤った履歴が残り Q1 の再発カウントが壊れるため、defer_reason と q1/q2 の
+    組み合わせを整合性検査する（実データ 75 行は全て q1/q2 が NO のため、既存行は本検査を
+    無改修で通過する・2026-08-31 JST 時点で実測）。
 
 ## 終了コード
 
@@ -99,7 +113,14 @@ DEFERRED_TRY_PATH = REPO_ROOT / "content" / "analytics" / "retro" / "deferred_tr
 SKILL_FIELD_SSOT = ".claude/skills/retrospective/SKILL.md §「見送りログのフィールド」表"
 REQUIRED_FIELDS = ("date", "title", "q1", "q2", "defer_reason")
 YES_NO = ("YES", "NO")
-DEFER_REASONS = ("medium", "over_quota", "low_single_file")
+DEFER_REASONS = ("medium", "over_quota", "low_single_file", "high_commented")
+# Issue #727: defer_reason は「Q1/Q2 が priority:high 相当（YES）だったか」を裏切ってはならない。
+# NOT_HIGH_REASONS は「high 相当ではなかった」見送り、HIGH_REASONS は「high 相当だった」見送り。
+NOT_HIGH_REASONS = ("medium", "low_single_file")
+HIGH_REASONS = ("over_quota", "high_commented")
+assert set(NOT_HIGH_REASONS) | set(HIGH_REASONS) == set(DEFER_REASONS), (
+    "NOT_HIGH_REASONS / HIGH_REASONS が DEFER_REASONS と分割一致していません"
+)
 DATE_SUFFIX = " JST"
 DATE_FORMAT = "%Y-%m-%d"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M"
@@ -206,11 +227,36 @@ def check_record(obj: object, lineno: int) -> list[str]:
                 f"L{lineno}: {field} は {' / '.join(YES_NO)} のいずれかである必要があります: {_fmt(obj[field])}"
             )
 
-    if "defer_reason" in obj and obj["defer_reason"] not in DEFER_REASONS:
+    q1 = obj.get("q1")
+    q2 = obj.get("q2")
+    defer_reason = obj.get("defer_reason")
+    q1_valid = q1 in YES_NO
+    q2_valid = q2 in YES_NO
+    defer_valid = defer_reason in DEFER_REASONS
+
+    if "defer_reason" in obj and not defer_valid:
         violations.append(
             f"L{lineno}: defer_reason は {' / '.join(DEFER_REASONS)} のいずれかである必要があります: "
             f"{_fmt(obj['defer_reason'])}（SSOT: {SKILL_FIELD_SSOT}）"
         )
+
+    # Issue #727: q1 / q2 / defer_reason がいずれも値域内のときだけ組み合わせ整合性を検査する
+    # （値域違反はすでに上（q1/q2）・直前（defer_reason）で個別に検出済みなので、値が不正な
+    # 状態のまま high 相当判定に踏み込んで二重の誤ったメッセージを出さない）。
+    if q1_valid and q2_valid and defer_valid:
+        is_high = q1 == "YES" or q2 == "YES"
+        if is_high and defer_reason in NOT_HIGH_REASONS:
+            violations.append(
+                f"L{lineno}: defer_reason が {_fmt(defer_reason)} ですが q1={q1} / q2={q2} は "
+                f"priority:high 相当（YES）です。high 相当の見送りは {' / '.join(HIGH_REASONS)} を"
+                f"使ってください（SSOT: {SKILL_FIELD_SSOT}）"
+            )
+        elif not is_high and defer_reason in HIGH_REASONS:
+            violations.append(
+                f"L{lineno}: defer_reason が {_fmt(defer_reason)} ですが q1={q1} / q2={q2} は "
+                f"priority:high 相当ではありません（両方 NO）。{' / '.join(HIGH_REASONS)} は "
+                f"q1 または q2 が YES のときだけ使ってください（SSOT: {SKILL_FIELD_SSOT}）"
+            )
 
     if "related_issue" in obj and not is_valid_related_issue(obj["related_issue"]):
         violations.append(
@@ -393,7 +439,7 @@ def _run_self_test() -> None:
         VALID_LINE
         + "\n"
         + '{"date":"2026-08-27 JST","title":"compact","q1":"YES","q2":"NO",'
-        '"defer_reason":"low_single_file","related_issue":"L-138"}\n'
+        '"defer_reason":"high_commented","related_issue":"L-138"}\n'
         + '{"date":"2026-08-28 JST","title":"int issue","q1":"NO","q2":"YES",'
         '"defer_reason":"over_quota","related_issue":660}\n'
         "\n"
@@ -517,6 +563,46 @@ def _run_self_test() -> None:
     # 既知フィールドのみなら WARNING はゼロ件
     v, _, w = check_text(_line(reevaluated_at="2026-08-30 14:23 JST") + "\n")
     assert w == [], f"既知フィールドのみで WARNING が出た: {w}"
+    cases += 1
+
+    # (g-2) Issue #727: defer_reason と q1/q2 の組み合わせ整合性
+    # 正常系: high 相当（YES）× over_quota / high_commented、非 high 相当（NO/NO）× medium /
+    # low_single_file はいずれも PASS
+    for q1, q2, reason in (
+        ("YES", "NO", "over_quota"),
+        ("NO", "YES", "over_quota"),
+        ("YES", "YES", "high_commented"),
+        ("NO", "NO", "medium"),
+        ("NO", "NO", "low_single_file"),
+    ):
+        v, _, _w = check_text(_line(q1=q1, q2=q2, defer_reason=reason) + "\n")
+        assert v == [], f"defer_reason 整合性 正常系 失敗({q1},{q2},{reason}): {v}"
+        cases += 1
+
+    # 異常系: high 相当なのに non-high 用の defer_reason（誤って「優先度不足」と記録される事故）
+    for q1, q2, reason in (
+        ("YES", "NO", "medium"),
+        ("NO", "YES", "low_single_file"),
+        ("YES", "YES", "medium"),
+    ):
+        v, _, _w = check_text(_line(q1=q1, q2=q2, defer_reason=reason) + "\n")
+        assert len(v) == 1 and "priority:high 相当（YES）です" in v[0], (
+            f"defer_reason 整合性 異常系(high 相当) 失敗({q1},{q2},{reason}): {v}"
+        )
+        cases += 1
+
+    # 異常系: non-high なのに high 専用の defer_reason（over_quota / high_commented を誤用）
+    for reason in ("over_quota", "high_commented"):
+        v, _, _w = check_text(_line(q1="NO", q2="NO", defer_reason=reason) + "\n")
+        assert len(v) == 1 and "priority:high 相当ではありません" in v[0], (
+            f"defer_reason 整合性 異常系(非 high) 失敗({reason}): {v}"
+        )
+        cases += 1
+
+    # 境界: q1/q2 自体が値域外のときは整合性検査をスキップし、値域違反 1 件だけを報告する
+    # （二重の誤ったメッセージを出さない・docstring 違反 11 の注記）
+    v, _, _w = check_text(_line(q1="maybe", defer_reason="medium") + "\n")
+    assert len(v) == 1 and "q1" in v[0], f"defer_reason 整合性 境界(q1 値域外) 失敗: {v}"
     cases += 1
 
     # (h) 行番号の採番: 2 行目だけを壊し L2 として報告されることを確認（start=1 の回帰）
