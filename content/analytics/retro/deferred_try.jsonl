@@ -78,3 +78,8 @@
 {"date": "2026-09-01 JST", "title": "多層防御に対する変異テストの扱い（全層同時に潰す・単層 PASS の理由を記録）を SD-2 に明記する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 686}
 {"date": "2026-09-01 JST", "title": "background subtask 実行中は Stop フックのコミット要求と WIP 自動コミットを抑止するマーカーを実装する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 322}
 {"date": "2026-09-01 JST", "title": "修正サイクルのカウント基準（A-4 の集計単位）を共有化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "tools/ の共有ユーティリティ索引を作り新規ツール作成時に必ず参照させる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "Layer 1 セルフレビューを PR 作成と同一 firing で実行する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "prettier チェックを tools/run_checks.sh に追加する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "本番デプロイ乖離の A-6 通知を初回検知で前倒しする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "SKILL.md の必須 Read をステップ別に義務化する（reference.md の該当節）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
