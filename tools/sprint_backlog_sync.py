@@ -52,6 +52,7 @@ CP-4 の多層防御（論理ロック・discover スクリプトの排他チェ
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -637,6 +638,56 @@ def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
 # セルフテスト
 # ──────────────────────────────────────────────
 
+
+@contextlib.contextmanager
+def _mocked_api_channels(
+    run_gh=None,
+    http_request=None,
+    read_doc_text=None,
+    env: dict[str, str | None] | None = None,
+):
+    """API チャネル系セルフテストの共通スタブ差し替え（PR #730 Layer1 指摘4: 重複排除）。
+
+    `_run_gh` / `_http_request` / `_read_doc_text` の module 関数差し替えと `os.environ` の
+    完全スナップショット退避・復元を1箇所に集約する。各キーワード引数が `None` の場合は
+    その対象を差し替えない（元の値を維持する）。
+
+    `env` は設定・解除したい環境変数の辞書（値が `None` のキーは `os.environ.pop()` で解除、
+    それ以外は設定）。復元は「完全スナップショット復元」（`clear()` → `update(old_env)`）
+    のため、テスト前に存在しなかった変数を空文字のまま残すことはない。
+    """
+    global _run_gh, _http_request, _read_doc_text
+    old_run_gh, old_http, old_read = _run_gh, _http_request, _read_doc_text
+    old_env = dict(os.environ)
+    if run_gh is not None:
+        _run_gh = run_gh
+    if http_request is not None:
+        _http_request = http_request
+    if read_doc_text is not None:
+        _read_doc_text = read_doc_text
+    if env is not None:
+        for key, value in env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    try:
+        yield
+    finally:
+        _run_gh, _http_request, _read_doc_text = old_run_gh, old_http, old_read
+        os.environ.clear()
+        os.environ.update(old_env)
+
+
+def _assert_not_called(label: str):
+    """呼ばれてはいけないスタブ（呼ばれたら `AssertionError` を送出する）。"""
+
+    def _fn(*_args, **_kwargs):
+        raise AssertionError(f"{label} が呼ばれてはいけない状況で呼ばれた")
+
+    return _fn
+
+
 _FIXTURE_MD_OK = """
 ### 5.3. スプリント一覧
 
@@ -844,6 +895,224 @@ def _self_test_title_extraction_variants() -> list[str]:
     return failures
 
 
+def _run_main_capture_exit_code(argv: list[str]) -> int:
+    """`main()` を呼び出し `sys.exit()` のコードだけを整数で返す（ネットワーク不要のセルフテスト用）。
+
+    `main()` はエントリポイントとして `sys.exit()` を呼ぶため、実プロセスを起動せずに
+    終了コードまで検証するにはこの形で `SystemExit` を捕捉する必要がある。
+    """
+    old_argv = sys.argv
+    sys.argv = ["sprint_backlog_sync.py"] + argv
+    try:
+        main()
+        code: object = 0
+    except SystemExit as e:
+        code = e.code
+    finally:
+        sys.argv = old_argv
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return code
+    return 1  # 文字列等が渡された場合（本スクリプトでは通常発生しない）
+
+
+def _self_test_api_channel_gh_success() -> list[str]:
+    """API チャネル①: `gh` が成功する実運用パスを直接検証する（PR #730 Layer1 指摘1）。
+
+    従来のテストは全て「gh 失敗」スタブしか使っておらず、`list_all_issues()` の
+    `if ok:` 分岐（gh 成功時に本来ここで結果を返す側）を `if not ok:` に反転しても
+    見逃していた（フォールバック側が偶然同じ結果を返してしまうため）。本テストは
+    gh 成功スタブを与え、① 返り値の中身 ② `err is None` ③ `_http_request`（REST）が
+    呼ばれていないこと、を直接検証する。実ネットワークには一切触れない。
+    """
+    failures: list[str] = []
+    issues_json = json.dumps([
+        {"number": 1, "title": "SP-1: a", "state": "CLOSED"},
+        {"number": 2, "title": "SP-2: b", "state": "OPEN"},
+    ])
+
+    def _fake_run_gh_ok(args: list[str]) -> tuple[bool, str]:
+        return True, issues_json
+
+    with _mocked_api_channels(
+        run_gh=_fake_run_gh_ok,
+        http_request=_assert_not_called("_http_request（REST）"),
+        env={"GH_TOKEN": "test-token-not-real", "GITHUB_TOKEN": None},
+    ):
+        try:
+            issues, err = list_all_issues()
+        except AssertionError as e:
+            failures.append(f"gh成功: {e}")
+            return failures
+        want_issues = [{"title": "SP-1: a", "state": "CLOSED"}, {"title": "SP-2: b", "state": "OPEN"}]
+        if err is not None:
+            failures.append(f"gh成功: list_all_issues がエラーを返した（REST に落ちるべきではない）: {err}")
+        elif issues != want_issues:
+            failures.append(f"gh成功: list_all_issues の結果が不一致: {issues}")
+    return failures
+
+
+def _self_test_api_channel_gh_fail_rest_success() -> list[str]:
+    """API チャネル②: `gh` 失敗 → `urllib` + `GH_TOKEN`（REST）成功にフォールバックする（#29）。
+
+    実ネットワークには一切触れない。
+    """
+    failures: list[str] = []
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    issues_json = json.dumps([
+        {"title": "SP-1: a", "state": "closed"},
+        {"title": "SP-2: b", "state": "open"},
+    ])
+
+    def _fake_http_ok(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+        if payload is None:
+            return True, issues_json
+        return True, json.dumps({"html_url": "https://github.com/example/repo/issues/999"})
+
+    with _mocked_api_channels(
+        run_gh=_fake_run_gh_fail,
+        http_request=_fake_http_ok,
+        env={"GH_TOKEN": "test-token-not-real", "GITHUB_TOKEN": None},
+    ):
+        # ① list_all_issues() 単体: gh 失敗 → REST 成功で issues が正しく組み立つ
+        issues, err = list_all_issues()
+        want_issues = [{"title": "SP-1: a", "state": "closed"}, {"title": "SP-2: b", "state": "open"}]
+        if err is not None:
+            failures.append(f"gh失敗→REST成功: list_all_issues がエラーを返した: {err}")
+        elif issues != want_issues:
+            failures.append(f"gh失敗→REST成功: list_all_issues の結果が不一致: {issues}")
+
+        # ② create_issue() 単体: gh 失敗 → REST 成功で issue_url が返る
+        ok, result = create_issue("SP-3: c", "本文", ["type:feature"])
+        if not ok or result != "https://github.com/example/repo/issues/999":
+            failures.append(f"gh失敗→REST成功: create_issue の結果が不一致: ok={ok} result={result}")
+
+        # ③ main() まで貫通させ、正常終了（exit 0）することを確認する
+        with _mocked_api_channels(read_doc_text=lambda: _FIXTURE_MD_OK):
+            code = _run_main_capture_exit_code(["--dry-run", "--json"])
+        if code != 0:
+            failures.append(f"gh失敗→REST成功: main() の終了コードが 0 を期待したが {code}")
+    return failures
+
+
+def _self_test_exit_code_both_channels_fail() -> list[str]:
+    """API チャネル③: `gh` 失敗 → REST も失敗 → `main()` が exit 2 で終わる（#29）。
+
+    あわせて `list_all_issues()` の `err` 文字列に gh 側の失敗理由（スタブメッセージ）が
+    含まれていることも検証する（PR #730 Layer1 指摘1: 分岐の取り違えを exit code だけでなく
+    エラーメッセージの中身でも検出できるようにする）。
+    """
+    failures: list[str] = []
+    gh_fail_msg = "gh コマンドが見つかりません（テスト用スタブ）"
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, gh_fail_msg
+
+    def _fake_http_fail(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+        return False, "接続失敗（テスト用スタブ）"
+
+    with _mocked_api_channels(
+        run_gh=_fake_run_gh_fail,
+        http_request=_fake_http_fail,
+        read_doc_text=lambda: _FIXTURE_MD_OK,
+        env={"GH_TOKEN": "test-token-not-real", "GITHUB_TOKEN": None},
+    ):
+        issues, err = list_all_issues()
+        if issues:
+            failures.append(f"gh失敗かつREST失敗: issues が空でない: {issues}")
+        if err is None or gh_fail_msg not in err:
+            failures.append(
+                f"gh失敗かつREST失敗: err に gh 側の失敗理由が含まれていない: {err!r}"
+            )
+
+        code = _run_main_capture_exit_code([])
+        if code != 2:
+            failures.append(f"gh失敗かつREST失敗: main() の終了コードが 2 を期待したが {code}")
+    return failures
+
+
+def _self_test_exit_code_create_issue_4xx() -> list[str]:
+    """API チャネル④: 起票 API（REST POST）が 4xx を返すと `main()` が exit 1 で終わる（#29）。"""
+    failures: list[str] = []
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    def _fake_http(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
+        if payload is None:
+            return True, "[]"  # 既存 Issue なし → SP-1 を起票しにいく
+        return False, "HTTP 422"  # 起票 API（POST）が 4xx
+
+    with _mocked_api_channels(
+        run_gh=_fake_run_gh_fail,
+        http_request=_fake_http,
+        read_doc_text=lambda: _FIXTURE_MD_OK,
+        env={"GH_TOKEN": "test-token-not-real", "GITHUB_TOKEN": None},
+    ):
+        code = _run_main_capture_exit_code([])
+        if code != 1:
+            failures.append(f"起票API 4xx: main() の終了コードが 1 を期待したが {code}")
+    return failures
+
+
+def _self_test_exit_code_no_credentials() -> list[str]:
+    """API チャネル⑤: `gh` 失敗かつ `GH_TOKEN`/`GITHUB_TOKEN` 未設定で `main()` が exit 2 で終わる（#29）。"""
+    failures: list[str] = []
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    with _mocked_api_channels(
+        run_gh=_fake_run_gh_fail,
+        http_request=_assert_not_called("_http_request（REST）"),
+        read_doc_text=lambda: _FIXTURE_MD_OK,
+        env={"GH_TOKEN": None, "GITHUB_TOKEN": None},
+    ):
+        try:
+            code = _run_main_capture_exit_code([])
+            if code != 2:
+                failures.append(f"認証情報なし: main() の終了コードが 2 を期待したが {code}")
+        except AssertionError as e:
+            failures.append(str(e))
+    return failures
+
+
+def _self_test_create_issue_no_credentials_direct() -> list[str]:
+    """API チャネル⑥: `create_issue()` 単体の無認証ガードを `main()` を経由せず直接検証する
+
+    （PR #730 Layer1 指摘2）。`main()` は `list_all_issues()` → `create_issue()` の順で呼ぶため、
+    無認証シナリオは常に `list_all_issues()` 側が先に exit 2 で終了し、`create_issue()` 自身の
+    `if not token:` ガード（無効化しても既存テストは全 PASS してしまっていた）を一度も通らない。
+    本テストは `create_issue()` を単体で呼び出し、そのガードが実際に働くことを検証する。
+    """
+    failures: list[str] = []
+
+    def _fake_run_gh_fail(args: list[str]) -> tuple[bool, str]:
+        return False, "gh コマンドが見つかりません（テスト用スタブ）"
+
+    with _mocked_api_channels(
+        run_gh=_fake_run_gh_fail,
+        http_request=_assert_not_called("_http_request（REST・create_issue の無認証ガード）"),
+        env={"GH_TOKEN": None, "GITHUB_TOKEN": None},
+    ):
+        try:
+            ok, result = create_issue("SP-1: x", "本文", ["type:feature"])
+        except AssertionError as e:
+            failures.append(f"create_issue 単体・認証情報なし: {e}")
+            return failures
+        if ok:
+            failures.append(f"create_issue 単体・認証情報なし: 成功してしまった: {result}")
+        elif "GH_TOKEN" not in result and "GITHUB_TOKEN" not in result:
+            failures.append(
+                f"create_issue 単体・認証情報なし: エラーメッセージにトークン未設定の言及がない: {result}"
+            )
+    return failures
+
+
 def _issue(title: str, state: str = "closed") -> dict:
     """セルフテスト用の Issue スタブ（既定は Closed = Ready 条件③を満たす側）。"""
     return {"title": title, "state": state}
@@ -981,11 +1250,23 @@ def run_self_test() -> int:
         ("ID 抽出", _self_test_id_extraction),
         ("decide 統合", _self_test_decide),
         ("Ready 条件③（先行 SP-n が Closed）", _self_test_ready_condition),
+        ("APIチャネル: gh成功（REST 不使用）", _self_test_api_channel_gh_success),
+        ("APIチャネル: gh失敗→REST成功", _self_test_api_channel_gh_fail_rest_success),
+        ("APIチャネル: gh失敗→REST失敗でexit2", _self_test_exit_code_both_channels_fail),
+        ("APIチャネル: 起票4xxでexit1", _self_test_exit_code_create_issue_4xx),
+        ("APIチャネル: 認証情報なしでexit2", _self_test_exit_code_no_credentials),
+        ("APIチャネル: create_issue単体の無認証ガード", _self_test_create_issue_no_credentials_direct),
     ]
     failed_groups = 0
     total_failures = 0
     for name, fn in groups:
-        failures = fn()
+        # 🔴 個々のグループが未捕捉例外（実装バグ由来の TypeError 等）を送出しても、
+        # ループ全体をクラッシュさせず「そのグループの FAIL」として計上し次のグループへ
+        # 継続する（PR #730 Layer1 指摘3・fail-closed を維持: 例外を握り潰して緑にしない）。
+        try:
+            failures = fn()
+        except Exception as e:  # noqa: BLE001 - セルフテストは失敗理由を全て可視化する
+            failures = [f"未捕捉例外 {type(e).__name__}: {e}"]
         if failures:
             failed_groups += 1
             total_failures += len(failures)
