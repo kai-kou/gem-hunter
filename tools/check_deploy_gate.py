@@ -1944,6 +1944,57 @@ def _self_test_decide_and_exit_code() -> list[str]:
     return failures
 
 
+def _self_test_mask_occurrences() -> list[str]:
+    """CI 指摘（CodeQL "Clear-text logging of sensitive information"・PR #735）対応の
+    `_mask_occurrences` / `_sanitize_secrets` の置換順序・全件置換を実測する。
+
+    既存の `_self_test_main_token_sanitization` は「単一の秘匿値がメッセージ中に 1 回だけ
+    現れる」ケースしか踏んでおらず、次の 2 つの実害シナリオを検知できなかった:
+      - 同一の秘匿値がメッセージ中に **複数回** 現れる（後段の出現が伏字化されない）
+      - **短い候補が、より長い候補の部分文字列になっている**（`GH_TOKEN` の値の中に
+        `GITHUB_TOKEN` の値がそのまま埋まっている等）ときに短い方を先に置換すると、
+        長い方の置換が「もう一致しない」ため素通りし、**秘匿値の断片が平文で残る**
+        （`_sanitize_secrets` が候補を長い順に処理する理由そのもの）。
+    """
+    failures = []
+
+    # ① _mask_occurrences 単体: 同一 needle の複数出現を全て置換する
+    masked = _mask_occurrences("token=SECRETVALUE end SECRETVALUE end2", "SECRETVALUE")
+    if "SECRETVALUE" in masked or masked.count(SECRET_PLACEHOLDER) != 2:
+        failures.append(
+            f"_mask_occurrences: 複数出現を全置換できていない: {masked!r}"
+        )
+
+    # ② _sanitize_secrets の統合シナリオ: GITHUB_TOKEN の値が GH_TOKEN の値の
+    # 部分文字列になっている（実運用でも「片方がもう片方を内包する」誤設定は起こりうる）。
+    # 短い候補（GITHUB_TOKEN 由来）を先に処理すると、長い候補（GH_TOKEN 由来）の
+    # 置換が素通りし "SECRET" と "5" という秘匿値の断片が平文で残る。
+    orig_gh_token = os.environ.get("GH_TOKEN")
+    orig_github_token = os.environ.get("GITHUB_TOKEN")
+    try:
+        os.environ["GH_TOKEN"] = "SECRETVALUE12345"  # 長い候補（17文字）
+        os.environ["GITHUB_TOKEN"] = "VALUE1234"      # 短い候補（9文字）。上の値の部分文字列
+        message = "leaked: SECRETVALUE12345 end"
+        sanitized = _sanitize_secrets(message)
+        if "SECRET" in sanitized or "VALUE1234" in sanitized or "12345" in sanitized:
+            failures.append(
+                f"_sanitize_secrets: 長い候補優先の順序が壊れ秘匿値の断片が残った: {sanitized!r}"
+            )
+        if sanitized != "leaked: *** end":
+            failures.append(
+                f"_sanitize_secrets: 長い候補を単一の '***' に丸ごと置換できていない: {sanitized!r}"
+            )
+    finally:
+        os.environ.pop("GH_TOKEN", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+        if orig_gh_token is not None:
+            os.environ["GH_TOKEN"] = orig_gh_token
+        if orig_github_token is not None:
+            os.environ["GITHUB_TOKEN"] = orig_github_token
+
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("スプリント対象判定", _self_test_is_sprint_issue),
@@ -1960,6 +2011,7 @@ def run_self_test() -> int:
         ("Issue コメント取得の gh/REST フォールバックとページング打ち切り（#237）", _self_test_fetch_issue_comments),
         ("main() の未捕捉例外→exit 2 写像（#313・BaseException 拡張含む）", _self_test_main_unhandled_exception),
         ("main() 未捕捉例外時のトークンサニタイズ（CONFIRMED 1）", _self_test_main_token_sanitization),
+        ("_mask_occurrences の全件置換・長い候補優先の順序（PR #735 CodeQL 対応）", _self_test_mask_occurrences),
         ("集約判定と終了コードのマッピング", _self_test_decide_and_exit_code),
     ]
     failed_groups = 0
@@ -2095,6 +2147,36 @@ def _collect_secret_candidates(value: str, candidates: set[str]) -> None:
             add(segment)
 
 
+SECRET_PLACEHOLDER = "***"
+
+
+def _mask_occurrences(message: str, needle: str) -> str:
+    """`message` 中の `needle`（秘匿値由来の候補文字列）の出現箇所を `SECRET_PLACEHOLDER`
+    へ置き換える（CI 指摘: CodeQL "Clear-text logging of sensitive information" 対応・PR #735）。
+
+    🔴 戻り値は `message` のスライスと定数 `SECRET_PLACEHOLDER` だけから組み立てる。
+    `str.replace(needle, ...)` のように `needle`（秘匿値そのもの）を戻り値の組み立てに
+    使う API へ渡すと、CodeQL の文字列モデルは taint（秘匿値 → 戻り値）を伝播させ、
+    その戻り値が `print` に渡る経路を「平文でのログ出力」として検知する（`str.replace`
+    はサニタイザとして認識されない）。ここでは `needle` を `str.find`/`len` という
+    **int を返す** 演算にしか使わず、出力文字列そのものの組み立てには一切関与させない
+    （`tools/check_prod_drift.py` の `count_build_triggers()` と同じ設計判断: 秘匿値を
+    扱う関数から秘匿値由来の文字列を返さない）。
+    """
+    if not needle:
+        return message
+    parts: list[str] = []
+    start = 0
+    while True:
+        idx = message.find(needle, start)
+        if idx == -1:
+            parts.append(message[start:])
+            return "".join(parts)
+        parts.append(message[start:idx])
+        parts.append(SECRET_PLACEHOLDER)
+        start = idx + len(needle)
+
+
 def _sanitize_secrets(message: str) -> str:
     """`GH_TOKEN` / `GITHUB_TOKEN` の実値がメッセージ中に含まれていたら伏字（`***`）へ
     置換する（レビュー指摘 CONFIRMED 1）。`Bearer <値>` の形や `b'...'` bytes repr、値の
@@ -2102,6 +2184,7 @@ def _sanitize_secrets(message: str) -> str:
     （候補の集め方は `_collect_secret_candidates` を参照）。
     値が空文字・未設定の環境変数、および `MIN_SECRET_LEN` 未満の値は対象にしない
     （空文字・短い値の部分一致で無関係なテキストごと壊す事故を防ぐ・WARNING 3）。
+    置換そのものは `_mask_occurrences`（`str.replace` に秘匿値を渡さない実装）に委譲する。
     """
     candidates: set[str] = set()
     for env_name in ("GH_TOKEN", "GITHUB_TOKEN"):
@@ -2111,7 +2194,7 @@ def _sanitize_secrets(message: str) -> str:
     # 長い候補から順に置換する（短い候補を先に置換すると、それを含む長い候補が部分的に
     # 欠けて一致しなくなり、置換漏れが起きるため）。
     for candidate in sorted(candidates, key=len, reverse=True):
-        message = message.replace(candidate, "***")
+        message = _mask_occurrences(message, candidate)
     return message
 
 
