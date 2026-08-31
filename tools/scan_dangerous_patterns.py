@@ -36,9 +36,10 @@ from __future__ import annotations
 import argparse
 import ast
 import re
-import subprocess
 import sys
 from pathlib import Path
+
+import git_diff_utils
 
 # 資格情報っぽい変数名（大文字小文字無視・部分一致）
 _SECRET_NAME_RE = re.compile(
@@ -238,25 +239,20 @@ def scan_file(path: str) -> list[tuple[int, str, str, str]]:
 
 
 def _changed_python_files() -> list[str]:
-    out: list[str] = []
+    """変更された .py ファイル一覧を返す（base range + worktree + cached・untracked は含まない）。
+
+    #195 指摘4: 収集ロジック本体は `tools/git_diff_utils.py` の `collect_changed_files()` へ
+    統合済み（旧実装が独自に持っていた 5 箇所目の重複を解消）。`include_untracked=False` は
+    旧実装どおり（untracked は見ない）。**挙動変更が 1 点ある**: 旧実装は `r.stdout.split()` で
+    パスを分割しており、スペースを含むパスを複数トークンに誤分割するバグを内包していた
+    （他 4 箇所は既に `splitlines()` に統一済み）。`collect_changed_files()` は `splitlines()` を
+    使うため、スペース入りパスも 1 件として正しく扱われるようになる（既存バグの修正）。
+    """
     try:
-        base = subprocess.run(["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-                              capture_output=True, text=True, timeout=10)
-        ref = base.stdout.strip().split("/")[-1] if base.returncode == 0 else "main"
-        cmds = [["git", "diff", "--name-only", f"origin/{ref}...HEAD"],
-                ["git", "diff", "--name-only"], ["git", "diff", "--cached", "--name-only"]]
-        seen: set[str] = set()
-        for c in cmds:
-            r = subprocess.run(c, capture_output=True, text=True, timeout=10)
-            if r.returncode != 0:
-                continue
-            for f in r.stdout.split():
-                if f.endswith(".py") and f not in seen and Path(f).is_file():
-                    seen.add(f)
-                    out.append(f)
+        files = git_diff_utils.collect_changed_files(include_untracked=False)
     except Exception:
-        pass
-    return out
+        return []
+    return [f for f in files if f.endswith(".py")]
 
 
 # --- 自己テスト --------------------------------------------------------------

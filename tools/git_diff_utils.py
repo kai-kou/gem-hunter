@@ -10,6 +10,16 @@
 生まれていた。本モジュールへ集約し、各ツールは薄いラッパーとして既存シグネチャ・既存挙動を
 維持する（呼び出し元の既存挙動は変えない・#195 完了条件 2）。
 
+**例外（意図的な挙動変更・2 件）**:
+- `check_architecture_boundaries.py` の `changed_files()` は base range の解決を
+  `origin/main` 固定 → `default_branch()`（`symbolic-ref` 解決・失敗時 `main` フォールバック）へ
+  変更した。`origin/HEAD` が未設定、または `main` を指す環境（本リポジトリの現状）でのみ
+  従来と同一結果になる（他 3 ツールは元々 dynamic 解決だったため、これに合わせて統一した・
+  #195 指摘4/6/7・詳細は同ファイルの `changed_files()` docstring）。
+- `scan_dangerous_patterns.py` の `_changed_python_files()` は `r.stdout.split()` →
+  `splitlines()`（本モジュール内部）へ変わったことで、スペースを含むパスが複数トークンに
+  誤分割されるバグが解消され、1 件のパスとして正しく扱われるようになった（#195 指摘4）。
+
 ## 提供する 2 系統
 
 - `collect_changed_files()`: `git diff --name-only`（base range・worktree・cached）+
@@ -18,7 +28,12 @@
 - `run_git_or_raise()`: `check_agent_diff_claim.py` 専用。**性質が違う**（作業ツリー実差分のみ・
   git 失敗を `RuntimeError` として送出する）ため、`collect_changed_files()` には混ぜず、
   「git 実行 + エラーハンドリング」部分だけをここへ寄せる。`raw` 文字列の中身・例外送出という
-  挙動は変えない（`check_agent_diff_claim.py --self-test` が検証している）。
+  挙動は変えない。**検証の分担**（#195 指摘5・PR #723 レビュー）: 例外型・メッセージ書式そのもの
+  （`RuntimeError` への変換・"git ... が失敗" / "git コマンドが見つかりません" の文言）は
+  本モジュールの `python3 tools/git_diff_utils.py --self-test`（`_self_test_run_git_or_raise`）が
+  検証する。`check_agent_diff_claim.py --self-test` は「`run_git()` 経由で
+  `git_diff_utils.run_git_or_raise()` へ正しい引数（`args` と `cwd` の順序）で配線されているか」
+  （`get_real_diff_files()` 経由の呼び出し配線）を検証する — 例外の中身ではなく配線の正しさが担当。
 
 ## テスト容易性
 
@@ -255,6 +270,16 @@ def _self_test_collect_changed_files_sources() -> list[str]:
     if "d.py" in got_no_cached:
         failures.append(f"include_cached=False で d.py が混入: got={got_no_cached!r}")
 
+    # include_worktree=False の単独ケース（#195 追加指摘8）。上の include_cached / include_untracked
+    # と対称: worktree だけ OFF にして c.py（worktree 由来）が消えることを見る。
+    # このケースが無いと include_worktree のガードがテストされない（他 3 ソース ON のまま
+    # worktree だけ壊しても緑のまま通り得た）。
+    got_no_worktree = collect_changed_files(
+        include_worktree=False, require_existing=False, runner=runner
+    )
+    if "c.py" in got_no_worktree:
+        failures.append(f"include_worktree=False で c.py が混入: got={got_no_worktree!r}")
+
     # include_base_range=False の単独ケース。他 3 ソースと違い「base range のみ」ケース
     # （残り 3 つを同時に False にする）では base range 側の分岐を壊しても緑のまま通るため、
     # このケースが無いと include_base_range のガードがテストされない（#195 の敵対的検証で検出）
@@ -364,6 +389,73 @@ def _self_test_collect_changed_files_space_in_path() -> list[str]:
     return failures
 
 
+def _self_test_collect_changed_files_real_filesystem_exists() -> list[str]:
+    """`require_existing=True` かつ `exists_fn=None`（本番の 4 ラッパー全てが通る唯一の経路）が、
+
+    実ファイルシステムに対して正しく存在チェックすることを確認する（#195 指摘1）。
+    `exists_fn` を注入せず、実際に `tempfile.TemporaryDirectory()` へファイルを作って
+    `cwd` 経由で存在確認させる。旧来の自己テストは全て `exists_fn` を注入していたため、
+    実測で「`(base_dir / f).is_file()` を常に `True` を返すよう壊しても 5 つの self-test が
+    全て緑のまま」という無検知が起きていた。
+    """
+    failures: list[str] = []
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        (tmp_path / "exists.py").write_text("x", encoding="utf-8")
+        # ghost.py はあえて作らない（存在しないパスとして扱われるべき）
+
+        responses = {
+            ("git", "symbolic-ref", "refs/remotes/origin/HEAD"): "",  # フォールバックで main
+            ("git", "diff", "--name-only", "origin/main...HEAD"): "exists.py\nghost.py\n",
+            ("git", "diff", "--name-only"): "",
+            ("git", "diff", "--cached", "--name-only"): "",
+            ("git", "ls-files", "--others", "--exclude-standard"): "",
+        }
+        runner = _make_fake_runner(responses)
+
+        got = collect_changed_files(
+            require_existing=True,
+            cwd=tmp_path,
+            runner=runner,
+        )
+        if got != ["exists.py"]:
+            failures.append(
+                f"実ファイルシステムでの存在チェック（exists_fn 未注入）: expected=['exists.py'] got={got!r}"
+            )
+
+    return failures
+
+
+def _self_test_run_git_cwd_and_timeout_forwarded() -> list[str]:
+    """`_run_git()` が受け取った `cwd` / `timeout` を実際に `runner` へ転送していることを確認する。
+
+    （#195 指摘2）`check_architecture_boundaries.py` は `cwd=REPO_ROOT` を指定して呼ぶため、
+    `_run_git` 内の `cwd=cwd` 転送が抜けると無検知の回帰になる（実測: 削除しても旧来の
+    self-test は全て緑のまま）。fake runner が受け取った kwargs を記録し、期待値と突き合わせる。
+    """
+    failures: list[str] = []
+    calls: list[dict] = []
+
+    def recording_runner(args, **kwargs):
+        calls.append(kwargs)
+        return _FakeResult(stdout="", returncode=0)
+
+    out, rc = _run_git(
+        ["git", "status"], cwd="/tmp/fake-repo-dir", timeout=7, runner=recording_runner
+    )
+    if len(calls) != 1:
+        failures.append(f"_run_git は runner をちょうど 1 回呼ぶべき: got {len(calls)} 回")
+    else:
+        if calls[0].get("cwd") != "/tmp/fake-repo-dir":
+            failures.append(f"cwd が runner へ転送されていない: got={calls[0].get('cwd')!r}")
+        if calls[0].get("timeout") != 7:
+            failures.append(f"timeout が runner へ転送されていない: got={calls[0].get('timeout')!r}")
+
+    return failures
+
+
 def _self_test_run_git_or_raise() -> list[str]:
     failures: list[str] = []
 
@@ -401,9 +493,14 @@ def run_self_test() -> int:
         ("default_branch", _self_test_default_branch),
         ("collect_changed_files ソース ON/OFF", _self_test_collect_changed_files_sources),
         ("collect_changed_files require_existing", _self_test_collect_changed_files_require_existing),
+        (
+            "collect_changed_files 実ファイルシステム存在チェック",
+            _self_test_collect_changed_files_real_filesystem_exists,
+        ),
         ("collect_changed_files sort/base override", _self_test_collect_changed_files_sort_and_base_override),
         ("collect_changed_files 空行除外", _self_test_collect_changed_files_blank_lines),
         ("collect_changed_files スペース入りパス", _self_test_collect_changed_files_space_in_path),
+        ("_run_git cwd/timeout 転送", _self_test_run_git_cwd_and_timeout_forwarded),
         ("run_git_or_raise", _self_test_run_git_or_raise),
     ]
     total_fail = 0

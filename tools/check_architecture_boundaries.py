@@ -270,7 +270,12 @@ def changed_files() -> list[str]:
 
     #195: 収集ロジック本体は `tools/git_diff_utils.py` の `collect_changed_files()` に統合済み。
     元実装は `origin/main` 固定だったが、`default_branch()`（`symbolic-ref` 解決・失敗時 `main`
-    フォールバック）へ寄せる。フォールバック先が `main` のため既存挙動は壊れない（意図的な統一・#195）。
+    フォールバック）へ寄せた。**これは挙動変更**（実測: テストリポジトリで `origin/HEAD` を
+    `refs/remotes/origin/develop` に向けると `default_branch()` は `"develop"` を返す）。
+    `origin/HEAD` が未設定、または `main` を指す環境（本リポジトリの現状）でのみ従来と同一で、
+    他 3 ツール（`self_review_check.py` / `check_cjk_markdown.py` /
+    `check_agent_diff_claim.py` の周辺）が元々 dynamic 解決だったため本ツールもそれに合わせて
+    意図的に統一した（#195 指摘4/6/7）。
     cached / untracked は元実装どおり見ない（アーキ境界検査は追跡差分のみで十分なため）。
     """
     return git_diff_utils.collect_changed_files(
