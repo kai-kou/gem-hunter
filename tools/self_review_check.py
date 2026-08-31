@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 import git_diff_utils
+from pr_meta_patterns import SPRINT_GOAL_LINE_RE, meta_line_re
 
 MAX_MB = float(os.environ.get("SELF_REVIEW_MAX_MB", "5"))
 CONFLICT_MARKERS = ("<<<<<<< ", "=======", ">>>>>>> ")
@@ -942,11 +943,11 @@ def _self_test_debug_trace() -> list[str]:
 
 # --- スプリントメタ（Session-Id / sp:N / Team:）の記載検査（#45 / #70 / #695） ---
 # 🔴 行アンカー必須（#695）: 部分文字列一致だと「本 PR は Sprint Goal: を持たない…」のような
-# 説明文にも当たり、非スプリント PR で常時 Warning が出る（オオカミ少年化）。メタ行は行頭
-# （インデント可）に置かれる前提なので、行頭アンカー + 値が非空であることまで見る。
-_SPRINT_GOAL_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Sprint Goal:[ \t]*\S")
-_SESSION_ID_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Session-Id:[ \t]*\S")
-_TEAM_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Team:[ \t]*\S")
+# 説明文にも当たり、非スプリント PR で常時 Warning が出る（オオカミ少年化）。判定の実体は
+# pr_meta_patterns.py に集約している（同じ誤りを各所で独立に直さないため）。
+_SPRINT_GOAL_LINE_RE = SPRINT_GOAL_LINE_RE
+_SESSION_ID_LINE_RE = meta_line_re("Session-Id")
+_TEAM_LINE_RE = meta_line_re("Team")
 _SP_LABEL_RE = re.compile(r"(?:^|[\s(\[`])sp:\d+\b")
 
 

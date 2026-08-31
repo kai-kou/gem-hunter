@@ -71,6 +71,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_agent_scope_overlap import expand_lane, format_expand_warnings  # noqa: E402
 
+# 🔴 行アンカー必須（#695）: 部分文字列一致だと「本 PR は Sprint Goal: を持たない…」のような
+# 説明文にも当たり、非スプリント PR で誤発火する（実測: PR #732）。判定の実体は
+# pr_meta_patterns.py に集約している（同じ誤りを各所で独立に直さないため）。
+from pr_meta_patterns import SPRINT_GOAL_LINE_RE as _SPRINT_GOAL_LINE_RE  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -239,10 +244,6 @@ _EXECUTION_TRACE_RE = re.compile(
     re.DOTALL,
 )
 
-# 🔴 行アンカー必須（#695）: 部分文字列一致だと「本 PR は Sprint Goal: を持たない…」のような
-# 説明文にも当たり、非スプリント PR で誤発火する（実測: PR #732）。メタ行は行頭（インデント可）
-# に置かれる前提なので、行頭アンカー + 値が非空であることまで見る。
-_SPRINT_GOAL_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Sprint Goal:[ \t]*\S")
 
 
 def pr_body_records_check(pr_body: str) -> str | None:
