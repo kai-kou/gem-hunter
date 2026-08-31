@@ -4,51 +4,51 @@
 {"date": "2026-08-24 JST", "title": "リサーチ後に同一症状の Issue 重複を機械検出して統合を促す（今回 4 件の重複を手動で発見した）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "393"}
 {"date": "2026-08-24 JST", "title": "レトロの Try 起票で影響ファイル一覧の精度が役割ごとにばらつく（存在しないパスが混ざる）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-24 JST", "title": "haiku サブエージェントの返り値に日本語以外の言語が混入することがある（今回 1 件・親が統合時に日本語へ是正し、ユーザー向け出力には到達していない）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date":"2026-08-27 JST","title":"REFUTED指摘の記録フォーマット定義","q1":"NO","q2":"NO","defer_reason":"low_single_file","related_issue":"L-138"}
-{"date":"2026-08-27 JST","title":"修正コミット後のインラインコメント投稿フロー明文化","q1":"NO","q2":"NO","defer_reason":"low_single_file","related_issue":"L-138"}
-{"date":"2026-08-28 JST","title":"run_checks.sh完了待ちポーリング戦略の抜本改革","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"sp:N規模に応じた段階的run_checks.sh実行の設計","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"validate_selftest_falsifiability.py新規作成（機械検査）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":"154"}
-{"date":"2026-08-28 JST","title":"discussion-reviewにself-test論理強度検証レンズを定義","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"PR作成前のself-reviewerスキル実施を工程に明記","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"E2E既存障害判定の検証手順をチェックリスト化する（diff内容確認・既知Issue照合）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"推定工数見積もり乖離対策として選定後・実装前に工数再見積もりゲートを設ける","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"バンドルPRの理由と独立性をPR本文に明示するテンプレート化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"実装中に発見した副次Issueへ優先度ラベルを自動分類する運用ルール化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"dto.tsのZodスキーマとdomain-model.mdの変換表の食い違いを機械検査する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"SKILL.md冒頭に複合ラベル誤判定を含む実装前チェックリスト・落とし穴ガイドを追加する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"github-mcp-fallback-patterns.md §2.1の視認性改善（強調見出しへの昇格）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"CIポーリング戦略の標準化・上限設定（Monitor/pr-review-watcherの役割分担明確化）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"訓練データへの過度な依存パターンをlessonsへ記録する（confabulationの対象をドキュメント記述まで拡張）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":660}
-{"date":"2026-08-28 JST","title":"PLAUSIBLEスキップ判定の記録場所統一（PR本文/Issueコメントへの権威記録）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"Layer1セルフレビュー完了待ちのReadNotificationsポーリングを明示waitへ変更","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"retro-tryバックログ154件の優先度判定をキャッシュ・インデックス化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"check_prod_drift/check_publish_drift/check_deploy_gateのexit code体系を統一・文書化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"done_type:D-planでスキップしたIssueへの都度コメント記録","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-28 JST","title":"既知のCI落ちパターン（Issue #629等）を一元カタログ化するknown-ci-failures.md","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-29 JST","title":"run_checks.sh の新規セクション追加時に既存ガードパターンをコピペせず共通ヘルパーへ抽出する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-29 JST","title":"run_checks.sh のチェック件数（被覆率分母）を pre-pr-create-check.sh で自動検証する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-29 JST","title":"retro-try-handler が優先度順で見送った Issue（#450等）の見送り理由を対象Issueへコメント記録する運用を徹底する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-29 JST","title":"sprint-cycle-router の在庫閾値（30件で処理上限5件）の根拠をSKILL.mdに明記する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-29 JST","title":"CI完了待ちのScheduleWakeup遅延秒数の根拠（p95実行時間ベース）を明文化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-29 JST","title":"code-reviewスキルのPLAUSIBLE指摘に対する『即修正 vs 別Issue化』の判定基準を明文化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"Try Issue在庫の機械フィルタリング（構造化メタデータ導入）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"Try Issue優先度判定マトリクスをself-improvement-loop-rulesへ新設","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"tools/ の exit code体系を一元ドキュメント化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"safe_process_kill.sh と clear_stale_e2e_ports.py の役割分担を文書化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"computeGemIndexValue → round2 の丸め境界を明示検証するテストを足す","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"CI の層 1 が .mjs をどのゲートで拾うかを PR / Issue に 1 行記録する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"self-improvement-loop の「out < in が 3 日続いたら発見モードへエスカレーション」が実装・配線されているか確認する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"Layer 1 セルフレビューの並列観点数とモデル配分のトークンコストを計測し、観点ごとに haiku/sonnet を出し分ける","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-30 JST","title":"E2E が既知の環境障害で常に exit 1 になる状態の扱いを決める（run_checks の緑/赤の情報量が失われている）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date": "2026-08-27 JST", "title": "REFUTED指摘の記録フォーマット定義", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-138"}
+{"date": "2026-08-27 JST", "title": "修正コミット後のインラインコメント投稿フロー明文化", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-138"}
+{"date": "2026-08-28 JST", "title": "run_checks.sh完了待ちポーリング戦略の抜本改革", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "sp:N規模に応じた段階的run_checks.sh実行の設計", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "validate_selftest_falsifiability.py新規作成（機械検査）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "154"}
+{"date": "2026-08-28 JST", "title": "discussion-reviewにself-test論理強度検証レンズを定義", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "PR作成前のself-reviewerスキル実施を工程に明記", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "E2E既存障害判定の検証手順をチェックリスト化する（diff内容確認・既知Issue照合）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "推定工数見積もり乖離対策として選定後・実装前に工数再見積もりゲートを設ける", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "バンドルPRの理由と独立性をPR本文に明示するテンプレート化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "実装中に発見した副次Issueへ優先度ラベルを自動分類する運用ルール化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "dto.tsのZodスキーマとdomain-model.mdの変換表の食い違いを機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "SKILL.md冒頭に複合ラベル誤判定を含む実装前チェックリスト・落とし穴ガイドを追加する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "github-mcp-fallback-patterns.md §2.1の視認性改善（強調見出しへの昇格）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "CIポーリング戦略の標準化・上限設定（Monitor/pr-review-watcherの役割分担明確化）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "訓練データへの過度な依存パターンをlessonsへ記録する（confabulationの対象をドキュメント記述まで拡張）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 660}
+{"date": "2026-08-28 JST", "title": "PLAUSIBLEスキップ判定の記録場所統一（PR本文/Issueコメントへの権威記録）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "Layer1セルフレビュー完了待ちのReadNotificationsポーリングを明示waitへ変更", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "retro-tryバックログ154件の優先度判定をキャッシュ・インデックス化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "check_prod_drift/check_publish_drift/check_deploy_gateのexit code体系を統一・文書化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "done_type:D-planでスキップしたIssueへの都度コメント記録", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-28 JST", "title": "既知のCI落ちパターン（Issue #629等）を一元カタログ化するknown-ci-failures.md", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-29 JST", "title": "run_checks.sh の新規セクション追加時に既存ガードパターンをコピペせず共通ヘルパーへ抽出する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-29 JST", "title": "run_checks.sh のチェック件数（被覆率分母）を pre-pr-create-check.sh で自動検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-29 JST", "title": "retro-try-handler が優先度順で見送った Issue（#450等）の見送り理由を対象Issueへコメント記録する運用を徹底する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-29 JST", "title": "sprint-cycle-router の在庫閾値（30件で処理上限5件）の根拠をSKILL.mdに明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-29 JST", "title": "CI完了待ちのScheduleWakeup遅延秒数の根拠（p95実行時間ベース）を明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-29 JST", "title": "code-reviewスキルのPLAUSIBLE指摘に対する『即修正 vs 別Issue化』の判定基準を明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "Try Issue在庫の機械フィルタリング（構造化メタデータ導入）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "Try Issue優先度判定マトリクスをself-improvement-loop-rulesへ新設", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "tools/ の exit code体系を一元ドキュメント化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "safe_process_kill.sh と clear_stale_e2e_ports.py の役割分担を文書化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "computeGemIndexValue → round2 の丸め境界を明示検証するテストを足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "CI の層 1 が .mjs をどのゲートで拾うかを PR / Issue に 1 行記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "self-improvement-loop の「out < in が 3 日続いたら発見モードへエスカレーション」が実装・配線されているか確認する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "Layer 1 セルフレビューの並列観点数とモデル配分のトークンコストを計測し、観点ごとに haiku/sonnet を出し分ける", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-30 JST", "title": "E2E が既知の環境障害で常に exit 1 になる状態の扱いを決める（run_checks の緑/赤の情報量が失われている）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-30 JST", "title": "全 Issue の陳腐化スキャンを定期実行する（起票時の前提が生きているかの生存確認）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-30 JST", "title": "Layer 1 セルフレビューの「差分外 desync」指摘を PR 上で明示的に区別する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-30 JST", "title": "waiting-claude Issue の着手時に起票時仕様の陳腐化再検査を必須化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-30 JST", "title": "open-questions.md の D-28 に「D-40 で具体化」の追記を入れる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-30 JST", "title": "run_checks.sh が既存の赤と新規の赤を区別できない（既存 Issue へ再発を追記）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 214}
-{"date":"2026-08-31 JST","title":"層別テスト範囲表（check_ui_dimensions.py の config）から code-review 二重指摘禁止セクションを自動生成する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-31 JST","title":"判定ロジック観点の起動要否を差分から機械判定し、起動記録を残す","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
-{"date":"2026-08-31 JST","title":"ベース由来 hooks の publish-sync 非採用コメントを短縮 variant として自動展開する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date": "2026-08-31 JST", "title": "層別テスト範囲表（check_ui_dimensions.py の config）から code-review 二重指摘禁止セクションを自動生成する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "判定ロジック観点の起動要否を差分から機械判定し、起動記録を残す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "ベース由来 hooks の publish-sync 非採用コメントを短縮 variant として自動展開する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "検査ツール群の除外ディレクトリ（EXCLUDED_DIRS）を共有定数に集約する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "並列委譲の完了待ちを sleep ポーリングから通知ハンドラへ変える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "委譲プロンプトに run_checks.sh の全チェック項目を列挙する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
@@ -78,3 +78,6 @@
 {"date": "2026-09-01 JST", "title": "多層防御に対する変異テストの扱い（全層同時に潰す・単層 PASS の理由を記録）を SD-2 に明記する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 686}
 {"date": "2026-09-01 JST", "title": "background subtask 実行中は Stop フックのコミット要求と WIP 自動コミットを抑止するマーカーを実装する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 322}
 {"date": "2026-09-01 JST", "title": "修正サイクルのカウント基準（A-4 の集計単位）を共有化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "tools/ の共有ユーティリティ索引を作り新規ツール作成時に必ず参照させる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "本番デプロイ乖離の A-6 通知を初回検知で前倒しする", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 626}
+{"date": "2026-09-01 JST", "title": "実装 ↔ ドキュメントの二重 SSOT を機械検出する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 699}
