@@ -44,6 +44,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from git_diff_utils import collect_changed_files  # noqa: E402
+
 CATEGORY_THRESHOLD = 4
 FILE_THRESHOLD = 8
 
@@ -84,14 +87,24 @@ def analyze(paths: list[str]) -> dict:
     }
 
 
-def changed_paths_from_git(base: str) -> list[str]:
-    out = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
+def changed_paths_from_git(base: str | None) -> list[str]:
+    """base range（`{base}...HEAD`）の変更ファイル一覧を返す。
+
+    収集は共有ユーティリティ `git_diff_utils.collect_changed_files` に委ねる（#195 の集約先。
+    ここで `git diff` を再実装しない）。バンドル判定は「マージ前提の差分」だけを見るため、
+    worktree / cached / untracked は意図的に含めない（判定時点の未コミット作業に左右させない）。
+    """
+    if base is not None and base.startswith("-"):
+        # `--base --output=path` のような値を git のオプションとして解釈させない
+        raise ValueError(f"--base にハイフン始まりの値は指定できません: {base!r}")
+    return collect_changed_files(
+        include_base_range=True,
+        include_worktree=False,
+        include_cached=False,
+        include_untracked=False,
+        require_existing=False,
+        base=base,
     )
-    return out.stdout.splitlines()
 
 
 # --------------------------------------------------------------------------- self-test
@@ -179,6 +192,13 @@ def self_test() -> int:
     expect("github dir", categorize(".github/workflows/quality-checks.yml"), ".github/")
     expect("empty path", categorize(""), ROOT_CATEGORY)
 
+    # 1-b. 近似パスの区別（前方一致へ退行すると別領域を同じカテゴリへ縮約し、
+    #      カテゴリ数を過小評価して「分割すべき PR をバンドル可」と誤判定する = fail-open）
+    expect("docs/rules 近似", categorize("docs/rules-old/x.md"), "docs/")
+    expect("app 近似", categorize("myapp/page.tsx"), "myapp/")
+    expect("src 近似", categorize("src_gen/y.ts"), "src_gen/")
+    expect("claude 近似", categorize(".claudex/z.md"), ".claudex/")
+
     # 2. app/ と src/ が 1 カテゴリへ統合されること（統合を外すと 2 になって落ちる）
     merged = analyze(["app/page.tsx", "src/domain/repo.ts"])
     expect("app+src merged", merged["category_count"], 1)
@@ -217,6 +237,19 @@ def self_test() -> int:
         expect(f"{pr} categories", got["category_count"], want_cats)
         expect(f"{pr} should_split", got["should_split"], want_split)
 
+    # 4-b. 空行・空白のみの行は入力から落とす（フィルタが外れるとカテゴリ・ファイル数が水増しされる）
+    blank = analyze(["tools/a.py", "", "  ", "tools/b.py"])
+    expect("blank line files", blank["file_count"], 2)
+    expect("blank line categories", blank["category_count"], 1)
+
+    # 4-c. `--base` にオプション文字列を渡すと git へ届く前に弾く（argument injection 防止）
+    try:
+        changed_paths_from_git("--output=x")
+    except ValueError:
+        pass
+    else:
+        failures.append("base guard: ハイフン始まりの --base が拒否されなかった")
+
     # 5. 同一カテゴリ内の複数ファイルは 1 カテゴリと数える
     expect(
         "dedup within category",
@@ -235,7 +268,7 @@ def self_test() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--base", default="origin/main", help="比較対象（既定: origin/main）")
+    parser.add_argument("--base", default=None, help="比較対象（既定: origin/{既定ブランチ}）")
     parser.add_argument("--path", action="append", default=[], help="パスを直接指定（繰り返し可・git を使わない）")
     parser.add_argument("--paths-file", help="1 行 1 パスのファイル（`-` で標準入力）")
     parser.add_argument("--json", action="store_true", help="JSON で出力する")
@@ -255,8 +288,8 @@ def main() -> int:
     else:
         try:
             paths = changed_paths_from_git(args.base)
-        except subprocess.CalledProcessError as exc:
-            print(f"❌ git diff に失敗しました（base={args.base}）: {exc.stderr}", file=sys.stderr)
+        except (ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+            print(f"❌ 変更ファイルの取得に失敗しました（base={args.base}）: {exc}", file=sys.stderr)
             return 2
 
     result = analyze(paths)

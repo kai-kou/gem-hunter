@@ -197,26 +197,27 @@ API Deprecated（破壊的変更）         → 全ルールファイルを grep
 
 **散らばり（scatter）= 変更ファイルが属するトップレベル・カテゴリの数**。カテゴリは以下で数える（同一カテゴリ内の複数ファイルは 1 と数える）。
 
-| カテゴリ                        | 例                                        |
-| ------------------------------- | ----------------------------------------- |
-| `.claude/hooks/`                | `pre-git-push-check.sh`                   |
-| `.claude/skills/`               | `code-review/SKILL.md`                    |
-| `docs/rules/`                   | `sprint-development-rules.md`             |
-| `docs/`（`docs/rules/` 以外）   | `docs/04_development/testing-strategy.md` |
-| `tools/`                        | `check_prod_drift.py`                     |
-| アプリコード（`app/` / `src/`） | `app/page.tsx`                            |
-| `.github/`                      | `workflows/quality-checks.yml`            |
-| リポジトリルート直下            | `playwright.workers.config.ts`            |
+🔴 **数え方の正本は `tools/count_change_scatter.py` の `categorize()`**。下表はその出力ラベルの early reference であり、食い違ったらスクリプトが正しい（同じ数え方を 2 か所に書くと解釈がぶれるため・#701）。
+
+| カテゴリ（出力ラベル）        | 例                                         |
+| ----------------------------- | ------------------------------------------ |
+| `.claude/hooks/`              | `.claude/hooks/pre-git-push-check.sh`      |
+| `.claude/skills/`             | `.claude/skills/code-review/SKILL.md`      |
+| `.claude/`（直下ファイル）    | `.claude/settings.json`                    |
+| `docs/rules/`                 | `docs/rules/sprint-development-rules.md`   |
+| `docs/`（`docs/rules/` 以外） | `docs/04_development/testing-strategy.md`  |
+| `tools/`                      | `tools/check_prod_drift.py`                |
+| `app-code`（`app/` + `src/`） | `app/page.tsx` / `src/domain/repository.ts` |
+| `.github/`                    | `.github/workflows/quality-checks.yml`     |
+| `<root>`（リポジトリ直下）    | `playwright.workers.config.ts`             |
 
 ```bash
 # カテゴリ数と変更ファイル数を数える（バンドル判定の直前に実行する）
-git diff --name-only origin/main...HEAD | awk -F/ '
-  /^\.claude\//  {print $1"/"$2; next}
-  /^docs\//      {print ($2=="rules") ? "docs/rules" : "docs/other"; next}
-  NF==1          {print "<root>"; next}
-                 {print $1"/"}
-' | sort -u | tee /dev/stderr | wc -l
+python3 tools/count_change_scatter.py            # 既定は origin/main...HEAD
+python3 tools/count_change_scatter.py --json     # file_count / category_count / should_split を機械可読で得る
 ```
+
+🔴 **数え方をシェルのワンライナーで書き直さない**（`app/` と `src/` を 1 と数えるか 2 と数えるか等でぶれ、同じ差分に対して判定が割れる）。AND 条件の判定に要る **カテゴリ数とファイル数の両方** を上記スクリプトが同時に出力する。
 
 **閾値**: 予定している変更が **カテゴリ数 4 以上 かつ 変更ファイル数 8 以上** になる見込みなら、Issue 数が 2〜3 件でもバンドルせず分割する。
 
@@ -227,7 +228,9 @@ git diff --name-only origin/main...HEAD | awk -F/ '
 | #670 | 3        | 5              | 5          | 3 件         | 1            |
 | #674 | 5        | 6              | 3          | 4 件         | 1            |
 | #697 | 4        | 12             | 4          | 7 件         | **2**        |
-| #723 | 2        | 5              | 2          | 7 件         | 1            |
+| #723 | 2        | 5              | 3          | 7 件         | 1            |
+
+> 表の #674（5 件）・#697（4 件）は「Issue 数 2〜3 件」条件の **例外下の実測**（単一固定ブランチ制約・#666）であり、Issue 数条件を緩める前例ではない。
 
 **閾値を超えたときの行動**: 原則はカテゴリを分けて 2 PR にする。ただし上表「同一カテゴリ」欄の例外（クラウド実行環境から単一の固定作業ブランチが指定されており複数ブランチを切り替えられない・#666）が効いている場合は PR を分けられないため、**そのセッションで束ねる Issue 件数を減らし、残りを次回 firing へ送る**（`done_type` は付けず `status:waiting-claude` のまま残す）。判断と実測値（カテゴリ数・ファイル数）は PR 本文に 1 行で記録する。
 

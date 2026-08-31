@@ -151,6 +151,14 @@ else
   skip_check "flaky レジストリ検査 (check_flaky_registry.py)" "スクリプトが見つかりません"
 fi
 
+# 3.47.1. PR バンドル判定の散らばり指標 self-test（#701）。本体はバンドル判定時のみ叩く運用ツールだが、
+# カテゴリ判定と閾値は回帰しても静かに誤判定するため self-test だけは常時実行する。
+if [ -f "$REPO_ROOT/tools/count_change_scatter.py" ]; then
+  run_check "散らばり指標 self-test (count_change_scatter.py --self-test)" python3 tools/count_change_scatter.py --self-test
+else
+  skip_check "散らばり指標 self-test (count_change_scatter.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 3.46. 居残り E2E サーバークリーンアップの self-test（実行本体は 3.54 で E2E 直前に呼ぶ）。
 if [ -f "$REPO_ROOT/tools/clear_stale_e2e_ports.py" ]; then
   run_check "居残り E2E サーバークリーンアップ self-test (clear_stale_e2e_ports.py --self-test)" python3 tools/clear_stale_e2e_ports.py --self-test
