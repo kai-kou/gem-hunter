@@ -304,10 +304,10 @@ if [ -f "$repo_root/tools/self_review_check.py" ]; then
   cd "$repo_root" || exit 0
   check_exit=0
   if command -v timeout >/dev/null 2>&1; then
-    check_output=$(timeout 60 python3 tools/self_review_check.py 2>&1) || check_exit=$?
+    check_output=$(printf '%s' "$pr_body" | timeout 60 python3 tools/self_review_check.py --pr-body-stdin 2>&1) || check_exit=$?
   else
     # macOS 等 timeout 不在環境のフォールバック
-    check_output=$(python3 tools/self_review_check.py 2>&1) || check_exit=$?
+    check_output=$(printf '%s' "$pr_body" | python3 tools/self_review_check.py --pr-body-stdin 2>&1) || check_exit=$?
   fi
   if [ "$check_exit" -eq 1 ]; then
     hook_block "[pre-pr-create-check] セルフレビュー機械チェックで Error を検出したため PR 作成をブロックしました。

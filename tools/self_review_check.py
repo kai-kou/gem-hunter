@@ -940,6 +940,95 @@ def _self_test_debug_trace() -> list[str]:
     return failures
 
 
+# --- スプリントメタ（Session-Id / sp:N / Team:）の記載検査（#45 / #70 / #695） ---
+# 🔴 行アンカー必須（#695）: 部分文字列一致だと「本 PR は Sprint Goal: を持たない…」のような
+# 説明文にも当たり、非スプリント PR で常時 Warning が出る（オオカミ少年化）。メタ行は行頭
+# （インデント可）に置かれる前提なので、行頭アンカー + 値が非空であることまで見る。
+_SPRINT_GOAL_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Sprint Goal:[ \t]*\S")
+_SESSION_ID_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Session-Id:[ \t]*\S")
+_TEAM_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Team:[ \t]*\S")
+_SP_LABEL_RE = re.compile(r"(?:^|[\s(\[`])sp:\d+\b")
+
+
+def sprint_meta_warnings(pr_body: str | None) -> list[str]:
+    """スプリントメタの記載漏れ Warning を組み立てる（純粋関数・self-test 対象・#695）。
+
+    - `pr_body is None`（PR 本文が渡されない手動実行）: 従来どおり一般リマインドを 1 件返す
+    - `pr_body` あり: `Session-Id:` は PR の種類を問わず要求する（`--mine` 所有判定の前提）。
+      `sp:N` / `Team:` は **`Sprint Goal:` 行を持つ `SP-n` スプリント PR のときだけ** 要求する
+      （`session-sprint-rules.md` §2 のチーム編成規律の射程が `SP-n` に限られるため・#695）
+    """
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
+    sid_hint = f"Session-Id: {sid}" if sid else "Session-Id: $CLAUDE_CODE_SESSION_ID を PR 本文へ"
+
+    if pr_body is None:
+        return [
+            "スプリントメタを PR 本文に記載してください（session-sprint-rules.md §2/§5）: "
+            f"{sid_hint} ＋ sp:N ラベル（project-mission.md 工程別標準値 + Dynamic 補正）"
+            "＋ Team: トレーラー（例 `Team: fan-out(3)`・sprint-development-rules.md §1・Issue #70）"
+        ]
+
+    out: list[str] = []
+    if not _SESSION_ID_LINE_RE.search(pr_body):
+        out.append(
+            f"PR 本文に Session-Id 行がありません（--mine 所有判定の前提・session-sprint-rules.md §2）: {sid_hint}"
+        )
+    if _SPRINT_GOAL_LINE_RE.search(pr_body):
+        missing = []
+        if not _SP_LABEL_RE.search(pr_body):
+            missing.append("sp:N（project-mission.md 工程別標準値 + Dynamic 補正）")
+        if not _TEAM_LINE_RE.search(pr_body):
+            missing.append("Team: トレーラー（例 `Team: fan-out(3)`・sprint-development-rules.md §1・Issue #70）")
+        if missing:
+            out.append(
+                "Sprint Goal: を持つスプリント PR です。次のスプリントメタを PR 本文に記載してください"
+                "（session-sprint-rules.md §2/§5）: " + " / ".join(missing)
+            )
+    return out
+
+
+def _self_test_sprint_meta_warnings() -> list[str]:
+    failures: list[str] = []
+
+    # 完了条件 1: Sprint Goal: 行を含まない PR 本文では sp:N / Team: を要求しない（#695 本体）
+    non_sprint = (
+        "Session-Id: abc-123\n"
+        "本 PR は `Sprint Goal:` を持たない改善 Issue 消化 PR です。\n"
+    )
+    got = sprint_meta_warnings(non_sprint)
+    if got:
+        failures.append(f"非スプリント PR で Warning が出た（散文の Sprint Goal: に誤発火）: {got}")
+
+    # 完了条件 2: Sprint Goal: 行があり sp:N / Team: が欠けていれば従来どおり Warning
+    sprint_missing = "Session-Id: abc-123\nSprint Goal: 何かする\n"
+    got = sprint_meta_warnings(sprint_missing)
+    if not any("Team:" in w for w in got) or not any("sp:N" in w for w in got):
+        failures.append(f"スプリント PR で sp:N / Team: の欠落 Warning が出ない: {got}")
+
+    # Sprint Goal: 行 + sp:N + Team: が揃っていれば Warning なし
+    sprint_ok = "Session-Id: abc-123\nSprint Goal: 何かする\nsp:3\nTeam: fan-out(3)\n"
+    got = sprint_meta_warnings(sprint_ok)
+    if got:
+        failures.append(f"スプリントメタが揃っているのに Warning が出た: {got}")
+
+    # 完了条件 3: Session-Id: の検査は PR の種類にかかわらず動く
+    for body, label in ((("Sprint Goal: 何かする\nsp:3\nTeam: fan-out(3)\n"), "スプリント PR"),
+                        ("改善 Issue の消化です。\n", "非スプリント PR")):
+        got = sprint_meta_warnings(body)
+        if not any("Session-Id" in w for w in got):
+            failures.append(f"{label} で Session-Id 欠落の Warning が出ない: {got}")
+
+    # 値が空のメタ行は「記載あり」とみなさない
+    if not any("Session-Id" in w for w in sprint_meta_warnings("Session-Id:\n")):
+        failures.append("値が空の Session-Id: 行を記載ありと誤判定している")
+
+    # pr_body=None（手動実行）は従来どおり一般リマインドを返す
+    if len(sprint_meta_warnings(None)) != 1:
+        failures.append("pr_body=None で従来の一般リマインドが返らない")
+
+    return failures
+
+
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
@@ -954,6 +1043,7 @@ def run_self_test() -> int:
         ("commit_files --root（issue3 回帰）", _self_test_commit_files_root_flag),
         ("補助チェッカー出力の振り分け", _self_test_subcheck_outcome),
         ("デバッグ痕跡検出（自己誤検出の回帰）", _self_test_debug_trace),
+        ("スプリントメタ Warning の射程（#695）", _self_test_sprint_meta_warnings),
     ]
     failed_groups = 0
     total_failures = 0
@@ -973,7 +1063,7 @@ def run_self_test() -> int:
     return 0
 
 
-def main() -> int:
+def main(pr_body: str | None = None) -> int:
     if not Path(".git").exists() and sh(["git", "rev-parse", "--git-dir"]).returncode != 0:
         return 2
 
@@ -1112,13 +1202,7 @@ def main() -> int:
         br = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"])
         cur = br.stdout.strip() if br.returncode == 0 else ""
         if cur not in ("", "main", "master", "HEAD"):
-            sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
-            sid_hint = f"Session-Id: {sid}" if sid else "Session-Id: $CLAUDE_CODE_SESSION_ID を PR 本文へ"
-            warnings.append(
-                "スプリントメタを PR 本文に記載してください（session-sprint-rules.md §2/§5）: "
-                f"{sid_hint} ＋ sp:N ラベル（project-mission.md 工程別標準値 + Dynamic 補正）"
-                "＋ Team: トレーラー（例 `Team: fan-out(3)`・sprint-development-rules.md §1・Issue #70）"
-            )
+            warnings.extend(sprint_meta_warnings(pr_body))
 
     if warnings:
         print("[self-review] Warning:")
@@ -1139,11 +1223,17 @@ if __name__ == "__main__":
         "--self-test", action="store_true",
         help="git・ネットワーク不要のユニットテストを実行する（検査 A/B/C のロジック検証）",
     )
+    _parser.add_argument(
+        "--pr-body-stdin", action="store_true",
+        help="標準入力から PR 本文を読み、Sprint Goal: 行を持つスプリント PR にだけ "
+             "sp:N / Team: を要求する（#695。未指定時は従来どおり一般リマインドを出す）",
+    )
     _args = _parser.parse_args()
     if _args.self_test:
         sys.exit(run_self_test())
+    _pr_body = sys.stdin.read() if _args.pr_body_stdin else None
     try:
-        sys.exit(main())
+        sys.exit(main(_pr_body))
     except Exception as e:
         print(f"[self-review] checker error: {e}", file=sys.stderr)
         sys.exit(2)

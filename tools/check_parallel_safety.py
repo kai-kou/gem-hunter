@@ -239,6 +239,11 @@ _EXECUTION_TRACE_RE = re.compile(
     re.DOTALL,
 )
 
+# 🔴 行アンカー必須（#695）: 部分文字列一致だと「本 PR は Sprint Goal: を持たない…」のような
+# 説明文にも当たり、非スプリント PR で誤発火する（実測: PR #732）。メタ行は行頭（インデント可）
+# に置かれる前提なので、行頭アンカー + 値が非空であることまで見る。
+_SPRINT_GOAL_LINE_RE = re.compile(r"(?:^|\n)[ \t]*Sprint Goal:[ \t]*\S")
+
 
 def pr_body_records_check(pr_body: str) -> str | None:
     """PR 本文に Sprint Goal: があるのに Step 4-1.5（並行安全性判定）の実行痕跡が
@@ -250,7 +255,7 @@ def pr_body_records_check(pr_body: str) -> str | None:
     （Sprint Planning コメント側にのみ記載され PR 本文に無いケースは検知できない既知の限界。
     SKILL.md 側で「PR 本文の編成欄にも記載する」運用へ寄せることで整合させている）。
     """
-    if "Sprint Goal:" not in pr_body:
+    if not _SPRINT_GOAL_LINE_RE.search(pr_body):
         return None
     if _EXECUTION_TRACE_RE.search(pr_body):
         return None
@@ -395,6 +400,16 @@ def run_self_test() -> int:
     check(
         "pr_body_records_check: Sprint Goal: なしは対象外（None）",
         pr_body_records_check("普通の PR です。特に記載なし。") is None,
+    )
+    check(
+        "pr_body_records_check: 本文中で Sprint Goal: に言及しただけの散文は対象外（None・#695 回帰）",
+        pr_body_records_check(
+            "本 PR は `Sprint Goal:` を持たない改善 Issue 消化 PR です。\nsp:2"
+        ) is None,
+    )
+    check(
+        "pr_body_records_check: 値が空の Sprint Goal: 行は対象外（None・#695 回帰）",
+        pr_body_records_check("Sprint Goal:\nsp:2") is None,
     )
     check(
         "pr_body_records_check: Sprint Goal: ありで実行痕跡もあれば None",
