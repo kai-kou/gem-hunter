@@ -79,7 +79,7 @@
 ```
 
 **姉妹ケース（2026-08-31・PR #730 のレトロ）**: 同じ「識別子を記憶で書く」根から、**MCP ツールの
-パラメータ名**でも失敗した。`mcp__github__add_reply_to_pull_request_comment` を `commentID`（大文字 D）
+パラメータ名** でも失敗した。`mcp__github__add_reply_to_pull_request_comment` を `commentID`（大文字 D）
 で 5 件連続呼び出し、全て `missing required parameter: commentId` で失敗した（正しくは `commentId`）。
 同じセッション内の別ツール `add_comment_to_pending_review` が `pullNumber` を使うため、命名規則を
 類推してしまったのが原因。
