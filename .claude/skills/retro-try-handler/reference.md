@@ -199,17 +199,17 @@ API Deprecated（破壊的変更）         → 全ルールファイルを grep
 
 🔴 **数え方の正本は `tools/count_change_scatter.py` の `categorize()`**。下表はその出力ラベルの early reference であり、食い違ったらスクリプトが正しい（同じ数え方を 2 か所に書くと解釈がぶれるため・#701）。
 
-| カテゴリ（出力ラベル）        | 例                                         |
-| ----------------------------- | ------------------------------------------ |
-| `.claude/hooks/`              | `.claude/hooks/pre-git-push-check.sh`      |
-| `.claude/skills/`             | `.claude/skills/code-review/SKILL.md`      |
-| `.claude/`（直下ファイル）    | `.claude/settings.json`                    |
-| `docs/rules/`                 | `docs/rules/sprint-development-rules.md`   |
-| `docs/`（`docs/rules/` 以外） | `docs/04_development/testing-strategy.md`  |
-| `tools/`                      | `tools/check_prod_drift.py`                |
+| カテゴリ（出力ラベル）        | 例                                          |
+| ----------------------------- | ------------------------------------------- |
+| `.claude/hooks/`              | `.claude/hooks/pre-git-push-check.sh`       |
+| `.claude/skills/`             | `.claude/skills/code-review/SKILL.md`       |
+| `.claude/`（直下ファイル）    | `.claude/settings.json`                     |
+| `docs/rules/`                 | `docs/rules/sprint-development-rules.md`    |
+| `docs/`（`docs/rules/` 以外） | `docs/04_development/testing-strategy.md`   |
+| `tools/`                      | `tools/check_prod_drift.py`                 |
 | `app-code`（`app/` + `src/`） | `app/page.tsx` / `src/domain/repository.ts` |
-| `.github/`                    | `.github/workflows/quality-checks.yml`     |
-| `<root>`（リポジトリ直下）    | `playwright.workers.config.ts`             |
+| `.github/`                    | `.github/workflows/quality-checks.yml`      |
+| `<root>`（リポジトリ直下）    | `playwright.workers.config.ts`              |
 
 ```bash
 # カテゴリ数と変更ファイル数を数える（バンドル判定の直前に実行する）
