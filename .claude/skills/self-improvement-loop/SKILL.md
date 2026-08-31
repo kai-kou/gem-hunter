@@ -385,7 +385,7 @@ python3 tools/consume_hold_guard.py --validate-comment-file - <<< "$body"       
    - サーキットブレーカー: 3サイクル試行しても進まないものは status:blocked + 理由コメント
    - **在庫が 30 件を超えたら整理モードを先に実行する**（「多すぎて選べない」状態の解消）
 
-5. 報告: 消化件数・残数・放置検出結果（**在庫増加率 vs 消化率**を明記）:
+5. 報告: 消化件数・残数・放置検出結果（**在庫増加率 vs 消化率** を明記）:
    - 当日 created（status:waiting-claude 付与）件数 = in flow
    - 当日 closed もしくは status:waiting-claude 解除 件数 = out flow
    - out < in が3日続く場合は CP-3 衛生アラートとして発見モードにエスカレーション
