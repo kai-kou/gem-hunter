@@ -585,6 +585,16 @@ def self_test() -> int:
         mask_output("error: key=a+b(c) invalid", secrets={"GH_TOKEN": "a+b(c)"}),
         f"error: key={REDACTED} invalid",
     )
+    # 🔴 短い秘匿値が長い秘匿値の部分文字列になっている場合でも断片を残さない
+    # （短い方を先に置換すると長い方が分断され "****def" のように実値が残る）。
+    check(
+        "部分文字列関係にある複数の秘匿値でも断片が残らない",
+        mask_output(
+            "token is abcdef here",
+            secrets={"GH_TOKEN": "abc", "GITHUB_TOKEN": "abcdef"},
+        ),
+        f"token is {REDACTED} here",
+    )
     check(
         "Bearer <token> 形式を除去する",
         mask_output("Authorization: Bearer sk-abcdefghijklmnop1234567890", secrets={}),

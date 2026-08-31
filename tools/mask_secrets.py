@@ -114,10 +114,14 @@ def mask_text(text: str, secrets: dict[str, str] | None = None) -> str:
         return text
     if secrets is None:
         secrets = {name: os.environ.get(name, "") for name in DEFAULT_SECRET_VARS}
+    # 🔴 長い値から先に消す。短い値を先に置換すると、それを部分文字列として含む長い値が
+    # 分断され、長い方の残り断片が平文のまま出力へ残る（例: GH_TOKEN="abc" /
+    # GITHUB_TOKEN="abcdef" → "****def"）。長さの降順にすると、長い値が先に丸ごと消えるため
+    # 短い値が断片を作れない。
+    values = sorted({value for value in secrets.values() if value}, key=len, reverse=True)
     masked = text
-    for value in secrets.values():
-        if value:
-            # 実値を検索パターンとしてのみ使い、置換後の文字列には一切持ち込まない
-            # （`str.replace(value, mask_value(value))` は実値の断片を出力へ残す）。
-            masked = re.sub(re.escape(value), REDACTED, masked)
+    for value in values:
+        # 実値を検索パターンとしてのみ使い、置換後の文字列には一切持ち込まない
+        # （`str.replace(value, mask_value(value))` は実値の断片を出力へ残す）。
+        masked = re.sub(re.escape(value), REDACTED, masked)
     return _BEARER_RE.sub("Bearer ****", masked)
