@@ -64,3 +64,12 @@
 {"date": "2026-08-31 JST", "title": "MCP ツールのパラメータ名を別ツールの命名規則から類推して連続失敗する（commentID vs commentId）", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-122"}
 {"date": "2026-08-31 JST", "title": "check_claude_md_integrity.py を .github/workflows/quality-checks.yml にも配線して push 時点で検知する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-08-31 JST", "title": "check_claude_md_integrity.py の反例をタブ・複数行プロパティ・Unicode 空白まで拡張する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "tools/ の環境変数読み取り 77 件を env_utils.py へ抽出する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "runner 注入パターンを gh_shim.py 等の他ツールへ横展開する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "tools/ の共有化戦略（いつ共通化するか・スコープの切り方）をドキュメント化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "check_architecture_boundaries と git_diff_utils で重複する base 解決の説明を単一正本化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "check_selftest_wiring.py に「テストが薄い self-test」の可視化メトリクスを足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "priority:high の型別構成を毎 firing スナップショットして偏りを可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "priority:high が全件 type:retro-try である理由を監査し、優先度付与の SSOT を確認する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-08-31 JST", "title": "Issue #626（Workers Builds 連携断）の blocking 関係を Issue 間で明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 626}
+{"date": "2026-08-31 JST", "title": "Stop フックの PR 存在確認をサブエージェント完了待ちのターンで重複させない", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
