@@ -9,6 +9,8 @@
 > | ドメイン語彙・値オブジェクト・ACL 変換表 | [`docs/03_design/data-model/domain-model.md`](../03_design/data-model/domain-model.md) |
 > | テストの層分担・道具・下限 | [`docs/04_development/testing-strategy.md`](../04_development/testing-strategy.md) |
 > | TDD の規律（Red → Green → Refactor） | [`sprint-development-rules.md`](./sprint-development-rules.md) `SD-2` |
+>
+> 🔴 **Next.js の API を書く前に**: 訓練データを信用せず `node_modules/next/dist/docs/` の当該バージョンの一次情報を読んでから実装する（破壊的変更あり）。この注意喚起はかつて `next dev` が `CLAUDE.md` へ自動追記していたが、`next.config.ts` の `agentRules: false`（Issue #50 T-3）で抑止したため、以後は本行が唯一の置き場である。
 
 ---
 

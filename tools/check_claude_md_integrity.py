@@ -17,10 +17,15 @@ generate-agent-files.js` はこの設定を見て自身の呼び出し元でス�
 next.config.ts 側の抑止設定の両方を機械チェックする。
 
 検査 1: `CLAUDE.md` に自動生成ブロックのマーカー
-        （`<!-- BEGIN:nextjs-agent-rules -->` / `<!-- END:nextjs-agent-rules -->`）が
-        含まれていないこと
-検査 2: `next.config.ts` に `agentRules: false`（抑止設定）が入っていること
-        （設定が消されると upsert が再発するため）
+        （`<!-- BEGIN:nextjs-agent-rules -->` / `<!-- END:nextjs-agent-rules -->`）を
+        **行全体として厳密に一致する行** が含まれていないこと（PR #732 Layer 1 指摘 2）。
+        マーカーを引用しただけの説明文（コードスパンで文中に埋め込む等）は行全体一致しない
+        ため誤検知しない。next dev が実際に書き込むマーカーは改行で独立した行を占有する。
+検査 2: `next.config.ts` の `nextConfig`（または `export default { ... }`）オブジェクトの
+        **直接プロパティ**として `agentRules: false` が入っていること（PR #732 Layer 1 指摘 1）。
+        ブレース深度を数える簡易パーサで判定するため、到達不能コード（`if (false) { ... }` の
+        中の別変数への代入等）やネストしたオブジェクト内の同名プロパティには反応しない
+        （fail-open 対策）。設定が消されると upsert が再発するため検査する。
 
 使い方:
   python3 tools/check_claude_md_integrity.py             # 本判定（PASS/NG を stdout・NG は stderr にも詳細）
@@ -43,83 +48,128 @@ NEXT_CONFIG = REPO_ROOT / "next.config.ts"
 AGENT_RULES_START_MARKER = "<!-- BEGIN:nextjs-agent-rules -->"
 AGENT_RULES_END_MARKER = "<!-- END:nextjs-agent-rules -->"
 
-# next.config.ts 側の抑止設定。空白の揺れ（`agentRules:false` / `agentRules : false` 等）を
-# 許容しつつ、コメントアウトされた行（例のコピペ残骸）は誤検知しないよう行単位で判定する。
-AGENT_RULES_CONFIG_RE = re.compile(r"^\s*agentRules\s*:\s*false\s*,?\s*(//.*)?$")
+# next.config.ts のオブジェクトリテラル内で `agentRules: false` プロパティを見つけるための
+# パターン（値部分の後続は `,` や改行等いろいろありうるため \b で区切るだけにする）。
+AGENT_PROP_RE = re.compile(r"agentRules\s*:\s*false\b")
+
+# nextConfig 変数への代入 `... nextConfig ... = {` を検出するアンカー（型注釈の間に任意の
+# トークンが挟まってよい）。`exampleDisabledConfig` のような別名の変数には一致しない
+# （`\bnextConfig\b` が識別子全体としての "nextConfig" だけを要求するため）。
+_NEXT_CONFIG_VAR_RE = re.compile(r"\bnextConfig\b[^=;{}]*=\s*\{")
+# 中間変数を経由せず `export default { ... }` と直書きするパターンのフォールバック。
+_EXPORT_DEFAULT_RE = re.compile(r"\bexport\s+default\s*\{")
 
 
 def find_marker_lines(content: str) -> list[tuple[int, str]]:
-    """CLAUDE.md 内でマーカー文字列を含む行を [(1-origin 行番号, マーカー文字列), ...] で返す。"""
+    """CLAUDE.md 内で、行全体が厳密にマーカー文字列と一致する行を
+    [(1-origin 行番号, マーカー文字列), ...] で返す。
+
+    行全体一致を要求することで、マーカーを言及しただけの説明文（コードスパンで文中に
+    埋め込む等）を汚染として誤検知しない（PR #732 Layer 1 指摘 2）。
+    """
     hits: list[tuple[int, str]] = []
     for i, line in enumerate(content.splitlines(), start=1):
-        if AGENT_RULES_START_MARKER in line:
+        stripped = line.strip()
+        if stripped == AGENT_RULES_START_MARKER:
             hits.append((i, AGENT_RULES_START_MARKER))
-        if AGENT_RULES_END_MARKER in line:
+        elif stripped == AGENT_RULES_END_MARKER:
             hits.append((i, AGENT_RULES_END_MARKER))
     return hits
 
 
+def _find_config_object_start(content: str) -> int | None:
+    """`nextConfig` に代入されるオブジェクトリテラル、または `export default { ... }` の
+    直書きオブジェクトリテラルの開始位置（開き `{` の位置）を返す。見つからなければ None。
+
+    到達不能コード内の別変数への代入（`if (false) { const exampleDisabledConfig: NextConfig =
+    { agentRules: false } }` 等）は `nextConfig` という識別子そのものではないため拾わない。
+    """
+    m = _NEXT_CONFIG_VAR_RE.search(content)
+    if m:
+        return m.end() - 1
+    m = _EXPORT_DEFAULT_RE.search(content)
+    if m:
+        return m.end() - 1
+    return None
+
+
 def has_agent_rules_suppressed(content: str) -> bool:
-    """next.config.ts に `agentRules: false`（コメント行を除く）があれば True。"""
-    for line in content.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("//") or stripped.startswith("*"):
-            continue  # 行コメント・ブロックコメント継続行は設定として数えない
-        if AGENT_RULES_CONFIG_RE.match(line):
-            return True
+    """next.config.ts の `nextConfig`（または `export default {...}`）オブジェクトの
+    直接プロパティとして `agentRules: false` があれば True。
+
+    ブレース深度を数える簡易パーサで、①オブジェクトの外（到達不能コード・別変数への代入等）
+    ②オブジェクト内でもネストしたサブオブジェクトの中（`experimental: { agentRules: false }`
+    等）には反応しないようにする（PR #732 Layer 1 指摘 1・fail-open 対策）。
+    文字列リテラル・コメント（`//` 行コメント / `/* */` ブロックコメント）内の記述も除外する。
+    """
+    start = _find_config_object_start(content)
+    if start is None:
+        return False
+
+    depth = 0
+    i = start
+    n = len(content)
+    in_line_comment = False
+    in_block_comment = False
+    string_char: str | None = None
+
+    while i < n:
+        c = content[i]
+        nxt = content[i + 1] if i + 1 < n else ""
+
+        if in_line_comment:
+            if c == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+        if in_block_comment:
+            if c == "*" and nxt == "/":
+                in_block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+        if string_char is not None:
+            if c == "\\":
+                i += 2
+                continue
+            if c == string_char:
+                string_char = None
+            i += 1
+            continue
+
+        if c == "/" and nxt == "/":
+            in_line_comment = True
+            i += 2
+            continue
+        if c == "/" and nxt == "*":
+            in_block_comment = True
+            i += 2
+            continue
+        if c in ("'", '"', "`"):
+            string_char = c
+            i += 1
+            continue
+
+        if c == "{":
+            depth += 1
+            i += 1
+            continue
+        if c == "}":
+            depth -= 1
+            i += 1
+            if depth == 0:
+                break
+            continue
+
+        if depth == 1:
+            m = AGENT_PROP_RE.match(content, i)
+            if m:
+                return True
+
+        i += 1
+
     return False
-
-
-def self_test() -> int:
-    """検査ロジックのセルフテスト（マーカー検出・設定検出の両方を回帰させる）。"""
-    # --- find_marker_lines ---
-    clean = "# CLAUDE.md\n\n本文のみ。\n"
-    assert find_marker_lines(clean) == [], "汚染なしの本文でマーカーを誤検出した"
-
-    polluted = (
-        "# CLAUDE.md\n\n"
-        "本文。\n\n"
-        "<!-- BEGIN:nextjs-agent-rules -->\n\n"
-        "# This is NOT the Next.js you know\n\n"
-        "<!-- END:nextjs-agent-rules -->\n"
-    )
-    hits = find_marker_lines(polluted)
-    assert hits == [
-        (5, AGENT_RULES_START_MARKER),
-        (9, AGENT_RULES_END_MARKER),
-    ], f"汚染ブロックの行番号検出に失敗: {hits}"
-
-    # 開始マーカーのみ混入した不完全ケースも検知できること（upsert 途中の破損等）
-    start_only = "本文\n<!-- BEGIN:nextjs-agent-rules -->\n"
-    assert find_marker_lines(start_only) == [
-        (2, AGENT_RULES_START_MARKER)
-    ], "開始マーカーのみのケースを検出できなかった"
-
-    # --- has_agent_rules_suppressed ---
-    suppressed = "const nextConfig: NextConfig = {\n  agentRules: false,\n}\n"
-    assert has_agent_rules_suppressed(suppressed) is True, "抑止設定ありなのに検出できなかった"
-
-    suppressed_no_trailing_comma = "const nextConfig: NextConfig = {\n  agentRules: false\n}\n"
-    assert (
-        has_agent_rules_suppressed(suppressed_no_trailing_comma) is True
-    ), "末尾カンマなしの抑止設定を検出できなかった"
-
-    suppressed_spaced = "  agentRules : false ,  \n"
-    assert has_agent_rules_suppressed(suppressed_spaced) is True, "空白揺れのある抑止設定を検出できなかった"
-
-    not_suppressed = "const nextConfig: NextConfig = {\n  reactStrictMode: true,\n}\n"
-    assert has_agent_rules_suppressed(not_suppressed) is False, "抑止設定なしなのに検出してしまった"
-
-    truthy_value = "  agentRules: true,\n"
-    assert has_agent_rules_suppressed(truthy_value) is False, "true 設定を false 相当として誤検出した"
-
-    commented_out = "  // agentRules: false,\n"
-    assert (
-        has_agent_rules_suppressed(commented_out) is False
-    ), "コメントアウトされた設定を有効設定として誤検出した"
-
-    print("[claude-md-integrity] self-test OK")
-    return 0
 
 
 def run_check(claude_md_path: Path, next_config_path: Path) -> int:
@@ -191,6 +241,19 @@ def self_test_run_check(tmp_path: Path) -> None:
         run_check(polluted_claude_md, ok_next_config) == 1
     ), "CLAUDE.md 汚染ケースで exit 1 にならなかった"
 
+    # PR #732 Layer 1 指摘 2 の反例をそのまま run_check() 経由でも回帰させる:
+    # マーカーを引用するだけの説明文は汚染とみなさない（exit 0）。
+    prose_claude_md = tmp_path / "CLAUDE_prose_mention.md"
+    prose_claude_md.write_text(
+        "## 過去のインシデント記録\n"
+        "next dev は自動生成マーカー `<!-- BEGIN:nextjs-agent-rules -->` を書き込んでいたが、\n"
+        "`next.config.ts` の `agentRules: false` で抑止した（Issue #50 T-3）。\n",
+        encoding="utf-8",
+    )
+    assert (
+        run_check(prose_claude_md, ok_next_config) == 0
+    ), "マーカーを言及しただけの説明文を汚染として誤検知した（exit 0 のはず）"
+
     not_suppressed_config = tmp_path / "next_not_suppressed.config.ts"
     not_suppressed_config.write_text(
         "const nextConfig: NextConfig = {\n  reactStrictMode: true,\n}\n", encoding="utf-8"
@@ -198,6 +261,27 @@ def self_test_run_check(tmp_path: Path) -> None:
     assert (
         run_check(ok_claude_md, not_suppressed_config) == 1
     ), "agentRules 未設定ケースで exit 1 にならなかった"
+
+    # PR #732 Layer 1 指摘 1 の反例をそのまま run_check() 経由でも回帰させる:
+    # 到達不能コード内の別変数の agentRules: false を「抑止済み」と誤判定しない（exit 1）。
+    dead_code_config = tmp_path / "next_dead_code.config.ts"
+    dead_code_config.write_text(
+        "// NOTE: an old example kept for reference, never actually used/exported.\n"
+        "if (false) {\n"
+        "  const exampleDisabledConfig: NextConfig = {\n"
+        "    agentRules: false,\n"
+        "  };\n"
+        "}\n"
+        "\n"
+        "const nextConfig: NextConfig = {\n"
+        "  reactStrictMode: true,\n"
+        "};\n"
+        "export default nextConfig;\n",
+        encoding="utf-8",
+    )
+    assert (
+        run_check(ok_claude_md, dead_code_config) == 1
+    ), "到達不能コード内の agentRules: false を抑止済みと誤判定した（fail-open・exit 1 のはず）"
 
     missing_path = tmp_path / "does_not_exist.md"
     assert (
@@ -230,6 +314,17 @@ def self_test() -> int:
         (2, AGENT_RULES_START_MARKER)
     ], "開始マーカーのみのケースを検出できなかった"
 
+    # PR #732 Layer 1 指摘 2 の反例: マーカーを引用しただけの説明文は誤検知しない
+    # （行全体がマーカーと厳密一致する行のみを対象にする）。
+    prose_mention = (
+        "## 過去のインシデント記録\n"
+        "next dev は自動生成マーカー `<!-- BEGIN:nextjs-agent-rules -->` を書き込んでいたが、\n"
+        "`next.config.ts` の `agentRules: false` で抑止した（Issue #50 T-3）。\n"
+    )
+    assert (
+        find_marker_lines(prose_mention) == []
+    ), "マーカーを言及しただけの説明文を汚染として誤検知した"
+
     # --- has_agent_rules_suppressed ---
     suppressed = "const nextConfig: NextConfig = {\n  agentRules: false,\n}\n"
     assert has_agent_rules_suppressed(suppressed) is True, "抑止設定ありなのに検出できなかった"
@@ -239,21 +334,56 @@ def self_test() -> int:
         has_agent_rules_suppressed(suppressed_no_trailing_comma) is True
     ), "末尾カンマなしの抑止設定を検出できなかった"
 
-    suppressed_spaced = "  agentRules : false ,  \n"
+    suppressed_spaced = "const nextConfig: NextConfig = {\n  agentRules : false ,  \n}\n"
     assert has_agent_rules_suppressed(suppressed_spaced) is True, "空白揺れのある抑止設定を検出できなかった"
+
+    suppressed_export_default = "export default {\n  agentRules: false,\n}\n"
+    assert (
+        has_agent_rules_suppressed(suppressed_export_default) is True
+    ), "export default 直書きの抑止設定を検出できなかった"
 
     not_suppressed = "const nextConfig: NextConfig = {\n  reactStrictMode: true,\n}\n"
     assert has_agent_rules_suppressed(not_suppressed) is False, "抑止設定なしなのに検出してしまった"
 
-    truthy_value = "  agentRules: true,\n"
+    truthy_value = "const nextConfig: NextConfig = {\n  agentRules: true,\n}\n"
     assert has_agent_rules_suppressed(truthy_value) is False, "true 設定を false 相当として誤検出した"
 
-    commented_out = "  // agentRules: false,\n"
+    commented_out = "const nextConfig: NextConfig = {\n  // agentRules: false,\n}\n"
     assert (
         has_agent_rules_suppressed(commented_out) is False
     ), "コメントアウトされた設定を有効設定として誤検出した"
 
-    # --- run_check()（エントリポイント〜終了コードの貫通） ---
+    # ネストしたサブオブジェクト内の同名プロパティは「直接プロパティ」ではないため無効
+    nested = (
+        "const nextConfig: NextConfig = {\n"
+        "  experimental: {\n"
+        "    agentRules: false,\n"
+        "  },\n"
+        "}\n"
+    )
+    assert (
+        has_agent_rules_suppressed(nested) is False
+    ), "ネストしたサブオブジェクト内の agentRules: false を直接プロパティとして誤検出した"
+
+    # PR #732 Layer 1 指摘 1 の反例: 到達不能コード内の別変数への代入は「抑止済み」とみなさない
+    dead_code = (
+        "// NOTE: an old example kept for reference, never actually used/exported.\n"
+        "if (false) {\n"
+        "  const exampleDisabledConfig: NextConfig = {\n"
+        "    agentRules: false,\n"
+        "  };\n"
+        "}\n"
+        "\n"
+        "const nextConfig: NextConfig = {\n"
+        "  reactStrictMode: true,\n"
+        "};\n"
+        "export default nextConfig;\n"
+    )
+    assert (
+        has_agent_rules_suppressed(dead_code) is False
+    ), "到達不能コード内の agentRules: false を抑止済みと誤判定した（fail-open）"
+
+    # --- run_check()（エントリポイント〜終了コードの貫通・上記反例も含む） ---
     import tempfile
 
     with tempfile.TemporaryDirectory() as td:
