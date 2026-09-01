@@ -67,3 +67,28 @@ Truth が複数箇所に分散している。
 **関連**: Issue #750（境界の外側の負ケース必須化。本教訓の「外側は 1 段とは限らない」を追記済み）/
 `sprint-development-rules.md` `SD-2`（変異テスト）/ `agent-team-summary.md`「検査ツール・ゲートを
 直すタスクの委譲プロンプト必須項目」（#474）
+
+---
+
+## L-147: 検査ツールの `--under` にファイルパスを渡すと、検査対象ゼロのまま素通りする（2026-09-02・PR #805）
+
+**症状**: 変更した 1 ファイルだけを検査するつもりで `--under` にファイルパスを渡すと、検査が 1 件も走らない。
+
+```
+$ python3 tools/check_cjk_markdown.py --fix --under docs/rules/github-mcp-fallback-patterns.md
+[cjk-md] 警告: --under で指定した配下に .md ファイルが 1 件もありません: [...]
+[cjk-md]   → パス指定の誤りがないか確認してください（黙って PASS 扱いにしない）
+```
+
+**原因**: `--under` は「そのディレクトリ配下」を意味する **ディレクトリ専用** の引数で、`--changed`（git 変更検知）と組み合わせて範囲を絞るために使う（#85 の並行委譲対策）。ファイルパスを渡すと「配下に .md が 0 件」となる。
+
+**正しい使い方**: 対象ディレクトリを渡し、`--changed` と併用する。
+
+```bash
+python3 tools/check_cjk_markdown.py --fix --changed --under docs/rules
+python3 tools/check_markdown_table_columns.py --changed --under docs/rules
+```
+
+**この失敗が致命傷にならなかった理由**: 本ツールは 0 件を **黙って PASS にせず警告を出す**（fail-loud）設計になっている。同種の検査ツールを作るときはこの設計を踏襲する — 「対象 0 件」と「対象があって全部合格」を出力で区別できないツールは、パス指定を間違えた瞬間から永久に何も検査しなくなる。
+
+**関連**: `CLAUDE.md`「Markdown 出力ルール」/ Issue #85（並行委譲中は `--under` で範囲を絞る）

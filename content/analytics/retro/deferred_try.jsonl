@@ -150,3 +150,11 @@
 {"date": "2026-09-02 JST", "title": "[prod-drift] Issue のコメント書式違反を定期 validation する（validate_prod_drift_comments.py 新設）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "803"}
 {"date": "2026-09-02 JST", "title": "変異テストの実施記録を commit / PR 本文に残す（今回は既に記録済みのため対応不要と判定）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "SKILL.md 手順 5-3 に「症状コメントと通知記録は同居させない」を明記する（PR #802 の a4bb955 で対応済み）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "機械可読マーカーの新設時に既存データの backfill / 後方互換を伴わせる", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 803}
+{"date": "2026-09-02 JST", "title": "多段フォールバックの JSON 出力に「どの層で成功したか」を載せ、劣化を機械判別可能にする", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 793}
+{"date": "2026-09-02 JST", "title": "並行委譲中は Stop フックの WIP 自動保全コミットをマーカー方式で抑制する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-02 JST", "title": "委譲先の変異テスト報告を親が独立に再実測する手順を明文化する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 775}
+{"date": "2026-09-02 JST", "title": "Layer 1 レビューのインラインコメントに検出元レンズのタグを記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "プロキシの REST / GraphQL 許可範囲を定期検証する仕組みを持つ", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "委譲の rework サイクル数を計測し A-4 サーキットブレーカーを自動発動させる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "REST ページング上限 max_pages=3 の妥当性を PR コメント数分布で検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
