@@ -91,4 +91,4 @@
 {"date": "2026-09-01 JST", "title": "Spec 忠実性ファインダーの起動プロンプトに PR 本文を同梱する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 657}
 {"date": "2026-09-01 JST", "title": "待機ターンで Stop フックの PR 存在確認警告を繰り返さない", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 478}
 {"date": "2026-09-01 JST", "title": "Step 0.0 の API チャネル判定結果をセッション内で再利用する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-01 JST", "title": "SKILL.md が書いた除外条件と実装の除外集合の一貫性を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 151}
+{"date": "2026-09-01 JST", "title": "SKILL.md が書いた除外条件と実装の除外集合の一貫性を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
