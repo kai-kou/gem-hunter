@@ -81,3 +81,8 @@
 {"date": "2026-09-01 JST", "title": "tools/ の共有ユーティリティ索引を作り新規ツール作成時に必ず参照させる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "本番デプロイ乖離の A-6 通知を初回検知で前倒しする", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 626}
 {"date": "2026-09-01 JST", "title": "実装 ↔ ドキュメントの二重 SSOT を機械検出する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 699}
+{"date": "2026-09-01 JST", "title": "抽出・判定が入れ子スコープを持つとき、各段に負ケースを 1 件ずつ置く（境界の外側は 1 段とは限らない）", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 750}
+{"date": "2026-09-01 JST", "title": "並行 fan-out 中の Stop フック警告で [wip] 自動保全コミットが作られ、PR 前の履歴書き換えと force push が要る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 322}
+{"date": "2026-09-01 JST", "title": "§7.4 の表に列定義と「列順を変えない」制約をコメントで明記し、パーサの前提をドキュメント側にも書く", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "Cloudflare MCP の許可集合を Markdown 表から JSON へ外部化し、パーサの脆さを設計で消す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "フック self-test のヘルパー（pass / fail / check）を lib へ共通化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 759}
