@@ -30,6 +30,14 @@ mcp__github__pull_request_read で取得した値を引数として渡す:
 
   python3 tools/discussion_review_trigger.py --pr 42
   python3 tools/discussion_review_trigger.py --pr 42 --dry-run
+
+## gh が全く見つからない環境（Issue #196）
+
+`gh` バイナリ自体が PATH 上に存在しない場合（クラウドで --diff-lines 等を
+渡し忘れた・シムも無い等）でも `FileNotFoundError` で落ちず、判定不能を
+示すメッセージと非ゼロ終了コードを返す（呼び出し元は明示引数を渡す経路へ
+フォールバックできる）。リポジトリ名の解決は `gh repo view` が使えない場合
+`tools/repo_slug.py`（`git remote get-url origin` ベース）にフォールバックする。
 """
 from __future__ import annotations
 
@@ -44,22 +52,35 @@ SPEC_PATH = REPO_ROOT / "tools" / "discussion_specs" / "code_review.json"
 TRIGGER_DIFF_LINES = 300
 TRIGGER_LABELS = {"type:security", "type:breaking-change"}
 
+# tools/repo_slug.py（gh 不要の owner/repo 解決ヘルパー）を import する。
+# スクリプト単体実行（`python3 tools/discussion_review_trigger.py`）でも
+# 他所からの import でも解決できるよう、tools/ を明示的に sys.path へ足す。
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+from repo_slug import resolve_repo_slug  # noqa: E402
+
+
+def _run_gh(args: list[str]) -> tuple[int, str]:
+    """`gh` を安全に呼び出す。バイナリ自体が無ければ (127, "") を返し例外にしない（#196）。"""
+    try:
+        result = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+    except FileNotFoundError:
+        return 127, ""
+    return result.returncode, result.stdout.strip()
+
 
 def _get_repo() -> str:
-    r = subprocess.run(
-        ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
-    )
-    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else ""
+    rc, out = _run_gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+    if rc == 0 and out:
+        return out
+    # gh 不在 / 失敗時は git remote ベースの解決にフォールバック（#196）
+    return resolve_repo_slug()
 
 
 def _gh(*args: str, repo: str = "") -> tuple[int, str]:
     repo_flag = ["-R", repo] if repo else []
-    result = subprocess.run(
-        ["gh", *args, *repo_flag],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
-    )
-    return result.returncode, result.stdout.strip()
+    return _run_gh([*args, *repo_flag])
 
 
 def get_pr_info_gh(pr_number: int, repo: str) -> dict:
@@ -96,7 +117,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Layer 2 議論型レビュー自動トリガー（Issue #97）",
     )
-    parser.add_argument("--pr", type=int, required=True, help="PR 番号")
+    parser.add_argument("--pr", type=int, default=None, help="PR 番号")
     parser.add_argument("--dry-run", action="store_true",
                         help="判定のみ・実際にはレビューを実行しない")
     # クラウド環境用: mcp__github__pull_request_read で取得した値を直接渡す
@@ -108,7 +129,16 @@ def main() -> None:
                         help="カンマ区切りの変更ファイルパス一覧。省略時は gh CLI で取得を試みる")
     parser.add_argument("--legacy", action="store_true",
                         help="旧経路（run_discussion_review.py = claude -p）を直接起動する（フォールバック用）")
+    parser.add_argument("--self-test", action="store_true",
+                        help="判定ロジック・gh 不在時のフォールバックを検証して終了する")
     args = parser.parse_args()
+
+    if args.self_test:
+        _self_test()
+        return
+
+    if args.pr is None:
+        parser.error("--pr は必須です（--self-test を除く）")
 
     # 引数で直接提供された場合はそれを使う（クラウド環境）
     if args.diff_lines is not None:
@@ -191,6 +221,108 @@ def main() -> None:
         sys.exit(rc)
 
     print("✅ Layer 2 レビュー完了")
+
+
+def _self_test() -> None:
+    """判定ロジックと gh 不在時のフォールバックを検証する（Issue #196）。"""
+
+    # --- 1. should_trigger の判定ロジック（閾値・ラベル） ---
+    # 失敗経路1: 閾値未満 かつ 対象ラベルなし → 起動しない
+    trig, _ = should_trigger(299, set())
+    assert trig is False, "diff=299・ラベルなしは起動しないはず"
+
+    # 失敗経路2: 閾値ちょうど（境界値） → 起動する
+    trig, reason = should_trigger(300, set())
+    assert trig is True and "300" in reason, "diff=300（閾値ちょうど）は起動するはず"
+
+    # 失敗経路3: 閾値超過 → 起動する
+    trig, _ = should_trigger(9999, set())
+    assert trig is True
+
+    # 失敗経路4: diff=0 でも対象ラベルがあれば起動する（ラベル優先）
+    trig, reason = should_trigger(0, {"type:security"})
+    assert trig is True and "security" in reason
+
+    trig, _ = should_trigger(0, {"type:breaking-change"})
+    assert trig is True
+
+    # 失敗経路5: 非対象ラベル（type:bug 等）だけでは起動しない
+    trig, _ = should_trigger(10, {"type:bug", "type:improvement"})
+    assert trig is False
+
+    # --- 2. gh が全く見つからない環境での挙動（#196 の本丸） ---
+    # バリアント A: subprocess.run が FileNotFoundError を送出する（PATH に gh が皆無）
+    orig_run = subprocess.run
+
+    def _raise_file_not_found(*_a, **_kw):
+        raise FileNotFoundError("[Errno 2] No such file or directory: 'gh'")
+
+    subprocess.run = _raise_file_not_found  # type: ignore[assignment]
+    try:
+        rc, out = _run_gh(["repo", "view"])
+        assert (rc, out) == (127, ""), "_run_gh は例外を握り潰し (127, \"\") を返すはず"
+
+        # _get_repo() は gh 不在時に例外を投げず git remote ベースへフォールバックする
+        repo = _get_repo()
+        assert isinstance(repo, str) and repo, "_get_repo は gh 不在でも文字列を返すはず"
+
+        # _gh() 経由（get_pr_info_gh / get_changed_files_gh が使う）も同様に握り潰す
+        rc2, out2 = _gh("pr", "view", "42", repo="owner/repo")
+        assert (rc2, out2) == (127, "")
+
+        # get_pr_info_gh / get_changed_files_gh は例外を外に漏らさず空値を返す
+        assert get_pr_info_gh(42, "owner/repo") == {}
+        assert get_changed_files_gh(42, "owner/repo") == []
+    finally:
+        subprocess.run = orig_run  # type: ignore[assignment]
+
+    # バリアント B: gh は PATH にあるが nameWithOwner が空文字（別種の失敗形）
+    class _FakeResult:
+        returncode = 0
+        stdout = "\n"
+
+    subprocess.run = lambda *_a, **_kw: _FakeResult()  # type: ignore[assignment]
+    try:
+        repo2 = _get_repo()
+        assert isinstance(repo2, str) and repo2, "空出力時も resolve_repo_slug へフォールバックするはず"
+    finally:
+        subprocess.run = orig_run  # type: ignore[assignment]
+
+    # --- 3. エントリポイントから exit code までの到達確認 ---
+    # main() を実際に子プロセスとして --pr 付きで起動し、gh を PATH から完全に外しても
+    # 非ゼロ例外（FileNotFoundError のトレースバック）を出さず判定結果を返すことを確認する
+    # （再帰的な自己呼び出しを避けるため子プロセスは --self-test ではなく通常呼び出しにする）。
+    import os
+
+    if os.environ.get("_DRT_SELFTEST_CHILD") != "1":
+        env = dict(os.environ)
+        # PATH から gh を完全に除去（本物・シムの両方を排除）
+        env["PATH"] = "/usr/bin:/bin"
+        env["_DRT_SELFTEST_CHILD"] = "1"
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--pr", "999", "--diff-lines", "10", "--labels", "type:bug", "--dry-run"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT), env=env, timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"gh 不在環境での --pr 実行が非ゼロ終了: rc={result.returncode}\n{result.stderr}"
+        )
+        assert "FileNotFoundError" not in result.stderr, (
+            f"gh 不在環境で FileNotFoundError が漏れている:\n{result.stderr}"
+        )
+
+        # 明示引数を渡さない fallback 経路（旧: _get_repo → gh pr view）も
+        # FileNotFoundError を漏らさず、判定不能メッセージ + 非ゼロ終了で応答することを確認する
+        result2 = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--pr", "999"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT), env=env, timeout=30,
+        )
+        assert result2.returncode != 0, "gh も引数もない場合は非ゼロ終了で判定不能を示すはず"
+        assert "FileNotFoundError" not in result2.stderr, (
+            f"引数なし fallback 経路で FileNotFoundError が漏れている:\n{result2.stderr}"
+        )
+
+    print("OK: discussion_review_trigger self-test passed")
 
 
 if __name__ == "__main__":
