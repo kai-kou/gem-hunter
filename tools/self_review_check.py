@@ -21,9 +21,11 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import git_diff_utils
+from md_fence import fence_flags, mask_inline_code
 from pr_meta_patterns import SPRINT_GOAL_LINE_RE, meta_line_re
 
 MAX_MB = float(os.environ.get("SELF_REVIEW_MAX_MB", "5"))
@@ -991,14 +993,38 @@ def sprint_meta_warnings(pr_body: str | None) -> list[str]:
 # GitHub が認識するクローズキーワード（Issue を自動クローズするトリガーキーワード）。
 # 公式ドキュメント: https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue
 # GitHub が認識する 9 語: close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved
-# 🔴 コードフェンス（```...```）と引用行（`>`）内の記載は検出から **除外** する。理由:
-#   - コードフェンス内は作例・説明の一部であり、実際に Issue クローズを意図していない
-#   - 引用行も過去の提案・解説の参考引用であり、現在の意図を反映していない
-#   - 例: PR 本文が「過去の `Closes #123` 対応を含む」と説明する場合、そこは検出対象外にすべき
+#
+# 🔴 除外するのは **コードブロックとコードスパンだけ**（PR #772 Layer 1 セルフレビュー）。
+#   GitHub のクローズキーワード解析は blockquote（`>`）を除外しない。引用行を検査対象から
+#   外していた旧実装は `> Closes #281` を素通りさせ、マージ時に Issue が自動クローズされる
+#   fail-open だった。引用の中に書いても GitHub は閉じるので、こちらも検出する。
+#
+# 🔴 参照部（キーワードの後ろ）は GitHub が認識する 4 形式すべてを見る（旧実装は `#N` のみ）:
+#   - `#281`                                             ローカル参照
+#   - `GH-281`                                           GH- 形式
+#   - `owner/repo#281`                                   クロスリポジトリ参照
+#   - `https://github.com/owner/repo/issues/281`         URL 形式
+#   キーワード直後の `:`（`Closes: #281`）も GitHub は許容するため任意で受ける。
+#
+# URL 形式の絞り込み（誤検出＝正当な PR のブロックを避けるため）:
+#   - ホストは `://github.com/` 直後に `/` が続く形に限定する。`https://notgithub.com/...` や
+#     `https://github.com.evil.example/...`・`https://gitlab.com/...` はマッチしない
+#   - パスは `/issues/<数字>` のみ。`/pull/281`（PR へのリンク）はクローズ参照ではないので除外
+#   - 末尾の `#issuecomment-123` 等のフラグメントは **切り離さずマッチさせたまま** にする
+#     （同じ Issue を指すため、見逃す（fail-open）より検出する（fail-closed）側に倒す）
 _CLOSES_KEYWORDS = re.compile(
-    r"\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#\d+",
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+"
+    r"(?:https?://github\.com/[\w.-]+/[\w.-]+/issues/\d+"
+    r"|[\w.-]+/[\w.-]+#\d+"
+    r"|GH-\d+"
+    r"|#\d+)",
     re.IGNORECASE,
 )
+
+# フェンス内の行を検査本文から落とすときの差し込み文字。空行に置き換えると
+# 「フェンスの前の行末の `Closes` + フェンスの後の行頭の `#123`」が `\s+` 越しに繋がって
+# 誤検出になるため、非空白のプレースホルダで橋渡しを断つ。
+_FENCE_PLACEHOLDER = "\x00"
 
 
 def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
@@ -1008,7 +1034,8 @@ def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
     含まれていれば、Step 7（スプリントレビュー + レトロ）完了前に Issue が
     自動クローズされてしまう危険があるため Error を返す。
 
-    コードフェンス・引用行内の記載は除外（説明文・過去の参考として記載される場合を考慮）。
+    除外するのは **コードフェンスとインラインコードだけ**（GitHub のクローズキーワード解析と
+    同じ境界）。引用行（`>`）は GitHub が除外しないため、こちらも検出する（PR #772 指摘）。
 
     戻り値: エラー文言（検出時）/ None（問題なし）
     """
@@ -1017,22 +1044,14 @@ def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
     if not _SPRINT_GOAL_LINE_RE.search(pr_body):
         return None
 
-    # コードフェンス・引用行を除外した本文を検査対象にする
-    lines_to_check: list[str] = []
-    in_fence = False
-    for line in pr_body.splitlines():
-        # コードフェンス判定（``` で開始/終了）
-        if line.strip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        # 引用行判定（行頭が > で始まる）
-        if line.lstrip().startswith(">"):
-            continue
-        # フェンス外かつ非引用行なら検査対象に加える
-        if not in_fence:
-            lines_to_check.append(line)
-
-    text_to_check = "\n".join(lines_to_check)
+    # コードフェンス（``` / ~~~ を CommonMark 準拠で判定）とインラインコードを除外する。
+    # 未閉フェンスは md_fence の既定どおり「不成立」として検査対象へ戻る（fail-closed）。
+    lines = pr_body.splitlines()
+    flags = fence_flags(lines)
+    text_to_check = "\n".join(
+        _FENCE_PLACEHOLDER if in_fence else mask_inline_code(line)
+        for line, in_fence in zip(lines, flags)
+    )
     matches = _CLOSES_KEYWORDS.finditer(text_to_check)
     found = [m.group() for m in matches]
     if found:
@@ -1088,113 +1107,148 @@ def _self_test_sprint_meta_warnings() -> list[str]:
 
 
 def _self_test_sprint_pr_closes_detection() -> list[str]:
-    """Sprint Goal を持つ PR 内のクローズキーワード検出テスト（Issue #281）。"""
+    """Sprint Goal を持つ PR 内のクローズキーワード検出テスト（Issue #281 / PR #772 指摘 1〜3）。"""
     failures: list[str] = []
 
+    def body(*extra: str) -> str:
+        return "Session-Id: abc\nSprint Goal: 何か\n" + "".join(f"{line}\n" for line in extra)
+
+    def want_hit(text: str, label: str) -> None:
+        if sprint_pr_closes_detection(text) is None:
+            failures.append(f"検出されるべきなのに見逃した（fail-open）: {label}")
+
+    def want_miss(text: str, label: str) -> None:
+        got = sprint_pr_closes_detection(text)
+        if got is not None:
+            failures.append(f"検出されるべきでないのに誤検出した（fail-closed）: {label} → {got}")
+
     # ケース 1: Sprint Goal: がなければ検出しない
-    no_goal = "Session-Id: abc\nこんにちは Closes #123\n"
-    got = sprint_pr_closes_detection(no_goal)
-    if got is not None:
-        failures.append(f"Sprint Goal: なし PR で検出された（誤検出）: {got}")
+    want_miss("Session-Id: abc\nこんにちは Closes #123\n", "Sprint Goal: なし PR")
 
     # ケース 2: Sprint Goal: あり + Closes キーワード → Error を返す
-    with_goal_closes = "Session-Id: abc\nSprint Goal: SP-1\n実装内容: Closes #123\n"
-    got = sprint_pr_closes_detection(with_goal_closes)
-    if got is None:
-        failures.append("Sprint Goal: あり + Closes キーワード有 のに検出されない")
+    want_hit(body("実装内容: Closes #123"), "Sprint Goal: あり + Closes #123")
 
-    # ケース 3: 9 語すべてをテスト（大文字小文字混合）
-    keywords_to_test = [
-        ("Closes #123", "Closes"),
-        ("closes #456", "closes"),
-        ("closed #789", "closed"),
-        ("Fix #111", "Fix"),
-        ("fixes #222", "fixes"),
-        ("fixed #333", "fixed"),
-        ("Resolve #444", "Resolve"),
-        ("resolves #555", "resolves"),
-        ("resolved #666", "resolved"),
-    ]
-    for keyword, name in keywords_to_test:
-        body = f"Session-Id: abc\nSprint Goal: 何か\n{keyword}\n"
-        got = sprint_pr_closes_detection(body)
-        if got is None:
-            failures.append(f"キーワード '{name}' が検出されない")
+    # ケース 3: GitHub が認識する 9 語すべて（大文字小文字混合・ケース 10 と統合）
+    for keyword in (
+        "close #111", "Closes #222", "CLOSED #333",
+        "Fix #444", "FIXES #555", "fixed #666",
+        "Resolve #777", "Resolves #888", "resolved #999",
+    ):
+        want_hit(body(keyword), f"9 語のうち '{keyword.split()[0]}'")
 
-    # ケース 4: コードフェンス内は検出しない
-    in_fence = (
-        "Session-Id: abc\nSprint Goal: 何か\n"
-        "```\n"
-        "Closes #123\n"
-        "```\n"
+    # ケース 4: 参照形式の網羅（PR #772 指摘 2・旧実装は `#N` 以外を全て見逃していた）
+    want_hit(body("Closes https://github.com/kai-kou/gem-hunter/issues/281"), "URL 形式")
+    want_hit(
+        body("Fixes https://github.com/kai-kou/gem-hunter/issues/281#issuecomment-123"),
+        "URL 形式 + コメントフラグメント（同じ Issue を指すので fail-closed 側に倒す）",
     )
-    got = sprint_pr_closes_detection(in_fence)
-    if got is not None:
-        failures.append(f"コードフェンス内のキーワードが誤検出された: {got}")
+    want_hit(body("Closes kai-kou/gem-hunter#281"), "クロスリポジトリ形式")
+    want_hit(body("Closes: #281"), "コロン付き")
+    want_hit(body("Resolves: kai-kou/gem-hunter#281"), "コロン付き + クロスリポジトリ形式")
+    want_hit(body("Closes GH-281"), "GH-N 形式")
+    want_hit(body("fixes gh-281"), "GH-N 形式（小文字）")
 
-    # ケース 5: 引用行内は検出しない
-    in_quote = (
-        "Session-Id: abc\nSprint Goal: 何か\n"
-        "> 過去の Closes #123 対応では…\n"
-    )
-    got = sprint_pr_closes_detection(in_quote)
-    if got is not None:
-        failures.append(f"引用行内のキーワードが誤検出された: {got}")
+    # ケース 5: URL 形式の絞り込み（GitHub が実際にはクローズしない形を誤検出しない）
+    want_miss(body("Closes https://gitlab.com/kai-kou/gem-hunter/issues/281"), "別ホスト（gitlab.com）")
+    want_miss(body("Closes https://notgithub.com/kai-kou/gem-hunter/issues/281"), "別ホスト（notgithub.com）")
+    want_miss(body("Closes https://github.com.evil.example/o/r/issues/281"), "ホスト偽装（github.com.evil.example）")
+    want_miss(body("Closes https://github.com/kai-kou/gem-hunter/pull/281"), "PR への URL（/pull/）")
+    want_miss(body("参考: https://github.com/kai-kou/gem-hunter/issues/281"), "キーワードのない Issue URL")
 
-    # ケース 6: Sprint Goal: あり + キーワードなし → None を返す
-    no_keyword = (
-        "Session-Id: abc\nSprint Goal: 何か\n"
-        "実装内容：〜を追加する\n"
-    )
-    got = sprint_pr_closes_detection(no_keyword)
-    if got is not None:
-        failures.append(f"Sprint Goal: あり かつキーワードなし のに Error が返された: {got}")
+    # ケース 6: 引用行は **検出する**（PR #772 指摘 1・GitHub は blockquote を除外しない）
+    want_hit(body("> 過去の Closes #123 対応では…"), "引用行内の Closes #123")
+    want_hit(body(">> Fixes #7"), "入れ子引用内の Fixes #7")
 
-    # ケース 7: 複数のキーワード検出時、最初の 3 つを表示
-    multi = (
-        "Session-Id: abc\nSprint Goal: 何か\n"
-        "Closes #111\nFix #222\nResolves #333\nResolves #444\n"
-    )
+    # ケース 7: コードフェンス・インラインコードは除外する（PR #772 指摘 3）
+    want_miss(body("```", "Closes #123", "```"), "``` フェンス内")
+    want_miss(body("~~~", "Closes #123", "~~~"), "~~~ フェンス内")
+    want_miss(body("````", "```", "Closes #123", "```", "````"), "4 連バッククォートの入れ子フェンス内")
+    want_miss(body("```text", "~~~", "Closes #123", "```"), "``` フェンス内の ~~~ で早期クローズしない")
+    want_miss(body("説明: `Closes #123` と書くと閉じます"), "インラインコード内")
+    want_miss(body("説明: ``Closes #123`` と書くと閉じます"), "2 連バッククォートのインラインコード内")
+    # 未閉フェンスは「不成立」として検査対象へ戻す（旧実装は以降が全て無検査 = fail-open）
+    want_hit(body("```", "Closes #123"), "未閉フェンス以降（検査対象へ戻す）")
+    # フェンスを跨いで `Closes` と `#123` が繋がるのを防ぐ（プレースホルダの回帰）
+    want_miss(body("Closes", "```", "x", "```", "#123"), "フェンスを跨いだ Closes / #123 の橋渡し")
+
+    # ケース 8: Sprint Goal: あり + キーワードなし → None を返す
+    want_miss(body("実装内容：〜を追加する"), "キーワードなし")
+
+    # ケース 9: 複数のキーワード検出時、最初の 3 つを表示
+    multi = body("Closes #111", "Fix #222", "Resolves #333", "Resolves #444")
     got = sprint_pr_closes_detection(multi)
     if got is None:
         failures.append("複数キーワード有 のに検出されない")
     elif "…" not in got:
         failures.append(f"複数キーワード（4件）時に省略表記が無い: {got}")
 
-    # ケース 8: pr_body=None のときは None を返す
-    got = sprint_pr_closes_detection(None)
-    if got is not None:
-        failures.append(f"pr_body=None で None 以外が返された: {got}")
+    # ケース 10: pr_body=None のときは None を返す
+    if sprint_pr_closes_detection(None) is not None:
+        failures.append("pr_body=None で None 以外が返された")
 
-    # ケース 9: キーワード + スペース + # + 数字の形が必須（不適切な形は検出しない）
-    # 検出対象外になる形をテスト（9 語いずれでも無い、または形式不正）
-    invalid_forms = [
-        ("Session-Id: abc\nSprint Goal: 何か\nCloses#123\n", "Closes#123"),  # スペースなし
-        ("Session-Id: abc\nSprint Goal: 何か\nCloses 123\n", "Closes 123"),   # # がない
-    ]
-    for body, keyword in invalid_forms:
-        got = sprint_pr_closes_detection(body)
-        if got is not None:
-            failures.append(f"不適切な形が誤検出: {keyword} → {got}")
+    # ケース 11: 形式不正・別語は検出しない（誤検出でスプリント PR をブロックしないこと）
+    want_miss(body("Closes#123"), "キーワードと参照の間に空白がない")
+    want_miss(body("Closes 123"), "# がない")
+    want_miss(body("RESPLVES #888"), "誤字 RESPLVES（9 語のいずれでもない）")
+    want_miss(body("closest #1"), "closest（close の前方一致に引っかけない）")
+    want_miss(body("unfixed #1"), "unfixed（語境界の内側）")
+    want_miss(body("fixing #1"), "fixing（9 語のいずれでもない）")
 
-    # ケース 10: 9 語全て（close/fix/resolve の 3 群 × 3 語形 = 9 語）
-    all_nine_words = [
-        ("Session-Id: abc\nSprint Goal: 何か\nclose #111\n", "close"),
-        ("Session-Id: abc\nSprint Goal: 何か\nCloses #222\n", "closes"),
-        ("Session-Id: abc\nSprint Goal: 何か\nCLOSED #333\n", "closed"),
-        ("Session-Id: abc\nSprint Goal: 何か\nFix #444\n", "fix"),
-        ("Session-Id: abc\nSprint Goal: 何か\nFIXES #555\n", "fixes"),
-        ("Session-Id: abc\nSprint Goal: 何か\nfixed #666\n", "fixed"),
-        ("Session-Id: abc\nSprint Goal: 何か\nResolve #777\n", "resolve"),
-        ("Session-Id: abc\nSprint Goal: 何か\nRESPLVES #888\n", "resolves"),
-        ("Session-Id: abc\nSprint Goal: 何か\nresolved #999\n", "resolved"),
-    ]
-    for body, word in all_nine_words:
-        got = sprint_pr_closes_detection(body)
-        if got is None and word != "resolves":  # RESPLVES は誤字なので除外
-            failures.append(f"GitHub の 9 語のいずれかが検出されない: {word}")
-        elif got is not None and word == "resolves":  # 誤字は検出されないべき
-            failures.append(f"誤字 RESPLVES が誤検出された")
+    return failures
+
+
+def _self_test_sprint_pr_closes_wiring() -> list[str]:
+    """main() への配線を、実プロセスの終了コードで検証する（PR #772 指摘 4）。
+
+    純関数テストだけでは配線の欠落を捕まえられない（対照実験で実測: `errors.append(...)` を
+    `warnings.append(...)` に変えても、`sprint_pr_closes_detection(...)` を `None` に
+    置き換えても `--self-test` は緑のままだった）。ここでは使い捨ての git リポジトリを作り、
+    `--pr-body-stdin` のエントリポイントから exit code まで貫通させる。
+
+    ⚠️ 無限再帰を避けるため子プロセスに渡すのは `--self-test` ではなく `--pr-body-stdin`。
+    ⚠️ `main()` の当該ブロックは「変更ファイルが 1 件以上 + 作業ブランチが main/master 以外」で
+       しか動かないため、初期コミット後にファイルを変更しブランチ名を付け替えてから実行する。
+    """
+    failures: list[str] = []
+    git = shutil.which("git")
+    if git is None:
+        # 実行できないことを緑にしない（fail-open 防止）
+        return ["git が見つからず main() 配線テストを実行できなかった"]
+
+    script = str(Path(__file__).resolve())
+    violation = "Sprint Goal: SP-0 配線テスト\n\n> Closes #1\n"
+    clean = "Sprint Goal: SP-0 配線テスト\nsp:1\nTeam: fan-out(2)\nSession-Id: self-test\n"
+
+    def run_git(tmp: str, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [git, "-C", tmp, "-c", "user.email=self-test@example.com",
+             "-c", "user.name=self-test", "-c", "commit.gpgsign=false", *args],
+            capture_output=True, text=True, timeout=60,
+        )
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "note.txt").write_text("hello\n", encoding="utf-8")
+            for args in (("init", "-q", "."), ("add", "-A"), ("commit", "-qm", "init"),
+                         ("branch", "-m", "feat/self-test")):
+                r = run_git(tmp, *args)
+                if r.returncode != 0:
+                    return [f"配線テスト用リポジトリの作成に失敗（git {' '.join(args)}）: {r.stderr.strip()}"]
+            # 変更ファイルを 1 件作る（main() の当該ブロックの発火条件）
+            (Path(tmp) / "note.txt").write_text("hello\nworld\n", encoding="utf-8")
+
+            for label, pr_body, want_rc in (("違反あり", violation, 1), ("違反なし", clean, 0)):
+                proc = subprocess.run(
+                    [sys.executable, script, "--pr-body-stdin"],
+                    input=pr_body, capture_output=True, text=True, cwd=tmp, timeout=300,
+                )
+                if proc.returncode != want_rc:
+                    failures.append(
+                        f"main() 配線: {label} の本文で exit={proc.returncode}（期待 {want_rc}）"
+                        f" / stdout={proc.stdout.strip()[:300]} / stderr={proc.stderr.strip()[:200]}"
+                    )
+    except (OSError, subprocess.SubprocessError) as e:
+        failures.append(f"main() 配線テストの実行に失敗: {type(e).__name__}: {e}")
 
     return failures
 
@@ -1215,6 +1269,7 @@ def run_self_test() -> int:
         ("デバッグ痕跡検出（自己誤検出の回帰）", _self_test_debug_trace),
         ("スプリントメタ Warning の射程（#695）", _self_test_sprint_meta_warnings),
         ("Sprint Goal 時の Closes キーワード検出（#281）", _self_test_sprint_pr_closes_detection),
+        ("Closes 検出の main() 配線（exit code 通貫・PR #772）", _self_test_sprint_pr_closes_wiring),
     ]
     failed_groups = 0
     total_failures = 0
