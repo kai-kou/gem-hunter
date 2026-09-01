@@ -111,3 +111,13 @@
 {"date": "2026-09-01 JST", "title": "Playwright のブラウザビルド不一致でクラウドの E2E 証跡が取れない状態を解消する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 629}
 {"date": "2026-09-01 JST", "title": "Layer 1 が CRITICAL を出したときの修正後再レビューを手順として明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "自動検査由来の軽微な指摘を Issue ではなく PR コメントへ寄せる記録レーン分離", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "Stop フックの WIP 自動保全が無関係な tracked 変更（package-lock.json）を巻き込む", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-01 JST", "title": "並行委譲中は Stop フックの WIP 自動コミット・コミット要求を抑止する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-01 JST", "title": "検査ツールに受理形式を追加したら、その形式が崩れた入力を 2〜3 バリアント self-test で固定する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 750}
+{"date": "2026-09-01 JST", "title": "スキルの決定木に、外部コマンドの exit code の組み合わせ表（未定義の組み合わせの合流先）を持たせる", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 785}
+{"date": "2026-09-01 JST", "title": "変異テストの報告を機械可読ブロック（MUTATION_RESULTS:）で返させ、親の実測と突合できるようにする", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 775}
+{"date": "2026-09-01 JST", "title": "run_checks.sh の恒常 FAIL を「既存の赤 / 今回の赤」で機械判定する（ベースライン方式）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 214}
+{"date": "2026-09-01 JST", "title": "PR 前後で run_checks.sh を 2 回実行する冗長を減らす（重い E2E / Lighthouse の実行回数最適化）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "session-start.sh で gh 不在を事前検出し、MCP を最初から優先経路にする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "prod_drift_escalation の連続回数閾値が cron 間隔前提の固定値で、SKILL.md とルーティン設定に分散している", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "self-improvement-loop 消化モードの「done と判定する条件」を SKILL.md に明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
