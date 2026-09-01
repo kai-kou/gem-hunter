@@ -7,6 +7,321 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/hook_block.sh
 source "$HOOK_DIR/lib/hook_block.sh"
 
+# `.git` 共通ディレクトリの解決と stat の GNU/BSD フォールバックは
+# lib/wip_guard.sh が既に解いている（同じ「.git 配下の TTL マーカー」という目的）。
+# 重複コピーを作らず再利用する（無い環境では下のフォールバックへ落ちる）。
+# shellcheck source=lib/wip_guard.sh
+[[ -f "$HOOK_DIR/lib/wip_guard.sh" ]] && source "$HOOK_DIR/lib/wip_guard.sh"
+
+# ── PR 確認済みマーカー（Issue #478）─────────────────────────────────────────
+#
+# 目的: 同一セッション・同一ブランチ・同一 HEAD で PR の実在を確認済みなら、Stop のたびに
+#       同じ確認依頼を出さない。
+#
+# 🔴 マーカーは「リマインドを出したとき」ではなく「Claude が list_pull_requests で PR の実在を
+#    確認したとき」にだけ立てる（Issue #478 の明示指定）。設置経路は
+#    `bash .claude/hooks/stop-pr-check.sh --mark-confirmed <PR番号>` のみで、フック本体は
+#    マーカーを **作らない**。これにより「PR を作ったつもりで作れていなかった」ケースでは
+#    Claude がマークできない＝リマインドが従来どおり出続ける（安全側）。
+#
+# 置き場所: `--git-common-dir`（絶対パス）配下。cwd 相対の `.git/` を使うと
+#   ① worktree では `.git` がファイルなので mkdir -p が "Not a directory" で失敗し抑制が効かない
+#   ② cwd がサブディレクトリだと偽の `.git/` ディレクトリを作ってしまう（以後その配下が
+#      親リポジトリの git status に現れなくなる）
+#   の 2 つの実害が出る（PR #772 Layer 1 セルフレビューで実測）。
+#
+# 寿命: `.git/` 配下は `git clean -fd` の対象外（.claude/hooks/session-start.sh 参照）なので
+#   作業コピーが残る限りセッションを跨いで生き残る。よってマーカーのキーに
+#   **セッション ID + ブランチ + HEAD sha** を含め、別セッション・追加コミット後には
+#   マッチしないようにする（TTL と `find -mtime +1 -delete` で残骸も掃除する）。
+
+# 数値バリデーション済みの TTL（分）を返す。
+# 🔴 環境変数を検証せずに算術評価（`[[ $a -lt $TTL ]]` / `(( ))`）へ流すと任意コマンド実行になる
+#    （実測: TTL='x[$(touch /tmp/pwn)]' でファイルが生成された）。必ずここを通す。
+pr_check_ttl_minutes() {
+  local ttl="${PR_CHECK_CONFIRMATION_TTL_MINUTES:-30}"
+  [[ "$ttl" =~ ^[0-9]+$ ]] || ttl=30
+  printf '%s\n' "$ttl"
+}
+
+# ファイル名に使える文字だけに落とす（パス区切り・記号を除去し、長さも制限する）
+pr_check_sanitize() {
+  printf '%s' "${1:-}" | tr -c 'A-Za-z0-9_-' '-' | cut -c1-80
+}
+
+# マーカー格納ディレクトリ（絶対パス）。git リポジトリでなければ非 0
+pr_check_marker_dir() {
+  local common marker
+  if declare -F wip_guard_marker_path >/dev/null 2>&1; then
+    marker=$(wip_guard_marker_path ".") || return 1
+    common=$(dirname "$marker")
+  else
+    common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+      || common=$(git rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  fi
+  [[ -n "$common" ]] || return 1
+  printf '%s/pr-check-confirmed\n' "$common"
+}
+
+# 現在の HEAD（短縮 sha）。コミットが無ければ "nohead"
+pr_check_head() {
+  git rev-parse --short=12 HEAD 2>/dev/null || printf 'nohead\n'
+}
+
+# マーカーのファイル名（セッション ID + ブランチ + HEAD sha）
+pr_check_marker_key() { # $1=session id, $2=branch, $3=head sha
+  printf '%s__%s__%s\n' \
+    "$(pr_check_sanitize "${1:-none}")" "$(pr_check_sanitize "${2:-none}")" "$(pr_check_sanitize "${3:-none}")"
+}
+
+# マーカーの mtime（エポック秒）。stat の GNU/BSD 差異は wip_guard 側の実装に寄せる
+pr_check_marker_mtime() { # $1 = マーカーパス
+  if declare -F wip_guard_marker_mtime >/dev/null 2>&1; then
+    wip_guard_marker_mtime "$1"
+  else
+    stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
+  fi
+}
+
+# 環境変数側のセッション ID（--mark-confirmed 実行時の既定キー）
+pr_check_env_session_id() {
+  local sid="${CLAUDE_CODE_SESSION_ID:-}"
+  [[ -n "$sid" ]] || sid="nosession"
+  printf '%s\n' "$sid"
+}
+
+# 確認済みなら 0、未確認（＝リマインドを出すべき）なら 1。
+# $1=ブランチ, $2.. = 突き合わせるセッション ID の候補（stdin JSON 由来 / 環境変数由来）
+pr_check_is_confirmed() {
+  local branch="$1"; shift
+  local dir head ttl now sid file content mtime age
+  dir=$(pr_check_marker_dir) || return 1
+  head=$(pr_check_head)
+  ttl=$(pr_check_ttl_minutes)
+  now=$(date +%s)
+  for sid in "$@"; do
+    [[ -n "$sid" ]] || continue
+    file="$dir/$(pr_check_marker_key "$sid" "$branch" "$head")"
+    [[ -f "$file" ]] || continue
+    # 中身が PR 番号でない（空・ゴミ）マーカーは「未確認」とみなす。
+    # touch だけで立った空マーカーを確認済みと誤認しないための下限（Issue #478）。
+    content=$(head -c 64 "$file" 2>/dev/null | tr -d '[:space:]' || echo "")
+    [[ "$content" =~ ^[0-9]+$ ]] || continue
+    mtime=$(pr_check_marker_mtime "$file")
+    # 算術評価へ流す前に必ず数値検証する（stat 失敗時の文字列混入を遮断）
+    [[ "$mtime" =~ ^[0-9]+$ ]] || continue
+    age=$(( (now - mtime) / 60 ))
+    (( age < 0 )) && age=0
+    if (( age < ttl )); then return 0; fi
+  done
+  return 1
+}
+
+# `--mark-confirmed <PR番号>`: PR の実在を確認できた Claude だけが呼ぶ設置経路
+pr_check_mark_confirmed() { # $1 = PR 番号
+  local pr="${1:-}" branch dir head file
+  if [[ ! "$pr" =~ ^[0-9]+$ ]]; then
+    echo "[stop-pr-check] --mark-confirmed には PR 番号（数字のみ）を渡してください: 受け取った値=[${pr}]" >&2
+    return 1
+  fi
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "[stop-pr-check] git リポジトリ外のためマーカーを設置できません" >&2
+    return 1
+  fi
+  branch=$(git branch --show-current 2>/dev/null || echo "")
+  if [[ -z "$branch" ]]; then
+    echo "[stop-pr-check] ブランチを特定できないためマーカーを設置できません（detached HEAD）" >&2
+    return 1
+  fi
+  dir=$(pr_check_marker_dir) || { echo "[stop-pr-check] .git 共通ディレクトリを解決できませんでした" >&2; return 1; }
+  if ! mkdir -p "$dir" 2>/dev/null; then
+    echo "[stop-pr-check] マーカーディレクトリを作成できませんでした: $dir" >&2
+    return 1
+  fi
+  # 古い残骸の掃除（.git 配下に溜め続けない）
+  find "$dir" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null || true
+  head=$(pr_check_head)
+  file="$dir/$(pr_check_marker_key "$(pr_check_env_session_id)" "$branch" "$head")"
+  if ! printf '%s\n' "$pr" >"$file" 2>/dev/null; then
+    echo "[stop-pr-check] マーカーを書き込めませんでした: $file" >&2
+    return 1
+  fi
+  echo "[stop-pr-check] PR #${pr} 確認済みマーカーを設置しました（ブランチ ${branch} / HEAD ${head} / TTL $(pr_check_ttl_minutes) 分）: ${file}"
+}
+
+if [[ "${1:-}" == "--mark-confirmed" ]]; then
+  pr_check_mark_confirmed "${2:-}"
+  exit $?
+fi
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  # 使い捨ての git リポジトリ（ローカル bare を origin にする＝ネットワーク不要）で
+  # フック本体を実際に起動し、終了コードを実測する。実リポジトリには一切触れない。
+  self_test_fail=0
+  ok() { echo "  ok   $1"; }
+  ng() { echo "  NG   $1${2:+ / $2}"; self_test_fail=1; }
+  expect_rc() { # $1=期待 rc, $2=実 rc, $3=ケース名
+    if [[ "$2" == "$1" ]]; then ok "$3"; else ng "$3" "expected rc=$1 got rc=$2"; fi
+  }
+
+  HOOK_PATH="$HOOK_DIR/$(basename "${BASH_SOURCE[0]}")"
+  REAL_STAT="$(command -v stat || echo /usr/bin/stat)"
+  TMP_ROOT="$(mktemp -d)"
+  trap 'rm -rf "$TMP_ROOT" 2>/dev/null || true' EXIT
+
+  git init -q --bare "$TMP_ROOT/origin.git"
+  git init -q -b feat/selftest "$TMP_ROOT/work" 2>/dev/null || {
+    git init -q "$TMP_ROOT/work"; git -C "$TMP_ROOT/work" checkout -q -b feat/selftest; }
+  cd "$TMP_ROOT/work"
+  git config user.email selftest@example.com
+  git config user.name selftest
+  git config commit.gpgsign false
+  git remote add origin "$TMP_ROOT/origin.git"
+  echo one >a.txt && git add a.txt && git commit -q -m one
+  git push -q -u origin feat/selftest
+  git checkout -q -b feat/other && echo two >b.txt && git add b.txt && git commit -q -m two
+  git push -q -u origin feat/other
+  git checkout -q feat/selftest
+
+  run_hook() { # $1=stdin session id, $2=env session id → rc を stdout に出す
+    local rc
+    set +e
+    printf '{"stop_hook_active":false,"session_id":"%s"}' "$1" \
+      | CLAUDE_CODE_REMOTE=true GITHUB_REPOSITORY=owner/repo \
+        CLAUDE_CODE_SESSION_ID="${2:-}" bash "$HOOK_PATH" >/dev/null 2>&1
+    rc=$?
+    set -e
+    printf '%s' "$rc"
+  }
+  mark() { # $1=PR 番号, $2=env session id → rc を stdout に出す
+    local rc
+    set +e
+    CLAUDE_CODE_SESSION_ID="${2:-}" bash "$HOOK_PATH" --mark-confirmed "$1" >/dev/null 2>&1
+    rc=$?
+    set -e
+    printf '%s' "$rc"
+  }
+  marker_of() { # $1=session id, $2=branch → マーカーの絶対パス
+    printf '%s/%s\n' "$(pr_check_marker_dir)" "$(pr_check_marker_key "$1" "$2" "$(pr_check_head)")"
+  }
+
+  MARKER_DIR="$(pr_check_marker_dir)"
+
+  # 1. マーカー無し → リマインド発火（exit 2）。かつリマインドはマーカーを作らない（Issue #478）
+  expect_rc 2 "$(run_hook S1 S1)" "マーカー無し → リマインド発火"
+  if [[ -d "$MARKER_DIR" ]] && [[ -n "$(ls -A "$MARKER_DIR" 2>/dev/null)" ]]; then
+    ng "リマインド発火時にマーカーを作らない" "$MARKER_DIR にファイルが作られた"
+  else
+    ok "リマインド発火時にマーカーを作らない"
+  fi
+
+  # 2. --mark-confirmed 後・TTL 内 → 抑制（exit 0）
+  expect_rc 0 "$(mark 772 S1)" "--mark-confirmed 772 が成功する"
+  expect_rc 0 "$(run_hook S1 S1)" "確認済み・TTL 内 → 抑制"
+
+  # 3. stdin の session_id が別でも環境変数側が一致すれば抑制（取り違え耐性）
+  expect_rc 0 "$(run_hook OTHER S1)" "stdin 不一致・env 一致 → 抑制"
+  # 3b. どちらのセッション ID も一致しない → 抑制しない
+  expect_rc 2 "$(run_hook S2 S2)" "別セッション → 抑制しない"
+
+  # 4. マーカーの中身が PR 番号でない → 未確認扱い
+  MK="$(marker_of S1 feat/selftest)"
+  : >"$MK"
+  expect_rc 2 "$(run_hook S1 S1)" "空マーカー → 抑制しない"
+  echo "abc" >"$MK"
+  expect_rc 2 "$(run_hook S1 S1)" "PR 番号でないマーカー → 抑制しない"
+  echo "772" >"$MK"
+  expect_rc 0 "$(run_hook S1 S1)" "PR 番号を書き戻すと再び抑制"
+
+  # 5. TTL 超過 → 再リマインド
+  touch -d "@$(( $(date +%s) - 7200 ))" "$MK"
+  expect_rc 2 "$(run_hook S1 S1)" "TTL 超過（既定 30 分・2 時間前）→ 再リマインド"
+  export PR_CHECK_CONFIRMATION_TTL_MINUTES=240
+  expect_rc 0 "$(run_hook S1 S1)" "TTL を 240 分に延ばすと同じマーカーで抑制"
+  unset PR_CHECK_CONFIRMATION_TTL_MINUTES
+
+  # 6. TTL の不正値 → 既定 30 分へフォールバックし、コマンドが実行されない（算術評価インジェクション）
+  # ペイロードは 2 種類試す。`x[...]` は set -u 下では "unbound variable" でフックごと落ちる
+  # （リマインドが静かに消える別の実害）。`age[...]` は set -u 下でも実際にコマンドが走る
+  # （実測済み）ので、遮断できていることの検証にはこちらが要る。
+  for payload_idx in 1 2; do
+    PWN="$TMP_ROOT/pwn_selftest_${payload_idx}"
+    if [[ "$payload_idx" == "1" ]]; then
+      export PR_CHECK_CONFIRMATION_TTL_MINUTES="x[\$(touch $PWN)]"
+    else
+      export PR_CHECK_CONFIRMATION_TTL_MINUTES="age[\$(touch $PWN)]"
+    fi
+    expect_rc 2 "$(run_hook S1 S1)" "TTL が不正値（payload ${payload_idx}）でも既定 30 分（2 時間前のマーカー）→ 再リマインド"
+    if [[ -e "$PWN" ]]; then
+      ng "TTL 経由の算術評価インジェクションを遮断（payload ${payload_idx}）" "$PWN が作られた"
+    else
+      ok "TTL 経由の算術評価インジェクションを遮断（payload ${payload_idx}）"
+    fi
+  done
+  export PR_CHECK_CONFIRMATION_TTL_MINUTES=abc
+  expect_rc 0 "$(mark 772 S1)" "不正 TTL でも --mark-confirmed は成功"
+  expect_rc 0 "$(run_hook S1 S1)" "TTL=abc → 既定 30 分で抑制"
+  unset PR_CHECK_CONFIRMATION_TTL_MINUTES
+
+  # 7. HEAD が変わった（確認後に追加コミット）→ 再リマインド
+  echo more >>a.txt && git add a.txt && git commit -q -m more
+  expect_rc 2 "$(run_hook S1 S1)" "HEAD 変更後 → 再リマインド"
+  expect_rc 0 "$(mark 772 S1)" "新 HEAD で再マーク"
+  expect_rc 0 "$(run_hook S1 S1)" "新 HEAD のマーカーで抑制"
+
+  # 8. 別ブランチ → 抑制されない（feat/other も push 済みなので not_found スキップではない）
+  git checkout -q feat/other
+  expect_rc 2 "$(run_hook S1 S1)" "別ブランチ → 抑制されない"
+  git checkout -q feat/selftest
+
+  # 9. stat の GNU/BSD 両形式で mtime が取れる
+  SHIM="$TMP_ROOT/shim"; mkdir -p "$SHIM"
+  cat >"$SHIM/stat" <<SHIM_GNU
+#!/bin/bash
+# GNU 形式のみ対応（BSD 形式 -f は失敗させる）
+[[ "\$1" == "-c" ]] || exit 1
+exec "$REAL_STAT" "\$@"
+SHIM_GNU
+  chmod +x "$SHIM/stat"
+  ORIG_PATH="$PATH"; export PATH="$SHIM:$PATH"
+  expect_rc 0 "$(run_hook S1 S1)" "stat が GNU 形式のみでも抑制が効く"
+  cat >"$SHIM/stat" <<SHIM_BSD
+#!/bin/bash
+# BSD 形式のみ対応（GNU 形式 -c は失敗させる）
+[[ "\$1" == "-f" ]] || exit 1
+exec "$REAL_STAT" -c %Y "\$3"
+SHIM_BSD
+  chmod +x "$SHIM/stat"
+  expect_rc 0 "$(run_hook S1 S1)" "stat が BSD 形式のみでも抑制が効く"
+  export PATH="$ORIG_PATH"; rm -rf "$SHIM"
+
+  # 10. worktree（.git がファイル）でもマーカーが共通 .git 配下に作られる
+  git worktree add -q "$TMP_ROOT/wt" -b feat/wt >/dev/null 2>&1
+  git -C "$TMP_ROOT/wt" push -q -u origin feat/wt
+  MAIN_GIT_DIR="$TMP_ROOT/work/.git"
+  (
+    cd "$TMP_ROOT/wt"
+    [[ -f "$TMP_ROOT/wt/.git" ]] || echo "  NG   worktree の .git がファイルでない（前提崩れ）"
+    exit 0
+  )
+  wt_rc=$(cd "$TMP_ROOT/wt" && mark 772 S1)
+  expect_rc 0 "$wt_rc" "worktree で --mark-confirmed が成功"
+  wt_head=$(git -C "$TMP_ROOT/wt" rev-parse --short=12 HEAD)
+  wt_marker="$MAIN_GIT_DIR/pr-check-confirmed/$(pr_check_marker_key S1 feat/wt "$wt_head")"
+  if [[ -f "$wt_marker" ]]; then ok "worktree のマーカーが共通 .git 配下に作られる"; else ng "worktree のマーカーが共通 .git 配下に作られる" "$wt_marker が無い"; fi
+  if [[ -d "$TMP_ROOT/wt/.git" ]]; then ng "worktree 配下に偽の .git ディレクトリを作らない" "$TMP_ROOT/wt/.git がディレクトリ化した"; else ok "worktree 配下に偽の .git ディレクトリを作らない"; fi
+  wt_rc=$(cd "$TMP_ROOT/wt" && run_hook S1 S1)
+  expect_rc 0 "$wt_rc" "worktree でも抑制が効く"
+
+  # 11. --mark-confirmed の入力検証
+  expect_rc 1 "$(mark 'abc' S1)" "--mark-confirmed に非数値 → 失敗"
+  expect_rc 1 "$(mark '' S1)" "--mark-confirmed に空文字 → 失敗"
+
+  cd "$HOOK_DIR"
+  if [[ $self_test_fail -eq 0 ]]; then echo "stop-pr-check: self-test PASS"; fi
+  exit $self_test_fail
+fi
+
 input=$(cat)
 
 # 再帰防止
@@ -89,13 +404,24 @@ fi
 # unknown（両方失敗）はサイレントスキップせず PR チェックに進む（L-050 対策）
 if [[ "$branch_check_status" == "not_found" ]]; then exit 0; fi
 
-# --- クラウド: PR 存在確認は Claude が MCP で行う（ハーネスからは判定できない・L-114 / #342）---
-# クラウドではフックから MCP を呼べず、gh も未導入・repo スコープ REST も 403 のため、
-# ハーネス側で PR の有無を判定する手段が存在しない。これは障害ではなく既定の運用なので、
-# 「確認できません」という異常表現ではなく Claude への実行指示として渡す。
+# --- クラウド: PR 確認済みマーカーによる重複抑制（Issue #478）---
+# 判定ロジックとマーカー設計はファイル冒頭の pr_check_* 関数群を参照。
+# 🔴 ここではマーカーを **作らない**。設置は Claude が PR の実在を確認したあとに
+#    `--mark-confirmed <PR番号>` を実行したときだけ行う（Issue #478 の明示指定）。
+#    したがって PR が未作成のとき（本来の発火ケース）は従来どおり毎回リマインドが出る。
 if [[ "${CLAUDE_CODE_REMOTE:-}" == "true" ]]; then
+  # セッション ID は stdin JSON（フックの正）と環境変数（--mark-confirmed 実行時の正）の
+  # 両方を候補にする。両者が食い違っても抑制が黙って効かなくなることを防ぐ。
+  session_id_stdin=$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || echo "")
+  session_id_env=$(pr_check_env_session_id)
+
+  if pr_check_is_confirmed "$current_branch" "$session_id_stdin" "$session_id_env"; then
+    # 同一セッション・同一ブランチ・同一 HEAD で PR 実在を確認済み → 確認依頼を出さない
+    exit 0
+  fi
+
   hook_block "📋 PR 存在確認をお願いします（クラウドではハーネスから判定できない仕様。gh の導入では解決しません）: ${VERIFY_HINT}
-- PR が既にある場合: 確認結果（PR 番号・state）を踏まえてそのまま終了してよい
+- PR が既にある場合: 確認結果（PR 番号・state）を踏まえてそのまま終了してよい。あわせて \`bash .claude/hooks/stop-pr-check.sh --mark-confirmed <PR番号>\` を実行すると、同じブランチ・同じコミットの間はこの確認依頼を $(pr_check_ttl_minutes) 分抑制します（Issue #478）
 - PR が無い場合: pr-review-flow.md に従いセルフレビュー → PR 作成まで進める"
 fi
 

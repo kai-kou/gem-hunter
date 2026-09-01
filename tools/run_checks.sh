@@ -428,6 +428,21 @@ else
   skip_check "CJK Markdown (check_cjk_markdown.py --changed)" "スクリプトが見つかりません"
 fi
 
+# 5.1.5 Markdown テーブルの列数・終端パイプ（Issue #395・CJK 検査の直後に配線）
+if [ -f "$REPO_ROOT/tools/check_markdown_table_columns.py" ]; then
+  run_check "Markdown テーブル (check_markdown_table_columns.py --changed)" python3 tools/check_markdown_table_columns.py --changed
+  run_check "Markdown テーブル self-test (check_markdown_table_columns.py --self-test)" python3 tools/check_markdown_table_columns.py --self-test
+else
+  skip_check "Markdown テーブル (check_markdown_table_columns.py --changed)" "スクリプトが見つかりません"
+fi
+
+# 5.1.6 コードフェンス／インラインコード判定の共有ヘルパー（PR #772）
+if [ -f "$REPO_ROOT/tools/md_fence.py" ]; then
+  run_check "Markdown フェンス判定 self-test (md_fence.py --self-test)" python3 tools/md_fence.py --self-test
+else
+  skip_check "Markdown フェンス判定 self-test (md_fence.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 5.1 GitHub 本文 Markdown（送信経路が壊す行内リンク書式・Issue #27）
 if [ -f "$REPO_ROOT/tools/check_github_body_markdown.py" ]; then
   run_check "GitHub 本文 Markdown (check_github_body_markdown.py)" python3 tools/check_github_body_markdown.py
@@ -694,6 +709,16 @@ if [ -f "$REPO_ROOT/.claude/hooks/pre-cloudflare-mcp-allowlist-check.sh" ]; then
     bash .claude/hooks/pre-cloudflare-mcp-allowlist-check.sh --self-test
 else
   skip_check "Cloudflare MCP アローリストガード self-test (pre-cloudflare-mcp-allowlist-check.sh --self-test)" "スクリプトが見つかりません"
+fi
+
+# PR 確認済みマーカーの重複抑制 self-test（Issue #478 / PR #772）。
+# 「PR の実在を確認したときだけマーカーが立つ」「TTL・HEAD・セッションが変われば再発火する」
+# 「TTL 環境変数の不正値でコマンドが実行されない」を、使い捨ての git リポジトリで実測する。
+if [ -f "$REPO_ROOT/.claude/hooks/stop-pr-check.sh" ]; then
+  run_check_timeout "PR 確認済みマーカー self-test (stop-pr-check.sh --self-test)" 60 \
+    bash .claude/hooks/stop-pr-check.sh --self-test
+else
+  skip_check "PR 確認済みマーカー self-test (stop-pr-check.sh --self-test)" "スクリプトが見つかりません"
 fi
 
 # 安全なプロセス掃除ヘルパー self-test（Issue #490 / L-139）。
