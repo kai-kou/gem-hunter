@@ -207,6 +207,18 @@ python3 tools/setup_github_variables.py --list
 |--------|------|------|--------|
 | `PR_CHECK_CONFIRMATION_TTL_MINUTES` | `stop-pr-check.sh` の PR 未作成リマインドを抑制する確認済みマーカーの有効期限（分）。Claude が PR の実在を確認したときにだけマーカーが立ち、同一セッション・同一ブランチではこの期間だけリマインドが再掲されない。**未設定時は 30 分** | 任意 | `30` |
 
+### テスト・E2E 実行変数（`SP-4` 以降・Issue #115）
+
+E2E（Playwright）と `tools/run_checks.sh` が読む変数。**いずれも開発・テスト実行時のみのもので、本番 Worker には設定しない**。既定値だけで E2E が通る（環境変数ゼロで実行できる）ため、通常は設定不要。
+
+| 変数名 | 用途 | 必須 | 値の例 |
+|--------|------|------|--------|
+| `GITHUB_API_ORIGIN` | GitHub REST の宛先オリジンを差し替える（`src/infrastructure/github/github-repository-query.ts`）。E2E スタブへ向けるためのもの。🔴 **ループバック（`127.0.0.1` / `localhost` / `::1`）宛てのみ許可** し、外部ホストを指定するとトークン漏洩防止のため例外を投げる。**本番では設定しない**（未設定時は `https://api.github.com`） | 任意（E2E のみ） | `http://127.0.0.1:8788` |
+| `E2E_BASE_URL` | E2E の対象 URL。**設定すると `playwright.config.ts` の `webServer` 自動起動（アプリ + スタブ）をスキップする** ため、外部 URL（プレビュー等）へ向けた場合はスタブ前提のテストが到達できない。未設定時は `http://127.0.0.1:3100` を自動起動 | 任意 | `http://127.0.0.1:3100` |
+| `E2E_STUB_PORT` | E2E スタブ API（`e2e/stub/server.mjs`）の待ち受けポート。未設定時は `8788` | 任意 | `8788` |
+| `SKIP_E2E` | `1` のとき `tools/run_checks.sh` の E2E ステップを明示スキップする（**結果表には SKIP として可視化され、黙って緑にはしない**） | 任意 | `1` |
+| `RUN_CHECKS_E2E_TIMEOUT` | `run_checks.sh` の E2E ステップ専用タイムアウト（秒）。他チェックと枠を取り合わないよう `RUN_CHECKS_TIMEOUT`（既定 300 秒）とは別に持つ。未設定時は `600` | 任意 | `600` |
+
 ## 自動ロードの仕組み（ローカル実行時のみ機能・クラウドは 403）
 
 ### session-start.sh の処理フロー
