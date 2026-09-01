@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
+import { resolveChromiumExecutablePath } from './tools/e2e-chromium-executable.mjs'
 
 /**
  * E2E 設定（SP-4・NFR-24 でネットワークを遮断するため、Next.js 本体をスタブ GitHub API へ向けて起動する）。
@@ -46,6 +47,10 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         launchOptions: {
           args: ['--ssl-version-max=tls1.2'],
+          // 🔴 Issue #629: クラウドコンテナのプリインストール Chromium と `@playwright/test`
+          // が要求するビルド番号が食い違う環境向けフォールバック（tools/e2e-chromium-executable.mjs
+          // が JSDoc で持つ契約どおり、正常系では undefined を返し既定解決に任せる）。
+          executablePath: resolveChromiumExecutablePath(),
         },
       },
     },

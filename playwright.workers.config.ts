@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import { buildDummyGitHubEnv } from './e2e/stub/e2e-env.mjs'
+import { resolveChromiumExecutablePath } from './tools/e2e-chromium-executable.mjs'
 
 /**
  * Workers ランタイム依存の振る舞い（レート制限・binding）を検証する E2E 専用設定（Issue #188）。
@@ -46,6 +47,8 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         launchOptions: {
           args: ['--ssl-version-max=tls1.2'],
+          // 🔴 Issue #629: playwright.config.ts と同じフォールバック（詳細は同ファイルのコメント参照）。
+          executablePath: resolveChromiumExecutablePath(),
         },
       },
     },
