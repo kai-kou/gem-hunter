@@ -48,6 +48,8 @@
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import re
 import sys
 from pathlib import Path
@@ -366,6 +368,113 @@ CASES: list[tuple[str, str, int]] = [
 ]
 
 
+def _run_integration_cases() -> list[str]:
+    """`main()`（ファイル収集 → 検査 → exit code）を実際に貫通させる統合ケース（Issue #222）。
+
+    上の `CASES`（`check_file()` 単体呼び出し）は検査ロジックの正しさは検証するが、
+    `collect_targets()` によるファイル収集や `main()` の exit code 決定ロジックには
+    一切触れない。ここでは以下の 2 経路を実際に通す:
+      A. subprocess でスクリプトを CLI として起動し、明示パス引数 → exit code を検証する
+         （真のエントリポイント通過）。
+      B. `main()` を直接呼び、`REPO_ROOT` を一時ディレクトリへ差し替えて
+         **既定の `app/`・`src/` 走査（`collect_targets` の非明示引数分岐）** →
+         `check_file` → `violations` 集計 → exit code までを検証する。
+      C. 検査対象ゼロのディレクトリで `main()` が exit 0 になることを検証する
+         （`collect_targets` が空リストを返す経路）。
+    """
+    import subprocess
+    import tempfile
+
+    failures: list[str] = []
+    script_path = str(Path(__file__).resolve())
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        viol_path = td_path / "app" / "api" / "session" / "route.ts"
+        viol_path.parent.mkdir(parents=True)
+        viol_path.write_text(
+            "export async function GET(request: Request) {\n"
+            "  const res = NextResponse.redirect('/')\n"
+            "  res.cookies.delete('session')\n  return res\n}\n",
+            encoding="utf-8",
+        )
+        ok_path = td_path / "src" / "ui" / "safe.tsx"
+        ok_path.parent.mkdir(parents=True)
+        ok_path.write_text(
+            "import Link from 'next/link'\nexport const x = <Link href=\"/ja\">JA</Link>\n",
+            encoding="utf-8",
+        )
+
+        # --- A. subprocess 経由（真のエントリポイント → exit code）---
+        proc_viol = subprocess.run(
+            [sys.executable, script_path, str(viol_path)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc_viol.returncode != 1:
+            failures.append(
+                "  integration/A_subprocess_violation_exit_code: want 1, "
+                f"got {proc_viol.returncode} (stdout={proc_viol.stdout!r})"
+            )
+        if "❌" not in proc_viol.stdout:
+            failures.append(
+                "  integration/A_subprocess_violation_output: 違反メッセージ（❌）が"
+                f"stdout に出力されていない: {proc_viol.stdout!r}"
+            )
+
+        proc_ok = subprocess.run(
+            [sys.executable, script_path, str(ok_path)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc_ok.returncode != 0:
+            failures.append(
+                "  integration/A_subprocess_ok_exit_code: want 0, "
+                f"got {proc_ok.returncode} (stdout={proc_ok.stdout!r})"
+            )
+
+        # --- B. main() 直接呼び出し + REPO_ROOT 差し替え（既定の app/src 走査を貫通）---
+        global REPO_ROOT
+        orig_root = REPO_ROOT
+        orig_argv = sys.argv
+        try:
+            REPO_ROOT = td_path
+            sys.argv = ["check_prefetchable_side_effects.py"]
+            # main() が出す検査結果（❌ / ℹ️ 行）は self-test 自体の失敗と見分けが
+            # つかないため握り潰す（判定に使うのは戻り値の exit code だけ）。
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = main()
+            if rc != 1:
+                failures.append(
+                    f"  integration/B_default_scan_exit_code: want 1（route.ts 違反が app/ 配下に"
+                    f"存在するため）, got {rc}"
+                )
+        finally:
+            REPO_ROOT = orig_root
+            sys.argv = orig_argv
+
+    # --- C. 検査対象ゼロのディレクトリ → exit 0（collect_targets が空リストを返す経路）---
+    with tempfile.TemporaryDirectory() as td_empty:
+        orig_root = REPO_ROOT
+        orig_argv = sys.argv
+        try:
+            REPO_ROOT = Path(td_empty)
+            sys.argv = ["check_prefetchable_side_effects.py"]
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = main()
+            if rc != 0:
+                failures.append(
+                    f"  integration/C_no_targets_exit_code: want 0（検査対象ゼロ）, got {rc}"
+                )
+        finally:
+            REPO_ROOT = orig_root
+            sys.argv = orig_argv
+
+    return failures
+
+
 def run_self_test() -> int:
     failures: list[str] = []
 
@@ -389,11 +498,15 @@ def run_self_test() -> int:
         if len(got) != want_n:
             failures.append(f"  {rel}: want {want_n} 件, got {len(got)} 件 :: {got}")
 
+    failures.extend(_run_integration_cases())
+
     if failures:
         print("❌ check_prefetchable_side_effects --self-test FAILED")
         print("\n".join(failures))
         return 1
-    print(f"✅ check_prefetchable_side_effects --self-test PASSED（{len(CASES)} ケース）")
+    print(
+        f"✅ check_prefetchable_side_effects --self-test PASSED（単体 {len(CASES)} ケース + 統合 3 ケース）"
+    )
     return 0
 
 

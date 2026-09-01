@@ -82,6 +82,8 @@ export type GemListLabels = {
   registryLabel: string
   /** 帰属表示（`D-29`）。`{source}` / `{license}` を含む。 */
   attribution: string
+  /** ライセンスリンクが新しいタブで開くことの `sr-only` 告知（`ui-ux-guidelines.md` §7.4a）。 */
+  opensInNewTab: string
 }
 
 /**
@@ -294,7 +296,10 @@ export function GemList({
       */}
       <AttributionNotice
         meta={view.meta}
-        labels={{ attribution: labels.attribution }}
+        labels={{
+          attribution: labels.attribution,
+          opensInNewTab: labels.opensInNewTab,
+        }}
         locale={locale}
       />
     </>

@@ -19,6 +19,7 @@ const labels: GemListLabels = {
   gemIndexLabel: 'Gem Index',
   registryLabel: 'レジストリ',
   attribution: 'このデータについて: {source}（{license}）のオープンデータをもとにしています。',
+  opensInNewTab: '（新しいタブで開きます）',
 }
 
 const meta: DigestMeta = {
@@ -461,14 +462,14 @@ describe('GemList', () => {
   it('帰属表示に出典元とライセンスをリンクとして出す（D-29）', () => {
     render(<GemList view={viewOf()} query="pad" locale={locale('ja')} labels={labels} />)
 
-    expect(screen.getByRole('link', { name: 'Ecosyste.ms' })).toHaveAttribute(
-      'href',
-      'https://ecosyste.ms/',
-    )
-    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
-      'href',
-      'https://creativecommons.org/licenses/by-sa/4.0/',
-    )
+    expect(
+      screen.getByRole('link', { name: 'Ecosyste.ms（新しいタブで開きます）' }),
+    ).toHaveAttribute('href', 'https://ecosyste.ms/')
+    // ライセンスリンクは新しいタブで開くため `sr-only` の告知がアクセシブルネームに連結される
+    // （`ui-ux-guidelines.md` §7.4a）。出典元リンクは同一タブなので告知を持たない
+    expect(
+      screen.getByRole('link', { name: 'CC BY-SA 4.0（新しいタブで開きます）' }),
+    ).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
   })
 
   /** `{generatedAt}` を含まない文言なので、生成時刻のノードは描かれない（共有実装の分岐）。 */
@@ -498,7 +499,9 @@ describe('GemList', () => {
       />,
     )
 
-    expect(screen.queryByRole('link', { name: 'Ecosyste.ms' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Ecosyste.ms（新しいタブで開きます）' }),
+    ).not.toBeInTheDocument()
     expect(screen.getByText(/Ecosyste\.ms/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'CC BY-SA 4.0' })).not.toBeInTheDocument()
   })

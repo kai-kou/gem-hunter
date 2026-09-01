@@ -431,7 +431,10 @@ export default async function LocaleHome({
             <AttributionNotice
               meta={dailyDigest.meta}
               locale={locale}
-              labels={{ attribution: messages.home.digest.attribution }}
+              labels={{
+                attribution: messages.home.digest.attribution,
+                opensInNewTab: messages.common.opensInNewTab,
+              }}
             />
           </>
         ) : null}
