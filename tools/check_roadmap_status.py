@@ -16,13 +16,21 @@
      §3 の該当マイルストーンの通過判定チェックボックス（`- [ ]`）に未チェックが残っている場合。
 
      🔵 **抑制マーカー**（意図して未達のまま通過させたことを記録した場合の除外手段）:
-     `<!-- roadmap-status-ok: {理由} -->`（HTML コメント形式・`docs/rules/datetime-rules.md`
-     の `# tz-ok` に倣う）を、§5.1 の該当マイルストーン行 **または** §3 の該当マイルストーン
-     節（`### M-n:` から次の `### M-` まで）の **どちらかに** 書けば違反4 の検出から除外される
-     （両方に書く必要はない）。🔴 **理由が空のマーカーは無効**（`<!-- roadmap-status-ok: -->`
-     や `<!-- roadmap-status-ok -->` は抑制しない＝無条件の握り潰しを防ぐ）。抑制が効いた
-     場合は黙って消さず、`🔵` を付けた情報行として stderr に出す（`❌`＝違反 / `⚠️`＝判定不能
-     と記号で区別する）。
+     `<!-- roadmap-status-ok:{件数}: {理由} -->`（件数付き構文・Issue #784）を、§5.1 の該当
+     マイルストーン行 **または** §3 の該当マイルストーン節（`### M-n:` から次の `### M-` まで）
+     の **どちらかに** 書けば違反4 の検出から除外される（両方に書く必要はない）。
+     🔴 **{件数} は「このマーカーが対象とする未チェック項目数」を宣言する**。実際の未チェック件数
+     （`checklist['unchecked']`）と一致するときだけ抑制し、**不一致なら「マーカーが想定していない
+     未チェックが増えた」として `violation4_suppression_count_mismatch` を報告する**（マイルストーン
+     単位で fail-open だった旧実装の穴を塞ぐ・背景は Issue #784）。理由が空のマーカーは無効
+     （`<!-- roadmap-status-ok:1: -->` や `<!-- roadmap-status-ok: -->` は抑制しない＝無条件の
+     握り潰しを防ぐ）。抑制が効いた場合は黙って消さず、`🔵` を付けた情報行として stderr に出す
+     （`❌`＝違反 / `⚠️`＝判定不能・件数なし旧構文の移行推奨 と記号で区別する）。
+
+     🟡 **後方互換（件数なし旧構文）**: `<!-- roadmap-status-ok: {理由} -->`（コロン直後が数字+コロン
+     でない）も引き続き受理し、旧来どおり件数照合なしで無条件に抑制する。ただし `⚠️` 付きで
+     「件数付き構文へ移行してください」と stderr に警告を出す（fail-open のまま残る唯一の経路
+     であることを毎回可視化し、放置されないようにする）。新規に書くマーカーは必ず件数付き構文を使う。
 
      ⚠️ **既知の限界（YAGNI により簡易実装）**:
      - 達成宣言キーワードの判定（`_has_achievement_keyword`）は、キーワード直後に代表的な
@@ -166,8 +174,12 @@ _SP_OPEN_RE = re.compile(r"`SP-(\d+)`\s*以降")
 ACHIEVEMENT_KEYWORDS: tuple[str, ...] = ("達成済み", "通過済み")
 
 # 抑制マーカー（`docs/rules/datetime-rules.md` の `# tz-ok` に倣う HTML コメント形式）。
-# 理由が空（コロン無し・コロン直後が空白のみ）は無効とするため、キャプチャ後に strip して
-# 非空であることを別途確認する（正規表現だけでは「空理由」を排除しきれないため）。
+# 件数付き構文（Issue #784）: `<!-- roadmap-status-ok:{件数}: {理由} -->`。
+# 第 1 キャプチャグループが件数（数字のみ・任意）、第 2 グループが理由。件数部分は
+# `roadmap-status-ok:` 直後が「数字 + コロン」の形のときだけマッチし、それ以外
+# （旧構文・理由が数字始まりでない）は件数グループが None のまま理由グループへ丸ごと落ちる
+# （後方互換）。理由が空（コロン無し・コロン直後が空白のみ）は無効とするため、キャプチャ後に
+# strip して非空であることを別途確認する（正規表現だけでは「空理由」を排除しきれないため）。
 #
 # 🔴 ReDoS 対策（レビュー WARNING2 対応）: 旧実装は `(.*?)` + `re.DOTALL` で「任意の文字を
 # 何文字でも」許していたため、閉じられない `<!-- roadmap-status-ok: ` を大量に反復した
@@ -175,8 +187,11 @@ ACHIEVEMENT_KEYWORDS: tuple[str, ...] = ("達成済み", "通過済み")
 # バックトラック量が入力長の 2 乗で増える（実測: 96KB で 4.4 秒）。理由部分を `>` を含まない
 # 文字クラス `[^>]` へ変える（＝抑制理由に `>` を書けない制約と引き換えに、`-->` の外側へ
 # 際限なく後方追跡させない）。DOTALL は `.`専用の挙動切り替えなので `[^>]` には効果が無く、
-# 複数行にまたがる理由は元々サポートしない想定だったため付けない。
-_SUPPRESSION_MARKER_RE = re.compile(r"<!--\s*roadmap-status-ok\s*:\s*([^>]*?)-->")
+# 複数行にまたがる理由は元々サポートしない想定だったため付けない。件数部分の `(\d+)` は
+# 固定長の数字クラスでバックトラック増幅の余地が無いため同じ対策で足りる。
+_SUPPRESSION_MARKER_RE = re.compile(
+    r"<!--\s*roadmap-status-ok\s*:\s*(?:(\d+)\s*:\s*)?([^>]*?)-->"
+)
 
 # 🔴 ReDoS 対策その2（多重防御）: 文字クラス変更だけでは「`>` を一切含まない巨大な反復入力」
 # に対する最悪計算量（O(n^2)）を根本的には防げない。検索対象を一定長に切り詰めることで
@@ -212,16 +227,25 @@ def _is_separator_row(cells: list[str]) -> bool:
     return all(re.fullmatch(r"[:\-]+", c) for c in cells if c)
 
 
-def _find_suppression_reason(text: str) -> str | None:
-    """`text` 内に有効な抑制マーカー（理由が非空）があれば理由文字列を、無ければ None を返す。
+def _find_suppression_marker(text: str) -> dict | None:
+    """`text` 内に有効な抑制マーカー（理由が非空）があれば
+    `{"count": int | None, "reason": str, "legacy": bool}` を、無ければ None を返す。
+
+    `count` は件数付き構文（`roadmap-status-ok:{N}: ...`）を書いたときだけ int になり、
+    件数なし旧構文（後方互換）のときは None（`legacy=True`）になる。
 
     ReDoS 対策として `text` は `_SUPPRESSION_SCAN_MAX_LEN` 文字までに切り詰めてから走査する
     （切り詰めの理由・トレードオフは `_SUPPRESSION_SCAN_MAX_LEN` のコメント参照）。
     """
     for m in _SUPPRESSION_MARKER_RE.finditer(text[:_SUPPRESSION_SCAN_MAX_LEN]):
-        reason = m.group(1).strip()
+        reason = m.group(2).strip()
         if reason:
-            return reason
+            count_raw = m.group(1)
+            return {
+                "count": int(count_raw) if count_raw is not None else None,
+                "reason": reason,
+                "legacy": count_raw is None,
+            }
     return None
 
 
@@ -397,15 +421,16 @@ def parse_roadmap(md_text: str) -> dict:
     }
 
 
-def find_milestone_suppression_reason(n: int, parsed: dict) -> str | None:
-    """`M-n` の抑制マーカーを §5.1 の該当行 → §3 の該当節の順に探し、理由文字列を返す。
+def find_milestone_suppression_marker(n: int, parsed: dict) -> dict | None:
+    """`M-n` の抑制マーカーを §5.1 の該当行 → §3 の該当節の順に探し、マーカー情報を返す。
 
     どちらかに有効な（理由が非空の）マーカーがあれば十分（両方に書く必要はない）。
+    戻り値の形式は `_find_suppression_marker` を参照。
     """
-    reason = _find_suppression_reason(parsed.get("states_raw_lines", {}).get(n, ""))
-    if reason:
-        return reason
-    return _find_suppression_reason(parsed.get("section3_blocks", {}).get(n, ""))
+    marker = _find_suppression_marker(parsed.get("states_raw_lines", {}).get(n, ""))
+    if marker:
+        return marker
+    return _find_suppression_marker(parsed.get("section3_blocks", {}).get(n, ""))
 
 
 # ──────────────────────────────────────────────
@@ -474,15 +499,45 @@ def evaluate_roadmap(
         if checklist["total"] == 0 or checklist["unchecked"] == 0:
             continue
 
-        reason = find_milestone_suppression_reason(n, parsed)
-        if reason:
-            suppressed_notes.append({
+        marker = find_milestone_suppression_marker(n, parsed)
+        if marker:
+            declared = marker["count"]
+            actual = checklist["unchecked"]
+            if marker["legacy"] or declared == actual:
+                suppressed_notes.append({
+                    "milestone": f"M-{n}",
+                    "reason": marker["reason"],
+                    "declared_count": declared,
+                    "actual_unchecked": actual,
+                    "legacy": marker["legacy"],
+                    "would_have_flagged": "violation4_achieved_but_unchecked",
+                    "detail": (
+                        f"M-{n} は達成宣言 + 未チェック残り（{actual}/{checklist['total']}）"
+                        f"に該当しましたが、抑制マーカーにより検出から除外しました"
+                        f"（理由: {marker['reason']}）。"
+                        + (
+                            " ⚠️ 件数なし旧構文のため件数照合なしで抑制しています。"
+                            "件数付き構文（`roadmap-status-ok:{件数}: {理由}`）へ移行してください。"
+                            if marker["legacy"] else ""
+                        )
+                    ),
+                })
+                continue
+
+            # 件数不一致: マーカーが想定していない未チェックが増えている（Issue #784）
+            violations.append({
+                "type": "violation4_suppression_count_mismatch",
                 "milestone": f"M-{n}",
-                "reason": reason,
-                "would_have_flagged": "violation4_achieved_but_unchecked",
+                "state_text": state_text,
+                "declared_count": declared,
+                "actual_unchecked": actual,
+                "total": checklist["total"],
+                "reason": marker["reason"],
                 "detail": (
-                    f"M-{n} は達成宣言 + 未チェック残り（{checklist['unchecked']}/{checklist['total']}）"
-                    f"に該当しましたが、抑制マーカーにより検出から除外しました（理由: {reason}）。"
+                    f"M-{n} の抑制マーカーは未チェック {declared} 件を宣言していますが、"
+                    f"実際の未チェックは {actual}/{checklist['total']} 件です。"
+                    "マーカーが想定していない未チェックが増えています。"
+                    f"マーカーの件数を更新するか、増えた項目を別途検討してください（理由: {marker['reason']}）。"
                 ),
             })
             continue
@@ -919,39 +974,42 @@ def _self_test_achievement_keyword_negation() -> list[str]:
 
 
 def _self_test_suppression_marker() -> list[str]:
-    """抑制マーカー（`<!-- roadmap-status-ok: 理由 -->`）の 5 ケースを検証する。"""
+    """抑制マーカー（`<!-- roadmap-status-ok:{件数}: 理由 -->`）の 7 ケースを検証する（Issue #784）。"""
     failures = []
 
-    # ① §5.1 の該当行に有効なマーカー（状態セル内に追記）→ 検出しない
+    # ① §5.1 の該当行に有効な件数付きマーカー（実際の未チェックと一致・状態セル内に追記）→ 検出しない
     fixture_51 = _FIXTURE_M5_GATE.replace(
         "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） |",
         "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20）"
-        "<!-- roadmap-status-ok: 飼い主の明示意向によりRK-1未充足のまま通過（D-27） --> |",
+        "<!-- roadmap-status-ok:1: 飼い主の明示意向によりRK-1未充足のまま通過（D-27） --> |",
     )
     parsed_51 = parse_roadmap(fixture_51)
     violations_51, suppressed_51 = evaluate_roadmap(parsed_51, sp_state_index={})
     if any(v["milestone"] == "M-5" for v in violations_51):
-        failures.append(f"抑制①（§5.1 行）: マーカーがあるのに違反として検出された: {violations_51}")
-    if len(suppressed_51) != 1 or suppressed_51[0]["milestone"] != "M-5" or not suppressed_51[0]["reason"]:
-        failures.append(f"抑制①（§5.1 行）: 抑制ノートが記録されていない: {suppressed_51}")
+        failures.append(f"抑制①（§5.1 行・件数一致）: マーカーがあるのに違反として検出された: {violations_51}")
+    if (
+        len(suppressed_51) != 1 or suppressed_51[0]["milestone"] != "M-5"
+        or not suppressed_51[0]["reason"] or suppressed_51[0]["legacy"] is not False
+    ):
+        failures.append(f"抑制①（§5.1 行・件数一致）: 抑制ノートが記録されていない: {suppressed_51}")
 
-    # ② §3 の該当節内に有効なマーカー（別行として追記）→ 検出しない
+    # ② §3 の該当節内に有効な件数付きマーカー（別行として追記）→ 検出しない
     fixture_3 = _FIXTURE_M5_GATE.replace(
         "  - [ ] `RK-1`: ペルソナとペインの検証（現在 n=0）\n",
         "  - [ ] `RK-1`: ペルソナとペインの検証（現在 n=0）\n\n"
-        "<!-- roadmap-status-ok: 飼い主の明示意向によりRK-1未充足のまま通過（D-27） -->\n",
+        "<!-- roadmap-status-ok:1: 飼い主の明示意向によりRK-1未充足のまま通過（D-27） -->\n",
     )
     parsed_3 = parse_roadmap(fixture_3)
     violations_3, suppressed_3 = evaluate_roadmap(parsed_3, sp_state_index={})
     if any(v["milestone"] == "M-5" for v in violations_3):
-        failures.append(f"抑制②（§3 節内）: マーカーがあるのに違反として検出された: {violations_3}")
+        failures.append(f"抑制②（§3 節内・件数一致）: マーカーがあるのに違反として検出された: {violations_3}")
     if len(suppressed_3) != 1 or suppressed_3[0]["milestone"] != "M-5":
-        failures.append(f"抑制②（§3 節内）: 抑制ノートが記録されていない: {suppressed_3}")
+        failures.append(f"抑制②（§3 節内・件数一致）: 抑制ノートが記録されていない: {suppressed_3}")
 
-    # ③ 理由が空のマーカー（コロンありだが空白のみ）→ 無効。抑制されず違反として検出する
+    # ③ 理由が空のマーカー（件数はあるが理由がコロン後空白のみ）→ 無効。抑制されず違反として検出する
     fixture_empty_reason = _FIXTURE_M5_GATE.replace(
         "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） |",
-        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） <!-- roadmap-status-ok:  --> |",
+        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） <!-- roadmap-status-ok:1:  --> |",
     )
     parsed_empty = parse_roadmap(fixture_empty_reason)
     violations_empty, suppressed_empty = evaluate_roadmap(parsed_empty, sp_state_index={})
@@ -981,7 +1039,7 @@ def _self_test_suppression_marker() -> list[str]:
     ).replace(
         "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） |",
         "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20）"
-        "<!-- roadmap-status-ok: 念のため --> |",
+        "<!-- roadmap-status-ok:1: 念のため --> |",
     )
     parsed_all_checked = parse_roadmap(fixture_all_checked)
     violations_ok, suppressed_ok = evaluate_roadmap(parsed_all_checked, sp_state_index={})
@@ -990,6 +1048,44 @@ def _self_test_suppression_marker() -> list[str]:
             f"抑制④（陰性対照・全チェック済み）: 違反もノートも無いはずが: "
             f"violations={violations_ok} suppressed={suppressed_ok}"
         )
+
+    # ⑤ CRITICAL 回帰（Issue #784 本体）: 件数不一致（宣言 1 件だが実際は 2 件に増えた）
+    #    → 抑制せず「マーカーが想定していない未チェックが増えた」ことを違反として報告する
+    fixture_mismatch = _FIXTURE_M5_GATE.replace(
+        "  - [x] `M-2` を通過している",
+        "  - [ ] `M-2` を通過している",
+    ).replace(
+        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） |",
+        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20）"
+        "<!-- roadmap-status-ok:1: 飼い主の明示意向によりRK-1未充足のまま通過（D-27） --> |",
+    )
+    parsed_mismatch = parse_roadmap(fixture_mismatch)
+    violations_mismatch, suppressed_mismatch = evaluate_roadmap(parsed_mismatch, sp_state_index={})
+    hit_mismatch = [
+        v for v in violations_mismatch
+        if v["milestone"] == "M-5" and v["type"] == "violation4_suppression_count_mismatch"
+    ]
+    if len(hit_mismatch) != 1 or hit_mismatch[0]["declared_count"] != 1 or hit_mismatch[0]["actual_unchecked"] != 2:
+        failures.append(f"抑制⑤（件数不一致・CRITICAL 回帰）: 検出できていない: {violations_mismatch}")
+    if any(n["milestone"] == "M-5" for n in suppressed_mismatch):
+        failures.append(f"抑制⑤（件数不一致）: 不一致なのに抑制ノートとして記録された: {suppressed_mismatch}")
+
+    # ⑥ 後方互換（件数なし旧構文）: 件数照合なしで無条件に抑制するが、legacy フラグ + ⚠️ 相当の
+    #    移行注意文言を detail に含める
+    fixture_legacy = _FIXTURE_M5_GATE.replace(
+        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） |",
+        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20）"
+        "<!-- roadmap-status-ok: 飼い主の明示意向によりRK-1未充足のまま通過（D-27） --> |",
+    )
+    parsed_legacy = parse_roadmap(fixture_legacy)
+    violations_legacy, suppressed_legacy = evaluate_roadmap(parsed_legacy, sp_state_index={})
+    if any(v["milestone"] == "M-5" for v in violations_legacy):
+        failures.append(f"抑制⑥（後方互換・旧構文）: マーカーがあるのに違反として検出された: {violations_legacy}")
+    if (
+        len(suppressed_legacy) != 1 or suppressed_legacy[0]["legacy"] is not True
+        or "移行" not in suppressed_legacy[0]["detail"]
+    ):
+        failures.append(f"抑制⑥（後方互換・旧構文）: legacy フラグ・移行注意文言が正しくない: {suppressed_legacy}")
 
     return failures
 
@@ -1004,11 +1100,11 @@ def _self_test_suppression_marker_redos() -> list[str]:
     failures = []
     malicious = "<!-- roadmap-status-ok: " * 4000  # 閉じる `-->` を含まない反復（約 96KB）
     start = time.monotonic()
-    result = _find_suppression_reason(malicious)
+    result = _find_suppression_marker(malicious)
     elapsed = time.monotonic() - start
 
     if result is not None:
-        failures.append(f"病的入力で誤って抑制理由を検出してしまった: {result!r}")
+        failures.append(f"病的入力で誤って抑制マーカーを検出してしまった: {result!r}")
     if elapsed > 1.0:
         failures.append(
             f"病的入力（約 96KB・閉じられないマーカーの反復）の処理が遅すぎる"
@@ -1085,7 +1181,7 @@ def run_self_test() -> int:
         ("違反4 検出（壊す前/後）", _self_test_violation4_detection),
         ("違反4: 通過済みキーワード + 装飾つき表記", _self_test_violation4_pass_keyword_and_decoration),
         ("達成宣言キーワードの否定文（WARNING1 回帰）", _self_test_achievement_keyword_negation),
-        ("抑制マーカー（§5.1 行/§3 節/空理由/陰性対照）", _self_test_suppression_marker),
+        ("抑制マーカー（§5.1 行/§3 節/空理由/陰性対照/件数不一致/後方互換・Issue #784）", _self_test_suppression_marker),
         ("抑制マーカーの ReDoS 耐性（WARNING2 回帰）", _self_test_suppression_marker_redos),
         ("陰性対照（誤検出なし）", _self_test_no_false_positive),
         ("副次 Issue 混入時の偽陽性なし（Issue #628）", _self_test_secondary_issue_no_false_positive),
@@ -1163,7 +1259,8 @@ def main() -> None:
         ))
 
     for note in suppressed_notes:
-        print(f"🔵 {note['detail']}", file=sys.stderr)
+        symbol = "⚠️" if note.get("legacy") else "🔵"
+        print(f"{symbol} {note['detail']}", file=sys.stderr)
 
     if violations:
         for v in violations:
