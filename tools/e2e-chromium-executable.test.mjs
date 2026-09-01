@@ -132,4 +132,46 @@ describe('resolveChromiumExecutablePath', () => {
     })
     expect(result).toBe(symlinkPath)
   })
+
+  it('回帰(#809): 桁数の異なる複数バージョンが混在しても数値最大のディレクトリが選ばれる（文字列ソートだと 999 > 1234 > 1194 の誤順になる）', () => {
+    const tmpDir = makeTmpDir()
+    // 意図的に文字列辞書順とは逆の作成順にする（実装が readdirSync の返却順に依存していないことも兼ねて確認）。
+    makeExecutableFile(tmpDir, 'chromium-999', 'chrome-linux', 'chrome')
+    makeExecutableFile(tmpDir, 'chromium-1194', 'chrome-linux', 'chrome')
+    const newest = makeExecutableFile(tmpDir, 'chromium-1234', 'chrome-linux', 'chrome')
+
+    const result = resolveChromiumExecutablePath({
+      env: { PLAYWRIGHT_BROWSERS_PATH: tmpDir },
+      getDefaultExecutablePath: () => '/nonexistent/default/chrome',
+    })
+    expect(result).toBe(newest)
+  })
+
+  it('回帰(#809): パース不能な名前（chromium-beta-tmp）が混ざっても数値最大の候補が正しく選ばれる', () => {
+    const tmpDir = makeTmpDir()
+    // ハイフン以降が純粋な数値でない名前は候補から除外され、探索を妨げないことを確認する。
+    fs.mkdirSync(path.join(tmpDir, 'chromium-beta-tmp', 'chrome-linux'), { recursive: true })
+    fs.writeFileSync(path.join(tmpDir, 'chromium-beta-tmp', 'chrome-linux', 'chrome'), '')
+    makeExecutableFile(tmpDir, 'chromium-999', 'chrome-linux', 'chrome')
+    const newest = makeExecutableFile(tmpDir, 'chromium-1234', 'chrome-linux', 'chrome')
+
+    const result = resolveChromiumExecutablePath({
+      env: { PLAYWRIGHT_BROWSERS_PATH: tmpDir },
+      getDefaultExecutablePath: () => '/nonexistent/default/chrome',
+    })
+    expect(result).toBe(newest)
+  })
+
+  it('既定引数の経路: env / getDefaultExecutablePath を省略しても例外を投げず文字列 or undefined を返す', () => {
+    // 本番経路（playwright.config.ts が引数なしで呼ぶ resolveChromiumExecutablePath()）は
+    // env = process.env / getDefaultExecutablePath = () => chromium.executablePath() を使う。
+    // 実インストール状況（Playwright ブラウザの有無・バージョン）に依存させないため、
+    // 「例外を投げない」「戻り値が string か undefined のどちらかである」ことだけを検証する
+    // （実在パスの具体値まで固定すると、実行環境ごとに Chromium の有無で不安定になるため）。
+    let result
+    expect(() => {
+      result = resolveChromiumExecutablePath()
+    }).not.toThrow()
+    expect(['string', 'undefined']).toContain(typeof result)
+  })
 })

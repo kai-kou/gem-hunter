@@ -100,15 +100,37 @@ function isExecutableFile(candidatePath) {
   }
 }
 
-/** @param {string} browsersPath @returns {string[]} バージョンディレクトリ名の降順一覧 */
+/**
+ * `chromium-{N}` 形式のディレクトリ名を、ビルド番号 `N` の **数値降順** で並べる。
+ *
+ * 🔴 なぜ文字列ソートではダメか（#809）: `sort().reverse()`（辞書順）はビルド番号の桁数が
+ * 揃わないと壊れる（実測: `['chromium-1194','chromium-999','chromium-1234'].sort().reverse()`
+ * → `['chromium-999','chromium-1234','chromium-1194']` で最新の `1234` が先頭に来ない）。
+ *
+ * パース方針: `chromium-` の直後から末尾までが **純粋な数値** であるものだけを候補にする。
+ * `chromium-beta-tmp` や `chromium-1194.bak` のようにハイフン以降が数値そのものでない名前は
+ * 候補から除外する（fail-open 回避 — 数値として解釈できない名前を誤って「新しい」と判定して
+ * 選んでしまうより、探索対象から外して次の候補に進む方が安全なため）。
+ *
+ * @param {string} browsersPath
+ * @returns {string[]} バージョンディレクトリ名の、ビルド番号の数値降順一覧
+ */
 function listVersionedChromiumDirs(browsersPath) {
+  const prefix = 'chromium-'
+  let entries
   try {
-    return fs
-      .readdirSync(browsersPath)
-      .filter((name) => name.startsWith('chromium-'))
-      .sort()
-      .reverse()
+    entries = fs.readdirSync(browsersPath)
   } catch {
     return []
   }
+
+  return entries
+    .filter((name) => name.startsWith(prefix))
+    .map((name) => ({ name, version: Number(name.slice(prefix.length)) }))
+    .filter(
+      ({ name, version }) =>
+        Number.isFinite(version) && String(version) === name.slice(prefix.length),
+    )
+    .sort((a, b) => b.version - a.version)
+    .map(({ name }) => name)
 }
