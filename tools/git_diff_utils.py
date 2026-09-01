@@ -144,6 +144,13 @@ def collect_changed_files(
 
     if include_base_range:
         b = base if base is not None else f"origin/{default_branch(cwd=cwd, runner=runner)}"
+        # `-` で始まる base は git がオプションとして解釈する（argument injection）。
+        # 呼び出し元ごとのガード複製に頼らず、共有モジュール側で一元的に拒否する
+        # （従来は count_change_scatter.py だけが自前で拒否していた・PR #761 Layer 1 レビュー）。
+        if b.startswith("-"):
+            raise ValueError(
+                f"base に - で始まる値は使えません（git のオプションとして解釈されるため）: {b!r}"
+            )
         paths, rc = _run_git_paths(["diff", "--name-only", "-z", f"{b}...HEAD"], cwd=cwd, runner=runner)
         if rc == 0:
             files += paths
@@ -466,6 +473,40 @@ def _self_test_collect_changed_files_non_ascii_and_newline_path() -> list[str]:
     return failures
 
 
+def _self_test_collect_changed_files_rejects_option_like_base() -> list[str]:
+    """`-` で始まる base を拒否すること（argument injection の一元ガード・PR #761 レビュー）。
+
+    許容側（拒否してはいけない値）も同じテストで固定する。`-` を **含む** だけのブランチ名
+    （`feature-x`・`origin/release-1.2`）や、`-` で始まらない通常の ref は通す。
+    """
+    failures: list[str] = []
+    responses = {
+        _k_base_range("--output=/tmp/pwned...HEAD"): "",
+        _k_base_range("origin/release-1.2...HEAD"): "a.py\0",
+        _k_worktree(): "",
+        _k_cached(): "",
+        _k_untracked(): "",
+    }
+    for bad in ("--output=/tmp/pwned", "-x", "--upload-pack=touch /tmp/x"):
+        runner = _make_fake_runner(responses)
+        try:
+            collect_changed_files(require_existing=False, base=bad, runner=runner)
+        except ValueError:
+            pass
+        else:
+            failures.append(f"オプション様の base を拒否していない: base={bad!r}")
+
+    runner = _make_fake_runner(responses)
+    try:
+        got = collect_changed_files(require_existing=False, base="origin/release-1.2", runner=runner)
+    except ValueError as exc:
+        failures.append(f"`-` を含むだけの正常な base を誤って拒否した: {exc}")
+    else:
+        if got != ["a.py"]:
+            failures.append(f"`-` を含むだけの正常な base の収集結果: got={got!r}")
+    return failures
+
+
 def _self_test_run_git_paths_quotepath_and_z_injected() -> list[str]:
     """`_run_git_paths()` が `-c core.quotePath=false` を注入し、NUL 分割・末尾空要素除去をすること。
 
@@ -622,6 +663,10 @@ def run_self_test() -> int:
         (
             "collect_changed_files 非ASCII/改行/ダブルクォート入りパス",
             _self_test_collect_changed_files_non_ascii_and_newline_path,
+        ),
+        (
+            "collect_changed_files オプション様 base の拒否",
+            _self_test_collect_changed_files_rejects_option_like_base,
         ),
         (
             "_run_git_paths core.quotePath 注入・NUL分割",

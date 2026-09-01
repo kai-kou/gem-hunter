@@ -1058,7 +1058,7 @@ def main():
     parser.add_argument(
         "--actionable-only",
         action="store_true",
-        help="対応が必要なPRのみ出力する（no_action と active_session=true を除外）",
+        help="対応が必要なPRのみ出力する（no_action・blocked_waiting_user・blocked_circuit_breaker と active_session=true を除外）",
     )
     parser.add_argument(
         "--include-active",
