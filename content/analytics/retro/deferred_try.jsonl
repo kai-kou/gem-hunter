@@ -86,3 +86,9 @@
 {"date": "2026-09-01 JST", "title": "§7.4 の表に列定義と「列順を変えない」制約をコメントで明記し、パーサの前提をドキュメント側にも書く", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "Cloudflare MCP の許可集合を Markdown 表から JSON へ外部化し、パーサの脆さを設計で消す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "フック self-test のヘルパー（pass / fail / check）を lib へ共通化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 759}
+{"date": "2026-09-01 JST", "title": "Playwright バイナリのレイアウト不整合を session-start.sh で自動復旧する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 681}
+{"date": "2026-09-01 JST", "title": "並行委譲中は Stop フックの WIP 自動保全を抑制するマーカーを設ける", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-01 JST", "title": "Spec 忠実性ファインダーの起動プロンプトに PR 本文を同梱する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 657}
+{"date": "2026-09-01 JST", "title": "待機ターンで Stop フックの PR 存在確認警告を繰り返さない", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 478}
+{"date": "2026-09-01 JST", "title": "Step 0.0 の API チャネル判定結果をセッション内で再利用する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "SKILL.md が書いた除外条件と実装の除外集合の一貫性を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
