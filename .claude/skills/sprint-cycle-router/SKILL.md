@@ -62,15 +62,19 @@ effort: medium
    （tools/check_pending_pr_reviews.py 等の既存 gh 依存ツールをそのまま使ってよい）
 3. 失敗 → `curl -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
    https://api.github.com/repos/{owner}/{repo}` を試す
-   ⚠️ `docs/rules/github-mcp-fallback-patterns.md` は「直叩きは通常 403 でフォールバックにならない」
-      と明記済み。この段が 200 を返しても **恒久前提にしない**（CP-2）。この firing 限定で
-      curl モードに落ちてよいが、次回 firing は必ず 1 → 3 を再度順に試す。
-      curl が 200 を返す事実自体が SSOT の記述と矛盾する場合は、矛盾を検証フラグ付きで
-      `type:bug`（`lane:github-api-proxy` 等の既存ラベル体系があれば流用）Issue に記録し、
-      本firingの判定はそのまま続行する（記録と実行を両立させる。記録のために止まらない）。
-   curl モードで Step 2（自分の PR 回収）を判定する場合、`check_pending_pr_reviews.py` に
-   curl 経由の第 3 層は無いため、`GET /repos/{owner}/{repo}/pulls?state=open` を直叩きし、
-   PR 本文の `Session-Id:` トレーラーをクライアント側で grep して `--mine` 相当を素朴に再実装する。
+   ⚠️ `docs/rules/github-mcp-fallback-patterns.md` §1.1 / §1.2 は 2026-08-31・2026-09-01 の
+      2 回連続で repo スコープ REST 直叩きが 200 を返したと記録しているが、可否は過去に
+      1 か月で 5 回変化した実績があるため、**この段が 200 を返しても恒久前提にしない**（CP-2）。
+      この firing 限定で curl モードに落ちてよいが、次回 firing は必ず 1 → 3 を再度順に試す。
+      curl が 403 に回帰した場合は、矛盾ではなく想定内の揺り戻しとして扱い、
+      本firingの判定はそのまま続行する（記録のために止まらない）。
+   curl モードで Step 2（自分の PR 回収）を判定する場合、`check_pending_pr_reviews.py` は
+   gh 失敗時に **urllib + `GH_TOKEN`/`GITHUB_TOKEN` による REST 直叩きの第 2 層フォールバックを
+   内蔵している**（Issue #789。`tools/check_deploy_gate.py` と同じ型）ため、まずスクリプトを
+   そのまま実行し、その内部フォールバックに委ねる。スクリプト自体が全滅（gh も内蔵 REST も失敗）を
+   明示的なセンチネル（exit code / `GH_UNAVAILABLE`）で返した場合に限り、`GET
+   /repos/{owner}/{repo}/pulls?state=open` を直叩きし、PR 本文の `Session-Id:` トレーラーを
+   クライアント側で grep して `--mine` 相当を素朴に再実装する（最終手段としてのみ）。
 4. 全滅 → GitHub API 完全不通。Issue/PR に依存する全 Step（整数・小数点を問わず。Step 1〜8 と 3.5 / 5.5）は実行不能と判定し、
    git 単独で判定できる範囲（ローカルに push 漏れのコミットが無いか等）だけ確認して **安全側 no-op**。
    ログを残さず何もしない（永続化先が無い。次回 firing が独立に再判定するのが ephemeral 前提と一致する。
