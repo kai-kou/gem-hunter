@@ -217,7 +217,9 @@ E2E（Playwright）と `tools/run_checks.sh` が読む変数。**いずれも開
 | `E2E_BASE_URL` | E2E の対象 URL。**設定すると `playwright.config.ts` の `webServer` 自動起動（アプリ + スタブ）をスキップする** ため、外部 URL（プレビュー等）へ向けた場合はスタブ前提のテストが到達できない。未設定時は `http://127.0.0.1:3100` を自動起動 | 任意 | `http://127.0.0.1:3100` |
 | `E2E_STUB_PORT` | E2E スタブ API（`e2e/stub/server.mjs`）の待ち受けポート。未設定時は `8788` | 任意 | `8788` |
 | `SKIP_E2E` | `1` のとき `tools/run_checks.sh` の E2E ステップを明示スキップする（**結果表には SKIP として可視化され、黙って緑にはしない**） | 任意 | `1` |
+| `SKIP_E2E_WORKERS` | `1` のとき `run_checks.sh` の **Workers E2E**（`test:e2e:workers`・OpenNext ビルド済み Worker に対する E2E）ステップだけを明示スキップする。`SKIP_E2E` とは独立で、**通常の E2E は走らせたまま Workers E2E だけ外す** ときに使う（`SKIP_E2E=1` は Workers E2E を止めない） | 任意 | `1` |
 | `RUN_CHECKS_E2E_TIMEOUT` | `run_checks.sh` の E2E ステップ専用タイムアウト（秒）。他チェックと枠を取り合わないよう `RUN_CHECKS_TIMEOUT`（既定 300 秒）とは別に持つ。未設定時は `600` | 任意 | `600` |
+| `RUN_CHECKS_WORKERS_E2E_TIMEOUT` | `run_checks.sh` の **Workers E2E** ステップ専用タイムアウト（秒）。通常の E2E とは別ステップ・別枠で持つ。未設定時は `300` | 任意 | `300` |
 
 ## 自動ロードの仕組み（ローカル実行時のみ機能・クラウドは 403）
 

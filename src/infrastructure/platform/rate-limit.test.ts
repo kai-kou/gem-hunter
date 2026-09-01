@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from './rate-limit'
+import { RATE_LIMIT_PERIOD_SECONDS, type RateLimiterBinding, WorkersRateLimit } from './rate-limit'
 
 describe('WorkersRateLimit', () => {
   it('binding が未提供の環境では常に許可する（フォールバック）', async () => {
@@ -39,6 +39,19 @@ describe('WorkersRateLimit', () => {
 
   it('binding が reject したら例外を伝播せず許可する（fail-open）', async () => {
     const binding = { limit: vi.fn().mockRejectedValue(new Error('binding unavailable')) }
+    const limiter = new WorkersRateLimit(binding)
+    await expect(limiter.consume('k')).resolves.toEqual({ allowed: true })
+  })
+
+  it('binding が undefined を返しても例外を伝播せず許可する（fail-open）', async () => {
+    // 事業者側の実行環境が注入する外部依存なので、型どおりの形が返る保証は実行時にはない。
+    const binding = { limit: vi.fn().mockResolvedValue(undefined) } as unknown as RateLimiterBinding
+    const limiter = new WorkersRateLimit(binding)
+    await expect(limiter.consume('k')).resolves.toEqual({ allowed: true })
+  })
+
+  it('binding が success を持たないオブジェクトを返しても許可する（fail-open）', async () => {
+    const binding = { limit: vi.fn().mockResolvedValue({}) } as unknown as RateLimiterBinding
     const limiter = new WorkersRateLimit(binding)
     await expect(limiter.consume('k')).resolves.toEqual({ allowed: true })
   })
