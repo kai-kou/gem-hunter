@@ -22,6 +22,17 @@
     [prod-drift][判定不能]   … check_prod_drift.py が exit 2（原因未特定）
     [prod-drift][経路未構成] … trigger 0 件を実測した（本番デプロイ経路が繋がっていない）
     [prod-drift][解消]       … ドリフト解消・再トリガー成功（連続カウントをリセットする）
+    [prod-drift][通知済み]   … 上記の症状で Slack へ A 区分通知を実行した記録
+
+【閾値到達後の再通知抑制（Issue #796）】
+  「連続 N 回に到達したら escalate」だけでは、状態が変わらないまま cron が回るたびに
+  同一内容の A-6 通知が飛ぶ（実測: #779 で consecutive が 4・5 と伸び続け、セッションが
+  毎回コメント履歴を人力で読んで抑制していた＝判定がスクリプトの外に漏れていた）。
+  そこで **通知を実行したら `[prod-drift][通知済み]` を追記する** ことにし、escalate の条件を
+  「閾値到達 **かつ** 現在の連続区間内に通知済みマーカーが無い」に変える。
+  抑制したときは黙って false にせず `suppressed: true` / `reason: "already_notified"` を返す。
+  `[prod-drift][解消]`（または別症状マーカー）が挟まると連続区間そのものが切れるため、
+  通知済みマーカーも同時に無効化される（別の state を持たない）。
 
 【使い方】
     python3 tools/prod_drift_escalation.py --comments-file comments.json \
@@ -44,11 +55,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from issue_marker_counter import (  # noqa: E402
     count_consecutive as _count_consecutive,
     extract_bodies,
+    has_marker,
 )
 
 INDETERMINATE_MARKER = "[prod-drift][判定不能]"
 NOT_CONFIGURED_MARKER = "[prod-drift][経路未構成]"
 RESOLVED_MARKER = "[prod-drift][解消]"
+# 通知を実行した記録。症状マーカーではないので ALL_MARKERS（＝連続を打ち切る集合）には入れない
+# （通知しても症状は続いているため、連続カウントは伸び続けるのが正しい）。
+NOTIFIED_MARKER = "[prod-drift][通知済み]"
 
 ALL_MARKERS = (INDETERMINATE_MARKER, NOT_CONFIGURED_MARKER, RESOLVED_MARKER)
 
@@ -66,6 +81,52 @@ def count_consecutive(bodies: list[str], marker: str) -> int:
     return _count_consecutive(bodies, (marker,), ALL_MARKERS)
 
 
+def is_notification_of(body: str, marker: str) -> bool:
+    """このコメントが `marker` の症状に対する通知記録か。
+
+    書式は **`[prod-drift][通知済み]` で始まる行に、対象の症状マーカーを併記する**:
+
+        [prod-drift][通知済み] [prod-drift][経路未構成] を A-6 として Slack 通知した（ts=...）
+
+    症状を併記させるのは、通知済みの記録が **別症状へ漏れない** ようにするため
+    （経路未構成で通知した記録が、その後に始まった判定不能の通知まで抑制すると、
+    別の障害が黙って握り潰される）。行頭一致で見るので、引用（`> ...`）や
+    バッククォート囲みの言及は通知記録として数えない。
+
+    🔴 **症状マーカーは通知済みマーカーの直後（空白を挟んでよい）にある場合だけ数える**
+    （Layer 1 CRITICAL・fail-open の実測）。行内のどこかにあれば良いという部分一致だと、
+    通知記録の自由文が別症状に言及しただけで（例: `… を通知した。[prod-drift][判定不能] は未発生`）
+    その別症状の通知が永久に抑制され、障害が黙って握り潰される。
+
+    症状マーカーと通知記録が **同一コメントに同居** した場合は本判定が優先し、抑制側に倒れる。
+    そのため運用手順（`sprint-cycle-router` §1.5 手順 5-3）は通知記録を別コメントで投稿する。
+    """
+    for line in body.split("\n"):
+        stripped = line.strip()
+        if not stripped.startswith(NOTIFIED_MARKER):
+            continue
+        if stripped[len(NOTIFIED_MARKER):].lstrip().startswith(marker):
+            return True
+    return False
+
+
+def notified_in_current_streak(bodies: list[str], marker: str) -> bool:
+    """現在の連続区間内に、その症状の通知記録が既にあるか（Issue #796）。
+
+    末尾から遡り、`marker` の通知記録が先に見つかれば True。区間を切るマーカー
+    （解消・別症状）に先に当たれば False。症状マーカー `marker` 自身と、どのマーカーも
+    持たないコメント（人手のメモ・別症状の通知記録）は読み飛ばす。
+    """
+    for body in reversed(bodies):
+        if is_notification_of(body, marker):
+            return True
+        if has_marker(body, (marker,)):
+            continue
+        if has_marker(body, ALL_MARKERS):
+            return False
+    return False
+
+
 def decide(bodies: list[str], marker: str, threshold: int = ESCALATION_THRESHOLD) -> dict:
     """escalate 要否と `@mention` 要否を判定する。
 
@@ -73,14 +134,25 @@ def decide(bodies: list[str], marker: str, threshold: int = ESCALATION_THRESHOLD
     trigger 0 件（`[prod-drift][経路未構成]`）は Cloudflare ダッシュボードで Workers Builds を
     接続し直す以外に復旧手段がなく、飼い主のアカウント権限が物理的に必要なので **A-6**。
     原因未特定の「判定不能」は A 区分ではないため、連続しても通知するだけで `@mention` しない。
+
+    閾値に到達していても、現在の連続区間内に既に通知済みマーカーがあれば **抑制する**
+    （`escalate: false` / `suppressed: true` / `reason: "already_notified"`・#796）。
+    抑制は黙って false にせず理由を出す（呼び出し側が「閾値未到達」と区別できるようにする）。
     """
     consecutive = count_consecutive(bodies, marker)
-    escalate = consecutive >= threshold
+    threshold_reached = consecutive >= threshold
+    already_notified = notified_in_current_streak(bodies, marker)
+    suppressed = threshold_reached and already_notified
+    escalate = threshold_reached and not already_notified
     return {
         "marker": marker,
         "consecutive": consecutive,
         "threshold": threshold,
+        "threshold_reached": threshold_reached,
+        "already_notified": already_notified,
         "escalate": escalate,
+        "suppressed": suppressed,
+        "reason": "already_notified" if suppressed else None,
         "mention": escalate and marker == NOT_CONFIGURED_MARKER,
     }
 
@@ -202,6 +274,156 @@ def _self_test_quoted_marker_does_not_reset() -> list[str]:
     return failures
 
 
+def _self_test_notified_suppresses_repeat() -> list[str]:
+    """🔴 完了条件（#796）: 閾値到達 → 通知 → 次 firing（状態不変）で再通知しない。"""
+    failures: list[str] = []
+    notified = [
+        f"{NOT_CONFIGURED_MARKER} 1",
+        f"{NOT_CONFIGURED_MARKER} 2",
+        f"{NOT_CONFIGURED_MARKER} 3",
+        f"{NOTIFIED_MARKER} {NOT_CONFIGURED_MARKER} を A-6 として Slack 通知した（ts=...）",
+        f"{NOT_CONFIGURED_MARKER} 4",
+    ]
+    result = decide(notified, NOT_CONFIGURED_MARKER)
+    if result["escalate"]:
+        failures.append(f"通知済みなのに再通知しようとしている: got={result!r}")
+    if not result["suppressed"]:
+        failures.append(f"抑制したのに suppressed が立っていない: got={result!r}")
+    if result["reason"] != "already_notified":
+        failures.append(f"抑制理由が出ていない: got={result.get('reason')!r}")
+    if result["mention"]:
+        failures.append("抑制中に @mention してはいけない")
+    if not result["threshold_reached"]:
+        failures.append("閾値到達の事実まで消してはいけない（未到達と区別できなくなる）")
+    if result["consecutive"] != 4:
+        failures.append(f"通知済みマーカーで連続カウントが壊れている: got={result['consecutive']}")
+
+    # 通知前は従来どおり escalate する（抑制が常時 true になる退行を捕まえる）
+    before = decide([f"{NOT_CONFIGURED_MARKER} {i}" for i in range(3)], NOT_CONFIGURED_MARKER)
+    if not (before["escalate"] and before["mention"]):
+        failures.append(f"未通知の閾値到達は escalate する必要がある: got={before!r}")
+    if before["suppressed"] or before["reason"] is not None:
+        failures.append(f"未通知なのに抑制扱いになっている: got={before!r}")
+    return failures
+
+
+def _self_test_resolved_reenables_notification() -> list[str]:
+    """🔴 完了条件（#796）: 解消を挟んで再び閾値へ到達したら、再度通知する。"""
+    failures: list[str] = []
+    bodies = [
+        f"{NOT_CONFIGURED_MARKER} 1",
+        f"{NOT_CONFIGURED_MARKER} 2",
+        f"{NOT_CONFIGURED_MARKER} 3",
+        f"{NOTIFIED_MARKER} {NOT_CONFIGURED_MARKER} を A-6 として Slack 通知した",
+        f"{RESOLVED_MARKER} 再トリガー成功",
+        f"{NOT_CONFIGURED_MARKER} 4",
+        f"{NOT_CONFIGURED_MARKER} 5",
+        f"{NOT_CONFIGURED_MARKER} 6",
+    ]
+    result = decide(bodies, NOT_CONFIGURED_MARKER)
+    if result["consecutive"] != 3:
+        failures.append(f"解消後の連続カウントが誤り: got={result['consecutive']}")
+    if not result["escalate"]:
+        failures.append(f"解消を挟んだ再発は再通知する必要がある: got={result!r}")
+    if result["already_notified"] or result["suppressed"]:
+        failures.append("解消で通知済みマーカーが無効化されていない")
+
+    # 別症状マーカーも区間を切る（通知済みが他症状へ漏れない）
+    other = [
+        f"{NOT_CONFIGURED_MARKER} 1",
+        f"{NOTIFIED_MARKER} {NOT_CONFIGURED_MARKER} を A-6 として Slack 通知した",
+        f"{INDETERMINATE_MARKER} 1",
+        f"{INDETERMINATE_MARKER} 2",
+        f"{INDETERMINATE_MARKER} 3",
+    ]
+    other_result = decide(other, INDETERMINATE_MARKER)
+    if not other_result["escalate"]:
+        failures.append(f"別症状の通知済みで抑制してはいけない: got={other_result!r}")
+    return failures
+
+
+def _self_test_notification_mention_does_not_leak() -> list[str]:
+    """🔴 通知記録の自由文中で別症状に言及しても、その症状は抑制されない（Layer 1 CRITICAL）。
+
+    症状マーカーが通知済みマーカーの **直後** にある場合だけ数える、という条件を固定する。
+    行内のどこかにあれば良い部分一致に緩めると、この区別テストが落ちる。
+    """
+    failures: list[str] = []
+    bodies = [
+        f"{NOTIFIED_MARKER} {NOT_CONFIGURED_MARKER} を通知した。{INDETERMINATE_MARKER} は未発生",
+        f"{INDETERMINATE_MARKER} 1",
+        f"{INDETERMINATE_MARKER} 2",
+        f"{INDETERMINATE_MARKER} 3",
+    ]
+    result = decide(bodies, INDETERMINATE_MARKER)
+    if result["already_notified"]:
+        failures.append("通知記録の自由文中の言及で別症状を抑制している（障害が握り潰される）")
+    if not result["escalate"]:
+        failures.append(f"言及されただけの症状は通常どおり escalate する: got={result!r}")
+
+    # 直後に併記された本来の症状は、従来どおり抑制される
+    proper = [
+        f"{NOT_CONFIGURED_MARKER} 1",
+        f"{NOT_CONFIGURED_MARKER} 2",
+        f"{NOT_CONFIGURED_MARKER} 3",
+        f"{NOTIFIED_MARKER}  {NOT_CONFIGURED_MARKER} を通知した（空白 2 個でも数える）",
+        f"{NOT_CONFIGURED_MARKER} 4",
+    ]
+    if not decide(proper, NOT_CONFIGURED_MARKER)["suppressed"]:
+        failures.append("直後に併記された症状を抑制できていない")
+    return failures
+
+
+def _self_test_below_threshold_is_not_suppressed() -> list[str]:
+    """通知記録があっても閾値未満なら抑制ではない（`suppressed` は閾値到達を含意する）。
+
+    `suppressed` の定義から `threshold_reached` を落とす退行を捕まえる。呼び出し側は
+    `suppressed: true` を「閾値には到達しているが通知済み」と読むため、閾値未満で立つと
+    原因調査が打ち切られる。
+    """
+    failures: list[str] = []
+    bodies = [
+        f"{NOTIFIED_MARKER} {NOT_CONFIGURED_MARKER} を通知した",
+        f"{NOT_CONFIGURED_MARKER} 1",
+    ]
+    result = decide(bodies, NOT_CONFIGURED_MARKER)
+    if result["consecutive"] != 1 or result["threshold_reached"]:
+        failures.append(f"前提が崩れている（連続 1 回・閾値未到達のはず）: got={result!r}")
+    if not result["already_notified"]:
+        failures.append("通知記録は検出されている必要がある")
+    if result["suppressed"] or result["reason"] is not None:
+        failures.append(f"閾値未満で抑制扱いにしてはいけない: got={result!r}")
+    if result["escalate"]:
+        failures.append("閾値未満で escalate してはいけない")
+    return failures
+
+
+def _self_test_notified_marker_must_start_line() -> list[str]:
+    """通知済みマーカーの言及・引用では抑制されない（行頭一致・fail-open 防止）。"""
+    failures: list[str] = []
+    quoted = [
+        f"{NOT_CONFIGURED_MARKER} 1",
+        f"{NOT_CONFIGURED_MARKER} 2",
+        f"メモ:\n> {NOTIFIED_MARKER} 過去の通知を引用しただけ",
+        f"{NOT_CONFIGURED_MARKER} 3",
+    ]
+    result = decide(quoted, NOT_CONFIGURED_MARKER)
+    if result["already_notified"]:
+        failures.append("引用しただけの通知済みマーカーで抑制している（通知が飛ばなくなる）")
+    if not result["escalate"]:
+        failures.append(f"引用行を挟んでも 3 連続なら escalate する: got={result!r}")
+
+    mentioned = [
+        f"{NOT_CONFIGURED_MARKER} 1",
+        f"{NOT_CONFIGURED_MARKER} 2",
+        f"`{NOTIFIED_MARKER}` は {NOT_CONFIGURED_MARKER} についてまだ一度も出ていない",
+        f"{NOT_CONFIGURED_MARKER} 3",
+    ]
+    if decide(mentioned, NOT_CONFIGURED_MARKER)["already_notified"]:
+        failures.append("行中の言及で抑制している")
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("単発・閾値未満では通知しない", _self_test_single_firing_does_not_escalate),
@@ -210,6 +432,11 @@ def run_self_test() -> int:
         ("解消・別症状でリセット", _self_test_resolved_resets),
         ("無関係コメントは無視", _self_test_unrelated_comment_is_ignored),
         ("引用・言及ではリセットしない", _self_test_quoted_marker_does_not_reset),
+        ("通知済みなら再通知を抑制する", _self_test_notified_suppresses_repeat),
+        ("解消後は再び通知できる", _self_test_resolved_reenables_notification),
+        ("通知済みマーカーも行頭一致", _self_test_notified_marker_must_start_line),
+        ("通知記録の言及は別症状へ漏れない", _self_test_notification_mention_does_not_leak),
+        ("閾値未満は抑制ではない", _self_test_below_threshold_is_not_suppressed),
     ]
     failed = 0
     total = 0
@@ -269,8 +496,9 @@ def main() -> None:
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
     else:
+        suffix = f" suppressed={result['suppressed']}({result['reason']})" if result["suppressed"] else ""
         print(f"連続 {result['consecutive']} 回 / 閾値 {result['threshold']} "
-              f"→ escalate={result['escalate']} mention={result['mention']}")
+              f"→ escalate={result['escalate']} mention={result['mention']}{suffix}")
     # 0 = 通知不要 / 1 = escalate 必要（呼び出し側が終了コードだけでも分岐できるようにする）
     sys.exit(1 if result["escalate"] else 0)
 
