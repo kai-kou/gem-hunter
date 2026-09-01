@@ -52,7 +52,10 @@ gh 取得失敗時（クラウドの 403 等・Issue #130・#789）:
   呼び出し元は exit code を確認し、3 の場合は `mcp__github__list_pull_requests` で直接代替すること
   （PR ごとの補助情報取得の失敗は従来どおり部分的な情報欠落として許容し、全体を失敗にはしない）。
   なお `get_unresolved_threads`（GraphQL 専用）は REST に等価エンドポイントが無いため
-  第 2 層フォールバックの対象外で、gh 到達不可時は stderr に理由を明示したうえで 0 件へ劣化する。
+  第 2 層フォールバックの対象外。gh 到達不可時は件数を 0 件へ黙って化けさせず、戻り値の
+  2 つ目の要素（取得成功可否）で「未検証」を呼び出し元へ機械可読に伝える。`analyze_pr` は
+  これを `unresolved_threads_unknown` として JSON 出力へ載せ、summary の先頭に
+  「⚠️ 未解決スレッド数は未検証」の警告を差し込む（status 判定自体は変えない・#790 指摘1）。
 
 アクティブセッション除外（CP-4・Issue #3007）:
   各 PR について「人間側（Claude セッション）の最終アクティビティ」
@@ -218,6 +221,20 @@ def _get_gh_token() -> str:
     return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
 
 
+def _token_gated(fn, *args) -> tuple[bool, str]:
+    """token 取得 → 未設定なら早期失敗、取得できれば fn(*args, token) を呼ぶ（第 2 層の共通ガード）。
+
+    「トークン未取得なら (False, 'GH_TOKEN/GITHUB_TOKEN 未設定') を返す」というガードが
+    8 箇所の `_fallback` クロージャへコピペされていたのを畳んだ共通ヘルパー（#790 指摘4）。
+    各 `get_*` 関数の `rest_fallback=` は `lambda: _token_gated(_rest_xxx, ...固有引数)` の
+    1 行に置き換える。
+    """
+    token = _get_gh_token()
+    if not token:
+        return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
+    return fn(*args, token)
+
+
 def _http_get(url: str, token: str) -> tuple[bool, str]:
     """GitHub REST を GET する（第 2 層）。
 
@@ -248,8 +265,16 @@ def _rest_get_all_pages(path: str, query: str, token: str, max_pages: int = 5) -
     Issue #602 が扱う共通ページネーションモジュール化のスコープには入らない、本ファイル内に
     閉じた最小実装（YAGNI）。取りこぼしが「0 件」に化けないよう、返却件数が 100 件ちょうどの間は
     次ページを取り続ける。戻り値は (成功, 結合済みリスト) または (失敗, エラー理由の文字列)。
+
+    🔴 `max_pages` に到達した時点でも最終ページがちょうど 100 件（＝まだ続きがある可能性を
+    否定できない）なら、黙って成功扱いにせず `(False, 理由)` を返す（#790 指摘3）。REST は
+    作成日時昇順で返すため、この打ち切りを fail-open で見逃すと 301 件超の PR で**最新の**
+    レビュー/コメントが切り捨てられ、`verify_layer1_review` が現行コミットへのレビューを
+    見つけられず `LAYER1_MISSING` と誤判定する。`critical=True` の呼び出しはそのまま
+    `GhUnavailableError` に倒れる（fail-closed 方針と一致）。
     """
     items: list = []
+    truncated = False
     for page in range(1, max_pages + 1):
         sep = "&" if query else ""
         url = f"https://api.github.com/repos/{REPO}/{path}?{query}{sep}per_page=100&page={page}"
@@ -265,6 +290,10 @@ def _rest_get_all_pages(path: str, query: str, token: str, max_pages: int = 5) -
         items.extend(batch)
         if len(batch) < 100:
             break
+        if page == max_pages:
+            truncated = True
+    if truncated:
+        return False, "ページ数上限に到達（取得しきれていない可能性）"
     return True, items
 
 
@@ -356,19 +385,13 @@ def get_open_prs() -> list[dict]:
     gh・REST 両層の失敗（クラウドの 403 等）は `GhUnavailableError` として呼び出し元に伝播する
     （「取得失敗」と「取得できたが 0 件」を混同しないため・Issue #130 / #789）。
     """
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        return _rest_open_prs(token)
-
     output = run_gh([
         "pr", "list",
         "-R", REPO,
         "--state", "open",
         "--limit", "100",
         "--json", "number,title,createdAt,headRefName,author,authorAssociation,reviewRequests,labels,body,isCrossRepository",
-    ], critical=True, rest_fallback=_fallback)
+    ], critical=True, rest_fallback=lambda: _token_gated(_rest_open_prs))
     if not output:
         return []
     try:
@@ -386,16 +409,10 @@ def get_pr_reviews(pr_number: int, critical: bool = False) -> list[dict]:
     区別するために使う）。`commit_id` はレビュー投稿時点の PR head SHA（force-push 後の
     古いレビューを「最新コミットに対する実施」と誤認しないための判定材料・base#462）。
     """
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        return _rest_pr_reviews(pr_number, token)
-
     output = run_gh([
         "api", f"repos/{REPO}/pulls/{pr_number}/reviews",
         "--jq", '[.[] | {user: .user.login, state, submitted_at, body_len: (.body | length), commit_id}]',
-    ], critical=critical, rest_fallback=_fallback)
+    ], critical=critical, rest_fallback=lambda: _token_gated(_rest_pr_reviews, pr_number))
     if not output:
         return []
     try:
@@ -429,16 +446,10 @@ def get_pr_comments(pr_number: int, critical: bool = False) -> list[dict]:
 
     `critical` / `commit_id` の意味は `get_pr_reviews` と同じ。
     """
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        return _rest_pr_comments(pr_number, token)
-
     output = run_gh([
         "api", f"repos/{REPO}/pulls/{pr_number}/comments",
         "--jq", '[.[] | {user: .user.login, created_at, body_len: (.body | length), path, commit_id}]',
-    ], critical=critical, rest_fallback=_fallback)
+    ], critical=critical, rest_fallback=lambda: _token_gated(_rest_pr_comments, pr_number))
     if not output:
         return []
     try:
@@ -486,30 +497,29 @@ def _rest_comment_is_bot(user: dict) -> bool:
     return user_type == "Bot" or "copilot" in login or "gemini" in login
 
 
+def _rest_gemini_trigger_comments(pr_number: int, token: str) -> tuple[bool, str]:
+    """`/gemini review` コマンドを含む issue コメントの REST 版（第 2 層）。"""
+    ok, items = _rest_issue_comments_raw(pr_number, token)
+    if not ok:
+        return False, items
+    out = [
+        {
+            "user": (c.get("user") or {}).get("login", ""),
+            "created_at": c.get("created_at", ""),
+            "body": (c.get("body") or "")[:200],
+        }
+        for c in items
+        if _GEMINI_TRIGGER_RE.search(c.get("body") or "")
+    ]
+    return True, json.dumps(out)
+
+
 def get_pr_gemini_trigger_comments(pr_number: int) -> list[dict]:
     """/gemini review コマンドを含むコメントを取得する（投稿者種別不問）。"""
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        ok, items = _rest_issue_comments_raw(pr_number, token)
-        if not ok:
-            return False, items
-        out = [
-            {
-                "user": (c.get("user") or {}).get("login", ""),
-                "created_at": c.get("created_at", ""),
-                "body": (c.get("body") or "")[:200],
-            }
-            for c in items
-            if _GEMINI_TRIGGER_RE.search(c.get("body") or "")
-        ]
-        return True, json.dumps(out)
-
     output = run_gh([
         "api", f"repos/{REPO}/issues/{pr_number}/comments",
         "--jq", '[.[] | select(.body | test("/gemini review"; "i")) | {user: .user.login, created_at, body: (.body | .[0:200])}]',
-    ], rest_fallback=_fallback)
+    ], rest_fallback=lambda: _token_gated(_rest_gemini_trigger_comments, pr_number))
     if not output:
         return []
     try:
@@ -518,31 +528,30 @@ def get_pr_gemini_trigger_comments(pr_number: int) -> list[dict]:
         return []
 
 
+def _rest_bot_issue_comments(pr_number: int, token: str) -> tuple[bool, str]:
+    """ボットの issue コメント（一般コメント）の REST 版（第 2 層）。"""
+    ok, items = _rest_issue_comments_raw(pr_number, token)
+    if not ok:
+        return False, items
+    out = [
+        {
+            "user": (c.get("user") or {}).get("login", ""),
+            "created_at": c.get("created_at", ""),
+            "body_len": len(c.get("body") or ""),
+            "body": (c.get("body") or "")[:500],
+        }
+        for c in items
+        if _rest_comment_is_bot(c.get("user") or {})
+    ]
+    return True, json.dumps(out)
+
+
 def get_pr_issue_comments(pr_number: int) -> list[dict]:
     """PRの一般コメント（ボットのみ）を取得する。"""
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        ok, items = _rest_issue_comments_raw(pr_number, token)
-        if not ok:
-            return False, items
-        out = [
-            {
-                "user": (c.get("user") or {}).get("login", ""),
-                "created_at": c.get("created_at", ""),
-                "body_len": len(c.get("body") or ""),
-                "body": (c.get("body") or "")[:500],
-            }
-            for c in items
-            if _rest_comment_is_bot(c.get("user") or {})
-        ]
-        return True, json.dumps(out)
-
     output = run_gh([
         "api", f"repos/{REPO}/issues/{pr_number}/comments",
         "--jq", '[.[] | select(.user.type == "Bot" or (.user.login | test("copilot|gemini"; "i"))) | {user: .user.login, created_at, body_len: (.body | length), body: (.body // "" | .[0:500])}]',
-    ], rest_fallback=_fallback)
+    ], rest_fallback=lambda: _token_gated(_rest_bot_issue_comments, pr_number))
     if not output:
         return []
     try:
@@ -561,33 +570,32 @@ def get_branch_last_commit_time(branch: str) -> str:
     if not branch:
         return ""
 
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        url = (
-            f"https://api.github.com/repos/{REPO}/commits"
-            f"?sha={urllib.parse.quote(branch, safe='')}&per_page=1"
-        )
-        ok, out = _http_get(url, token)
-        if not ok:
-            return False, out
-        try:
-            data = json.loads(out)
-        except json.JSONDecodeError:
-            return False, "REST 応答の JSON 解析に失敗"
-        if not data:
-            return True, ""
-        date = ((data[0].get("commit") or {}).get("committer") or {}).get("date", "")
-        return True, date
-
     output = run_gh([
         "api", "--method", "GET", f"repos/{REPO}/commits",
         "-f", f"sha={branch}",
         "-f", "per_page=1",
         "--jq", '.[0]?.commit.committer.date // ""',
-    ], rest_fallback=_fallback)
+    ], rest_fallback=lambda: _token_gated(_rest_branch_last_commit_time, branch))
     return output.strip()
+
+
+def _rest_branch_last_commit_time(branch: str, token: str) -> tuple[bool, str]:
+    """head ブランチの最新コミット時刻の REST 版（第 2 層）。"""
+    url = (
+        f"https://api.github.com/repos/{REPO}/commits"
+        f"?sha={urllib.parse.quote(branch, safe='')}&per_page=1"
+    )
+    ok, out = _http_get(url, token)
+    if not ok:
+        return False, out
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return False, "REST 応答の JSON 解析に失敗"
+    if not data:
+        return True, ""
+    date = ((data[0].get("commit") or {}).get("committer") or {}).get("date", "")
+    return True, date
 
 
 def _filter_human_comment_times(comments: list[dict]) -> list[str]:
@@ -611,29 +619,28 @@ def _filter_human_comment_times(comments: list[dict]) -> list[str]:
     return times
 
 
+def _rest_human_comment_times_raw(pr_number: int, token: str) -> tuple[bool, str]:
+    """PR の issue コメント（ボット判定用の login/type 付き）の REST 版（第 2 層）。"""
+    ok, items = _rest_issue_comments_raw(pr_number, token)
+    if not ok:
+        return False, items
+    out = [
+        {
+            "login": (c.get("user") or {}).get("login", ""),
+            "type": (c.get("user") or {}).get("type", ""),
+            "created_at": c.get("created_at", ""),
+        }
+        for c in items
+    ]
+    return True, json.dumps(out)
+
+
 def get_pr_human_comment_times(pr_number: int) -> list[str]:
     """PR の非ボット（人間 / Claude セッション）issue コメント時刻一覧を返す。"""
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        ok, items = _rest_issue_comments_raw(pr_number, token)
-        if not ok:
-            return False, items
-        out = [
-            {
-                "login": (c.get("user") or {}).get("login", ""),
-                "type": (c.get("user") or {}).get("type", ""),
-                "created_at": c.get("created_at", ""),
-            }
-            for c in items
-        ]
-        return True, json.dumps(out)
-
     output = run_gh([
         "api", f"repos/{REPO}/issues/{pr_number}/comments",
         "--jq", '[.[] | {login: .user.login, type: (.user.type // ""), created_at}]',
-    ], rest_fallback=_fallback)
+    ], rest_fallback=lambda: _token_gated(_rest_human_comment_times_raw, pr_number))
     if not output:
         return []
     try:
@@ -695,14 +702,17 @@ def compute_last_activity_min(
     return max(0, int(elapsed.total_seconds() / 60))
 
 
-def get_unresolved_threads(pr_number: int) -> int:
-    """未解決のレビュースレッド数を取得する。
+def get_unresolved_threads(pr_number: int) -> tuple[int, bool]:
+    """未解決のレビュースレッド数を取得する。戻り値は (件数, 取得成功可否)。
 
     🔴 GraphQL 専用（review thread の `isResolved` は REST に等価エンドポイントが無い・#789）。
-    gh が使えない環境では REST フォールバックできないため、黙って 0 を返さず stderr に理由を
-    明示したうえで劣化する（呼び出し元 `analyze_pr` はこの値が 0 なら「未解決スレッドなし」経路へ
-    進むため、gh 到達不可時は本来 needs_response になるはずの PR を見逃す可能性がある。既存の
-    設計上の残存リスクであり、gh を復旧させる以外の恒久対策は無い）。
+    gh が使えない環境では REST フォールバックできない。以前は失敗時に黙って `0` を返しており、
+    呼び出し元 `analyze_pr` はそれを「未解決スレッドなし」と区別できず fail-open していた
+    （gh 到達不可時に本来 `needs_response` になるはずの PR が `needs_prompt` / `awaiting_review`
+    に落ちて自動マージ対象へ紛れ込む・#790 指摘1）。戻り値の 2 つ目の要素で取得成功可否を
+    機械可読に伝え、`analyze_pr` 側で `unresolved_threads_unknown` として可視化する
+    （status 判定そのものは変えない — unknown を一律 needs_response に倒すと、gh 不在の
+    クラウドでは全 PR が needs_response になり「Layer 1 未実施」の検知が効かなくなるため）。
     """
     query = """
     query {
@@ -720,20 +730,21 @@ def get_unresolved_threads(pr_number: int) -> int:
         print(
             f"WARNING: gh 到達不可のため未解決スレッド数を取得できません（{gh_out}）。"
             "review thread の解決状態は GitHub GraphQL 専用で REST に等価エンドポイントが無く、"
-            "本スクリプトでは REST フォールバックできません（0 件として劣化します。必要なら "
-            "mcp__github__pull_request_read 等で個別に確認してください）。",
+            "本スクリプトでは REST フォールバックできません（未検証として呼び出し元に伝えます。"
+            "必要なら mcp__github__pull_request_read 等で個別に確認してください）。",
             file=sys.stderr,
         )
-        return 0
+        return 0, False
     output = gh_out
     if not output:
-        return 0
+        return 0, True
     try:
         data = json.loads(output)
         threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {}).get("nodes", [])
-        return sum(1 for t in threads if not t.get("isResolved", True))
+        return sum(1 for t in threads if not t.get("isResolved", True)), True
     except (json.JSONDecodeError, KeyError, TypeError):
-        return 0
+        # JSON 破損・スキーマ想定外も「取得失敗」として扱う（0 件成功に化けさせない）
+        return 0, False
 
 
 def _label_based_early_exit_status(pr_labels: set[str]) -> dict | None:
@@ -803,6 +814,7 @@ def analyze_pr(pr: dict) -> dict:
             "ai_reviews_count": 0,
             "ai_inline_count": 0,
             "unresolved_threads": 0,
+            "unresolved_threads_unknown": False,
             "bot_comments_count": 0,
             "has_gemini_review": False,
             "has_copilot_review": False,
@@ -836,8 +848,9 @@ def analyze_pr(pr: dict) -> dict:
     # /gemini review コマンドコメント取得（投稿者種別不問・L-051 対策）
     gemini_trigger_comments = get_pr_gemini_trigger_comments(pr_number)
 
-    # 未解決スレッド数
-    unresolved = get_unresolved_threads(pr_number)
+    # 未解決スレッド数（#790 指摘1: 取得成功可否も受け取り fail-open を防ぐ）
+    unresolved, unresolved_ok = get_unresolved_threads(pr_number)
+    unresolved_threads_unknown = not unresolved_ok
 
     # PR作成からの経過時間（ステータス判定より前に計算する）
     elapsed_min = 0
@@ -946,6 +959,15 @@ def analyze_pr(pr: dict) -> dict:
         status = "no_action"
         summary = "Claude 以外の PR または手動 PR（自律レビュー対象外）"
 
+    # 未解決スレッド数が未検証（gh 到達不可）なら summary の先頭に必ず警告を差し込む（#790 指摘1）。
+    # status 判定は変えない（可視化と機械可読フラグのみで対処する）。
+    if unresolved_threads_unknown:
+        summary = (
+            "⚠️ 未解決スレッド数は未検証（gh 到達不可）。マージ前に "
+            'mcp__github__pull_request_read(method="get_review_comments") で確認すること。｜'
+            + summary
+        )
+
     # アクティブセッション判定（Issue #3007・CP-4）
     # 介入対象ステータスの PR のみ追加 API 呼び出しでアクティビティを算出する
     last_activity_min = 9999
@@ -967,6 +989,7 @@ def analyze_pr(pr: dict) -> dict:
         "ai_reviews_count": len(ai_reviews),
         "ai_inline_count": len(ai_inline),
         "unresolved_threads": unresolved,
+        "unresolved_threads_unknown": unresolved_threads_unknown,
         "bot_comments_count": len(issue_comments),
         "has_gemini_review": has_gemini_review,
         "has_copilot_review": has_copilot_review,
@@ -978,26 +1001,25 @@ def analyze_pr(pr: dict) -> dict:
     }
 
 
+def _rest_pr_head_sha(pr_number: int, token: str) -> tuple[bool, str]:
+    """PR の head コミット SHA の REST 版（第 2 層）。"""
+    url = f"https://api.github.com/repos/{REPO}/pulls/{pr_number}"
+    ok, out = _http_get(url, token)
+    if not ok:
+        return False, out
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return False, "REST 応答の JSON 解析に失敗"
+    return True, (data.get("head") or {}).get("sha", "")
+
+
 def get_pr_head_sha(pr_number: int, critical: bool = False) -> str:
     """PRの現在のheadコミットSHAを取得する（`verify_layer1_review` の最新コミット判定用）。"""
-    def _fallback() -> tuple[bool, str]:
-        token = _get_gh_token()
-        if not token:
-            return False, "GH_TOKEN/GITHUB_TOKEN 未設定"
-        url = f"https://api.github.com/repos/{REPO}/pulls/{pr_number}"
-        ok, out = _http_get(url, token)
-        if not ok:
-            return False, out
-        try:
-            data = json.loads(out)
-        except json.JSONDecodeError:
-            return False, "REST 応答の JSON 解析に失敗"
-        return True, (data.get("head") or {}).get("sha", "")
-
     output = run_gh([
         "api", f"repos/{REPO}/pulls/{pr_number}",
         "--jq", ".head.sha",
-    ], critical=critical, rest_fallback=_fallback)
+    ], critical=critical, rest_fallback=lambda: _token_gated(_rest_pr_head_sha, pr_number))
     return output.strip()
 
 
@@ -1326,6 +1348,251 @@ def _test_rest_pagination() -> list[str]:
             )
     finally:
         globals()["_http_get"] = orig_http_get
+
+    # 上限到達時の打ち切り検知（#790 指摘3）: max_pages に達した時点でも最終ページが
+    # ちょうど100件（＝まだ続きがある可能性）なら fail-open で成功扱いにせず ok=False を返す。
+    def _fake_http_get_always_full(url, token):
+        return True, json.dumps([{"id": i} for i in range(100)])
+
+    globals()["_http_get"] = _fake_http_get_always_full
+    try:
+        ok3, reason3 = _rest_get_all_pages("pulls", "state=open", "dummy-token", max_pages=2)
+        if ok3:
+            failures.append(
+                f"  _rest_get_all_pages: max_pages到達時に fail-open で成功扱いになった "
+                f"(ok={ok3!r} result={reason3!r})"
+            )
+        elif "上限" not in str(reason3):
+            failures.append(
+                f"  _rest_get_all_pages: max_pages到達時の理由文字列に『上限』が含まれない: {reason3!r}"
+            )
+    finally:
+        globals()["_http_get"] = orig_http_get
+
+    # 負ケース: ちょうど max_pages で完了するが最終ページが100件未満（＝続きが無い）なら
+    # 打ち切り扱いにしない（誤って fail-closed に倒さないことの回帰固定）。
+    def _fake_http_get_exact_boundary(url, token):
+        if url.endswith("&page=1"):
+            return True, json.dumps([{"id": i} for i in range(100)])
+        if url.endswith("&page=2"):
+            return True, json.dumps([{"id": 100}])
+        return True, json.dumps([])
+
+    globals()["_http_get"] = _fake_http_get_exact_boundary
+    try:
+        ok4, items4 = _rest_get_all_pages("pulls", "state=open", "dummy-token", max_pages=2)
+        if not ok4 or len(items4) != 101:
+            failures.append(
+                f"  _rest_get_all_pages: ちょうど max_pages で完了するケースを誤って打ち切り扱いした "
+                f"(ok={ok4!r} len={len(items4) if ok4 else 'N/A'})"
+            )
+    finally:
+        globals()["_http_get"] = orig_http_get
+    return failures
+
+
+def _test_get_unresolved_threads_fail_open_fix() -> list[str]:
+    """`get_unresolved_threads` が gh 到達不可時に `(0, False)` を返すことを固定する（#790 指摘1）。
+
+    修正前は成功可否を返さず常に `int`（0 件）を返しており、呼び出し元が「取得失敗」と
+    「本当に 0 件」を区別できず fail-open していた（本来 `needs_response` になるはずの PR が
+    `needs_prompt`/`awaiting_review` に落ちて自動マージ対象へ紛れ込む）。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+
+    # gh 到達不可 → (0, False)
+    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
+    try:
+        got = get_unresolved_threads(1)
+        if got != (0, False):
+            failures.append(f"  get_unresolved_threads: gh失敗時 = {got!r} (expected (0, False))")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+
+    # gh 成功 → (未解決件数, True)
+    def _fake_graphql_success(args):
+        query_result = {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "nodes": [
+                                {"isResolved": False},
+                                {"isResolved": True},
+                                {"isResolved": False},
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        return True, json.dumps(query_result)
+
+    globals()["_run_gh_raw"] = _fake_graphql_success
+    try:
+        got2 = get_unresolved_threads(1)
+        if got2 != (2, True):
+            failures.append(f"  get_unresolved_threads: gh成功時 = {got2!r} (expected (2, True))")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+
+    # gh は成功したが JSON 破損 → (0, False)（黙って 0 件成功に化けさせない）
+    globals()["_run_gh_raw"] = lambda args: (True, "not-json{{{")
+    try:
+        got3 = get_unresolved_threads(1)
+        if got3 != (0, False):
+            failures.append(f"  get_unresolved_threads: JSON解析失敗時 = {got3!r} (expected (0, False))")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+    return failures
+
+
+def _test_analyze_pr_unresolved_threads_unknown() -> list[str]:
+    """`analyze_pr` が未解決スレッド数の未検証を `unresolved_threads_unknown` として可視化し、
+    summary の先頭に警告を差し込むことを固定する（#790 指摘1）。
+
+    gh 到達不可・token 未設定（REST フォールバックも不可）を再現し、`analyze_pr` を実際に
+    呼んで劣化経路を通す。他の `get_*` 呼び出しも同じ環境下で自然に空リスト/空文字へ
+    劣化するため、追加の monkeypatch なしで安全に実行できる（実ネットワークへは出ない）。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    saved_env = {k: os.environ.pop(k, None) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
+    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
+    try:
+        pr = {
+            "number": 9001,
+            "title": "テスト PR",
+            "headRefName": "feat/x",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "author": {"login": "someone"},
+            "authorAssociation": "OWNER",
+            "reviewRequests": [],
+            "labels": [],
+            "body": "",
+            "isCrossRepository": False,
+        }
+        result = analyze_pr(pr)
+        if result.get("unresolved_threads_unknown") is not True:
+            failures.append(
+                "  analyze_pr: unresolved_threads_unknown が True にならない "
+                f"(got {result.get('unresolved_threads_unknown')!r})"
+            )
+        summary = result.get("summary", "")
+        if not summary.startswith("⚠️ 未解決スレッド数は未検証"):
+            failures.append(
+                f"  analyze_pr: summary の先頭に未検証警告が差し込まれていない (summary={summary!r})"
+            )
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+    return failures
+
+
+def _test_get_open_prs_rest_fallback() -> list[str]:
+    """`get_open_prs()` の REST フォールバック（getter レベル）を検証する（#790 指摘2）。
+
+    既存の self-test は `run_gh` の汎用フォールバック分岐・`get_pr_reviews` という別 getter・
+    `_transform_rest_pr` / `_rest_get_all_pages` の単体テストしかカバーしておらず、
+    `get_open_prs()` 内部の `_fallback`（現 `_rest_open_prs` 経由）自体は一度も実行されて
+    いなかった。ここでは `_run_gh_raw` を失敗スタブへ差し替え、`_http_get` を PR 配列 JSON を
+    返すスタブへ差し替えたうえで実際に `get_open_prs()` を呼び、結果が `_transform_rest_pr`
+    を通した gh スキーマ（createdAt / headRefName / authorAssociation / labels=[{name}]）に
+    なっていることを確認する。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_http_get = globals()["_http_get"]
+    saved_env = {k: os.environ.pop(k, None) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
+    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
+    os.environ["GH_TOKEN"] = "dummy-token-for-test"
+    raw_prs = [
+        {
+            "number": 123,
+            "title": "テスト PR",
+            "created_at": "2026-09-01T00:00:00Z",
+            "head": {"ref": "feat/x", "repo": {"full_name": REPO}},
+            "user": {"login": "someone"},
+            "author_association": "OWNER",
+            "requested_reviewers": [],
+            "requested_teams": [],
+            "labels": [{"name": "sp:3"}],
+            "body": "Session-Id: test",
+        }
+    ]
+    globals()["_http_get"] = lambda url, token: (True, json.dumps(raw_prs))
+    try:
+        got = get_open_prs()
+        if len(got) != 1:
+            failures.append(
+                f"  get_open_prs REST フォールバック: 件数不一致 (got {len(got)} 件, expected 1)"
+            )
+        else:
+            pr = got[0]
+            expected_fields = {
+                "number": 123,
+                "title": "テスト PR",
+                "createdAt": "2026-09-01T00:00:00Z",
+                "headRefName": "feat/x",
+                "authorAssociation": "OWNER",
+            }
+            for key, expected_value in expected_fields.items():
+                if pr.get(key) != expected_value:
+                    failures.append(
+                        f"  get_open_prs REST フォールバック: {key}={pr.get(key)!r} "
+                        f"(expected {expected_value!r})"
+                    )
+            if pr.get("labels") != [{"name": "sp:3"}]:
+                failures.append(
+                    f"  get_open_prs REST フォールバック: labels={pr.get('labels')!r} "
+                    "(expected [{'name': 'sp:3'}])"
+                )
+    except GhUnavailableError as e:
+        failures.append(f"  get_open_prs REST フォールバック: 予期せず GhUnavailableError ({e})")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_http_get"] = orig_http_get
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+    return failures
+
+
+def _test_get_pr_head_sha_rest_fallback() -> list[str]:
+    """`get_pr_head_sha()` の REST フォールバック（getter レベル）を検証する（#790 指摘2）。
+
+    `critical=True` で呼ばれ `verify_layer1_review` の判定に直結するため、REST フォールバック
+    経由でも正しい head SHA を返すことを確認する。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_http_get = globals()["_http_get"]
+    saved_env = {k: os.environ.pop(k, None) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
+    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
+    os.environ["GH_TOKEN"] = "dummy-token-for-test"
+    expected_sha = "deadbeef1234"
+    globals()["_http_get"] = lambda url, token: (True, json.dumps({"head": {"sha": expected_sha}}))
+    try:
+        got = get_pr_head_sha(1, critical=True)
+        if got != expected_sha:
+            failures.append(f"  get_pr_head_sha REST フォールバック: {got!r} (expected {expected_sha!r})")
+    except GhUnavailableError as e:
+        failures.append(f"  get_pr_head_sha REST フォールバック: 予期せず GhUnavailableError ({e})")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_http_get"] = orig_http_get
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
     return failures
 
 
@@ -1619,10 +1886,30 @@ def _run_self_test() -> None:
     failures.extend(getter_fallback_failures)
     GETTER_FALLBACK_CASE_COUNT = 3  # ④-b / 負ケース / ④-a の3アサーション
 
-    # REST ページネーションの取りこぼし防止（#789 実装要件4）
+    # REST ページネーションの取りこぼし防止（#789 実装要件4）・上限到達時の打ち切り検知（#790 指摘3）
     pagination_failures = _test_rest_pagination()
     failures.extend(pagination_failures)
-    PAGINATION_CASE_COUNT = 2  # 複数ページ結合 / 単一ページでの過剰リクエスト無しの2アサーション
+    PAGINATION_CASE_COUNT = 4  # 複数ページ結合 / 単一ページ過剰リクエスト無し / 上限打ち切り検知 / ちょうど境界で完了
+
+    # get_unresolved_threads の fail-open 転換の修正固定（#790 指摘1）
+    unresolved_threads_failures = _test_get_unresolved_threads_fail_open_fix()
+    failures.extend(unresolved_threads_failures)
+    UNRESOLVED_THREADS_CASE_COUNT = 3  # gh失敗時 / gh成功時 / JSON解析失敗時
+
+    # analyze_pr が unresolved_threads_unknown を可視化し summary 先頭に警告を差すことの固定（#790 指摘1）
+    analyze_pr_unknown_failures = _test_analyze_pr_unresolved_threads_unknown()
+    failures.extend(analyze_pr_unknown_failures)
+    ANALYZE_PR_UNKNOWN_CASE_COUNT = 2  # unresolved_threads_unknown フラグ / summary 先頭の警告
+
+    # get_open_prs() の REST フォールバック（getter レベル回帰・#790 指摘2）
+    open_prs_fallback_failures = _test_get_open_prs_rest_fallback()
+    failures.extend(open_prs_fallback_failures)
+    OPEN_PRS_FALLBACK_CASE_COUNT = 7  # 件数1 + フィールド5 + labels1
+
+    # get_pr_head_sha() の REST フォールバック（getter レベル回帰・#790 指摘2）
+    head_sha_fallback_failures = _test_get_pr_head_sha_rest_fallback()
+    failures.extend(head_sha_fallback_failures)
+    HEAD_SHA_FALLBACK_CASE_COUNT = 1
 
     total_cases = (
         len(cases)
@@ -1644,6 +1931,10 @@ def _run_self_test() -> None:
         + RUN_GH_FALLBACK_CASE_COUNT
         + GETTER_FALLBACK_CASE_COUNT
         + PAGINATION_CASE_COUNT
+        + UNRESOLVED_THREADS_CASE_COUNT
+        + ANALYZE_PR_UNKNOWN_CASE_COUNT
+        + OPEN_PRS_FALLBACK_CASE_COUNT
+        + HEAD_SHA_FALLBACK_CASE_COUNT
     )
     if failures:
         print("FAIL: check_pending_pr_reviews self-test", file=sys.stderr)
