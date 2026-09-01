@@ -144,6 +144,9 @@
 {"date": "2026-09-02 JST", "title": "sprint-cycle-router Step 0.2 の前に prod_drift_escalation.py --self-test を前置する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "sprint-development-rules.md §4 に「新規ツール実装時はツール docstring も読む」を追加する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "issue_marker_counter.py の API を複数症状の AND 判定へ拡張する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-02 JST", "title": "consume_hold_guard.py と prod_drift_escalation.py の同型ロジックの統合方針を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-02 JST", "title": "SKILL.md §1.5 手順 5-3 に判定 JSON の実例（3 分岐）を貼る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-02 JST", "title": "is_notification_of() の docstring に複数マーカー・複数行入力時の仕様を追記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "consume_hold_guard.py と prod_drift_escalation.py の同型ロジックの統合方針を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "803"}
+{"date": "2026-09-02 JST", "title": "SKILL.md §1.5 手順 5-3 に判定 JSON の実例（3 分岐）を貼る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "803"}
+{"date": "2026-09-02 JST", "title": "is_notification_of() の docstring に複数マーカー・複数行入力時の仕様を追記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "803"}
+{"date": "2026-09-02 JST", "title": "[prod-drift] Issue のコメント書式違反を定期 validation する（validate_prod_drift_comments.py 新設）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "803"}
+{"date": "2026-09-02 JST", "title": "変異テストの実施記録を commit / PR 本文に残す（今回は既に記録済みのため対応不要と判定）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "SKILL.md 手順 5-3 に「症状コメントと通知記録は同居させない」を明記する（PR #802 の a4bb955 で対応済み）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
