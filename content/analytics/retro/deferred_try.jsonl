@@ -129,3 +129,12 @@
 {"date": "2026-09-02 JST", "title": "prod_drift_escalation.py の consecutive 判定に代替 build trigger の存在確認を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "サブエージェント待機ターンの Stop 出力を進捗報告へ切り替える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "classifier が Authorization ヘッダつき curl をブロックする件と urllib 迂回を記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "E2E Playwright #629（browser build ミスマッチ）の自動検知・回避実装", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 629}
+{"date": "2026-09-02 JST", "title": "env-vars.md と run_checks.sh の環境変数同期を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "pr-review-flow-summary.md の run_checks 件数を自動生成に変更する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "Hot 層予算チェックの増減ログ追記を pre-pr-create-check.sh へ自動化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "#798（Hot 層再棚卸し）の削減判定を eval で検証する仕組みを整える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "RateLimitPort の「key は HMAC 化」指示を呼び出し側の責務として明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "環境ノイズの自動戻し件数をテレメトリに記録して傾向分析する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "CachePort が ClockPort の「throw しない」契約に依存している点を §1.6 に明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "委譲プロンプト④（既存ポートの確認）の実効性を次 fan-out で実測する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
