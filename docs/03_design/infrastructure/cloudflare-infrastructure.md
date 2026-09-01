@@ -514,7 +514,11 @@ npx wrangler versions view <VERSION_ID>   # 投入結果は Secrets 欄で確認
 | `allow` | 上表の読み取り 4 ツール |
 | `deny` | 書き込み系 10 種（D1 / KV / R2 / Hyperdrive の `*_create` / `*_delete` / `*_edit` / `*_query`）**＋ 上表に無い読み取り系 10 種**（各サービスの `*_get` / `*_list` と `migrate_pages_to_workers_guide`） |
 
-⚠️ **`deny` は既知ツール名の列挙** であり、`allow` を潰さずにワイルドカードで塞ぐ手段がないため、**MCP サーバー側に新しいツールが増えると未列挙のまま素通りする**。恒久対策（PreToolUse フックによるアローリスト化）は #56。今後 MCP を追加する PR は、許可範囲の `permissions` 反映を **同一 PR に含める**。
+⚠️ **`deny` は既知ツール名の列挙** であり、`allow` を潰さずにワイルドカードで塞ぐ手段がないため、**MCP サーバー側に新しいツールが増えると未列挙のまま素通りする**。今後 MCP を追加する PR は、許可範囲の `permissions` 反映を **同一 PR に含める**。
+
+🔴 **恒久対策（アローリスト化・#56・実装済み）**: `PreToolUse`（`.claude/hooks/pre-tool-use-router.sh` → `pre-cloudflare-mcp-allowlist-check.sh`）が `mcp__Cloudflare_Developer_Platform__*` 呼び出しを本表（読み取り 4 ツール）に対して機械的に照合し、**許可集合に無いツールは exit code 2 で一律ブロックする**（新規ツールが `permissions` の更新漏れで素通りする穴を塞ぐ）。許可集合は本表の「読み取り（許可）」行から **バッククォート区切りのツール名を grep/sed で機械的に読み取る**（正本はこの表のみ・二重管理にしない）。表を解析できない場合（ファイル不在・行の書式崩れ等）は **fail-closed**（全 Cloudflare MCP ツールをブロック）にする。回帰検証: `bash .claude/hooks/pre-cloudflare-mcp-allowlist-check.sh --self-test`（`tools/run_checks.sh` に配線済み）。
+
+**`permissions.allow` / `deny` の扱い（判断記録）**: 上表の `allow`/`deny` はそのまま **残す**（削除しない）。理由は二重防御（defense-in-depth）— `permissions` ACL は Claude Code 本体が PreToolUse フックより先に評価しうるレイヤーであり、フック側にバグ・設定ミス（ドキュメント解析失敗を除く）があっても `deny` 列挙済みの書き込み系ツールは別レイヤーで止まる。一方でこの `deny` 列挙は「新しいツールを塞げない」という本質的な限界を持ち続けるため、**アローリストの正本はあくまでフック側（本表 §7.4 を参照する実装）** であり、`permissions.deny` は「知られている危険なツール名を二重に塞ぐ補助」という位置づけに格下げする。
 
 ### 7.5. ⚠️ `INF-20` の例外（セッションからの手動デプロイ・`D-23` → 復帰先は `D-31` / `D-32` で改訂）
 

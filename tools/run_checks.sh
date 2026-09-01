@@ -678,6 +678,15 @@ else
   skip_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" "スクリプトが見つかりません"
 fi
 
+# Cloudflare MCP ツールアローリストガード self-test（Issue #56・未列挙の新規 MCP ツールが
+# 確認プロンプトなしで素通りする穴の恒久対策）。
+if [ -f "$REPO_ROOT/.claude/hooks/pre-cloudflare-mcp-allowlist-check.sh" ]; then
+  run_check "Cloudflare MCP アローリストガード self-test (pre-cloudflare-mcp-allowlist-check.sh --self-test)" \
+    bash .claude/hooks/pre-cloudflare-mcp-allowlist-check.sh --self-test
+else
+  skip_check "Cloudflare MCP アローリストガード self-test (pre-cloudflare-mcp-allowlist-check.sh --self-test)" "スクリプトが見つかりません"
+fi
+
 # 安全なプロセス掃除ヘルパー self-test（Issue #490 / L-139）。
 # 自分自身・祖先プロセスを除外集合に入れているか、無関係なプロセスは検出して終了できるかを実測する。
 if [ -f "$REPO_ROOT/tools/safe_process_kill.sh" ]; then
