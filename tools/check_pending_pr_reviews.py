@@ -1579,14 +1579,16 @@ def _test_get_unresolved_threads_fail_open_fix() -> list[str]:
 
 def _test_approx_unresolved_from_comments() -> list[str]:
     """`_approx_unresolved_from_comments` のスレッド再構成・近似ロジックを固定する（#792・
-    PR #735 実測を受けて投稿者比較を撤廃した契約修正後の版）。
+    PR #735 実測を受けて投稿者比較を撤廃した契約修正後の版・#805 で孤児返信検出と型防御を追加）。
 
     検査ロジック必須確認（#474）の反映:
       - 失敗経路（見逃し = 未解決なのに 0 と数える経路 / 過検知 = 解決済みなのに未解決と
         数える経路）: 返信ゼロ・同一投稿者の返信・他者の返信・`user` が None・
-        `in_reply_to_id` キー欠落 の各パターンを個別に検証する
+        `in_reply_to_id` キー欠落・**孤児返信（親ルートが取得結果に不在）**・
+        **自己参照コメント（`id == in_reply_to_id`）** の各パターンを個別に検証する
       - 入力バリアント: 複数返信・bot 返信者・複数ルート混在の複合ケース、
-        実 PR #735 のデータ形状（同一投稿者による指摘＋対応返信が並ぶ）を含める
+        実 PR #735 のデータ形状（同一投稿者による指摘＋対応返信が並ぶ）、
+        **非 dict 要素・unhashable な `id`/`in_reply_to_id`**（例外を投げず読み飛ばすこと）を含める
     """
     failures: list[str] = []
 
@@ -1652,6 +1654,37 @@ def _test_approx_unresolved_from_comments() -> list[str]:
             ],
             0,
         ),
+        (
+            # 🔴 CRITICAL 回帰ケース（#805）: 親ルートが取得結果に存在しない孤児返信。
+            # GitHub はルートコメントだけの削除を許容するため実運用で起こり得る。
+            # 修正前は roots だけを回すループで消えて 0 件（fail-open）になっていた。
+            "孤児返信（親ルートが取得結果に不在）→ 未解決1件",
+            [_comment(2, 1, "author-b")],
+            1,
+        ),
+        (
+            "自己参照コメント（id == in_reply_to_id）→ 孤児として未解決1件",
+            [_comment(1, 1, "reviewer-a")],
+            1,
+        ),
+        (
+            "id 欠落コメントは読み飛ばし、正常なルートだけ集計 → 未解決1件",
+            [
+                {"id": None, "in_reply_to_id": None, "user": {"login": "x"}},
+                _comment(1, None, "reviewer-a"),
+            ],
+            1,
+        ),
+        (
+            "非 dict 要素・unhashable id/in_reply_to_id は例外を投げず読み飛ばす（#805）",
+            [
+                None,
+                {"id": 1, "in_reply_to_id": ["x"], "user": {}},
+                {"id": ["y"], "in_reply_to_id": None, "user": {}},
+                _comment(2, None, "reviewer-a"),  # 正常なルートは引き続き集計される
+            ],
+            1,
+        ),
     ]
     for label, comments, expected in cases:
         got = _approx_unresolved_from_comments(comments)
@@ -1711,6 +1744,54 @@ def _test_get_unresolved_threads_rest_approx_layer() -> list[str]:
                 os.environ[k] = v
             else:
                 os.environ.pop(k, None)
+    return failures
+
+
+def _test_get_unresolved_threads_layer1_success_skips_layer2() -> list[str]:
+    """`get_unresolved_threads` は第 1 層（gh GraphQL）が成功したら第 2 層（REST 近似）を
+    呼ばないことを固定する（#805）。
+
+    第 2 層をスタブに差し替えて呼び出しフラグを立て、gh 成功パスで `(2, True, False)` を
+    返しつつフラグが `False` のままであることを assert する。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_rest_approx = globals()["_rest_unresolved_threads_approx"]
+    called = {"rest": False}
+
+    def _stub_rest(pr_number, token):
+        called["rest"] = True
+        return True, json.dumps({"count": 99})
+
+    def _fake_graphql_success(args):
+        query_result = {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "nodes": [
+                                {"isResolved": False},
+                                {"isResolved": True},
+                                {"isResolved": False},
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        return True, json.dumps(query_result)
+
+    globals()["_run_gh_raw"] = _fake_graphql_success
+    globals()["_rest_unresolved_threads_approx"] = _stub_rest
+    try:
+        got = get_unresolved_threads(1)
+        if got != (2, True, False):
+            failures.append(f"  get_unresolved_threads: gh成功時 = {got!r} (expected (2, True, False))")
+        if called["rest"] is not False:
+            failures.append("  get_unresolved_threads: gh成功時に第2層（REST近似）が呼ばれてしまった")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_rest_unresolved_threads_approx"] = orig_rest_approx
     return failures
 
 
@@ -2223,15 +2304,20 @@ def _run_self_test() -> None:
     failures.extend(unresolved_threads_failures)
     UNRESOLVED_THREADS_CASE_COUNT = 3  # gh失敗時 / gh成功時 / JSON解析失敗時
 
-    # 未解決スレッド REST 近似のスレッド再構成ロジック（#792）
+    # 未解決スレッド REST 近似のスレッド再構成ロジック（#792・#805 で孤児返信検出・型防御を追加）
     approx_comments_failures = _test_approx_unresolved_from_comments()
     failures.extend(approx_comments_failures)
-    APPROX_COMMENTS_CASE_COUNT = 7  # 返信ゼロ/同一投稿者返信(回帰・反転)/他者返信あり/複合ケース/user None・キー欠落/混在1件未解決/PR#735実データ形状
+    APPROX_COMMENTS_CASE_COUNT = 11  # 返信ゼロ/同一投稿者返信(回帰・反転)/他者返信あり/複合ケース/user None・キー欠落/混在1件未解決/PR#735実データ形状/孤児返信/自己参照/id欠落読み飛ばし/非dict・unhashable読み飛ばし
 
     # get_unresolved_threads の第 2 層（REST 近似）フォールバック（#792）
     unresolved_rest_approx_failures = _test_get_unresolved_threads_rest_approx_layer()
     failures.extend(unresolved_rest_approx_failures)
     UNRESOLVED_REST_APPROX_CASE_COUNT = 3  # 近似成功 / 近似も失敗 / token未設定
+
+    # gh (第1層) 成功時は REST 近似(第2層) を呼ばないことの固定（#805）
+    layer1_skips_layer2_failures = _test_get_unresolved_threads_layer1_success_skips_layer2()
+    failures.extend(layer1_skips_layer2_failures)
+    LAYER1_SKIPS_LAYER2_CASE_COUNT = 2  # 件数の一致 / 第2層未呼び出しの確認
 
     # analyze_pr が unresolved_threads_unknown を可視化し summary 先頭に警告を差すことの固定（#790 指摘1）
     analyze_pr_unknown_failures = _test_analyze_pr_unresolved_threads_unknown()
@@ -2277,6 +2363,7 @@ def _run_self_test() -> None:
         + UNRESOLVED_THREADS_CASE_COUNT
         + APPROX_COMMENTS_CASE_COUNT
         + UNRESOLVED_REST_APPROX_CASE_COUNT
+        + LAYER1_SKIPS_LAYER2_CASE_COUNT
         + ANALYZE_PR_UNKNOWN_CASE_COUNT
         + ANALYZE_PR_APPROX_CASE_COUNT
         + OPEN_PRS_FALLBACK_CASE_COUNT
