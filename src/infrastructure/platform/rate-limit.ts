@@ -33,8 +33,20 @@ export class WorkersRateLimit implements RateLimitPort {
     if (!this.binding) {
       return { allowed: true }
     }
-    const result = await this.binding.limit({ key })
-    if (!result.success) {
+    // binding は事業者側の実行環境が注入する外部依存であり、型どおりの形が返る保証は実行時にはない。
+    // 契約（RateLimitPort）が「consume は投げない」と約束しているため、undefined 等が返っても
+    // プロパティ参照で TypeError を投げないよう `| undefined` として扱う。
+    let result: { success: boolean } | undefined
+    try {
+      result = await this.binding.limit({ key })
+    } catch {
+      // binding が一時的にエラーを返した場合は「制限なし」を返す（fail-open）。
+      // binding 未提供時のフォールバックと同じ扱いにする（RateLimitPort の契約）。
+      return { allowed: true }
+    }
+    // 明示的に success: false と言われたときだけ拒否する。判定不能な形（undefined 等）は
+    // 上の catch と同じく fail-open にする（レート制限は保護であって可用性の前提ではない）。
+    if (result?.success === false) {
       // Cloudflare Rate Limiting binding の limit() は { success } しか返さず、次の窓が開く正確な時刻を
       // 教えてくれない。そのため wrangler.jsonc で宣言した period（＝窓の長さ）を
       // 「次の窓が開くまでの最大待ち時間」として Retry-After に使う（保守的な上限値）。
