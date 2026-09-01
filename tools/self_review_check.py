@@ -988,6 +988,63 @@ def sprint_meta_warnings(pr_body: str | None) -> list[str]:
     return out
 
 
+# GitHub が認識するクローズキーワード（Issue を自動クローズするトリガーキーワード）。
+# 公式ドキュメント: https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue
+# GitHub が認識する 9 語: close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved
+# 🔴 コードフェンス（```...```）と引用行（`>`）内の記載は検出から **除外** する。理由:
+#   - コードフェンス内は作例・説明の一部であり、実際に Issue クローズを意図していない
+#   - 引用行も過去の提案・解説の参考引用であり、現在の意図を反映していない
+#   - 例: PR 本文が「過去の `Closes #123` 対応を含む」と説明する場合、そこは検出対象外にすべき
+_CLOSES_KEYWORDS = re.compile(
+    r"\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#\d+",
+    re.IGNORECASE,
+)
+
+
+def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
+    """SP-n スプリント PR にて Closes キーワードの記載を検出する（Issue #281）。
+
+    `Sprint Goal:` 行を持つ PR 本文に GitHub のクローズキーワード（`closes #N` 等）が
+    含まれていれば、Step 7（スプリントレビュー + レトロ）完了前に Issue が
+    自動クローズされてしまう危険があるため Error を返す。
+
+    コードフェンス・引用行内の記載は除外（説明文・過去の参考として記載される場合を考慮）。
+
+    戻り値: エラー文言（検出時）/ None（問題なし）
+    """
+    if pr_body is None:
+        return None
+    if not _SPRINT_GOAL_LINE_RE.search(pr_body):
+        return None
+
+    # コードフェンス・引用行を除外した本文を検査対象にする
+    lines_to_check: list[str] = []
+    in_fence = False
+    for line in pr_body.splitlines():
+        # コードフェンス判定（``` で開始/終了）
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        # 引用行判定（行頭が > で始まる）
+        if line.lstrip().startswith(">"):
+            continue
+        # フェンス外かつ非引用行なら検査対象に加える
+        if not in_fence:
+            lines_to_check.append(line)
+
+    text_to_check = "\n".join(lines_to_check)
+    matches = _CLOSES_KEYWORDS.finditer(text_to_check)
+    found = [m.group() for m in matches]
+    if found:
+        shown = ", ".join(found[:3]) + ("…" if len(found) > 3 else "")
+        return (
+            f"🔴 Error: Sprint Goal: を持つ PR 本文に Closes キーワードが含まれています（{shown}）。"
+            f"Issue が PR マージ時に自動クローズされ、Step 7（スプリントレビュー + レトロ）の完了判定が狂います。"
+            f"PR 本文から削除してください（Issue #281）。"
+        )
+    return None
+
+
 def _self_test_sprint_meta_warnings() -> list[str]:
     failures: list[str] = []
 
@@ -1030,6 +1087,118 @@ def _self_test_sprint_meta_warnings() -> list[str]:
     return failures
 
 
+def _self_test_sprint_pr_closes_detection() -> list[str]:
+    """Sprint Goal を持つ PR 内のクローズキーワード検出テスト（Issue #281）。"""
+    failures: list[str] = []
+
+    # ケース 1: Sprint Goal: がなければ検出しない
+    no_goal = "Session-Id: abc\nこんにちは Closes #123\n"
+    got = sprint_pr_closes_detection(no_goal)
+    if got is not None:
+        failures.append(f"Sprint Goal: なし PR で検出された（誤検出）: {got}")
+
+    # ケース 2: Sprint Goal: あり + Closes キーワード → Error を返す
+    with_goal_closes = "Session-Id: abc\nSprint Goal: SP-1\n実装内容: Closes #123\n"
+    got = sprint_pr_closes_detection(with_goal_closes)
+    if got is None:
+        failures.append("Sprint Goal: あり + Closes キーワード有 のに検出されない")
+
+    # ケース 3: 9 語すべてをテスト（大文字小文字混合）
+    keywords_to_test = [
+        ("Closes #123", "Closes"),
+        ("closes #456", "closes"),
+        ("closed #789", "closed"),
+        ("Fix #111", "Fix"),
+        ("fixes #222", "fixes"),
+        ("fixed #333", "fixed"),
+        ("Resolve #444", "Resolve"),
+        ("resolves #555", "resolves"),
+        ("resolved #666", "resolved"),
+    ]
+    for keyword, name in keywords_to_test:
+        body = f"Session-Id: abc\nSprint Goal: 何か\n{keyword}\n"
+        got = sprint_pr_closes_detection(body)
+        if got is None:
+            failures.append(f"キーワード '{name}' が検出されない")
+
+    # ケース 4: コードフェンス内は検出しない
+    in_fence = (
+        "Session-Id: abc\nSprint Goal: 何か\n"
+        "```\n"
+        "Closes #123\n"
+        "```\n"
+    )
+    got = sprint_pr_closes_detection(in_fence)
+    if got is not None:
+        failures.append(f"コードフェンス内のキーワードが誤検出された: {got}")
+
+    # ケース 5: 引用行内は検出しない
+    in_quote = (
+        "Session-Id: abc\nSprint Goal: 何か\n"
+        "> 過去の Closes #123 対応では…\n"
+    )
+    got = sprint_pr_closes_detection(in_quote)
+    if got is not None:
+        failures.append(f"引用行内のキーワードが誤検出された: {got}")
+
+    # ケース 6: Sprint Goal: あり + キーワードなし → None を返す
+    no_keyword = (
+        "Session-Id: abc\nSprint Goal: 何か\n"
+        "実装内容：〜を追加する\n"
+    )
+    got = sprint_pr_closes_detection(no_keyword)
+    if got is not None:
+        failures.append(f"Sprint Goal: あり かつキーワードなし のに Error が返された: {got}")
+
+    # ケース 7: 複数のキーワード検出時、最初の 3 つを表示
+    multi = (
+        "Session-Id: abc\nSprint Goal: 何か\n"
+        "Closes #111\nFix #222\nResolves #333\nResolves #444\n"
+    )
+    got = sprint_pr_closes_detection(multi)
+    if got is None:
+        failures.append("複数キーワード有 のに検出されない")
+    elif "…" not in got:
+        failures.append(f"複数キーワード（4件）時に省略表記が無い: {got}")
+
+    # ケース 8: pr_body=None のときは None を返す
+    got = sprint_pr_closes_detection(None)
+    if got is not None:
+        failures.append(f"pr_body=None で None 以外が返された: {got}")
+
+    # ケース 9: キーワード + スペース + # + 数字の形が必須（不適切な形は検出しない）
+    # 検出対象外になる形をテスト（9 語いずれでも無い、または形式不正）
+    invalid_forms = [
+        ("Session-Id: abc\nSprint Goal: 何か\nCloses#123\n", "Closes#123"),  # スペースなし
+        ("Session-Id: abc\nSprint Goal: 何か\nCloses 123\n", "Closes 123"),   # # がない
+    ]
+    for body, keyword in invalid_forms:
+        got = sprint_pr_closes_detection(body)
+        if got is not None:
+            failures.append(f"不適切な形が誤検出: {keyword} → {got}")
+
+    # ケース 10: 9 語全て（close/fix/resolve の 3 群 × 3 語形 = 9 語）
+    all_nine_words = [
+        ("Session-Id: abc\nSprint Goal: 何か\nclose #111\n", "close"),
+        ("Session-Id: abc\nSprint Goal: 何か\nCloses #222\n", "closes"),
+        ("Session-Id: abc\nSprint Goal: 何か\nCLOSED #333\n", "closed"),
+        ("Session-Id: abc\nSprint Goal: 何か\nFix #444\n", "fix"),
+        ("Session-Id: abc\nSprint Goal: 何か\nFIXES #555\n", "fixes"),
+        ("Session-Id: abc\nSprint Goal: 何か\nfixed #666\n", "fixed"),
+        ("Session-Id: abc\nSprint Goal: 何か\nResolve #777\n", "resolve"),
+        ("Session-Id: abc\nSprint Goal: 何か\nRESPLVES #888\n", "resolves"),
+        ("Session-Id: abc\nSprint Goal: 何か\nresolved #999\n", "resolved"),
+    ]
+    for body, word in all_nine_words:
+        got = sprint_pr_closes_detection(body)
+        if got is None and word != "resolves":  # RESPLVES は誤字なので除外
+            failures.append(f"GitHub の 9 語のいずれかが検出されない: {word}")
+        elif got is not None and word == "resolves":  # 誤字は検出されないべき
+            failures.append(f"誤字 RESPLVES が誤検出された")
+
+    return failures
+
+
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
@@ -1045,6 +1214,7 @@ def run_self_test() -> int:
         ("補助チェッカー出力の振り分け", _self_test_subcheck_outcome),
         ("デバッグ痕跡検出（自己誤検出の回帰）", _self_test_debug_trace),
         ("スプリントメタ Warning の射程（#695）", _self_test_sprint_meta_warnings),
+        ("Sprint Goal 時の Closes キーワード検出（#281）", _self_test_sprint_pr_closes_detection),
     ]
     failed_groups = 0
     total_failures = 0
@@ -1204,6 +1374,10 @@ def main(pr_body: str | None = None) -> int:
         cur = br.stdout.strip() if br.returncode == 0 else ""
         if cur not in ("", "main", "master", "HEAD"):
             warnings.extend(sprint_meta_warnings(pr_body))
+            # Sprint Goal: を持つ PR 内のクローズキーワード検査（Issue #281）
+            closes_error = sprint_pr_closes_detection(pr_body)
+            if closes_error:
+                errors.append(closes_error)
 
     if warnings:
         print("[self-review] Warning:")
