@@ -51,8 +51,7 @@ run_gated_deploy() {
   if [ "${gate_status}" -ne 0 ]; then
     echo "[workers-build-deploy] デプロイを実行しません（ゲート終了コード: ${gate_status}）。" >&2
     case "${gate_status}" in
-      1) echo "[workers-build-deploy] 1 = 待機（Sprint Review 判定が未確定、または rejected のスプリント Issue が残っている）。" >&2
-         echo "[workers-build-deploy] ⚠️ ゲート側の未捕捉例外も 1 を返しうるため、理由は上のゲート出力そのもので確認すること。" >&2 ;;
+      1) echo "[workers-build-deploy] 1 = 待機（Sprint Review 判定が未確定、または rejected のスプリント Issue が残っている）。" >&2 ;;
       2) echo "[workers-build-deploy] 2 = 判定不能（GitHub API へ到達できない等・fail-closed）。" >&2 ;;
       *) echo "[workers-build-deploy] 想定外の終了コードです。ゲートコマンドの実行自体に失敗した可能性があります（コマンド不在・実行権限・インタプリタの異常終了を確認してください）。" >&2 ;;
     esac
