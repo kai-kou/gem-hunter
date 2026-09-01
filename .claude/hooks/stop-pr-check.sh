@@ -89,11 +89,40 @@ fi
 # unknown（両方失敗）はサイレントスキップせず PR チェックに進む（L-050 対策）
 if [[ "$branch_check_status" == "not_found" ]]; then exit 0; fi
 
-# --- クラウド: PR 存在確認は Claude が MCP で行う（ハーネスからは判定できない・L-114 / #342）---
-# クラウドではフックから MCP を呼べず、gh も未導入・repo スコープ REST も 403 のため、
-# ハーネス側で PR の有無を判定する手段が存在しない。これは障害ではなく既定の運用なので、
-# 「確認できません」という異常表現ではなく Claude への実行指示として渡す。
+# --- クラウド: PR 確認済みマーカーによる重複抑制（Issue #478）---
+# 同一セッション・同一ブランチで PR 確認済みなら、確認依頼を繰り返し出さない。
+# マーカーは `.git/` 配下に置き（追跡対象を汚さない）、TTL で自動失効。
+# 次セッションではマーカーが消えるため安全側へ倒れる。
 if [[ "${CLAUDE_CODE_REMOTE:-}" == "true" ]]; then
+  MARKER_DIR=".git/pr-check-confirmed"
+  # branch 名に / が含まれる場合、ファイル名として使えないので - に置換
+  MARKER_FILE="${MARKER_DIR}/${current_branch//\//-}"
+
+  # TTL は環境変数で上書き可（既定 30 分：バックグラウンドタスク fan-out の
+  # 多ターン化に対応。セッション内の重複は防ぎ、セッション跨ぎでは再出現）
+  TTL_MINUTES="${PR_CHECK_CONFIRMATION_TTL_MINUTES:-30}"
+
+  # マーカーが存在し TTL 内なら、既に確認済みと判定して抑制
+  if [[ -f "$MARKER_FILE" ]]; then
+    # marker_time を stat で取得（BSD `stat -f%m` と GNU `stat -c%Y` に対応）
+    marker_time=$(stat -f%m "$MARKER_FILE" 2>/dev/null || stat -c%Y "$MARKER_FILE" 2>/dev/null || echo 0)
+    now=$(date +%s)
+    age_minutes=$(( (now - marker_time) / 60 ))
+    if [[ $age_minutes -lt $TTL_MINUTES ]]; then
+      # 確認済みなので確認依頼を出さずに終了（同一セッション・同一ブランチの重複抑制）
+      exit 0
+    fi
+  fi
+
+  # マーカーなし or TTL 経過 → 確認依頼を出す。
+  # リマインドを出した時点でマーカーを置き、TTL 内の再掲を抑制する（Issue #478）。
+  # hook_block は stderr 出力後に exit 2 する（lib/hook_block.sh）ため、必ずその「前」に置く。
+  # 作成に失敗しても（権限・読み取り専用 .git 等）握りつぶして必ずリマインドへ進む＝安全側に倒れる
+  # （マーカーが無い状態＝毎ターン従来どおりリマインドが出るだけで、見逃しは発生しない）。
+  # 既存マーカーへの touch は mtime を更新するので、TTL 経過後の再掲でも計測が正しく巻き直る。
+  mkdir -p "$MARKER_DIR" 2>/dev/null || true
+  touch "$MARKER_FILE" 2>/dev/null || true
+
   hook_block "📋 PR 存在確認をお願いします（クラウドではハーネスから判定できない仕様。gh の導入では解決しません）: ${VERIFY_HINT}
 - PR が既にある場合: 確認結果（PR 番号・state）を踏まえてそのまま終了してよい
 - PR が無い場合: pr-review-flow.md に従いセルフレビュー → PR 作成まで進める"
