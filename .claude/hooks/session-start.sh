@@ -415,14 +415,36 @@ if [ -f "${PROJECT_DIR}/tools/check_publish_drift.py" ]; then
 fi
 
 # --- PR レビュー待機状態チェック（セッションタイムアウト復帰・CP-4 対策）---
-# ⚠ 本スクリプトは冒頭で CLAUDE_CODE_REMOTE=true のときだけ本体を実行する。クラウドでは
-# check_pending_pr_reviews.py が依存する gh の repo 操作が egress プロキシに 403 でブロックされ
-# （L-114・Issue #133）、この経路は構造的に必ず失敗する。毎セッション「取得失敗」警告 1 行を
-# 注入するだけの無情報ノイズになるため、ランタイム試行は行わない（Issue #249）。
+# ⚠ 本スクリプトは冒頭で CLAUDE_CODE_REMOTE=true のときだけ本体を実行する。
+#
+# 【2026-09-02 05:1x JST 実測・PR #790 以降は前提が変わった】 旧コメントは
+# 「check_pending_pr_reviews.py が依存する gh の repo 操作が egress プロキシに 403 で
+# ブロックされ、この経路は構造的に必ず失敗する」としていたが、PR #790 で REST 第 2 層
+# （urllib + GH_TOKEN 直叩き）が実装された結果これは事実ではなくなった。同一 firing で
+# 以下を実測済み: gh 不在（PATH 上はシムのみ）でも
+# `python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json` は
+# exit 0・`[]` を返して完走する（`gh コマンドが見つかりません` の WARNING は出るが
+# REST 第 2 層にフォールバックして処理は止まらない）。個々の REST 呼び出しは
+# `GET .../pulls/{n}/comments` 1.25s・`GET .../pulls/{n}/reviews` 0.57s 程度で通る
+# （`POST /graphql` は urllib 直叩きでも 403・詳細は github-mcp-fallback-patterns.md）。
+#
+# それでも本スクリプトはランタイム試行を **見送りのまま維持する**。理由は「構造的に
+# 失敗するから」ではなく「REST 第 2 層込みでもコストに見合わないから」に変わった:
+#   - オープン PR 1 件ごとに複数 REST 呼び出しが必要で、1 呼び出し 0.5〜1.3 秒。
+#     SessionStart は無人 firing も含め **全セッション起動ごと** に走るため、
+#     オープン PR 数に応じて起動が線形に遅くなる。
+#   - レビュー待ち PR の回収は sprint-cycle-router の決定木 Step 2 が毎 firing 実行して
+#     おり、SessionStart で重ねて実行しなくても回収機会は失われない（Issue #249 が
+#     懸念した「取得失敗の無情報ノイズ」も、REST 経路が通る今は「常に空 or 有意な
+#     結果」に変わったが、それでも上記コストの方が上回ると判断した）。
 # ready_to_merge PR の復帰回収は MCP 経由がセッションの責務（pr-review-flow-summary.md）:
-#   mcp__github__list_pull_requests で確認 → check_pending_pr_reviews.py は MCP 未対応の
-#   ローカル実行時のプリフライト用途に限定する。現状把握の 1 行ポインタは
-#   generate_project_context.py（クラウドモード）のスナップショットが担う。
+#   mcp__github__list_pull_requests で確認 → check_pending_pr_reviews.py は
+#   sprint-cycle-router 等の各パイプライン内・ローカル実行時のプリフライト用途に限定する。
+#   現状把握の 1 行ポインタは generate_project_context.py（クラウドモード）の
+#   スナップショットが担う。
+#
+# ⚠ この判断は恒久ではない（CP-2）。プロキシの許可範囲・REST 呼び出し所要時間が
+# 変われば再評価すること。
 
 # ======================================================================
 # プロジェクト固有セットアップ（必要に応じて追記する）

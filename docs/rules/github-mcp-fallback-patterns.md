@@ -67,7 +67,7 @@ GitHub API アクセス付きでセッションに attach されていないこ�
 | `gh api repos/{o}/{r}`（repo REST read 全般） | ❌ 403 | **07-14 の許可から回帰**。issues / pulls / labels とも 403「GitHub access is not enabled for this session. An org admin must connect the Claude GitHub App for this organization.」= リポジトリが API アクセス付きで attach されていない（§0 の切り分け参照） |
 | `gh api repos/{o}/{r}/...`（repo REST write） | ❌ 403 | read が 403 のため write も同様（07-14 は POST /issues 成功を実測していた） |
 | `gh issue list/view`・`gh pr list/view`・`gh label list`・`gh repo view`（シム変換） | ❌ 403 | シムは REST へ変換するが、その REST 自体が 403。シムは stderr に `[gh-shim] repo スコープ REST がプロキシで遮断 → MCP へ切替` を付与（設計どおりのフェイルファスト） |
-| `gh api graphql -f query=...`・GraphQL 依存コマンド（素の `gh issue/pr list`・`gh pr checks/diff`・`gh gist list`・`gh status` 等） | ❌ 403 | 「This GraphQL query is not enabled for this session — only the pinned set of PR-review operations is served. Use REST via `gh api repos/{owner}/{repo}/...` instead.」（MCP の PR レビュー系だけが pinned で通る） |
+| `gh api graphql -f query=...`・GraphQL 依存コマンド（素の `gh issue/pr list`・`gh pr checks/diff`・`gh gist list`・`gh status` 等） | ❌ 403 | 「This GraphQL query is not enabled for this session — only the pinned set of PR-review operations is served. Use REST via `gh api repos/{owner}/{repo}/...` instead.」（MCP の PR レビュー系だけが pinned で通る）。**この行は 2026-09-02 時点でも成立**（§1.3。REST 直叩きが 200 に回帰しても GraphQL は連動しない） |
 | `curl` / `urllib` で `api.github.com/repos/...` 直叩き | ❌ 403 | `Authorization` ヘッダ有無・`Bearer proxy-injected` 指定・実 `GH_TOKEN` のいずれでも同一 403。**直叩きはフォールバックにならない** |
 | スコープ外リポジトリの API | ❌ 403 | 「Use `add_repo` to request access. … call add_repo again with access:"push"」。`access:"read"` は git clone/fetch のみで API は付かない |
 | `add_repo(access:"push")` による API attach | ❌ | auto mode classifier にブロックされることがある（07-26 実測）。回避せず MCP を使う |
@@ -132,6 +132,25 @@ GitHub API アクセス付きでセッションに attach されていないこ�
 - **Issue #531 との関係**: 「直叩きは通常 403 でフォールバックにならない」という §0〜§1 の記述と、
   §1.1・本節の実測結果が食い違う件は Issue #531（open）で追跡中。本節は実測の追記であり、
   #531 のクローズ判断はしない（是正の要否・範囲は Issue 側で判断する）。
+
+### 1.3 再検証（2026-09-02・Issue #792）— REST は 200 継続、GraphQL urllib 直叩きは引き続き 403
+
+🔴 §1.1・§1.2 の「REST 直叩きが 200」は 2026-09-02 05:1x JST 時点でも継続している。一方で今回、
+**`POST /graphql` の urllib 直叩き** を明示的に実測したところ、REST とは独立に **403 のまま** だった
+（無人 firing 中に `urllib` + `GH_TOKEN` で実測）。
+
+| 直叩きしたエンドポイント | 2026-09-02 実測 |
+|---|---|
+| `POST /graphql`（`query{viewer{login}}` 等・最小クエリでも同じ） | ❌ **403**「This GraphQL query is not enabled for this session — only the pinned set of PR-review operations is served. Use REST via `gh api repos/{owner}/{repo}/...` instead.」 |
+| `GET /repos/{o}/{r}/pulls/{n}/comments?per_page=100` | ✅ **200**（0.5〜1.3 秒程度） |
+| `GET /repos/{o}/{r}/pulls/{n}/reviews?per_page=100` | ✅ **200**（同上） |
+
+**読み方（重要・§1.1/§1.2 からの追加知見）**:
+
+- **REST と GraphQL でプロキシの許可範囲が明確に異なる**。「REST 直叩きが通るなら GraphQL 直叩きも通るはず」という推測はこの実測で否定された — 両者は独立に判定されている。
+- エラー文言自体が `Use REST via gh api repos/{owner}/{repo}/... instead` と **REST への誘導を明示** しており、GraphQL 遮断は一時的な障害ではなく **プロキシの意図的な設計** である可能性が高い。
+- したがって §0・表 1（59〜82 行目）の「`gh api graphql` → MCP が唯一経路」は 2026-09-02 時点でも成立する。**REST が 200 に回帰したからといって GraphQL も回帰したと誤読しない**（`gh api graphql` を伴う代替コマンドを新設しない）。
+- 🔴 **これも恒久前提ではない**（CP-2）。可否は 1 か月で複数回変わった実績があるため、GraphQL・REST それぞれを個別にその場で計測する。
 
 ## 1.5 gh シム（`tools/gh_shim.py`・Issue #254）— ローカル互換 + MCP 誘導シグナル
 
