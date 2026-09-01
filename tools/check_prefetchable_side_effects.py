@@ -48,6 +48,8 @@
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import re
 import sys
 from pathlib import Path
@@ -440,7 +442,10 @@ def _run_integration_cases() -> list[str]:
         try:
             REPO_ROOT = td_path
             sys.argv = ["check_prefetchable_side_effects.py"]
-            rc = main()
+            # main() が出す検査結果（❌ / ℹ️ 行）は self-test 自体の失敗と見分けが
+            # つかないため握り潰す（判定に使うのは戻り値の exit code だけ）。
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = main()
             if rc != 1:
                 failures.append(
                     f"  integration/B_default_scan_exit_code: want 1（route.ts 違反が app/ 配下に"
@@ -457,7 +462,8 @@ def _run_integration_cases() -> list[str]:
         try:
             REPO_ROOT = Path(td_empty)
             sys.argv = ["check_prefetchable_side_effects.py"]
-            rc = main()
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = main()
             if rc != 0:
                 failures.append(
                     f"  integration/C_no_targets_exit_code: want 0（検査対象ゼロ）, got {rc}"
