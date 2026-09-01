@@ -734,16 +734,29 @@ def _approx_unresolved_from_comments(comments: list[dict]) -> int:
         投稿者比較を採らない設計判断。ルート投稿者自身の返信であっても解決扱いにする）。
       - **偽陽性**: 返信不要な単独コメント（レビュアーの補足・雑談等）が未解決として
         数えられる。GitHub の「一般コメント」的な使い方をしている場合に過大カウントし得る。
+      - **偽陽性（設計判断・#805）**: `in_reply_to_id` が指す親コメントが取得結果に
+        存在しない「孤児返信」は未解決側へ寄せる。GitHub はレビュースレッドのルート
+        コメントだけの削除を許容し、削除済みルートは `pulls/{n}/comments` の応答から
+        消える一方、残った返信の `in_reply_to_id` は削除済み id を指し続けるため、
+        スレッドの解決状態を判定できない。見逃し（fail-open）より過大カウントを選ぶ。
+        自己参照コメント（`id == in_reply_to_id`）もこの経路で孤児として吸収される。
       - ページング打ち切り（`_rest_get_all_pages` が上限到達で失敗を返す場合）は
         呼び出し元で「取得失敗」として扱われ、本関数自体には渡らない。
+      - 想定外の要素形状（dict でない要素・`id`/`in_reply_to_id` が list/dict/set 等の
+        unhashable 値）は 1 件ずつ読み飛ばす（近似値としての意味を保つため、1 要素の
+        破損でスクリプト全体を落とさない・#805）。
     """
     roots: dict[int, dict] = {}
     replies_by_root: dict[int, list[dict]] = {}
     for c in comments:
+        if not isinstance(c, dict):
+            continue
         cid = c.get("id")
-        if cid is None:
+        if cid is None or isinstance(cid, (list, dict, set)):
             continue
         parent_id = c.get("in_reply_to_id")
+        if isinstance(parent_id, (list, dict, set)):
+            continue
         if parent_id is None:
             roots[cid] = c
         else:
@@ -751,9 +764,11 @@ def _approx_unresolved_from_comments(comments: list[dict]) -> int:
 
     unresolved = 0
     for root_id in roots:
-        thread_replies = replies_by_root.get(root_id, [])
-        if not thread_replies:
+        if not replies_by_root.get(root_id):
             unresolved += 1
+    # 親（ルート）が取得結果に存在しない孤児返信は、スレッドの状態を判定できない。
+    # 見逃し（fail-open）を避けるため未解決側へ寄せる（自己参照コメントもここに吸収される）。
+    unresolved += len(set(replies_by_root) - set(roots))
     return unresolved
 
 
@@ -785,6 +800,15 @@ def get_unresolved_threads(pr_number: int) -> tuple[int, bool, bool]:
     `isResolved` そのものは取れておらず「検証済み」と主張してはいけないため
     （呼び出し元 `analyze_pr` は 3 つ目の要素 `近似値か` を見て summary の文言を出し分ける）。
     第 1 層・第 2 層とも失敗した場合は `(0, False, False)`（現状と同じ fail-closed 表現）。
+
+    不変条件（#805）: 2 つ目・3 つ目の bool は排他。取り得るのは
+    `(True, False)`（gh 成功・正確）/ `(False, True)`（gh 失敗・REST 近似成功）/
+    `(False, False)`（両層とも失敗）の 3 通りのみで、`(True, True)` は発生しない。
+
+    NOTE（#805）: 他の getter（`get_pr_reviews` 等）と違い `run_gh(rest_fallback=...)` を
+    経由せず `_run_gh_raw` を直接呼んでいるのは意図的な逸脱。`run_gh` の戻り値契約は
+    `str` 1 個で「どの層で取得したか」を呼び出し元へ伝播できないため、本関数が返す
+    3-tuple（正確に取得できたか・近似値か）の情報を `run_gh` 経由では表現できない。
     """
     query = """
     query {
