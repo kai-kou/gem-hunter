@@ -628,11 +628,12 @@ OpenSSF `criticality_score` は既に 10 シグナルの加重和で 0〜1 の�
 | 区分 | 該当する内容 |
 |---|---|
 | **Phase 1 で採用** | REST を基本とする / Octokit / Pagination / Rate Limit（一次・二次）/ ETag・条件付きリクエスト / Retry 戦略 / API バージョンの明示 / Secret 管理・最小権限 |
-| **Phase 2 で採用** | GraphQL の併用（複数リポジトリのバッチ取得で効く）/ Cache 設計の作り込み |
-| **不採用** | GitHub App / Webhooks / Idempotency / Queue / Mutation の作法 / AI Code Review アーキテクチャ |
+| **Phase 2 で採用** | Cache 設計の作り込み |
+| **不採用** | GitHub App / Webhooks / Idempotency / Queue / Mutation の作法 / AI Code Review アーキテクチャ / **GraphQL の併用**（2026-09-01 撤回・下記参照） |
 
 - **不採用の理由を 1 行で書く**: 本プロダクトは **他人の公開リポジトリを読むだけ** で、監視対象リポジトリもイベント購読関係も存在しない。したがって同リサーチの中心命題「GitHub をイベントソースとするアプリを作れ」は、**本プロダクトの形には当てはまらない**。
 - この表は `nextjs16-architecture-research.md` が持つ「本プロジェクトへの適用メモ」と同じ役割を果たす（GitHub API 側には無かったもの）。
+- 🔴 **GraphQL の併用を撤回（2026-09-01・Issue #267）**: 当初は「複数リポジトリのバッチ取得で効く」という一般論で `Phase 2 で採用` に区分していたが、その Phase 2 のデータ取得を担う `E-24`（Gem Index の算出パイプライン）の実設計は Ecosyste.ms REST API（`packages.ecosyste.ms` の `rankings` フィールド。[ADR 0014](../adr/0014-zero-query-daily-digest.md) §5・`D-28` 訂正）で確定しており、被依存数は GitHub 側から一括取得する必要がない。GraphQL の出番が実設計から消えたため **不採用へ移す**。GraphQL を入れると認証・レート枠・エラー判別の実装が二重になる（`NFR-16` のデータアクセス層が 2 系統になる）ことも理由に加える。`prd.md` に GraphQL への言及がそもそも無いことは grep で確認済み。将来バッチ取得の必要が生じた場合は、その時点で改めて `Q-6` 相当の判断として決定する（本撤回は「不要になった」という事実の記録であり、恒久的な禁止ではない）。
 
 ### Q-9 の決定から従属的に確定する事項（エラー判別の仕様）
 
