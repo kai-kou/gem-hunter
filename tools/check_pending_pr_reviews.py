@@ -51,11 +51,15 @@ gh 取得失敗時（クラウドの 403 等・Issue #130・#789）:
   stdout に `GH_UNAVAILABLE: ...` を出力して **exit code 3** で終了する（PR 一覧取得の場合）。
   呼び出し元は exit code を確認し、3 の場合は `mcp__github__list_pull_requests` で直接代替すること
   （PR ごとの補助情報取得の失敗は従来どおり部分的な情報欠落として許容し、全体を失敗にはしない）。
-  なお `get_unresolved_threads`（GraphQL 専用）は REST に等価エンドポイントが無いため
-  第 2 層フォールバックの対象外。gh 到達不可時は件数を 0 件へ黙って化けさせず、戻り値の
-  2 つ目の要素（取得成功可否）で「未検証」を呼び出し元へ機械可読に伝える。`analyze_pr` は
-  これを `unresolved_threads_unknown` として JSON 出力へ載せ、summary の先頭に
-  「⚠️ 未解決スレッド数は未検証」の警告を差し込む（status 判定自体は変えない・#790 指摘1）。
+  `get_unresolved_threads` は正確な件数を GraphQL（`isResolved`）専用で取得するが、
+  REST に等価エンドポイントが無いため、gh 到達不可時は「返信の有無」から近似する
+  第 2 層（`_rest_unresolved_threads_approx`）を持つ（#792）。gh・REST 近似の両方が
+  失敗した場合のみ件数を 0 件へ黙って化けさせず、戻り値の 2 つ目の要素（正確に取得できたか）
+  で「未検証」を呼び出し元へ機械可読に伝える。`analyze_pr` はこれを `unresolved_threads_unknown`
+  として JSON 出力へ載せ、summary の先頭に「⚠️ 未解決スレッド数は未検証」（近似も失敗）または
+  「⚠️ 未解決スレッド数は近似値」（REST 近似が効いた場合。`unresolved_threads_approx` で判別）の
+  警告を差し込む（status 判定自体は変えない・#790 指摘1・#792）。近似の限界（偽陰性・偽陽性）は
+  `_approx_unresolved_from_comments` の docstring を参照。
 
 アクティブセッション除外（CP-4・Issue #3007）:
   各 PR について「人間側（Claude セッション）の最終アクティビティ」
@@ -702,17 +706,109 @@ def compute_last_activity_min(
     return max(0, int(elapsed.total_seconds() / 60))
 
 
-def get_unresolved_threads(pr_number: int) -> tuple[int, bool]:
-    """未解決のレビュースレッド数を取得する。戻り値は (件数, 取得成功可否)。
+def _approx_unresolved_from_comments(comments: list[dict]) -> int:
+    """`pulls/{n}/comments` の生 REST 応答からスレッドを再構成し、未解決スレッド数を近似する（純粋関数・#792）。
 
-    🔴 GraphQL 専用（review thread の `isResolved` は REST に等価エンドポイントが無い・#789）。
-    gh が使えない環境では REST フォールバックできない。以前は失敗時に黙って `0` を返しており、
-    呼び出し元 `analyze_pr` はそれを「未解決スレッドなし」と区別できず fail-open していた
-    （gh 到達不可時に本来 `needs_response` になるはずの PR が `needs_prompt` / `awaiting_review`
-    に落ちて自動マージ対象へ紛れ込む・#790 指摘1）。戻り値の 2 つ目の要素で取得成功可否を
-    機械可読に伝え、`analyze_pr` 側で `unresolved_threads_unknown` として可視化する
-    （status 判定そのものは変えない — unknown を一律 needs_response に倒すと、gh 不在の
-    クラウドでは全 PR が needs_response になり「Layer 1 未実施」の検知が効かなくなるため）。
+    GitHub REST にはレビュースレッドの `isResolved` に等価なエンドポイントが無いため、
+    「返信の有無」で近似する。**返信が 1 件も無いスレッドを未解決とみなす（返信の投稿者は問わない）**。
+
+    🔴 投稿者を比較しない理由（実 PR #735 での実測に基づく契約修正・当初は「ルート投稿者以外
+    による返信が無いこと」を条件にしていたが構造的欠陥があった）: 本リポジトリの運用
+    （`pr-review-flow-summary.md`「指摘対応ルール」）では、Layer 1 セルフレビューを
+    `code-review` スキルが自己実行し、**指摘の投稿も対応返信の投稿も同一アカウント
+    （Claude セッションの GitHub アイデンティティ）** になる。そのため「ルート投稿者以外の
+    返信」を条件にすると、本リポジトリの主要ユースケースで全スレッドが構造的に条件を
+    満たしてしまい（対応済みでも投稿者が同じというだけで未解決と誤判定）、全 PR が
+    `needs_response` に倒れる偽陽性の温床になっていた（PR #735 実測: 6 ルート + 同一投稿者
+    による対応返信 6 件、全て解決済みなのに `(6, False, True)` を返していた）。
+
+    スレッド再構成: `in_reply_to_id` が無い（None・キー欠落）コメントをルートとし、
+    `in_reply_to_id` がそのルートの `id` と一致するコメントを返信として束ねる
+    （GitHub REST は返信の `in_reply_to_id` を常にスレッドの起点コメント id にする仕様で、
+    返信への返信でも中間の返信 id ではなくルート id を指す）。
+
+    🔴 近似の限界（呼び出し元の docstring・summary にも明記すること）:
+      - **偽陰性**: 返信は付いているが Resolve されていないスレッド（対応が不十分で
+        再指摘を待っている場合など）は「解決」と数えてしまう。
+      - **偽陰性**: 投稿者の異同では対応の有無を判定できない（上記の理由により、あえて
+        投稿者比較を採らない設計判断。ルート投稿者自身の返信であっても解決扱いにする）。
+      - **偽陽性**: 返信不要な単独コメント（レビュアーの補足・雑談等）が未解決として
+        数えられる。GitHub の「一般コメント」的な使い方をしている場合に過大カウントし得る。
+      - **偽陽性（設計判断・#805）**: `in_reply_to_id` が指す親コメントが取得結果に
+        存在しない「孤児返信」は未解決側へ寄せる。GitHub はレビュースレッドのルート
+        コメントだけの削除を許容し、削除済みルートは `pulls/{n}/comments` の応答から
+        消える一方、残った返信の `in_reply_to_id` は削除済み id を指し続けるため、
+        スレッドの解決状態を判定できない。見逃し（fail-open）より過大カウントを選ぶ。
+        自己参照コメント（`id == in_reply_to_id`）もこの経路で孤児として吸収される。
+      - ページング打ち切り（`_rest_get_all_pages` が上限到達で失敗を返す場合）は
+        呼び出し元で「取得失敗」として扱われ、本関数自体には渡らない。
+      - 想定外の要素形状（dict でない要素・`id`/`in_reply_to_id` が list/dict/set 等の
+        unhashable 値）は 1 件ずつ読み飛ばす（近似値としての意味を保つため、1 要素の
+        破損でスクリプト全体を落とさない・#805）。
+    """
+    roots: dict[int, dict] = {}
+    replies_by_root: dict[int, list[dict]] = {}
+    for c in comments:
+        if not isinstance(c, dict):
+            continue
+        cid = c.get("id")
+        if cid is None or isinstance(cid, (list, dict, set)):
+            continue
+        parent_id = c.get("in_reply_to_id")
+        if isinstance(parent_id, (list, dict, set)):
+            continue
+        if parent_id is None:
+            roots[cid] = c
+        else:
+            replies_by_root.setdefault(parent_id, []).append(c)
+
+    unresolved = 0
+    for root_id in roots:
+        if not replies_by_root.get(root_id):
+            unresolved += 1
+    # 親（ルート）が取得結果に存在しない孤児返信は、スレッドの状態を判定できない。
+    # 見逃し（fail-open）を避けるため未解決側へ寄せる（自己参照コメントもここに吸収される）。
+    unresolved += len(set(replies_by_root) - set(roots))
+    return unresolved
+
+
+def _rest_unresolved_threads_approx(pr_number: int, token: str) -> tuple[bool, str]:
+    """未解決レビュースレッド数の REST 近似版（第 2 層・#792）。
+
+    `pulls/{n}/comments` を全ページ取得し `_approx_unresolved_from_comments` で近似する。
+    戻り値は既存の第 2 層 getter（`_rest_pr_reviews` 等）と同じ規約（成功可否, JSON 文字列）。
+    近似の限界は `_approx_unresolved_from_comments` の docstring を参照。
+    """
+    ok, items = _rest_get_all_pages(f"pulls/{pr_number}/comments", "", token, max_pages=3)
+    if not ok:
+        return False, items  # items はこの分岐では理由文字列
+    count = _approx_unresolved_from_comments(items)
+    return True, json.dumps({"count": count})
+
+
+def get_unresolved_threads(pr_number: int) -> tuple[int, bool, bool]:
+    """未解決のレビュースレッド数を取得する。戻り値は (件数, 正確に取得できたか, 近似値か)。
+
+    第 1 層: `gh api graphql`（review thread の `isResolved`・正確な値）。
+    第 2 層（#792）: 第 1 層が gh 到達不可で失敗した場合のみ、REST の `pulls/{n}/comments` から
+    `_rest_unresolved_threads_approx` で近似値を算出する。クラウド無人 firing では `gh` が
+    常に不在のため、第 2 層が無いと本関数は常に `(0, False, False)` を返し、
+    `has_unresolved = False` → 未解決スレッドを抱えた PR が `needs_prompt`（即マージ対象）に
+    紛れ込む fail-open が発生していた（Issue #792）。
+
+    2 つ目の要素（正確に取得できたか）は近似成功時も **`False` のまま** にする。
+    `isResolved` そのものは取れておらず「検証済み」と主張してはいけないため
+    （呼び出し元 `analyze_pr` は 3 つ目の要素 `近似値か` を見て summary の文言を出し分ける）。
+    第 1 層・第 2 層とも失敗した場合は `(0, False, False)`（現状と同じ fail-closed 表現）。
+
+    不変条件（#805）: 2 つ目・3 つ目の bool は排他。取り得るのは
+    `(True, False)`（gh 成功・正確）/ `(False, True)`（gh 失敗・REST 近似成功）/
+    `(False, False)`（両層とも失敗）の 3 通りのみで、`(True, True)` は発生しない。
+
+    NOTE（#805）: 他の getter（`get_pr_reviews` 等）と違い `run_gh(rest_fallback=...)` を
+    経由せず `_run_gh_raw` を直接呼んでいるのは意図的な逸脱。`run_gh` の戻り値契約は
+    `str` 1 個で「どの層で取得したか」を呼び出し元へ伝播できないため、本関数が返す
+    3-tuple（正確に取得できたか・近似値か）の情報を `run_gh` 経由では表現できない。
     """
     query = """
     query {
@@ -726,25 +822,40 @@ def get_unresolved_threads(pr_number: int) -> tuple[int, bool]:
     }
     """ % (OWNER, REPO_NAME, pr_number)
     gh_ok, gh_out = _run_gh_raw(["api", "graphql", "-f", f"query={query}"])
-    if not gh_ok:
-        print(
-            f"WARNING: gh 到達不可のため未解決スレッド数を取得できません（{gh_out}）。"
-            "review thread の解決状態は GitHub GraphQL 専用で REST に等価エンドポイントが無く、"
-            "本スクリプトでは REST フォールバックできません（未検証として呼び出し元に伝えます。"
-            "必要なら mcp__github__pull_request_read 等で個別に確認してください）。",
-            file=sys.stderr,
-        )
-        return 0, False
-    output = gh_out
-    if not output:
-        return 0, True
-    try:
-        data = json.loads(output)
-        threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {}).get("nodes", [])
-        return sum(1 for t in threads if not t.get("isResolved", True)), True
-    except (json.JSONDecodeError, KeyError, TypeError):
-        # JSON 破損・スキーマ想定外も「取得失敗」として扱う（0 件成功に化けさせない）
-        return 0, False
+    if gh_ok:
+        output = gh_out
+        if not output:
+            return 0, True, False
+        try:
+            data = json.loads(output)
+            threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {}).get("nodes", [])
+            return sum(1 for t in threads if not t.get("isResolved", True)), True, False
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # gh 自体は成功したが応答が破損 — 第 2 層は「gh 到達不可」時のみの対象なので、
+            # ここでは従来どおり「取得失敗」として扱う（0 件成功に化けさせない）
+            return 0, False, False
+
+    print(
+        f"WARNING: gh 到達不可のため未解決スレッド数を正確には取得できません（{gh_out}）。"
+        "review thread の解決状態は GitHub GraphQL 専用で REST に等価エンドポイントが無いため、"
+        "REST の返信有無から近似値を試みます（正確な isResolved ではありません）。",
+        file=sys.stderr,
+    )
+    approx_ok, approx_out = _token_gated(_rest_unresolved_threads_approx, pr_number)
+    if approx_ok:
+        try:
+            approx_count = json.loads(approx_out)["count"]
+            print(
+                f"WARNING: 未解決スレッド数は REST 近似値です（{approx_count}件・正確な isResolved は未検証）。"
+                "必要なら mcp__github__pull_request_read 等で個別に確認してください。",
+                file=sys.stderr,
+            )
+            return approx_count, False, True
+        except (json.JSONDecodeError, KeyError, TypeError):
+            print("WARNING: REST 近似フォールバックの応答解析に失敗しました", file=sys.stderr)
+    else:
+        print(f"WARNING: REST 近似フォールバックも失敗しました（{approx_out}）", file=sys.stderr)
+    return 0, False, False
 
 
 def _label_based_early_exit_status(pr_labels: set[str]) -> dict | None:
@@ -815,6 +926,7 @@ def analyze_pr(pr: dict) -> dict:
             "ai_inline_count": 0,
             "unresolved_threads": 0,
             "unresolved_threads_unknown": False,
+            "unresolved_threads_approx": False,
             "bot_comments_count": 0,
             "has_gemini_review": False,
             "has_copilot_review": False,
@@ -848,8 +960,9 @@ def analyze_pr(pr: dict) -> dict:
     # /gemini review コマンドコメント取得（投稿者種別不問・L-051 対策）
     gemini_trigger_comments = get_pr_gemini_trigger_comments(pr_number)
 
-    # 未解決スレッド数（#790 指摘1: 取得成功可否も受け取り fail-open を防ぐ）
-    unresolved, unresolved_ok = get_unresolved_threads(pr_number)
+    # 未解決スレッド数（#790 指摘1: 取得成功可否も受け取り fail-open を防ぐ。
+    # #792: 取得成功可否に加え「近似値か」も受け取る）
+    unresolved, unresolved_ok, unresolved_approx = get_unresolved_threads(pr_number)
     unresolved_threads_unknown = not unresolved_ok
 
     # PR作成からの経過時間（ステータス判定より前に計算する）
@@ -960,13 +1073,22 @@ def analyze_pr(pr: dict) -> dict:
         summary = "Claude 以外の PR または手動 PR（自律レビュー対象外）"
 
     # 未解決スレッド数が未検証（gh 到達不可）なら summary の先頭に必ず警告を差し込む（#790 指摘1）。
+    # #792: REST 近似が効いた場合は「未検証」ではなく「近似値」であることが分かる文言にする
+    # （近似が取れているのに毎回「取得できませんでした」とだけ出るのを避ける）。
     # status 判定は変えない（可視化と機械可読フラグのみで対処する）。
     if unresolved_threads_unknown:
-        summary = (
-            "⚠️ 未解決スレッド数は未検証（gh 到達不可）。マージ前に "
-            'mcp__github__pull_request_read(method="get_review_comments") で確認すること。｜'
-            + summary
-        )
+        if unresolved_approx:
+            summary = (
+                f"⚠️ 未解決スレッド数は近似値（REST フォールバック・{unresolved}件・正確な isResolved は未検証）。"
+                'マージ前に mcp__github__pull_request_read(method="get_review_comments") で確認すること。｜'
+                + summary
+            )
+        else:
+            summary = (
+                "⚠️ 未解決スレッド数は未検証（gh 到達不可）。マージ前に "
+                'mcp__github__pull_request_read(method="get_review_comments") で確認すること。｜'
+                + summary
+            )
 
     # アクティブセッション判定（Issue #3007・CP-4）
     # 介入対象ステータスの PR のみ追加 API 呼び出しでアクティビティを算出する
@@ -990,6 +1112,7 @@ def analyze_pr(pr: dict) -> dict:
         "ai_inline_count": len(ai_inline),
         "unresolved_threads": unresolved,
         "unresolved_threads_unknown": unresolved_threads_unknown,
+        "unresolved_threads_approx": unresolved_approx,
         "bot_comments_count": len(issue_comments),
         "has_gemini_review": has_gemini_review,
         "has_copilot_review": has_copilot_review,
@@ -1392,25 +1515,254 @@ def _test_rest_pagination() -> list[str]:
 
 
 def _test_get_unresolved_threads_fail_open_fix() -> list[str]:
-    """`get_unresolved_threads` が gh 到達不可時に `(0, False)` を返すことを固定する（#790 指摘1）。
+    """`get_unresolved_threads` が gh 到達不可時に `(0, False, False)` を返すことを固定する
+    （#790 指摘1・#792 で 3-tuple へ拡張）。
 
     修正前は成功可否を返さず常に `int`（0 件）を返しており、呼び出し元が「取得失敗」と
     「本当に 0 件」を区別できず fail-open していた（本来 `needs_response` になるはずの PR が
     `needs_prompt`/`awaiting_review` に落ちて自動マージ対象へ紛れ込む）。
+
+    このテストは GH_TOKEN/GITHUB_TOKEN を明示的に未設定にし、第 2 層（REST 近似）も
+    到達不可になる経路（token 未設定）を通す。第 2 層が実際に近似値を返す経路は
+    `_test_get_unresolved_threads_rest_approx_layer` が別途検証する。
     """
     failures: list[str] = []
     orig_run_gh_raw = globals()["_run_gh_raw"]
+    saved_env = {k: os.environ.pop(k, None) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
 
-    # gh 到達不可 → (0, False)
-    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
     try:
+        # gh 到達不可 + token 未設定（第 2 層も不可） → (0, False, False)
+        globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
         got = get_unresolved_threads(1)
-        if got != (0, False):
-            failures.append(f"  get_unresolved_threads: gh失敗時 = {got!r} (expected (0, False))")
+        if got != (0, False, False):
+            failures.append(f"  get_unresolved_threads: gh失敗時 = {got!r} (expected (0, False, False))")
+
+        # gh 成功 → (未解決件数, True, False)
+        def _fake_graphql_success(args):
+            query_result = {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "nodes": [
+                                    {"isResolved": False},
+                                    {"isResolved": True},
+                                    {"isResolved": False},
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+            return True, json.dumps(query_result)
+
+        globals()["_run_gh_raw"] = _fake_graphql_success
+        got2 = get_unresolved_threads(1)
+        if got2 != (2, True, False):
+            failures.append(f"  get_unresolved_threads: gh成功時 = {got2!r} (expected (2, True, False))")
+
+        # gh は成功したが JSON 破損 → (0, False, False)（黙って 0 件成功に化けさせない。
+        # 第 2 層は「gh 到達不可」時のみの対象なので、gh 成功時の応答破損では呼ばれない）
+        globals()["_run_gh_raw"] = lambda args: (True, "not-json{{{")
+        got3 = get_unresolved_threads(1)
+        if got3 != (0, False, False):
+            failures.append(f"  get_unresolved_threads: JSON解析失敗時 = {got3!r} (expected (0, False, False))")
     finally:
         globals()["_run_gh_raw"] = orig_run_gh_raw
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+    return failures
 
-    # gh 成功 → (未解決件数, True)
+
+def _test_approx_unresolved_from_comments() -> list[str]:
+    """`_approx_unresolved_from_comments` のスレッド再構成・近似ロジックを固定する（#792・
+    PR #735 実測を受けて投稿者比較を撤廃した契約修正後の版・#805 で孤児返信検出と型防御を追加）。
+
+    検査ロジック必須確認（#474）の反映:
+      - 失敗経路（見逃し = 未解決なのに 0 と数える経路 / 過検知 = 解決済みなのに未解決と
+        数える経路）: 返信ゼロ・同一投稿者の返信・他者の返信・`user` が None・
+        `in_reply_to_id` キー欠落・**孤児返信（親ルートが取得結果に不在）**・
+        **自己参照コメント（`id == in_reply_to_id`）** の各パターンを個別に検証する
+      - 入力バリアント: 複数返信・bot 返信者・複数ルート混在の複合ケース、
+        実 PR #735 のデータ形状（同一投稿者による指摘＋対応返信が並ぶ）、
+        **非 dict 要素・unhashable な `id`/`in_reply_to_id`**（例外を投げず読み飛ばすこと）を含める
+    """
+    failures: list[str] = []
+
+    def _comment(id_, in_reply_to, login):
+        return {
+            "id": id_,
+            "in_reply_to_id": in_reply_to,
+            "user": {"login": login} if login is not None else None,
+        }
+
+    cases: list[tuple[str, list[dict], int]] = [
+        ("返信ゼロのスレッド1件のみ → 未解決1件", [_comment(1, None, "reviewer-a")], 1),
+        (
+            # 🔴 回帰ケース（当初の契約は「未解決のまま」を期待していたが、PR #735 実測により
+            # 期待値を反転。本リポジトリの Layer 1 セルフレビューは指摘者と対応返信者が
+            # 同一アカウントになるため、同一投稿者の返信でも「解決」として数えなければならない。
+            "同一投稿者（自己）の返信あり → 解決として数える（投稿者の異同では判定しない）",
+            [_comment(1, None, "reviewer-a"), _comment(2, 1, "reviewer-a")],
+            0,
+        ),
+        (
+            "他者の返信あり → 解決扱いで除外",
+            [_comment(1, None, "reviewer-a"), _comment(2, 1, "author-b")],
+            0,
+        ),
+        (
+            "複数返信・bot返信者・複数ルート混在（返信があれば投稿者不問で解決扱い）",
+            [
+                _comment(1, None, "reviewer-a"),  # root1: 自己返信あり → 解決
+                _comment(2, 1, "reviewer-a"),
+                _comment(3, None, "reviewer-c"),  # root3: 他者(author-b)の返信あり → 解決
+                _comment(4, 3, "author-b"),
+                _comment(5, None, "gemini-code-assist[bot]"),  # root5: 返信ゼロ → 未解決
+            ],
+            1,
+        ),
+        (
+            "user が None・in_reply_to_id キー欠落（両方 root 扱い・返信ゼロ）",
+            [_comment(1, None, None), {"id": 2, "user": {"login": "author-b"}}],
+            2,
+        ),
+        (
+            "返信ゼロのルートが1件混ざる → 未解決1件",
+            [
+                _comment(10, None, "reviewer-a"),  # rootA: 同一投稿者返信あり → 解決
+                _comment(11, 10, "reviewer-a"),
+                _comment(12, None, "reviewer-a"),  # rootB: 返信ゼロ → 未解決
+            ],
+            1,
+        ),
+        (
+            # 実データ回帰: PR #735 の実データ形状（ルート6件・各ルートに同一投稿者 kai-kou の
+            # 対応返信が1件ずつ・計12コメント）。修正前の契約では (6, False, True) を返し
+            # 全スレッド解決済みにもかかわらず全件未解決扱いになっていた欠陥の再発防止。
+            "PR #735 の実データ形状（ルート6件・同一投稿者返信6件）→ 未解決0件",
+            [
+                c
+                for i in range(1, 7)
+                for c in (
+                    _comment(3892971259 + i, None, "kai-kou"),
+                    _comment(3893072380 + i, 3892971259 + i, "kai-kou"),
+                )
+            ],
+            0,
+        ),
+        (
+            # 🔴 CRITICAL 回帰ケース（#805）: 親ルートが取得結果に存在しない孤児返信。
+            # GitHub はルートコメントだけの削除を許容するため実運用で起こり得る。
+            # 修正前は roots だけを回すループで消えて 0 件（fail-open）になっていた。
+            "孤児返信（親ルートが取得結果に不在）→ 未解決1件",
+            [_comment(2, 1, "author-b")],
+            1,
+        ),
+        (
+            "自己参照コメント（id == in_reply_to_id）→ 孤児として未解決1件",
+            [_comment(1, 1, "reviewer-a")],
+            1,
+        ),
+        (
+            "id 欠落コメントは読み飛ばし、正常なルートだけ集計 → 未解決1件",
+            [
+                {"id": None, "in_reply_to_id": None, "user": {"login": "x"}},
+                _comment(1, None, "reviewer-a"),
+            ],
+            1,
+        ),
+        (
+            "非 dict 要素・unhashable id/in_reply_to_id は例外を投げず読み飛ばす（#805）",
+            [
+                None,
+                {"id": 1, "in_reply_to_id": ["x"], "user": {}},
+                {"id": ["y"], "in_reply_to_id": None, "user": {}},
+                _comment(2, None, "reviewer-a"),  # 正常なルートは引き続き集計される
+            ],
+            1,
+        ),
+    ]
+    for label, comments, expected in cases:
+        got = _approx_unresolved_from_comments(comments)
+        if got != expected:
+            failures.append(f"  _approx_unresolved_from_comments[{label}] = {got} (expected {expected})")
+    return failures
+
+
+def _test_get_unresolved_threads_rest_approx_layer() -> list[str]:
+    """`get_unresolved_threads` の第 2 層（REST 近似）を検証する（#792）。
+
+    gh (GraphQL) が失敗した場合のみ REST 近似層を試すこと、成功時は `(件数, False, True)`、
+    失敗時は `(0, False, False)` を返すことを固定する。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_http_get = globals()["_http_get"]
+    saved_env = {k: os.environ.pop(k, None) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
+    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
+
+    try:
+        # token あり + REST 近似成功 → (件数, False, True)
+        os.environ["GH_TOKEN"] = "dummy-token-for-test"
+
+        def _fake_http_get_ok(url, token):
+            payload = [
+                {"id": 1, "in_reply_to_id": None, "user": {"login": "reviewer-a"}},
+                {"id": 2, "in_reply_to_id": 1, "user": {"login": "reviewer-a"}},  # 同一投稿者の返信 → 解決
+                {"id": 3, "in_reply_to_id": None, "user": {"login": "reviewer-c"}},
+                {"id": 4, "in_reply_to_id": 3, "user": {"login": "author-b"}},  # 他者返信 → 解決
+                {"id": 5, "in_reply_to_id": None, "user": {"login": "reviewer-d"}},  # 返信ゼロ → 未解決
+            ]
+            return True, json.dumps(payload)
+
+        globals()["_http_get"] = _fake_http_get_ok
+        got_ok = get_unresolved_threads(2)
+        if got_ok != (1, False, True):
+            failures.append(f"  get_unresolved_threads: REST近似成功時 = {got_ok!r} (expected (1, False, True))")
+
+        # token あり + REST 近似も失敗（HTTP エラー）→ (0, False, False)
+        globals()["_http_get"] = lambda url, token: (False, "HTTP 403")
+        got_fail = get_unresolved_threads(3)
+        if got_fail != (0, False, False):
+            failures.append(f"  get_unresolved_threads: REST近似も失敗時 = {got_fail!r} (expected (0, False, False))")
+
+        # token 未設定 → REST 近似不可 → (0, False, False)
+        os.environ.pop("GH_TOKEN", None)
+        globals()["_http_get"] = _fake_http_get_ok  # token ガードで呼ばれないはず
+        got_no_token = get_unresolved_threads(4)
+        if got_no_token != (0, False, False):
+            failures.append(f"  get_unresolved_threads: token未設定時 = {got_no_token!r} (expected (0, False, False))")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_http_get"] = orig_http_get
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+    return failures
+
+
+def _test_get_unresolved_threads_layer1_success_skips_layer2() -> list[str]:
+    """`get_unresolved_threads` は第 1 層（gh GraphQL）が成功したら第 2 層（REST 近似）を
+    呼ばないことを固定する（#805）。
+
+    第 2 層をスタブに差し替えて呼び出しフラグを立て、gh 成功パスで `(2, True, False)` を
+    返しつつフラグが `False` のままであることを assert する。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_rest_approx = globals()["_rest_unresolved_threads_approx"]
+    called = {"rest": False}
+
+    def _stub_rest(pr_number, token):
+        called["rest"] = True
+        return True, json.dumps({"count": 99})
+
     def _fake_graphql_success(args):
         query_result = {
             "data": {
@@ -1430,21 +1782,16 @@ def _test_get_unresolved_threads_fail_open_fix() -> list[str]:
         return True, json.dumps(query_result)
 
     globals()["_run_gh_raw"] = _fake_graphql_success
+    globals()["_rest_unresolved_threads_approx"] = _stub_rest
     try:
-        got2 = get_unresolved_threads(1)
-        if got2 != (2, True):
-            failures.append(f"  get_unresolved_threads: gh成功時 = {got2!r} (expected (2, True))")
+        got = get_unresolved_threads(1)
+        if got != (2, True, False):
+            failures.append(f"  get_unresolved_threads: gh成功時 = {got!r} (expected (2, True, False))")
+        if called["rest"] is not False:
+            failures.append("  get_unresolved_threads: gh成功時に第2層（REST近似）が呼ばれてしまった")
     finally:
         globals()["_run_gh_raw"] = orig_run_gh_raw
-
-    # gh は成功したが JSON 破損 → (0, False)（黙って 0 件成功に化けさせない）
-    globals()["_run_gh_raw"] = lambda args: (True, "not-json{{{")
-    try:
-        got3 = get_unresolved_threads(1)
-        if got3 != (0, False):
-            failures.append(f"  get_unresolved_threads: JSON解析失敗時 = {got3!r} (expected (0, False))")
-    finally:
-        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_rest_unresolved_threads_approx"] = orig_rest_approx
     return failures
 
 
@@ -1486,6 +1833,67 @@ def _test_analyze_pr_unresolved_threads_unknown() -> list[str]:
             )
     finally:
         globals()["_run_gh_raw"] = orig_run_gh_raw
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+    return failures
+
+
+def _test_analyze_pr_unresolved_threads_approx() -> list[str]:
+    """`analyze_pr` が REST 近似成功時、`unresolved_threads_approx` を可視化し summary に
+    近似値であることを明示すること、および fail-open が塞がって `needs_response` に倒れる
+    ことを固定する（#792 の狙いそのもの）。
+
+    gh 到達不可 + token あり + REST 近似成功（未解決1件）を再現する。
+    """
+    failures: list[str] = []
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_http_get = globals()["_http_get"]
+    saved_env = {k: os.environ.pop(k, None) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
+    os.environ["GH_TOKEN"] = "dummy-token-for-test"
+    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
+
+    def _fake_http_get(url, token):
+        if "/pulls/" in url and "/comments" in url:
+            payload = [{"id": 1, "in_reply_to_id": None, "user": {"login": "reviewer-a"}}]
+            return True, json.dumps(payload)
+        return True, json.dumps([])
+
+    globals()["_http_get"] = _fake_http_get
+    try:
+        pr = {
+            "number": 9002,
+            "title": "テスト PR（REST近似）",
+            "headRefName": "feat/y",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "author": {"login": "someone"},
+            "authorAssociation": "OWNER",
+            "reviewRequests": [],
+            "labels": [],
+            "body": "",
+            "isCrossRepository": False,
+        }
+        result = analyze_pr(pr)
+        if result.get("unresolved_threads_approx") is not True:
+            failures.append(
+                "  analyze_pr: unresolved_threads_approx が True にならない "
+                f"(got {result.get('unresolved_threads_approx')!r})"
+            )
+        if result.get("unresolved_threads") != 1:
+            failures.append(f"  analyze_pr: unresolved_threads = {result.get('unresolved_threads')!r} (expected 1)")
+        summary = result.get("summary", "")
+        if "近似値" not in summary:
+            failures.append(f"  analyze_pr: summary に近似値である旨が書かれていない (summary={summary!r})")
+        if result.get("status") != "needs_response":
+            failures.append(
+                f"  analyze_pr: status = {result.get('status')!r} (expected needs_response・"
+                "fail-open修正の眼目=近似値でも needs_response に倒れること)"
+            )
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_http_get"] = orig_http_get
         for k, v in saved_env.items():
             if v is not None:
                 os.environ[k] = v
@@ -1896,10 +2304,31 @@ def _run_self_test() -> None:
     failures.extend(unresolved_threads_failures)
     UNRESOLVED_THREADS_CASE_COUNT = 3  # gh失敗時 / gh成功時 / JSON解析失敗時
 
+    # 未解決スレッド REST 近似のスレッド再構成ロジック（#792・#805 で孤児返信検出・型防御を追加）
+    approx_comments_failures = _test_approx_unresolved_from_comments()
+    failures.extend(approx_comments_failures)
+    APPROX_COMMENTS_CASE_COUNT = 11  # 返信ゼロ/同一投稿者返信(回帰・反転)/他者返信あり/複合ケース/user None・キー欠落/混在1件未解決/PR#735実データ形状/孤児返信/自己参照/id欠落読み飛ばし/非dict・unhashable読み飛ばし
+
+    # get_unresolved_threads の第 2 層（REST 近似）フォールバック（#792）
+    unresolved_rest_approx_failures = _test_get_unresolved_threads_rest_approx_layer()
+    failures.extend(unresolved_rest_approx_failures)
+    UNRESOLVED_REST_APPROX_CASE_COUNT = 3  # 近似成功 / 近似も失敗 / token未設定
+
+    # gh (第1層) 成功時は REST 近似(第2層) を呼ばないことの固定（#805）
+    layer1_skips_layer2_failures = _test_get_unresolved_threads_layer1_success_skips_layer2()
+    failures.extend(layer1_skips_layer2_failures)
+    LAYER1_SKIPS_LAYER2_CASE_COUNT = 2  # 件数の一致 / 第2層未呼び出しの確認
+
     # analyze_pr が unresolved_threads_unknown を可視化し summary 先頭に警告を差すことの固定（#790 指摘1）
     analyze_pr_unknown_failures = _test_analyze_pr_unresolved_threads_unknown()
     failures.extend(analyze_pr_unknown_failures)
     ANALYZE_PR_UNKNOWN_CASE_COUNT = 2  # unresolved_threads_unknown フラグ / summary 先頭の警告
+
+    # analyze_pr が REST 近似成功時に unresolved_threads_approx / summary / needs_response を
+    # 正しく反映すること（#792・fail-open 修正の眼目）
+    analyze_pr_approx_failures = _test_analyze_pr_unresolved_threads_approx()
+    failures.extend(analyze_pr_approx_failures)
+    ANALYZE_PR_APPROX_CASE_COUNT = 4  # approxフラグ / 件数 / summary文言 / status=needs_response
 
     # get_open_prs() の REST フォールバック（getter レベル回帰・#790 指摘2）
     open_prs_fallback_failures = _test_get_open_prs_rest_fallback()
@@ -1932,7 +2361,11 @@ def _run_self_test() -> None:
         + GETTER_FALLBACK_CASE_COUNT
         + PAGINATION_CASE_COUNT
         + UNRESOLVED_THREADS_CASE_COUNT
+        + APPROX_COMMENTS_CASE_COUNT
+        + UNRESOLVED_REST_APPROX_CASE_COUNT
+        + LAYER1_SKIPS_LAYER2_CASE_COUNT
         + ANALYZE_PR_UNKNOWN_CASE_COUNT
+        + ANALYZE_PR_APPROX_CASE_COUNT
         + OPEN_PRS_FALLBACK_CASE_COUNT
         + HEAD_SHA_FALLBACK_CASE_COUNT
     )
