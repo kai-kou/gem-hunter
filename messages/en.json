@@ -15,6 +15,7 @@
     "skipLink": "Skip to main content",
     "loading": "Loading",
     "retry": "Try again",
+    "opensInNewTab": "(opens in a new tab)",
     "errors": {
       "network": "Could not connect. Check your network connection and try again.",
       "rateLimitPrimary": "You have reached the request limit. Try again after {resetAt}.",

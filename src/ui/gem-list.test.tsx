@@ -19,6 +19,7 @@ const labels: GemListLabels = {
   gemIndexLabel: 'Gem Index',
   registryLabel: 'レジストリ',
   attribution: 'このデータについて: {source}（{license}）のオープンデータをもとにしています。',
+  opensInNewTab: '（新しいタブで開きます）',
 }
 
 const meta: DigestMeta = {
@@ -465,10 +466,11 @@ describe('GemList', () => {
       'href',
       'https://ecosyste.ms/',
     )
-    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
-      'href',
-      'https://creativecommons.org/licenses/by-sa/4.0/',
-    )
+    // ライセンスリンクは新しいタブで開くため `sr-only` の告知がアクセシブルネームに連結される
+    // （`ui-ux-guidelines.md` §7.4a）。出典元リンクは同一タブなので告知を持たない
+    expect(
+      screen.getByRole('link', { name: 'CC BY-SA 4.0（新しいタブで開きます）' }),
+    ).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
   })
 
   /** `{generatedAt}` を含まない文言なので、生成時刻のノードは描かれない（共有実装の分岐）。 */

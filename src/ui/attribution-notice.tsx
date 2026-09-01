@@ -16,6 +16,15 @@ type AttributionNoticeLabels = {
    * （Gem 一覧の `gems.attribution` のように生成時刻を出さない面でも同じ実装を使えるようにする）。
    */
   attribution: string
+  /**
+   * 「新しいタブで開きます」の sr-only 告知文言（`messages/{locale}.json` の
+   * `common.opensInNewTab` 由来。ハードコードしない・§3 の i18n 方針）。
+   * ライセンスリンク（`sourceLicenseUrl`）にのみ添える（§7.4a・Issue #287）。
+   * 出典元リンク（`sourceUrl`）には付けない — GitHub リポジトリの外部リンクほど
+   * 遷移先が予測しにくいわけではなく、告知を両方に足すと文が冗長になるため
+   * §7.4a が明示的に対象を「ライセンスリンク」に絞っている。
+   */
+  opensInNewTab: string
 }
 
 /**
@@ -66,7 +75,11 @@ export function AttributionNotice({
       {beforeSource}
       <SafeLink href={meta.sourceUrl} text={meta.source} />
       {beforeLicense}
-      <SafeLink href={meta.sourceLicenseUrl} text={meta.license} />
+      <SafeLink
+        href={meta.sourceLicenseUrl}
+        text={meta.license}
+        opensInNewTabLabel={labels.opensInNewTab}
+      />
       {/*
         🔵 `{generatedAt}` を含まない文言（Gem 一覧）では時刻ノードごと描かない。
         含まないのに描くと、文の末尾へ日時が接ぎ木されて意味の通らない文になる。
@@ -100,14 +113,28 @@ function GeneratedAt({ value, format }: { value: string; format: Intl.DateTimeFo
  *
  * 🔴 候補プール JSON は外部データ由来なので、URL を無検査で `href` へ渡さない
  * （`javascript:` を `href` に流さない）。
+ *
+ * `opensInNewTabLabel` が渡されたときだけ、新しいタブで開く旨の `sr-only` 告知を
+ * `<a>` の **内側** に添える（§7.4a）。外側（兄弟要素）に置くとリンクの
+ * アクセシブルネームに入らない。文言側が括弧で始まる前提で、間に空白を挟まず
+ * 連結する（§7.4a 4 点目・JSX の空白落ちに頼らない）。
  */
-function SafeLink({ href, text }: { href: string; text: string }) {
+function SafeLink({
+  href,
+  text,
+  opensInNewTabLabel,
+}: {
+  href: string
+  text: string
+  opensInNewTabLabel?: string
+}) {
   if (!isHttpUrl(href)) {
     return <>{text}</>
   }
   return (
     <a href={href} rel="noopener noreferrer" target="_blank" className={INLINE_LINK_CLASS_NAME}>
       {text}
+      {opensInNewTabLabel ? <span className="sr-only">{opensInNewTabLabel}</span> : null}
     </a>
   )
 }

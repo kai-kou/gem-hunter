@@ -16,6 +16,7 @@ const meta: DigestMeta = {
 const labels = {
   attribution:
     'Data via {source}（{license}）· 生成: {generatedAt} · 並び順は日付シードで再算出しています',
+  opensInNewTab: '（新しいタブで開きます）',
 }
 
 describe('AttributionNotice', () => {
@@ -48,6 +49,7 @@ describe('AttributionNotice', () => {
         labels={{
           attribution:
             "Data via {source} ({license}) · Generated: {generatedAt} · Order is recomputed from the day's seed.",
+          opensInNewTab: '(opens in a new tab)',
         }}
         locale={locale('en')}
       />,
@@ -63,7 +65,10 @@ describe('AttributionNotice', () => {
     const { container } = render(
       <AttributionNotice
         meta={{ ...meta, generatedAt: '' }}
-        labels={{ attribution: 'src={source} lic={license} at=[{generatedAt}]' }}
+        labels={{
+          attribution: 'src={source} lic={license} at=[{generatedAt}]',
+          opensInNewTab: labels.opensInNewTab,
+        }}
         locale={locale('ja')}
       />,
     )
@@ -75,11 +80,53 @@ describe('AttributionNotice', () => {
   it('ライセンスは sourceLicenseUrl を指すリンクになっている（改変元へ辿れる・D-29）', () => {
     render(<AttributionNotice meta={meta} labels={labels} locale={locale('ja')} />)
 
-    const link = screen.getByRole('link', { name: 'CC BY-SA 4.0' })
+    const link = screen.getByRole('link', { name: `CC BY-SA 4.0${labels.opensInNewTab}` })
     expect(link).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
     // 外部リンクなので target=_blank + noopener を付ける
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+  })
+
+  /**
+   * 🔴 §7.4a: 新しいタブで開くリンクは sr-only 文言をアクセシブルネームに含める（Issue #287）。
+   * `sr-only` 要素は `<a>` の内側に置くため、視覚テキストだけでなくアクセシブルネームにも
+   * 含まれる（スクリーンリーダーのリンク一覧で新規タブで開くことが伝わる）。
+   */
+  it('ライセンスリンクのアクセシブルネームに「新しいタブで開きます」の告知を含む（§7.4a・Issue #287）', () => {
+    render(<AttributionNotice meta={meta} labels={labels} locale={locale('ja')} />)
+
+    const link = screen.getByRole('link', { name: `CC BY-SA 4.0${labels.opensInNewTab}` })
+    const srOnly = link.querySelector('.sr-only')
+    expect(srOnly).not.toBeNull()
+    expect(srOnly?.textContent).toBe(labels.opensInNewTab)
+  })
+
+  it('en ロケールでもライセンスリンクのアクセシブルネームに opens in a new tab の告知を含む（§7.4a）', () => {
+    const enOpensInNewTab = '(opens in a new tab)'
+    render(
+      <AttributionNotice
+        meta={meta}
+        labels={{ attribution: labels.attribution, opensInNewTab: enOpensInNewTab }}
+        locale={locale('en')}
+      />,
+    )
+
+    expect(
+      screen.getByRole('link', { name: `CC BY-SA 4.0${enOpensInNewTab}` }),
+    ).toBeInTheDocument()
+  })
+
+  /**
+   * 出典元（source）リンクは §7.4a の対象外（Issue #287 はライセンスリンクのみを扱う）。
+   * アクセシブルネームに告知文言が混ざらないことを固定する（回帰防止）。
+   */
+  it('出典元リンクのアクセシブルネームには告知文言を含めない（§7.4a の対象はライセンスリンクのみ）', () => {
+    render(<AttributionNotice meta={meta} labels={labels} locale={locale('ja')} />)
+
+    expect(screen.getByRole('link', { name: 'Ecosyste.ms' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: `Ecosyste.ms${labels.opensInNewTab}` }),
+    ).not.toBeInTheDocument()
   })
 
   it('出典元は sourceUrl を指すリンクになっている（Ecosyste.ms 本体へ辿れる・F-6）', () => {
@@ -105,16 +152,16 @@ describe('AttributionNotice', () => {
         labels={{
           attribution:
             "Data via {source} ({license}) · Generated: {generatedAt} · Order is recomputed from the day's seed.",
+          opensInNewTab: '(opens in a new tab)',
         }}
         locale={locale('en')}
       />,
     )
 
     expect(screen.getByRole('link', { name: 'Ecosyste.ms' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
-      'href',
-      'https://creativecommons.org/licenses/by-sa/4.0/',
-    )
+    expect(
+      screen.getByRole('link', { name: 'CC BY-SA 4.0(opens in a new tab)' }),
+    ).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
     expect(screen.getByText(/Order is recomputed/)).toBeInTheDocument()
   })
 
@@ -122,7 +169,7 @@ describe('AttributionNotice', () => {
     render(
       <AttributionNotice
         meta={{ ...meta, source: 'A $& B' }}
-        labels={{ attribution: 'src={source} lic={license}' }}
+        labels={{ attribution: 'src={source} lic={license}', opensInNewTab: labels.opensInNewTab }}
         locale={locale('ja')}
       />,
     )
@@ -139,7 +186,10 @@ describe('AttributionNotice', () => {
     const { container } = render(
       <AttributionNotice
         meta={meta}
-        labels={{ attribution: 'このデータについて: {source}（{license}）をもとにしています。' }}
+        labels={{
+          attribution: 'このデータについて: {source}（{license}）をもとにしています。',
+          opensInNewTab: labels.opensInNewTab,
+        }}
         locale={locale('ja')}
       />,
     )
