@@ -161,7 +161,7 @@
 {"date": "2026-09-02 JST", "title": "消化モードの候補選択に「ブロッカー先読み」フィルタを入れる（status:blocked ではないが依存 Issue が壊れていて着手不能なものを後回しにする）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "vitest.config.mts に e2e/ project の自動収集設定を足し、E2E 専用モジュールを e2e/ 配下に置けるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "CLAUDE.md の環境ガイダンス（Pre-installed browser 等）とプロジェクト実装の乖離を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-02 JST", "title": "fail-open の向きを持つ実装のテストに「誤った候補を選ばなかったか」の明示検証を求める基準をドキュメント化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "810"}
+{"date": "2026-09-02 JST", "title": "fail-open の向きを持つ実装のテストに「誤った候補を選ばなかったか」の明示検証を求める基準をドキュメント化する（#810 に統合済み）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "新規環境変数が docs/rules/env-vars.md の表へ載ったかを機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "494"}
 {"date": "2026-09-02 JST", "title": "package-lock.json の環境ノイズが PR 作成ゲートと diff 突合ツールを毎回誤らせる問題を根治する", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": "799"}
 {"date": "2026-09-02 JST", "title": "サブエージェント並行稼働中は Stop フックの未コミット催促を抑制する（mutation_guard の流用をやめる）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "322"}
