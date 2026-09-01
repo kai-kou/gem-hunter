@@ -19,10 +19,13 @@ type AttributionNoticeLabels = {
   /**
    * 「新しいタブで開きます」の sr-only 告知文言（`messages/{locale}.json` の
    * `common.opensInNewTab` 由来。ハードコードしない・§3 の i18n 方針）。
-   * ライセンスリンク（`sourceLicenseUrl`）にのみ添える（§7.4a・Issue #287）。
-   * 出典元リンク（`sourceUrl`）には付けない — GitHub リポジトリの外部リンクほど
-   * 遷移先が予測しにくいわけではなく、告知を両方に足すと文が冗長になるため
-   * §7.4a が明示的に対象を「ライセンスリンク」に絞っている。
+   *
+   * 🔴 `SafeLink` が描くリンクは **すべて** `target="_blank"` なので、出典元
+   * （`sourceUrl`）・ライセンス（`sourceLicenseUrl`）の **両方** に添える。
+   * §7.4a は「新しいタブで開くリンクを実装するときは 3 点を必ず満たす」と
+   * 無条件に定めており、対象をライセンスリンクへ絞ってはいない（節見出しの
+   * 括弧書きは適用例の列挙）。片方だけに付けると、告知のないリンクは同一タブで
+   * 開くと誤って推論される（Issue #287・PR #765 Layer 1 レビュー指摘）。
    */
   opensInNewTab: string
 }
@@ -73,7 +76,11 @@ export function AttributionNotice({
   return (
     <p className="text-muted-foreground mt-6 text-xs">
       {beforeSource}
-      <SafeLink href={meta.sourceUrl} text={meta.source} />
+      <SafeLink
+        href={meta.sourceUrl}
+        text={meta.source}
+        opensInNewTabLabel={labels.opensInNewTab}
+      />
       {beforeLicense}
       <SafeLink
         href={meta.sourceLicenseUrl}

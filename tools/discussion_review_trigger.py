@@ -60,12 +60,18 @@ from repo_slug import resolve_repo_slug  # noqa: E402
 
 
 def _run_gh(args: list[str]) -> tuple[int, str]:
-    """`gh` を安全に呼び出す。バイナリ自体が無ければ (127, "") を返し例外にしない（#196）。"""
+    """`gh` を安全に呼び出す。起動できなければ (127, "") を返し例外にしない（#196）。
+
+    捕捉対象は `FileNotFoundError` だけでなく `OSError` 全般にする。`gh` が PATH 上に
+    あっても実行属性が無い（`PermissionError`）・PATH のエントリがディレクトリを指す
+    （`NotADirectoryError`）といった異常構成では別の `OSError` が飛び、片方だけ捕捉すると
+    「gh が無い環境でも判定結果を返す」という本関数の目的が崩れるため。
+    """
     try:
         result = subprocess.run(
             ["gh", *args], capture_output=True, text=True, cwd=str(REPO_ROOT),
         )
-    except FileNotFoundError:
+    except OSError:
         return 127, ""
     return result.returncode, result.stdout.strip()
 
@@ -276,15 +282,44 @@ def _self_test() -> None:
     finally:
         subprocess.run = orig_run  # type: ignore[assignment]
 
-    # バリアント B: gh は PATH にあるが nameWithOwner が空文字（別種の失敗形）
+    # バリアント B: gh は PATH にあるが nameWithOwner が空文字（別種の失敗形）。
+    # 🔴 戻り値が非空であることだけを見ても検証にならない: resolve_repo_slug() の既定
+    # placeholder は本リポジトリでは置換済み（"__" を含まない）なので、git remote を
+    # 引かずに即座に placeholder を返す。つまり「フォールバックが呼ばれたか」と
+    # 「戻り値が非空か」は独立しており、後者は分岐を通らなくても真になる（PR #765 レビュー指摘）。
+    # そこで resolve_repo_slug 自体を差し替え、**実際に呼ばれたこと** を確認する。
     class _FakeResult:
         returncode = 0
         stdout = "\n"
 
+    called: list[bool] = []
+
+    def _fake_resolve(*_a, **_kw) -> str:
+        called.append(True)
+        return "sentinel-owner/sentinel-repo"
+
+    global resolve_repo_slug
+    orig_resolve = resolve_repo_slug
     subprocess.run = lambda *_a, **_kw: _FakeResult()  # type: ignore[assignment]
+    resolve_repo_slug = _fake_resolve  # type: ignore[assignment]
     try:
         repo2 = _get_repo()
-        assert isinstance(repo2, str) and repo2, "空出力時も resolve_repo_slug へフォールバックするはず"
+        assert called, "gh の出力が空なら resolve_repo_slug へフォールバックするはず"
+        assert repo2 == "sentinel-owner/sentinel-repo", (
+            f"フォールバックの戻り値をそのまま返すはず（実際: {repo2!r}）"
+        )
+    finally:
+        subprocess.run = orig_run  # type: ignore[assignment]
+        resolve_repo_slug = orig_resolve  # type: ignore[assignment]
+
+    # バリアント C: gh は PATH にあるが実行できない（PermissionError 等の OSError）
+    def _raise_permission(*_a, **_kw):
+        raise PermissionError("[Errno 13] Permission denied: 'gh'")
+
+    subprocess.run = _raise_permission  # type: ignore[assignment]
+    try:
+        rc3, out3 = _run_gh(["repo", "view"])
+        assert (rc3, out3) == (127, ""), "FileNotFoundError 以外の OSError も握り潰すはず"
     finally:
         subprocess.run = orig_run  # type: ignore[assignment]
 
