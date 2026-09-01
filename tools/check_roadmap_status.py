@@ -32,6 +32,24 @@
      「件数付き構文へ移行してください」と stderr に警告を出す（fail-open のまま残る唯一の経路
      であることを毎回可視化し、放置されないようにする）。新規に書くマーカーは必ず件数付き構文を使う。
 
+     🔴 **崩れた件数構文は「旧構文」と区別し fail-closed にする（Issue #787 レビュー CRITICAL 対応）**:
+     件数を書こうとしてタイポで厳密形 `(\d+)\s*:\s*` に一致しなかった入力（コロン抜け
+     `roadmap-status-ok:1 ok`・数字の後に余分な文字 `roadmap-status-ok:1a: ok`・負数
+     `roadmap-status-ok:-1: ok` 等）は、理由文の先頭が `-?\d`（数字、または `-` + 数字）で
+     始まっているかどうかで「件数を書こうとした形跡」を検出し、**旧構文として無条件抑制せず**
+     `violation4_suppression_malformed_count` として違反報告する（exit 非ゼロ）。これにより、
+     件数照合の抜け道（タイポ 1 つで fail-open に戻る経路）を塞ぐ。判定はラフな先頭文字判定
+     のため、理由文が本当に数字で始まる旧構文（例:「2026-08-20 に確認予定」）も同じ扱いになる
+     トレードオフを許容する（安全側＝過検出は「誤って違反として報告される」側の失敗モード）。
+
+     🟡 **理由文を数字 + コロンで始めない（運用制約）**: `<!-- roadmap-status-ok: 12:30 に確認予定
+     のため未実施 -->` のように理由文が `{数字}:` から始まる旧構文は、`_SUPPRESSION_MARKER_RE` の
+     件数グループに `12` を、理由に「30 に確認予定のため未実施」を食われてしまい、件数付き構文
+     として誤解釈される（件数照合が働き、実際の未チェック件数と 12 が一致しない限り抑制されない）。
+     構文自体の変更（採用しないと判断・Issue #787 レビュー WARNING1 対応）ではなく **運用制約として
+     理由文を数字 + コロンで始めないことを明記する** ことで対処する。新規・既存マーカー（`roadmap.md`
+     の `M-1` / `M-5`）はいずれも理由文が数字で始まらないため移行不要（2026-09-01 実測）。
+
      ⚠️ **既知の限界（YAGNI により簡易実装）**:
      - 達成宣言キーワードの判定（`_has_achievement_keyword`）は、キーワード直後に代表的な
        否定語尾（`_NEGATION_SUFFIXES` = 「ではない」「とは言えない」「ていない」等）が
@@ -193,6 +211,12 @@ _SUPPRESSION_MARKER_RE = re.compile(
     r"<!--\s*roadmap-status-ok\s*:\s*(?:(\d+)\s*:\s*)?([^>]*?)-->"
 )
 
+# 崩れた件数構文の検出（Issue #787 レビュー CRITICAL 対応）: 上の正規表現で件数グループ
+# `(\d+)\s*:\s*` に一致しなかった（＝ legacy 扱いに落ちた）とき、理由文の **先頭** が数字
+# または `-` + 数字で始まっていれば「件数を書こうとしてタイポした」形跡とみなす。
+# ラフな判定でよい（誤検出は fail-closed 側＝安全な失敗モードのため許容する）。
+_MALFORMED_COUNT_PREFIX_RE = re.compile(r"^-?\d")
+
 # 🔴 ReDoS 対策その2（多重防御）: 文字クラス変更だけでは「`>` を一切含まない巨大な反復入力」
 # に対する最悪計算量（O(n^2)）を根本的には防げない。検索対象を一定長に切り詰めることで
 # 絶対的な処理時間の上限を保証する。実 `roadmap.md` の §3 マイルストーン節は最大でも
@@ -229,10 +253,17 @@ def _is_separator_row(cells: list[str]) -> bool:
 
 def _find_suppression_marker(text: str) -> dict | None:
     """`text` 内に有効な抑制マーカー（理由が非空）があれば
-    `{"count": int | None, "reason": str, "legacy": bool}` を、無ければ None を返す。
+    `{"count": int | None, "reason": str, "legacy": bool, "malformed_count": bool}` を、
+    無ければ None を返す。
 
     `count` は件数付き構文（`roadmap-status-ok:{N}: ...`）を書いたときだけ int になり、
     件数なし旧構文（後方互換）のときは None（`legacy=True`）になる。
+
+    `malformed_count` は `legacy=True` の中でも、理由文の先頭が数字（または `-` + 数字）で
+    始まる場合に True になる（Issue #787 レビュー CRITICAL 対応）。件数を書こうとして厳密形
+    `(\\d+)\\s*:\\s*` にタイポで一致しなかった入力（コロン抜け・数字直後の余分な文字・負数等）
+    が「理由なし旧構文」として無条件抑制（fail-open）に落ちるのを防ぐための検出であり、
+    呼び出し側（`evaluate_roadmap`）はこのフラグが立っていれば legacy 抑制せず違反として扱う。
 
     ReDoS 対策として `text` は `_SUPPRESSION_SCAN_MAX_LEN` 文字までに切り詰めてから走査する
     （切り詰めの理由・トレードオフは `_SUPPRESSION_SCAN_MAX_LEN` のコメント参照）。
@@ -241,10 +272,12 @@ def _find_suppression_marker(text: str) -> dict | None:
         reason = m.group(2).strip()
         if reason:
             count_raw = m.group(1)
+            legacy = count_raw is None
             return {
                 "count": int(count_raw) if count_raw is not None else None,
                 "reason": reason,
-                "legacy": count_raw is None,
+                "legacy": legacy,
+                "malformed_count": legacy and bool(_MALFORMED_COUNT_PREFIX_RE.match(reason)),
             }
     return None
 
@@ -501,6 +534,22 @@ def evaluate_roadmap(
 
         marker = find_milestone_suppression_marker(n, parsed)
         if marker:
+            if marker["malformed_count"]:
+                violations.append({
+                    "type": "violation4_suppression_malformed_count",
+                    "milestone": f"M-{n}",
+                    "state_text": state_text,
+                    "reason": marker["reason"],
+                    "detail": (
+                        f"M-{n} の抑制マーカーは件数構文が崩れています（理由文の先頭が数字ですが、"
+                        "厳密な件数付き構文 `roadmap-status-ok:{件数}: {理由}` に一致しませんでした: "
+                        f"{marker['reason']!r}）。件数照合なしの旧構文として無条件抑制せず、"
+                        "違反として報告します。`roadmap-status-ok:{件数}: {理由}`"
+                        "（コロンの位置・件数が正しい数字であること）を確認して書き直してください。"
+                    ),
+                })
+                continue
+
             declared = marker["count"]
             actual = checklist["unchecked"]
             if marker["legacy"] or declared == actual:
@@ -524,7 +573,19 @@ def evaluate_roadmap(
                 })
                 continue
 
-            # 件数不一致: マーカーが想定していない未チェックが増えている（Issue #784）
+            # 件数不一致: 実際の未チェックがマーカーの宣言件数からズレている（Issue #784）。
+            # 増えた（declared < actual）/ 減った（declared > actual）で文言を分岐する
+            # （Issue #787 レビュー WARNING2 対応・旧実装は増減にかかわらず「増えています」固定だった）。
+            if actual > declared:
+                trend = (
+                    "マーカーが想定していない未チェックが増えています。"
+                    "マーカーの件数を更新するか、増えた項目を別途検討してください"
+                )
+            else:
+                trend = (
+                    "マーカーの想定より未チェックが減っています。"
+                    f"マーカーの件数を実態（{actual} 件）に更新してください"
+                )
             violations.append({
                 "type": "violation4_suppression_count_mismatch",
                 "milestone": f"M-{n}",
@@ -536,8 +597,7 @@ def evaluate_roadmap(
                 "detail": (
                     f"M-{n} の抑制マーカーは未チェック {declared} 件を宣言していますが、"
                     f"実際の未チェックは {actual}/{checklist['total']} 件です。"
-                    "マーカーが想定していない未チェックが増えています。"
-                    f"マーカーの件数を更新するか、増えた項目を別途検討してください（理由: {marker['reason']}）。"
+                    f"{trend}（理由: {marker['reason']}）。"
                 ),
             })
             continue
@@ -1090,6 +1150,81 @@ def _self_test_suppression_marker() -> list[str]:
     return failures
 
 
+def _self_test_suppression_marker_malformed_count() -> list[str]:
+    """CRITICAL 回帰テスト（Issue #787 レビュー指摘1）: 崩れた件数構文は旧構文として
+
+    無条件抑制（fail-open）せず、`violation4_suppression_malformed_count` として違反報告する。
+    3 バリアント（コロン抜け・数字直後の余分な文字・負数）を検証する。
+    """
+    failures = []
+    cases = [
+        ("コロン抜け", "<!-- roadmap-status-ok:1 理由 -->"),
+        ("数字直後に余分な文字", "<!-- roadmap-status-ok:1a: 理由 -->"),
+        ("負数", "<!-- roadmap-status-ok:-1: 理由 -->"),
+    ]
+    for label, marker_text in cases:
+        fixture = _FIXTURE_M5_GATE.replace(
+            "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） |",
+            f"| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20）{marker_text} |",
+        )
+        parsed = parse_roadmap(fixture)
+        violations, suppressed = evaluate_roadmap(parsed, sp_state_index={})
+        hit = [v for v in violations if v["milestone"] == "M-5" and v["type"] == "violation4_suppression_malformed_count"]
+        if len(hit) != 1:
+            failures.append(f"崩れた件数構文（{label}）: violation4_suppression_malformed_count が検出されない: {violations}")
+        if any(n["milestone"] == "M-5" for n in suppressed):
+            failures.append(f"崩れた件数構文（{label}）: fail-open のまま無条件抑制されてしまっている: {suppressed}")
+    return failures
+
+
+def _self_test_suppression_marker_reason_digit_colon_boundary() -> list[str]:
+    """WARNING1 回帰テスト（Issue #787 レビュー指摘2）: 理由文が『数字 + コロン』で始まる旧構文は
+
+    件数付き構文として誤解釈される（運用制約として理由文を数字で始めないことを明記する判断・
+    構文自体は変更しない）。この境界ケースの現行解釈を固定し、静かに変わらないようにする。
+    """
+    failures = []
+    # マーカー単体の解釈（`_find_suppression_marker`）を直接検証する: 「12:30 に確認予定のため
+    # 未実施」は `roadmap-status-ok:` 直後の "12:" を件数付き構文として食い、count=12 になる。
+    marker = _find_suppression_marker("<!-- roadmap-status-ok: 12:30 に確認予定のため未実施 -->")
+    if marker is None or marker["legacy"] is not False or marker["count"] != 12 or marker["reason"] != "30 に確認予定のため未実施":
+        failures.append(f"数字+コロン始まりの理由文: 現行解釈（count=12 として誤解釈）から変化した: {marker}")
+    if marker is not None and marker["malformed_count"]:
+        failures.append(f"数字+コロン始まりの理由文: 件数付き構文として解釈済みなのに malformed_count=True になった: {marker}")
+    return failures
+
+
+def _self_test_suppression_count_mismatch_direction() -> list[str]:
+    """WARNING2 回帰テスト（Issue #787 レビュー指摘3）: 未チェックが『減った』場合（declared > actual）に
+
+    「増えています」という誤った文言を出さないこと。既存の CRITICAL 回帰（declared < actual・
+    増えたケース）は `_self_test_suppression_marker` の⑤で担保済みなので、本テストは減ったケースのみ扱う。
+    """
+    failures = []
+    # ベース: `_FIXTURE_M5_GATE` は通過判定 2 件中 1 件未チェック（`RK-1`）。
+    # マーカーは宣言件数 2（実際より多い＝進捗で未チェックが減った状態）にする。
+    fixture = _FIXTURE_M5_GATE.replace(
+        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20） |",
+        "| `M-5` Phase 2 着手判断 | — | 通過済み（`D-27`・2026-08-20）"
+        "<!-- roadmap-status-ok:2: 飼い主の明示意向により未充足のまま通過（D-27） --> |",
+    )
+    parsed = parse_roadmap(fixture)
+    violations, suppressed = evaluate_roadmap(parsed, sp_state_index={})
+    hit = [
+        v for v in violations
+        if v["milestone"] == "M-5" and v["type"] == "violation4_suppression_count_mismatch"
+    ]
+    if len(hit) != 1 or hit[0]["declared_count"] != 2 or hit[0]["actual_unchecked"] != 1:
+        failures.append(f"件数不一致（減少方向）: 検出できていない: {violations}")
+    elif "増えています" in hit[0]["detail"]:
+        failures.append(f"件数不一致（減少方向）: 誤って『増えています』と報告している: {hit[0]['detail']!r}")
+    elif "減っています" not in hit[0]["detail"]:
+        failures.append(f"件数不一致（減少方向）: 減少方向の文言になっていない: {hit[0]['detail']!r}")
+    if any(n["milestone"] == "M-5" for n in suppressed):
+        failures.append(f"件数不一致（減少方向）: 不一致なのに抑制ノートとして記録された: {suppressed}")
+    return failures
+
+
 def _self_test_suppression_marker_redos() -> list[str]:
     """WARNING2 回帰テスト: 閉じられない抑制マーカーの反復（病的入力）が実用的な時間で終わること。
 
@@ -1182,6 +1317,9 @@ def run_self_test() -> int:
         ("違反4: 通過済みキーワード + 装飾つき表記", _self_test_violation4_pass_keyword_and_decoration),
         ("達成宣言キーワードの否定文（WARNING1 回帰）", _self_test_achievement_keyword_negation),
         ("抑制マーカー（§5.1 行/§3 節/空理由/陰性対照/件数不一致/後方互換・Issue #784）", _self_test_suppression_marker),
+        ("抑制マーカー: 崩れた件数構文は fail-closed（Issue #787 レビュー指摘1）", _self_test_suppression_marker_malformed_count),
+        ("抑制マーカー: 理由が数字+コロン始まりの境界（Issue #787 レビュー指摘2）", _self_test_suppression_marker_reason_digit_colon_boundary),
+        ("抑制マーカー: 件数不一致（減少方向）の文言（Issue #787 レビュー指摘3）", _self_test_suppression_count_mismatch_direction),
         ("抑制マーカーの ReDoS 耐性（WARNING2 回帰）", _self_test_suppression_marker_redos),
         ("陰性対照（誤検出なし）", _self_test_no_false_positive),
         ("副次 Issue 混入時の偽陽性なし（Issue #628）", _self_test_secondary_issue_no_false_positive),
