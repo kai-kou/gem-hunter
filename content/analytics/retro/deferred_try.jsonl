@@ -103,5 +103,5 @@
 {"date": "2026-09-01 JST", "title": "並列委譲中の Stop フック WIP 自動コミットを抑止し、未追跡ファイルも退避する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
 {"date": "2026-09-01 JST", "title": "Playwright のブラウザビルド不一致を解消する（playwright install は実行可能だった）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 681}
 {"date": "2026-09-01 JST", "title": "新規検査ツールが既存の正本（対象解決・除外集合・共有 lib）を再利用する索引を用意する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 590}
-{"date": "2026-09-01 JST", "title": "完了条件を満たさないまま Issue をクローズすることを防ぐ", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 774}
+{"date": "2026-09-01 JST", "title": "完了条件を満たさないまま Issue をクローズすることを防ぐ", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "run_checks.sh の実行時間を層別化する（PR 前は軽量・マージ前は全件）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
