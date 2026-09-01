@@ -37,6 +37,7 @@ PR作成後のAIレビュー待ち（sleep ポーリング）中にセッショ�
             needs_prompt（Layer 1 セルフレビュー要実施 → 観点別フレッシュ文脈レビュー実行 → 即マージ）
             awaiting_review（PR 作成直後 = 作成セッションがセルフレビュー実行中 → 待機）
             blocked_waiting_user（status:waiting-user ラベル付き → 自動マージ対象外）
+            blocked_circuit_breaker（status:blocked ラベル付き → A-4 発動済み・Step 2/3 の対象外・#746）
             no_action（Claude 以外の PR または手動 PR）
   ※ 外部レビュアーの 25 分応答待ち・催促・問題なし判定タイムアウトは廃止。
 
@@ -424,6 +425,36 @@ def get_unresolved_threads(pr_number: int) -> int:
         return 0
 
 
+def _label_based_early_exit_status(pr_labels: set[str]) -> dict | None:
+    """ラベルだけで判定できる「actionable 対象外」の早期終了ステータスを返す（純粋関数・#746）。
+
+    gh API を叩く前にラベル集合だけで判定できるため、I/O を伴わずテストできる。
+    両方のラベルが同時に付いている場合は status:blocked を優先する
+    （A-4 サーキットブレーカーは「これ以上の自動修正サイクルを止める」宣言であり、
+    waiting-user 解除だけを理由に Step 2/3 が拾い直すのを防ぐため）。
+
+    Issue #746: sprint-cycle-router §8 の A-4 行は「Step 3 / Step 4 / Step 5 の対象クエリから
+    除外」とだけ書いており、本スクリプト（Step 2 の実装）には status:blocked の判定が
+    一切実装されていなかった（waiting-user のみ）。この欠落が Step 2 の無人再取得を招いた。
+    """
+    if "status:blocked" in pr_labels:
+        return {
+            "status": "blocked_circuit_breaker",
+            "summary": "status:blocked ラベル付き（A-4 サーキットブレーカー等発動済み・Step 2/3 の対象外・#746）",
+        }
+    if "status:waiting-user" in pr_labels:
+        return {
+            "status": "blocked_waiting_user",
+            "summary": "status:waiting-user ラベル付き（ユーザー判断必須・自動マージ対象外）",
+        }
+    return None
+
+
+# --actionable-only が除外するステータス集合（#746: main() と self-test で同じ定数を参照し、
+# 新設した blocked_circuit_breaker が除外漏れにならないことを固定する）。
+ACTIONABLE_EXCLUDED_STATUSES = {"no_action", "blocked_waiting_user", "blocked_circuit_breaker"}
+
+
 def analyze_pr(pr: dict) -> dict:
     """PRのレビュー状態を分析する。"""
     pr_number = pr["number"]
@@ -447,14 +478,16 @@ def analyze_pr(pr: dict) -> dict:
     is_dependabot_pr = _is_dependabot_pr(branch, author_login, is_cross_repository)
     is_trusted_bot_pr = is_automation_pr or is_dependabot_pr
 
-    # status:waiting-user ラベル付き PR は自動マージ対象から除外（#2173）
-    if "status:waiting-user" in pr_labels:
+    # status:waiting-user / status:blocked ラベル付き PR は自動マージ対象から除外
+    # （#2173・#746）。gh API 呼び出し前にラベルだけで判定できるため早期 return する。
+    early_exit = _label_based_early_exit_status(pr_labels)
+    if early_exit is not None:
         return {
             "pr_number": pr_number,
             "title": title,
             "branch": branch,
-            "status": "blocked_waiting_user",
-            "summary": "status:waiting-user ラベル付き（ユーザー判断必須・自動マージ対象外）",
+            "status": early_exit["status"],
+            "summary": early_exit["summary"],
             "elapsed_min": 0,
             "ai_reviews_count": 0,
             "ai_inline_count": 0,
@@ -947,6 +980,38 @@ def _run_self_test() -> None:
             "  _is_dependabot_pr('automation/gem-pool-refresh', 'github-actions[bot]', False) = True (expected False)"
         )
 
+    # status:blocked / status:waiting-user のラベル早期終了判定（#746）。gh 非依存の純粋関数。
+    label_exit_cases: list[tuple[set[str], str | None]] = [
+        (set(), None),
+        ({"status:in-progress"}, None),
+        ({"status:waiting-user"}, "blocked_waiting_user"),
+        ({"status:blocked"}, "blocked_circuit_breaker"),
+        # 両方付いている場合は blocked を優先する（A-4 は waiting-user 解除だけでは解除されない）
+        ({"status:blocked", "status:waiting-user"}, "blocked_circuit_breaker"),
+        ({"status:blocked", "sp:3", "type:bug"}, "blocked_circuit_breaker"),
+        # 表記ゆれ・部分一致は誤検知しない（完全一致のみ判定対象）
+        ({"status:blocked-review"}, None),
+        ({"Status:Blocked"}, None),
+    ]
+    for pr_labels_case, expected_status in label_exit_cases:
+        got = _label_based_early_exit_status(pr_labels_case)
+        got_status = got["status"] if got is not None else None
+        if got_status != expected_status:
+            failures.append(
+                f"  _label_based_early_exit_status({pr_labels_case!r}) = {got_status!r} "
+                f"(expected {expected_status!r})"
+            )
+
+    # --actionable-only の除外集合に新設ステータスが含まれていること（main() 側の回帰固定）
+    if "blocked_circuit_breaker" not in ACTIONABLE_EXCLUDED_STATUSES:
+        failures.append(
+            "  ACTIONABLE_EXCLUDED_STATUSES に 'blocked_circuit_breaker' が含まれていない"
+        )
+    if "blocked_waiting_user" not in ACTIONABLE_EXCLUDED_STATUSES:
+        failures.append(
+            "  ACTIONABLE_EXCLUDED_STATUSES に 'blocked_waiting_user' が含まれていない"
+        )
+
     # Layer 1 検証の判定ロジック（base#462）。I/O から分離した純粋関数なので gh 非依存でテストできる。
     verdict_cases: list[tuple[int, int, int]] = [
         (0, 0, 1),   # 両方0件 → LAYER1_MISSING
@@ -971,6 +1036,8 @@ def _run_self_test() -> None:
         + len(dependabot_cases)
         + len(cross_cases)
         + 1
+        + len(label_exit_cases)
+        + 2
     )
     if failures:
         print("FAIL: check_pending_pr_reviews self-test", file=sys.stderr)
@@ -1079,7 +1146,7 @@ def main():
         # --mine: 自セッション所有 PR 以外を除外する（積極的所有判定）
         if args.mine and not is_mine:
             continue
-        if args.actionable_only and result["status"] in ("no_action", "blocked_waiting_user"):
+        if args.actionable_only and result["status"] in ACTIONABLE_EXCLUDED_STATUSES:
             continue
         # 作成セッションが現役で対応中の PR には他セッションが介入しない（CP-4・Issue #3007）。
         # ただし自 PR（is_mine）は所有者本人なので active_session 除外を適用しない
