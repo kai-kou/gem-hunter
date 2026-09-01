@@ -153,7 +153,14 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
         本リポジトリは公開リポジトリで第三者もコメントできるため、判定は `OWNER` / `MEMBER` /
         `COLLABORATOR` のコメントだけを対象にする（`tools/issue_marker_counter.py`）。
         JSON を本文だけの配列へ加工するとこのフィルタが効かない。
-        - `escalate: false` → 記録だけで §2 へ進む（**単発の API エラーで通知しない**）。
+        判定は次の 3 分岐で読む（**`escalate` だけを見ない**・#796）:
+        - `escalate: false` かつ `suppressed: false` → 閾値未到達。記録だけで §2 へ進む
+          （**単発の API エラーで通知しない**）。
+        - `escalate: false` かつ `suppressed: true`（`reason: "already_notified"`）→
+          閾値には到達しているが、**同じ症状で既に通知済みなので再通知しない**。
+          コメントに 1 行だけ「前回通知から状態不変のため再通知を抑制した」と書いて §2 へ進む
+          （毎 firing 同じ内容を鳴らすと A 区分通知全体が無視されるようになる・
+          `user-notification-triage.md` §4）。
         - `escalate: true` → `python3 tools/slack_notify.py` で通知する。
           `mention: true`（= `[prod-drift][経路未構成]` が閾値到達）のときだけ `@mention` する:
           Cloudflare ダッシュボードで Workers Builds を接続し直す以外に復旧手段がなく、
@@ -161,11 +168,21 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
           （`user-notification-triage.md` §3 の必須要件 4 点を満たして書く: 具体的ユーザーアクション /
           該当境界 A-6 / 取らない場合の結果 = main への push が本番に反映され続けない /
           Claude 側の状態）。`mention: false` の判定不能は A 区分ではないので `@mention` しない。
+          🔴 **通知したら、その直後に通知記録コメントを 1 件追記する**（次 firing の抑制判定は
+          このコメントだけを材料にする。書き忘れると同じ通知が繰り返される）。先頭行の書式は
+          **`[prod-drift][通知済み]` の後ろに対象の症状マーカーを併記する**:
+
+          ```
+          [prod-drift][通知済み] [prod-drift][経路未構成] を A-6 として Slack 通知した（ts=...）
+          ```
+
+          症状を併記するのは、通知済みの記録が別症状へ漏れて別の障害を握り潰さないようにするため。
    5-4. 連続回数の閾値は **3 回**（`ESCALATION_THRESHOLD`）。根拠: 本ルーティンの cron 間隔は
         2 時間（`docs/routines/sprint-cycle-routine.md`）なので 3 連続 ≒ 6 時間。一過性の
         Cloudflare API エラーはこの窓を跨いで残らない一方、構成断線は何度 firing しても直らず
         必ず 3 回に到達する。ドリフト解消・再トリガー成功時に 4 が書く進捗コメントは
-        `[prod-drift][解消]` で始め、連続カウントをリセットできるようにする。
+        `[prod-drift][解消]` で始め、連続カウントをリセットできるようにする（同時に
+        `[prod-drift][通知済み]` も無効化されるため、再発したら改めて通知が飛ぶ）。
 6. `trigger_workers_build.py` が存在しない場合（未デプロイ環境等）はスキップし、記録も起票もせず
    §2 へ進む（本ステップは #451 対策の一部であり、存在しない前提で決定木全体を止めない）。
 ```
