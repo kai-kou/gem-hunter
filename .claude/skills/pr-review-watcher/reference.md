@@ -28,7 +28,7 @@
 | Layer 1 | `session-start.sh` が開始時に `check_pending_pr_reviews.py` を自動実行 | 手動再開時（即座） |
 | Layer 2 | hourly スロットのプリフライトで `check_pending_pr_reviews.py` 実行     | 最大 1 時間以内    |
 | Layer 3 | `check_pending_pr_reviews.py` が経過時間・レビュー状態で判定           | 検出後即座         |
-| Layer 4 | `stop-pr-check.sh` が PR 未マージ終了を検知                            | セッション終了時   |
+| Layer 4 | `stop-pr-check.sh` が PR 未マージ終了を検知（同一セッション・同一ブランチで PR の実在を確認済みの間だけ再掲を抑制する。TTL 既定 30 分・`PR_CHECK_CONFIRMATION_TTL_MINUTES` で上書き可） | セッション終了時   |
 
 ---
 

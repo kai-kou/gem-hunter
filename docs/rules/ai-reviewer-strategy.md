@@ -20,7 +20,7 @@
 
 | Layer | 役割 | コスト | ステータス |
 |-------|------|--------|-----------|
-| **Layer 0 機械ゲート** | `self_review_check.py`（`scan_dangerous_patterns.py` 含む）/ `check_cjk_markdown.py` / lint / test | ゼロ | ✅ 全 PR 必須 |
+| **Layer 0 機械ゲート** | `self_review_check.py`（`scan_dangerous_patterns.py` 含む）/ `check_cjk_markdown.py` / `check_markdown_table_columns.py` / lint / test | ゼロ | ✅ 全 PR 必須 |
 | **Layer 1 CCR セルフレビュー（主軸）** | **自前 `code-review` スキル（`.claude/skills/code-review/`・組み込みを置換・自律起動可）を `Skill(code-review)` で必ず実行**。観点別フレッシュ文脈ファインダー（並列サブエージェント）→ 敵対的検証 → 報告の 3 段で、差分を「第三者の PR」として読み直し自己修正盲点 64.5% を回避。**指摘は必ず PR の行単位インラインコメントで記録し、指摘ゼロでも `event="COMMENT"` のレビューを 1 件投稿する**（#461・振り返り可読性の担保。手順は SKILL.md Step 3-A）。対話セッションの `/code-review` 手打ちも同じ自前スキルに解決される | ゼロ（サブスク枠内） | ✅ **全 PR 必須（依頼ではなく自己実行）** |
 | **Layer 2 敵対的多観点議論** | **`discussion-review` スキル（ネイティブ Agent Teams・既定）** + `discussion_specs/code_review.json`（4 観点・敵対 rebuttal）。`tools/discussion_review_trigger.py` が要否判定と実行プラン出力（`--legacy` で旧 claude -p 経路へフォールバック） | ゼロ | ✅ 条件付き必須（diff ≥300行 または `type:security`/`type:breaking-change` ラベル時）|
 | **Layer 3 外部独立レビュー** | `anthropics/claude-code-security-review` Action / `/ultrareview` 等。**Copilot・Gemini は使わない。** 高リスク差分のみ任意で起動（手動・非ブロッキング） | 従量（高リスク時のみ） | ⚪ 任意（高リスク差分のみ・外部 AI レビュアー依頼は除く） |

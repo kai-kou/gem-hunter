@@ -130,7 +130,7 @@ Layer 0+1 通過後 : 即自動マージ（外部レビュアー応答待ちな�
 | 2    | 指摘の分類（修正対象 / スキップ）。CI 失敗・人手コメントの有無を確認                                                                                                                                                                                                                                                                                                                                                         |
 | 3    | 指摘への自動対応（修正コミット or スキップ → スレッド返信 → **Resolve 必須**）                                                                                                                                                                                                                                                                                                                                               |
 | 4    | Layer 0（機械ゲート）+ Layer 1 通過の確認。**`check_pending_pr_reviews.py --verify-layer1 <PR番号>` で Layer 1 投稿済みかを機械検証**（base#462・挙動は reference.md Step 4）。**あわせて `quality-checks.yml` の check run が緑であることを `mcp__github__pull_request_read`（`method="get_check_runs"` / `method="get_status"`）で確認する**（赤ならマージしない。check run が付かない例外は本ファイル冒頭の二層構成の節） |
-| 5    | 自動マージ（squash・外部レビュアー応答待ちなし）                                                                                                                                                                                                                                                                                                                                                                             |
+| 5    | 自動マージ（squash・外部レビュアー応答待ちなし）。🔴 **`SP-n` のスプリント PR では `mcp__github__merge_pull_request` の `commit_message` にも `Closes` / `Fixes` / `Resolves #N` を書かない**（squash コミット本文のクローズキーワードでも Issue は閉じるため・下記 Step 7 の 🔴 参照）                                                                                                                                                                                                                                                                                                                                                                             |
 | 6    | **本番デプロイはゲート判定を経由し、一次経路は Workers Builds の再トリガー**（`tools/trigger_workers_build.py`。`npm run deploy` の直叩きはフォールバック）: スプリント PR（`Sprint Goal:` 行あり）はここでデプロイせず Step 7 の判定へ委譲。非スプリント PR は同スクリプトが内部でゲートを確認し、開いているときだけトリガーする（fail-closed）。詳細は下記                                                                 |
 | 7    | **スプリントレビュー + レトロスペクティブ**（`Sprint Goal:` 行のある PR のみ・完了報告の前に必須実施）。判定が `accepted`（または `accepted_with_conditions` かつ `deploy: yes`）ならデプロイ → 疎通確認 → プレビュー環境の退役（`tools/retire_preview_aliases.py`）まで実行。詳細は下記                                                                                                                                     |
 | 8    | レビュー完了サマリーを **PR スレッドのみ** に記録（サイレント・L-102）                                                                                                                                                                                                                                                                                                                                                       |
@@ -245,6 +245,15 @@ tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部�
 書くとマージ時点で Issue が閉じ、Step 7 が中断したときに **`sprint-cycle-router` Step 3（`status:in-progress`
 かつ open の stale Issue を再開）が拾えなくなる**（= レビューとレトロが黙って永久に実施されない）。
 クローズは本ステップ 5 が行うため、Issue は Step 7 完了まで open + `status:in-progress` のまま残す。
+
+🔴 **同じ規約は「マージコミット本文」にも適用する**（PR 本文だけを見て安心しない）。Step 5 で
+`mcp__github__merge_pull_request` を呼ぶとき、`commit_title` / `commit_message` に
+`Closes` / `Fixes` / `Resolves #N`（および `close` / `fixed` / `resolved` 等の同義形）を **書かない**。
+GitHub は squash マージコミットの本文に含まれるクローズキーワードでも Issue を閉じるため、PR 本文が
+クリーンでもマージコミット側に混入していれば同じ事故が起きる（実例: PR 本文に `Closes` が無いのに
+squash コミット本文に含まれており、Step 7 完了前に対象 Issue がクローズされた）。`commit_message` は
+既定でコミット群の要約が入るため、**ブランチ上のコミットメッセージにクローズキーワードを書かない**
+ことも同じ規約に含まれる（書いてしまった場合は `commit_message` を明示指定して除去する）。
 
 新ラベル（`status:conditionally-accepted` 等）・新 state ファイル・新ディレクトリ規約は作らない。
 記録先は既存の仕組み（Issue コメント / `content/discussions/` / `retrospective` スキルの出力）に限定する。

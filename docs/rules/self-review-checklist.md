@@ -45,6 +45,7 @@
 | ☐ | タスク外ファイルが diff に混入していないか（`git diff origin/main...HEAD --name-only`） | 目視 | `core-principles.md` CP-1（スコープ外の改善は別 Issue を立ててから着手する） |
 | ☐ | リポジトリ名・パス・コマンドの typo（gem-hunter の末尾 i 重複等） | 機械 | 実指摘あり（誤操作リスク） |
 | ☐ | 対象 Issue の Done Criteria（Issue 本文または最初のコミットメッセージのいずれかに記載）を diff が満たしているか（どちらにも未記載なら理由を1行記録してスキップ） | 目視 | self-reviewer SKILL.md Step 1 追加（verification loops 記事の spec validation 縮小採用・#297・#302） |
+| ☐ | **`Sprint Goal:` 行のある PR で `Closes` / `Fixes` / `Resolves #N` を書いていないか**（書くとマージ時点で Issue が閉じ、スプリントレビューとレトロが実施されないまま迷子になる） | **機械**（PR 本文は `self_review_check.py` の `sprint_pr_closes_detection()` が Error でブロック）+ 目視（**マージコミット本文** は機械検査の対象外。`merge_pull_request` の `commit_message` を自分で確認する） | `pr-review-watcher` SKILL.md Step 5 / Step 7（SP-15 事故の再発防止） |
 
 ## 1. 台本・コンテンツ（`content/scripts/` `content/meta/`）
 
@@ -95,6 +96,7 @@
 | ☐ | 既存 SSOT との重複定義を作っていないか（要約を置くなら SSOT 参照を併記） | 目視 | L-095 |
 | ☐ | 配布対象ドキュメント（`docs/rules/` `.claude/skills/`）の新規記述で Issue/PR 番号を **単独の論拠** にしていないか（番号は下流リポジトリでは別 Issue を誤指しする。恒久的に意味が通る説明を本文に書き、番号は出典補足に留める） | 目視 | Issue #211（下流誤リンク） |
 | ☐ | CJK 強調記法の前後半角スペース（`python3 tools/check_cjk_markdown.py --fix --changed` で自動整形） | **機械** | CLAUDE.md 規約（旧「目視」ですり抜け頻発 → 機械化） |
+| ☐ | GFM テーブルの列数不整合・**終端パイプの後ろに書いた内容の取りこぼし**（`python3 tools/check_markdown_table_columns.py --changed`。GitHub は行末パイプより後ろを黙って表示しない） | **機械** | CLAUDE.md 規約（目視では気づけない silent drop の再発防止） |
 
 ## 5. Remotion / TypeScript（`remotion/`）
 

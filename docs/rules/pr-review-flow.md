@@ -110,6 +110,8 @@ PR 説明文に以下のテンプレートを使用することで、Gemini / Co
 Closes #{Issue番号}
 ```
 
+🔴 **`Sprint Goal:` 行を持つ `SP-n` スプリント PR は、この末尾の `Closes #{Issue番号}` を書かない**（本テンプレートの唯一の例外）。書くとマージ時点で Issue が閉じ、スプリントレビューとレトロ（`pr-review-watcher` SKILL.md Step 7）が実施されないまま迷子になる。`self_review_check.py` が Error にして `pre-pr-create-check.sh` が PR 作成をブロックする。同じ規約は **マージコミット本文**（`merge_pull_request` の `commit_message`）にも適用する。
+
 ### 「設計意図・既知の警告」セクションを含めるべきケース
 
 | 変更内容 | 理由 |
@@ -636,7 +638,7 @@ AIレビュー指摘への対応が収束しない場合に備え、以下の上
 ## PR 作成ステップ
 1. セルフレビュー（self-reviewer スキル）実行
 2. PR 作成前競合チェック（同一動画 ID のオープン PR を確認）
-3. PR作成: クラウドは `mcp__github__create_pull_request`（L-114）/ ローカルは `gh pr create`（`--head` / `--base` / `Closes #N` を必ず含める）
+3. PR作成: クラウドは `mcp__github__create_pull_request`（L-114）/ ローカルは `gh pr create`（`--head` / `--base` / `Closes #N` を必ず含める。🔴 `Sprint Goal:` 行を持つスプリント PR だけは `Closes #N` を書かない・上記テンプレートの例外）
 4. 【必須・L-050】PR作成直後に存在確認: クラウドは `mcp__github__list_pull_requests(head="{owner}:{ブランチ}", state="open")` / ローカルは `gh pr list --head {ブランチ名} -R kai-kou/gem-hunter --limit 1 --json number,url,state` → URL を確認してから報告する
 5. `slack_notify.py pr --pr-title "[PR作成] ..."` で PR 作成完了を通知
 6. **Layer 1 セルフレビュー: 自前 `code-review` スキルを `Skill(code-review)` で必ず実行**（`.claude/skills/code-review/` が組み込みを置換・自律起動可・❌ Copilot/Gemini 依頼はしない）
