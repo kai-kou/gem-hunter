@@ -36,4 +36,20 @@ describe('WorkersRateLimit', () => {
     await limiter.consume('hmac-abc123')
     expect(binding.limit).toHaveBeenCalledWith({ key: 'hmac-abc123' })
   })
+
+  it('binding が reject したら例外を伝播せず許可する（fail-open）', async () => {
+    const binding = { limit: vi.fn().mockRejectedValue(new Error('binding unavailable')) }
+    const limiter = new WorkersRateLimit(binding)
+    await expect(limiter.consume('k')).resolves.toEqual({ allowed: true })
+  })
+
+  it('binding が同期 throw しても例外を伝播せず許可する（fail-open）', async () => {
+    const binding = {
+      limit: vi.fn(() => {
+        throw new Error('boom')
+      }),
+    }
+    const limiter = new WorkersRateLimit(binding)
+    await expect(limiter.consume('k')).resolves.toEqual({ allowed: true })
+  })
 })

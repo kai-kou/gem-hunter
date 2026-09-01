@@ -33,7 +33,14 @@ export class WorkersRateLimit implements RateLimitPort {
     if (!this.binding) {
       return { allowed: true }
     }
-    const result = await this.binding.limit({ key })
+    let result: { success: boolean }
+    try {
+      result = await this.binding.limit({ key })
+    } catch {
+      // binding が一時的にエラーを返した場合は「制限なし」を返す（fail-open）。
+      // binding 未提供時のフォールバックと同じ扱いにする（RateLimitPort の契約）。
+      return { allowed: true }
+    }
     if (!result.success) {
       // Cloudflare Rate Limiting binding の limit() は { success } しか返さず、次の窓が開く正確な時刻を
       // 教えてくれない。そのため wrangler.jsonc で宣言した period（＝窓の長さ）を
