@@ -245,8 +245,9 @@ def _changed_python_files() -> list[str]:
     統合済み（旧実装が独自に持っていた 5 箇所目の重複を解消）。`include_untracked=False` は
     旧実装どおり（untracked は見ない）。**挙動変更が 1 点ある**: 旧実装は `r.stdout.split()` で
     パスを分割しており、スペースを含むパスを複数トークンに誤分割するバグを内包していた
-    （他 4 箇所は既に `splitlines()` に統一済み）。`collect_changed_files()` は `splitlines()` を
-    使うため、スペース入りパスも 1 件として正しく扱われるようになる（既存バグの修正）。
+    （他 4 箇所は既に `splitlines()` に統一済み）。`collect_changed_files()` は NUL 区切り
+    （`-z` + `core.quotePath=false`）で分割するため、スペース・改行・非 ASCII 入りパスも
+    1 件として正しく扱われる（既存バグの修正・分割方式は #748 で `splitlines()` から変更）。
     """
     try:
         files = git_diff_utils.collect_changed_files(include_untracked=False)

@@ -71,6 +71,35 @@ def _run_git(
     return r.stdout, r.returncode
 
 
+def _run_git_paths(
+    args: list[str],
+    *,
+    cwd: Path | str | None = None,
+    timeout: int = 20,
+    runner: Runner = subprocess.run,
+) -> tuple[list[str], int]:
+    """パス一覧を返す git サブコマンド専用の実行ヘルパー（Issue #748）。
+
+    既定（`core.quotePath=true`）では非 ASCII パスが `"docs/\\346\\227\\245.md"` の形にクォート
+    ＋8進エスケープされ、改行を含むパスも `"multi\\nline.md"` のようにエスケープされる。
+    `git -c core.quotePath=false ... -z` の組み合わせで両方回避できる（実測で確認済み・#748）:
+      - `core.quotePath=false` だけでは非 ASCII は解けるが、改行・ダブルクォートを含むパスは
+        依然クォート＋エスケープされる（NUL 区切りでない限り改行はレコード境界と衝突するため）。
+      - `-z` を付けて NUL 区切りで受け取ると、`core.quotePath=false` と合わせて改行・ダブルクォート
+        入りパスも生のバイト列のまま 1 レコードとして返る。
+    呼び出し側は `args` に `-z` を含める必要がある（本関数は `-c core.quotePath=false` の注入と
+    NUL 分割だけを担当し、どのサブコマンドで `-z` を使うかは呼び出し側が決める）。
+    """
+    out, rc = _run_git(["git", "-c", "core.quotePath=false", *args], cwd=cwd, timeout=timeout, runner=runner)
+    if rc != 0:
+        return [], rc
+    # NUL 区切り。末尾に区切り文字由来の空要素が付くので取り除く。
+    parts = out.split("\0")
+    if parts and parts[-1] == "":
+        parts = parts[:-1]
+    return parts, rc
+
+
 def default_branch(
     *,
     cwd: Path | str | None = None,
@@ -107,32 +136,41 @@ def collect_changed_files(
       4. untracked（`git ls-files --others --exclude-standard`）
 
     `require_existing=True` のとき、`exists_fn`（既定は `(cwd or '.') / f` の `is_file()`）で
-    実在するファイルのみ残す。パス分割は必ず `splitlines()`（`split()` はスペース入りパスを壊す）。
+    実在するファイルのみ残す。パス分割は `-z`（NUL 区切り）+ `core.quotePath=false` を使う
+    `_run_git_paths()` を通す（非 ASCII パス・改行入りパスの誤分割を避けるため・#748。
+    `splitlines()` / `split()` は使わない）。
     """
     files: list[str] = []
 
     if include_base_range:
         b = base if base is not None else f"origin/{default_branch(cwd=cwd, runner=runner)}"
-        out, rc = _run_git(["git", "diff", "--name-only", f"{b}...HEAD"], cwd=cwd, runner=runner)
+        # `-` で始まる base は git がオプションとして解釈する（argument injection）。
+        # 呼び出し元ごとのガード複製に頼らず、共有モジュール側で一元的に拒否する
+        # （従来は count_change_scatter.py だけが自前で拒否していた・PR #761 Layer 1 レビュー）。
+        if b.startswith("-"):
+            raise ValueError(
+                f"base に - で始まる値は使えません（git のオプションとして解釈されるため）: {b!r}"
+            )
+        paths, rc = _run_git_paths(["diff", "--name-only", "-z", f"{b}...HEAD"], cwd=cwd, runner=runner)
         if rc == 0:
-            files += out.splitlines()
+            files += paths
 
     if include_worktree:
-        out, rc = _run_git(["git", "diff", "--name-only"], cwd=cwd, runner=runner)
+        paths, rc = _run_git_paths(["diff", "--name-only", "-z"], cwd=cwd, runner=runner)
         if rc == 0:
-            files += out.splitlines()
+            files += paths
 
     if include_cached:
-        out, rc = _run_git(["git", "diff", "--cached", "--name-only"], cwd=cwd, runner=runner)
+        paths, rc = _run_git_paths(["diff", "--cached", "--name-only", "-z"], cwd=cwd, runner=runner)
         if rc == 0:
-            files += out.splitlines()
+            files += paths
 
     if include_untracked:
-        out, rc = _run_git(
-            ["git", "ls-files", "--others", "--exclude-standard"], cwd=cwd, runner=runner
+        paths, rc = _run_git_paths(
+            ["ls-files", "--others", "--exclude-standard", "-z"], cwd=cwd, runner=runner
         )
         if rc == 0:
-            files += out.splitlines()
+            files += paths
 
     if exists_fn is None:
         base_dir = Path(cwd) if cwd else Path(".")
@@ -212,6 +250,23 @@ def _make_fake_runner(
     return runner
 
 
+def _k_base_range(base_range: str) -> tuple[str, ...]:
+    """base range 取得コマンドのキー（`_run_git_paths` が組み立てる実引数と一致させる）。"""
+    return ("git", "-c", "core.quotePath=false", "diff", "--name-only", "-z", base_range)
+
+
+def _k_worktree() -> tuple[str, ...]:
+    return ("git", "-c", "core.quotePath=false", "diff", "--name-only", "-z")
+
+
+def _k_cached() -> tuple[str, ...]:
+    return ("git", "-c", "core.quotePath=false", "diff", "--cached", "--name-only", "-z")
+
+
+def _k_untracked() -> tuple[str, ...]:
+    return ("git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard", "-z")
+
+
 def _self_test_default_branch() -> list[str]:
     failures: list[str] = []
 
@@ -237,10 +292,10 @@ def _self_test_collect_changed_files_sources() -> list[str]:
 
     responses = {
         ("git", "symbolic-ref", "refs/remotes/origin/HEAD"): "refs/remotes/origin/main\n",
-        ("git", "diff", "--name-only", "origin/main...HEAD"): "a.py\nb.py\n",
-        ("git", "diff", "--name-only"): "b.py\nc.py\n",  # b.py は base range と重複
-        ("git", "diff", "--cached", "--name-only"): "d.py\n",
-        ("git", "ls-files", "--others", "--exclude-standard"): "e.py\n",
+        _k_base_range("origin/main...HEAD"): "a.py\0b.py\0",
+        _k_worktree(): "b.py\0c.py\0",  # b.py は base range と重複
+        _k_cached(): "d.py\0",
+        _k_untracked(): "e.py\0",
     }
     runner = _make_fake_runner(responses)
 
@@ -297,10 +352,10 @@ def _self_test_collect_changed_files_require_existing() -> list[str]:
     failures: list[str] = []
     responses = {
         ("git", "symbolic-ref", "refs/remotes/origin/HEAD"): "",  # フォールバックで main を使う
-        ("git", "diff", "--name-only", "origin/main...HEAD"): "exists.py\nghost.py\n",
-        ("git", "diff", "--name-only"): "",
-        ("git", "diff", "--cached", "--name-only"): "",
-        ("git", "ls-files", "--others", "--exclude-standard"): "",
+        _k_base_range("origin/main...HEAD"): "exists.py\0ghost.py\0",
+        _k_worktree(): "",
+        _k_cached(): "",
+        _k_untracked(): "",
     }
     runner = _make_fake_runner(responses)
 
@@ -322,10 +377,10 @@ def _self_test_collect_changed_files_require_existing() -> list[str]:
 def _self_test_collect_changed_files_sort_and_base_override() -> list[str]:
     failures: list[str] = []
     responses = {
-        ("git", "diff", "--name-only", "custom-base...HEAD"): "z.py\na.py\n",
-        ("git", "diff", "--name-only"): "",
-        ("git", "diff", "--cached", "--name-only"): "",
-        ("git", "ls-files", "--others", "--exclude-standard"): "",
+        _k_base_range("custom-base...HEAD"): "z.py\0a.py\0",
+        _k_worktree(): "",
+        _k_cached(): "",
+        _k_untracked(): "",
     }
     runner = _make_fake_runner(responses)
 
@@ -356,36 +411,141 @@ def _self_test_collect_changed_files_sort_and_base_override() -> list[str]:
 
 
 def _self_test_collect_changed_files_blank_lines() -> list[str]:
-    """空行・空白のみの行を混入させない（splitlines() の境界）。"""
+    """空要素（連続 NUL・末尾 NUL 由来）を混入させない。"""
     failures: list[str] = []
     responses = {
         ("git", "symbolic-ref", "refs/remotes/origin/HEAD"): "refs/remotes/origin/main\n",
-        ("git", "diff", "--name-only", "origin/main...HEAD"): "a.py\n\n  \nb.py\n",
-        ("git", "diff", "--name-only"): "",
-        ("git", "diff", "--cached", "--name-only"): "",
-        ("git", "ls-files", "--others", "--exclude-standard"): "",
+        _k_base_range("origin/main...HEAD"): "a.py\0\0b.py\0",
+        _k_worktree(): "",
+        _k_cached(): "",
+        _k_untracked(): "",
     }
     runner = _make_fake_runner(responses)
     got = collect_changed_files(require_existing=False, runner=runner)
     if got != ["a.py", "b.py"]:
-        failures.append(f"空行・空白行を除外: got={got!r}")
+        failures.append(f"空要素を除外: got={got!r}")
     return failures
 
 
 def _self_test_collect_changed_files_space_in_path() -> list[str]:
-    """スペースを含むパスを `split()` ではなく `splitlines()` で 1 件として扱うこと。"""
+    """スペースを含むパスを 1 件として扱うこと（NUL 区切りなので空白では分割されない）。"""
     failures: list[str] = []
     responses = {
         ("git", "symbolic-ref", "refs/remotes/origin/HEAD"): "refs/remotes/origin/main\n",
-        ("git", "diff", "--name-only", "origin/main...HEAD"): "docs/my report.md\nb.py\n",
-        ("git", "diff", "--name-only"): "",
-        ("git", "diff", "--cached", "--name-only"): "",
-        ("git", "ls-files", "--others", "--exclude-standard"): "",
+        _k_base_range("origin/main...HEAD"): "docs/my report.md\0b.py\0",
+        _k_worktree(): "",
+        _k_cached(): "",
+        _k_untracked(): "",
     }
     runner = _make_fake_runner(responses)
     got = collect_changed_files(require_existing=False, runner=runner)
     if got != ["docs/my report.md", "b.py"]:
         failures.append(f"スペース入りパスを 1 件として保持: got={got!r}")
+    return failures
+
+
+def _self_test_collect_changed_files_non_ascii_and_newline_path() -> list[str]:
+    """非 ASCII パス・改行入りパス・ダブルクォート入りパスを 1 件のまま正しく扱う（Issue #748 本体）。
+
+    `core.quotePath=true`（git 既定）だと非 ASCII パスは `"docs/\\346\\227\\245.md"` の形で
+    クォート＋8進エスケープされ、改行・ダブルクォート入りパスも同様にエスケープされる
+    （実測で確認済み・本ファイル冒頭のモジュール docstring 相当の検証）。ここでは
+    `_run_git_paths()`（`-c core.quotePath=false` + `-z` 区切り）を経由した後の「素のパスが
+    NUL 区切りでそのまま渡ってくる」状態を模して、呼び出し側が正しく 1 パスとして復元できるかを見る。
+    """
+    failures: list[str] = []
+    non_ascii = "docs/rules/日.md"
+    with_newline = "multi\nline.md"
+    with_quote = 'quo"te.md'
+    responses = {
+        ("git", "symbolic-ref", "refs/remotes/origin/HEAD"): "refs/remotes/origin/main\n",
+        _k_base_range("origin/main...HEAD"): f"{non_ascii}\0{with_newline}\0{with_quote}\0",
+        _k_worktree(): "",
+        _k_cached(): "",
+        _k_untracked(): "",
+    }
+    runner = _make_fake_runner(responses)
+    got = collect_changed_files(require_existing=False, runner=runner)
+    if got != [non_ascii, with_newline, with_quote]:
+        failures.append(
+            f"非 ASCII / 改行 / ダブルクォート入りパスを 1 件ずつ保持: got={got!r}"
+        )
+    return failures
+
+
+def _self_test_collect_changed_files_rejects_option_like_base() -> list[str]:
+    """`-` で始まる base を拒否すること（argument injection の一元ガード・PR #761 レビュー）。
+
+    許容側（拒否してはいけない値）も同じテストで固定する。`-` を **含む** だけのブランチ名
+    （`feature-x`・`origin/release-1.2`）や、`-` で始まらない通常の ref は通す。
+    """
+    failures: list[str] = []
+    responses = {
+        _k_base_range("--output=/tmp/pwned...HEAD"): "",
+        _k_base_range("origin/release-1.2...HEAD"): "a.py\0",
+        _k_worktree(): "",
+        _k_cached(): "",
+        _k_untracked(): "",
+    }
+    for bad in ("--output=/tmp/pwned", "-x", "--upload-pack=touch /tmp/x"):
+        runner = _make_fake_runner(responses)
+        try:
+            collect_changed_files(require_existing=False, base=bad, runner=runner)
+        except ValueError:
+            pass
+        else:
+            failures.append(f"オプション様の base を拒否していない: base={bad!r}")
+
+    runner = _make_fake_runner(responses)
+    try:
+        got = collect_changed_files(require_existing=False, base="origin/release-1.2", runner=runner)
+    except ValueError as exc:
+        failures.append(f"`-` を含むだけの正常な base を誤って拒否した: {exc}")
+    else:
+        if got != ["a.py"]:
+            failures.append(f"`-` を含むだけの正常な base の収集結果: got={got!r}")
+    return failures
+
+
+def _self_test_run_git_paths_quotepath_and_z_injected() -> list[str]:
+    """`_run_git_paths()` が `-c core.quotePath=false` を注入し、NUL 分割・末尾空要素除去をすること。
+
+    変異テスト対象（`-c core.quotePath=false` の注入を外す・`-z` split を `splitlines()` に
+    戻す等）に対する直接の回帰検知。呼び出しコマンドを記録する fake runner で検証する。
+    """
+    failures: list[str] = []
+    calls: list[list[str]] = []
+
+    def recording_runner(args, **kwargs):
+        calls.append(list(args))
+        return _FakeResult(stdout="a.py\0b.py\0", returncode=0)
+
+    got, rc = _run_git_paths(["diff", "--name-only", "-z"], runner=recording_runner)
+    if rc != 0:
+        failures.append(f"正常系の returncode は 0: got={rc}")
+    if got != ["a.py", "b.py"]:
+        failures.append(f"NUL 分割・末尾空要素除去: got={got!r}")
+    if len(calls) != 1 or "-c" not in calls[0] or "core.quotePath=false" not in calls[0]:
+        failures.append(f"-c core.quotePath=false が注入されていない: got={calls!r}")
+    if calls and calls[0][0] != "git":
+        failures.append(f"先頭は 'git' であるべき: got={calls[0]!r}")
+
+    # 空出力（変更なし）でも例外なく空リストを返す
+    def empty_runner(args, **kwargs):
+        return _FakeResult(stdout="", returncode=0)
+
+    got_empty, rc_empty = _run_git_paths(["diff", "--name-only", "-z"], runner=empty_runner)
+    if got_empty != [] or rc_empty != 0:
+        failures.append(f"空出力は空リスト・rc=0: got=({got_empty!r}, {rc_empty})")
+
+    # git 失敗時は空リスト・非ゼロ rc を返す（例外は投げない）
+    fail_runner = _make_fake_runner(
+        {}, fail_cmds=frozenset({("git", "-c", "core.quotePath=false", "diff", "--name-only", "-z")})
+    )
+    got_fail, rc_fail = _run_git_paths(["diff", "--name-only", "-z"], runner=fail_runner)
+    if rc_fail == 0 or got_fail != []:
+        failures.append(f"git 失敗時は空リスト・rc!=0: got=({got_fail!r}, {rc_fail})")
+
     return failures
 
 
@@ -408,10 +568,10 @@ def _self_test_collect_changed_files_real_filesystem_exists() -> list[str]:
 
         responses = {
             ("git", "symbolic-ref", "refs/remotes/origin/HEAD"): "",  # フォールバックで main
-            ("git", "diff", "--name-only", "origin/main...HEAD"): "exists.py\nghost.py\n",
-            ("git", "diff", "--name-only"): "",
-            ("git", "diff", "--cached", "--name-only"): "",
-            ("git", "ls-files", "--others", "--exclude-standard"): "",
+            _k_base_range("origin/main...HEAD"): "exists.py\0ghost.py\0",
+            _k_worktree(): "",
+            _k_cached(): "",
+            _k_untracked(): "",
         }
         runner = _make_fake_runner(responses)
 
@@ -500,6 +660,18 @@ def run_self_test() -> int:
         ("collect_changed_files sort/base override", _self_test_collect_changed_files_sort_and_base_override),
         ("collect_changed_files 空行除外", _self_test_collect_changed_files_blank_lines),
         ("collect_changed_files スペース入りパス", _self_test_collect_changed_files_space_in_path),
+        (
+            "collect_changed_files 非ASCII/改行/ダブルクォート入りパス",
+            _self_test_collect_changed_files_non_ascii_and_newline_path,
+        ),
+        (
+            "collect_changed_files オプション様 base の拒否",
+            _self_test_collect_changed_files_rejects_option_like_base,
+        ),
+        (
+            "_run_git_paths core.quotePath 注入・NUL分割",
+            _self_test_run_git_paths_quotepath_and_z_injected,
+        ),
         ("_run_git cwd/timeout 転送", _self_test_run_git_cwd_and_timeout_forwarded),
         ("run_git_or_raise", _self_test_run_git_or_raise),
     ]
