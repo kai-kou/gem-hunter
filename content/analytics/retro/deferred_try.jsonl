@@ -92,3 +92,10 @@
 {"date": "2026-09-01 JST", "title": "待機ターンで Stop フックの PR 存在確認警告を繰り返さない", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 478}
 {"date": "2026-09-01 JST", "title": "Step 0.0 の API チャネル判定結果をセッション内で再利用する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "SKILL.md が書いた除外条件と実装の除外集合の一貫性を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "check_app_thinness.py の allowlist ラチェットを固定値から相対制限（増分許容）へ転換する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "target=\"_blank\" と sr-only 告知の対応を機械検査する（check_a11y_external_links.py 新設）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 320}
+{"date": "2026-09-01 JST", "title": "README 本文の動的リンク（readme-html.ts）への §7.4a 適用可否を決めて記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "本番デプロイ chain（deploy_gate → trigger → wrangler）の判定を統一し早期チェック化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-01 JST", "title": "Layer 1 code-review の completeness/consistency を機械検査ゲート化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 753}
+{"date": "2026-09-01 JST", "title": "修正前の failing テスト状態を PR 本文に 3 段階（失敗 → 実装 → 緑）で記録する習慣を明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 698}
+{"date": "2026-09-01 JST", "title": "self-test を新設・改修したのに実行記録が PR 本文に無い場合を self_review_check.py で警告する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
