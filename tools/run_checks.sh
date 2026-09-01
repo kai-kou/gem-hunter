@@ -651,6 +651,15 @@ else
   skip_check "棚卸し判定規則 self-test (triage_improvements.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Layer 2 議論型レビューの起動判定 self-test（Issue #196）。gh 不在のクラウド環境でも
+# 起動できること（FileNotFoundError を握り潰し git remote へフォールバックすること）を含めて
+# 固定する。本判定（--pr 実行）は GitHub API に依存するので配線しない。
+if [ -f "$REPO_ROOT/tools/discussion_review_trigger.py" ]; then
+  run_check "Layer 2 起動判定 self-test (discussion_review_trigger.py --self-test)" python3 tools/discussion_review_trigger.py --self-test
+else
+  skip_check "Layer 2 起動判定 self-test (discussion_review_trigger.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # WIP 自動コミット抑止ガードの回帰テスト（Issue #304 / L-131）。
 # 隔離した一時 git リポジトリでフックを実行し、変異テスト中の一時改変が拾われないこと・
 # マーカーが無ければ従来どおり保全されること・置き忘れが TTL で失効することを実測する。

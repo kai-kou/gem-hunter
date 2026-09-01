@@ -111,9 +111,7 @@ describe('AttributionNotice', () => {
       />,
     )
 
-    expect(
-      screen.getByRole('link', { name: `CC BY-SA 4.0${enOpensInNewTab}` }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: `CC BY-SA 4.0${enOpensInNewTab}` })).toBeInTheDocument()
   })
 
   /**
@@ -159,9 +157,10 @@ describe('AttributionNotice', () => {
     )
 
     expect(screen.getByRole('link', { name: 'Ecosyste.ms' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: 'CC BY-SA 4.0(opens in a new tab)' }),
-    ).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
+    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0(opens in a new tab)' })).toHaveAttribute(
+      'href',
+      'https://creativecommons.org/licenses/by-sa/4.0/',
+    )
     expect(screen.getByText(/Order is recomputed/)).toBeInTheDocument()
   })
 
