@@ -26,6 +26,18 @@ if [ "$TOOL_NAME" = "mcp__github__create_pull_request" ]; then
   exit $?
 fi
 
+# Cloudflare MCP ツールのアローリスト化（Issue #56）
+# `permissions.allow` / `deny` はツール名の列挙にすぎず、Cloudflare MCP サーバーに
+# 新しいツールが増えると allow にも deny にも無いまま確認プロンプトなしで素通りする。
+# 許可集合の正本（SSOT）は docs/03_design/infrastructure/cloudflare-infrastructure.md §7.4。
+# 判定ロジックの実体は pre-cloudflare-mcp-allowlist-check.sh（正本を複製しない・fail-closed）。
+case "$TOOL_NAME" in
+  mcp__Cloudflare_Developer_Platform__*)
+    "$HOOK_DIR/pre-cloudflare-mcp-allowlist-check.sh" "$TOOL_NAME"
+    exit $?
+    ;;
+esac
+
 # コマンド文字列を抽出（JSON の tool_input.command フィールド）
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
