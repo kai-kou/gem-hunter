@@ -109,6 +109,30 @@ GitHub API アクセス付きでセッションに attach されていないこ�
 - ❌ **`code-scanning/*` は 403 のまま**。プロキシではなく **GitHub App トークンの権限不足**（`Resource not accessible by integration`）なので、直叩きでもシムでも解決しない。
 - **使う前に必ずその場で計測する**（暗記しない）: `curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/{o}/{r}/...`
 
+### 1.2 再検証（2026-09-01・Issue #789）— repo スコープ REST 直叩きが引き続き 200
+
+🔴 上記 §1.1（2026-08-31）に続き、**2026-09-01 23:14 JST 時点でも repo スコープ REST 直叩きは 403 に戻っていない**。
+`sprint-cycle-router` firing 中に実測した結果は次のとおり（`urllib` + `GH_TOKEN` ヘッダ）。
+
+| 直叩きしたパス | 2026-09-01 実測 |
+|---|---|
+| `GET /repos/{o}/{r}/pulls?state=open&per_page=5` | ✅ **200**（1 件） |
+| `GET /repos/{o}/{r}/pulls/735/reviews?per_page=5` | ✅ **200**（5 件） |
+| `GET /repos/{o}/{r}/issues?state=open&per_page=1` | ✅ **200**（1 件） |
+| `GET /repos/{o}/{r}/commits/main/check-runs` | ✅ **200** |
+
+**読み方は §1.1 と同じ**（🔴 恒久前提にしない・毎回その場で計測する）。ここでは 2 点だけ追記する。
+
+- **実装例として参照できるスクリプト**: このリポジトリでは既に `tools/check_deploy_gate.py` が
+  「gh → 失敗したら `urllib` + `GH_TOKEN`/`GITHUB_TOKEN` で REST 直叩き」の第 2 層フォールバックを実装済み
+  （トークンはサブプロセス引数に載せず Python プロセス内で `Authorization` ヘッダに直接載せる設計）。
+  `tools/check_pending_pr_reviews.py` も同じ第 2 層を実装済み（Issue #789）。**新しく gh 依存スクリプトへ
+  REST フォールバックを足すときは、この 2 本を実装の型として参照する**（urllib の使い方・失敗時の
+  シグナリング・token をログに出さない配慮など）。
+- **Issue #531 との関係**: 「直叩きは通常 403 でフォールバックにならない」という §0〜§1 の記述と、
+  §1.1・本節の実測結果が食い違う件は Issue #531（open）で追跡中。本節は実測の追記であり、
+  #531 のクローズ判断はしない（是正の要否・範囲は Issue 側で判断する）。
+
 ## 1.5 gh シム（`tools/gh_shim.py`・Issue #254）— ローカル互換 + MCP 誘導シグナル
 
 **クラウドの gh 403 を「事前変換 + 事後ガイダンス」で排除する PATH ラッパー**。SessionStart フック
@@ -338,6 +362,10 @@ git push -u origin <branch>                                           # ✅（pu
 **この層はクラウドで GitHub API に到達する手段を持たない**（実 gh は不在、repo スコープ REST は 403・
 2026-07-26 実測）。この層の設計は **「取りに行く」ではなく「取れなかったことを正確に伝える」** が正解であり、
 以下の失敗シグナリング原則が実際の一次動作になる（呼び出し元の Claude が MCP で引き取る）。
+
+> §1.1（2026-08-31）・§1.2（2026-09-01）のとおり repo スコープ REST が 200 を返す期間があり、
+> `check_pending_pr_reviews.py`（#789）はこれを内蔵の第 2 層として使う。ただし恒久前提にはできないため、
+> **両層とも失敗した場合（exit 3 / `GH_UNAVAILABLE`）に限り** 本節の代替フローへ進む。
 
 - 取得系（read）: スクリプトが `gh` で失敗（403/非 0）したら、メインセッションの `mcp__github__*` ツールで直接操作する。
 - GraphQL 系: **urllib で `api.github.com/graphql` を直叩きしない**（同一プロキシで 403）。MCP の等価ツールへ置換する。
