@@ -121,3 +121,11 @@
 {"date": "2026-09-01 JST", "title": "session-start.sh で gh 不在を事前検出し、MCP を最初から優先経路にする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "prod_drift_escalation の連続回数閾値が cron 間隔前提の固定値で、SKILL.md とルーティン設定に分散している", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-01 JST", "title": "self-improvement-loop 消化モードの「done と判定する条件」を SKILL.md に明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "self-test のエントリポイント到達性を関数単位で機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 770}
+{"date": "2026-09-02 JST", "title": "同一ファイル内で実測日時つき記述と日時なしの断定が矛盾していないか機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 396}
+{"date": "2026-09-02 JST", "title": "background サブエージェント稼働中は Stop フックの WIP 自動コミットを自動抑制する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-02 JST", "title": "run_checks 証跡ゲートを二層化し、サブエージェント待機中でも PR を先行作成できるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "github-mcp-fallback-patterns.md を不変の層構成と実測マトリクスの 2 ファイルに分離する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "prod_drift_escalation.py の consecutive 判定に代替 build trigger の存在確認を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "サブエージェント待機ターンの Stop 出力を進捗報告へ切り替える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "classifier が Authorization ヘッダつき curl をブロックする件と urllib 迂回を記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
