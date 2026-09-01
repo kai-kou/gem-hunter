@@ -14,10 +14,11 @@ set -euo pipefail
 # 一律ゲートし、許可集合に無いツールを exit code 2 でブロックする。
 #
 # 【許可集合の正本（SSOT）】
-# docs/03_design/infrastructure/cloudflare-infrastructure.md §7.4 の表（「読み取り（許可）」行の
-# バッククォート区切りツール名）から機械的に読み取る。本スクリプトは正本を複製しない。
-# 表を解釈できない場合（ファイル不在・行が見つからない・書式変更等）は **fail-closed**
-# （全 Cloudflare MCP ツールをブロック）にする。
+# docs/03_design/infrastructure/cloudflare-infrastructure.md §7.4 の表（「読み取り（許可）」行に
+# 行アンカー＋ヘッダ列の動的解決で特定した「ツール」列のバッククォート区切りツール名）から
+# 機械的に読み取る。本スクリプトは正本を複製しない。
+# 表を解釈できない場合（ファイル不在・該当行が見つからない/曖昧・列を解決できない・
+# 書式変更等）は **fail-closed**（全 Cloudflare MCP ツールをブロック）にする。
 #
 # 使い方: bash .claude/hooks/pre-cloudflare-mcp-allowlist-check.sh <tool_name>
 # self-test: bash .claude/hooks/pre-cloudflare-mcp-allowlist-check.sh --self-test
@@ -29,41 +30,90 @@ source "$HOOK_DIR/lib/hook_block.sh"
 
 TOOL_PREFIX="mcp__Cloudflare_Developer_Platform__"
 
-# SSOT ドキュメントのパス（self-test 時は固定パスの代わりにフィクスチャへ差し替え可能にする
-# ため環境変数で上書きできるようにする。通常運用では常に既定値を使う）。
-CF_MCP_DOC_PATH="${CF_MCP_ALLOWLIST_DOC_PATH:-$REPO_ROOT/docs/03_design/infrastructure/cloudflare-infrastructure.md}"
+# SSOT ドキュメントのパス（固定・上書き不可）。
+# 🔴 WARNING 3（Layer 1 セルフレビュー指摘）: 以前は `CF_MCP_ALLOWLIST_DOC_PATH` 環境変数で
+# 本番実行でも無条件に上書きできる設計だった（`.claude/settings.json` の `env` に 1 行足す
+# だけで許可集合の正本を任意ファイルへ差し替え可能になる、実効的なセキュリティホール）。
+# self-test 側は元々 `classify_cloudflare_mcp_tool` にフィクスチャの doc パスを**引数として
+# 直接渡す**設計になっており、この環境変数は self-test からも参照されていなかった
+# （used-nowhere の攻撃面だけが存在していた）。よって環境変数オーバーライド自体を廃止し、
+# 常にリポジトリ内の固定パスだけを見る。
+CF_MCP_DOC_PATH="$REPO_ROOT/docs/03_design/infrastructure/cloudflare-infrastructure.md"
 
-# ドキュメントの §7.4 表から「読み取り（許可）」行の**ツール名列（第2列）だけ**から
-# バッククォート区切りツール名を抽出する。抽出できたら
-# "search_cloudflare_documentation workers_list ..." のように空白区切りで返す。
-# 抽出できない（ファイル不在・行が見つからない・バッククォートが 1 個も無い等）場合は
-# 何も出力せず、呼び出し側が fail-closed 判定する。
+# ドキュメントの §7.4 表から「読み取り（許可）」行のツール名セルだけを取り出す。
+# 見つかれば 1 行のテキスト（バッククォート区切りのツール名を含むセル本文）を返す。
+# 見つからない・曖昧・列を解決できない場合は何も出力しない（呼び出し側が fail-closed 判定）。
 #
-# 🔴 fail-open 対策（コーディネーター指摘・回帰防止）: 当初は行全体（3列）から
-# バッククォート語を拾っており、第1列（区分）・第3列（可否・注記）に将来
-# `` `wrangler` `` のような英数字のみのバッククォート語が混入すると、それが
-# **許可ツール名として黙って許可集合に加わる**（セキュリティゲートの fail-open）。
-# 実際に §7.4 の第3列には既に `` `CP-2` `` が入っており、ハイフンを含むため
-# 偶然 `[A-Za-z0-9_]+` に当たらずセーフだっただけで、英数字のみの語が入れば
-# 即座に穴になる状態だった。対策として `cut -d'|' -f3` で**第2列のセルのみ**を
-# 取り出してから抽出する（Markdown 表の行は先頭が `|` のため、`|` 区切りの
-# フィールド番号は 1: 空文字（行頭より前）/ 2: 第1列（区分）/ 3: 第2列（ツール名）/
-# 4: 第3列（可否）/ 5: 空文字（行末より後）となり、目的の列は `-f3`）。
-_cf_mcp_extract_allowed_short_names() {
-  local doc="$1" line col2
+# 🔴 CRITICAL 1 対策（Layer 1 セルフレビュー指摘・行アンカー）: 以前は `grep -F` で文書全体から
+# 「読み取り（許可）」という**文字列を含む行**を拾っており、表の行かどうかを見ていなかった。
+# ① 同じ文言を含む散文が表より前に来ると、その散文行がヒットして `cut` が空を返し
+# 全 Cloudflare MCP ツールが原因不明のまま fail-closed で全面ブロックされる
+# ② その散文に英数字のみのバッククォート語（`` `d1_database_get` `` 等）があると、
+# それが許可ツール名として許可集合に混入する fail-open のどちらも起こりうる
+# （しかも本ドキュメント自身がこの節でその文言・バッククォート語を含んでいるため、
+# 表が散文より後に来る書き方に変わった瞬間に発火しうる）。
+# 対策: 行頭が `|` で区分セルが「読み取り（許可）」に**完全一致**する行だけを候補にする
+# （`grep -E '^\| *読み取り（許可） *\|'`）。散文はどこにあっても行頭が `|` でないため
+# 候補に入らない。さらに候補が 0 件でも 2 件以上（曖昧）でも fail-closed にする
+# （複数ヒットのときどちらが正か決め打ちしない）。
+#
+# 🔴 CRITICAL 2 対策（Layer 1 セルフレビュー指摘・列位置の動的解決）: 以前は
+# `cut -d'|' -f3`（決め打ちの第3フィールド）でツール名列を取っており、表に列が
+# 1 つ増減・並び替えされると別の列（例: 区分と可否の間に列が増えるとツール名の
+# はずが破壊的操作の列を拾う）を許可集合として読み込んでしまう最悪の組み合わせに
+# なりうった。対策: ヘッダ行（同じ表の連続ブロック内で、セルが「ツール」に完全一致する
+# 行）から列番号を動的に解決し、その列番号をデータ行に適用する。表の外（先頭が `|`
+# でない行）に出たらヘッダ追跡をリセットし、無関係な別テーブルのヘッダを誤って
+# 引き継がない。ヘッダが見つからない（= 列番号を解決できない）場合も fail-closed にする。
+# 🔵 設計選択（コーディネーターが提示した二択のうち採用した方）: 「区分セルの次のセル」
+# ではなく「ヘッダの列名解決」を選んだ。理由: 上記の実測攻撃フィクスチャ（区分列とツール列の
+# 間に新しい列が挿入されるケース）は「次のセル」方式では防げない（挿入された列が
+# そのまま「次のセル」になってしまう）ため、列の意味（ヘッダ名）で解決する方式でなければ
+# この攻撃を防げない。制約として「区分」列は表の先頭列のままであることを前提にする
+# （区分列自体の位置がずれるケースは対象外・現行表の構造と一致）。
+_cf_mcp_extract_tool_cell() {
+  local doc="$1" anchor_lines anchor_count
   [ -f "$doc" ] || return 0
 
-  # 「読み取り（許可）」を含む表の行を 1 行取る（複数マッチしても最初の 1 行のみ使う。
-  # 表は §7.4 に 1 行しか無い前提だが、複数あっても最初の行を正とすることで挙動を決定的にする）
-  line=$(grep -m1 -F '読み取り（許可）' "$doc" || true)
-  [ -n "$line" ] || return 0
+  # 行アンカー: 行頭 `|` + 区分セルが「読み取り（許可）」に完全一致する行のみを候補にする
+  anchor_lines=$(grep -E '^\| *読み取り（許可） *\|' "$doc" || true)
+  [ -n "$anchor_lines" ] || return 0
 
-  # `|` 区切りの第3フィールド（= 表の第2列 = ツール名列）だけを取り出す
-  col2=$(printf '%s\n' "$line" | cut -d'|' -f3)
+  anchor_count=$(printf '%s\n' "$anchor_lines" | grep -c '.' || true)
+  if [ "$anchor_count" -ne 1 ]; then
+    # 曖昧（同じ表行文言が複数箇所にある）。どちらが正か決め打ちしない → fail-closed
+    return 0
+  fi
+
+  # ヘッダ行から「ツール」列の位置を動的解決し、同じ表ブロック内のデータ行（区分セルが
+  # 「読み取り（許可）」に完全一致する行）のその列を出力する。表の外に出たらリセットする。
+  awk -F'|' '
+    {
+      if ($0 !~ /^\|/) { header_idx = 0; next }
+      for (i = 1; i <= NF; i++) {
+        cell = $i
+        gsub(/^[ \t]+|[ \t]+$/, "", cell)
+        if (cell == "ツール") { header_idx = i }
+      }
+      cell1 = $2
+      gsub(/^[ \t]+|[ \t]+$/, "", cell1)
+      if (cell1 == "読み取り（許可）") {
+        if (header_idx > 0) { print $(header_idx) }
+        exit
+      }
+    }
+  ' "$doc"
+}
+
+# `_cf_mcp_extract_tool_cell` が返したセル本文からバッククォート区切りツール名を抜き出す。
+# 抽出できたら "search_cloudflare_documentation workers_list ..." のように空白区切りで返す。
+# 抽出できない場合は何も出力せず、呼び出し側が fail-closed 判定する。
+_cf_mcp_extract_allowed_short_names() {
+  local doc="$1" col2
+  col2=$(_cf_mcp_extract_tool_cell "$doc")
   [ -n "$col2" ] || return 0
 
   # バッククォートで囲まれたトークンを全て抜き出す（例: `search_cloudflare_documentation`）
-  # grep -oE で `...` にマッチさせ、sed でバッククォート自体を剥がす
   printf '%s\n' "$col2" \
     | grep -oE '`[A-Za-z0-9_]+`' \
     | sed -E 's/`//g'
@@ -109,8 +159,11 @@ EOF
 }
 
 # 許可集合（空白区切り）を「`a` / `b` / `c`」形式の人間向け文字列に整形する。
-# 空なら「（取得できませんでした）」を返す（本来 block:doc-unparseable 経路で使うことは
-# ないが、防御的にメッセージが空になることを避ける）。
+# ⚪ NIT（Layer 1 セルフレビュー指摘）: 空文字列分岐（「（取得できませんでした）」）は、
+# 現在の呼び出し経路（block:not-in-allowlist ケースのみで呼ばれる。抽出が失敗していれば
+# その前に block:doc-unparseable に分岐して本関数へは到達しない）からは**到達不能**。
+# 純粋関数として「空を渡されても壊れない」防御的な分岐として意図的に残す（削除より
+# 安全側に倒す。呼び出し経路が将来変わってもメッセージが空文字列になる事故を防ぐ）。
 _cf_mcp_format_allowed_list() {
   local short_names="$1" short formatted=""
   [ -n "$short_names" ] || { echo "（取得できませんでした）"; return; }
@@ -247,25 +300,45 @@ run_self_test() {
   check "行はあるがバッククォート無し → fail-closed でブロック（表の書式が崩れた場合）" \
     "${TOOL_PREFIX}workers_list" "$no_backtick_doc" "block:doc-unparseable"
 
-  echo "== fail-open 回帰防止: 第1列・第3列のバッククォート語を許可集合に混入させない ==" >&2
-  # コーディネーター指摘: 当初は行全体からバッククォート語を拾っており、区分列（第1列）・
-  # 可否/注記列（第3列）に英数字のみのバッククォート語が入ると、それが黙って許可集合に
-  # 加わる fail-open だった（§7.4 の実際の第3列は `CP-2` でハイフンを含むため偶然セーフ
-  # だっただけ）。第1列・第3列にダミーの英数字バッククォート語を仕込んだフィクスチャで、
-  # そのダミー語が許可集合に混入しない（＝ツールとして許可されない）ことを実測する。
-  local col1_leak_doc="$tmpdir/col1-leak.md"
-  printf '| 読み取り（許可） `evil_tool` | `search_cloudflare_documentation` / `workers_list` / `workers_get_worker` / `workers_get_worker_code` | 🟢 使ってよい |\n' > "$col1_leak_doc"
-  check "第1列（区分）に紛れ込んだバッククォート語 evil_tool は許可集合に混入しない" \
-    "${TOOL_PREFIX}evil_tool" "$col1_leak_doc" "block:not-in-allowlist"
-  check "同フィクスチャで本来の許可ツールは引き続き allow" \
-    "${TOOL_PREFIX}workers_list" "$col1_leak_doc" "allow"
+  echo "== CRITICAL 1 回帰防止: 表の行だけを候補にする（散文中の同一文言に反応しない） ==" >&2
+  # Layer 1 セルフレビュー指摘の実測フィクスチャ: 「読み取り（許可）」という文言を含む散文が
+  # 表より前に来ても、① その散文行を表の行と誤認して fail-closed に落ちない
+  # （散文の直後に本物の表があれば、そちらを正しく見つける）② 散文中のバッククォート語
+  # （`d1_database_get` / `PreToolUse` 等）が許可集合に混入しない（fail-open しない）の
+  # 両方を同時に確認する。
+  local prose_before_table_doc="$tmpdir/prose-before-table.md"
+  printf '（散文）読み取り（許可）というツール区分の話をする。ここでは `d1_database_get` や `PreToolUse` には一切触れない。\n\n| 区分 | ツール | 可否 |\n|---|---|---|\n| 読み取り（許可） | `search_cloudflare_documentation` / `workers_list` / `workers_get_worker` / `workers_get_worker_code` | 🟢 使ってよい |\n' > "$prose_before_table_doc"
+  check "散文中のバッククォート語 d1_database_get は許可集合に混入しない（fail-open しない）" \
+    "${TOOL_PREFIX}d1_database_get" "$prose_before_table_doc" "block:not-in-allowlist"
+  check "散文中のバッククォート語 PreToolUse も混入しない" \
+    "${TOOL_PREFIX}PreToolUse" "$prose_before_table_doc" "block:not-in-allowlist"
+  check "散文の後にある本物の表は正しく解析され workers_list は allow（fail-closed しない）" \
+    "${TOOL_PREFIX}workers_list" "$prose_before_table_doc" "allow"
 
-  local col3_leak_doc="$tmpdir/col3-leak.md"
-  printf '| 読み取り（許可） | `search_cloudflare_documentation` / `workers_list` / `workers_get_worker` / `workers_get_worker_code` | 🟢 使ってよい（`evil_tool` の一次情報確認） |\n' > "$col3_leak_doc"
-  check "第3列（可否・注記）に紛れ込んだバッククォート語 evil_tool は許可集合に混入しない（本 fail-open 修正の核心ケース）" \
-    "${TOOL_PREFIX}evil_tool" "$col3_leak_doc" "block:not-in-allowlist"
-  check "同フィクスチャで本来の許可ツールは引き続き allow（2）" \
-    "${TOOL_PREFIX}workers_get_worker" "$col3_leak_doc" "allow"
+  echo "== CRITICAL 1 回帰防止: 候補行が複数（曖昧）なら fail-closed ==" >&2
+  local ambiguous_doc="$tmpdir/ambiguous-two-tables.md"
+  printf '| 区分 | ツール | 可否 |\n|---|---|---|\n| 読み取り（許可） | `workers_list` | 🟢 |\n\n（別の表）\n\n| 区分 | ツール | 可否 |\n|---|---|---|\n| 読み取り（許可） | `workers_get_worker` | 🟢 |\n' > "$ambiguous_doc"
+  check "候補行が2件（曖昧）→ どちらが正か決め打ちせず fail-closed" \
+    "${TOOL_PREFIX}workers_list" "$ambiguous_doc" "block:doc-unparseable"
+
+  echo "== CRITICAL 2 回帰防止: 列位置をヘッダから動的解決する（決め打ちしない） ==" >&2
+  # Layer 1 セルフレビュー指摘の実測フィクスチャ: 区分列とツール列の間に新しい列
+  # （優先度）が挿入されると、位置決め打ち（旧実装の `cut -d'|' -f3`）は誤って
+  # 「優先度」列の内容（deny 済みの破壊的操作ツール名）を許可集合として読み込む
+  # 最悪の組み合わせになる。ヘッダの列名（「ツール」）で動的解決していれば、
+  # 列が増えても正しい列を追随できることを実測する。
+  local column_reorder_doc="$tmpdir/column-reorder.md"
+  printf '| 区分 | 優先度 | ツール | 可否 |\n|---|---|---|---|\n| 読み取り（許可） | `d1_database_create` | `search_cloudflare_documentation` / `workers_list` | 🟢 |\n' > "$column_reorder_doc"
+  check "挿入列の内容（d1_database_create）が誤って許可集合に入らない（本 fail-open 修正の核心ケース）" \
+    "${TOOL_PREFIX}d1_database_create" "$column_reorder_doc" "block:not-in-allowlist"
+  check "列が増えても正しいツール列（workers_list）を追随して allow できる" \
+    "${TOOL_PREFIX}workers_list" "$column_reorder_doc" "allow"
+  check "同フィクスチャの search_cloudflare_documentation も allow" \
+    "${TOOL_PREFIX}search_cloudflare_documentation" "$column_reorder_doc" "allow"
+
+  echo "== WARNING 4: プレフィックスちょうど（サフィックス空）はブロック ==" >&2
+  check "プレフィックスのみ（サフィックス空）はブロック" \
+    "${TOOL_PREFIX}" "$real_doc" "block:not-in-allowlist"
 
   echo "== exit code まで貫通しているか（main() 経由） ==" >&2
   local out code
