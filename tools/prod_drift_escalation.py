@@ -92,10 +92,20 @@ def is_notification_of(body: str, marker: str) -> bool:
     （経路未構成で通知した記録が、その後に始まった判定不能の通知まで抑制すると、
     別の障害が黙って握り潰される）。行頭一致で見るので、引用（`> ...`）や
     バッククォート囲みの言及は通知記録として数えない。
+
+    🔴 **症状マーカーは通知済みマーカーの直後（空白を挟んでよい）にある場合だけ数える**
+    （Layer 1 CRITICAL・fail-open の実測）。行内のどこかにあれば良いという部分一致だと、
+    通知記録の自由文が別症状に言及しただけで（例: `… を通知した。[prod-drift][判定不能] は未発生`）
+    その別症状の通知が永久に抑制され、障害が黙って握り潰される。
+
+    症状マーカーと通知記録が **同一コメントに同居** した場合は本判定が優先し、抑制側に倒れる。
+    そのため運用手順（`sprint-cycle-router` §1.5 手順 5-3）は通知記録を別コメントで投稿する。
     """
     for line in body.split("\n"):
         stripped = line.strip()
-        if stripped.startswith(NOTIFIED_MARKER) and marker in stripped[len(NOTIFIED_MARKER):]:
+        if not stripped.startswith(NOTIFIED_MARKER):
+            continue
+        if stripped[len(NOTIFIED_MARKER):].lstrip().startswith(marker):
             return True
     return False
 
@@ -332,6 +342,62 @@ def _self_test_resolved_reenables_notification() -> list[str]:
     return failures
 
 
+def _self_test_notification_mention_does_not_leak() -> list[str]:
+    """🔴 通知記録の自由文中で別症状に言及しても、その症状は抑制されない（Layer 1 CRITICAL）。
+
+    症状マーカーが通知済みマーカーの **直後** にある場合だけ数える、という条件を固定する。
+    行内のどこかにあれば良い部分一致に緩めると、この区別テストが落ちる。
+    """
+    failures: list[str] = []
+    bodies = [
+        f"{NOTIFIED_MARKER} {NOT_CONFIGURED_MARKER} を通知した。{INDETERMINATE_MARKER} は未発生",
+        f"{INDETERMINATE_MARKER} 1",
+        f"{INDETERMINATE_MARKER} 2",
+        f"{INDETERMINATE_MARKER} 3",
+    ]
+    result = decide(bodies, INDETERMINATE_MARKER)
+    if result["already_notified"]:
+        failures.append("通知記録の自由文中の言及で別症状を抑制している（障害が握り潰される）")
+    if not result["escalate"]:
+        failures.append(f"言及されただけの症状は通常どおり escalate する: got={result!r}")
+
+    # 直後に併記された本来の症状は、従来どおり抑制される
+    proper = [
+        f"{NOT_CONFIGURED_MARKER} 1",
+        f"{NOT_CONFIGURED_MARKER} 2",
+        f"{NOT_CONFIGURED_MARKER} 3",
+        f"{NOTIFIED_MARKER}  {NOT_CONFIGURED_MARKER} を通知した（空白 2 個でも数える）",
+        f"{NOT_CONFIGURED_MARKER} 4",
+    ]
+    if not decide(proper, NOT_CONFIGURED_MARKER)["suppressed"]:
+        failures.append("直後に併記された症状を抑制できていない")
+    return failures
+
+
+def _self_test_below_threshold_is_not_suppressed() -> list[str]:
+    """通知記録があっても閾値未満なら抑制ではない（`suppressed` は閾値到達を含意する）。
+
+    `suppressed` の定義から `threshold_reached` を落とす退行を捕まえる。呼び出し側は
+    `suppressed: true` を「閾値には到達しているが通知済み」と読むため、閾値未満で立つと
+    原因調査が打ち切られる。
+    """
+    failures: list[str] = []
+    bodies = [
+        f"{NOTIFIED_MARKER} {NOT_CONFIGURED_MARKER} を通知した",
+        f"{NOT_CONFIGURED_MARKER} 1",
+    ]
+    result = decide(bodies, NOT_CONFIGURED_MARKER)
+    if result["consecutive"] != 1 or result["threshold_reached"]:
+        failures.append(f"前提が崩れている（連続 1 回・閾値未到達のはず）: got={result!r}")
+    if not result["already_notified"]:
+        failures.append("通知記録は検出されている必要がある")
+    if result["suppressed"] or result["reason"] is not None:
+        failures.append(f"閾値未満で抑制扱いにしてはいけない: got={result!r}")
+    if result["escalate"]:
+        failures.append("閾値未満で escalate してはいけない")
+    return failures
+
+
 def _self_test_notified_marker_must_start_line() -> list[str]:
     """通知済みマーカーの言及・引用では抑制されない（行頭一致・fail-open 防止）。"""
     failures: list[str] = []
@@ -369,6 +435,8 @@ def run_self_test() -> int:
         ("通知済みなら再通知を抑制する", _self_test_notified_suppresses_repeat),
         ("解消後は再び通知できる", _self_test_resolved_reenables_notification),
         ("通知済みマーカーも行頭一致", _self_test_notified_marker_must_start_line),
+        ("通知記録の言及は別症状へ漏れない", _self_test_notification_mention_does_not_leak),
+        ("閾値未満は抑制ではない", _self_test_below_threshold_is_not_suppressed),
     ]
     failed = 0
     total = 0
