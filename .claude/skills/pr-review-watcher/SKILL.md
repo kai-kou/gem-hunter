@@ -161,6 +161,15 @@ tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部�
     ブロックされることがあるため一次経路にしない）。デプロイしない場合はコマンド出力をそのまま PR/Issue
     コメントに記録する（次に該当 PR が再チェックされるまでデプロイは保留のまま）。🔴 **終了コード
     （0/1/2）の意味は `cloudflare-infrastructure.md` §8.2 の記載が SSOT**（本項では再掲しない）。
+    🔴 **`exit code` 軸と実行可否軸は別軸**（L-130・Issue #785・一般則は
+    `docs/rules/lessons/cloud-environment.md` L-130 追記）: `npm run deploy` フォールバック実行時、
+    ツール呼び出しが classifier に拒否され exit code が一切返らないことがある。その場合は
+    0/1/2 のどれにも丸め込まず、**同一 firing 内で 1 回だけリトライ** する。2 回目もブロックされたら
+    打ち切り、コマンド出力の代わりに「実行ブロック（auto mode classifier）」とだけ PR/Issue コメントに
+    記録して保留する（本パスは `[prod-drift]` Issue の escalation を持たないため `sprint-cycle-router`
+    §1.5 のような専用マーカー・自動 `@mention` は行わない。次に本番へ反映されているかは
+    `sprint-cycle-router` Step 0.2 の本番ドリフト検査が拾い、そちらの `[prod-drift][実行ブロック]`
+    escalation 経路で通知される・#785）。
   - このゲートの目的: レビュー待ちのスプリント成果物が `main` 経由で本番へ漏れる穴を塞ぐ（release_eng が
     round 2 で採用した「デプロイの直列化」。穴を受け入れる案は撤回済み）。
 - デプロイを実行する場合は 🔴 **deploy 前に `main` HEAD で `npm run check` を再実行** し（合成状態の検証）、
@@ -227,6 +236,11 @@ tools/trigger_workers_build.py`**（Workers Builds の再トリガー。内部�
   `cloudflare-infrastructure.md` §8.2 が SSOT**）をここで実行する。1（ゲート待機中）の場合は
   デプロイを実行せず、`進捗:` を「デプロイ未完了」のまま更新しない（下記の失敗時と同じ扱い。
   次回 firing は `sprint-cycle-router` Step 0.2 が拾う）。
+  🔴 **exit code 軸と実行可否軸は別軸**（L-130・Issue #785）: `trigger_workers_build.py` /
+  `npm run deploy` フォールバックのいずれかの呼び出しが classifier に拒否され exit code が
+  返らなかった場合も 0/1/2 に丸め込まず 1 回だけリトライし、2 回目もブロックなら「デプロイ未完了
+  （実行ブロック）」と追加コメントに記録して保留する（次回 firing の Step 0.2 が拾う。Step 6 と
+  同じ判断であり `[prod-drift]` の escalation 経路は Step 0.2 側が担う）。
 - デプロイ成功後、**そのスプリント PR の preview alias を退役する**:
   `python3 tools/retire_preview_aliases.py --alias pr-<N>`（`<N>` は対象 PR 番号。本番と同一ビルドへ
   張り替える＝「削除」ではなく「上書き」。削除 API が存在しないことは

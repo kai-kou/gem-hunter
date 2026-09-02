@@ -111,6 +111,32 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
 3. 0（ドリフト無し）→ 何もせず §2 へ進む。
 4. 1（ドリフトあり）→ python3 tools/trigger_workers_build.py を実行する（既定でデプロイゲートを
    内部で再確認するため、ここでの `check_deploy_gate.py` の二重実行はしない）。
+   🔴 **exit code 軸と実行可否軸は別軸**（L-130・Issue #785・一般則は
+   `docs/rules/lessons/cloud-environment.md` L-130 追記を参照）: 以下の 0/1/2 分岐は
+   **ツール呼び出しが実際に走って `sys.exit()` を経由した場合の分岐**であり、呼び出しそのものが
+   auto mode classifier の permission フェーズで止まって拒否メッセージ（`Permission for this
+   action was denied by the Claude Code auto mode classifier.`）が返り exit code が一切
+   得られない場合はこの 0/1/2 のどれにも該当しない。その場合は下記「実行ブロック」分岐へ進む
+   （0/1/2 のいずれかに丸め込まない）。
+   - **実行ブロック**（ツール呼び出しが classifier に拒否され exit code が返らない）→
+     L-130 の指針どおり **同一 firing 内で 1 回だけリトライ** する。
+     - リトライで通過（exit code が得られた）→ 得られた exit code で下記 0/1/2 分岐へ進む
+       （リトライ成功はブロックの記録を残さない。`[prod-drift][実行ブロック]` は「1 回リトライ
+       してもなお実行不能だった」場合のみ使うマーカーのため）。
+     - 2 回目もブロック → 打ち切り、`[prod-drift]` の open Issue が既に無いか確認する（重複起票
+       防止・4 の他分岐と同じ作法）。無ければ 1 件だけ起票し、あれば追記コメントで、先頭行を
+       `[prod-drift][実行ブロック]`（検知日時 JST・ブロック時のエラー文言を続けて記載）で始める
+       （マーカーの書式・行頭一致の要件は `tools/prod_drift_escalation.py` の docstring を参照）。
+       このコメント履歴を 5-3 と同じ手順で `tools/prod_drift_escalation.py
+       --marker "[prod-drift][実行ブロック]"` に渡し、`escalate: true` かつ `mention: true`
+       （閾値到達で自動的に立つ。`A6_MARKERS` に `[prod-drift][実行ブロック]` を含めてある）なら
+       5-3 と同じ手順で Slack へ A-6 通知する: 分類器の `autoMode` 設定はユーザー設定
+       （`~/.claude/settings.json` 等）からしか読まれずプロジェクト側からは緩和できないため、
+       緩和には飼い主のアカウント権限が物理的に必要（具体的ユーザーアクション = auto mode
+       classifier の設定緩和、または `npm run deploy` フォールバックへの切替判断 / 該当境界 A-6 /
+       取らない場合の結果 = 本番反映が本ステップだけでは完結せず滞留し続ける / Claude 側の状態 =
+       他の経路（次回 firing の再試行・`npm run deploy` フォールバック）は自律で試行済み）。
+       通知したら 5-3 と同じ `[prod-drift][通知済み]` コメントを別コメントで追記する。
    - 0（トリガー成功）→ 自己解決。`[prod-drift]` の open Issue があれば
      `進捗: Workers Builds 再トリガー成功（build_uuid: <値>）` を追記コメントしてクローズする
      （無ければ起票不要・「気づかれず滞留」した形跡が無いため）。
@@ -556,6 +582,9 @@ Step 3.5 が Ready 判定を満たす次の `SP-n` を発見できなくなっ�
       （`python3 tools/check_lane_reachability.py` が PASS する・#377）
 - [ ] 健全な中断の 4 条件（§7）を満たさずに firing を終えていない
 - [ ] `[Milestone] M-3 到達` Issue が重複起票されていない（既存 open Issue の有無で判定済み）
+- [ ] Step 0.2 手順 4 で `trigger_workers_build.py` の呼び出しが exit code を返さず終わった場合、
+      0/1/2 のどれかに丸め込まずに「実行ブロック」分岐（L-130・1 回リトライ→`[prod-drift][実行ブロック]`
+      で記録）へ進んでいる（Issue #785）
 
 ---
 
