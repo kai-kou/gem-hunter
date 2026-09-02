@@ -9,6 +9,8 @@ import { searchFor, uniqueKeyword } from './helpers'
  * Text Spacing は `e2e/a11y-text-spacing.spec.ts` が別途担当）。
  *
  * 判定は `locator.boundingBox()`（実描画サイズ）で行う。宣言値（クラス名の有無）では判定しない。
+ * 注: `clip-path` でクリップされたターゲットは `boundingBox()` が元サイズを返すため検出できない
+ * （本プロジェクトは現状 `clip-path` を使わない）。
  *
  * ## 対象の選定（`--size-control-xs` = 24px フロアを直接満たす方針・§7.5「間隔例外に頼らない」）
  * - **検索ボタン**（主要な操作要素・`--size-control-xl` = 44px）
@@ -67,6 +69,17 @@ async function expectExpandedCardTargetSize(link: Locator, label: string): Promi
   ).toBe(true)
 
   const li = link.locator('xpath=ancestor::li[1]')
+
+  // `::after` の `position: absolute; inset: 0` は、値そのものが常に絶対長 `0px` を返すため、
+  // 親 <li> が `position: relative`（positioned）でなければ containing block が親を指さず
+  // 上記チェックが素通りしてしまう（`<li>` から `relative` が落ちても緑のまま、というトートロジー）。
+  // ::after 検査の直後に、containing block の前提そのものを実測でアサートする。
+  const liPosition = await li.evaluate((el) => getComputedStyle(el).position)
+  expect(
+    liPosition,
+    `${label}: 親 <li> が positioned でないため ::after の containing block が親を指さない`,
+  ).not.toBe('static')
+
   await expectTargetSizeAtLeast(li, `${label}（拡張後のクリック領域＝親 <li>）`)
 }
 

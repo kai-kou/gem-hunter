@@ -68,6 +68,54 @@ async function expectNoVerticalOverlap(items: Locator, label: string): Promise<v
   }
 }
 
+/**
+ * `container` 配下で要素がクリップされて中身が失われていないことを確認する。
+ * `toBeVisible()` は祖先の `overflow: hidden` 等によるクリップを検出しないため、
+ * `scrollHeight`（実コンテンツの高さ）が `clientHeight`（見えている高さ）を超えていないかを
+ * 直接測る（+1 は端数丸め用の許容）。
+ */
+async function expectNoClipping(container: Locator, label: string): Promise<void> {
+  const overflowing = await container.evaluate((el) => el.scrollHeight > el.clientHeight + 1)
+  expect(
+    overflowing,
+    `${label}: コンテンツがクリップされている（scrollHeight がクリップ許容値を超えて clientHeight を上回る）`,
+  ).toBe(false)
+}
+
+/**
+ * 注入した Text Spacing 上書き（`line-height` / `letter-spacing` / `word-spacing`）が
+ * `container` 配下の代表要素に実際に効いているかを `getComputedStyle` で直接確認する。
+ * 宣言（CSS を注入したこと）だけでなく、実効値（computed value）で判定する。
+ */
+async function expectTextSpacingAppliedWithin(container: Locator, label: string): Promise<void> {
+  const target = container.locator('p, td').first()
+  await expect(target, `${label}: 代表要素（p / td）が見つからない`).toBeVisible()
+
+  const metrics = await target.evaluate((el) => {
+    const style = getComputedStyle(el)
+    return {
+      fontSize: Number.parseFloat(style.fontSize),
+      lineHeight: Number.parseFloat(style.lineHeight),
+      letterSpacing: Number.parseFloat(style.letterSpacing),
+      wordSpacing: Number.parseFloat(style.wordSpacing),
+    }
+  })
+
+  // 浮動小数の丸め誤差を吸収するため、絶対値側に -0.01px の許容を入れる（比率でなく px 同士で比較）。
+  expect(
+    metrics.lineHeight,
+    `${label}: line-height 不足（実測 ${metrics.lineHeight}px, font-size ${metrics.fontSize}px）`,
+  ).toBeGreaterThanOrEqual(metrics.fontSize * 1.5 - 0.01)
+  expect(
+    metrics.letterSpacing,
+    `${label}: letter-spacing 不足（実測 ${metrics.letterSpacing}px, font-size ${metrics.fontSize}px）`,
+  ).toBeGreaterThanOrEqual(metrics.fontSize * 0.12 - 0.01)
+  expect(
+    metrics.wordSpacing,
+    `${label}: word-spacing 不足（実測 ${metrics.wordSpacing}px, font-size ${metrics.fontSize}px）`,
+  ).toBeGreaterThanOrEqual(metrics.fontSize * 0.16 - 0.01)
+}
+
 test.describe('WCAG 2.2 SC 1.4.12 Text Spacing', () => {
   // 🔴 `e2e/overflow-guard.spec.ts` と同じ理由で 320px 単独（SC 1.4.10 と同じ根拠：
   // 320 CSS px は Reflow 系達成基準が名指しする最小 viewport 幅であり、ここで折り返し・
@@ -94,7 +142,15 @@ test.describe('WCAG 2.2 SC 1.4.12 Text Spacing', () => {
     await expectNoHorizontalScroll(page, '検索結果一覧（Text Spacing 上書き後）')
     // カードは `<ul className="divide-border divide-y">` の直接の子（各カードの topics
     // ネスト `<ul>` は `divide-border` を持たないため誤って対象に含まれない）。
-    await expectNoVerticalOverlap(page.locator('ul.divide-border > li'), '検索結果カード')
+    const cards = page.locator('ul.divide-border > li')
+    await expectNoVerticalOverlap(cards, '検索結果カード')
+
+    // `toBeVisible()` は祖先の overflow クリップを検出しないため、各カードで
+    // 内容がクリップされて隠れていないか（scrollHeight <= clientHeight）を直接測る。
+    const cardCount = await cards.count()
+    for (let i = 0; i < cardCount; i++) {
+      await expectNoClipping(cards.nth(i), `検索結果カード[${i}]`)
+    }
 
     // 上書き後も 3 件のリンクが引き続き見えている（クリップ・重なりで隠れていない）ことを確認する。
     await expect(descriptionCard).toBeVisible()
@@ -114,5 +170,13 @@ test.describe('WCAG 2.2 SC 1.4.12 Text Spacing', () => {
     await expectNoHorizontalScroll(page, '詳細ページ（README, Text Spacing 上書き後）')
     await expect(page.locator('#readme-heading')).toBeVisible()
     await expect(page.locator('.readme-content table')).toBeVisible()
+
+    // `.readme-content` は `overflow-x-auto` を持ちコンテナ内部スクロールに横方向の増大を吸収する
+    // ため、`expectNoHorizontalScroll`（`document.scrollingElement` 検査）だけでは
+    // `.readme-content` 配下に注入した 4 値が実際に効いているかを測れない。代表要素の
+    // computed style を直接測り、かつクリップで消えていないことも確認する。
+    const readmeContent = page.locator('.readme-content')
+    await expectTextSpacingAppliedWithin(readmeContent, 'README 本文（.readme-content）')
+    await expectNoClipping(readmeContent, 'README 本文（.readme-content）')
   })
 })
