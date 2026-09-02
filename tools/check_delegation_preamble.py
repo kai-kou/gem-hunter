@@ -146,6 +146,10 @@ SUPPRESSION_RE = re.compile(
 )
 
 # HTML コメント（複数行対応）。閉じられていない `<!--` 以降も除去する（fail-closed 方向）。
+# check_markdown_table_columns.py の同名パターンと同一だが、あちらは表の行からコメントを
+# 取り除く前処理、こちらは充足判定から除外する前処理で用途が異なる。共通モジュール化する
+# ほどの実体（1 行の正規表現）が無いため意図的に重複させる
+# dup-ok: 用途が異なる 1 行の正規表現。共通化の実体が無いため意図的に重複させる（#816）
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _UNCLOSED_COMMENT_RE = re.compile(r"<!--.*\Z", re.DOTALL)
 
