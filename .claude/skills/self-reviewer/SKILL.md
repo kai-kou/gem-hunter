@@ -74,8 +74,9 @@ git diff main...HEAD --name-only
 
 ### Step 4: 観点別フレッシュ文脈セルフレビュー（Layer 1・必須）
 
-PR 作成後に **自前 `code-review` スキルを `Skill(code-review)` で必ず実行** する（Layer 1・全 PR 必須）。
 <!-- delegation-preamble: n/a 本スキルは自前の委譲テンプレートを持たず、サブエージェント起動は `Skill(code-review)` に委ねる（並行安全プリアンブルの展開は code-review 側の責務） -->
+
+PR 作成後に **自前 `code-review` スキルを `Skill(code-review)` で必ず実行** する（Layer 1・全 PR 必須）。
 観点別ファインダー（並列サブエージェント）→ 敵対的検証 → 報告の 3 段で、差分を「第三者の PR」として
 読み直し自己修正盲点（64.5%）を回避する。**指摘は確度を問わず全件 PR の行単位インラインコメントで記録し、
 指摘ゼロでも `event="COMMENT"` のレビューを 1 件投稿する**（#461。手順・本文テンプレートは
