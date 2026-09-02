@@ -52,6 +52,8 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from repo_slug import resolve_repo_slug
+from github_rest import http_get as _github_rest_http_get
+from github_rest import paginate_json_array
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = ROOT / "config" / "claude_code_spec_sync.yaml"
@@ -64,31 +66,24 @@ _USER_AGENT_API = "claude-code-spec-sync"
 # GitHub REST フォールバック（gh 不在/403 環境用。クラウドはプロキシが App 認証を注入・L-114）
 # --------------------------------------------------------------------------
 def _github_rest_get(path: str, params: str = "") -> list | None:
+    """`tools/github_rest.py` の共通ページネーションへの薄いラッパー（Issue #602）。
+
+    token は None/空文字を許容（匿名リクエスト・既存挙動）。5 ページに到達しても続きが
+    ある可能性を否定できない場合は、従来どおり黙って打ち切る（`on_truncate="stop"`）。
+    """
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    results: list = []
-    page = 1
-    while page <= 5:
+
+    def fetch_page(page: int) -> tuple[bool, str]:
         url = f"https://api.github.com/{path}?per_page=100&page={page}"
         if params:
             url += f"&{params}"
-        req = urllib.request.Request(url, headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": _USER_AGENT_API,
-            **({"Authorization": f"Bearer {token}"} if token else {}),
-        })
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                batch = json.loads(resp.read().decode("utf-8"))
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
-            print(f"[warn] REST フォールバックも失敗 ({path}): {e}", file=sys.stderr)
-            return None
-        if not isinstance(batch, list):
-            return None
-        results.extend(batch)
-        if len(batch) < 100:
-            break
-        page += 1
-    return results
+        return _github_rest_http_get(url, token, user_agent=_USER_AGENT_API)
+
+    ok, result = paginate_json_array(fetch_page, per_page=100, max_pages=5, on_truncate="stop")
+    if not ok:
+        print(f"[warn] REST フォールバックも失敗 ({path}): {result}", file=sys.stderr)
+        return None
+    return result
 
 
 def _github_rest_post_issue(repo: str, title: str, body: str, labels: list[str]) -> str | None:

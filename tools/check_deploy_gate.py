@@ -86,14 +86,14 @@ import os
 import re
 import subprocess
 import sys
-import urllib.error
 import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
+from github_rest import http_get as _github_rest_http_get  # noqa: E402
+from github_rest import paginate_json_array, exclude_pull_requests  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 
@@ -154,25 +154,12 @@ def _run_gh(args: list[str]) -> tuple[bool, str]:
 
 
 def _http_get(url: str, token: str) -> tuple[bool, str]:
-    """GitHub REST を GET する。token をサブプロセス引数に載せず Python プロセス内で
-    ヘッダを組み立てる（`ps` / `/proc/<pid>/cmdline` 経由の露出防止・既存パターン踏襲）。
+    """`tools/github_rest.py` の共通実装への薄いラッパー（Issue #602）。
+
+    module-level 関数として残す（self-test が `globals()["_http_get"]` でモック差し替える
+    既存パターンとの互換のため）。
     """
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "gem-hunter-check-deploy-gate",
-    }
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as res:
-            return True, res.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        return False, f"HTTP {e.code}"
-    except urllib.error.URLError as e:
-        return False, f"接続失敗（{type(e).__name__}）"
-    except TimeoutError:
-        return False, "リクエストがタイムアウトしました"
+    return _github_rest_http_get(url, token, user_agent="gem-hunter-check-deploy-gate")
 
 
 def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
@@ -202,29 +189,27 @@ def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
     label_q = urllib.parse.quote("status:in-progress", safe="")
-    issues: list[dict] = []
-    for page in range(1, 4):  # 100件 x 3ページ = 最大300件
-        ok2, out2 = _http_get(
+
+    def fetch_page(page: int) -> tuple[bool, str]:
+        return _http_get(
             f"https://api.github.com/repos/{REPO}/issues"
             f"?state=open&labels={label_q}&per_page=100&page={page}",
             token,
         )
-        if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
-        try:
-            batch = json.loads(out2)
-        except json.JSONDecodeError:
+
+    # 100件 x 3ページ = 最大300件。3ページ到達時になお続きがある可能性を否定できなくても、
+    # ここは従来どおり黙って打ち切る（on_truncate="stop"・既存挙動を変えない）。
+    ok2, result = paginate_json_array(fetch_page, per_page=100, max_pages=3, on_truncate="stop")
+    if not ok2:
+        reason = str(result)
+        if "JSON 解析" in reason:
             return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
-        if not batch:
-            break
-        # /issues エンドポイントは PR も含むため pull_request キーで除外する
-        issues.extend(
-            {"number": i["number"], "title": i.get("title", ""), "body": i.get("body") or ""}
-            for i in batch
-            if "pull_request" not in i
-        )
-        if len(batch) < 100:
-            break
+        return [], f"gh 失敗（{gh_err}）・REST も失敗（{reason}）"
+    # /issues エンドポイントは PR も含むため pull_request キーで除外する
+    issues = [
+        {"number": i["number"], "title": i.get("title", ""), "body": i.get("body") or ""}
+        for i in exclude_pull_requests(result)
+    ]
     return issues, None
 
 
@@ -258,31 +243,27 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
-    comments: list[dict] = []
-    for page in range(1, 4):
-        ok2, out2 = _http_get(
+    def fetch_page(page: int) -> tuple[bool, str]:
+        return _http_get(
             f"https://api.github.com/repos/{REPO}/issues/{number}/comments"
             f"?per_page=100&page={page}",
             token,
         )
-        if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
-        try:
-            batch = json.loads(out2)
-        except json.JSONDecodeError:
+
+    ok2, result = paginate_json_array(fetch_page, per_page=100, max_pages=3, on_truncate="stop")
+    if not ok2:
+        reason = str(result)
+        if "JSON 解析" in reason:
             return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
-        if not batch:
-            break
-        comments.extend(
-            {
-                "body": c.get("body", ""),
-                "created_at": c.get("created_at", ""),
-                "author_association": c.get("author_association", ""),
-            }
-            for c in batch
-        )
-        if len(batch) < 100:
-            break
+        return [], f"gh 失敗（{gh_err}）・REST も失敗（{reason}）"
+    comments = [
+        {
+            "body": c.get("body", ""),
+            "created_at": c.get("created_at", ""),
+            "author_association": c.get("author_association", ""),
+        }
+        for c in result
+    ]
     return comments, None
 
 
