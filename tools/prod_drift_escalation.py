@@ -21,6 +21,9 @@
 
     [prod-drift][判定不能]   … check_prod_drift.py が exit 2（原因未特定）
     [prod-drift][経路未構成] … trigger 0 件を実測した（本番デプロイ経路が繋がっていない）
+    [prod-drift][実行ブロック] … trigger_workers_build.py の呼び出し自体が auto mode classifier に
+                                 ブロックされ、exit code が一切返らなかった（L-130・Issue #785。
+                                 1 回リトライしてもなお実行不能だった場合のみこのマーカーを使う）
     [prod-drift][解消]       … ドリフト解消・再トリガー成功（連続カウントをリセットする）
     [prod-drift][通知済み]   … 上記の症状で Slack へ A 区分通知を実行した記録
 
@@ -60,12 +63,26 @@ from issue_marker_counter import (  # noqa: E402
 
 INDETERMINATE_MARKER = "[prod-drift][判定不能]"
 NOT_CONFIGURED_MARKER = "[prod-drift][経路未構成]"
+# trigger_workers_build.py の呼び出し自体が auto mode classifier にブロックされ、exit code が
+# 一切返らなかった状態（L-130・Issue #785）。exit code 軸（判定不能・経路未構成等）とは別軸であり、
+# どちらにも丸め込まない（丸め込むと L-130 のリトライ規律が適用されず実行ブロックが握り潰される）。
+EXECUTION_BLOCKED_MARKER = "[prod-drift][実行ブロック]"
 RESOLVED_MARKER = "[prod-drift][解消]"
 # 通知を実行した記録。症状マーカーではないので ALL_MARKERS（＝連続を打ち切る集合）には入れない
 # （通知しても症状は続いているため、連続カウントは伸び続けるのが正しい）。
 NOTIFIED_MARKER = "[prod-drift][通知済み]"
 
-ALL_MARKERS = (INDETERMINATE_MARKER, NOT_CONFIGURED_MARKER, RESOLVED_MARKER)
+ALL_MARKERS = (
+    INDETERMINATE_MARKER,
+    NOT_CONFIGURED_MARKER,
+    EXECUTION_BLOCKED_MARKER,
+    RESOLVED_MARKER,
+)
+
+# `@mention`（A-6）を伴う症状マーカー。緩和にユーザーのアカウント権限（Cloudflare ダッシュボード /
+# auto mode 設定）が物理的に必要なもの。`decide()` の `mention` 判定はこの集合の所属だけで決める
+# （マーカーを追加するたびに `mention` の分岐式を書き換えなくて済むようにする）。
+A6_MARKERS = (NOT_CONFIGURED_MARKER, EXECUTION_BLOCKED_MARKER)
 
 # 連続何回で escalate するか（根拠はモジュール docstring）。
 ESCALATION_THRESHOLD = 3
@@ -153,7 +170,7 @@ def decide(bodies: list[str], marker: str, threshold: int = ESCALATION_THRESHOLD
         "escalate": escalate,
         "suppressed": suppressed,
         "reason": "already_notified" if suppressed else None,
-        "mention": escalate and marker == NOT_CONFIGURED_MARKER,
+        "mention": escalate and marker in A6_MARKERS,
     }
 
 
@@ -424,11 +441,85 @@ def _self_test_notified_marker_must_start_line() -> list[str]:
     return failures
 
 
+def _self_test_execution_blocked_mentions() -> list[str]:
+    """🔴 完了条件（Issue #785）: 実行ブロックの連続 3 回は A-6 として @mention する。
+
+    exit code 軸の判定不能（`INDETERMINATE_MARKER`）と混同していないかも合わせて固定する
+    （実行ブロックは exit code が一切返らない別軸の状態であり、判定不能とは異なるマーカーで
+    数える必要がある）。
+    """
+    failures: list[str] = []
+    bodies = [f"{EXECUTION_BLOCKED_MARKER} {i} 回目" for i in range(3)]
+    result = decide(bodies, EXECUTION_BLOCKED_MARKER)
+    if not (result["escalate"] and result["mention"]):
+        failures.append(f"実行ブロックの 3 連続は @mention 付きで escalate する: got={result!r}")
+
+    below = decide([f"{EXECUTION_BLOCKED_MARKER} 1"], EXECUTION_BLOCKED_MARKER)
+    if below["mention"] or below["escalate"]:
+        failures.append("閾値未満の実行ブロックで escalate / @mention してはいけない")
+
+    # 判定不能マーカーと実行ブロックマーカーは別軸なので混ざらない（互いに連続を打ち切る）
+    mixed = [
+        f"{EXECUTION_BLOCKED_MARKER} 1",
+        f"{EXECUTION_BLOCKED_MARKER} 2",
+        f"{INDETERMINATE_MARKER} 別症状（判定不能）",
+        f"{EXECUTION_BLOCKED_MARKER} 3",
+    ]
+    if count_consecutive(mixed, EXECUTION_BLOCKED_MARKER) != 1:
+        failures.append("判定不能マーカーが挟まっても実行ブロックの連続が途切れていない")
+
+    # 解消マーカーで実行ブロックの連続もリセットされる
+    resolved = [
+        f"{EXECUTION_BLOCKED_MARKER} 1",
+        f"{EXECUTION_BLOCKED_MARKER} 2",
+        f"{RESOLVED_MARKER} 再トリガー成功",
+        f"{EXECUTION_BLOCKED_MARKER} 3",
+    ]
+    if count_consecutive(resolved, EXECUTION_BLOCKED_MARKER) != 1:
+        failures.append("解消コメントで実行ブロックの連続がリセットされていない")
+
+    # 🔴 逆方向: 実行ブロックが挟まったら他症状（判定不能）の連続も打ち切られる必要がある
+    # （EXECUTION_BLOCKED_MARKER が ALL_MARKERS＝reset 集合から漏れていると、判定不能の
+    # 連続カウントが実行ブロックを無視して伸び続け、症状が変わったのに escalate してしまう）。
+    reset_other = [
+        f"{INDETERMINATE_MARKER} 1",
+        f"{INDETERMINATE_MARKER} 2",
+        f"{EXECUTION_BLOCKED_MARKER} 別症状（実行ブロック）",
+        f"{INDETERMINATE_MARKER} 3",
+    ]
+    if count_consecutive(reset_other, INDETERMINATE_MARKER) != 1:
+        failures.append(
+            "実行ブロックマーカーが ALL_MARKERS から漏れており、判定不能の連続を"
+            "リセットできていない（症状が変わったのに連続扱いされる）"
+        )
+    return failures
+
+
+def _self_test_execution_blocked_quoted_or_inline_is_ignored() -> list[str]:
+    """🔴 引用・行中の言及は実行ブロックの発生としても解消としても数えない（fail-open 防止）。"""
+    failures: list[str] = []
+    quoted = [
+        f"{EXECUTION_BLOCKED_MARKER} 1",
+        f"{EXECUTION_BLOCKED_MARKER} 2",
+        f"調査メモ:\n> {RESOLVED_MARKER} 再トリガー成功\nを引用しただけで、まだ解消していない",
+        f"{EXECUTION_BLOCKED_MARKER} 3",
+    ]
+    if count_consecutive(quoted, EXECUTION_BLOCKED_MARKER) != 3:
+        failures.append("引用された解消マーカーで実行ブロックの連続が打ち切られている")
+
+    inline_claim = [f"本文中に {EXECUTION_BLOCKED_MARKER} と書いただけのコメント"]
+    if count_consecutive(inline_claim, EXECUTION_BLOCKED_MARKER) != 0:
+        failures.append("行頭にない実行ブロックマーカーを症状として数えている")
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("単発・閾値未満では通知しない", _self_test_single_firing_does_not_escalate),
         ("閾値到達で escalate", _self_test_threshold_escalates),
         ("経路未構成は A-6 として @mention", _self_test_not_configured_mentions),
+        ("実行ブロックは A-6 として @mention", _self_test_execution_blocked_mentions),
+        ("実行ブロックの引用・言及は無視", _self_test_execution_blocked_quoted_or_inline_is_ignored),
         ("解消・別症状でリセット", _self_test_resolved_resets),
         ("無関係コメントは無視", _self_test_unrelated_comment_is_ignored),
         ("引用・言及ではリセットしない", _self_test_quoted_marker_does_not_reset),

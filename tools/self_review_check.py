@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 import git_diff_utils
 from md_fence import fence_flags, mask_inline_code
@@ -1027,6 +1028,21 @@ _CLOSES_KEYWORDS = re.compile(
 _FENCE_PLACEHOLDER = "\x00"
 
 
+def _mask_fenced_and_inline_code(pr_body: str) -> str:
+    """PR 本文からコードフェンス（``` / ~~~）とインラインコードを除いたテキストを返す。
+
+    未閉フェンスは md_fence の既定どおり「不成立」として検査対象へ戻る（fail-closed）。
+    `sprint_pr_closes_detection` と `mutation_test_record_warning` が同じ境界で判定するために
+    共有する（片方だけ古い境界に取り残されるのを防ぐ）。
+    """
+    lines = pr_body.splitlines()
+    flags = fence_flags(lines)
+    return "\n".join(
+        _FENCE_PLACEHOLDER if in_fence else mask_inline_code(line)
+        for line, in_fence in zip(lines, flags)
+    )
+
+
 def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
     """SP-n スプリント PR にて Closes キーワードの記載を検出する（Issue #281）。
 
@@ -1045,13 +1061,7 @@ def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
         return None
 
     # コードフェンス（``` / ~~~ を CommonMark 準拠で判定）とインラインコードを除外する。
-    # 未閉フェンスは md_fence の既定どおり「不成立」として検査対象へ戻る（fail-closed）。
-    lines = pr_body.splitlines()
-    flags = fence_flags(lines)
-    text_to_check = "\n".join(
-        _FENCE_PLACEHOLDER if in_fence else mask_inline_code(line)
-        for line, in_fence in zip(lines, flags)
-    )
+    text_to_check = _mask_fenced_and_inline_code(pr_body)
     matches = _CLOSES_KEYWORDS.finditer(text_to_check)
     found = [m.group() for m in matches]
     if found:
@@ -1062,6 +1072,277 @@ def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
             f"PR 本文から削除してください（Issue #281）。"
         )
     return None
+
+
+# --- 変異テスト記録リマインド（Issue #698・`sprint-development-rules.md` SD-2） ---
+#
+# SD-2 は「見た目・スタイルに関わる変更をした場合、変異テストで赤くなることを実測し、PR 本文へ
+# 1 行記録する」ことを規律として定めるが、機械検査は見送られていた（本文の #349 参照）。
+# ここでは「変異テストを実行したか」自体は検査しない（fail-open を招く広い判定になる）。
+# 判定範囲を狭く保つため、① スタイル変更の有無 ② PR 本文の記録行の有無 の 2 点だけを機械判定し、
+# ①かつ②なしのときだけ Warning（非ブロッキング）を返す。
+
+# `.tsx`/`.jsx` は「class/className 属性の変更行が diff に含まれる」ときだけスタイル変更とみなす
+# （ロジックだけの変更で誤検知しないため・#698 仕様）。plain HTML の `class=` と JSX の
+# `className=` の両方を拾う。
+_CLASS_ATTR_RE = re.compile(r"(?<![\w-])(?:class|className)\s*=")
+_STYLE_EXT_TSX = (".tsx", ".jsx")
+_STYLE_EXT_CSS = (".css",)
+
+# `変異テスト:` 記録行（行頭 + 値付き）。書式は既存の meta_line_re 判定（Sprint Goal: 等）と統一する。
+_MUTATION_TEST_LINE_RE = meta_line_re("変異テスト")
+
+
+def _diff_hunk_body_lines(diff_text: str) -> list[str]:
+    """unified diff から追加/削除行の中身（先頭の +/- を除いた本文）だけを返す。
+
+    `+++ b/path`/`--- a/path`（ファイルヘッダ）は除外する（除外しないと変更後のファイルパス
+    文字列に `class=` を含む場合の誤検知経路になる）。
+
+    🔴 ヘッダ判定は **空白付きの書式**（`+++ ` / `--- `）と裸のヘッダに限定する。単なる
+    `startswith("+++")` にすると、追加/削除された **本文行の中身が `++`/`--` で始まる** ケース
+    （CSS カスタムプロパティ `--brand: ...` の削除行が diff 上で `---brand: ...` になる等）を
+    ヘッダと誤認して落とし、スタイル変更を見逃す（fail-open）。
+    """
+    out: list[str] = []
+    for line in diff_text.splitlines():
+        if line in ("+++", "---") or line.startswith(("+++ ", "--- ")):
+            continue
+        if line.startswith("+") or line.startswith("-"):
+            out.append(line[1:])
+    return out
+
+
+def diff_has_class_attr_change(diff_text: str) -> bool:
+    """diff の追加/削除行に `class=`/`className=` 属性の変更が含まれるか。"""
+    return any(_CLASS_ATTR_RE.search(line) for line in _diff_hunk_body_lines(diff_text))
+
+
+_DIFF_GIT_HEADER_RE = re.compile(r"^diff --git a/(?P<a>.+?) b/(?P<b>.+)$")
+
+
+def split_diff_by_file(diff_text: str) -> dict[str, str]:
+    """複数ファイル分の unified diff を `diff --git` ヘッダでファイル単位へ分割する。
+
+    キーは `b/` 側（変更後）のパス。ヘッダより前の行は捨てる。
+    """
+    chunks: dict[str, list[str]] = {}
+    current: list[str] | None = None
+    for line in diff_text.splitlines():
+        m = _DIFF_GIT_HEADER_RE.match(line)
+        if m:
+            current = chunks.setdefault(m.group("b"), [])
+        if current is not None:
+            current.append(line)
+    return {path: "\n".join(lines) for path, lines in chunks.items()}
+
+
+def _make_default_style_diff_fetcher(files: list[str]) -> Callable[[str], str]:
+    """対象ファイル群の diff を **1 回の git 呼び出しでまとめて取得** する fetcher を返す。
+
+    ファイル 1 件ごとに `git diff` を起動すると、`.tsx` を大量に変更した PR（Tailwind クラスの
+    一括置換等）で subprocess が O(N) 回直列に走り `npm run check` のレイテンシを悪化させる。
+
+    まず base ブランチとの range diff（`origin/{default}...HEAD`）を試し、範囲が解決できない
+    （fork していない・shallow clone 等）場合のみ `git diff HEAD`（作業ツリー差分）へ
+    フォールバックする。取得できなければ空文字列（＝スタイル変更なしと同じ扱い＝fail-open だが、
+    診断不能を Warning のブロッキング材料にしない方針は他の検査と同じ）。
+
+    `--find-renames` を付けるのは、単一パスの pathspec ではリネーム検出が働かず、内容変更の
+    無い `git mv` が「全行追加」として現れて誤検知するため（既存の `className=` を含む行が
+    追加行として数えられる）。
+    """
+    if not files:
+        return lambda _f: ""
+    base = default_branch()
+    per_file: dict[str, str] = {}
+    r = sh(["git", "diff", "--find-renames", f"origin/{base}...HEAD", "--", *files], timeout=30)
+    if r.returncode == 0 and r.stdout.strip():
+        per_file = split_diff_by_file(r.stdout)
+    else:
+        r2 = sh(["git", "diff", "--find-renames", "HEAD", "--", *files], timeout=30)
+        if r2.returncode == 0:
+            per_file = split_diff_by_file(r2.stdout)
+    return lambda f: per_file.get(f, "")
+
+
+def detect_style_change_files(
+    files: list[str],
+    diff_fetcher: Callable[[str], str] | None = None,
+) -> list[str]:
+    """変更ファイル一覧から「見た目・スタイルに関わる変更」と判定したファイルを返す。
+
+    - `.css` は拡張子だけで判定する（内容を問わず常にスタイル変更）
+    - `.tsx`/`.jsx` は diff の追加/削除行に class/className 属性の変更があるときだけ対象
+    - それ以外の拡張子は対象外
+
+    `diff_fetcher` を渡すと git を呼ばずに判定できる（`--self-test` 用の注入口）。
+    """
+    tsx_files = [f for f in files if f.endswith(_STYLE_EXT_TSX)]
+    fetcher = diff_fetcher or _make_default_style_diff_fetcher(tsx_files)
+    out: list[str] = []
+    for f in files:
+        if f.endswith(_STYLE_EXT_CSS):
+            out.append(f)
+        elif f.endswith(_STYLE_EXT_TSX):
+            diff_text = fetcher(f)
+            if diff_text and diff_has_class_attr_change(diff_text):
+                out.append(f)
+    return out
+
+
+def mutation_test_record_warning(
+    files: list[str],
+    pr_body: str | None,
+    diff_fetcher: Callable[[str], str] | None = None,
+) -> str | None:
+    """スタイル変更 + 変異テスト記録なし の Warning（#698・`sprint-development-rules.md` SD-2）。
+
+    - `pr_body is None`（PR 本文を取得できない経路。Bash 経路 / 手動実行）: 判定不能として
+      スキップする（fail-open。判定できないものを毎回 Warning にすると Bash 経路の全 PR で
+      誤発火し、本当に必要な Warning が埋もれる）
+    - スタイル変更ファイルが 1 つも無ければスキップ
+    - `変異テスト:` 記録行（コードフェンス外）があればスキップ
+    """
+    if pr_body is None:
+        return None
+    style_files = detect_style_change_files(files, diff_fetcher)
+    if not style_files:
+        return None
+
+    # コードフェンス（``` / ~~~）とインラインコードを除外して判定する（テンプレート例示の
+    # `変異テスト: ...` を実記録と誤認しない・sprint_pr_closes_detection と同じ境界）。
+    if _MUTATION_TEST_LINE_RE.search(_mask_fenced_and_inline_code(pr_body)):
+        return None
+
+    shown = ", ".join(style_files[:5]) + ("…" if len(style_files) > 5 else "")
+    return (
+        "見た目・スタイルに関わる変更（class/className 属性の変更・CSS）を含みますが、"
+        f"PR 本文に `変異テスト:` の記録がありません（対象: {shown}）。"
+        "計算後の値（getComputedStyle）で検証する E2E があり、変異テストで赤くなることを実測した場合は"
+        "「変異テスト: 何を壊して何が落ちたか」を PR 本文に 1 行記載してください"
+        "（sprint-development-rules.md SD-2・#698）。"
+    )
+
+
+def _self_test_style_change_detection() -> list[str]:
+    failures: list[str] = []
+
+    diff_with_class = "diff --git a/x.tsx b/x.tsx\n--- a/x.tsx\n+++ b/x.tsx\n-  <div className=\"old\">\n+  <div className=\"new\">\n"
+    diff_logic_only = "diff --git a/x.tsx b/x.tsx\n--- a/x.tsx\n+++ b/x.tsx\n-  const x = 1\n+  const x = 2\n"
+
+    def fetcher(text_map: dict[str, str]) -> Callable[[str], str]:
+        return lambda f: text_map.get(f, "")
+
+    # ケース1: .css は内容を問わずスタイル変更
+    got = detect_style_change_files(["app/globals.css"], fetcher({}))
+    if got != ["app/globals.css"]:
+        failures.append(f".css ファイルはスタイル変更として検出されるべきだが {got}")
+
+    # ケース2: .tsx で className 変更行あり → 検出
+    got = detect_style_change_files(["app/foo.tsx"], fetcher({"app/foo.tsx": diff_with_class}))
+    if got != ["app/foo.tsx"]:
+        failures.append(f"className 変更を含む .tsx はスタイル変更として検出されるべきだが {got}")
+
+    # ケース3: .tsx でロジックのみの変更 → 検出しない（誤検知しない）
+    got = detect_style_change_files(["app/foo.tsx"], fetcher({"app/foo.tsx": diff_logic_only}))
+    if got:
+        failures.append(f"ロジックのみの .tsx 変更は検出されないべきだが {got}")
+
+    # ケース4: .ts（ロジックファイル）は対象外拡張子
+    got = detect_style_change_files(["src/usecases/foo.ts"], fetcher({"src/usecases/foo.ts": diff_with_class}))
+    if got:
+        failures.append(f".ts はそもそも判定対象外のはずだが {got}")
+
+    # ケース5: 誤判定しやすい入力 — .md 内に「class=」という文字列があるだけ（.md は対象外拡張子）
+    got = detect_style_change_files(["docs/note.md"], fetcher({"docs/note.md": diff_with_class}))
+    if got:
+        failures.append(f".md は判定対象外のはずだが {got}")
+
+    # ケース6（負ケース・境界の外側）: `data-class=` のようなハイフン区切りの別属性は
+    # class/className 属性ではない。`\b` 境界だと `-` の直後で成立して誤検出する。
+    diff_data_class = (
+        "diff --git a/x.tsx b/x.tsx\n--- a/x.tsx\n+++ b/x.tsx\n"
+        '-  <div data-class="a">\n+  <div data-class="b">\n'
+    )
+    got = detect_style_change_files(["app/foo.tsx"], fetcher({"app/foo.tsx": diff_data_class}))
+    if got:
+        failures.append(f"data-class= は class/className 属性ではないので検出されないべきだが {got}")
+
+    # ケース7（正ケース・ヘッダ判定の境界）: 本文行の中身が `--`/`++` で始まる場合でも
+    # ファイルヘッダと誤認して落とさない（落とすとスタイル変更を見逃す＝fail-open）。
+    # 実ヘッダは必ず `--- a/...` / `+++ b/...` と **空白が続く** ので、空白の有無で切り分ける。
+    # 下の削除行の中身は CSS カスタムプロパティ（`--custom-prop`）で始まり、diff 上では
+    # `---custom-prop...` と描画されるため、素朴な startswith("---") ではヘッダ扱いで落ちる。
+    diff_body_starts_with_dashes = (
+        "diff --git a/x.tsx b/x.tsx\n--- a/x.tsx\n+++ b/x.tsx\n"
+        '---custom-prop:1;<span class="old"></span>\n'
+        "+  --custom-prop:2;\n"
+    )
+    got = detect_style_change_files(
+        ["app/foo.tsx"], fetcher({"app/foo.tsx": diff_body_starts_with_dashes})
+    )
+    if got != ["app/foo.tsx"]:
+        failures.append(f"`--` で始まる本文行をヘッダと誤認せず検出されるべきだが {got}")
+
+    # ケース8: 複数ファイル分の diff を `diff --git` ヘッダで分割できる（一括取得の前提）
+    merged = diff_with_class.replace("x.tsx", "a.tsx") + diff_logic_only.replace("x.tsx", "b.tsx")
+    split = split_diff_by_file(merged)
+    if sorted(split) != ["a.tsx", "b.tsx"]:
+        failures.append(f"複数ファイル diff の分割キーが b/ 側パスになっていない: {sorted(split)}")
+    elif diff_has_class_attr_change(split["b.tsx"]):
+        failures.append("分割後の b.tsx（ロジックのみ）に class 変更ありと誤判定した")
+    elif not diff_has_class_attr_change(split["a.tsx"]):
+        failures.append("分割後の a.tsx（className 変更あり）を検出できなかった")
+
+    return failures
+
+
+def _self_test_mutation_test_record_warning() -> list[str]:
+    failures: list[str] = []
+    style_files = ["app/foo.tsx"]
+
+    def fetcher_with_style(_f: str) -> str:
+        return "--- a/x\n+++ b/x\n-  <div className=\"old\">\n+  <div className=\"new\">\n"
+
+    def fetcher_no_style(_f: str) -> str:
+        return "--- a/x\n+++ b/x\n-  const x = 1\n+  const x = 2\n"
+
+    # 完了条件1: スタイル変更 + 記録なし → Warning
+    got = mutation_test_record_warning(style_files, "本文だけで記録なし", fetcher_with_style)
+    if not got:
+        failures.append("スタイル変更 + 記録なしで Warning が出ない")
+
+    # 完了条件2: スタイル変更 + `変異テスト:` 記録あり → Warning なし
+    got = mutation_test_record_warning(
+        style_files, "変異テスト: globals.css の宣言を削除 → E2E が FAIL することを確認", fetcher_with_style
+    )
+    if got:
+        failures.append(f"記録ありなのに Warning が出た: {got}")
+
+    # 完了条件3: スタイル変更なし（ロジックのみ）→ Warning なし（誤検知ゼロ）
+    got = mutation_test_record_warning(style_files, "記録なし本文", fetcher_no_style)
+    if got:
+        failures.append(f"スタイル変更が無いのに Warning が出た: {got}")
+
+    # pr_body=None（判定不能）→ Warning なし（fail-open。誤ブロックの温床にしない）
+    got = mutation_test_record_warning(style_files, None, fetcher_with_style)
+    if got:
+        failures.append(f"pr_body=None なのに Warning が出た: {got}")
+
+    # 誤判定しやすい入力: コードフェンス内の例示だけ → 記録として数えない（Warning が出る）
+    fenced_body = "説明\n```\n変異テスト: 例示テンプレート\n```\n"
+    got = mutation_test_record_warning(style_files, fenced_body, fetcher_with_style)
+    if not got:
+        failures.append("コードフェンス内の例示だけなのに記録ありと誤認された（Warning が出ない）")
+
+    # 誤判定しやすい入力: 「変異テスト」という語が値なしで出てくるだけ（メタ行として不成立）
+    empty_value_body = "変異テスト:\n"
+    got = mutation_test_record_warning(style_files, empty_value_body, fetcher_with_style)
+    if not got:
+        failures.append("値なしの `変異テスト:` 行を記録ありと誤認した（Warning が出ない）")
+
+    return failures
 
 
 def _self_test_sprint_meta_warnings() -> list[str]:
@@ -1270,6 +1551,8 @@ def run_self_test() -> int:
         ("スプリントメタ Warning の射程（#695）", _self_test_sprint_meta_warnings),
         ("Sprint Goal 時の Closes キーワード検出（#281）", _self_test_sprint_pr_closes_detection),
         ("Closes 検出の main() 配線（exit code 通貫・PR #772）", _self_test_sprint_pr_closes_wiring),
+        ("スタイル変更検出（#698）", _self_test_style_change_detection),
+        ("変異テスト記録リマインド（#698）", _self_test_mutation_test_record_warning),
     ]
     failed_groups = 0
     total_failures = 0
@@ -1433,6 +1716,10 @@ def main(pr_body: str | None = None) -> int:
             closes_error = sprint_pr_closes_detection(pr_body)
             if closes_error:
                 errors.append(closes_error)
+            # 変異テスト記録リマインド（sprint-development-rules.md SD-2・Issue #698）
+            mutation_warn = mutation_test_record_warning(files, pr_body)
+            if mutation_warn:
+                warnings.append(mutation_warn)
 
     if warnings:
         print("[self-review] Warning:")

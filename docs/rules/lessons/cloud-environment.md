@@ -315,6 +315,30 @@ Next.js 本体は `compile()` を `{ validate: false }` で呼ぶため、ロー
 ため、非決定性そのものを記録に残す。詳細は Issue #288 / #300 / #451、議論記録は
 `content/discussions/prod-deploy-gate-20260821/whiteboard.md`。
 
+**一般則（2026-09-02 追記・Issue #785）: `exit code` 軸と `実行可否` 軸は別軸である**
+
+デプロイ系コマンド（`trigger_workers_build.py` / `npm run deploy` 等）を呼ぶスキルは、しばしば
+「終了コード 0/1/2 で分岐する」ことだけを実装し、**ツール呼び出しそのものが auto mode classifier の
+permission フェーズで止まり、コマンドが一切実行されず終了コードが返らない** という第 3 の状態を
+分岐に持たない（本ファイルの上表「リトライで通過」の実測どおり、classifier ブロックはスクリプトの
+`sys.exit()` を経由しないため exit code の 0/1/2 のどれにも該当しない）。
+
+- **exit code 軸**（スクリプトが実際に走った場合の結果）: 0 = 成功 / 1 = 待機中・異常ではない /
+  2 = 判定不能（fail-closed）— スクリプト内部の分岐であり `check_prod_drift.py` /
+  `trigger_workers_build.py` の docstring が個別に定義する
+- **実行可否軸**（そのツール呼び出しが実行されたかどうか）: 実行された（→ 上記 exit code 軸で分岐）/
+  **実行がブロックされた**（`Permission for this action was denied by the Claude Code auto mode
+  classifier.` のエラー文言で止まり、exit code が存在しない）
+
+**デプロイ系コマンドを呼ぶ分岐を書く・レビューするときは、必ず両軸を独立に扱う**（exit code の分岐だけを
+書いて「ブロックされたら exit code のどれかに丸め込まれるはず」と仮定しない。丸め込み先が無いため、
+分岐から漏れた実行ブロックは無人 firing では静かに素通りする）。実行ブロックを検知したときの行動指針は
+上記「対策（行動指針）」のリトライ規律（同一セッション内で 1 回まで）と同じであり、1 回リトライしても
+なお実行不能なら「判定不能」ではなく「実行ブロック」として記録し区別する（原因が異なるため対策も異なる:
+判定不能はスクリプト側のバグ・API 障害の疑いがあるが、実行ブロックは分類器設定の問題であり緩和は
+ユーザーのアカウント権限が必要な A-6 相当）。実装例は `sprint-cycle-router` SKILL.md §1.5 手順 4 の
+「実行ブロック」分岐。
+
 ## L-134: Cloudflare API に「未知のサブリソース名 + DELETE」を投げると親リソースが削除される（本番 Worker 誤削除・実測）
 
 **症状**: 「preview alias / version を個別削除する API があるか」を実 API で裏取りする過程で、
