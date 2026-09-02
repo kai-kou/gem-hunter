@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto'
 import { expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
+import { SEARCH_PARAM_KEYS } from '../src/ui/url/search-params'
+
 /**
  * スタブ（`e2e/stub/server.mjs`）のデータセットマーカーに、他ファイル・retry 試行との
  * キャッシュ衝突を避ける接尾辞を足した一意キーワード（マーカーの判定は部分一致なので足してよい）。
@@ -50,10 +52,61 @@ export async function expectNoHorizontalScroll(page: Page, label?: string): Prom
  * `sp-1` / `sp-2` / `sp-3` / `a11y` の 4 ファイルで同じ 2 行が重複していたため切り出した
  * （`e2e/axe.ts` と同じ薄いヘルパーの置き方）。URL への反映やその後の検証は
  * 各 `test.step()` の意図が読めることを優先し、呼び出し側に委ねる（ここに `expect` は入れない）。
+ *
+ * 🔴 **クリックしたら、その検索ナビゲーションの完了までを本ヘルパーが待つ**（Issue #624）。
+ * 以前は `click()` した瞬間に戻っていたため、「検索フォームの GET 送信 → サーバー側の
+ * 上流フェッチ → SSR → HTML の到達」という一連の処理を、呼び出し側の
+ * `expect(...).toBeVisible()` が **既定 5 秒の assertion 予算だけで** 吸収する構造だった。
+ * 実測（本リポジトリのコンテナ・4 コアを 4 倍オーバーコミットした負荷下で 40 回計測）では
+ * p50 648ms / p90 787ms に対し **最大 3,496ms** と裾が長く、フルスイートや他プロセスと
+ * 競合すると 5 秒を超えうる。リトライ・スキップで隠すのではなく、ヘルパーが名乗っている
+ * 操作（＝検索の実行）を完了させてから戻る、という同期の是正である。
+ *
+ * 🔴 **ストリーム完了まで待っているのは最後の `waitForLoadState('domcontentloaded')` である**
+ * （PR #841 Layer 1 指摘 A の実測結果・この 1 行を消すと待たなくなる）。検索結果は
+ * `app/[locale]/page.tsx` の `<Suspense>` 内でストリーミングされるが、`waitForResponse` は
+ * **レスポンスヘッダ受信時点** で解決するため、それだけでは HTML 本文の到達を待てない。
+ * `sp9-slow`（スタブが 1.5 秒遅延・`e2e/stub/server.mjs`）で実測すると
+ * `waitForResponse` 解決は 71〜301ms、`waitForLoadState('domcontentloaded')` 到達は
+ * 1,574〜1,728ms（30 回・うち 10 回は CPU 2 倍オーバーコミット下）で、
+ * ストリーム完了（`response.finished()` 相当）と同じ時点まで待つ。
+ * DOMContentLoaded は「HTML を最後までパースし終えた時点」で発火するため、
+ * ストリーミング応答では本文の到達待ちとして機能する。
+ * この待ちが消えたら決定論的に落ちるよう `e2e/search-wait-guard.spec.ts` で固定してある。
+ *
+ * ⚠️ URL 一致（`waitForURL`）ではなく **ナビゲーション応答** を待つ。同じキーワードで
+ * 続けて検索する経路（`e2e/sp-5.spec.ts` のキャッシュ検証 2 回目）では URL が変化せず、
+ * URL 監視だと「既に一致している」として即座に戻ってしまうため。
+ *
+ * ⏱️ 待ち時間の予算: `waitForResponse` / `waitForLoadState` の既定タイムアウトはいずれも
+ * 30 秒（`playwright.config.ts` は `actionTimeout` / `navigationTimeout` を指定していないので
+ * Playwright の既定のまま）で、テスト全体のタイムアウトは 60 秒（同 config の `timeout`）。
+ * 呼び出し側の `expect(...).toBeVisible()`（既定 5 秒）より広い予算でナビゲーションを待つ、
+ * というのが本ヘルパーの狙いである。
  */
 export async function searchFor(page: Page, keyword: string): Promise<void> {
   await page.getByRole('searchbox', { name: '検索キーワード' }).fill(keyword)
-  await page.getByRole('button', { name: '検索' }).click()
+  // 🔴 `Promise.all` の配列要素は左から評価されるため、`waitForResponse()`（＝待ち受けの登録）は
+  //    `click()` の呼び出しより先に行われる（応答が速いと click 後の登録では取りこぼす）。
+  //    そのうえで 1 つの await 境界に束ねることで、`click()` が失敗しても待ち受け Promise が
+  //    未処理のまま取り残されない（無関係な後続テストへ unhandled rejection が漏れない）。
+  await Promise.all([
+    page.waitForResponse((response) => {
+      const status = response.status()
+      // 3xx（`next.config.ts` の `redirects()` 等）にも同じクエリが載って返るため、
+      // リダイレクト応答では戻らない（最終応答だけに一致させる）。
+      if (status >= 300 && status < 400) return false
+      const request = response.request()
+      return (
+        request.isNavigationRequest() &&
+        request.frame() === page.mainFrame() &&
+        new URL(response.url()).searchParams.get(SEARCH_PARAM_KEYS.keyword) === keyword
+      )
+    }),
+    page.getByRole('button', { name: '検索' }).click(),
+  ])
+  // 🔴 この 1 行がストリーム完了までの待ちを担う（上記 JSDoc の実測）。消さないこと。
+  await page.waitForLoadState('domcontentloaded')
 }
 
 /**
