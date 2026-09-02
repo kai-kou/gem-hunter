@@ -221,3 +221,8 @@
 {"date": "2026-09-03 JST", "title": "改善 Issue 選定に「着手可否スコア」（前提条件の充足度）を加える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-03 JST", "title": "prod-drift の連続静止記録を毎 firing のコメントから週次集計へ圧縮する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-03 JST", "title": "複合要因で成り立つ設計判断コメントの書式（条件ツリー + 各条件の出典）をテンプレート化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-03 JST", "title": "変異テストは FAIL 報告だけでなく『その変異をテストが区別できるか』まで問う", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 775}
+{"date": "2026-09-03 JST", "title": "検査ツール新設時に、その検査が読む正本ドキュメント側の更新手順も同時に整える", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 590}
+{"date": "2026-09-03 JST", "title": "ドキュメントが『実装の型として参照せよ』と名指ししたシンボルの実在と実体を機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 660}
+{"date": "2026-09-03 JST", "title": "コンテナ・ワーカー再起動でもサブエージェント結果が失われる（PreCompact 以外の喪失経路）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 702}
+{"date": "2026-09-03 JST", "title": "Layer 1 の観点別メトリクス（指摘発生率・再実行率・所要時間）を残す", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 375}
