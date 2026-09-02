@@ -216,3 +216,8 @@
 {"date": "2026-09-03 JST", "title": "サブエージェント並行稼働中の WIP 自動保全が中間状態と環境ノイズを巻き込む", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 799}
 {"date": "2026-09-03 JST", "title": "変異させても落ちない予防的対策の記録形式を決める（実測漏れと区別する）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 775}
 {"date": "2026-09-03 JST", "title": "独立した複数ファインダーの一致は正しさの証拠にならない（実測で確度を決める）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 769}
+{"date": "2026-09-03 JST", "title": "ファインダーの食い違う結論・誤指摘の根拠座標を必須化し、矛盾を記録する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 769}
+{"date": "2026-09-03 JST", "title": "Issue 本文に「着手前要確認」セクション（前提条件・参照 ADR・仕様分岐の有無）を必須化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-03 JST", "title": "改善 Issue 選定に「着手可否スコア」（前提条件の充足度）を加える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-03 JST", "title": "prod-drift の連続静止記録を毎 firing のコメントから週次集計へ圧縮する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-03 JST", "title": "複合要因で成り立つ設計判断コメントの書式（条件ツリー + 各条件の出典）をテンプレート化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
