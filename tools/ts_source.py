@@ -332,13 +332,27 @@ def find_tag_end(text: str, start_idx: int) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _find_matching_paren(text: str, open_idx: int) -> int:
-    """`text[open_idx] == '('` として、対応する `)` の直後のインデックスを返す。
+def find_matching_paren(text: str, open_idx: int) -> int:
+    """`text[open_idx] == '('` として、対応する `)` のインデックスを返す。
 
     クォート（`'` `"` `` ` ``）の中の括弧は数えない。中に現れる `{` `}` はそもそも
     数えない（分割代入パラメータ・デフォルト値のオブジェクトリテラルはそれ自身で完結して
-    おり、外側の `(` `)` の対応関係を崩さないため、無視してよい）。対応する `)` が
-    見つからない場合は `len(text)` を返す。
+    おり、外側の `(` `)` の対応関係を崩さないため、無視してよい）。
+
+    対応する `)` が見つからない場合は **`-1` を返す**（`find_tag_end` と同じ「未発見は -1」
+    契約。見つかった場合は `find_matching_brace` と同じ「閉じ文字そのもののインデックス」を
+    返す規約に揃える）。
+
+    🔴 なぜ新設したか（Issue #828 Layer 1 CRITICAL 指摘）: `check_prefetchable_side_effects.py`
+    が独自に持つ `find_matching_paren`（未発見時 `n - 1` を返す）とも、本モジュール内部専用の
+    `_find_matching_paren`（未発見時 `len(text)` を返す・関数本体探索の内部実装に依存した契約）
+    とも戻り値の意味が違う。`_find_matching_paren` の「未発見時は末尾扱いで処理を継続する」
+    契約は `_skip_parameter_list` が正しく依存しているため変更しない（本関数へ委譲するだけの
+    薄いラッパーに変えた）。一方 `check_ui_dimensions.py` 側は「未発見（壊れた/切り詰められた
+    入力）を確実にスキップする」ために `-1` という **実在のインデックスと衝突しない値** が
+    必要だった（`len(text)` は一見実在のインデックスに見えてしまい、`close <= open_paren` の
+    ような事後チェックを別途書かないと安全に判定できず、そのガード自体にバグが混入していた
+    ＝実際に本 Issue の CRITICAL 指摘の原因）。
     """
     n = len(text)
     depth = 0
@@ -366,10 +380,26 @@ def _find_matching_paren(text: str, open_idx: int) -> int:
             depth -= 1
             i += 1
             if depth == 0:
-                return i
+                return i - 1
             continue
         i += 1
-    return n
+    return -1
+
+
+def _find_matching_paren(text: str, open_idx: int) -> int:
+    """`text[open_idx] == '('` として、対応する `)` の直後のインデックスを返す。
+
+    🔴 **内部専用**（本モジュール内の `_skip_parameter_list` 専用）。未発見時に `len(text)` を
+    返す契約に `_skip_parameter_list` が依存している（見つからなければ「仮引数リストがソース
+    末尾まで続く」ものとして扱い、`find_function_body_end` 側の以降の走査を自然に打ち切らせる
+    ため）。**この契約を変更しない**。外部（`check_ui_dimensions.py` 等）から呼ぶ場合は
+    `find_matching_paren`（未発見時 `-1` を返す公開版）を使うこと。実装は `find_matching_paren`
+    へ委譲し、その戻り値（見つかった場合は `)` 自身のインデックス／見つからない場合は `-1`）を
+    本関数の契約（`)` の直後のインデックス／見つからない場合は `len(text)`）に変換するだけの
+    薄いラッパー。
+    """
+    close = find_matching_paren(text, open_idx)
+    return len(text) if close == -1 else close + 1
 
 
 def _find_unquoted_char(text: str, start: int, end: int, target: str) -> int:
@@ -628,6 +658,35 @@ def _run_self_test() -> int:
     # 見つからない場合は -1
     check("find_tag_end/not_found", find_tag_end("<Foo bar=1", 4), -1)
 
+    # ---------------- find_matching_paren（公開版・未発見は -1・Issue #828） ----------------
+
+    def paren_span(text: str) -> int:
+        return find_matching_paren(text, text.index("("))
+
+    check("find_matching_paren/simple", paren_span("(a, b)"), 5)
+    check("find_matching_paren/nested", paren_span("(a, (b, c), d)"), 13)
+    # 文字列リテラル内の括弧は対応関係の一部として数えない
+    check(
+        "find_matching_paren/string_with_unbalanced_parens",
+        paren_span('(a, "x ) y (" , b)'),
+        17,
+    )
+    # 対応する閉じ括弧が最後の文字であっても正しく見つかる（off-by-one の反例）
+    check("find_matching_paren/close_is_last_char", paren_span("(a)"), 2)
+    # 対応する閉じ括弧が無い（壊れた/切り詰められた入力）→ -1（len(text) ではない）
+    check("find_matching_paren/unmatched_returns_neg_one", find_matching_paren("(a, b", 0), -1)
+    # `_find_matching_paren`（内部版・委譲先）は従来どおり len(text) を返す契約を維持する
+    check(
+        "find_matching_paren/internal_wrapper_still_returns_len_on_unmatched",
+        _find_matching_paren("(a, b", 0),
+        len("(a, b"),
+    )
+    check(
+        "find_matching_paren/internal_wrapper_matches_close_plus_one",
+        _find_matching_paren("(a)", 0),
+        3,
+    )
+
     # ---------------- find_function_body_end ----------------
 
     # 必須ケース: export の直後に非 export のヘルパー関数が続く。export の本文が
@@ -721,7 +780,7 @@ def _run_self_test() -> int:
         print("❌ ts_source --self-test FAILED")
         print("\n".join(failures))
         return 1
-    print("✅ ts_source --self-test PASSED（33 ケース）")
+    print("✅ ts_source --self-test PASSED（40 ケース）")
     return 0
 
 

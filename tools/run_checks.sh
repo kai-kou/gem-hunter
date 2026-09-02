@@ -346,6 +346,17 @@ else
   skip_check "日時 TZ 検査 (check_datetime_tz.py)" "スクリプトが見つかりません"
 fi
 
+# 4.8.5.5. apply-base 適用時の固有拡張消失を検知するツールの self-test
+# （本判定＝snapshot/check サブコマンドは apply-to-repo.sh 実行時のみ。Issue #60）。
+# 本判定は「apply-to-repo.sh の適用実行そのもの」を前提とするため、通常の PR チェック
+# （差分だけを見るオフライン検査）には乗らない。判定ロジックの退行だけを self-test で機械的に守る
+# （本番乖離検知 self-test・check_datetime_tz.py --self-test と同じパターン）。
+if [ -f "$REPO_ROOT/tools/check_apply_base_drift.py" ]; then
+  run_check "apply-base ドリフト検査 self-test (check_apply_base_drift.py --self-test)" python3 tools/check_apply_base_drift.py --self-test
+else
+  skip_check "apply-base ドリフト検査 self-test (check_apply_base_drift.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 4.8.6. Hot 層予算チェックの self-test（増減ログのテーブル書式が変わったときの沈黙失敗を検知する）。
 #        本体（引数なし実行）は tools/self_review_check.py が Hot 層変更時に Warning として回すため、
 #        ここでは self-test だけを配線する（PR ごとに増減ログの記録漏れでブロックしない）。
