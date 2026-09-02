@@ -214,5 +214,5 @@
 {"date": "2026-09-03 JST", "title": "cache.test.ts の testKey ヘルパー依存を減らし生成関数経由でキーを作る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-03 JST", "title": "コード内コメントが根拠として引く「方針・規約」の実在性を機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 660}
 {"date": "2026-09-03 JST", "title": "サブエージェント並行稼働中の WIP 自動保全が中間状態と環境ノイズを巻き込む", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 799}
-{"date": "2026-09-03 JST", "title": "変異させても落ちない予防的対策の記録形式を決める（実測漏れと区別する）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 775}
-{"date": "2026-09-03 JST", "title": "独立した複数ファインダーの一致は正しさの証拠にならない（実測で確度を決める）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 769}
+{"date": "2026-09-03 JST", "title": "変異させても落ちない予防的対策の記録形式を決める（実測漏れと区別する）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 775}
+{"date": "2026-09-03 JST", "title": "独立した複数ファインダーの一致は正しさの証拠にならない（実測で確度を決める）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 769}
