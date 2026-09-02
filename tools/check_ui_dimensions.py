@@ -125,7 +125,16 @@ RAW_H_SIZE_TOKEN_RE = re.compile(r"^(?:h|size)-(?:\d|\[)")
 BARE_TEXT_TOKEN_RE = re.compile(
     r"^text-(" + "|".join(re.escape(k) for k in TEXT_SCALE_PX) + r")$"
 )
-CALL_SITE_H_TEXT_RE = re.compile(r"^(?:h-|text-)")
+# 呼び出しサイトで禁止する「サイズ影響クラス」のトークン判定。
+# 🔴 `text-` を前方一致で拾わない（Issue #828 レビュー指摘の回帰）: `text-muted-foreground/50` の
+#    ような **色** ユーティリティまでサイズ上書きとして Error 化してしまい、正当なコードが
+#    通らなくなる（fail-closed 誤検知）。フォントサイズは `TEXT_SCALE_PX` のスケール名との
+#    完全一致、または任意値記法 `text-[...]` のときだけサイズ影響とみなす。
+CALL_SITE_H_TEXT_RE = re.compile(
+    r"^(?:h-|text-(?:(?:"
+    + "|".join(re.escape(k) for k in TEXT_SCALE_PX)
+    + r")$|\[))"
+)
 
 
 # --------------------------------------------------------------------------- 共通ユーティリティ
@@ -1067,6 +1076,35 @@ _case(
         ),
     ),
     1, 0,
+)
+
+_case(
+    "検査4回帰（Issue #828 の修正が作った誤検知）: className: プロパティの色ユーティリティ "
+    "（`text-muted-foreground/50`）はサイズ上書きではないので Error にしない。`text-` の前方一致で "
+    "拾うと正当なコードが通らなくなる（fail-closed）",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        f["src/ui/pagination.tsx"].replace(
+            "buttonVariants({ variant: 'ghost', size: 'default' })",
+            "buttonVariants({ variant: 'ghost', size: 'default', "
+            "className: 'pointer-events-none text-muted-foreground/50' })",
+        ),
+    ),
+    0, 0,
+)
+
+_case(
+    "検査4回帰（上記の対）: 色ユーティリティを許容しても、フォントサイズスケール名の完全一致 "
+    "（`text-lg`）と任意値記法（`text-[13px]`）はサイズ上書きとして検出し続ける",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        f["src/ui/pagination.tsx"].replace(
+            "buttonVariants({ variant: 'ghost', size: 'default' })",
+            "buttonVariants({ variant: 'ghost', size: 'default', "
+            "className: 'text-primary text-lg text-[13px]' })",
+        ),
+    ),
+    2, 0,
 )
 
 _case(
