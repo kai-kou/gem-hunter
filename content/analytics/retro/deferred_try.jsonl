@@ -207,3 +207,8 @@
 {"date": "2026-09-02 JST", "title": "sprint-cycle-router SKILL.md 1.5 の分岐肥大化を分割して到達不能分岐を防ぐ", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "check_hot_budget.py に増減ログの自動シンク（--auto-sync）を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "L-130（exit code 軸と実行可否軸は別軸）を Layer 1 セルフレビューの観点に加える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-03 JST", "title": "並列委譲中に Stop フックの WIP 自動コミットが他役の中間状態を巻き込む", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-03 JST", "title": "正規表現で走査する検査ツールがコメント内の記述を実データとして拾う（5 つ目の欠陥類型）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 590}
+{"date": "2026-09-03 JST", "title": "self-test が判定テーブル・設定リストを通る経路に到達しない", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 770}
+{"date": "2026-09-03 JST", "title": "1 PR に複数 Issue を同梱するときのレビュー複雑性の基準を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-03 JST", "title": "cache.test.ts の testKey ヘルパー依存を減らし生成関数経由でキーを作る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
