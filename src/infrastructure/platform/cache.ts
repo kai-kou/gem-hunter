@@ -1,4 +1,4 @@
-import type { CachePort } from '../../domain/ports/cache-port'
+import type { CacheKey, CachePort } from '../../domain/ports/cache-port'
 import type { ClockPort } from '../../domain/ports/clock-port'
 import { SystemClock } from '../system-clock'
 
@@ -16,11 +16,11 @@ type Entry = {
  * として実際に配線済み（`CachingRepositoryQuery` から呼ばれる）。
  */
 export class InMemoryCache implements CachePort {
-  private readonly store = new Map<string, Entry>()
+  private readonly store = new Map<CacheKey, Entry>()
 
   constructor(private readonly clock: ClockPort = new SystemClock()) {}
 
-  async get<T>(key: string): Promise<T | null> {
+  async get<T>(key: CacheKey): Promise<T | null> {
     const entry = this.store.get(key)
     if (!entry) {
       return null
@@ -32,7 +32,7 @@ export class InMemoryCache implements CachePort {
     return entry.value as T
   }
 
-  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
+  async set<T>(key: CacheKey, value: T, ttlSeconds: number): Promise<void> {
     if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
       throw new RangeError(
         `ttlSeconds は正の有限数である必要があります（受け取った値: ${ttlSeconds}）`,
@@ -41,7 +41,7 @@ export class InMemoryCache implements CachePort {
     this.store.set(key, { value, expiresAt: this.clock.now().getTime() + ttlSeconds * 1000 })
   }
 
-  async invalidate(key: string): Promise<void> {
+  async invalidate(key: CacheKey): Promise<void> {
     this.store.delete(key)
   }
 }

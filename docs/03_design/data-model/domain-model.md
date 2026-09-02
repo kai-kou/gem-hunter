@@ -150,7 +150,7 @@ export function trySearchKeyword(raw: string): SearchKeyword | null { /* … */ 
 
 🔴 **厳格版はインフラ層・UI 層の実データ読み取りには使わないこと**。実在データの一部を拒否し、一覧からの消失・リンク破損を招く（`static-gem-index.ts` / `static-gem-digest.ts` / `gem-list.tsx` は過去に独自の緩い判定を重複実装していたが、許容版へ統合済み）。
 
-**`CacheKey` の実装位置（Issue #67）**: ブランド型 + 生成関数を `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。`src/domain/model/` ではない — キー形式が `CachePort` 実装詳細と不可分なため）。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` の 2 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
+**`CacheKey` の実装位置（Issue #67・Issue #89 で改訂）**: **ブランド型の定義** は `src/domain/ports/cache-port.ts`（`CachePort` と同じファイル）に置く — `CachePort.get` / `set` / `invalidate` の引数を `key: CacheKey` にして、生成関数を経ない生の `string` を渡すとコンパイルエラーになるよう型で強制するため（ARCH-1 により domain は infrastructure を import できず、ポート側で型を持つほかない）。**生成関数（キーの組み立て）** は引き続き `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。キー形式が `CachePort` 実装詳細と不可分なため・`src/domain/model/` ではない）。domain 側はブランド型を **定義するだけ** で構築しない。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` / `readmeCacheKey(owner, name)` の 3 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
 
 ```text
 search:{バージョン}:{正規化キーワード}:page={ページ番号}:sort={ソート順}:per_page={表示件数}   # searchResultCacheKey

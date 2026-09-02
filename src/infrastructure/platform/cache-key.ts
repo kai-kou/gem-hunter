@@ -1,4 +1,7 @@
+import type { CacheKey } from '../../domain/ports/cache-port'
 import type { SearchQuery } from '../../domain/model/search-query'
+
+export type { CacheKey } from '../../domain/ports/cache-port'
 
 /**
  * キャッシュキーの命名規約（NFR-18）。
@@ -8,6 +11,8 @@ import type { SearchQuery } from '../../domain/model/search-query'
  * - 前後空白・大文字小文字を正規化する
  *
  * 🔴 生成関数（本ファイル）以外でキーを組み立てない（domain-model.md §4）。
+ * `CacheKey` 型自体は `src/domain/ports/cache-port.ts` が定義する（`CachePort` の
+ * 引数として型で強制するため・Issue #89）。ここでは生成関数のみを持つ。
  */
 const NAMESPACE_SEARCH = 'search'
 const NAMESPACE_REPOSITORY = 'repository'
@@ -36,11 +41,6 @@ const NAMESPACE_README = 'readme'
  *   結果の意味（含まれるリポジトリの範囲）が変わったため引き上げ（Issue #142）
  */
 export const CACHE_SCHEMA_VERSION = 'v2'
-
-declare const brand: unique symbol
-
-/** 名前空間つき・正規化済みのキャッシュキー。 */
-export type CacheKey = string & { readonly [brand]: 'CacheKey' }
 
 function normalizeSegment(segment: string): string {
   return encodeURIComponent(segment.normalize('NFC').trim().toLowerCase())
