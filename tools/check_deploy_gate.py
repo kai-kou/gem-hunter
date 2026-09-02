@@ -1367,6 +1367,77 @@ def _self_test_decide_and_exit_code() -> list[str]:
     return failures
 
 
+def _self_test_run_gh_and_http_get_delegate_to_github_api() -> list[str]:
+    """`_run_gh` / `_http_get` ラッパーが実際に `github_api.run_gh` / `github_api.http_get`
+    （さらにその内部の `subprocess.run` / `urllib.request.urlopen`）へ到達することを実測する
+    （PR #849 Layer1 指摘1）。
+
+    既存の API チャネル系セルフテスト（`_self_test_fetch_merged_pr_commit_shas` 等）は
+    `globals()["_run_gh"]` / `globals()["_http_get"]` を丸ごと差し替えるため、
+    `return github_api.run_gh(args)` / `return github_api.http_get(...)` という委譲コード
+    自体は self-test 実行時に一度も実行されない。本テストは `_run_gh` / `_http_get` を
+    差し替えず、その内側の `subprocess.run` / `urllib.request.urlopen` だけを差し替える。
+    """
+    import subprocess
+    import urllib.request
+
+    failures: list[str] = []
+    orig_run = subprocess.run
+    orig_urlopen = urllib.request.urlopen
+    captured_argv: list[list[str]] = []
+    captured_requests: list[urllib.request.Request] = []
+
+    class _FakeCompleted:
+        def __init__(self, returncode, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    class _FakeResponse:
+        def __init__(self, body: bytes):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self) -> bytes:
+            return self._body
+
+    def fake_run(cmd, **kwargs):
+        captured_argv.append(cmd)
+        return _FakeCompleted(0, stdout="hello\n")
+
+    def fake_urlopen(req, timeout=None):
+        captured_requests.append(req)
+        return _FakeResponse(b'{"ok": true}')
+
+    try:
+        subprocess.run = fake_run
+        urllib.request.urlopen = fake_urlopen
+
+        ok, out = _run_gh(["issue", "list", "-R", "o/r", "--state", "open"])
+        if not ok or out != "hello":
+            failures.append(f"_run_gh: github_api.run_gh に到達していない: {(ok, out)!r}")
+        if not captured_argv or captured_argv[0] != ["gh", "issue", "list", "-R", "o/r", "--state", "open"]:
+            failures.append(f"_run_gh: argv が subprocess.run に意図通り届いていない: {captured_argv}")
+
+        captured_requests.clear()
+        ok2, out2 = _http_get("https://api.github.com/repos/o/r/issues", "test-token-not-real")
+        if not ok2 or out2 != '{"ok": true}':
+            failures.append(f"_http_get: github_api.http_get に到達していない: {(ok2, out2)!r}")
+        if not captured_requests:
+            failures.append("_http_get: urlopen に到達していない")
+        elif captured_requests[0].get_header("Authorization") != "Bearer test-token-not-real":
+            failures.append("_http_get: Authorization: Bearer ヘッダが実送信されていない")
+    finally:
+        subprocess.run = orig_run
+        urllib.request.urlopen = orig_urlopen
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("スプリント対象判定", _self_test_is_sprint_issue),
@@ -1381,6 +1452,8 @@ def run_self_test() -> int:
         ("open PR 検索の gh/REST フォールバック（#723 指摘1）", _self_test_fetch_open_pr_numbers),
         ("in-progress Issue / コメント取得の REST 経路（#602 移行の挙動不変・#824）", _self_test_fetch_in_progress_sprint_candidates),
         ("集約判定と終了コードのマッピング", _self_test_decide_and_exit_code),
+        ("APIチャネル: _run_gh/_http_get の委譲到達（#849）",
+         _self_test_run_gh_and_http_get_delegate_to_github_api),
     ]
     failed_groups = 0
     total_failures = 0

@@ -105,7 +105,7 @@ def run_gh(args):
     """
     ok, out = github_api.run_gh(args, timeout=60)
     if not ok:
-        if out not in ("gh コマンドが見つかりません", "gh コマンドがタイムアウトしました"):
+        if not github_api.is_gh_unavailable(out):
             print(f"WARNING: gh failed: gh {' '.join(args)}\n  {out}", file=sys.stderr)
         return ""
     return out
@@ -439,6 +439,106 @@ def _fmt(d):
     return " / ".join(f"{k}={v}" for k, v in sorted(d.items(), key=lambda x: (-x[1], x[0])))
 
 
+def _self_test_run_gh_delegates_with_stderr_asymmetry():
+    """`run_gh()` が `github_api.run_gh()` 経由で実際に `subprocess.run` へ到達すること、
+    かつ元実装から意図的に保持している非対称挙動（gh 起動不能では無警告 / 非0終了では
+    WARNING を出す）が実際に機能していることを実測する（PR #849 Layer1 指摘1・4）。
+
+    従来の `_self_test()` は「純粋関数のみ」を対象にしており（モジュール docstring 明記）、
+    `run_gh()` 自体は一度も呼ばれていなかった。`globals()["_run_gh"]` を丸ごと差し替える
+    パターン（他ファイルの慣習）ではなく、`subprocess.run` そのものを差し替えて委譲コードを
+    実行させる（#710 の fake runner argv 検証と同じ形）。
+    """
+    import subprocess
+
+    failures = []
+    orig_run = subprocess.run
+    captured = []
+
+    class _FakeCompleted:
+        def __init__(self, returncode, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run_ok(cmd, **kwargs):
+        captured.append({"cmd": cmd, "kwargs": kwargs})
+        return _FakeCompleted(0, stdout="hello\n")
+
+    def fake_run_not_found(cmd, **kwargs):
+        captured.append({"cmd": cmd, "kwargs": kwargs})
+        raise FileNotFoundError()
+
+    def fake_run_fail(cmd, **kwargs):
+        captured.append({"cmd": cmd, "kwargs": kwargs})
+        return _FakeCompleted(1, stderr="HTTP 403: Forbidden\n")
+
+    import io
+    import contextlib
+
+    try:
+        # ① 成功: argv がそのまま subprocess.run に届く
+        captured.clear()
+        subprocess.run = fake_run_ok
+        out = run_gh(["issue", "list", "-R", "o/r", "--label", "type:improvement"])
+        if out != "hello":
+            failures.append(f"run_gh 成功: 期待 'hello' だが {out!r}")
+        if not captured or captured[0]["cmd"] != [
+            "gh", "issue", "list", "-R", "o/r", "--label", "type:improvement",
+        ]:
+            failures.append(f"run_gh: argv が意図通りでない: {captured}")
+        if captured and captured[0]["kwargs"].get("timeout") != 60:
+            failures.append("run_gh: timeout=60 が subprocess.run に伝播していない")
+
+        # ② gh 起動不能（FileNotFoundError）: 空文字を返し、WARNING を出さない（非対称挙動）
+        captured.clear()
+        subprocess.run = fake_run_not_found
+        stderr_buf = io.StringIO()
+        with contextlib.redirect_stderr(stderr_buf):
+            out = run_gh(["issue", "list"])
+        if out != "":
+            failures.append(f"run_gh gh不在: 空文字を期待したが {out!r}")
+        if "WARNING" in stderr_buf.getvalue():
+            failures.append(
+                f"run_gh gh不在: 非対称挙動（無警告）が壊れている。stderr={stderr_buf.getvalue()!r}"
+            )
+
+        # ③ 非0終了: 空文字を返し、WARNING を出す（非対称挙動のもう半分）
+        captured.clear()
+        subprocess.run = fake_run_fail
+        stderr_buf = io.StringIO()
+        with contextlib.redirect_stderr(stderr_buf):
+            out = run_gh(["issue", "list"])
+        if out != "":
+            failures.append(f"run_gh 非0終了: 空文字を期待したが {out!r}")
+        if "WARNING" not in stderr_buf.getvalue():
+            failures.append(
+                f"run_gh 非0終了: WARNING が出るべきだが出ていない。stderr={stderr_buf.getvalue()!r}"
+            )
+        if "HTTP 403: Forbidden" not in stderr_buf.getvalue():
+            failures.append("run_gh 非0終了: WARNING に gh の失敗理由が含まれていない")
+    finally:
+        subprocess.run = orig_run
+    return failures
+
+
+def _self_test_is_gh_unavailable_equivalence():
+    """`run_gh()` が使う `github_api.is_gh_unavailable()` の等価性契約（PR #849 指摘4）。
+
+    旧実装は `("gh コマンドが見つかりません", "gh コマンドがタイムアウトしました")` を
+    ここへ逐語コピーして固定比較していた（指摘3/5・github_api.py の `GH_UNAVAILABLE_REASONS`
+    が唯一の SSOT になった後も、呼び出し元が正しく import して使っていることを裏付ける）。
+    """
+    failures = []
+    if not github_api.is_gh_unavailable("gh コマンドが見つかりません"):
+        failures.append("FileNotFoundError 文言が is_gh_unavailable=True にならない")
+    if not github_api.is_gh_unavailable("gh コマンドがタイムアウトしました"):
+        failures.append("TimeoutExpired 文言が is_gh_unavailable=True にならない")
+    if github_api.is_gh_unavailable("HTTP 403: Forbidden"):
+        failures.append("非0終了時の stderr 文言が誤って is_gh_unavailable=True になった")
+    return failures
+
+
 def _self_test():
     """純粋関数（API 非依存）のセルフテスト。"""
     fail = 0
@@ -517,8 +617,16 @@ def _self_test():
     check(high_ratio_ok(31, 100) is False, "high_ratio_ok over ceiling")
     check(high_ratio_ok(1, 0) is True, "high_ratio_ok empty")
 
+    # gh/REST 委譲到達テスト（PR #849 Layer1 指摘1/4。実エントリポイント経由で実測する）
+    for name, fn in (
+        ("run_gh 委譲到達 + stderr 非対称挙動", _self_test_run_gh_delegates_with_stderr_asymmetry),
+        ("is_gh_unavailable 等価性", _self_test_is_gh_unavailable_equivalence),
+    ):
+        for msg in fn():
+            check(False, f"[{name}] {msg}")
+
     if fail == 0:
-        print("PASS: triage_improvements self-test (22 checks)")
+        print("PASS: triage_improvements self-test (24 checks)")
     return 1 if fail else 0
 
 

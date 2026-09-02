@@ -68,6 +68,25 @@ DEFAULT_GH_TIMEOUT = 30
 DEFAULT_REST_TIMEOUT = 30
 DEFAULT_USER_AGENT = "gem-hunter-github-api"
 
+# `run_gh()` が gh 自体の起動不能（＝実行すら出来ていない）を示すときに返す理由文字列。
+# 非 0 終了時の stderr/stdout 文言とは区別する必要がある呼び出し元（例: 「gh はあるが
+# 権限エラー」では警告ログを出し、「gh コマンドが無い」では出さない、という非対称挙動を
+# 持つ呼び出し元・`tools/triage_improvements.py` / `tools/check_claude_code_updates.py`）が
+# `is_gh_unavailable()` 経由で判定する。この定数がタプル文言の唯一の SSOT
+# （2 箇所で逐語コピーされていた重複の解消・PR #849 Layer1 指摘3/5）。
+GH_UNAVAILABLE_REASONS: tuple[str, ...] = (
+    "gh コマンドが見つかりません",
+    "gh コマンドがタイムアウトしました",
+)
+
+
+def is_gh_unavailable(reason: str) -> bool:
+    """`run_gh()` の失敗理由が「gh 自体が起動できない」（`GH_UNAVAILABLE_REASONS` のいずれか）か。
+
+    非 0 終了時の stderr/stdout 文言（gh は起動できたが失敗した）とは区別する。
+    """
+    return reason in GH_UNAVAILABLE_REASONS
+
 
 def resolve_token(env_vars: tuple[str, ...] = DEFAULT_TOKEN_ENV_VARS) -> str | None:
     """`env_vars` を優先順に見て、最初に非空の値を持つ環境変数の値を返す。無ければ None。
@@ -233,6 +252,31 @@ def _self_test_no_token_message_format() -> list[str]:
     msg2 = no_token_message("x", env_vars=("A_TOKEN", "B_TOKEN"))
     if msg2 != "gh 失敗（x）かつ A_TOKEN/B_TOKEN 未設定":
         failures.append(f"カスタム env_vars 文言が一致しない: {msg2!r}")
+    return failures
+
+
+def _self_test_is_gh_unavailable() -> list[str]:
+    """`GH_UNAVAILABLE_REASONS` / `is_gh_unavailable()` の SSOT 化（PR #849 Layer1 指摘3/5）。
+
+    `run_gh()` が実際に返す 2 つの理由文字列（① FileNotFoundError ② TimeoutExpired）が
+    そのまま `is_gh_unavailable()` で True になること、非 0 終了の stderr 文言は False の
+    ままであることを確認する。呼び出し元（triage_improvements.py /
+    check_claude_code_updates.py）が同じ定数を import して使うため、ここでの文言変更は
+    両呼び出し元のテストにも波及する（SSOT が機能していることの裏付け）。
+    """
+    failures = []
+    if not is_gh_unavailable("gh コマンドが見つかりません"):
+        failures.append("FileNotFoundError 文言が is_gh_unavailable=True にならない")
+    if not is_gh_unavailable("gh コマンドがタイムアウトしました"):
+        failures.append("TimeoutExpired 文言が is_gh_unavailable=True にならない")
+    if is_gh_unavailable("HTTP 403: Forbidden"):
+        failures.append("非0終了時の stderr 文言が誤って is_gh_unavailable=True になった")
+    if is_gh_unavailable(""):
+        failures.append("空文字が誤って is_gh_unavailable=True になった")
+    if tuple(GH_UNAVAILABLE_REASONS) != (
+        "gh コマンドが見つかりません", "gh コマンドがタイムアウトしました",
+    ):
+        failures.append(f"GH_UNAVAILABLE_REASONS の中身が変わっている: {GH_UNAVAILABLE_REASONS!r}")
     return failures
 
 
@@ -500,6 +544,7 @@ def _run_self_tests() -> int:
     tests = [
         ("resolve_token 優先順位", _self_test_resolve_token_priority),
         ("no_token_message 文言", _self_test_no_token_message_format),
+        ("GH_UNAVAILABLE_REASONS / is_gh_unavailable SSOT", _self_test_is_gh_unavailable),
         ("run_gh エントリポイント", _self_test_run_gh_entrypoint),
         ("http_request エントリポイント", _self_test_http_request_entrypoint),
         ("rest_get_after_gh_failure 3分岐", _self_test_rest_get_after_gh_failure),

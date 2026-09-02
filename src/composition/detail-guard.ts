@@ -1,4 +1,3 @@
-import { headers } from 'next/headers'
 import type { RepositoryDetail } from '../domain/model/repository'
 import type { GetRepositoryDetailInput } from '../usecases/get-repository-detail'
 import { getRepositoryDetailUseCase } from './container'
@@ -22,23 +21,26 @@ import { enforceDetailRateLimit } from './rate-limit'
  * DomainError)` に委ねる（詳細取得自体の失敗＝`rateLimitPrimary` 等と同じローカライズ済み
  * `ErrorNotice` 表示を再利用し、新しい表示分岐を増やさない）。
  *
- * 🔵 **`headers()` は呼び出し側から受け取らず、ここで自分で呼ぶ**。`getSessionAccessToken()`
- * （`src/infrastructure/platform/session-cookie.ts` が内部で `cookies()` を呼ぶ）と同じ流儀
- * （Next.js のリクエストスコープ API はページ側へ運ばず composition 層に隠す）を踏襲する。
- * `prepareSearchKeyword` が外部から `headers` を受け取るのは、画面 (`await headers()`) と
- * API Route (`request.headers`) の 2 つの取得元を切り替える必要があるため（本関数の呼び出し元は
- * 画面 1 箇所のみで、切り替えの要がない）。
+ * 🔵 **`headers` は呼び出し側から `Headers` として受け取る**（姉妹関数 `enforceSearchRateLimit` /
+ * `enforceGemListRateLimit` / `enforceDetailRateLimit`（`rate-limit.ts`）や `prepareSearchKeyword`
+ * （`search-guard.ts`）と同じ形）。composition 層自身が `next/headers` の `headers()` /
+ * `cookies()` を呼ぶ流儀を持つのは `getSessionAccessToken()` ではなく、実際にはその内部の
+ * `readSessionCookieFromRequestScope()`（`src/infrastructure/platform/session-cookie.ts`。
+ * **infrastructure 層**）であり、composition root 自身は Next.js のリクエストスコープ API を
+ * 直接呼ばない。本関数もその形に揃え、呼び出し元（画面）が `await headers()` を呼んで渡す。
  *
  * @param accessToken セッションのアクセストークン（未ログインは `null`）。SP-8: 渡すとユーザー
  *   自身のレート枠で取得する（省略時は installation token）。
+ * @param headers 接続元 IP 抽出に使う `Headers`（呼び出し元の画面が `await headers()` で取得）。
  * @param input 対象リポジトリ（owner/repo）。
  * @returns 取得できたリポジトリ詳細（見つからない場合は `null`）。
  */
 export async function fetchRepositoryDetail(
   accessToken: string | null,
+  headers: Headers,
   input: GetRepositoryDetailInput,
 ): Promise<RepositoryDetail | null> {
-  await enforceDetailRateLimit(await headers())
+  await enforceDetailRateLimit(headers)
   return getRepositoryDetailUseCase(accessToken)(input)
 }
 

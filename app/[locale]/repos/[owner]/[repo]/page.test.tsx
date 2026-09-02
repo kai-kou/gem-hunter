@@ -22,17 +22,28 @@ vi.mock('@/src/composition/auth', () => ({
 const isAuthConfiguredMock = vi.fn<() => boolean>()
 
 /**
- * Issue #190: `fetchRepositoryDetail`（`src/composition/detail-guard.ts`）が「自リクエスト
- * 間引き → 詳細取得」を 1 関数へ集約したため、ページ側は `@/src/composition/container` /
- * `@/src/composition/rate-limit` / `next/headers` のいずれも直接 import しなくなった。
+ * Issue #190 / セルフレビュー指摘 6（PR #849）: `fetchRepositoryDetail`
+ * （`src/composition/detail-guard.ts`）は「自リクエスト間引き → 詳細取得」を 1 関数へ集約するが、
+ * `headers`（`Headers`）は姉妹経路（`rate-limit.ts` の `enforce*RateLimit` / `search-guard.ts` の
+ * `prepareSearchKeyword`）と同じく **呼び出し側（本ページ）が `await headers()` で取得して渡す**。
  * その配線の順序・条件そのものは `src/composition/detail-guard.test.ts` が固定するので、
- * 本ファイルは「ページが `fetchRepositoryDetail` の結果をどう描画するか」だけを検査する。
+ * 本ファイルは「ページが `fetchRepositoryDetail` の結果をどう描画するか」と、`headers()` の
+ * 戻り値をそのまま渡していることだけを検査する。
  */
 const fetchRepositoryDetailMock = vi.fn<() => Promise<unknown>>()
 vi.mock('@/src/composition/detail-guard', () => ({
   fetchRepositoryDetail: (...args: unknown[]) => fetchRepositoryDetailMock(...(args as [])),
   // エラー分岐では README 取得まで到達しないため中身は空でよい。
   getRepositoryReadmeUseCase: () => async () => null,
+}))
+
+// `headers()` は Workers/Next のリクエストスコープでしか動かないため固定の `Headers` を返す
+// （`gems/page.test.tsx` と同じ流儀）。空の `Headers` だと `new Headers()` と構造的に区別が付かず
+// （どちらも entries が空）、`headers()` を経由せず素通りさせる変異を検知できない。中身を持たせ、
+// `toHaveBeenCalledWith` の深い等価比較で区別できるようにする（変異テストで実測・PR #849）。
+const FIXED_HEADERS = new Headers({ 'x-test-marker': 'repository-detail-page' })
+vi.mock('next/headers', () => ({
+  headers: async () => FIXED_HEADERS,
 }))
 
 function renderPage(owner: string, repo: string) {
@@ -115,7 +126,7 @@ describe('RepositoryDetailPage — 詳細取得のレート制限配線（Issue 
     const tree = await renderPage('facebook', 'react')
 
     expect(fetchRepositoryDetailMock).toHaveBeenCalledTimes(1)
-    expect(fetchRepositoryDetailMock).toHaveBeenCalledWith(null, {
+    expect(fetchRepositoryDetailMock).toHaveBeenCalledWith(null, FIXED_HEADERS, {
       owner: 'facebook',
       repo: 'react',
     })

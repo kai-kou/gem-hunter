@@ -1087,6 +1087,96 @@ def _self_test_create_issue_no_credentials_direct() -> list[str]:
     return failures
 
 
+def _self_test_run_gh_and_http_request_delegate_to_github_api() -> list[str]:
+    """`_run_gh` / `_http_request` ラッパーが実際に `github_api.run_gh` / `github_api.http_request`
+    （さらにその内部の `subprocess.run` / `urllib.request.urlopen`）へ到達することを実測する
+    （PR #849 Layer1 指摘1）。
+
+    従来の API チャネル系セルフテストは `_mocked_api_channels()` 経由で `globals()["_run_gh"]` /
+    `globals()["_http_request"]` を丸ごと差し替えるため、`return github_api.run_gh(args)` /
+    `return github_api.http_request(...)` という **委譲コード自体は一度も実行されない**（実測:
+    `_run_gh` を `return github_api.run_gh([])` に変異させても既存 15 グループ全 PASS のまま
+    通った）。本テストは `_run_gh` / `_http_request` を差し替えず、その内側の
+    `subprocess.run` / `urllib.request.urlopen` だけを差し替えて実際に到達することを確認する。
+    """
+    import subprocess
+    import urllib.error
+    import urllib.request
+
+    failures: list[str] = []
+    orig_run = subprocess.run
+    orig_urlopen = urllib.request.urlopen
+    captured_argv: list[list[str]] = []
+    captured_requests: list[urllib.request.Request] = []
+
+    class _FakeCompleted:
+        def __init__(self, returncode, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    class _FakeResponse:
+        def __init__(self, body: bytes):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self) -> bytes:
+            return self._body
+
+    def fake_run(cmd, **kwargs):
+        captured_argv.append(cmd)
+        return _FakeCompleted(0, stdout="hello\n")
+
+    def fake_urlopen(req, timeout=None):
+        captured_requests.append(req)
+        return _FakeResponse(b'{"ok": true}')
+
+    try:
+        subprocess.run = fake_run
+        urllib.request.urlopen = fake_urlopen
+
+        ok, out = _run_gh(["issue", "list", "-R", "o/r", "--state", "all"])
+        if not ok or out != "hello":
+            failures.append(f"_run_gh: github_api.run_gh に到達していない: {(ok, out)!r}")
+        if not captured_argv or captured_argv[0] != ["gh", "issue", "list", "-R", "o/r", "--state", "all"]:
+            failures.append(f"_run_gh: argv が subprocess.run に意図通り届いていない: {captured_argv}")
+
+        captured_requests.clear()
+        ok2, out2 = _http_request("https://api.github.com/repos/o/r/issues", "test-token-not-real")
+        if not ok2 or out2 != '{"ok": true}':
+            failures.append(f"_http_request: github_api.http_request に到達していない: {(ok2, out2)!r}")
+        if not captured_requests:
+            failures.append("_http_request: urlopen に到達していない")
+        else:
+            req = captured_requests[0]
+            if req.get_method() != "GET":
+                failures.append("_http_request: payload=None なのに method が GET でない")
+            if req.get_header("Authorization") != "Bearer test-token-not-real":
+                failures.append("_http_request: Authorization: Bearer ヘッダが実送信されていない")
+
+        # POST（payload あり）も同じ経路を通ることを確認（干渉検証: GET/POST 分岐の共有）
+        captured_requests.clear()
+        ok3, out3 = _http_request(
+            "https://api.github.com/repos/o/r/issues", "test-token-not-real",
+            payload='{"title": "t"}',
+        )
+        if not ok3:
+            failures.append(f"_http_request POST: 成功を期待したが {(ok3, out3)!r}")
+        if not captured_requests or captured_requests[0].get_method() != "POST":
+            failures.append("_http_request POST: method が POST として到達していない")
+        if captured_requests and captured_requests[0].data != b'{"title": "t"}':
+            failures.append("_http_request POST: body が意図通り送られていない")
+    finally:
+        subprocess.run = orig_run
+        urllib.request.urlopen = orig_urlopen
+    return failures
+
+
 def _issue(title: str, state: str = "closed") -> dict:
     """セルフテスト用の Issue スタブ（既定は Closed = Ready 条件③を満たす側）。"""
     return {"title": title, "state": state}
@@ -1230,6 +1320,8 @@ def run_self_test() -> int:
         ("APIチャネル: 起票4xxでexit1", _self_test_exit_code_create_issue_4xx),
         ("APIチャネル: 認証情報なしでexit2", _self_test_exit_code_no_credentials),
         ("APIチャネル: create_issue単体の無認証ガード", _self_test_create_issue_no_credentials_direct),
+        ("APIチャネル: _run_gh/_http_request の委譲到達（#849）",
+         _self_test_run_gh_and_http_request_delegate_to_github_api),
     ]
     failed_groups = 0
     total_failures = 0

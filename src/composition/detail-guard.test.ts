@@ -15,20 +15,17 @@ vi.mock('./rate-limit', () => ({
   enforceDetailRateLimit: (...args: unknown[]) => enforceDetailRateLimit(...args),
 }))
 
-// `headers()` は Workers/Next のリクエストスコープでしか動かないため固定の `Headers` を返す
-// （`app/[locale]/gems/page.test.tsx` と同じ流儀）。中身は `enforceDetailRateLimit` が
-// 受け取るだけで判定には使われないが、同一インスタンスがそのまま渡っていることは検証する。
-const FIXED_HEADERS = new Headers()
-vi.mock('next/headers', () => ({
-  headers: async () => FIXED_HEADERS,
-}))
-
 // mock 定義後に import する（rate-limit.test.ts / search-guard.test.ts と同じ流儀）。
 const { fetchRepositoryDetail, getRepositoryReadmeUseCase: reExportedReadmeUseCase } =
   await import('./detail-guard')
 
 const ACCESS_TOKEN = 'session-token'
 const INPUT = { owner: 'facebook', repo: 'react' }
+// セルフレビュー指摘 6（PR #849）: `headers` は呼び出し側（画面）が取得して渡す引数になった
+// （姉妹関数 `enforceSearchRateLimit` 等・`prepareSearchKeyword` と同じ形）。本ファイルはもはや
+// `next/headers` をモックしない。同一インスタンスがそのまま `enforceDetailRateLimit` へ
+// 渡っていることは各テストで検証する。
+const FIXED_HEADERS = new Headers()
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -41,7 +38,7 @@ describe('fetchRepositoryDetail（Issue #190: page.tsx に書かれていた「�
     })
     enforceDetailRateLimit.mockRejectedValue(rateLimitError)
 
-    await expect(fetchRepositoryDetail(ACCESS_TOKEN, INPUT)).rejects.toBe(rateLimitError)
+    await expect(fetchRepositoryDetail(ACCESS_TOKEN, FIXED_HEADERS, INPUT)).rejects.toBe(rateLimitError)
 
     expect(getRepositoryDetailUseCase).not.toHaveBeenCalled()
     expect(detailFetch).not.toHaveBeenCalled()
@@ -52,7 +49,7 @@ describe('fetchRepositoryDetail（Issue #190: page.tsx に書かれていた「�
     const repository = { fullName: 'facebook/react' }
     detailFetch.mockResolvedValue(repository)
 
-    const result = await fetchRepositoryDetail(ACCESS_TOKEN, INPUT)
+    const result = await fetchRepositoryDetail(ACCESS_TOKEN, FIXED_HEADERS, INPUT)
 
     expect(result).toBe(repository)
     expect(getRepositoryDetailUseCase).toHaveBeenCalledWith(ACCESS_TOKEN)
@@ -63,7 +60,7 @@ describe('fetchRepositoryDetail（Issue #190: page.tsx に書かれていた「�
     enforceDetailRateLimit.mockResolvedValue(undefined)
     detailFetch.mockResolvedValue(null)
 
-    const result = await fetchRepositoryDetail(ACCESS_TOKEN, INPUT)
+    const result = await fetchRepositoryDetail(ACCESS_TOKEN, FIXED_HEADERS, INPUT)
 
     expect(result).toBeNull()
   })
@@ -78,16 +75,16 @@ describe('fetchRepositoryDetail（Issue #190: page.tsx に書かれていた「�
       return null
     })
 
-    await fetchRepositoryDetail(ACCESS_TOKEN, INPUT)
+    await fetchRepositoryDetail(ACCESS_TOKEN, FIXED_HEADERS, INPUT)
 
     expect(callOrder).toEqual(['enforceDetailRateLimit', 'detailFetch'])
   })
 
-  it('レート制限の呼び出しに headers() が返す Headers をそのまま渡す', async () => {
+  it('レート制限の呼び出しに引数で受け取った Headers をそのまま渡す', async () => {
     enforceDetailRateLimit.mockResolvedValue(undefined)
     detailFetch.mockResolvedValue(null)
 
-    await fetchRepositoryDetail(ACCESS_TOKEN, INPUT)
+    await fetchRepositoryDetail(ACCESS_TOKEN, FIXED_HEADERS, INPUT)
 
     expect(enforceDetailRateLimit).toHaveBeenCalledWith(FIXED_HEADERS)
   })

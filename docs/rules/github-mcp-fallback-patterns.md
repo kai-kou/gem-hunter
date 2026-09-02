@@ -123,12 +123,22 @@ GitHub API アクセス付きでセッションに attach されていないこ�
 
 **読み方は §1.1 と同じ**（🔴 恒久前提にしない・毎回その場で計測する）。ここでは 2 点だけ追記する。
 
-- **実装例として参照できるスクリプト**: このリポジトリでは既に `tools/check_deploy_gate.py` が
-  「gh → 失敗したら `urllib` + `GH_TOKEN`/`GITHUB_TOKEN` で REST 直叩き」の第 2 層フォールバックを実装済み
-  （トークンはサブプロセス引数に載せず Python プロセス内で `Authorization` ヘッダに直接載せる設計）。
-  `tools/check_pending_pr_reviews.py` も同じ第 2 層を実装済み（Issue #789）。**新しく gh 依存スクリプトへ
-  REST フォールバックを足すときは、この 2 本を実装の型として参照する**（urllib の使い方・失敗時の
-  シグナリング・token をログに出さない配慮など）。
+- **実装本体（urllib 構築そのもの）の所在**: 「gh → 失敗したら `urllib` + `GH_TOKEN`/`GITHUB_TOKEN` で
+  REST 直叩き」の型は `tools/github_api.py` に集約済み（Issue #238・PR #849）。`run_gh()`（gh サブプロセス
+  実行の 3 分岐）・`http_request()`（`Bearer` + `X-GitHub-Api-Version` の GET/POST・トークンをサブプロセス
+  引数に載せない設計）・`http_get()`（`tools/github_rest.py` への再輸出）・`rest_get_after_gh_failure()`
+  （gh 失敗理由から token 解決 → REST GET までの後半部分）が実装の型そのもの。**新しく gh 依存スクリプトへ
+  REST フォールバックを足すときは、まずこれらの再利用を検討する**（urllib の使い方・失敗時のシグナリング・
+  token をログに出さない配慮は既にここに実装済み）。
+- **薄いラッパーの実例**: `tools/check_deploy_gate.py`（`_run_gh` / `_http_get`）・
+  `tools/sprint_backlog_sync.py`（`_run_gh` / `_http_request`）は `tools/github_api.py` への薄い委譲
+  ラッパーとして実装されている（module-level 関数として残しているのは、各ファイルの self-test が
+  `globals()["_run_gh"]` 差し替えでモックする既存パターンとの互換のため）。`tools/check_pending_pr_reviews.py`
+  も同じ第 2 層フォールバックを実装済み（Issue #789）。新規スクリプトを書くときはこれらを「委譲ラッパーの
+  書き方」の実例として参照する。⚠️ **委譲ラッパーだけを足す実装は、ラッパー自体の到達テストを必ず書く**
+  （`globals()` 差し替え型の self-test は委譲コード自体を実行しないため、`subprocess.run` /
+  `urllib.request.urlopen` を直接差し替えるテストが要る。実例は上記 3 ファイルの self-test 内
+  「委譲到達」テスト・PR #849 Layer1 指摘1）。
 - **Issue #531 との関係**: 「直叩きは通常 403 でフォールバックにならない」という §0〜§1 の記述と、
   §1.1・本節の実測結果が食い違う件は Issue #531（open）で追跡中。本節は実測の追記であり、
   #531 のクローズ判断はしない（是正の要否・範囲は Issue 側で判断する）。
