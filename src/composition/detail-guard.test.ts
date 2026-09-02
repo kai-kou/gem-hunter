@@ -38,7 +38,9 @@ describe('fetchRepositoryDetail（Issue #190: page.tsx に書かれていた「�
     })
     enforceDetailRateLimit.mockRejectedValue(rateLimitError)
 
-    await expect(fetchRepositoryDetail(ACCESS_TOKEN, FIXED_HEADERS, INPUT)).rejects.toBe(rateLimitError)
+    await expect(fetchRepositoryDetail(ACCESS_TOKEN, FIXED_HEADERS, INPUT)).rejects.toBe(
+      rateLimitError,
+    )
 
     expect(getRepositoryDetailUseCase).not.toHaveBeenCalled()
     expect(detailFetch).not.toHaveBeenCalled()
