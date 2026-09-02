@@ -197,3 +197,13 @@
 {"date": "2026-09-02 JST", "title": "github_rest.http_get のエラー種別（HTTPError / URLError / タイムアウト）を構造化して返す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "委譲プロンプトに self-test の実行結果（テスト名と PASS/FAIL）の返り値必須化を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 775}
 {"date": "2026-09-02 JST", "title": "is_empty_related_issue に bool の明示チェックを足す（PR #824 で実装済み・陳腐化）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "並列サブエージェント稼働中の Stop フック WIP 自動コミットを抑制する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-02 JST", "title": "check_skill_references.py --self-test を run_checks.sh に配線する", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 164}
+{"date": "2026-09-02 JST", "title": "フルスイート実行時のみ落ちる E2E をテスト間干渉として構造的に検知する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 831}
+{"date": "2026-09-02 JST", "title": "並列委譲時の --under フラグ遵守を委譲プロンプトの必須項目にする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "split_diff_by_file() / _diff_hunk_body_lines() を git_diff_utils.py へ抽出する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "count_change_scatter.py の分割推奨に制約で従えないときの記録形式を定める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "prod_drift_escalation.py の docstring に Issue コメント記録形式の実例を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "sprint-cycle-router SKILL.md 1.5 の分岐肥大化を分割して到達不能分岐を防ぐ", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "check_hot_budget.py に増減ログの自動シンク（--auto-sync）を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "L-130（exit code 軸と実行可否軸は別軸）を Layer 1 セルフレビューの観点に加える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
