@@ -76,6 +76,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cloudflare_api import CF_PAGE_SIZE, should_fetch_next_page  # noqa: E402
 from mask_secrets import mask_text  # noqa: E402
 from wrangler_config import parse_worker_name  # noqa: E402
 from workers_build_diagnostics import (  # noqa: E402
@@ -283,25 +284,6 @@ def wait_for_build(
         sleeper(min(interval_sec, remaining))
 
 
-def should_fetch_next_worker_scripts_page(
-    result_info: dict[str, Any], fetched_count: int, page_item_count: int
-) -> bool:
-    """`GET workers/scripts` のページング継続判定（純関数・Layer 1 セルフレビュー WARNING-4）。
-
-    `tools/retire_preview_aliases.py` の `should_fetch_next_page()` と同じ判定ロジック
-    （Cloudflare API の `result_info`（page/per_page/count/total_count）形式は共通）。
-    Worker が 21 件以上（既定 `per_page=20`）あって対象が 2 ページ目以降にあると、
-    1 ページ目しか見ない実装では再トリガー経路が恒常的に exit 2 で死ぬ問題の修正。
-    """
-    if page_item_count == 0:
-        return False
-    total_count = result_info.get("total_count")
-    if total_count is None:
-        # total_count が取れない応答は継続条件を判定できないため、無限ループを避けて打ち切る。
-        return False
-    return fetched_count < total_count
-
-
 # ──────────────────────────────────────────────
 # 外部 I/O（gh/Cloudflare API・subprocess）
 # ──────────────────────────────────────────────
@@ -360,7 +342,7 @@ def _http_json(
 
 def fetch_worker_scripts(account_id: str, token: str) -> list[dict[str, Any]]:
     """`GET .../workers/scripts` の全ページを回収する（WARNING-4・21 件以上あるアカウント対応）。"""
-    per_page = 50
+    per_page = CF_PAGE_SIZE
     page = 1
     items: list[dict[str, Any]] = []
     while True:
@@ -370,9 +352,7 @@ def fetch_worker_scripts(account_id: str, token: str) -> list[dict[str, Any]]:
             raise ApiError(mask_text(f"workers/scripts の取得に失敗しました: {payload.get('errors')}"))
         page_items = payload.get("result") or []
         items.extend(page_items)
-        if not should_fetch_next_worker_scripts_page(
-            payload.get("result_info") or {}, len(items), len(page_items)
-        ):
+        if not should_fetch_next_page(payload.get("result_info") or {}, len(items), len(page_items)):
             break
         page += 1
     return items
@@ -797,53 +777,6 @@ def _self_test_http_json_error_handling() -> list[str]:
     return failures
 
 
-def _self_test_should_fetch_next_worker_scripts_page() -> list[str]:
-    """WARNING-4: `workers/scripts` のページング継続判定を固定する。"""
-    failures = []
-    cases = [
-        (
-            "1 ページで全件取得できたら継続しない",
-            {"page": 1, "per_page": 50, "count": 20, "total_count": 20},
-            20,
-            20,
-            False,
-        ),
-        (
-            "total_count が per_page を超えるなら継続する（21 件以上の見落とし防止）",
-            {"page": 1, "per_page": 50, "count": 50, "total_count": 120},
-            50,
-            50,
-            True,
-        ),
-        (
-            "累積が total_count に達したら継続しない（最終ページ）",
-            {"page": 3, "per_page": 50, "count": 20, "total_count": 120},
-            120,
-            20,
-            False,
-        ),
-        (
-            "このページが 0 件なら継続しない（無限ループ防止）",
-            {"page": 5, "per_page": 50, "total_count": 120},
-            100,
-            0,
-            False,
-        ),
-        (
-            "total_count が取れない応答は継続しない（fail-safe・無限ループ防止）",
-            {"page": 1, "per_page": 50, "count": 10},
-            10,
-            10,
-            False,
-        ),
-    ]
-    for label, result_info, fetched_count, page_item_count, expected in cases:
-        got = should_fetch_next_worker_scripts_page(result_info, fetched_count, page_item_count)
-        if got != expected:
-            failures.append(f"{label}: 期待 {expected} / 実際 {got}")
-    return failures
-
-
 def _self_test_build_wait_outcome() -> list[str]:
     """ビルド状態 → 継続中 / success / fail の写像（Issue #497）。"""
     cases = [
@@ -1031,7 +964,6 @@ def run_self_test() -> int:
         ("trigger 解決の branch 伝搬（resolve_trigger）", _self_test_resolve_trigger_branch_wiring),
         ("trigger 0 件と branch 不一致の区別（resolve_trigger）", _self_test_resolve_trigger_empty_triggers),
         ("_http_json の異常系（不正 JSON / HTTPError）", _self_test_http_json_error_handling),
-        ("workers/scripts ページング判定", _self_test_should_fetch_next_worker_scripts_page),
         ("ビルド結果の判定（build_wait_outcome）", _self_test_build_wait_outcome),
         ("ビルド完了待ち（wait_for_build）", _self_test_wait_for_build),
         ("エラー JSON の trigger 未構成フラグ", _self_test_emit_error_trigger_flag),

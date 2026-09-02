@@ -47,6 +47,7 @@ import urllib.request
 from typing import Any, Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cloudflare_api import CF_PAGE_SIZE, should_fetch_next_page  # noqa: E402
 from mask_secrets import REDACTED, mask_text  # noqa: E402
 from repo_slug import resolve_repo_slug  # noqa: E402
 from wrangler_config import parse_worker_name  # noqa: E402
@@ -175,23 +176,6 @@ def exit_code_for(results: list[dict[str, Any]]) -> int:
     return EXIT_FAILED if any(not r.get("ok") for r in results) else EXIT_OK
 
 
-def should_fetch_next_page(result_info: dict[str, Any], fetched_count: int, page_item_count: int) -> bool:
-    """Cloudflare API の `result_info`（page/per_page/count/total_count）を見て
-    次ページを取得すべきか判定する（純粋関数）。
-
-    実測（2026-08-20 JST・GET .../versions?per_page=100）: `result_info` はペイロード直下にあり、
-    `{"page": 1, "per_page": 100, "count": 35, "total_count": 35}` の形。`total_pages` フィールドは
-    無いため `total_count` との比較で継続判定する。
-    """
-    if page_item_count == 0:
-        return False
-    total_count = result_info.get("total_count")
-    if total_count is None:
-        # total_count が取れない応答は継続条件を判定できないため、無限ループを避けて打ち切る
-        return False
-    return fetched_count < total_count
-
-
 # ---------------------------------------------------------------------------
 # 外部 I/O
 # ---------------------------------------------------------------------------
@@ -216,7 +200,7 @@ def fetch_versions(account_id: str, token: str, worker: str) -> list[dict[str, A
     100 件（1 ページの上限）を超えると古い alias から順に見落とすため（WARNING・PR #235）、
     `should_fetch_next_page()` の判定に従ってページングする。
     """
-    per_page = 100
+    per_page = CF_PAGE_SIZE
     page = 1
     items: list[dict[str, Any]] = []
     while True:
@@ -531,33 +515,6 @@ def self_test() -> int:
     check("対象ゼロは成功扱い", exit_code_for([]), EXIT_OK)
     check("全件成功", exit_code_for([{"ok": True}, {"ok": True}]), EXIT_OK)
     check("1 件でも失敗したら 1", exit_code_for([{"ok": True}, {"ok": False}]), EXIT_FAILED)
-
-    # --- C: ページング判定（should_fetch_next_page・PR #235 CRITICAL の再発防止） ---
-    check(
-        "1 ページで全件取得できたら継続しない（実測 total_count=35, per_page=100 相当）",
-        should_fetch_next_page({"page": 1, "per_page": 100, "count": 35, "total_count": 35}, 35, 35),
-        False,
-    )
-    check(
-        "total_count が per_page を超えるなら継続する（100 件超の見落とし防止）",
-        should_fetch_next_page({"page": 1, "per_page": 100, "count": 100, "total_count": 250}, 100, 100),
-        True,
-    )
-    check(
-        "累積が total_count に達したら継続しない（最終ページ）",
-        should_fetch_next_page({"page": 3, "per_page": 100, "count": 50, "total_count": 250}, 250, 50),
-        False,
-    )
-    check(
-        "このページが 0 件なら継続しない（無限ループ防止）",
-        should_fetch_next_page({"page": 5, "per_page": 100, "total_count": 250}, 200, 0),
-        False,
-    )
-    check(
-        "total_count が取れない応答は継続しない（fail-safe・無限ループ防止）",
-        should_fetch_next_page({"page": 1, "per_page": 100, "count": 10}, 10, 10),
-        False,
-    )
 
     # --- D: 出力マスク（mask_output・PR #235 WARNING） ---
     check(
