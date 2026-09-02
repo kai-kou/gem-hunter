@@ -93,6 +93,8 @@ python3 tools/check_markdown_table_columns.py --changed --under docs/rules
 
 **関連**: `CLAUDE.md`「Markdown 出力ルール」/ Issue #85（並行委譲中は `--under` で範囲を絞る）
 
+**再発（2026-09-02・PR #818）**: 同じ firing で `--under docs/rules/token-optimization-rules.md`（ファイルパス）を渡して空振りした。**`--under` はディレクトリ限定**（`walk_md_under()` が `base.is_dir()` でない要素を黙って skip する）。警告文が「配下に .md ファイルが 1 件もありません」としか言わないため、原因（ファイルを渡した）が読み取れない — メッセージに「ファイルパスが渡されました」の分岐を足す改善案は本再発時に検討し、`priority:low` として lessons 記載で完結させた（起票しない）。
+
 ---
 
 ## L-148: E2E で「代表要素だけ」を測る検査は、なぜその要素で足りるかを書かないと射程が黙って縮む（2026-09-02・PR #812）
