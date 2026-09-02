@@ -38,13 +38,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
+import github_api  # noqa: E402
 
 DEFAULT_REPO = resolve_repo_slug("kai-kou/gem-hunter")
 API_ROOT = "https://api.github.com"
 
 
 def _token() -> str:
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    """`tools/github_api.py` の共通トークン解決への薄いラッパー（Issue #238）。
+
+    本ツールは `gh` を一切試さない（push 403 のフォールバック専用で最初から gh 経由の
+    代替が無い設計。詳細は `tools/github_api.py` docstring「集約しなかったもの」）ため、
+    `resolve_token()` のみを共有し、リクエスト実装（`token ` スキーム・PUT 経由の
+    Contents API）は独立のまま残す。
+    """
+    token = github_api.resolve_token()
     if not token:
         raise RuntimeError("GH_TOKEN / GITHUB_TOKEN が未設定です")
     return token

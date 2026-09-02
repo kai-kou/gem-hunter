@@ -39,9 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -54,6 +52,7 @@ from xml.etree import ElementTree as ET
 from repo_slug import resolve_repo_slug
 from github_rest import http_get as _github_rest_http_get
 from github_rest import paginate_json_array
+import github_api
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = ROOT / "config" / "claude_code_spec_sync.yaml"
@@ -71,7 +70,7 @@ def _github_rest_get(path: str, params: str = "") -> list | None:
     token は None/空文字を許容（匿名リクエスト・既存挙動）。5 ページに到達しても続きが
     ある可能性を否定できない場合は、従来どおり黙って打ち切る（`on_truncate="stop"`）。
     """
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
 
     def fetch_page(page: int) -> tuple[bool, str]:
         url = f"https://api.github.com/{path}?per_page=100&page={page}"
@@ -87,7 +86,7 @@ def _github_rest_get(path: str, params: str = "") -> list | None:
 
 
 def _github_rest_post_issue(repo: str, title: str, body: str, labels: list[str]) -> str | None:
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
     url = f"https://api.github.com/repos/{repo}/issues"
     payload = json.dumps({"title": title, "body": body, "labels": labels}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, method="POST", headers={
@@ -394,18 +393,20 @@ def fetch_issued_versions(repo: str, labels: list[str], lookback_hours: int) -> 
     issued: set[str] = set()
     rows: list[tuple[str, str]] = []  # (created_at, body)
     for label in labels:
-        try:
-            out = subprocess.run(
-                ["gh", "issue", "list", "-R", repo, "--label", label,
-                 "--state", "all", "--limit", "1000", "--json", "body,createdAt"],
-                capture_output=True, text=True, timeout=60,
-            )
-            if out.returncode == 0:
+        ok, out = github_api.run_gh(
+            ["issue", "list", "-R", repo, "--label", label,
+             "--state", "all", "--limit", "1000", "--json", "body,createdAt"],
+            timeout=60,
+        )
+        if ok:
+            try:
                 rows.extend((x.get("createdAt", ""), x.get("body", ""))
-                            for x in json.loads(out.stdout or "[]"))
+                            for x in json.loads(out or "[]"))
                 continue
-        except (FileNotFoundError, subprocess.SubprocessError, ValueError) as e:
-            print(f"[warn] gh issue list 失敗（REST フォールバックへ降格）: {e}", file=sys.stderr)
+            except ValueError as e:
+                print(f"[warn] gh issue list 失敗（REST フォールバックへ降格）: {e}", file=sys.stderr)
+        else:
+            print(f"[warn] gh issue list 失敗（REST フォールバックへ降格）: {out}", file=sys.stderr)
         rest = _github_rest_get(f"repos/{repo}/issues",
                                 f"state=all&labels={urllib.parse.quote(label)}")
         if rest:
@@ -498,18 +499,17 @@ def build_issue(releases: list[dict], kind: str, cfg: dict) -> tuple[str, str]:
 
 
 def create_issue(title: str, body: str, labels: list[str], repo: str) -> str | None:
-    try:
-        out = subprocess.run(
-            ["gh", "issue", "create", "-R", repo,
-             "--title", title, "--body", body, "--label", ",".join(labels)],
-            capture_output=True, text=True, timeout=60,
-        )
-        if out.returncode == 0:
-            return out.stdout.strip()
-        print(f"[warn] gh issue create failed (REST フォールバック試行): "
-              f"{out.stderr.strip()}", file=sys.stderr)
-    except (FileNotFoundError, subprocess.SubprocessError) as e:
-        print(f"[warn] gh unavailable (REST フォールバック試行): {e}", file=sys.stderr)
+    ok, out = github_api.run_gh(
+        ["issue", "create", "-R", repo,
+         "--title", title, "--body", body, "--label", ",".join(labels)],
+        timeout=60,
+    )
+    if ok:
+        return out
+    if out in ("gh コマンドが見つかりません", "gh コマンドがタイムアウトしました"):
+        print(f"[warn] gh unavailable (REST フォールバック試行): {out}", file=sys.stderr)
+    else:
+        print(f"[warn] gh issue create failed (REST フォールバック試行): {out}", file=sys.stderr)
     return _github_rest_post_issue(repo, title, body, labels)
 
 

@@ -56,16 +56,14 @@ import contextlib
 import json
 import os
 import re
-import subprocess
 import sys
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
 from github_rest import paginate_json_array, exclude_pull_requests  # noqa: E402
+import github_api  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOC_PATH = "docs/02_requirements/user-story-map.md"
@@ -494,45 +492,21 @@ def _validate_repo() -> None:
 
 
 def _run_gh(args: list[str]) -> tuple[bool, str]:
-    try:
-        result = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=30)
-    except FileNotFoundError:
-        return False, "gh コマンドが見つかりません"
-    except subprocess.TimeoutExpired:
-        return False, "gh コマンドがタイムアウトしました"
-    if result.returncode != 0:
-        return False, (result.stderr or result.stdout).strip() or f"gh 実行失敗: {' '.join(args)}"
-    return True, result.stdout.strip()
+    """`tools/github_api.py` の共通実装への薄いラッパー（Issue #238）。
+
+    module-level 関数として残す（self-test が `globals()["_run_gh"]` でモック差し替える
+    既存パターンとの互換のため）。
+    """
+    return github_api.run_gh(args)
 
 
 def _http_request(url: str, token: str, payload: str | None = None) -> tuple[bool, str]:
-    """GitHub REST を叩く（GET / POST）。
+    """`tools/github_api.py` の共通実装への薄いラッパー（Issue #238）。
 
-    🔴 token を **サブプロセスの引数に載せない**。`curl -H "Authorization: Bearer <token>"` は
-    同一ホストの他プロセスから `ps` / `/proc/<pid>/cmdline` で読めてしまい、無人ルーティンで
-    毎 firing 実行されるぶん露出機会が積み上がる。Python プロセス内でヘッダを組み立てる。
+    module-level 関数として残す（self-test が `globals()["_http_request"]` でモック差し替える
+    既存パターンとの互換のため）。GET は `payload=None`、POST は JSON 文字列を渡す。
     """
-    data = payload.encode("utf-8") if payload is not None else None
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "gem-hunter-sprint-backlog-sync",
-    }
-    if data is not None:
-        headers["Content-Type"] = "application/json; charset=utf-8"
-    req = urllib.request.Request(url, data=data, headers=headers,
-                                 method="POST" if data is not None else "GET")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as res:
-            return True, res.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        # 本文にトークンは含まれないが、念のため詳細は載せずステータスのみ返す
-        return False, f"HTTP {e.code}"
-    except urllib.error.URLError as e:
-        return False, f"接続失敗（{type(e).__name__}）"
-    except TimeoutError:
-        return False, "リクエストがタイムアウトしました"
+    return github_api.http_request(url, token, payload, user_agent="gem-hunter-sprint-backlog-sync")
 
 
 def list_all_issues() -> tuple[list[dict], str | None]:
@@ -576,7 +550,7 @@ def list_all_issues() -> tuple[list[dict], str | None]:
                 ], None
     gh_err = out
 
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
@@ -619,7 +593,7 @@ def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
         return True, out.strip()
     gh_err = out
 
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
     if not token:
         return False, f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 

@@ -92,8 +92,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
-from github_rest import http_get as _github_rest_http_get  # noqa: E402
 from github_rest import paginate_json_array, exclude_pull_requests  # noqa: E402
+import github_api  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 
@@ -142,24 +142,21 @@ def _validate_repo() -> None:
 
 
 def _run_gh(args: list[str]) -> tuple[bool, str]:
-    try:
-        result = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=30)
-    except FileNotFoundError:
-        return False, "gh コマンドが見つかりません"
-    except subprocess.TimeoutExpired:
-        return False, "gh コマンドがタイムアウトしました"
-    if result.returncode != 0:
-        return False, (result.stderr or result.stdout).strip() or f"gh 実行失敗: {' '.join(args)}"
-    return True, result.stdout.strip()
+    """`tools/github_api.py` の共通実装への薄いラッパー（Issue #238）。
+
+    module-level 関数として残す（self-test が `globals()["_run_gh"]` でモック差し替える
+    既存パターンとの互換のため）。
+    """
+    return github_api.run_gh(args)
 
 
 def _http_get(url: str, token: str) -> tuple[bool, str]:
-    """`tools/github_rest.py` の共通実装への薄いラッパー（Issue #602）。
+    """`tools/github_api.py`（`tools/github_rest.py` への再輸出）の薄いラッパー（Issue #238/#602）。
 
     module-level 関数として残す（self-test が `globals()["_http_get"]` でモック差し替える
     既存パターンとの互換のため）。
     """
-    return _github_rest_http_get(url, token, user_agent="gem-hunter-check-deploy-gate")
+    return github_api.http_get(url, token, user_agent="gem-hunter-check-deploy-gate")
 
 
 def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
@@ -184,7 +181,7 @@ def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
             out = "gh の JSON 応答が不正"
     gh_err = out
 
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
@@ -239,7 +236,7 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
             out = "gh の JSON 応答が不正"
     gh_err = out
 
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
@@ -312,7 +309,7 @@ def fetch_merged_pr_commit_shas(sprint_id: str) -> tuple[list[str], str | None]:
             out = "gh の JSON 応答が不正"
     gh_err = out
 
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
@@ -381,7 +378,7 @@ def fetch_open_pr_numbers(sprint_id: str) -> tuple[list[int], str | None]:
             out = "gh の JSON 応答が不正"
     gh_err = out
 
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 

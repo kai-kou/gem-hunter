@@ -26,19 +26,16 @@ self-improvement-loop スキル（整理モード）の「重い処理」層。t
 
 import argparse
 import json
-import os
 import re
-import subprocess
 import sys
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
+import github_api  # noqa: E402
 
 # 優先順: bootstrap 済みプレースホルダ解決値（最優先・下流リポジトリの既定動作）→
 # 未解決の場合のみ PROJECT_REPO → GITHUB_REPOSITORY → git remote の URL 解析 →
@@ -97,20 +94,32 @@ _STOPWORDS = {
 
 
 def run_gh(args):
-    """gh CLI を実行して stdout を返す。失敗時は空文字。"""
-    try:
-        result = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=60)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    """gh CLI を実行して stdout を返す。失敗時は空文字。
+
+    `tools/github_api.py` の共通実装への薄いラッパー（Issue #238）。元実装は
+    `FileNotFoundError`/`TimeoutExpired`（gh 起動不能）では警告を出さず、非 0 終了時のみ
+    stderr を警告表示する非対称な挙動だった。`github_api.run_gh()` は理由文字列を返すのみで
+    例外種別を呼び出し元に開示しないため、固定の理由文字列で区別して元の非対称挙動を保つ
+    （挙動を変えないための意図的な文字列比較。github_api.run_gh() のメッセージ文言が変われば
+    ここも追従が必要）。
+    """
+    ok, out = github_api.run_gh(args, timeout=60)
+    if not ok:
+        if out not in ("gh コマンドが見つかりません", "gh コマンドがタイムアウトしました"):
+            print(f"WARNING: gh failed: gh {' '.join(args)}\n  {out}", file=sys.stderr)
         return ""
-    if result.returncode != 0:
-        print(f"WARNING: gh failed: gh {' '.join(args)}\n  {result.stderr.strip()}", file=sys.stderr)
-        return ""
-    return result.stdout.strip()
+    return out
 
 
 def _fetch_via_api(label, state):
-    """gh 不在時のフォールバック（GitHub REST API・GH_TOKEN 必要）。"""
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    """gh 不在時のフォールバック（GitHub REST API・GH_TOKEN 必要）。
+
+    per-page の HTTP 呼び出しは `github_api.http_get()` に委譲する（Issue #238）。
+    ページネーションの継続判定（`max_pages` 上限を持たず空バッチで打ち切り）はファイル固有の
+    既存挙動としてそのまま踏襲する（`github_rest.paginate_json_array` へは寄せない設計判断は
+    `tools/github_api.py` docstring「集約しなかったもの」参照）。
+    """
+    token = github_api.resolve_token()
     if not token:
         print("ERROR: gh CLI も GH_TOKEN も利用できません", file=sys.stderr)
         return []
@@ -122,17 +131,11 @@ def _fetch_via_api(label, state):
             f"https://api.github.com/repos/{REPO}/issues"
             f"?labels={urllib.parse.quote(label)}&state={state_q}&per_page=100&page={page}"
         )
-        req = urllib.request.Request(url, headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "curl/8.5.0",
-        })
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                batch = json.loads(resp.read())
-        except urllib.error.URLError as e:
-            print(f"ERROR: API fetch failed: {e}", file=sys.stderr)
+        ok, out = github_api.http_get(url, token, user_agent="curl/8.5.0", timeout=60)
+        if not ok:
+            print(f"ERROR: API fetch failed: {out}", file=sys.stderr)
             break
+        batch = json.loads(out)  # 元実装通り不正 JSON は無捕捉のまま例外伝播させる
         if not batch:
             break
         for it in batch:
