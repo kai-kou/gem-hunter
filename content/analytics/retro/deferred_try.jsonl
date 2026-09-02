@@ -188,6 +188,5 @@
 {"date": "2026-09-02 JST", "title": "research-runner を Agent 委譲へ拡張するとき明示リスト追加を忘れないようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "self-improvement-loop 消化モードの候補選定根拠（なぜその 1 件か）を Issue に明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "check_delegation_preamble.py の走査範囲（.claude/skills/ 配下限定）を docstring に明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-02 JST", "title": "Hot 層の再棚卸しで agent-team-summary.md の運用注記の Warm 降格を検討する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "#798"}
 {"date": "2026-09-02 JST", "title": "PR 作成後の追加コミットで証跡（Hot 層増減ログ等）が古くなるのを検知する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#751"}
 {"date": "2026-09-02 JST", "title": "デプロイ系スクリプトの exit 2 に原因カテゴリを持たせ抑制判定を組で行う", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#785"}
