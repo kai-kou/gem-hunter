@@ -301,7 +301,8 @@ d) 当日の衛生スロット実施済みか（`project-sync` のログ相当�
 - **着手できないものは `status:blocked`**: 前提が未成立の Issue（例: `SP-4` 完了が前提の CI 作業）は
   `status:waiting-claude` ではなく `status:blocked` を付け、解除条件を本文に書く。`status:blocked` は
   Step 5 の対象外である（§10 の完了定義）
-- `type:retro-try` は振り返りレーン（`retro-try-handler`）の担当なので Step 5 の対象からは外す
+- `type:retro-try` の **消化（実装）** は振り返りレーン（`retro-try-handler`）の担当なので Step 5 の対象からは外す
+  （**棚卸し**（重複統合・Epic 化・優先度再査定）は `self-improvement-loop` 整理モードが担う・#153）
   （`improvement-lane-map.md`）。**外した先は Step 5.5 が拾う**（#377）。かつては外すだけで
   受け皿が無く、`type:retro-try` が決定木のどのブランチからも起動されずに滞留していた
   （open の 6 割が到達不能だった）。Step 5.5 を消すなら同時に本行の除外も撤回すること

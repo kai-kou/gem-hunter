@@ -10,7 +10,8 @@ SSOT: `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.1 / §2.2。
 WCAG 2.x の相対輝度式でコントラスト比を計算する。oklch() 記法のため、oklch → 線形 sRGB → sRGB の
 変換を自前実装する（外部ライブラリ・ネットワーク接続は使わない）。
 
-検査するペア（§2.1 / §7.3 の表に対応。計 16 ペア × ライト/ダーク = 32 判定）:
+検査するペア（セマンティック 11 ペアは §2.1 / §7.3 の表に対応。sidebar-* の 5 ペアは
+ガイドラインに表を持たず `app/globals.css` の棚卸しコメントが根拠・#185。計 16 ペア × ライト/ダーク = 32 判定）:
   fg        vs bg         (>= 4.5:1)  本文
   fg        vs bg-subtle  (>= 4.5:1)  本文（カード面）
   fg-muted  vs bg         (>= 4.5:1)  メタ情報
@@ -142,14 +143,31 @@ def contrast_ratio(srgb1: tuple[float, float, float], srgb2: tuple[float, float,
 
 # --------------------------------------------------------------------------- CSS パース
 
+_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def strip_css_comments(text: str) -> str:
+    """CSS コメント（`/* ... */`）を除去する。
+
+    セレクタ探索・宣言抽出はいずれも正規表現で行うため、コメント内に書かれた
+    「書き方の例」「旧値の記録」（例: `/* 旧値は --sidebar-ring: oklch(0.708 0 0) だった */`）が
+    実宣言として読み取られる。宣言は後勝ちで dict へ入るので、実宣言の後ろに置かれた
+    コメント内の旧値が実値を静かに上書きし、検査が実データを見ないまま PASS / FAIL する
+    （どちらの向きにも倒れる）。パースの入口で必ず除去する。
+    """
+    return _COMMENT_RE.sub("", text)
+
+
 def extract_block(css_text: str, selector: str) -> str:
     """`selector { ... }` の直近 1 ブロックの中身を返す（ネストなし前提。globals.css の実構造に対応）。
 
     `selector` の後ろに（空白を挟んで）`{` が続く出現だけを対象にする。`.dark` は
     `@custom-variant dark (&:is(.dark *));` のような他行にも部分一致するため、
-    厳密な `セレクタ + 空白* + {` パターンでのみマッチさせる。
+    厳密な `セレクタ + 空白* + {` パターンでのみマッチさせる。さらに **行頭（前置きは空白のみ）**
+    にアンカーして、文中に現れる同形の断片を拾わないようにする。
     """
-    pattern = re.compile(re.escape(selector) + r"\s*\{")
+    css_text = strip_css_comments(css_text)
+    pattern = re.compile(r"^[ \t]*" + re.escape(selector) + r"\s*\{", re.MULTILINE)
     m = pattern.search(css_text)
     if not m:
         raise ValueError(f"セレクタが見つかりません: {selector!r}")
@@ -172,7 +190,7 @@ _DECL_RE = re.compile(r"--([\w-]+)\s*:\s*([^;]+);")
 
 def parse_declarations(block: str) -> dict[str, str]:
     result: dict[str, str] = {}
-    for m in _DECL_RE.finditer(block):
+    for m in _DECL_RE.finditer(strip_css_comments(block)):
         result[m.group(1)] = m.group(2).strip()
     return result
 
@@ -373,6 +391,30 @@ def self_test() -> int:
     dark_block = extract_block(sample_css, ".dark")
     dark_decls = parse_declarations(dark_block)
     check("CSS ブロック抽出（.dark）は :root を混入しない", "b" not in dark_decls)
+    check("CSS ブロック抽出（.dark）は同名変数のダーク側の値を返す", dark_decls.get("a") == "oklch(0 0 0)")
+
+    # コメント起因の誤読の回帰ケース（#836 Layer 1 レビュー指摘）。
+    # いずれも「実データを一切見ないまま PASS / FAIL する」経路で、実装コメントを増やすほど発火しやすい。
+    commented_css = (
+        "/* 書き方の例:\n"
+        " *   :root {\n"
+        " *     --a: oklch(0.5 0 0);\n"
+        " *   }\n"
+        " * のように書く。 */\n"
+        ":root {\n"
+        "  --a: oklch(1 0 0);\n"
+        "  --b: oklch(0.6 0 0); /* 旧値は --b: oklch(0.708 0 0); だった（#179 で是正） */\n"
+        "}\n"
+    )
+    commented_decls = parse_declarations(extract_block(commented_css, ":root"))
+    check(
+        "コメント内の `:root {` を実ブロックと誤認しない",
+        commented_decls.get("a") == "oklch(1 0 0)",
+    )
+    check(
+        "実宣言の後ろのコメント内の宣言が実値を上書きしない",
+        commented_decls.get("b") == "oklch(0.6 0 0)",
+    )
 
     if failures:
         print("[check_contrast --self-test] FAIL:")
