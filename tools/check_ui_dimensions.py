@@ -49,8 +49,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ts_source import (  # noqa: E402
     JS_IDENTIFIER_RE,
-    _find_matching_paren,
     find_matching_brace,
+    find_matching_paren,
     find_tag_end,
     strip_comments,
 )
@@ -263,10 +263,15 @@ def find_call_site_spans(code: str, component: str) -> list[tuple[int, int, int]
     if fn_name:
         for call_m in re.finditer(rf"\b{re.escape(fn_name)}\s*\(", code):
             open_paren = call_m.end() - 1
-            close = _find_matching_paren(code, open_paren)
-            if close <= open_paren or code[close - 1] != ")":
+            # `find_matching_paren` は未発見時に確実に `-1` を返す（Issue #828 CRITICAL 指摘）。
+            # 旧実装は `_find_matching_paren`（未発見時 `len(text)` を返す内部専用契約）を誤って
+            # 呼び出しており、TS/TSX はファイル末尾付近にほぼ必ず `)` があるため
+            # `close <= open_paren or code[close - 1] != ")"` のガードが「見つかった」と
+            # 誤判定していた（本体 span がファイル末尾までの巨大な範囲になる偽陰性）。
+            close = find_matching_paren(code, open_paren)
+            if close == -1:
                 continue  # 対応する閉じ括弧が見つからない（壊れた/切り詰められた入力）
-            spans.append((call_m.start(), open_paren + 1, close - 1))
+            spans.append((call_m.start(), open_paren + 1, close))
 
     return spans
 
@@ -279,6 +284,11 @@ def _pos_in_spans(spans: list[tuple[int, int, int]], pos: int) -> bool:
 
 CLASSNAME_LITERAL_RE = re.compile(r'className\s*=\s*"([^"]*)"')
 CLASSNAME_EXPR_START_RE = re.compile(r"className\s*=\s*\{")
+# オブジェクトリテラルのプロパティ構文（`buttonVariants({ className: '...' })` のように
+# JSX 属性ではなく関数呼び出し引数の中で使われる形）。`CLASSNAME_LITERAL_RE`（`className="..."`。
+# JSX 属性専用）は `:` 区切りにマッチしないため、これを見落としていた（Issue #828 CRITICAL
+# 指摘）。シングル/ダブルどちらのクォートにも対応する。
+CLASSNAME_PROP_LITERAL_RE = re.compile(r"""className\s*:\s*(['"])((?:(?!\1).)*)\1""", re.DOTALL)
 
 
 def _scan_classname_expr(rel: str, expr: str, base_offset: int, code: str) -> tuple[list[str], bool]:
@@ -388,6 +398,20 @@ def check_call_site_classname(
                     "（サイズは cva の size variant 経由で指定し、呼び出し側で上書きしないでください）"
                 )
 
+    for m in CLASSNAME_PROP_LITERAL_RE.finditer(code):
+        if not _pos_in_spans(spans, m.start(2)):
+            continue
+        content = m.group(2)
+        base_offset = m.start(2)
+        for tok_m in re.finditer(r"\S+", content):
+            stripped_tok = tok_m.group(0)
+            if CALL_SITE_H_TEXT_RE.match(stripped_tok):
+                ln = lineno_at(code, base_offset + tok_m.start())
+                errors.append(
+                    f"{rel}:{ln} UI-DIM-4: className: プロパティのリテラルに `{stripped_tok}` があります"
+                    "（サイズは cva の size variant 経由で指定し、呼び出し側で上書きしないでください）"
+                )
+
     for m in CLASSNAME_EXPR_START_RE.finditer(code):
         if not _pos_in_spans(spans, m.start()):
             continue
@@ -411,6 +435,65 @@ def check_call_site_classname(
 SIZE_PROP_RE = re.compile(r"""size\s*[:=]\s*['"]([^'"]+)['"]""")
 
 
+def _brace_depth_at_each_pos(body: str) -> list[int]:
+    """`body` の各文字位置における `{}` ネスト深さ（文字列リテラルの中は無視）を返す。
+
+    `len(body) + 1` 要素（末尾位置も含む）。`check_call_site_tier` が「呼び出しサイト本体の
+    トップレベルにある `size` を優先する」ために使う（Issue #828 CRITICAL 指摘: `.search()` は
+    最初に出現した `size` を無条件で採用するため、`onClick={() => track({ size: 'xl' })}` の
+    ようにネストしたオブジェクトリテラル内の `size` を先に拾い、本当の `size="xs"` を
+    見逃していた）。
+    """
+    depths = [0] * (len(body) + 1)
+    depth = 0
+    i = 0
+    n = len(body)
+    quote: str | None = None
+    while i < n:
+        depths[i] = depth
+        ch = body[i]
+        if quote:
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+            i += 1
+            continue
+        if ch == "{":
+            depth += 1
+            i += 1
+            continue
+        if ch == "}":
+            depth = max(0, depth - 1)
+            i += 1
+            continue
+        i += 1
+    depths[n] = depth
+    return depths
+
+
+def _shallowest_size_match(body: str) -> re.Match[str] | None:
+    """`body` 内の `size` 指定のうち、`{}` ネスト深さが最も浅い（同点なら最初に出現した）
+    ものを返す。JSX タグ形式ではタグ直下の属性（深さ 0）を、関数呼び出し形式では引数
+    オブジェクトのトップレベルプロパティ（本体の最小深さ）を選び、途中に挟まる
+    `onClick={() => track({ size: 'xl' })}` のようなネストした `size` に惑わされない。
+    """
+    depths = _brace_depth_at_each_pos(body)
+    best: re.Match[str] | None = None
+    best_depth: int | None = None
+    for size_m in SIZE_PROP_RE.finditer(body):
+        d = depths[size_m.start()]
+        if best_depth is None or d < best_depth:
+            best_depth = d
+            best = size_m
+    return best
+
+
 def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> list[str]:
     errors: list[str] = []
     code = strip_comments(text)
@@ -422,7 +505,7 @@ def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> l
         # 両方の呼び出しサイトを検出する（Issue #83・pagination.tsx 等は後者の形のみを使う）。
         for report_start, body_start, body_end in find_call_site_spans(code, component):
             body = code[body_start:body_end]
-            size_m = SIZE_PROP_RE.search(body)
+            size_m = _shallowest_size_match(body)
             variant_name = size_m.group(1) if size_m else "default"
             used_tier = VARIANT_TIER.get(variant_name)
             if used_tier is None:
@@ -440,29 +523,128 @@ def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> l
 
 # --------------------------------------------------------------------------- Warning: 未登録の呼び出しサイト（src/ui/ 直下）
 
-UNREGISTERED_CALL_SITE_RE = re.compile(r"<Button\b|\bbuttonVariants\s*\(")
+
+def _build_unregistered_call_site_re() -> re.Pattern[str]:
+    """`COMPONENT_CALL_FN` のキー（JSX タグ名）・値（関数呼び出し名）からコンポーネント名の
+    列挙を動的に組み立てる（Issue #828 CRITICAL 指摘）。
+
+    旧実装は `<Button\\b|\\bbuttonVariants\\s*\\(` をハードコードしており、同じ
+    `COMPONENT_CALL_FN` に既に登録済みの `Input` / `inputVariants` を見落としていた
+    （`search-form.tsx` は Input の tier 要件を持つのに、他ファイルで Input を未登録のまま
+    使っても Warning が出ない穴があった）。列挙をここへ集約したことで、新規コンポーネントを
+    `COMPONENT_CALL_FN` に足すだけで本 Warning にも自動反映される。
+    """
+    tag_alt = "|".join(re.escape(name) for name in COMPONENT_CALL_FN)
+    fn_alt = "|".join(re.escape(fn) for fn in COMPONENT_CALL_FN.values())
+    return re.compile(rf"<(?:{tag_alt})\b|\b(?:{fn_alt})\s*\(")
+
+
+UNREGISTERED_CALL_SITE_RE = _build_unregistered_call_site_re()
+
+# 対象コンポーネントの登録済み文字列表現（Warning メッセージ用。COMPONENT_CALL_FN から動的生成）。
+_UNREGISTERED_CALL_SITE_NAMES = " / ".join(
+    sorted(set(COMPONENT_CALL_FN) | set(COMPONENT_CALL_FN.values()))
+)
+
+# `import { buttonVariants as bv } from './components/button'` のような named import の
+# ローカル別名を解決するための正規表現（Issue #828 CRITICAL 指摘）。
+_IMPORT_NAMED_RE = re.compile(r"""import\s*\{([^}]*)\}\s*from\s*['"]([^'"]*)['"]""")
+_IMPORT_ALIAS_ITEM_RE = re.compile(r"^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$")
+# namespace import（`import * as NS from '...'`）は「NS.buttonVariants(...)」のような
+# メンバアクセス呼び出しになり、本モジュールの正規表現ベースの走査では静的に解決できない
+# ため、黙って素通りさせず Warning で可視化する（解決できない import 形式の検出）。
+_IMPORT_NAMESPACE_RE = re.compile(
+    r"""import\s+\*\s+as\s+[A-Za-z_$][\w$]*\s+from\s*['"]([^'"]*)['"]"""
+)
+# COMPONENT_FILES（`src/ui/components/button.tsx` 等）のモジュール名（拡張子なしの
+# ファイル名）。namespace import の指定パスがコンポーネントモジュールを指しているかどうかの
+# 判定に使う（`import * as React from 'react'` のような無関係な namespace import まで
+# 誤検知しないため、スコープをコンポーネントモジュールに限定する）。
+_COMPONENT_MODULE_STEMS = {Path(p).stem for p in COMPONENT_FILES}
+
+
+def _resolve_call_fn_aliases(code: str) -> dict[str, str]:
+    """`import { buttonVariants as bv } from '...'` のような named import のローカル別名を
+    `{ ローカル名: 元の関数名 }` で返す（`COMPONENT_CALL_FN` の値に一致するものだけ）。
+
+    「同ディレクトリからの named import のローカル別名を解決する」という Issue #828 の
+    要求のうち、named import の別名解決部分をここで満たす。
+    """
+    known_fns = set(COMPONENT_CALL_FN.values())
+    aliases: dict[str, str] = {}
+    for imp_m in _IMPORT_NAMED_RE.finditer(code):
+        for item in imp_m.group(1).split(","):
+            item = item.strip()
+            if not item:
+                continue
+            alias_m = _IMPORT_ALIAS_ITEM_RE.match(item)
+            if alias_m and alias_m.group(1) in known_fns:
+                aliases[alias_m.group(2)] = alias_m.group(1)
+    return aliases
+
+
+def _has_unresolved_component_namespace_import(code: str) -> bool:
+    """コンポーネントモジュール（`COMPONENT_FILES`）を指す namespace import があるかを返す。
+
+    `import * as ButtonNs from './components/button'` の後に `ButtonNs.buttonVariants(...)`
+    と呼ばれると、本モジュールの正規表現ベースの走査では解決できない。黙ってスキップせず
+    Warning として可視化する（Issue #828: 「解決できない import 形式を検出したら Warning を
+    出す」要求を満たす）。
+    """
+    for ns_m in _IMPORT_NAMESPACE_RE.finditer(code):
+        spec = ns_m.group(1).rstrip("/")
+        stem = spec.rsplit("/", 1)[-1] if "/" in spec else spec
+        if stem in _COMPONENT_MODULE_STEMS:
+            return True
+    return False
+
+
+def _unregistered_call_site_message(rel: str, detail: str = "") -> str:
+    base = (
+        f"{rel} が {UI_DIR} 直下で {_UNREGISTERED_CALL_SITE_NAMES} を使用していますが "
+        "CALL_SITE_REQUIREMENTS に未登録です（tools/check_ui_dimensions.py に tier 要件を登録してください）"
+    )
+    return f"{base}{detail}"
 
 
 def check_unregistered_call_site_warning(rel: str, text: str, registered: set[str]) -> list[str]:
-    """`src/ui/` 直下（`COMPONENTS_DIR` を除く）で Button / buttonVariants を使っているのに
-    `CALL_SITE_REQUIREMENTS` に未登録のファイルを Warning にする（Issue #83）。
+    """`src/ui/` 直下（`COMPONENTS_DIR` を除く）で Button / Input（および `COMPONENT_CALL_FN`
+    に登録された他コンポーネント）を使っているのに `CALL_SITE_REQUIREMENTS` に未登録の
+    ファイルを Warning にする（Issue #83 / #828）。
 
     既存の「未登録コンポーネント Warning」（`check_unregistered_component_warning`）は
     `COMPONENTS_DIR` 配下の新規コンポーネントファイル自体の生値のみを見ており、
     `src/ui/` 直下の呼び出しサイト（`pagination.tsx` 等）は範囲外だった
     （`CALL_SITE_REQUIREMENTS` 未登録なら Error 検査自体が走らずサイレントに素通りする穴）。
-    本関数はその穴を Warning で塞ぐ。生の `h-\\d` の有無に関わらず、Button を使っている時点で警告する
-    （tier 要件の登録漏れ自体を検知したいため。既存 Warning のような生値限定にしない）。
+    本関数はその穴を Warning で塞ぐ。生の `h-\\d` の有無に関わらず、コンポーネントを
+    使っている時点で警告する（tier 要件の登録漏れ自体を検知したいため。既存 Warning のような
+    生値限定にしない）。エイリアス import・namespace import の扱いは Issue #828 参照。
     """
     if rel in registered:
         return []
     code = strip_comments(text)
-    if not UNREGISTERED_CALL_SITE_RE.search(code):
-        return []
-    return [
-        f"{rel} が {UI_DIR} 直下で Button / buttonVariants を使用していますが "
-        "CALL_SITE_REQUIREMENTS に未登録です（tools/check_ui_dimensions.py に tier 要件を登録してください）"
-    ]
+    if UNREGISTERED_CALL_SITE_RE.search(code):
+        return [_unregistered_call_site_message(rel)]
+
+    aliases = _resolve_call_fn_aliases(code)
+    for local_name, original_fn in aliases.items():
+        if re.search(rf"\b{re.escape(local_name)}\s*\(", code):
+            return [
+                _unregistered_call_site_message(
+                    rel, f"（`{original_fn} as {local_name}` のエイリアス経由）"
+                )
+            ]
+
+    if _has_unresolved_component_namespace_import(code):
+        return [
+            f"{rel} がコンポーネントモジュールを namespace import（`import * as ... from "
+            "'...'`）していますが、本検査はそのメンバアクセス呼び出しを静的に解決できません"
+            "（Button / Input 相当の呼び出しを見落としている可能性があります。named import "
+            "またはエイリアス import に変更するか、手動で CALL_SITE_REQUIREMENTS への登録要否を"
+            "確認してください）"
+        ]
+
+    return []
 
 
 # --------------------------------------------------------------------------- Warning: 未登録コンポーネントの生値
@@ -859,6 +1041,107 @@ _case(
 )
 
 _case(
+    "検査4回帰（Issue #828 CRITICAL #1）: オブジェクトリテラルの className: プロパティ構文"
+    "（`buttonVariants({ className: '...' })`）に h-*/text-* があれば検出する（`className=` の"
+    "JSX 属性構文しか見ていなかった旧実装は検知できていなかった）",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            '<Button type="submit" size="xl">検索</Button>',
+            '<Button type="submit" size="xl" data-x={buttonVariants({ '
+            "variant: 'ghost', size: 'xl', className: 'h-20 text-xl whitespace-normal' "
+            "})}>検索</Button>",
+        ),
+    ),
+    2, 0,  # h-20 と text-xl の 2 トークン（size は xl にして UI-DIM-5 を誘発しないようにする）
+)
+
+_case(
+    "検査4回帰（Issue #828 CRITICAL #1）: pagination.tsx（buttonVariants 関数呼び出し形式）の "
+    "className: プロパティに h-8 を追加すると検出する",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        f["src/ui/pagination.tsx"].replace(
+            "buttonVariants({ variant: 'ghost', size: 'default' })",
+            "buttonVariants({ variant: 'ghost', size: 'default', className: 'h-8' })",
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査4回帰: className: プロパティのシングルクォート文字列でも検出できる（ダブルクォートに限らない）",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        f["src/ui/pagination.tsx"].replace(
+            "buttonVariants({ variant: 'ghost', size: 'default' })",
+            'buttonVariants({ variant: "ghost", size: "default", className: "h-8" })',
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査5回帰（Issue #828 CRITICAL #2）: JSX タグ属性の中にネストした `size:` "
+    "（`onClick={() => track({ size: 'xl' })}`）があっても、本当の tier 不足（size=\"xs\"）を "
+    "正しく検出できる（ネストした size に惑わされて見逃さない）",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            '<Button type="submit" size="xl">検索</Button>',
+            "<Button type=\"submit\" onClick={() => track({ size: 'xl', label: 'x' })} "
+            'size="xs">検索</Button>',
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査5回帰（Issue #828 CRITICAL #2・逆順）: ネストした size がタグ属性の size より前にあっても "
+    "誤検知しない（正当な size=\"xl\" を正しく採用する）",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace(
+            '<Input id="q" name="q" size="xl" className="flex-1" defaultValue={keyword} />',
+            "<Input id=\"q\" name=\"q\" onClick={() => track({ size: 'xs' })} size=\"xl\" "
+            'className="flex-1" defaultValue={keyword} />',
+        ),
+    ),
+    0, 0,
+)
+
+_case(
+    "干渉検証（Issue #828 CRITICAL #1×#2）: 同じ呼び出しサイト本体にネストした "
+    "`size:`（onClick 内の track({size:'md'})）と className: プロパティのリテラル `h-10` が "
+    "同時にあっても、tier 判定（トップレベルの size=\"xl\" を正しく採用し違反なしと判定）と "
+    "className 判定（h-10 を正しく検出）が互いの前提を壊さず両立する",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        f["src/ui/pagination.tsx"].replace(
+            "buttonVariants({ variant: 'ghost', size: 'default' })",
+            "buttonVariants({ variant: 'ghost', onClick: () => track({ size: 'xs' }), "
+            "size: 'xl', className: 'h-10' })",
+        ),
+    ),
+    1, 0,  # h-10 の className 違反のみ（tier は xl >= 必要 md なので違反なし）
+)
+
+_case(
+    "検査3回帰（Issue #828 CRITICAL #3）: 閉じ括弧の無い壊れた `buttonVariants(` の後に "
+    "無関係な `)` がファイル末尾付近にあっても「見つかった」と誤判定せず安全にスキップする"
+    "（旧ガード `code[close-1] != \")\"` は TS/TSX ではファイル末尾付近にほぼ必ず `)` があるため "
+    "誤判定していた・本体 span がファイル末尾までの巨大な範囲になり無関係な text-* まで誤検知する）",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        # 末尾を意図的に ')' で終わらせる（旧ガードの誤判定条件を再現するため）。
+        f["src/ui/pagination.tsx"]
+        + "\nconst broken = buttonVariants({ size: 'default'\n"
+        + "const unrelatedTail = (1 + 2)",
+    ),
+    0, 0,
+)
+
+_case(
     "対象ファイル不在: button.tsx / input.tsx が無ければ黙って PASS",
     lambda f: (f.pop("src/ui/components/button.tsx", None), f.pop("src/ui/components/input.tsx", None)),
     0, 0,
@@ -952,6 +1235,76 @@ _case(
 )
 
 _case(
+    "Warning: src/ui/ 直下の未登録ファイルが <Input> JSX を使用"
+    "（Issue #828 CRITICAL #4: 旧実装は Button/buttonVariants しか見ておらず "
+    "COMPONENT_CALL_FN に既に登録済みの Input を見落としていた）",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "export function SomeWidget() {\n  return <Input size=\"sm\" />\n}\n",
+    ),
+    0, 1,
+)
+
+_case(
+    "Warning: src/ui/ 直下の未登録ファイルが inputVariants 関数呼び出しを使用",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "export function SomeWidget() {\n"
+        "  return <input className={inputVariants({ size: 'sm' })} />\n"
+        "}\n",
+    ),
+    0, 1,
+)
+
+_case(
+    "Warning: src/ui/ 直下の未登録ファイルが named import のエイリアス "
+    "（`import { buttonVariants as bv }`）経由で呼び出している（Issue #828 CRITICAL #4）",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "import { buttonVariants as bv } from './components/button'\n"
+        "export function SomeWidget() {\n"
+        "  return <a className={bv({ size: 'default' })}>x</a>\n"
+        "}\n",
+    ),
+    0, 1,
+)
+
+_case(
+    "Warning対象外: エイリアスが COMPONENT_CALL_FN の関数名と無関係なら誤検知しない",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "import { someUnrelatedFn as x } from './lib/util'\n"
+        "export function SomeWidget() {\n  return <a>{x()}</a>\n}\n",
+    ),
+    0, 0,
+)
+
+_case(
+    "Warning: src/ui/ 直下の未登録ファイルが namespace import 経由の JSX 名前空間タグ "
+    "（`<ButtonNs.Button>`）でコンポーネントを使用している（正規表現ベースでは解決できないため "
+    "見落とし方向に倒さず Warning で可視化する・Issue #828 CRITICAL #4）",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "import * as ButtonNs from './components/button'\n"
+        "export function SomeWidget() {\n"
+        "  return <ButtonNs.Button size=\"sm\">x</ButtonNs.Button>\n"
+        "}\n",
+    ),
+    0, 1,
+)
+
+_case(
+    "Warning対象外: コンポーネントモジュールと無関係な namespace import "
+    "（`import * as React from 'react'`）は誤検知しない",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "import * as React from 'react'\n"
+        "export function SomeWidget() {\n  return React.createElement('div')\n}\n",
+    ),
+    0, 0,
+)
+
+_case(
     "Warning対象外: .test.tsx は未登録呼び出しサイト検査の対象外",
     lambda f: f.__setitem__(
         "src/ui/some-widget.test.tsx",
@@ -970,8 +1323,30 @@ _case(
 )
 
 
+def _direct_span_assertions() -> list[str]:
+    """`CASES`（`run_checks` のエラー/警告件数だけを見る表駆動テスト）では判別しづらい、
+    `find_call_site_spans` 自体の境界条件を直接検証する（Issue #828 CRITICAL #3）。
+
+    表駆動の「検査3回帰」ケースは `run_checks` 経由で 0 エラー / 0 警告になることまでは
+    確認できるが、それだけでは「正しく span を作らなかった（fix）」のか「span は暴走したが
+    たまたま中身に禁止トークンが無かった（bug のまま）」のかを区別できない。ここでは
+    `find_call_site_spans` の戻り値そのものを直接検証し、両者を確実に区別する。
+    """
+    failures: list[str] = []
+    broken_src = "buttonVariants({ size: 'default'\nconst unrelatedTail = (1 + 2)"
+    spans = find_call_site_spans(strip_comments(broken_src), "Button")
+    if spans:
+        failures.append(
+            "find_call_site_spans/broken_paren_before_unrelated_close_paren: "
+            "閉じ括弧の無い `buttonVariants(` の後方に無関係な `)` があると、本体 span が"
+            f"そこまで暴走して誤検出された（旧ガードの偽陽性が再現している）: {spans!r}"
+        )
+    return failures
+
+
 def run_self_test() -> int:
     failures: list[str] = []
+    failures.extend(_direct_span_assertions())
     for label, files, want_e, want_w in CASES:
         errs, warns = run_checks(files)
         if len(errs) != want_e or len(warns) != want_w:
@@ -1001,11 +1376,16 @@ def collect_disk_files() -> dict[str, str]:
 
     # `src/ui/` 直下（サブディレクトリを除く）も読み込む: 未登録呼び出しサイト Warning
     # （`check_unregistered_call_site_warning`）の対象を disk から拾うため（Issue #83）。
+    # 🔴 `.ts`（`.tsx` のみ）も走査する（Issue #828 CRITICAL 指摘）: `COMPONENTS_DIR` 側は
+    # `.ts` / `.tsx` の両方を rglob しているのに、`UI_DIR` 側は `.tsx` のみで揃っていなかった。
+    # `src/ui/inline-template.ts` のような `.ts` ファイルが Button/Input を関数呼び出し形式で
+    # 使っても検知できないまま素通りする穴になっていた。
     ui_dir = REPO_ROOT / UI_DIR
     if ui_dir.is_dir():
-        for p in ui_dir.glob("*.tsx"):
-            if p.is_file():
-                rels.add(p.relative_to(REPO_ROOT).as_posix())
+        for pattern in ("*.ts", "*.tsx"):
+            for p in ui_dir.glob(pattern):
+                if p.is_file():
+                    rels.add(p.relative_to(REPO_ROOT).as_posix())
 
     files: dict[str, str] = {}
     for rel in rels:
