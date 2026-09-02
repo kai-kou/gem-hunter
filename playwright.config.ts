@@ -75,17 +75,18 @@ export default defineConfig({
           // 失敗する。鮮度チェック済みなら再ビルドはスキップされるため、通常時の起動時間はほぼ
           // 変わらない（`tools/ensure_open_next_assets.mjs` 冒頭のコメント参照）。
           // `tools/run_checks.sh` 側にも同じスクリプトを配線済み（ロジックは二重実装しない）。
+          //
+          // 🔴 起動オーケストレーション自体（build → start → 待受 → 後始末）は
+          // tools/run_lighthouse.mjs が別に持つ。`webServer` は config 単位で 1 セットしか
+          // 持てず project ごとに分けられないため、Lighthouse をここへ寄せるとポート分離・
+          // 単独スキップ・INFRA_FAIL/GATE_FAIL の区別が失われる（Issue #186 で検証し、
+          // 二重実装を許容すると決定。理由の全文は tools/run_lighthouse.mjs 冒頭）。
+          // このコマンド・ポートを変えるときは run_lighthouse.mjs の起動部も併せて確認すること。
           command: `node tools/ensure_open_next_assets.mjs && npm run build && npm start -- --port 3100`,
           env: {
             // ダミー GitHub OAuth 環境変数一式は e2e/stub/e2e-env.mjs（共有モジュール）に集約済み。
             // tools/run_lighthouse.mjs（Lighthouse 計測: stub 8799 / app 3101）と同じ値セットを
             // 個別に複製しない（SP-10・GitGuardian 誤検知の再発防止）。
-            // 🔴 起動オーケストレーション自体（build → start → 待受 → 後始末）は
-            // tools/run_lighthouse.mjs が別に持つ。`webServer` は config 単位で 1 セットしか
-            // 持てず project ごとに分けられないため、Lighthouse をここへ寄せるとポート分離・
-            // 単独スキップ・INFRA_FAIL/GATE_FAIL の区別が失われる（Issue #186 で検証し、
-            // 二重実装を許容すると決定。理由の全文は tools/run_lighthouse.mjs 冒頭）。
-            // このコマンド・ポートを変えるときは run_lighthouse.mjs の起動部も併せて確認すること。
             ...buildDummyGitHubEnv({ stubPort, appUrl: baseURL }),
             PORT: '3100',
             // 🔴 #175: サーバープロセスも UTC 固定（本番 Workers と同条件で JST 表示ロジックを検証する）
