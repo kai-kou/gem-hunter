@@ -263,6 +263,27 @@ ARRAY_PARSE_TEST_CASES = [
 ]
 
 
+# `_covered_by()` の自己テスト（#750）。前方一致への退行（`startswith` に境界チェックが
+# 欠けると `docs/rules-old/` を `docs/rules` 配下と誤って縮約する）を検知するため、
+# 正ケースだけでなく「境界の外側」の負ケースを必ず含める。
+COVERED_BY_TEST_CASES = [
+    ("完全一致は covered", "docs/rules", {"docs/rules"}, True),
+    ("配下のファイルは covered", "docs/rules/lessons-core.md", {"docs/rules"}, True),
+    (
+        "近似ディレクトリ名は covered にならない（前方一致への退行を検知・#750）",
+        "docs/rules-old/x.md",
+        {"docs/rules"},
+        False,
+    ),
+    (
+        "プレフィックス違いのファイル名も covered にならない",
+        "docs/rulesbook.md",
+        {"docs/rules"},
+        False,
+    ),
+]
+
+
 def run_self_test() -> int:
     """除外規約と配布定義パーサが期待どおり動くことを検証する。
 
@@ -283,6 +304,13 @@ def run_self_test() -> int:
         else:
             failures += 1
             print(f"  ❌ {label}\n     期待: {expected_list}\n     実際: {actual_list}")
+    for label, ref, paths, expected_bool in COVERED_BY_TEST_CASES:
+        actual_bool = _covered_by(ref, paths)
+        if actual_bool == expected_bool:
+            print(f"  ✅ {label}")
+        else:
+            failures += 1
+            print(f"  ❌ {label}\n     期待: {expected_bool}\n     実際: {actual_bool}")
     print(f"\n{'✅ self-test PASS' if not failures else f'❌ self-test FAIL: {failures} 件'}")
     return 1 if failures else 0
 
