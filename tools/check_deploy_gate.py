@@ -1158,12 +1158,13 @@ def _self_test_fetch_merged_pr_commit_shas() -> list[str]:
 
 def _self_test_fetch_in_progress_sprint_candidates() -> list[str]:
     """#824 Layer 1 指摘: 本 PR で paginate_json_array / exclude_pull_requests へ移行した
-    `fetch_in_progress_sprint_candidates` の REST 経路を、`_run_gh` / `_http_get` の
+    `fetch_in_progress_sprint_candidates` / `fetch_issue_comments` の REST 経路を、`_run_gh` / `_http_get` の
     モック差し替えでエントリポイントから実測する（移行前後の挙動不変の証跡・#602 完了条件3）。
 
     入力バリアント: ① 複数ページ結合（1 ページ目が per_page ちょうど → 2 ページ目で終端）
     ② PR 混入時の除外 ③ 打ち切り（max_pages=3 到達）でも既存どおり黙って取得済み分を返す
-    （`on_truncate="stop"`）④ REST 失敗はエラー文字列で伝播する。
+    （`on_truncate="stop"`）④ REST 失敗はエラー文字列で伝播する。⑤〜⑦ は `fetch_issue_comments`
+    について同じ 3 点（複数ページ結合とフィールド写し替え / 打ち切り stop / REST 失敗の伝播）を見る。
     """
     failures = []
     orig_run_gh = _run_gh
@@ -1221,6 +1222,44 @@ def _self_test_fetch_in_progress_sprint_candidates() -> list[str]:
         issues, err = fetch_in_progress_sprint_candidates()
         if err is None or issues != []:
             failures.append(f"④ REST 失敗: エラーを期待したが {(issues, err)!r}")
+
+        # ⑤ fetch_issue_comments も同じ移行対象なので REST 経路を実測する
+        #    （複数ページ結合 + フィールド写し替え + 打ち切り stop）。REST 応答は snake_case
+        #    （`created_at` / `author_association`）で、gh 経路の camelCase とは別系統である点も固定する。
+        def http_comments(url, token):
+            page = page_of(url)
+            if page == 1:
+                return True, json.dumps([
+                    {"body": f"c{i}", "created_at": "2026-09-02T00:00:00Z", "author_association": "OWNER"}
+                    for i in range(100)
+                ])
+            if page == 2:
+                return True, json.dumps([
+                    {"body": "last", "created_at": "2026-09-02T01:00:00Z", "author_association": "MEMBER"}
+                ])
+            return True, json.dumps([])  # 呼ばれてはいけない
+
+        globals()["_http_get"] = http_comments
+        comments, err = fetch_issue_comments(123)
+        if err is not None or len(comments) != 101:
+            failures.append(f"⑤ コメント複数ページ結合: 期待 101 件 / err=None だが {(len(comments) if isinstance(comments, list) else comments, err)!r}")
+        elif comments[-1] != {"body": "last", "created_at": "2026-09-02T01:00:00Z", "author_association": "MEMBER"}:
+            failures.append(f"⑤ コメントのフィールド写し替え: {comments[-1]!r}")
+
+        # ⑥ コメント側の打ち切りも既存どおり stop（3 ページ分を黙って返す）
+        globals()["_http_get"] = lambda url, token: (
+            True,
+            json.dumps([{"body": "x", "created_at": "", "author_association": ""}] * 100),
+        )
+        comments, err = fetch_issue_comments(123)
+        if err is not None or len(comments) != 300:
+            failures.append(f"⑥ コメント打ち切り(stop): 期待 300 件 / err=None だが {(len(comments) if isinstance(comments, list) else comments, err)!r}")
+
+        # ⑦ コメント取得の REST 失敗はエラーで伝播（fail-closed）
+        globals()["_http_get"] = lambda url, token: (False, "HTTP 502")
+        comments, err = fetch_issue_comments(123)
+        if err is None or comments != []:
+            failures.append(f"⑦ コメント REST 失敗: エラーを期待したが {(comments, err)!r}")
     finally:
         globals()["_run_gh"] = orig_run_gh
         globals()["_http_get"] = orig_http_get
@@ -1343,7 +1382,7 @@ def run_self_test() -> int:
         ("main 祖先判定・fetch メモ化（git 呼び出しのモック差し替え・#471/#723）", _self_test_is_ancestor_of_main),
         ("merged PR 検索の gh/REST フォールバック（#723 指摘3）", _self_test_fetch_merged_pr_commit_shas),
         ("open PR 検索の gh/REST フォールバック（#723 指摘1）", _self_test_fetch_open_pr_numbers),
-        ("in-progress Issue 取得の REST 経路（#602 移行の挙動不変・#824）", _self_test_fetch_in_progress_sprint_candidates),
+        ("in-progress Issue / コメント取得の REST 経路（#602 移行の挙動不変・#824）", _self_test_fetch_in_progress_sprint_candidates),
         ("集約判定と終了コードのマッピング", _self_test_decide_and_exit_code),
     ]
     failed_groups = 0
