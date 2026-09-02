@@ -190,3 +190,10 @@
 {"date": "2026-09-02 JST", "title": "check_delegation_preamble.py の走査範囲（.claude/skills/ 配下限定）を docstring に明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "PR 作成後の追加コミットで証跡（Hot 層増減ログ等）が古くなるのを検知する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#751"}
 {"date": "2026-09-02 JST", "title": "デプロイ系スクリプトの exit 2 に原因カテゴリを持たせ抑制判定を組で行う", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#785"}
+{"date": "2026-09-02 JST", "title": "並行 fan-out 中の Stop フック WIP 自動コミットの粒度を制御する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-02 JST", "title": "Layer 1 ファインダーが同じ差分に対して実行ごとに食い違う結論を返す", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 769}
+{"date": "2026-09-02 JST", "title": "self-test が変更対象の関数に到達しているかを機械検査する（第 2 軸）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 770}
+{"date": "2026-09-02 JST", "title": "check_deploy_gate.py の max_pages=3 + on_truncate=stop の取りこぼしを再検討する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "github_rest.http_get のエラー種別（HTTPError / URLError / タイムアウト）を構造化して返す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "委譲プロンプトに self-test の実行結果（テスト名と PASS/FAIL）の返り値必須化を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 775}
+{"date": "2026-09-02 JST", "title": "is_empty_related_issue に bool の明示チェックを足す（PR #824 で実装済み・陳腐化）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
