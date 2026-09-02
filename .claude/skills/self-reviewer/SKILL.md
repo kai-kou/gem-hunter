@@ -74,8 +74,6 @@ git diff main...HEAD --name-only
 
 ### Step 4: 観点別フレッシュ文脈セルフレビュー（Layer 1・必須）
 
-<!-- delegation-preamble: n/a 本スキルは自前の委譲テンプレートを持たず、サブエージェント起動は `Skill(code-review)` に委ねる（並行安全プリアンブルの展開は code-review 側の責務） -->
-
 PR 作成後に **自前 `code-review` スキルを `Skill(code-review)` で必ず実行** する（Layer 1・全 PR 必須）。
 観点別ファインダー（並列サブエージェント）→ 敵対的検証 → 報告の 3 段で、差分を「第三者の PR」として
 読み直し自己修正盲点（64.5%）を回避する。**指摘は確度を問わず全件 PR の行単位インラインコメントで記録し、
@@ -87,6 +85,8 @@ PR 作成後に **自前 `code-review` スキルを `Skill(code-review)` で必�
 > 同名 project スキルとして置換した自前実装（#275 → #280）。対話セッションの手打ちも同スキルに解決される。
 > 万一 `Skill(code-review)` が disable-model-invocation エラーを返す場合（bundled 側に解決が倒れた場合）のみ、
 > 旧手段としてサブエージェント（`general-purpose`/`Explore`）に Step 2 の観点表を渡す直接レビューへフォールバックする。
+>
+> 🔴 **このフォールバックで `Agent` を起動するときは、起動前に `docs/rules/agent-team-summary.md` の「並行安全プリアンブル」節（SSOT）を Read し、その節のコードブロックの中身を実テキストのまま委譲プロンプトの先頭へ展開する**（パス・節名を書くだけでは実行時に解決されず、サブエージェントには何も届かない）。このレビュー役は読み取り専用なので、展開したテキストの直後に `ファイルの編集も禁止する。` の 1 行を足す（禁止文言そのものを本ファイルへ複製しない・二重管理の再発防止・#816）。
 
 diff ≥300行 / `type:security` / `type:breaking-change` の PR は Layer 2（`discussion_review_trigger.py`）も起動する。
 critical 指摘は修正必須（自動ゲート扱い）。**外部 AI レビュアー（Copilot / Gemini）への依頼はしない。**
