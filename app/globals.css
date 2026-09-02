@@ -97,20 +97,35 @@
      --border（ライト）と同値へ揃え、vs bg 3.947:1 / vs bg-subtle 3.619:1 を確保する
      （tools/check_contrast.py 実測・SP-10 議論ラウンド1 a11y_impl）。 */
   --ring: oklch(0.6 0 0);
+  /* #185: --chart-* も現状どのコンポーネントからも未参照（shadcn 由来。grep 実測・0 件）。
+     データ可視化コンポーネント導入時に使う想定で削除はしないが、テキスト/背景の固定ペアを
+     持たないカテゴリカルパレット（どの背景の上で使われるか未確定）のため、
+     tools/check_contrast.py の機械検査対象には含めない。実装時に使用箇所の背景色を確定させたら
+     WCAG 2.2 SC 1.4.11（非テキストコントラスト 3:1）の検査ペアを別途追加する。 */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
+  /* #185: sidebar-* は現状どのコンポーネントからも参照されていない（shadcn 由来の未使用トークン。
+     grep -rn "sidebar" --include="*.tsx" --include="*.ts" --include="*.css" -- app src e2e tools docs
+     で実測・0 件）。将来 `npx shadcn add sidebar` で使われる可能性があるため削除はせず、
+     --border / --ring と同じ役割のトークンとして値を揃え、tools/check_contrast.py の機械検査対象に含める
+     （#179 で --border / --ring を是正した際に sidebar-* は取り残され、SC 1.4.11 未達のまま放置されていた）。 */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* #185: 旧値 oklch(0.922 0 0) は vs --sidebar 1.21:1 で 3:1 未達（--border の旧欠陥と同型）。
+     --border（ライト）と同値へ揃え、vs --sidebar 3.78:1 を確保する（tools/check_contrast.py 実測）。 */
+  --sidebar-border: oklch(0.6 0 0);
+  /* #185: 旧値 oklch(0.708 0 0) は vs --sidebar 2.48:1 で 3:1 未達（--ring の旧欠陥と同型・#179 で
+     --ring は是正されたが sidebar-ring は取り残されていた）。--ring（ライト）と同値へ揃え、
+     vs --sidebar 3.78:1 を確保する（tools/check_contrast.py 実測）。 */
+  --sidebar-ring: oklch(0.6 0 0);
 }
 
 .dark {
@@ -146,7 +161,9 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  /* #185: 旧値 oklch(1 0 0 / 10%) は不透明でも vs --sidebar 1.32:1 で 3:1 未達（--border ダークの
+     旧欠陥と同型）。--border（ダーク）と同値の不透明色へ揃え、vs --sidebar 3.69:1 を確保する。 */
+  --sidebar-border: oklch(0.55 0 0);
   --sidebar-ring: oklch(0.556 0 0);
 }
 
