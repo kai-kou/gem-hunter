@@ -18,6 +18,30 @@
 //      （「チェッカー自体が落ちた」と「本当に a11y が落ちた」を混同しない）。
 //
 // 起動したプロセス（stub / next start）は正常終了・異常終了を問わず必ず後始末する。
+//
+// 🔴 起動オーケストレーションを playwright.config.ts の `webServer` へ一本化しない理由（Issue #186）
+//
+// 「stub 起動 → build → start → ポート待受 → 後始末」は playwright.config.ts の `webServer` と
+// 概念的に重複する（実重複は約 30 行）。一本化案（Lighthouse を Playwright の別 project として
+// 書き、起動を `webServer` に委ねる）を検討したが、**採らない**。Playwright の `webServer` は
+// config 単位で 1 セットしか持てず project ごとに分けられないため、寄せると以下が失われる:
+//
+//   1. ポート分離（stub 8799 / app 3101 ↔ E2E の 8788 / 3100）。E2E が異常終了でポートを掴んだまま
+//      残っても Lighthouse は独立して走れる、という上の設計意図が消える
+//   2. `--self-test`（`selfTest()`）— Chrome 不要でゲート判定ロジックだけを検証する経路
+//   3. INFRA_FAIL と GATE_FAIL の区別。Playwright ではどちらも単なるテスト失敗になる
+//   4. `spawnTracked`（detached）+ `killGroup` によるプロセスグループ単位の後始末。next の孫プロセスが
+//      ポートを掴んだまま残る実測済みの障害への対策で、`webServer` は同等の保証を持たない
+//   5. `SKIP_LIGHTHOUSE` による単独スキップと `RUN_CHECKS_LIGHTHOUSE_TIMEOUT`（既定 180 秒）の
+//      独立タイムアウト。E2E（既定 600 秒）と同じ枠に丸められる
+//
+// さらに `webServer` 側は `ensure_open_next_assets.mjs` を挟む OpenNext ビルドを計測対象にするため、
+// Performance の計測基準が素の `next build` から変わる。`reuseExistingServer`（ローカル）により
+// 古いビルドを計測して緑になる沈黙リスクも新たに増える。
+//
+// 二重実装のうち **更新漏れの実害が大きいダミー環境変数一式は `e2e/stub/e2e-env.mjs` へ共通化済み**
+// （下の import）。残る重複は起動コマンドとポートだけで、両者は上記 1 のとおり意図的に異なる。
+// 起動コマンドを変えるときは playwright.config.ts の `webServer`（app 側）も併せて確認すること。
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
