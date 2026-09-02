@@ -82,6 +82,12 @@ CALL_SITE_REQUIREMENTS: dict[str, dict[str, str]] = {
     "src/ui/pagination.tsx": {"Button": "md"},
     "src/ui/sort-picker.tsx": {"Button": "md"},
     "src/ui/per-page-picker.tsx": {"Button": "md"},
+    "src/ui/locale-switcher.tsx": {"Button": "md"},
+    "src/ui/gem-list-link.tsx": {"Button": "md"},
+    # 二次導線だが `sm`（`--size-control-sm`）を要件として追認する（Issue #829）。
+    # §2.4 の「二次的なコントロールは md 以上」は 🔵 推奨であって 🔴 必須ではなく、
+    # md へ引き上げるとヘッダーの見た目が変わる（実装変更の是非は別 Issue）。
+    "src/ui/login-link.tsx": {"Button": "sm"},
 }
 
 # コンポーネント名 → JSX を使わず cva variants 関数を直接呼び出す呼び出しサイトで使う関数名。

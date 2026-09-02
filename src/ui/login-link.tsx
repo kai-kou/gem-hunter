@@ -31,6 +31,8 @@ type LoginLinkProps = {
  * 必須「高さとフォントサイズは cva の size variant 経由でのみ指定する」・PR #141 レビュー指摘）。
  */
 export function LoginLink({ isLoggedIn, labels }: LoginLinkProps) {
+  // 二次導線だが sm を追認: §2.4 の「二次的なコントロールは md 以上」は 🔵 推奨であり必須ではなく、
+  // md へ引き上げるとヘッダーの見た目が変わるため現状を要件として登録した（Issue #829）。
   const className = buttonVariants({ variant: 'ghost', size: 'sm' })
 
   if (isLoggedIn) {
