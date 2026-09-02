@@ -173,3 +173,11 @@
 {"date": "2026-09-02 JST", "title": "Target Size の E2E も 320px viewport で測るか、viewport 選択の根拠をコメントへ明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "E2E ヘルパーの重複を引数リテラル単位で検知するゲートを新設する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "813"}
 {"date": "2026-09-02 JST", "title": "computed style の検査対象を代表要素に絞ったら、絞った根拠をコメントに残す", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-148"}
+{"date": "2026-09-02 JST", "title": "並列委譲中の Stop フック WIP 自動コミット割り込みを防ぐガードを入れる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-02 JST", "title": "「self-test が緑でも見逃す」根本問題の 3 箇所分散を一元化する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 699}
+{"date": "2026-09-02 JST", "title": "委譲プロンプトへ実テキストで渡る部位は複製・全文引用を許容する例外ルールを Hot 層に置く", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 816}
+{"date": "2026-09-02 JST", "title": "#816 の完了条件へ「参照ではなく実テキスト展開」の判断根拠を引き継ぐ", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 816}
+{"date": "2026-09-02 JST", "title": "self-test が本番の主コードパスを通っているかを機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 817}
+{"date": "2026-09-02 JST", "title": "副作用ツール全数の self-test 実効性マイグレーションを計画する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 817}
+{"date": "2026-09-02 JST", "title": "ドキュメント整合（重複定義・見出しスコープ）の機械検査を段階的に入れる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "check_cjk_markdown.py の --under にファイルパスを渡したときの警告文を改善する", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-147"}
