@@ -118,6 +118,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
 from github_rest import http_get as _github_rest_http_get  # noqa: E402
+from github_rest import exclude_pull_requests  # noqa: E402
 from github_rest import paginate_json_array  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -160,11 +161,6 @@ def extract_sp_number_from_title(title: str) -> int | None:
         if m:
             return int(m.group(1))
     return None
-
-
-def filter_out_pull_requests(items: list[dict]) -> list[dict]:
-    """`/issues` エンドポイントの応答から PR（`pull_request` キーを持つ要素）を除外する。"""
-    return [i for i in items if "pull_request" not in i]
 
 
 # ──────────────────────────────────────────────
@@ -477,7 +473,7 @@ def build_sp_state_index(items: list[dict]) -> dict[int, list[str]]:
     1 件でも Closed でなければ「全件 Closed」ではないと判定できるようリストで保持する。
     """
     index: dict[int, list[str]] = {}
-    for item in filter_out_pull_requests(items):
+    for item in exclude_pull_requests(items):
         n = extract_sp_number_from_title(str(item.get("title", "")))
         if n is None:
             continue
@@ -799,7 +795,7 @@ def _self_test_pull_request_filter() -> list[str]:
         {"title": "SP-11: a", "state": "closed"},
         {"title": "feat(SP-11): a", "state": "open", "pull_request": {"url": "x"}},
     ]
-    got = filter_out_pull_requests(items)
+    got = exclude_pull_requests(items)
     if len(got) != 1 or got[0]["title"] != "SP-11: a":
         failures.append(f"PR 除外: {got}")
     return failures
