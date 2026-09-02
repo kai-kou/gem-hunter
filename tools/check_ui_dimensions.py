@@ -12,13 +12,19 @@ SSOT: `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.4（コントロールサ�
      `--text-control-min` 宣言値未満でないこと（ボタンは対象外）
   3. `app/globals.css` の `--size-control-xs` 宣言値が 24px（WCAG 2.5.8 フロア）未満でないこと。
      `--text-control-min` 宣言値が 16px（iOS Safari 自動ズーム回避）未満でないこと
-  4. 登録済み呼び出しサイト（既定: `src/ui/search-form.tsx`）のリテラル `className` に
-     `h-*` / `text-*` が含まれていない（サイズの上書き禁止）
+  4. 登録済み呼び出しサイト（既定: `src/ui/search-form.tsx`）の、そのコンポーネントの呼び出し箇所
+     （JSX 属性 `<Button className="...">` / 関数呼び出し引数 `buttonVariants({ className: '...' })`
+     の**どちらか**）のリテラル `className` に `h-*` / `text-*` が含まれていない（サイズの上書き禁止）。
+     🔴 ファイル全体ではなく呼び出しサイトの範囲だけを見る（無関係な要素の typography クラスを
+     誤検知しないため・Issue #83）
   5. 登録済み呼び出しサイトが要求 tier 未満のコンポーネント size variant を使っていないこと
-     （既定: `search-form.tsx` は Input / Button ともに `xl` tier 以上）
+     （既定: `search-form.tsx` は Input / Button ともに `xl` tier 以上）。JSX タグ形式
+     （`<Button size="...">`）と関数呼び出し形式（`buttonVariants({ size: '...' })`）の両方を検出する
 
 Warning（`run_checks.sh` を止めない）:
   - `src/ui/components/` 配下に未登録の新規コンポーネントファイルがあり、生の `h-\\d+` を含む場合
+  - `src/ui/` 直下（サブディレクトリ・`components/` を除く）に Button / buttonVariants を使用して
+    いるのに `CALL_SITE_REQUIREMENTS` に未登録のファイルがある場合（登録漏れの検知漏れ対策・Issue #83）
   - 登録済み呼び出しサイトの `className={...}`（式形式）に、変数展開・関数戻り値など
     静的に解決できない部分が含まれる場合（誤検知で止めないため Error にしない）
   - `app/globals.css` の対象変数が宣言されているが、値を px/rem として解決できない場合
@@ -41,7 +47,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ts_source import JS_IDENTIFIER_RE, find_matching_brace, find_tag_end, strip_comments  # noqa: E402
+from ts_source import (  # noqa: E402
+    JS_IDENTIFIER_RE,
+    _find_matching_paren,
+    find_matching_brace,
+    find_tag_end,
+    strip_comments,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -56,6 +68,8 @@ FONT_CHECK_FILES = [
 ]
 GLOBALS_CSS = "app/globals.css"
 COMPONENTS_DIR = "src/ui/components/"
+# `src/ui/` 直下（サブディレクトリを除く）を「呼び出しサイトの登録漏れ」検査のスキャン対象にする。
+UI_DIR = "src/ui/"
 
 # 呼び出しサイト → { コンポーネント名: 必要な最低 tier }
 CALL_SITE_REQUIREMENTS: dict[str, dict[str, str]] = {
@@ -63,6 +77,19 @@ CALL_SITE_REQUIREMENTS: dict[str, dict[str, str]] = {
     # エラー通知の導線（ui-ux-guidelines.md §5.2「再試行ボタン」）。再試行は主要導線 = xl、
     # ログイン導線はそれに次ぐ lg。下限は小さい方の tier を登録する（両方が lg 以上であること）。
     "src/ui/error-notice.tsx": {"Button": "lg"},
+    # 二次的なナビゲーション導線（ui-ux-guidelines.md §2.4 🔵 推奨「二次的なコントロールは md 以上」）。
+    # 3 ファイルとも `buttonVariants({ size: 'default' })` 経由で tier md を使用済み（Issue #83）。
+    "src/ui/pagination.tsx": {"Button": "md"},
+    "src/ui/sort-picker.tsx": {"Button": "md"},
+    "src/ui/per-page-picker.tsx": {"Button": "md"},
+}
+
+# コンポーネント名 → JSX を使わず cva variants 関数を直接呼び出す呼び出しサイトで使う関数名。
+# `<Button ...>` の代わりに `buttonVariants({ size: '...', className: '...' })` のように
+# 関数呼び出しで className 文字列を組み立てる箇所（`pagination.tsx` 等）を検出するために使う。
+COMPONENT_CALL_FN: dict[str, str] = {
+    "Button": "buttonVariants",
+    "Input": "inputVariants",
 }
 
 # tier の順序（小 → 大）。px 値ではなく「順序」のみを Python が持つ。
@@ -209,6 +236,45 @@ def check_globals_floor(css_text: str) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
+# --------------------------------------------------------------------------- 呼び出しサイト検出（JSX タグ / variants 関数呼び出しの両対応）
+
+
+def find_call_site_spans(code: str, component: str) -> list[tuple[int, int, int]]:
+    """コンポーネントの呼び出しサイトを `(報告用位置, 本体テキスト開始, 本体テキスト終了)` で返す。
+
+    2 つの形を検出する:
+      - JSX タグ形式 `<Button size="lg">`（本体 = タグの属性文字列）
+      - 関数呼び出し形式 `buttonVariants({ size: 'lg', className: '...' })`
+        （本体 = 呼び出しの引数文字列。`COMPONENT_CALL_FN` に登録されたコンポーネントのみ検出）
+
+    対応する終端（タグ終端 `>` / 閉じ括弧 `)`）が見つからない壊れた入力は、誤検知を避けて
+    黙ってスキップする（既存の `check_call_site_tier` と同じ方針）。
+    """
+    spans: list[tuple[int, int, int]] = []
+
+    for open_m in re.finditer(rf"<{re.escape(component)}\b", code):
+        attrs_start = open_m.end()
+        tag_end = find_tag_end(code, attrs_start)
+        if tag_end == -1:
+            continue
+        spans.append((open_m.start(), attrs_start, tag_end))
+
+    fn_name = COMPONENT_CALL_FN.get(component)
+    if fn_name:
+        for call_m in re.finditer(rf"\b{re.escape(fn_name)}\s*\(", code):
+            open_paren = call_m.end() - 1
+            close = _find_matching_paren(code, open_paren)
+            if close <= open_paren or code[close - 1] != ")":
+                continue  # 対応する閉じ括弧が見つからない（壊れた/切り詰められた入力）
+            spans.append((call_m.start(), open_paren + 1, close - 1))
+
+    return spans
+
+
+def _pos_in_spans(spans: list[tuple[int, int, int]], pos: int) -> bool:
+    return any(body_start <= pos < body_end for _, body_start, body_end in spans)
+
+
 # --------------------------------------------------------------------------- 検査 4: 呼び出しサイトの className 上書き禁止
 
 CLASSNAME_LITERAL_RE = re.compile(r'className\s*=\s*"([^"]*)"')
@@ -287,12 +353,30 @@ def _scan_classname_expr(rel: str, expr: str, base_offset: int, code: str) -> tu
     return errors, has_dynamic
 
 
-def check_call_site_classname(rel: str, text: str) -> tuple[list[str], list[str]]:
+def check_call_site_classname(
+    rel: str, text: str, components: list[str]
+) -> tuple[list[str], list[str]]:
+    """登録済みコンポーネントの呼び出しサイト（JSX 属性 / 関数呼び出し引数）に限定して検査する。
+
+    🔴 ファイル全体を無差別に走査しない（Issue #83）: `pagination.tsx` のように、対象コンポーネント
+    とは無関係な要素（ページ番号表示の `<span className="text-sm ...">` 等）が同じファイル内に
+    あると、ファイル全体走査ではそれらの正当な typography クラスまで誤検知する。呼び出しサイトの
+    本体テキスト範囲（`find_call_site_spans`）に位置するマッチだけを対象にすることで、無関係な
+    JSX を誤って弾かずに済ませる。
+    """
     errors: list[str] = []
     warnings: list[str] = []
     code = strip_comments(text)
 
+    spans: list[tuple[int, int, int]] = []
+    for component in components:
+        spans.extend(find_call_site_spans(code, component))
+    if not spans:
+        return errors, warnings
+
     for m in CLASSNAME_LITERAL_RE.finditer(code):
+        if not _pos_in_spans(spans, m.start(1)):
+            continue
         content = m.group(1)
         base_offset = m.start(1)
         for tok_m in re.finditer(r"\S+", content):
@@ -305,6 +389,8 @@ def check_call_site_classname(rel: str, text: str) -> tuple[list[str], list[str]
                 )
 
     for m in CLASSNAME_EXPR_START_RE.finditer(code):
+        if not _pos_in_spans(spans, m.start()):
+            continue
         brace_start = m.end() - 1
         close = find_matching_brace(code, brace_start)
         expr = code[brace_start + 1 : close]
@@ -322,6 +408,9 @@ def check_call_site_classname(rel: str, text: str) -> tuple[list[str], list[str]
 
 # --------------------------------------------------------------------------- 検査 5: 呼び出しサイトの tier 下限
 
+SIZE_PROP_RE = re.compile(r"""size\s*[:=]\s*['"]([^'"]+)['"]""")
+
+
 def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> list[str]:
     errors: list[str] = []
     code = strip_comments(text)
@@ -329,17 +418,11 @@ def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> l
         required_idx = tier_order_index(required_tier)
         if required_idx is None:
             continue
-        for open_m in re.finditer(rf"<{re.escape(component)}\b", code):
-            tag_start = open_m.start()
-            attrs_start = open_m.end()
-            # 非貪欲正規表現 `(.*?)(?:/>|>)` は onClick={() => f()} の `=>` の `>` を
-            # タグ終端と誤認する（属性の並び順で結果が変わる偽陽性の原因）。深さ・クォートを
-            # 追跡する find_tag_end で実際のタグ終端だけを終端と判定する（Issue #612）。
-            tag_end = find_tag_end(code, attrs_start)
-            if tag_end == -1:
-                continue  # 対応するタグ終端が見つからない（壊れた/切り詰められた入力）。誤検知を避けて素通りする。
-            attrs = code[attrs_start:tag_end]
-            size_m = re.search(r'size\s*=\s*"([^"]+)"', attrs)
+        # JSX タグ `<Button size="lg">` と関数呼び出し `buttonVariants({ size: 'lg' })` の
+        # 両方の呼び出しサイトを検出する（Issue #83・pagination.tsx 等は後者の形のみを使う）。
+        for report_start, body_start, body_end in find_call_site_spans(code, component):
+            body = code[body_start:body_end]
+            size_m = SIZE_PROP_RE.search(body)
             variant_name = size_m.group(1) if size_m else "default"
             used_tier = VARIANT_TIER.get(variant_name)
             if used_tier is None:
@@ -347,12 +430,39 @@ def check_call_site_tier(rel: str, text: str, requirements: dict[str, str]) -> l
             used_idx = tier_order_index(used_tier)
             if used_idx is None or used_idx >= required_idx:
                 continue
-            ln = lineno_at(code, tag_start)
+            ln = lineno_at(code, report_start)
             errors.append(
                 f"{rel}:{ln} UI-DIM-5: <{component}> が size=\"{variant_name}\"（tier {used_tier}）"
                 f"を使っていますが、この呼び出しサイトは tier {required_tier} 以上が必要です"
             )
     return errors
+
+
+# --------------------------------------------------------------------------- Warning: 未登録の呼び出しサイト（src/ui/ 直下）
+
+UNREGISTERED_CALL_SITE_RE = re.compile(r"<Button\b|\bbuttonVariants\s*\(")
+
+
+def check_unregistered_call_site_warning(rel: str, text: str, registered: set[str]) -> list[str]:
+    """`src/ui/` 直下（`COMPONENTS_DIR` を除く）で Button / buttonVariants を使っているのに
+    `CALL_SITE_REQUIREMENTS` に未登録のファイルを Warning にする（Issue #83）。
+
+    既存の「未登録コンポーネント Warning」（`check_unregistered_component_warning`）は
+    `COMPONENTS_DIR` 配下の新規コンポーネントファイル自体の生値のみを見ており、
+    `src/ui/` 直下の呼び出しサイト（`pagination.tsx` 等）は範囲外だった
+    （`CALL_SITE_REQUIREMENTS` 未登録なら Error 検査自体が走らずサイレントに素通りする穴）。
+    本関数はその穴を Warning で塞ぐ。生の `h-\\d` の有無に関わらず、Button を使っている時点で警告する
+    （tier 要件の登録漏れ自体を検知したいため。既存 Warning のような生値限定にしない）。
+    """
+    if rel in registered:
+        return []
+    code = strip_comments(text)
+    if not UNREGISTERED_CALL_SITE_RE.search(code):
+        return []
+    return [
+        f"{rel} が {UI_DIR} 直下で Button / buttonVariants を使用していますが "
+        "CALL_SITE_REQUIREMENTS に未登録です（tools/check_ui_dimensions.py に tier 要件を登録してください）"
+    ]
 
 
 # --------------------------------------------------------------------------- Warning: 未登録コンポーネントの生値
@@ -406,20 +516,32 @@ def run_checks(files: dict[str, str]) -> tuple[list[str], list[str]]:
         text = files.get(rel)
         if text is None:
             continue
-        classname_errors, classname_warnings = check_call_site_classname(rel, text)
+        classname_errors, classname_warnings = check_call_site_classname(
+            rel, text, list(requirements.keys())
+        )
         errors.extend(classname_errors)
         warnings.extend(classname_warnings)
         errors.extend(check_call_site_tier(rel, text, requirements))
 
-    registered = set(COMPONENT_FILES)
+    registered_components = set(COMPONENT_FILES)
     for rel, text in files.items():
         if not rel.startswith(COMPONENTS_DIR):
             continue
-        if rel in registered:
+        if rel in registered_components:
             continue
         if ".test." in Path(rel).name or ".spec." in Path(rel).name:
             continue
         warnings.extend(check_unregistered_component_warning(rel, text))
+
+    registered_call_sites = set(CALL_SITE_REQUIREMENTS.keys())
+    for rel, text in files.items():
+        if not rel.startswith(UI_DIR) or rel.startswith(COMPONENTS_DIR):
+            continue
+        if "/" in rel[len(UI_DIR) :]:
+            continue  # 「直下」のみ対象（url/ 等のサブディレクトリは対象外）
+        if ".test." in Path(rel).name or ".spec." in Path(rel).name:
+            continue
+        warnings.extend(check_unregistered_call_site_warning(rel, text, registered_call_sites))
 
     return errors, warnings
 
@@ -481,11 +603,29 @@ def _good_files() -> dict[str, str]:
         "  )\n"
         "}\n"
     )
+    # 関数呼び出し形式（`<Button>` JSX を使わず `buttonVariants({...})` で className 文字列を
+    # 組み立てる呼び出しサイト。`pagination.tsx` 等・Issue #83）を模した最小フィクスチャ。
+    # 対象コンポーネントと無関係な `<span className="text-sm ...">` を意図的に含める
+    # （ファイル全体走査に戻ると誤検知することを固定するための回帰ケース・下記 CASES 参照）。
+    pagination = (
+        "const linkClassName = buttonVariants({ variant: 'ghost', size: 'default' })\n"
+        "export function Pagination({ current }) {\n"
+        "  return (\n"
+        "    <nav>\n"
+        "      <span className={linkClassName}>prev</span>\n"
+        "      <span aria-current=\"page\" className=\"text-sm font-medium\">\n"
+        "        {current.page}\n"
+        "      </span>\n"
+        "    </nav>\n"
+        "  )\n"
+        "}\n"
+    )
     return {
         "src/ui/components/button.tsx": button,
         "src/ui/components/input.tsx": input_tsx,
         "app/globals.css": globals_css,
         "src/ui/search-form.tsx": search_form,
+        "src/ui/pagination.tsx": pagination,
     }
 
 
@@ -598,12 +738,23 @@ _case(
 )
 
 _case(
-    "検査4: search-form.tsx のリテラル className に text-sm",
+    "検査4: search-form.tsx の Input の リテラル className に text-sm",
+    lambda f: f.__setitem__(
+        "src/ui/search-form.tsx",
+        f["src/ui/search-form.tsx"].replace('className="flex-1"', 'className="flex-1 text-sm"'),
+    ),
+    1, 0,
+)
+
+_case(
+    "回帰ケース（Issue #83）: search-form.tsx の <form> タグ（Input/Button 以外）の "
+    "className は呼び出しサイト範囲外なので、text-* を足しても誤検知しない"
+    "（呼び出しサイトスコープ化前はファイル全体走査で誤検知していた）",
     lambda f: f.__setitem__(
         "src/ui/search-form.tsx",
         f["src/ui/search-form.tsx"].replace('className="flex gap-2"', 'className="flex gap-2 text-sm"'),
     ),
-    1, 0,
+    0, 0,
 )
 
 _case(
@@ -743,6 +894,81 @@ _case(
     0, 0,
 )
 
+# --- 検査4/5: 関数呼び出し形式（`buttonVariants({...})`）の呼び出しサイト対応（Issue #83）----
+
+_case(
+    "検査5: pagination.tsx（buttonVariants 関数呼び出し形式）の size を tier 不足（xs）に変える",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        f["src/ui/pagination.tsx"].replace("size: 'default'", "size: 'xs'"),
+    ),
+    1, 0,
+)
+
+_case(
+    "回帰ケース（Issue #83）: pagination.tsx の Button/buttonVariants と無関係な "
+    "<span className=\"text-lg\"> はファイル全体走査に戻すと誤検知するが、呼び出しサイト範囲"
+    "スコープなら誤検知しない",
+    lambda f: f.__setitem__(
+        "src/ui/pagination.tsx",
+        f["src/ui/pagination.tsx"].replace(
+            'className="text-sm font-medium"', 'className="text-lg font-medium"'
+        ),
+    ),
+    0, 0,
+)
+
+_case(
+    "Warning: src/ui/ 直下の未登録ファイルが buttonVariants を使用",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "export function SomeWidget() {\n"
+        "  return <a className={buttonVariants({ size: 'default' })}>x</a>\n"
+        "}\n",
+    ),
+    0, 1,
+)
+
+_case(
+    "Warning: src/ui/ 直下の未登録ファイルが <Button> JSX を使用",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.tsx",
+        "export function SomeWidget() {\n"
+        "  return <Button size=\"sm\">x</Button>\n"
+        "}\n",
+    ),
+    0, 1,
+)
+
+_case(
+    "Warning対象外: src/ui/ のサブディレクトリ（直下ではない）は未登録呼び出しサイト検査の対象外",
+    lambda f: f.__setitem__(
+        "src/ui/url/some-widget.tsx",
+        "export function SomeWidget() {\n"
+        "  return <a className={buttonVariants({ size: 'default' })}>x</a>\n"
+        "}\n",
+    ),
+    0, 0,
+)
+
+_case(
+    "Warning対象外: .test.tsx は未登録呼び出しサイト検査の対象外",
+    lambda f: f.__setitem__(
+        "src/ui/some-widget.test.tsx",
+        "export function SomeWidget() {\n"
+        "  return <a className={buttonVariants({ size: 'default' })}>x</a>\n"
+        "}\n",
+    ),
+    0, 0,
+)
+
+_case(
+    "Warning対象外: CALL_SITE_REQUIREMENTS 登録済みファイル（pagination.tsx）は "
+    "未登録呼び出しサイト警告の対象外",
+    lambda f: None,  # baseline の pagination.tsx が既に登録済み
+    0, 0,
+)
+
 
 def run_self_test() -> int:
     failures: list[str] = []
@@ -771,6 +997,14 @@ def collect_disk_files() -> dict[str, str]:
     if components_dir.is_dir():
         for p in components_dir.rglob("*"):
             if p.suffix in (".ts", ".tsx") and p.is_file():
+                rels.add(p.relative_to(REPO_ROOT).as_posix())
+
+    # `src/ui/` 直下（サブディレクトリを除く）も読み込む: 未登録呼び出しサイト Warning
+    # （`check_unregistered_call_site_warning`）の対象を disk から拾うため（Issue #83）。
+    ui_dir = REPO_ROOT / UI_DIR
+    if ui_dir.is_dir():
+        for p in ui_dir.glob("*.tsx"):
+            if p.is_file():
                 rels.add(p.relative_to(REPO_ROOT).as_posix())
 
     files: dict[str, str] = {}
