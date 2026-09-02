@@ -179,7 +179,7 @@ flowchart TB
 | 検索画面（`prepareSearchKeyword` 経由） | `app/[locale]/page.tsx` | ✅ 適用 | `search:` |
 | 検索 API（`prepareSearchKeyword` 経由） | `app/api/search/route.ts` | ✅ 適用 | `search:` |
 | Gem 一覧 | `app/[locale]/gems/page.tsx` | ✅ 適用 | `gems:` |
-| リポジトリ詳細 | `app/[locale]/repos/[owner]/[repo]/page.tsx` | ❌ 対象外 | — |
+| リポジトリ詳細（`fetchRepositoryDetail` 経由） | `app/[locale]/repos/[owner]/[repo]/page.tsx` | ✅ 適用 | `detail:` |
 | OG 画像 | `app/[locale]/opengraph-image.tsx` | ❌ 対象外 | — |
 | ログイン | `app/api/auth/login/route.ts` | ❌ 対象外 | — |
 | 認証コールバック | `app/api/auth/callback/route.ts` | ❌ 対象外 | — |
@@ -189,9 +189,14 @@ flowchart TB
 
 **❌ 対象外にした理由**（判断を再現できるように残す）:
 
-- **リポジトリ詳細**: **平常時のトラフィックでは** GitHub Core 枠が 5,000 req/h あり、ここがボトルネックにならない（既存の決定を維持する。`SP-19` の追加でもこの判断は変えていない）。🔴 **ただし枠の枯渇攻撃には無防備で、未対応の残存リスクとして受容している状態である**: 未ログインの `/{locale}/repos/{owner}/{repo}` は **全ユーザー共有の installation token** を使うため、存在しない `owner/repo` をランダム生成して叩き続けられるとキャッシュが毎回ミスし、詳細取得（+ README）で 1〜2 コールが上流へ飛ぶ。毎秒 1 リクエスト程度でも 1 時間以内に Core 枠を使い切り、以後は **正規の利用者全員が `rateLimitPrimary`**（検索・詳細とも利用不能）になる。**この経路への間引き適用は別 Issue で扱う**
 - **ログイン / 認証コールバック / ログアウト**: OAuth のリダイレクトと Cookie 操作だけで、上流 API の重い呼び出しも重い CPU 処理も持たない。むしろ間引くと正規のログイン導線を壊す側のリスクが大きい
 - **OG 画像**: 背景画像は `tools/ui-assets/build_data_uri_module.mjs` がビルド時に base64 データ URI の TS モジュールへ変換してバンドルへ埋め込んでおり、**実行時の I/O が無い**（実行時 `readFile` は Workers 上で 500 になるため不採用・Issue #347）。さらに `params` しか使わず `headers()` / `cookies()` 等のリクエスト時 API を使わないため、**ビルド時に静的最適化される**（= リクエストごとに Worker を起動しない）。🔴 **この判断は現在の実装に依存している**: リクエスト時 API の導入など静的最適化が崩れる変更を入れたら、間引きの要否をここで見直すこと
+
+#### リポジトリ詳細を独立枠にした理由（`detail:`・Issue #190）
+
+**リポジトリ詳細** は当初（#122）❌ 対象外だった。**平常時のトラフィックでは** GitHub Core 枠が 5,000 req/h あり、ここがボトルネックにならないという判断（`SP-19` の追加でもこの判断は変えていなかった）だが、🔴 **枠の枯渇攻撃には無防備な残存リスクとして受容している状態のままだった**: 未ログインの `/{locale}/repos/{owner}/{repo}` は **全ユーザー共有の installation token** を使うため、存在しない `owner/repo` をランダム生成して叩き続けられるとキャッシュが毎回ミスし、詳細取得（+ README）で 1〜2 コールが上流へ飛ぶ。毎秒 1 リクエスト程度でも 1 時間以内に Core 枠を使い切り、以後は **正規の利用者全員が `rateLimitPrimary`**（検索・詳細とも利用不能）になる。Issue #190 でこの残存リスクへ対応し、`✅ 適用` へ切り替えた。
+
+**検索と枠を共有せず独立させる**（キー接頭辞 `detail:`）のは、`enforceGemListRateLimit` が `gems:` を独立させたのと同じ判断（経路ごとに独立した枠を割り当てる）を踏襲したため。詳細取得も検索と同じく上流 GitHub API の枠を消費する点では性質が同じだが、失敗シナリオ（owner/repo を変えながら詳細ページを連打）は検索とは独立に起こりうる。枠を共有すると、検索を一切していない利用者の詳細連打だけで枠が枯れたときに検索側まで巻き込まれ、逆に検索側の消費で「検索して詳細を開く」という正常な導線が早く枯れる可能性がある。
 
 #### Gem 一覧を独立枠にした理由（`gems:`・Issue #442）
 

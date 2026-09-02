@@ -519,6 +519,12 @@ else
   skip_check "GitHub REST 共通ヘルパー self-test (github_rest.py --self-test)" "スクリプトが見つかりません"
 fi
 
+if [ -f "$REPO_ROOT/tools/github_api.py" ]; then
+  run_check "GitHub API フォールバック共通化 self-test (github_api.py --self-test)" python3 tools/github_api.py --self-test
+else
+  skip_check "GitHub API フォールバック共通化 self-test (github_api.py --self-test)" "スクリプトが見つかりません"
+fi
+
 if [ -f "$REPO_ROOT/tools/workers_build_deploy.sh" ]; then
   run_check "Workers Builds デプロイ入口 self-test (workers_build_deploy.sh --self-test)" bash tools/workers_build_deploy.sh --self-test
 else

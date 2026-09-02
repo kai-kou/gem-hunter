@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import { getRepositoryDetailUseCase, getRepositoryReadmeUseCase } from '@/src/composition/container'
+import { fetchRepositoryDetail, getRepositoryReadmeUseCase } from '@/src/composition/detail-guard'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { DEFAULT_PER_PAGE } from '@/src/domain/model/per-page'
@@ -140,7 +141,7 @@ export default async function RepositoryDetailPage({
 
   let repository
   try {
-    repository = await getRepositoryDetailUseCase(accessToken)({ owner, repo })
+    repository = await fetchRepositoryDetail(accessToken, await headers(), { owner, repo }) // 間引き込み・Issue #190
   } catch (error) {
     if (error instanceof DomainError) {
       // 🔴 `error.message`（開発者向けの内部文言）は画面へ出さず、種別から文言を組み立てる
@@ -283,13 +284,12 @@ export default async function RepositoryDetailPage({
  * Next.js の route announcer は `document.title` の変化のみを見て発火するため、一覧→詳細の
  * クライアント遷移でも SSR 段階から正しいタイトルを出す（E-15）。
  *
- * 🔴 `getRepositoryDetailUseCase` を呼び直してリポジトリ本体を再取得しない: `generateMetadata` は
- * ページ本体のレンダリングとは独立して評価されうるため、ここで同じユースケースを呼ぶとキャッシュ
- * TTL 内でも往復が増える（`src/composition/container.ts` の `sharedCache` は HIT するが、
- * セッショントークンの再解決など無駄な非同期処理が増える）。`fullName` は通常 `owner/repo` と
- * 一致する（GitHub の大文字小文字の正規化差はタイトルの実用上無視できる）ため、
- * デコード済みの URL セグメントをそのままタイトルに使う。404 の場合は同ディレクトリの
- * `not-found.tsx` が自身の `generateMetadata` で上書きするため、ここでは意識しない。
+ * 🔴 `fetchRepositoryDetail` を呼び直してリポジトリ本体を再取得しない: `generateMetadata` は
+ * ページ本体のレンダリングとは独立して評価されうるため、ここで同じ取得を呼ぶと間引き判定
+ * （`enforceDetailRateLimit`）とキャッシュ往復が余分に増える。`fullName` は通常 `owner/repo` と
+ * 一致する（大文字小文字の正規化差はタイトルの実用上無視できる）ため、デコード済みの URL
+ * セグメントをそのままタイトルに使う。404 は `not-found.tsx` が自身の `generateMetadata` で
+ * 上書きするため、ここでは意識しない。
  */
 export async function generateMetadata({
   params,

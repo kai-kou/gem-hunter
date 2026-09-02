@@ -107,6 +107,22 @@ export async function enforceGemListRateLimit(headers: Headers): Promise<void> {
 }
 
 /**
+ * リポジトリ詳細取得（`/{locale}/repos/{owner}/{repo}`）の自リクエスト間引き（Issue #190）。
+ * 超過時は他経路と同じく `RateLimitExceededError('rateLimitSecondary')` を投げる。
+ *
+ * **なぜ `search:` と枠を共有せず `detail:` へ分けるのか（Issue #190 が要求する 1 行根拠）**:
+ * 詳細取得も検索と同じく上流 GitHub API の枠を消費する点では性質が同じだが、失敗シナリオ
+ * （owner/repo を変えながら詳細ページを連打）は検索とは独立に起こりうる。枠を共有すると、
+ * 検索を一切していない利用者の詳細連打だけで枠が枯れたときに検索側まで巻き込まれ、逆に
+ * 検索側の消費で「検索して詳細を開く」という正常な導線が早く枯れる可能性がある
+ * （Issue #190 本文の懸念）。`enforceGemListRateLimit` が `gems:` を独立させたのと同じ判断
+ * （経路ごとに独立した枠を割り当てる）を踏襲する。
+ */
+export async function enforceDetailRateLimit(headers: Headers): Promise<void> {
+  await enforceRateLimit(headers, 'detail:')
+}
+
+/**
  * 警告ログ。`[AssetReader]` / `[StaticGemIndex]` と同じく、モジュール名の接頭辞を付けた
  * `console.warn` に寄せる（本プロジェクトの既存の流儀）。
  *

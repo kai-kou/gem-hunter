@@ -39,11 +39,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import subprocess
 import sys
-import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -54,6 +51,7 @@ from xml.etree import ElementTree as ET
 from repo_slug import resolve_repo_slug
 from github_rest import http_get as _github_rest_http_get
 from github_rest import paginate_json_array
+import github_api
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = ROOT / "config" / "claude_code_spec_sync.yaml"
@@ -71,7 +69,7 @@ def _github_rest_get(path: str, params: str = "") -> list | None:
     token は None/空文字を許容（匿名リクエスト・既存挙動）。5 ページに到達しても続きが
     ある可能性を否定できない場合は、従来どおり黙って打ち切る（`on_truncate="stop"`）。
     """
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = github_api.resolve_token()
 
     def fetch_page(page: int) -> tuple[bool, str]:
         url = f"https://api.github.com/{path}?per_page=100&page={page}"
@@ -87,22 +85,32 @@ def _github_rest_get(path: str, params: str = "") -> list | None:
 
 
 def _github_rest_post_issue(repo: str, title: str, body: str, labels: list[str]) -> str | None:
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    url = f"https://api.github.com/repos/{repo}/issues"
-    payload = json.dumps({"title": title, "body": body, "labels": labels}).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, method="POST", headers={
-        "Accept": "application/vnd.github+json",
-        "Content-Type": "application/json",
-        "User-Agent": _USER_AGENT_API,
-        **({"Authorization": f"Bearer {token}"} if token else {}),
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data.get("html_url")
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
-        print(f"[warn] REST Issue 作成も失敗: {e}", file=sys.stderr)
+    """`tools/github_api.py` の `http_request()`（POST）への薄いラッパー（PR #849 Layer1 指摘2）。
+
+    旧実装は手書き `urllib.request.Request(..., method="POST", ...)` を独自に持っていたが、
+    `github_api.http_request()` が同型（`Bearer` + `X-GitHub-Api-Version` + `User-Agent`）の
+    POST を既に実装しているため移行した。挙動は変えない: token が無ければ `Authorization`
+    ヘッダを省略していた旧実装と異なり `http_request()` は token を必須引数に取るため、
+    token 未解決時はこの関数自体を呼ばない（`http_request()` に空文字を渡すのではなく
+    呼び出し前に判定する）。JSON デコードと例外処理はこの関数側に残す
+    （`http_request()` は成功時に raw JSON 文字列を返す契約・github_api.py docstring 参照）。
+    """
+    token = github_api.resolve_token()
+    if not token:
+        print("[warn] REST Issue 作成も失敗: GH_TOKEN/GITHUB_TOKEN 未設定", file=sys.stderr)
         return None
+    url = f"https://api.github.com/repos/{repo}/issues"
+    payload = json.dumps({"title": title, "body": body, "labels": labels}, ensure_ascii=False)
+    ok, out = github_api.http_request(url, token, payload, user_agent=_USER_AGENT_API)
+    if not ok:
+        print(f"[warn] REST Issue 作成も失敗: {out}", file=sys.stderr)
+        return None
+    try:
+        data = json.loads(out)
+    except ValueError as e:
+        print(f"[warn] REST Issue 作成も失敗: 応答の JSON パースに失敗（{e}）", file=sys.stderr)
+        return None
+    return data.get("html_url")
 
 
 # --------------------------------------------------------------------------
@@ -394,18 +402,20 @@ def fetch_issued_versions(repo: str, labels: list[str], lookback_hours: int) -> 
     issued: set[str] = set()
     rows: list[tuple[str, str]] = []  # (created_at, body)
     for label in labels:
-        try:
-            out = subprocess.run(
-                ["gh", "issue", "list", "-R", repo, "--label", label,
-                 "--state", "all", "--limit", "1000", "--json", "body,createdAt"],
-                capture_output=True, text=True, timeout=60,
-            )
-            if out.returncode == 0:
+        ok, out = github_api.run_gh(
+            ["issue", "list", "-R", repo, "--label", label,
+             "--state", "all", "--limit", "1000", "--json", "body,createdAt"],
+            timeout=60,
+        )
+        if ok:
+            try:
                 rows.extend((x.get("createdAt", ""), x.get("body", ""))
-                            for x in json.loads(out.stdout or "[]"))
+                            for x in json.loads(out or "[]"))
                 continue
-        except (FileNotFoundError, subprocess.SubprocessError, ValueError) as e:
-            print(f"[warn] gh issue list 失敗（REST フォールバックへ降格）: {e}", file=sys.stderr)
+            except ValueError as e:
+                print(f"[warn] gh issue list 失敗（REST フォールバックへ降格）: {e}", file=sys.stderr)
+        else:
+            print(f"[warn] gh issue list 失敗（REST フォールバックへ降格）: {out}", file=sys.stderr)
         rest = _github_rest_get(f"repos/{repo}/issues",
                                 f"state=all&labels={urllib.parse.quote(label)}")
         if rest:
@@ -498,18 +508,17 @@ def build_issue(releases: list[dict], kind: str, cfg: dict) -> tuple[str, str]:
 
 
 def create_issue(title: str, body: str, labels: list[str], repo: str) -> str | None:
-    try:
-        out = subprocess.run(
-            ["gh", "issue", "create", "-R", repo,
-             "--title", title, "--body", body, "--label", ",".join(labels)],
-            capture_output=True, text=True, timeout=60,
-        )
-        if out.returncode == 0:
-            return out.stdout.strip()
-        print(f"[warn] gh issue create failed (REST フォールバック試行): "
-              f"{out.stderr.strip()}", file=sys.stderr)
-    except (FileNotFoundError, subprocess.SubprocessError) as e:
-        print(f"[warn] gh unavailable (REST フォールバック試行): {e}", file=sys.stderr)
+    ok, out = github_api.run_gh(
+        ["issue", "create", "-R", repo,
+         "--title", title, "--body", body, "--label", ",".join(labels)],
+        timeout=60,
+    )
+    if ok:
+        return out
+    if github_api.is_gh_unavailable(out):
+        print(f"[warn] gh unavailable (REST フォールバック試行): {out}", file=sys.stderr)
+    else:
+        print(f"[warn] gh issue create failed (REST フォールバック試行): {out}", file=sys.stderr)
     return _github_rest_post_issue(repo, title, body, labels)
 
 
@@ -537,6 +546,179 @@ _SAMPLE_ATOM = """<?xml version="1.0" encoding="UTF-8"?>
   </entry>
 </feed>
 """
+
+
+def _self_test_fetch_issued_versions_delegates_to_gh() -> list[str]:
+    """`fetch_issued_versions()` が `github_api.run_gh()` 経由で実際に `subprocess.run` へ
+    到達することを実測する（PR #849 Layer1 指摘1）。
+
+    `self_test()` はこれまで `fetch_issued_versions()` / `create_issue()` を一切呼んでおらず、
+    gh 委譲コードが self-test 実行時に一度も実行されていなかった（ネット呼び出しが無いことの
+    検証と、委譲コードが実行されないことの見逃しは別物）。ここでは `subprocess.run` 自体を
+    差し替え、gh コマンドが起動できる状態を模擬したうえで実際の応答パース・ラベルループ・
+    lookback フィルタまでを通しで確認する。
+    """
+    import subprocess
+
+    failures: list[str] = []
+    orig_run = subprocess.run
+    captured: list[dict] = []
+
+    class _FakeCompleted:
+        def __init__(self, returncode, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    body_in_window = f"foo\n{ver_marker('9.9.9', 'breaking')}\nbar"
+    issues_json = json.dumps([
+        {"body": body_in_window, "createdAt": datetime.now(timezone.utc).isoformat()},
+    ])
+
+    def fake_run_ok(cmd, **kwargs):
+        captured.append({"cmd": cmd, "kwargs": kwargs})
+        return _FakeCompleted(0, stdout=issues_json)
+
+    try:
+        subprocess.run = fake_run_ok
+        issued = fetch_issued_versions("o/r", ["lane:x"], lookback_hours=24)
+    finally:
+        subprocess.run = orig_run
+
+    if not captured or captured[0]["cmd"][:2] != ["gh", "issue"]:
+        failures.append(f"fetch_issued_versions: run_gh が subprocess.run に到達していない: {captured}")
+    if captured and "-R" not in captured[0]["cmd"] or (captured and "o/r" not in captured[0]["cmd"]):
+        failures.append(f"fetch_issued_versions: repo 引数が argv に含まれていない: {captured}")
+    if captured and captured[0]["kwargs"].get("timeout") != 60:
+        failures.append("fetch_issued_versions: timeout=60 が subprocess.run に伝播していない")
+    if "9.9.9#breaking" not in issued:
+        failures.append(f"fetch_issued_versions: gh 経路の応答から version marker が抽出されなかった: {issued}")
+    return failures
+
+
+def _self_test_create_issue_delegates_and_rest_fallback() -> list[str]:
+    """`create_issue()` の委譲到達 + `_github_rest_post_issue()` の POST 移行後の到達を実測する
+    （PR #849 Layer1 指摘1 + 指摘2 の統合検証・干渉検証を兼ねる）。
+
+    ① `github_api.run_gh()` が実際に `subprocess.run` へ到達すること（gh 不在を模擬）
+    ② gh 不在 → `github_api.is_gh_unavailable()` 判定を通って `_github_rest_post_issue()` へ
+       フォールバックすること ③ `_github_rest_post_issue()` が `github_api.http_request()` 経由で
+       実際に `urllib.request.urlopen` へ POST として到達すること（Authorization ヘッダ・
+       Content-Type・method=POST を実送信ヘッダで確認）を 1 本の呼び出し（`create_issue()`）を
+       通して検証する。POST 移行（指摘2）が委譲到達（指摘1）の入力・戻り値契約を壊していないかも
+       ここで確認できる（干渉検証）。
+    """
+    import os
+    import subprocess
+
+    failures: list[str] = []
+    orig_run = subprocess.run
+    orig_urlopen = urllib.request.urlopen
+    saved_env = {k: os.environ.get(k) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
+    captured_argv: list[list[str]] = []
+    captured_requests: list[urllib.request.Request] = []
+
+    class _FakeResponse:
+        def __init__(self, body: bytes):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self) -> bytes:
+            return self._body
+
+    def fake_run_not_found(cmd, **kwargs):
+        captured_argv.append(cmd)
+        raise FileNotFoundError()
+
+    def fake_urlopen(req, timeout=None):
+        captured_requests.append(req)
+        return _FakeResponse(b'{"html_url": "https://github.com/example/repo/issues/42"}')
+
+    try:
+        subprocess.run = fake_run_not_found
+        urllib.request.urlopen = fake_urlopen
+        os.environ["GH_TOKEN"] = "test-token-not-real"
+        os.environ.pop("GITHUB_TOKEN", None)
+        result = create_issue("t", "body", ["type:feature"], "o/r")
+    finally:
+        subprocess.run = orig_run
+        urllib.request.urlopen = orig_urlopen
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    if not captured_argv or captured_argv[0][:2] != ["gh", "issue"]:
+        failures.append(f"create_issue: run_gh が subprocess.run に到達していない: {captured_argv}")
+    if result != "https://github.com/example/repo/issues/42":
+        failures.append(f"create_issue: REST フォールバックの結果が不一致: {result!r}")
+    if not captured_requests:
+        failures.append("create_issue: _github_rest_post_issue が urlopen に到達していない")
+    else:
+        req = captured_requests[0]
+        if req.get_method() != "POST":
+            failures.append("create_issue: REST フォールバックが POST として送信されていない")
+        if req.get_header("Authorization") != "Bearer test-token-not-real":
+            failures.append("create_issue: Authorization: Bearer ヘッダが実送信されていない")
+        if req.get_header("Content-type") is None:
+            failures.append("create_issue: Content-Type ヘッダが実送信されていない")
+    return failures
+
+
+def _self_test_github_rest_post_issue_no_token() -> list[str]:
+    """`_github_rest_post_issue()` 単体: token 未解決時は urlopen を一切呼ばず None を返す。"""
+    import os
+
+    failures: list[str] = []
+    saved_env = {k: os.environ.get(k) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
+    orig_urlopen = urllib.request.urlopen
+
+    def _assert_not_called(req, timeout=None):
+        raise AssertionError("token 未解決時に urlopen が呼ばれてはいけない")
+
+    try:
+        os.environ.pop("GH_TOKEN", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+        urllib.request.urlopen = _assert_not_called
+        result = _github_rest_post_issue("o/r", "t", "b", [])
+    except AssertionError as e:
+        failures.append(str(e))
+        result = "UNREACHED"
+    finally:
+        urllib.request.urlopen = orig_urlopen
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    if result is not None and result != "UNREACHED":
+        failures.append(f"_github_rest_post_issue: token 無しで None を期待したが {result!r}")
+    return failures
+
+
+def _self_test_is_gh_unavailable_equivalence() -> list[str]:
+    """`create_issue()` が使う `github_api.is_gh_unavailable()` の等価性契約（PR #849 指摘4）。
+
+    `run_gh()` が実際に返す 2 つの「gh 起動不能」理由文字列が `is_gh_unavailable()` で
+    True になり、非 0 終了時の任意の stderr 文言では False のままであることを確認する。
+    この等価性は `tools/github_api.py` 側の `GH_UNAVAILABLE_REASONS` が SSOT であり、
+    本テストは呼び出し元（本ファイル）がそれを正しく import して使っていることの裏付け。
+    """
+    failures: list[str] = []
+    if not github_api.is_gh_unavailable("gh コマンドが見つかりません"):
+        failures.append("FileNotFoundError 文言が is_gh_unavailable=True にならない")
+    if not github_api.is_gh_unavailable("gh コマンドがタイムアウトしました"):
+        failures.append("TimeoutExpired 文言が is_gh_unavailable=True にならない")
+    if github_api.is_gh_unavailable("HTTP 403: Forbidden"):
+        failures.append("非0終了時の stderr 文言が誤って is_gh_unavailable=True になった")
+    return failures
 
 
 def self_test() -> int:
@@ -592,6 +774,24 @@ def self_test() -> int:
     # repo 解決（本リポジトリ = プレースホルダ未置換でも git remote から導出できる）
     repo = resolve_repo_slug(cfg.get("issue", {}).get("repo", ""))
     assert repo and "/" in repo, f"repo 解決失敗: {repo!r}"
+
+    # gh/REST 委譲到達テスト（PR #849 Layer1 指摘1/2/4。実エントリポイント経由で実測する）
+    delegation_groups = [
+        ("fetch_issued_versions: gh 委譲到達", _self_test_fetch_issued_versions_delegates_to_gh),
+        ("create_issue: gh 委譲到達 + REST POST 到達", _self_test_create_issue_delegates_and_rest_fallback),
+        ("_github_rest_post_issue: token 無しガード", _self_test_github_rest_post_issue_no_token),
+        ("is_gh_unavailable 等価性", _self_test_is_gh_unavailable_equivalence),
+    ]
+    delegation_failures: list[str] = []
+    for name, fn in delegation_groups:
+        for f in fn():
+            delegation_failures.append(f"[{name}] {f}")
+    if delegation_failures:
+        for f in delegation_failures:
+            print(f"FAIL: {f}", file=sys.stderr)
+        print(f"self-test: 委譲到達テスト {len(delegation_failures)} 件失敗", file=sys.stderr)
+        return 1
+
     print(f"self-test: OK (repo={repo})")
     return 0
 

@@ -24,7 +24,8 @@ vi.mock('../infrastructure/platform/rate-limit', () => ({
 }))
 
 // mock 定義後に import する（vi.mock はホイストされるため import 順は問題ないが明示のため最後に置く）。
-const { enforceSearchRateLimit, enforceGemListRateLimit } = await import('./rate-limit')
+const { enforceSearchRateLimit, enforceGemListRateLimit, enforceDetailRateLimit } =
+  await import('./rate-limit')
 
 const HEADERS = new Headers()
 const IP = '203.0.113.1'
@@ -56,6 +57,7 @@ type EnforceCase = [
 const ENFORCE_CASES: EnforceCase[] = [
   ['enforceSearchRateLimit', enforceSearchRateLimit, 'search:'],
   ['enforceGemListRateLimit', enforceGemListRateLimit, 'gems:'],
+  ['enforceDetailRateLimit', enforceDetailRateLimit, 'detail:'],
 ]
 
 describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
@@ -157,10 +159,10 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
   })
 })
 
-// 🔴 この 1 本だけは表駆動化しない。共通実装を 2 経路から叩くのではなく
-// 「2 経路を同時に使ったときにキーが衝突しない」ことを見るテストであり、
+// 🔴 この 1 本だけは表駆動化しない。共通実装を 3 経路から叩くのではなく
+// 「3 経路を同時に使ったときにキーが衝突しない」ことを見るテストであり、
 // 共通化後も意味を保つ唯一の検証（枠を分けるというユーザー裁定の実効性を固定する）。
-describe('検索と Gem 一覧の枠は独立している（Issue #442 のユーザー裁定）', () => {
+describe('検索・Gem 一覧・詳細取得の枠は独立している（Issue #442 / #190 のユーザー裁定）', () => {
   it('同じ IP・同じ salt でも consume に渡るキーの接頭辞が異なる', async () => {
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', SALT)
@@ -170,15 +172,18 @@ describe('検索と Gem 一覧の枠は独立している（Issue #442 のユー
 
     await enforceSearchRateLimit(HEADERS)
     await enforceGemListRateLimit(HEADERS)
+    await enforceDetailRateLimit(HEADERS)
 
-    expect(consume).toHaveBeenCalledTimes(2)
+    expect(consume).toHaveBeenCalledTimes(3)
     const [searchKey] = consume.mock.calls[0] as [string]
     const [gemListKey] = consume.mock.calls[1] as [string]
+    const [detailKey] = consume.mock.calls[2] as [string]
 
     expect(searchKey).toBe('search:hashed-key')
     expect(gemListKey).toBe('gems:hashed-key')
+    expect(detailKey).toBe('detail:hashed-key')
     // 同一ハッシュでも接頭辞が違えば Cloudflare 側のカウンタは別枠になる。
-    // ここが同じキーに退行すると「検索 → Gem 一覧」の導線で枠を食い合う。
-    expect(searchKey).not.toBe(gemListKey)
+    // ここが同じキーに退行すると「検索 → 詳細を開く」等の導線で枠を食い合う。
+    expect(new Set([searchKey, gemListKey, detailKey]).size).toBe(3)
   })
 })
