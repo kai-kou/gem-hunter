@@ -39,6 +39,14 @@
   fail-open で許容する点が、他の実装（打ち切りを検知したら fail-closed でエラーにする、または
   `on_truncate="stop"` で明示的に許容する）と設計思想の出発点から違う。認証方式もエラー処理
   方針も異なるため集約しない。
+- **`tools/gh_shim.py` の `gh_api_list` / `list_issues` の PR 除外**: `urllib` + `GH_TOKEN` では
+  なく **実 gh のサブプロセス**（`gh api`）を呼ぶ別系統で、トークンを本モジュールのように
+  自前で扱わない（`generate_project_context.py` と同じ理由）。加えて打ち切り条件が
+  `max_pages`（ページ数上限）ではなく `limit`（**件数上限**）で、`len(results) < limit` の間だけ
+  ループを回して最後に `results[:limit]` で切る形。本モジュールの `paginate_json_array` は
+  ページ数で打ち切って全件を返す契約なので、寄せると gh_shim 側に「件数で切る」層を足すか
+  本モジュールに使われない `limit` 引数を増やすことになり、どちらも YAGNI に反する。
+  本シムは gh 互換出力の再現が目的で、他ツールから import される想定も無いため集約しない。
 - **`tools/analyze_pr_review_comments.py`**: `gh api ... --paginate` という gh CLI 組み込みの
   ページネーションフラグを使っており、独自ループの実装がそもそも存在しない。
 - **`tools/retire_preview_aliases.py`**: GitHub ではなく Cloudflare API のページネーション。

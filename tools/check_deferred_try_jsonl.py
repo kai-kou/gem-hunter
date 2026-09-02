@@ -231,14 +231,23 @@ def is_valid_related_issue(value: object) -> bool:
 def is_empty_related_issue(obj: dict) -> bool:
     """`high_commented` の related_issue 必須検査で使う「空」判定（違反 12）。
 
-    欠落・`None`・空文字（空白のみ含む）のいずれも「空」として扱う。「空文字も空とみなす」判定を
-    `None` のみに緩めると、`"related_issue": ""` の行を見逃す（Issue #727 フォローアップ）。
+    欠落・`None`・空文字（空白のみ含む）・`bool`・0 以下の整数のいずれも「空」として扱う。
+    「空文字も空とみなす」判定を `None` のみに緩めると、`"related_issue": ""` の行を見逃す
+    （Issue #727 フォローアップ）。整数の非正値を空に含めるのは、`related_issue: 0` が
+    「追記先 Issue が実在する」という値の意味を満たさないのに必須検査を素通りしていたため
+    （#824 Layer 1 指摘・fail-open の是正）。
     """
     if "related_issue" not in obj:
         return True
     value = obj["related_issue"]
     if value is None:
         return True
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, int):
+        # Issue 番号は 1 以上。0 / 負数は「追記先が実在する」という値の意味を満たさないため
+        # 空として扱う（#824 Layer 1 指摘: 数値だと非空扱いになり必須検査が fail-open していた）。
+        return value <= 0
     return isinstance(value, str) and not value.strip()
 
 
@@ -693,7 +702,9 @@ def _run_self_test() -> None:
         )
         cases += 1
 
-        for bad_related in (None, "", "   "):
+        # 0 / 負数は Issue 番号として無効なので「空」に含める（#824 Layer 1 指摘の fail-open 是正）。
+        # bool は違反 9（型違反）で先に落ちるためここでは扱わない。
+        for bad_related in (None, "", "   ", 0, -1):
             v, _, _w = check_text(
                 _line(q1=q1, q2=q2, defer_reason=reason, related_issue=bad_related) + "\n"
             )
