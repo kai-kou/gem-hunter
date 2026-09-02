@@ -150,20 +150,22 @@ export function trySearchKeyword(raw: string): SearchKeyword | null { /* … */ 
 
 🔴 **厳格版はインフラ層・UI 層の実データ読み取りには使わないこと**。実在データの一部を拒否し、一覧からの消失・リンク破損を招く（`static-gem-index.ts` / `static-gem-digest.ts` / `gem-list.tsx` は過去に独自の緩い判定を重複実装していたが、許容版へ統合済み）。
 
-**`CacheKey` の実装位置（Issue #67）**: ブランド型 + 生成関数を `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。`src/domain/model/` ではない — キー形式が `CachePort` 実装詳細と不可分なため）。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` の 2 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
+**`CacheKey` の実装位置（Issue #67・Issue #89 で改訂）**: **ブランド型の定義** は `src/domain/ports/cache-port.ts`（`CachePort` と同じファイル）に置く — `CachePort.get` / `set` / `invalidate` の引数を `key: CacheKey` にして、生成関数を経ない生の `string` を渡すとコンパイルエラーになるよう型で強制するため（ARCH-1 により domain は infrastructure を import できず、ポート側で型を持つほかない）。**生成関数（キーの組み立て）** は引き続き `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。キー形式が `CachePort` 実装詳細と不可分なため・`src/domain/model/` ではない）。domain 側はブランド型を **定義するだけ** で構築しない。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` / `readmeCacheKey(owner, name)` の 3 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
 
 ```text
 search:{バージョン}:{正規化キーワード}:page={ページ番号}:sort={ソート順}:per_page={表示件数}   # searchResultCacheKey
 repository:{バージョン}:{正規化owner}/{正規化name}                                             # repositoryCacheKey
+readme:{バージョン}:{正規化owner}/{正規化name}                                                 # readmeCacheKey
 
 # 現行（CACHE_SCHEMA_VERSION = 'v2'）の実例
 search:v2:react:page=1:sort=stars:per_page=20
 repository:v2:vercel/next.js
+readme:v2:vercel/next.js
 ```
 
 ソート順（`AR-2`）・表示件数（`AR-3`）は `SearchQuery` の構成要素であり、キャッシュ断片化を招くため `searchResultCacheKey` に必ず含める。
 
-**🔴 バージョンセグメント（`CACHE_SCHEMA_VERSION`・Issue #142）**: 名前空間の直後に置く **キャッシュスキーマバージョン** で、両方の生成関数が同じ定数（`src/infrastructure/platform/cache-key.ts` の `export const CACHE_SCHEMA_VERSION`）を共有する。
+**🔴 バージョンセグメント（`CACHE_SCHEMA_VERSION`・Issue #142）**: 名前空間の直後に置く **キャッシュスキーマバージョン** で、3 つの生成関数すべてが同じ定数（`src/infrastructure/platform/cache-key.ts` の `export const CACHE_SCHEMA_VERSION`）を共有する。
 
 - **bump する条件**: **キャッシュ値の「意味」が変わったとき** — 取得範囲・フィルタ条件・レスポンスのマッピングの変更が対象。キーの構成要素（キーワード・ページ・ソート順・表示件数）が同じままでも、**同じキーに対して返るべき値の中身が変われば bump する**。
 - **なぜ必要か**: キーが検索条件だけで構成されていると、**同一 isolate が生存している間**（および将来 L3 の外部ストアを導入した場合は、その TTL が切れるまで）**古い意味の値が入ったエントリがヒットし続ける**。バージョンを上げれば全キーが別物になり、既存エントリを一括で論理的に無効化できる（明示的なパージ機構を持たずに済む）。⚠️ 現行の L2 は isolate 内メモリの `InMemoryCache` であり、デプロイで isolate が入れ替われば内容自体は失われる（[Cloudflare インフラ設計](../infrastructure/cloudflare-infrastructure.md) §4.2 / [ADR 0005](../../adr/0005-cache-port-yagni-exception-and-ttl.md)）。バージョンセグメントは「デプロイで消えること」に依存せずに無効化できる手段として持つ。

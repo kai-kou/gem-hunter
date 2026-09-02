@@ -11,6 +11,8 @@ model: haiku
 詳細ルールは `docs/rules/retrospective-rules.md`、各 Step の詳細テンプレート・コマンド例は
 `reference.md`（プログレッシブ・ディスクロージャ。該当 Step 実行直前に該当セクションだけ Read する）を参照。
 
+> `type:retro-try` の **棚卸し**（重複統合・Epic 化・優先度再査定）は本スキルの担当ではない。`self-improvement-loop` の整理モード（Step G-1.5 / G-6）が担当する（責務境界の SSOT: `docs/rules/improvement-lane-map.md` §2 ルール 2/5・#153）。本スキルは棚卸し後の **実装** のみを行う。
+
 > 🔴 クラウドでは repo スコープの `gh` が 403 になる（L-114）ため、本 SKILL.md の Issue/PR 操作は
 > GitHub MCP（`mcp__github__*`）を一次経路とする。**複数ラベル指定は OR**・`issue_write` の `labels` は
 > **全置換**・`perPage` 既定は 100 件までなどの gotcha は SSOT: `docs/rules/github-mcp-fallback-patterns.md`

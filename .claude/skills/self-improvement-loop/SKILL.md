@@ -33,7 +33,7 @@ effort: medium
 
 責務境界の SSOT は **`docs/rules/improvement-lane-map.md`**（本ファイルでは再定義しない）。要点のみ:
 
-- `type:retro-try` は **振り返りレーン**（`retrospective` → `retro-try-handler`）の担当。本スキルの消化モードは扱わない（奪い合い防止・#160）
+- `type:retro-try` の **実装** は **振り返りレーン**（`retrospective` → `retro-try-handler`）の担当。本スキルの消化モードは扱わない（奪い合い防止・#160）。**棚卸し（整理モード・Step G-1.5 / G-6）は対象に含む**（#153・詳細は `improvement-lane-map.md` §2 ルール 2/5）
 - Issue / PR の **状態**（ラベル不整合・Stale・Orphan）は **監査・衛生レーン**（`workflow-health-check` → `project-sync`）の担当
 - 監査結果は再監査せず参照する。発見モード Step 0.5 で `workflow-health-check`（軽量版）を実際に呼び出して入力にする（宣言だけの連携をしない）
 
@@ -158,7 +158,6 @@ R3-2（ブロック理由を超えた精査対象）:
 
 共通の除外:
   status:waiting-user（A 区分＝ユーザー判断待ち。waiting-user-handler の担当）
-  type:retro-try（振り返りレーンの専管・#160 の奪い合い防止）
   同じ回のルーティンが blocked 再評価コメントを付けたばかりの Issue
     （二重処理を避け、再評価の打ち切りカウントを優先する。次回の精査で拾う）
 ```
@@ -167,7 +166,7 @@ R3-2（ブロック理由を超えた精査対象）:
 > `session-sprint-rules.md` 系の「refinement 昇格」（起票時に `sp:` を付けてバックログに載せる工程）とは
 > 別物。前者はライフサイクル後半、後者は入口の作業を指す。
 
-**type ラベルで絞らない**（`type:feature` / `type:docs` / type 欠落も対象。#335 のカバレッジ不変条件を継承）。
+**type ラベルで絞らない**（`type:feature` / `type:docs` / `type:retro-try` / type 欠落も対象。#335 のカバレッジ不変条件を継承。`type:retro-try` の対象化は #153・`improvement-lane-map.md` §2 ルール 5 が正本）。
 
 `T` が空なら **no-op**（「対象ゼロ（オープン N 件 / 除外内訳）」を 1 行報告して終了。Step G-6 は実行しない）。
 

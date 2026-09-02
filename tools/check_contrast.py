@@ -10,7 +10,8 @@ SSOT: `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.1 / §2.2。
 WCAG 2.x の相対輝度式でコントラスト比を計算する。oklch() 記法のため、oklch → 線形 sRGB → sRGB の
 変換を自前実装する（外部ライブラリ・ネットワーク接続は使わない）。
 
-検査するペア（§2.1 / §7.3 の表に対応。計 11 ペア × ライト/ダーク = 22 判定）:
+検査するペア（セマンティック 11 ペアは §2.1 / §7.3 の表に対応。sidebar-* の 5 ペアは
+ガイドラインに表を持たず `app/globals.css` の棚卸しコメントが根拠・#185。計 16 ペア × ライト/ダーク = 32 判定）:
   fg        vs bg         (>= 4.5:1)  本文
   fg        vs bg-subtle  (>= 4.5:1)  本文（カード面）
   fg-muted  vs bg         (>= 4.5:1)  メタ情報
@@ -22,6 +23,13 @@ WCAG 2.x の相対輝度式でコントラスト比を計算する。oklch() 記
   danger-fg vs danger     (>= 4.5:1)  エラー面上のテキスト
   ring      vs bg         (>= 3.0:1)  フォーカスリング（非テキストコントラスト・WCAG 2.2 SC 1.4.11）
   ring      vs bg-subtle  (>= 3.0:1)  フォーカスリング（カード面上）
+
+  以下は #185: 未参照だが将来使用に備えて保持する sidebar-* トークン（app/globals.css コメント参照）
+  sidebar-fg          vs sidebar          (>= 4.5:1)  サイドバー本文
+  sidebar-primary-fg  vs sidebar-primary  (>= 4.5:1)  サイドバー主ボタン文字色
+  sidebar-accent-fg   vs sidebar-accent   (>= 4.5:1)  サイドバーメニュー選択項目の文字色
+  sidebar-border      vs sidebar          (>= 3.0:1)  サイドバー枠・区切り線
+  sidebar-ring        vs sidebar          (>= 3.0:1)  サイドバーのフォーカスリング（非テキストコントラスト・WCAG 2.2 SC 1.4.11）
 
 使い方:
   python3 tools/check_contrast.py            # app/globals.css を検査
@@ -135,14 +143,31 @@ def contrast_ratio(srgb1: tuple[float, float, float], srgb2: tuple[float, float,
 
 # --------------------------------------------------------------------------- CSS パース
 
+_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def strip_css_comments(text: str) -> str:
+    """CSS コメント（`/* ... */`）を除去する。
+
+    セレクタ探索・宣言抽出はいずれも正規表現で行うため、コメント内に書かれた
+    「書き方の例」「旧値の記録」（例: `/* 旧値は --sidebar-ring: oklch(0.708 0 0) だった */`）が
+    実宣言として読み取られる。宣言は後勝ちで dict へ入るので、実宣言の後ろに置かれた
+    コメント内の旧値が実値を静かに上書きし、検査が実データを見ないまま PASS / FAIL する
+    （どちらの向きにも倒れる）。パースの入口で必ず除去する。
+    """
+    return _COMMENT_RE.sub("", text)
+
+
 def extract_block(css_text: str, selector: str) -> str:
     """`selector { ... }` の直近 1 ブロックの中身を返す（ネストなし前提。globals.css の実構造に対応）。
 
     `selector` の後ろに（空白を挟んで）`{` が続く出現だけを対象にする。`.dark` は
     `@custom-variant dark (&:is(.dark *));` のような他行にも部分一致するため、
-    厳密な `セレクタ + 空白* + {` パターンでのみマッチさせる。
+    厳密な `セレクタ + 空白* + {` パターンでのみマッチさせる。さらに **行頭（前置きは空白のみ）**
+    にアンカーして、文中に現れる同形の断片を拾わないようにする。
     """
-    pattern = re.compile(re.escape(selector) + r"\s*\{")
+    css_text = strip_css_comments(css_text)
+    pattern = re.compile(r"^[ \t]*" + re.escape(selector) + r"\s*\{", re.MULTILINE)
     m = pattern.search(css_text)
     if not m:
         raise ValueError(f"セレクタが見つかりません: {selector!r}")
@@ -165,7 +190,7 @@ _DECL_RE = re.compile(r"--([\w-]+)\s*:\s*([^;]+);")
 
 def parse_declarations(block: str) -> dict[str, str]:
     result: dict[str, str] = {}
-    for m in _DECL_RE.finditer(block):
+    for m in _DECL_RE.finditer(strip_css_comments(block)):
         result[m.group(1)] = m.group(2).strip()
     return result
 
@@ -190,6 +215,20 @@ SEMANTIC_VARS = [
     "ring",
 ]
 
+# #185: sidebar-* は現状どのコンポーネントからも未参照だが、削除せず保持する判断（app/globals.css
+# のコメント参照）に伴い、コントラスト要件のあるペア（テキスト/背景・非テキスト UI 要素）を
+# 機械検査の対象に含める。--chart-* は固定の背景ペアを持たないため対象外（同ファイルのコメント参照）。
+SIDEBAR_VARS = [
+    "sidebar",
+    "sidebar-foreground",
+    "sidebar-primary",
+    "sidebar-primary-foreground",
+    "sidebar-accent",
+    "sidebar-accent-foreground",
+    "sidebar-border",
+    "sidebar-ring",
+]
+
 # (fg変数, bg変数, しきい値, ラベル)
 CHECK_PAIRS = [
     ("foreground", "background", 4.5, "--color-fg vs --color-bg（本文）"),
@@ -203,6 +242,12 @@ CHECK_PAIRS = [
     ("destructive-foreground", "destructive", 4.5, "--color-danger-fg vs --color-danger（エラー面文字色）"),
     ("ring", "background", 3.0, "--color-ring vs --color-bg（フォーカスリング・非テキストコントラスト・WCAG 2.2 SC 1.4.11）"),
     ("ring", "muted", 3.0, "--color-ring vs --color-bg-subtle（カード面上のフォーカスリング）"),
+    # #185: sidebar-* トークンの棚卸し（未参照だが将来使用に備えて保持・app/globals.css コメント参照）
+    ("sidebar-foreground", "sidebar", 4.5, "--color-sidebar-foreground vs --color-sidebar（サイドバー本文）"),
+    ("sidebar-primary-foreground", "sidebar-primary", 4.5, "--color-sidebar-primary-foreground vs --color-sidebar-primary（サイドバー主ボタン文字色）"),
+    ("sidebar-accent-foreground", "sidebar-accent", 4.5, "--color-sidebar-accent-foreground vs --color-sidebar-accent（サイドバーメニュー選択項目の文字色）"),
+    ("sidebar-border", "sidebar", 3.0, "--color-sidebar-border vs --color-sidebar（サイドバー枠・区切り線）"),
+    ("sidebar-ring", "sidebar", 3.0, "--color-sidebar-ring vs --color-sidebar（サイドバーのフォーカスリング・非テキストコントラスト・WCAG 2.2 SC 1.4.11）"),
 ]
 
 
@@ -220,7 +265,7 @@ def resolve_srgb(var_name: str, decls: dict[str, str], bg_context_srgb: tuple[fl
 def evaluate_theme(theme_name: str, decls: dict[str, str]) -> tuple[bool, list[str]]:
     ok = True
     lines: list[str] = []
-    missing = [v for v in SEMANTIC_VARS if v not in decls]
+    missing = [v for v in SEMANTIC_VARS + SIDEBAR_VARS if v not in decls]
     if missing:
         lines.append(f"[{theme_name}] 未宣言の変数: {', '.join('--' + v for v in missing)}")
         return False, lines
@@ -264,7 +309,7 @@ def run_check() -> int:
         print(line)
 
     if ok_light and ok_dark:
-        print("[check_contrast] PASS: 11 ペア × ライト/ダーク 計 22 判定、全てしきい値を満たしています")
+        print(f"[check_contrast] PASS: {len(CHECK_PAIRS)} ペア × ライト/ダーク 計 {len(CHECK_PAIRS) * 2} 判定、全てしきい値を満たしています")
         return 0
 
     print("[check_contrast] FAIL: しきい値を下回るペアがあります")
@@ -346,6 +391,30 @@ def self_test() -> int:
     dark_block = extract_block(sample_css, ".dark")
     dark_decls = parse_declarations(dark_block)
     check("CSS ブロック抽出（.dark）は :root を混入しない", "b" not in dark_decls)
+    check("CSS ブロック抽出（.dark）は同名変数のダーク側の値を返す", dark_decls.get("a") == "oklch(0 0 0)")
+
+    # コメント起因の誤読の回帰ケース（#836 Layer 1 レビュー指摘）。
+    # いずれも「実データを一切見ないまま PASS / FAIL する」経路で、実装コメントを増やすほど発火しやすい。
+    commented_css = (
+        "/* 書き方の例:\n"
+        " *   :root {\n"
+        " *     --a: oklch(0.5 0 0);\n"
+        " *   }\n"
+        " * のように書く。 */\n"
+        ":root {\n"
+        "  --a: oklch(1 0 0);\n"
+        "  --b: oklch(0.6 0 0); /* 旧値は --b: oklch(0.708 0 0); だった（#179 で是正） */\n"
+        "}\n"
+    )
+    commented_decls = parse_declarations(extract_block(commented_css, ":root"))
+    check(
+        "コメント内の `:root {` を実ブロックと誤認しない",
+        commented_decls.get("a") == "oklch(1 0 0)",
+    )
+    check(
+        "実宣言の後ろのコメント内の宣言が実値を上書きしない",
+        commented_decls.get("b") == "oklch(0.6 0 0)",
+    )
 
     if failures:
         print("[check_contrast --self-test] FAIL:")
