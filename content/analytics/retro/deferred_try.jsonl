@@ -181,3 +181,13 @@
 {"date": "2026-09-02 JST", "title": "副作用ツール全数の self-test 実効性マイグレーションを計画する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 817}
 {"date": "2026-09-02 JST", "title": "ドキュメント整合（重複定義・見出しスコープ）の機械検査を段階的に入れる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "check_cjk_markdown.py の --under にファイルパスを渡したときの警告文を改善する", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-147"}
+{"date": "2026-09-02 JST", "title": "SSOT にプレースホルダ表記と読み取り専用 1 行の書き方を規定として明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "SSOT 節に展開後の完成例（読み取り専用役 1 件）を追加する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "pr-review-watcher の Sprint Review 委譲プロンプトをコードブロック化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "SSOT コードブロックに version metadata を付け、展開先の追従漏れを可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "research-runner を Agent 委譲へ拡張するとき明示リスト追加を忘れないようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "self-improvement-loop 消化モードの候補選定根拠（なぜその 1 件か）を Issue に明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "check_delegation_preamble.py の走査範囲（.claude/skills/ 配下限定）を docstring に明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "Hot 層の再棚卸しで agent-team-summary.md の運用注記の Warm 降格を検討する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "#798"}
+{"date": "2026-09-02 JST", "title": "PR 作成後の追加コミットで証跡（Hot 層増減ログ等）が古くなるのを検知する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#751"}
+{"date": "2026-09-02 JST", "title": "デプロイ系スクリプトの exit 2 に原因カテゴリを持たせ抑制判定を組で行う", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#785"}
