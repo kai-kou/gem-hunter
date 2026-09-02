@@ -1028,6 +1028,21 @@ _CLOSES_KEYWORDS = re.compile(
 _FENCE_PLACEHOLDER = "\x00"
 
 
+def _mask_fenced_and_inline_code(pr_body: str) -> str:
+    """PR 本文からコードフェンス（``` / ~~~）とインラインコードを除いたテキストを返す。
+
+    未閉フェンスは md_fence の既定どおり「不成立」として検査対象へ戻る（fail-closed）。
+    `sprint_pr_closes_detection` と `mutation_test_record_warning` が同じ境界で判定するために
+    共有する（片方だけ古い境界に取り残されるのを防ぐ）。
+    """
+    lines = pr_body.splitlines()
+    flags = fence_flags(lines)
+    return "\n".join(
+        _FENCE_PLACEHOLDER if in_fence else mask_inline_code(line)
+        for line, in_fence in zip(lines, flags)
+    )
+
+
 def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
     """SP-n スプリント PR にて Closes キーワードの記載を検出する（Issue #281）。
 
@@ -1046,13 +1061,7 @@ def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
         return None
 
     # コードフェンス（``` / ~~~ を CommonMark 準拠で判定）とインラインコードを除外する。
-    # 未閉フェンスは md_fence の既定どおり「不成立」として検査対象へ戻る（fail-closed）。
-    lines = pr_body.splitlines()
-    flags = fence_flags(lines)
-    text_to_check = "\n".join(
-        _FENCE_PLACEHOLDER if in_fence else mask_inline_code(line)
-        for line, in_fence in zip(lines, flags)
-    )
+    text_to_check = _mask_fenced_and_inline_code(pr_body)
     matches = _CLOSES_KEYWORDS.finditer(text_to_check)
     found = [m.group() for m in matches]
     if found:
@@ -1076,7 +1085,7 @@ def sprint_pr_closes_detection(pr_body: str | None) -> str | None:
 # `.tsx`/`.jsx` は「class/className 属性の変更行が diff に含まれる」ときだけスタイル変更とみなす
 # （ロジックだけの変更で誤検知しないため・#698 仕様）。plain HTML の `class=` と JSX の
 # `className=` の両方を拾う。
-_CLASS_ATTR_RE = re.compile(r"\b(?:class|className)\s*=")
+_CLASS_ATTR_RE = re.compile(r"(?<![\w-])(?:class|className)\s*=")
 _STYLE_EXT_TSX = (".tsx", ".jsx")
 _STYLE_EXT_CSS = (".css",)
 
@@ -1087,12 +1096,17 @@ _MUTATION_TEST_LINE_RE = meta_line_re("変異テスト")
 def _diff_hunk_body_lines(diff_text: str) -> list[str]:
     """unified diff から追加/削除行の中身（先頭の +/- を除いた本文）だけを返す。
 
-    `+++`/`---`（ファイルヘッダ）は除外する（除外しないと変更後のファイルパス文字列に
-    `class=` を含む場合の誤検知経路になる）。
+    `+++ b/path`/`--- a/path`（ファイルヘッダ）は除外する（除外しないと変更後のファイルパス
+    文字列に `class=` を含む場合の誤検知経路になる）。
+
+    🔴 ヘッダ判定は **空白付きの書式**（`+++ ` / `--- `）と裸のヘッダに限定する。単なる
+    `startswith("+++")` にすると、追加/削除された **本文行の中身が `++`/`--` で始まる** ケース
+    （CSS カスタムプロパティ `--brand: ...` の削除行が diff 上で `---brand: ...` になる等）を
+    ヘッダと誤認して落とし、スタイル変更を見逃す（fail-open）。
     """
     out: list[str] = []
     for line in diff_text.splitlines():
-        if line.startswith("+++") or line.startswith("---"):
+        if line in ("+++", "---") or line.startswith(("+++ ", "--- ")):
             continue
         if line.startswith("+") or line.startswith("-"):
             out.append(line[1:])
@@ -1104,20 +1118,52 @@ def diff_has_class_attr_change(diff_text: str) -> bool:
     return any(_CLASS_ATTR_RE.search(line) for line in _diff_hunk_body_lines(diff_text))
 
 
-def _default_style_diff_fetcher(f: str) -> str:
-    """1 ファイル分の diff テキストを取得する（PR 作成前提＝コミット済みを想定）。
+_DIFF_GIT_HEADER_RE = re.compile(r"^diff --git a/(?P<a>.+?) b/(?P<b>.+)$")
+
+
+def split_diff_by_file(diff_text: str) -> dict[str, str]:
+    """複数ファイル分の unified diff を `diff --git` ヘッダでファイル単位へ分割する。
+
+    キーは `b/` 側（変更後）のパス。ヘッダより前の行は捨てる。
+    """
+    chunks: dict[str, list[str]] = {}
+    current: list[str] | None = None
+    for line in diff_text.splitlines():
+        m = _DIFF_GIT_HEADER_RE.match(line)
+        if m:
+            current = chunks.setdefault(m.group("b"), [])
+        if current is not None:
+            current.append(line)
+    return {path: "\n".join(lines) for path, lines in chunks.items()}
+
+
+def _make_default_style_diff_fetcher(files: list[str]) -> Callable[[str], str]:
+    """対象ファイル群の diff を **1 回の git 呼び出しでまとめて取得** する fetcher を返す。
+
+    ファイル 1 件ごとに `git diff` を起動すると、`.tsx` を大量に変更した PR（Tailwind クラスの
+    一括置換等）で subprocess が O(N) 回直列に走り `npm run check` のレイテンシを悪化させる。
 
     まず base ブランチとの range diff（`origin/{default}...HEAD`）を試し、範囲が解決できない
-    （fork していない・shallow clone 等）場合のみ `git diff HEAD -- f`（作業ツリー差分）へ
+    （fork していない・shallow clone 等）場合のみ `git diff HEAD`（作業ツリー差分）へ
     フォールバックする。取得できなければ空文字列（＝スタイル変更なしと同じ扱い＝fail-open だが、
     診断不能を Warning のブロッキング材料にしない方針は他の検査と同じ）。
+
+    `--find-renames` を付けるのは、単一パスの pathspec ではリネーム検出が働かず、内容変更の
+    無い `git mv` が「全行追加」として現れて誤検知するため（既存の `className=` を含む行が
+    追加行として数えられる）。
     """
+    if not files:
+        return lambda _f: ""
     base = default_branch()
-    r = sh(["git", "diff", f"origin/{base}...HEAD", "--", f], timeout=20)
+    per_file: dict[str, str] = {}
+    r = sh(["git", "diff", "--find-renames", f"origin/{base}...HEAD", "--", *files], timeout=30)
     if r.returncode == 0 and r.stdout.strip():
-        return r.stdout
-    r2 = sh(["git", "diff", "HEAD", "--", f], timeout=20)
-    return r2.stdout if r2.returncode == 0 else ""
+        per_file = split_diff_by_file(r.stdout)
+    else:
+        r2 = sh(["git", "diff", "--find-renames", "HEAD", "--", *files], timeout=30)
+        if r2.returncode == 0:
+            per_file = split_diff_by_file(r2.stdout)
+    return lambda f: per_file.get(f, "")
 
 
 def detect_style_change_files(
@@ -1132,7 +1178,8 @@ def detect_style_change_files(
 
     `diff_fetcher` を渡すと git を呼ばずに判定できる（`--self-test` 用の注入口）。
     """
-    fetcher = diff_fetcher or _default_style_diff_fetcher
+    tsx_files = [f for f in files if f.endswith(_STYLE_EXT_TSX)]
+    fetcher = diff_fetcher or _make_default_style_diff_fetcher(tsx_files)
     out: list[str] = []
     for f in files:
         if f.endswith(_STYLE_EXT_CSS):
@@ -1165,13 +1212,7 @@ def mutation_test_record_warning(
 
     # コードフェンス（``` / ~~~）とインラインコードを除外して判定する（テンプレート例示の
     # `変異テスト: ...` を実記録と誤認しない・sprint_pr_closes_detection と同じ境界）。
-    lines = pr_body.splitlines()
-    flags = fence_flags(lines)
-    text_to_check = "\n".join(
-        _FENCE_PLACEHOLDER if in_fence else mask_inline_code(line)
-        for line, in_fence in zip(lines, flags)
-    )
-    if _MUTATION_TEST_LINE_RE.search(text_to_check):
+    if _MUTATION_TEST_LINE_RE.search(_mask_fenced_and_inline_code(pr_body)):
         return None
 
     shown = ", ".join(style_files[:5]) + ("…" if len(style_files) > 5 else "")
@@ -1217,6 +1258,42 @@ def _self_test_style_change_detection() -> list[str]:
     got = detect_style_change_files(["docs/note.md"], fetcher({"docs/note.md": diff_with_class}))
     if got:
         failures.append(f".md は判定対象外のはずだが {got}")
+
+    # ケース6（負ケース・境界の外側）: `data-class=` のようなハイフン区切りの別属性は
+    # class/className 属性ではない。`\b` 境界だと `-` の直後で成立して誤検出する。
+    diff_data_class = (
+        "diff --git a/x.tsx b/x.tsx\n--- a/x.tsx\n+++ b/x.tsx\n"
+        '-  <div data-class="a">\n+  <div data-class="b">\n'
+    )
+    got = detect_style_change_files(["app/foo.tsx"], fetcher({"app/foo.tsx": diff_data_class}))
+    if got:
+        failures.append(f"data-class= は class/className 属性ではないので検出されないべきだが {got}")
+
+    # ケース7（正ケース・ヘッダ判定の境界）: 本文行の中身が `--`/`++` で始まる場合でも
+    # ファイルヘッダと誤認して落とさない（落とすとスタイル変更を見逃す＝fail-open）。
+    # 実ヘッダは必ず `--- a/...` / `+++ b/...` と **空白が続く** ので、空白の有無で切り分ける。
+    # 下の削除行の中身は CSS カスタムプロパティ（`--custom-prop`）で始まり、diff 上では
+    # `---custom-prop...` と描画されるため、素朴な startswith("---") ではヘッダ扱いで落ちる。
+    diff_body_starts_with_dashes = (
+        "diff --git a/x.tsx b/x.tsx\n--- a/x.tsx\n+++ b/x.tsx\n"
+        '---custom-prop:1;<span class="old"></span>\n'
+        "+  --custom-prop:2;\n"
+    )
+    got = detect_style_change_files(
+        ["app/foo.tsx"], fetcher({"app/foo.tsx": diff_body_starts_with_dashes})
+    )
+    if got != ["app/foo.tsx"]:
+        failures.append(f"`--` で始まる本文行をヘッダと誤認せず検出されるべきだが {got}")
+
+    # ケース8: 複数ファイル分の diff を `diff --git` ヘッダで分割できる（一括取得の前提）
+    merged = diff_with_class.replace("x.tsx", "a.tsx") + diff_logic_only.replace("x.tsx", "b.tsx")
+    split = split_diff_by_file(merged)
+    if sorted(split) != ["a.tsx", "b.tsx"]:
+        failures.append(f"複数ファイル diff の分割キーが b/ 側パスになっていない: {sorted(split)}")
+    elif diff_has_class_attr_change(split["b.tsx"]):
+        failures.append("分割後の b.tsx（ロジックのみ）に class 変更ありと誤判定した")
+    elif not diff_has_class_attr_change(split["a.tsx"]):
+        failures.append("分割後の a.tsx（className 変更あり）を検出できなかった")
 
     return failures
 

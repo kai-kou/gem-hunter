@@ -17,23 +17,23 @@
 | Cache Components（`use cache` / `cacheLife` / `cacheTag`） | GitHub APIレスポンスのキャッシュに採用検討。レート制限緩和に直結する |
 | URL State（searchParams） | 採用必須。検索キーワード・ページのURL反映が要件（4.3） |
 | Route Handler vs Server Action | MVPはRead中心のためServer Componentからの直接fetchが基本。Mutationは現時点でなし |
-| Secret管理（`NEXT_PUBLIC_*` 禁止・Server Only） | 採用必須。GitHubトークンの扱いが要件（4.1）にある |
+| Secret管理（`NEXT_PUBLIC_*`禁止・Server Only） | 採用必須。GitHubトークンの扱いが要件（4.1）にある |
 | Validation（Zod等） | 外部APIレスポンスの型検証として採用検討 |
 | DAL / Service Layer / PostgreSQL / ORM | MVPスコープ外（DBを持たない）。将来Gem Score等で永続化が必要になった段階で再検討 |
 | Authentication / Authorization | MVPスコープ外（要件1.2で対象外） |
 | Observability（OpenTelemetry） | MVPでは最小限。将来の運用フェーズで導入 |
-| AI Agent対応（`AGENTS.md` 等） | 初期から整備してよい（低コスト・高リターン） |
+| AI Agent対応（`AGENTS.md`等） | 初期から整備してよい（低コスト・高リターン） |
 
 ## 1. エグゼクティブサマリー
 
-2026年の新規Next.js開発では、単なる「React + SSR」ではなく、**フルスタックWebアプリケーション基盤** として設計する。
+2026年の新規Next.js開発では、単なる「React + SSR」ではなく、**フルスタックWebアプリケーション基盤**として設計する。
 
 基本方針:
 
 1. Next.js 16.x + App Routerを採用
 2. TypeScriptを必須級とする
 3. React Server Componentsをデフォルトにする
-4. `use client` はインタラクションが必要な箇所に限定
+4. `use client`はインタラクションが必要な箇所に限定
 5. Cache Componentsをデータ/UI単位のキャッシュ設計に利用
 6. Server Functions/ActionsはMutationに活用
 7. Server Actionでも認証・認可・入力検証を必ず実施
@@ -52,7 +52,7 @@ Next.js 16の大きなテーマは以下。
 - Turbopack stable / default
 - React Compiler support
 - Enhanced routing / prefetching
-- `updateTag()` / `refresh()` / 改良された `revalidateTag()`
+- `updateTag()` / `refresh()` / 改良された`revalidateTag()`
 - React 19.2
 - Proxyへの名称変更
 - Build Adapters API
@@ -105,7 +105,7 @@ Client Component
   └─ Browser API
 ```
 
-`use client` は以下が必要な場合だけ付与する。
+`use client`は以下が必要な場合だけ付与する。
 
 - `useState`
 - `useEffect`
@@ -132,7 +132,7 @@ Product Page
 └── Recommendations Cached
 ```
 
-`use cache`、`cacheLife`、`cacheTag` を利用して、データの意味に応じてキャッシュする。
+`use cache`、`cacheLife`、`cacheTag`を利用して、データの意味に応じてキャッシュする。
 
 ### キャッシュ設計原則
 
@@ -209,7 +209,7 @@ Cache Update
 
 ## 8. Proxy
 
-Next.js 16では `middleware.ts` から `proxy.ts` へ名称変更。
+Next.js 16では`middleware.ts`から`proxy.ts`へ名称変更。
 
 向いている用途:
 - Redirect
@@ -355,7 +355,7 @@ Recommendations → 後から
 Next.js 16ではTurbopackが標準。
 
 方針:
-- `next dev` / `next build` の標準構成を利用
+- `next dev` / `next build`の標準構成を利用
 - Webpack依存の独自カスタマイズを避ける
 - Turbopack FileSystem Cacheなどの進化を継続的に追う
 
@@ -425,7 +425,7 @@ Audit Log
 Dependency Security
 ```
 
-`NEXT_PUBLIC_*` はBrowserへ公開される前提。
+`NEXT_PUBLIC_*`はBrowserへ公開される前提。
 
 SecretはServer Only。
 
@@ -507,7 +507,7 @@ architecture/
 
 を整備する。
 
-`AGENTS.md` には例えば:
+`AGENTS.md`には例えば:
 
 ```text
 Architecture:
@@ -631,7 +631,7 @@ Server / Data
 
 避けるべき設計:
 
-- 全ページを `use client`
+- 全ページを`use client`
 - Server Actionを認証なしで実行
 - ProxyだけでAuthorization
 - Client ComponentからDBへ直接アクセス
@@ -642,7 +642,7 @@ Server / Data
 - APIを無意味にRoute Handler化
 - 巨大なClient Bundle
 - Webpack前提の独自カスタマイズ
-- Secretを `NEXT_PUBLIC_*` にする
+- Secretを`NEXT_PUBLIC_*`にする
 - Observabilityをリリース直前に導入
 
 ## 27. 開発フェーズ

@@ -127,8 +127,11 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
        防止・4 の他分岐と同じ作法）。無ければ 1 件だけ起票し、あれば追記コメントで、先頭行を
        `[prod-drift][実行ブロック]`（検知日時 JST・ブロック時のエラー文言を続けて記載）で始める
        （マーカーの書式・行頭一致の要件は `tools/prod_drift_escalation.py` の docstring を参照）。
-       このコメント履歴を 5-3 と同じ手順で `tools/prod_drift_escalation.py
-       --marker "[prod-drift][実行ブロック]"` に渡し、`escalate: true` かつ `mention: true`
+       このコメント履歴を 5-3 と同じ手順で渡す（**コメント取得と JSON 保存まで含めて 5-3 と同じ**
+       — `mcp__github__issue_read(method="get_comments")` の応答を `author_association` を落とさず
+       そのまま JSON 保存し、`python3 tools/prod_drift_escalation.py --comments-file <path>
+       --marker "[prod-drift][実行ブロック]" --json` を実行する。`--comments-file` は必須で、
+       欠くと `argparse` が即エラー終了する）。その結果が `escalate: true` かつ `mention: true`
        （閾値到達で自動的に立つ。`A6_MARKERS` に `[prod-drift][実行ブロック]` を含めてある）なら
        5-3 と同じ手順で Slack へ A-6 通知する: 分類器の `autoMode` 設定はユーザー設定
        （`~/.claude/settings.json` 等）からしか読まれずプロジェクト側からは緩和できないため、
