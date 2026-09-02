@@ -171,5 +171,5 @@
 {"date": "2026-09-02 JST", "title": "申し送りコメントの「残る作業は X」が実装状態と一致するかを機械検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "E2E テストで導入した許容値（0.01px / 1px）をドキュメント側の判定基準として明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-02 JST", "title": "Target Size の E2E も 320px viewport で測るか、viewport 選択の根拠をコメントへ明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-02 JST", "title": "E2E ヘルパーの重複を引数リテラル単位で検知するゲートを新設する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "813"}
+{"date": "2026-09-02 JST", "title": "E2E ヘルパーの重複を引数リテラル単位で検知するゲートを新設する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "813"}
 {"date": "2026-09-02 JST", "title": "computed style の検査対象を代表要素に絞ったら、絞った根拠をコメントに残す", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-148"}
