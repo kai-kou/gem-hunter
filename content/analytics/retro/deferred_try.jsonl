@@ -166,3 +166,10 @@
 {"date": "2026-09-02 JST", "title": "package-lock.json の環境ノイズが PR 作成ゲートと diff 突合ツールを毎回誤らせる問題を根治する", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": "799"}
 {"date": "2026-09-02 JST", "title": "サブエージェント並行稼働中は Stop フックの未コミット催促を抑制する（mutation_guard の流用をやめる）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "322"}
 {"date": "2026-09-02 JST", "title": "auto mode classifier のブロックを「失敗」ではなく「未判定」として扱う 3 状態分岐にする", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": "785"}
+{"date": "2026-09-02 JST", "title": "ドキュメント・Issue 本文が「存在する」と断定する参照先（tools/ ・E2E spec・完了済みタスク）の実在を機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "605"}
+{"date": "2026-09-02 JST", "title": "並列委譲中は Stop フックの WIP 自動コミットを抑制する（mutation_guard と同じマーカー方式）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "536"}
+{"date": "2026-09-02 JST", "title": "申し送りコメントの「残る作業は X」が実装状態と一致するかを機械検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "E2E テストで導入した許容値（0.01px / 1px）をドキュメント側の判定基準として明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "Target Size の E2E も 320px viewport で測るか、viewport 選択の根拠をコメントへ明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-02 JST", "title": "E2E ヘルパーの重複を引数リテラル単位で検知するゲートを新設する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": "813"}
+{"date": "2026-09-02 JST", "title": "computed style の検査対象を代表要素に絞ったら、絞った根拠をコメントに残す", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-148"}
