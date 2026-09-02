@@ -21,27 +21,18 @@ vi.mock('@/src/composition/auth', () => ({
 }))
 const isAuthConfiguredMock = vi.fn<() => boolean>()
 
-const getRepositoryDetailMock = vi.fn<() => Promise<unknown>>()
-vi.mock('@/src/composition/container', () => ({
-  getRepositoryDetailUseCase:
-    () =>
-    (...args: unknown[]) =>
-      getRepositoryDetailMock(...(args as [])),
+/**
+ * Issue #190: `fetchRepositoryDetail`（`src/composition/detail-guard.ts`）が「自リクエスト
+ * 間引き → 詳細取得」を 1 関数へ集約したため、ページ側は `@/src/composition/container` /
+ * `@/src/composition/rate-limit` / `next/headers` のいずれも直接 import しなくなった。
+ * その配線の順序・条件そのものは `src/composition/detail-guard.test.ts` が固定するので、
+ * 本ファイルは「ページが `fetchRepositoryDetail` の結果をどう描画するか」だけを検査する。
+ */
+const fetchRepositoryDetailMock = vi.fn<() => Promise<unknown>>()
+vi.mock('@/src/composition/detail-guard', () => ({
+  fetchRepositoryDetail: (...args: unknown[]) => fetchRepositoryDetailMock(...(args as [])),
   // エラー分岐では README 取得まで到達しないため中身は空でよい。
   getRepositoryReadmeUseCase: () => async () => null,
-}))
-
-// Issue #190: 詳細取得のレート制限配線。`app/[locale]/gems/page.test.tsx` と同じ検査方式
-// （配線の順序・条件を返り値の要素ツリーで確かめる。理由は同ファイルの JSDoc を参照）。
-const enforceDetailRateLimitMock = vi.fn<(headers: Headers) => Promise<void>>()
-vi.mock('@/src/composition/rate-limit', () => ({
-  enforceDetailRateLimit: (...args: [Headers]) => enforceDetailRateLimitMock(...args),
-}))
-
-// `headers()` は Workers/Next のリクエストスコープでしか動かないため空の `Headers` を返す。
-// 中身はモックした `enforceDetailRateLimit` が受け取るだけで、判定には使われない。
-vi.mock('next/headers', () => ({
-  headers: async () => new Headers(),
 }))
 
 function renderPage(owner: string, repo: string) {
@@ -70,14 +61,12 @@ function findByType(tree: ReactNode, type: unknown): ReactElement | undefined {
 beforeEach(() => {
   isAuthConfiguredMock.mockReset()
   isAuthConfiguredMock.mockReturnValue(false)
-  getRepositoryDetailMock.mockReset()
-  getRepositoryDetailMock.mockRejectedValue(
+  fetchRepositoryDetailMock.mockReset()
+  fetchRepositoryDetailMock.mockRejectedValue(
     new RateLimitExceededError('rateLimitPrimary', {
       retryAfter: new Date('2026-08-30T00:00:00Z'),
     }),
   )
-  enforceDetailRateLimitMock.mockReset()
-  enforceDetailRateLimitMock.mockResolvedValue(undefined)
 })
 
 describe('RepositoryDetailPage — showAuthLink の配線（Issue #365 / #549）', () => {
@@ -117,32 +106,29 @@ describe('RepositoryDetailPage — showAuthLink の配線（Issue #365 / #549）
 })
 
 describe('RepositoryDetailPage — 詳細取得のレート制限配線（Issue #190）', () => {
-  it('正常時は enforceDetailRateLimit が 1 回だけ、かつ取得より先に呼ばれる', async () => {
-    getRepositoryDetailMock.mockResolvedValue({
+  it('正常時は fetchRepositoryDetail の結果をそのまま描画する', async () => {
+    fetchRepositoryDetailMock.mockResolvedValue({
       fullName: 'facebook/react',
       htmlUrl: 'https://github.com/facebook/react',
     })
 
-    await renderPage('facebook', 'react')
+    const tree = await renderPage('facebook', 'react')
 
-    expect(enforceDetailRateLimitMock).toHaveBeenCalledTimes(1)
-    expect(getRepositoryDetailMock).toHaveBeenCalledTimes(1)
-    // 🔴 「重い処理（GitHub API 呼び出し）の前で判定する」という配線の主張そのもの
-    //    （順序が逆だと間引きの意味がない）。
-    expect(enforceDetailRateLimitMock.mock.invocationCallOrder[0]).toBeLessThan(
-      getRepositoryDetailMock.mock.invocationCallOrder[0] as number,
-    )
+    expect(fetchRepositoryDetailMock).toHaveBeenCalledTimes(1)
+    expect(fetchRepositoryDetailMock).toHaveBeenCalledWith(null, {
+      owner: 'facebook',
+      repo: 'react',
+    })
+    expect(findByType(tree, ErrorNotice)).toBeUndefined()
   })
 
-  it('超過（RateLimitExceededError）時は取得へ進まず、ローカライズ済みの ErrorNotice を出す', async () => {
-    enforceDetailRateLimitMock.mockRejectedValue(
+  it('超過（RateLimitExceededError）時は既存の DomainError 分岐へ合流し、ローカライズ済みの ErrorNotice を出す', async () => {
+    fetchRepositoryDetailMock.mockRejectedValue(
       new RateLimitExceededError('rateLimitSecondary', { retryAfterSeconds: 60 }),
     )
 
     const tree = await renderPage('facebook', 'react')
 
-    // 詳細取得（getRepositoryDetailUseCase）自体は呼ばれない（レート制限が先に弾く）。
-    expect(getRepositoryDetailMock).not.toHaveBeenCalled()
     const notice = findByType(tree, ErrorNotice)
     expect(notice).toBeDefined()
     const props = notice?.props as { presentation: ErrorPresentation; retryHref?: string }
@@ -155,9 +141,8 @@ describe('RepositoryDetailPage — 詳細取得のレート制限配線（Issue 
   })
 
   it('レート制限以外の例外は握り潰さずそのまま投げ直す', async () => {
-    enforceDetailRateLimitMock.mockRejectedValue(new Error('headers() が使えない実行環境'))
+    fetchRepositoryDetailMock.mockRejectedValue(new Error('detail-guard 側の想定外の失敗'))
 
-    await expect(renderPage('facebook', 'react')).rejects.toThrow('headers() が使えない実行環境')
-    expect(getRepositoryDetailMock).not.toHaveBeenCalled()
+    await expect(renderPage('facebook', 'react')).rejects.toThrow('detail-guard 側の想定外の失敗')
   })
 })

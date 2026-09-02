@@ -1,10 +1,8 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { getSessionAccessToken, isAuthConfigured } from '@/src/composition/auth'
-import { getRepositoryDetailUseCase, getRepositoryReadmeUseCase } from '@/src/composition/container'
-import { enforceDetailRateLimit } from '@/src/composition/rate-limit'
+import { fetchRepositoryDetail, getRepositoryReadmeUseCase } from '@/src/composition/detail-guard'
 import { DomainError, RateLimitExceededError, type ErrorKind } from '@/src/domain/errors'
 import { isLocale, locale as toLocale, type Locale } from '@/src/domain/model/locale'
 import { DEFAULT_PER_PAGE } from '@/src/domain/model/per-page'
@@ -142,19 +140,7 @@ export default async function RepositoryDetailPage({
 
   let repository
   try {
-    /**
-     * Issue #190: 詳細取得の自リクエスト間引き（`NFR-7`）。#122（PR #184）は検索経路のみ
-     * 配線しており、owner/repo を変えながら詳細ページを連打する迂回に無防備だった。
-     *
-     * 🔴 **位置は取得（`getRepositoryDetailUseCase`）の直前・同じ `try` の中**。超過時に投げる
-     * `RateLimitExceededError` は下の `catch (error instanceof DomainError)` 分岐へそのまま
-     * 合流させ、詳細取得自体の失敗（`rateLimitPrimary` 等）と同じローカライズ済み `ErrorNotice`
-     * 表示（`toErrorPresentation`）を再利用する（新しい表示分岐を増やさない）。
-     * 🔵 枠は検索・Gem 一覧のいずれとも独立（`enforceDetailRateLimit` が `detail:` を使う。
-     * 根拠は `src/composition/rate-limit.ts` の JSDoc を参照）。
-     */
-    await enforceDetailRateLimit(await headers())
-    repository = await getRepositoryDetailUseCase(accessToken)({ owner, repo })
+    repository = await fetchRepositoryDetail(accessToken, { owner, repo }) // 間引き込み・Issue #190
   } catch (error) {
     if (error instanceof DomainError) {
       // 🔴 `error.message`（開発者向けの内部文言）は画面へ出さず、種別から文言を組み立てる
