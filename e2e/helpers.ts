@@ -4,6 +4,13 @@ import { expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 /**
+ * 検索キーワードのクエリパラメータ名（正本は `prd.md` §2.4.1・実装は
+ * `src/ui/url/search-params.ts` の `SEARCH_PARAM_KEYS.keyword`）。
+ * E2E は `src/` を import しない方針のため、ここでは値だけを持つ（変更時は両方を直す）。
+ */
+const SEARCH_KEYWORD_PARAM = 'q'
+
+/**
  * スタブ（`e2e/stub/server.mjs`）のデータセットマーカーに、他ファイル・retry 試行との
  * キャッシュ衝突を避ける接尾辞を足した一意キーワード（マーカーの判定は部分一致なので足してよい）。
  * 衝突回避の手段（バイト数・エンコーディング）をここ 1 箇所に閉じ込める。
@@ -50,10 +57,34 @@ export async function expectNoHorizontalScroll(page: Page, label?: string): Prom
  * `sp-1` / `sp-2` / `sp-3` / `a11y` の 4 ファイルで同じ 2 行が重複していたため切り出した
  * （`e2e/axe.ts` と同じ薄いヘルパーの置き方）。URL への反映やその後の検証は
  * 各 `test.step()` の意図が読めることを優先し、呼び出し側に委ねる（ここに `expect` は入れない）。
+ *
+ * 🔴 **クリックしたら、その検索ナビゲーションの完了までを本ヘルパーが待つ**（Issue #624）。
+ * 以前は `click()` した瞬間に戻っていたため、「検索フォームの GET 送信 → サーバー側の
+ * 上流フェッチ → SSR → HTML の到達」という一連の処理を、呼び出し側の
+ * `expect(...).toBeVisible()` が **既定 5 秒の assertion 予算だけで** 吸収する構造だった。
+ * 実測（本リポジトリのコンテナ・4 コアを 4 倍オーバーコミットした負荷下で 40 回計測）では
+ * p50 648ms / p90 787ms に対し **最大 3,496ms** と裾が長く、フルスイートや他プロセスと
+ * 競合すると 5 秒を超えうる。ここで待てば同じ待ちがテストタイムアウト（60 秒）側の
+ * 予算で行われ、`toBeVisible()` は「読み込み済みのページに要素があるか」だけを見る。
+ * リトライ・スキップで隠すのではなく、ヘルパーが名乗っている操作（＝検索の実行）を
+ * 完了させてから戻る、という同期の是正である。
+ *
+ * ⚠️ URL 一致（`waitForURL`）ではなく **ナビゲーション応答** を待つ。同じキーワードで
+ * 続けて検索する経路（`e2e/sp-5.spec.ts` のキャッシュ検証 2 回目）では URL が変化せず、
+ * URL 監視だと「既に一致している」として即座に戻ってしまうため。
  */
 export async function searchFor(page: Page, keyword: string): Promise<void> {
   await page.getByRole('searchbox', { name: '検索キーワード' }).fill(keyword)
+  // クリックより先に待ち受けを開始する（応答が速いと click 後の登録では取りこぼす）。
+  const navigationResponse = page.waitForResponse(
+    (response) =>
+      response.request().isNavigationRequest() &&
+      response.request().frame() === page.mainFrame() &&
+      new URL(response.url()).searchParams.get(SEARCH_KEYWORD_PARAM) === keyword,
+  )
   await page.getByRole('button', { name: '検索' }).click()
+  await navigationResponse
+  await page.waitForLoadState('domcontentloaded')
 }
 
 /**
