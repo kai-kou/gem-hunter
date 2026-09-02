@@ -420,6 +420,17 @@ else
   skip_check "見送り Try ログ検査 (check_deferred_try_jsonl.py)" "スクリプトが見つかりません"
 fi
 
+# 4.14. 委譲プロンプトの並行安全プリアンブル再掲検査（Issue #816）
+#        サブエージェントは CLAUDE.md / docs/rules/ を読まないため、並行実行中の破壊的
+#        git 操作の禁止（#93 / #768）は委譲プロンプトへ実テキストで再掲したときだけ届く。
+#        ローカルファイルしか見ないためネットワーク非依存（本判定も self-test も両方配線する）。
+if [ -f "$REPO_ROOT/tools/check_delegation_preamble.py" ]; then
+  run_check "並行安全プリアンブル再掲検査 (check_delegation_preamble.py)" python3 tools/check_delegation_preamble.py
+  run_check "並行安全プリアンブル再掲検査 self-test (check_delegation_preamble.py --self-test)" python3 tools/check_delegation_preamble.py --self-test
+else
+  skip_check "並行安全プリアンブル再掲検査 (check_delegation_preamble.py)" "スクリプトが見つかりません"
+fi
+
 # 5. CJK Markdown 整形
 if [ -f "$REPO_ROOT/tools/check_cjk_markdown.py" ]; then
   run_check "CJK Markdown (check_cjk_markdown.py --changed)" python3 tools/check_cjk_markdown.py --changed
