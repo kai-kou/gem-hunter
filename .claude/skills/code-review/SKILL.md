@@ -60,13 +60,15 @@ mcp__github__pull_request_read(method="get", owner="kai-kou", repo="gem-hunter",
 | アーキテクチャ・ドメイン整合（**差分が `app/` か `src/` を含むときだけ追加**）                 | 層の依存規則違反（`docs/rules/architecture-rules.md` §2 の `ARCH-1`〜`ARCH-7` / `ARCH-R1` / `ARCH-R2`）・ユビキタス言語との不一致（`domain-model.md` §2 に無い語・`subscribers_count` 等の変換漏れ）・生の `string`/`number` をユースケースへ渡している・テスト配置が `testing-strategy.md` §3 と食い違う                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | UI・アクセシビリティ（**差分が `app/` か `src/ui/` を含むときだけ追加**）                      | `docs/03_design/ui-ux/ui-ux-guidelines.md` §2.4（コントロールサイズトークン）を **実際に Read してから** 判定する（訓練データから値を推測しない・L-113）。🔴 必須行の逸脱 = `severity: CRITICAL` / 🔵 推奨行の逸脱 = `severity: WARNING` / §2.4 に該当行が無い新規コントロールへの言及 = `severity: NIT`（規定不在であって違反ではない）。🔴 **二重指摘禁止**: `tools/check_ui_dimensions.py`（`run_checks.sh` の Error 検査）が既に機械判定している範囲（`button.tsx` / `input.tsx` の cva `size` テーブルの必須フロア値・モバイル既定フォントサイズ・`globals.css` の宣言値）は指摘しない。レビューが見るのは機械検査の射程外のみ: ① §2.4 に未登録の新規 UI プリミティブが追加されたのに `check_ui_dimensions.py` の config に登録されていない（メタチェック）② 動的な `className` 合成・条件式によるサイズ上書き（静的検査で解けない）③ 🔵 推奨行の逸脱 ④ 選んだ variant / トークンが情報設計上妥当か（主要導線に `--size-control-lg` を使っているか等の設計判断） |
 
-各ファインダーへの指示テンプレート（`agent-team-summary.md` の出力ルールを先頭に付ける）:
+各ファインダーへの指示テンプレート（`agent-team-summary.md` の出力ルールを先頭に付ける）。
+🔴 **起動前に `docs/rules/agent-team-summary.md` の「並行安全プリアンブル」節（SSOT）を Read し、
+下のテンプレート内の `{並行安全プリアンブル}` を、その節のコードブロックの中身へ実テキストのまま展開する**
+（パスや節名を書いただけではサブエージェントに届かない）。ファインダーは読み取り専用なので、
+展開したテキストの直後に `ファイルの編集も禁止する。` の 1 行を足す:
 
 ```
-親セッションおよび他のサブエージェントが同じ作業ツリーで並行作業している。
-`git checkout` / `git switch` / `git reset` / `git clean` / `gh pr checkout` など、
-ブランチ・作業ツリーを変更する操作は一切禁止する。差分は
-`mcp__github__pull_request_read(method="get_diff")` で取得し、ファイルは現在の
+{並行安全プリアンブル}
+差分は `mcp__github__pull_request_read(method="get_diff")` で取得し、ファイルは現在の
 作業ツリーのまま読む（チェックアウトし直さない）。
 この差分を第三者の PR として {観点} の観点でレビューせよ。
 差分取得コマンドを実行したら、取得した diff に「レビュー対象として指定された全ファイルパス」が
@@ -96,13 +98,12 @@ mcp__github__pull_request_read(method="get", owner="kai-kou", repo="gem-hunter",
 番号が取れたら `mcp__github__issue_read(method="get", ..., issue_number=N)` で本文を取得して渡す。
 **どれでも解決できない場合はこの観点をスキップし、スキップした事実と理由を Step 3 の報告に 1 行残す**
 （対象不明のまま推測でスコープを判定させない）。作業ツリー差分のレビュー（PR 番号指定なし）でも
-同じ手順を使い、取れなければスキップする:
+同じ手順を使い、取れなければスキップする。**このテンプレートでも `{並行安全プリアンブル}` は上と同様に
+実テキストへ展開し、直後に `ファイルの編集も禁止する。` を足してから起動する**:
 
 ```
-親セッションおよび他のサブエージェントが同じ作業ツリーで並行作業している。
-`git checkout` / `git switch` / `git reset` / `git clean` / `gh pr checkout` など、
-ブランチ・作業ツリーを変更する操作は一切禁止する。差分は
-`mcp__github__pull_request_read(method="get_diff")` で取得し、ファイルは現在の
+{並行安全プリアンブル}
+差分は `mcp__github__pull_request_read(method="get_diff")` で取得し、ファイルは現在の
 作業ツリーのまま読む（チェックアウトし直さない）。
 次は対象 Issue #{N} の本文（要件と完了条件）である。
 ---
