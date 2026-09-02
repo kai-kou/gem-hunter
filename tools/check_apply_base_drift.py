@@ -32,17 +32,28 @@
         この場合は削除行を全件「未確認の候補」として報告する（黙って PASS にしない）。
 
 exit 2 は exit 1 と意味が異なる（判定不能 ≠ 確実な検出）。呼び出し側は stdout 冒頭の
-`[drift] RESULT: ...` 行、または --json の `"result"` フィールドで区別すること。
+`[check_apply_base_drift.py] RESULT: ...` 行、または --json の `"result"` フィールドで区別すること。
 
 【見逃し（miss）に至りうる経路と対策】
     - スナップショット取得の失敗（対象パス不在）        → 空スナップショットとして扱い、
       check 側でファイルが「新規追加」として扱われるため見逃さない（削除行ゼロは正しく0件）
-    - 正規表現ではなく行完全一致（stripped）で比較       → 大文字小文字・空白差は意図的に許容
-      （§CJK 整形の差・行末空白の差は「入力バリアント」節を参照）
-    - 早期リターン・例外の握り潰し                       → main() は例外を捕捉せず fail-closed
-      （未捕捉例外は判定不能 exit 2 として trap 相当の finally で処理する）
+    - 正規表現ではなく行完全一致（stripped）で比較       → 行末空白・改行差のみ意図的に許容する
+      （大文字小文字の差は別内容とみなし許容しない。CJK 整形等の軽微な言い回し変更は
+      SIMILARITY_MODIFY_THRESHOLD による「改変」判定＝下記で別途吸収する）
+    - 改変（modify）扱いの閾値が緩すぎると別内容への置換を見逃す → SIMILARITY_MODIFY_THRESHOLD は
+      「別内容への置換」を改変扱いしないよう高め（0.85）に設定する。閾値未満の削除候補は
+      次段の上流照合（下記）で最終判定する
+    - 上流照合のスコープが広すぎると無関係な偶然一致で drift を握り潰す → 上流照合は
+      削除行と同じ行番号の近傍（±BASE_MATCH_WINDOW 行）だけを走査する（ファイル全文探索はしない）
+    - `--paths-file` に glob 文字（`*?[`）やリポジトリルート外を指す相対パス（`../` 等）・
+      絶対パスが混入 → 黙って対象 0 件にする（fail-open）のではなく `DeclaredPathError` を送出し
+      判定不能 exit 2 として処理する
+    - 早期リターン・例外の握り潰し                       → main() は cmd_snapshot/cmd_check 呼び出しを
+      try/except で包み、未捕捉例外は判定不能 exit 2 として処理する（クラッシュを exit 1=drift 確定
+      と誤読させない）
     - シンボリックリンク（.claude/rules → docs/rules）    → os.walk は宣言された先頭パス自体には
-      必ず descend する。ネストしたシンボリックリンクの循環は realpath の visited set で防ぐ
+      必ず descend する。ネストしたシンボリックリンクの循環は realpath の visited set で防ぐ。
+      壊れたシンボリックリンク（読み取り不能）は判定不能として `unreadable`（exit 2）に計上する
     - 空ディレクトリ・バイナリファイル                    → バイナリは行比較対象外（既知の制限。
       本ツールの対象はテキスト設定・ルールファイルのため許容する）とし、黙って無視するのではなく
       `binary_skipped` に集計して --json / 通常出力へ明示する
@@ -61,13 +72,25 @@ SCRIPT_NAME = "check_apply_base_drift.py"
 
 # 近傍の追加行と十分似ていれば「削除ではなく改変（言い回し・整形の変更）」とみなす閾値。
 # CJK マークダウン整形（強調記法前後への半角スペース挿入等）や上流の言い回し変更を
-# 誤って「本リポジトリ固有行の消失」と誤検知しないための緩和（#719 系の教訓: 閾値は緩すぎても
-# きつすぎても事故る。0.6 は「同一行の軽微な書き換え」を拾い「別内容への置換」は拾わない実測値）。
-SIMILARITY_MODIFY_THRESHOLD = 0.6
+# 誤って「本リポジトリ固有行の消失」と誤検知しないための緩和。
+# 🔴 0.6 は「別内容への置換」（例: R-1 ルーティン稼働の説明行 → R-2 バッチ処理の説明行。CJK 定型構文
+# を共有するだけで内容は別物）を実測 ratio 0.660 で「改変」扱いにしてしまい、上流照合に到達する前に
+# 削除候補から除外していた（#828・fail-open）。0.85 は「同一行の軽微な書き換え」（CJK 整形等）を
+# 拾い続けつつ「別内容への置換」は拾わない再実測値。
+SIMILARITY_MODIFY_THRESHOLD = 0.85
+
+# 上流照合で「同一行が上流にも存在する」とみなす近傍窓（削除行と同じ行番号の前後 N 行）。
+# ファイル全体を対象にすると、無関係な位置にある偶然一致の短い定型文（CJK ボイラープレート等）を
+# 「上流にも存在する行」と誤判定し、本当に消えた本リポジトリ固有行を握り潰す（#828・fail-open）。
+BASE_MATCH_WINDOW = 20
+
+
+class DeclaredPathError(RuntimeError):
+    """--paths-file に処理不能な宣言パス（glob 文字・リポジトリルート外参照）が含まれることを示す。"""
 
 
 def _norm(line: str) -> str:
-    """比較用正規化: 行末空白差・改行差を吸収する（内容比較そのものは変えない）。"""
+    """比較用正規化: 行末空白差・改行差のみを吸収する（大文字小文字・内容の差は変えない）。"""
     return line.rstrip()
 
 
@@ -94,12 +117,39 @@ class WalkResult:
     unreadable: list[str] = field(default_factory=list)
 
 
+_GLOB_CHARS = frozenset("*?[")
+
+
 def _walk_declared_paths(root: Path, declared: list[str]) -> WalkResult:
-    """declared（SYNC_PATHS 相当の相対パス群）の下にある全テキストファイルを集める。"""
+    """declared（SYNC_PATHS 相当の相対パス群）の下にある全テキストファイルを集める。
+
+    宣言パスは ① glob 文字を含まない ② root 配下を指す、の 2 条件を満たすことを検証する
+    （--paths-file は汎用 CLI として任意の値を受け取れるため。違反時は黙って 0 件にする
+    fail-open ではなく DeclaredPathError を送出し、呼び出し側で判定不能 exit 2 とする）。
+    """
     result = WalkResult()
     visited_real: set[str] = set()
+    try:
+        root_resolved = root.resolve()
+    except OSError as e:
+        raise DeclaredPathError(f"repo-root の解決に失敗しました: {root}: {e}") from e
     for rel in declared:
-        top = (root / rel).resolve() if False else (root / rel)  # 表示用に元の rel は保持
+        if _GLOB_CHARS & set(rel):
+            raise DeclaredPathError(
+                f"glob 文字（* ? [）を含む宣言パスは未対応です: {rel}"
+                "（Path.glob() 未実装のため対象 0 件になる fail-open を避けて明示的に失敗させる）"
+            )
+        top = root / rel  # 表示用・relpath 計算用に元の rel ベースのパスを保持する
+        try:
+            top_resolved = top.resolve()
+        except OSError as e:
+            raise DeclaredPathError(f"宣言パスの解決に失敗しました: {rel}: {e}") from e
+        try:
+            top_resolved.relative_to(root_resolved)
+        except ValueError as e:
+            raise DeclaredPathError(
+                f"宣言パスがリポジトリルート外を指しています: {rel} -> {top_resolved}"
+            ) from e
         if not top.exists():
             continue
         if top.is_file():
@@ -130,11 +180,12 @@ def _walk_declared_paths(root: Path, declared: list[str]) -> WalkResult:
                     relpath = str(fpath)
                 lines = _read_lines(fpath)
                 if lines is None:
-                    if fpath.exists() and not fpath.is_symlink():
-                        result.binary_skipped.append(relpath)
-                    elif fpath.exists():
+                    if fpath.exists():
+                        # 存在するが非テキスト（バイナリ・非 UTF-8・NUL 混入）: 比較対象外として集計
                         result.binary_skipped.append(relpath)
                     else:
+                        # os.walk が列挙した名前が読めない = 壊れたシンボリックリンク等。
+                        # 内容を確認できないため判定不能（fail-closed）として計上する
                         result.unreadable.append(relpath)
                     continue
                 result.files[relpath] = lines
@@ -202,10 +253,16 @@ def _diff_removed_candidates(old_lines: list[str], new_lines: list[str]) -> list
     return candidates
 
 
-def _line_in_base_file(norm_line: str, base_lines: list[str] | None) -> bool:
+def _line_in_base_file(norm_line: str, base_lines: list[str] | None, around_index: int) -> bool:
+    """base_lines のうち around_index（0-origin）近傍 ±BASE_MATCH_WINDOW 行だけを走査し、
+    正規化後に完全一致する行があるかを判定する。ファイル全文を対象にしないのは、無関係な
+    位置にある偶然一致（短い定型文の重複等）を「上流にも存在する行」と誤判定し、本当に
+    消えた本リポジトリ固有行を握り潰すのを防ぐため（#828・fail-open 対策）。"""
     if base_lines is None:
         return False
-    return any(_norm(bl) == norm_line for bl in base_lines)
+    lo = max(0, around_index - BASE_MATCH_WINDOW)
+    hi = min(len(base_lines), around_index + BASE_MATCH_WINDOW + 1)
+    return any(_norm(bl) == norm_line for bl in base_lines[lo:hi])
 
 
 def run_check(
@@ -239,8 +296,8 @@ def run_check(
             if not base_available:
                 unconfirmed.append(c)
                 continue
-            if _line_in_base_file(norm_text, base_lines):
-                continue  # 上流にも存在する行 = 上流由来の正当な更新とみなす
+            if _line_in_base_file(norm_text, base_lines, c.line_no - 1):
+                continue  # 上流の近傍にも存在する行 = 上流由来の正当な更新とみなす
             confirmed.append(c)
 
     if not base_available:
@@ -336,6 +393,70 @@ def _run_main_capture(argv: list[str]) -> tuple[int, str]:
     finally:
         sys.argv = old_argv
     return code, buf.getvalue()
+
+
+def _self_test_apply_script_static_order(check) -> None:
+    """apply-to-repo.sh の静的な順序契約を検証する（#828 CRITICAL-1 の再発防止）。
+
+    ネットワーク非依存・リポジトリ同梱の scripts/apply-to-repo.sh をテキストとして読むだけの
+    静的検査（実行はしない）。次の 3 点を確認する:
+      ① .claude/settings.json（ハーネス本体）の導入ブロックより前に、ドリフト検査用の
+         スナップショット取得（snapshot 呼び出し）が行われる（上書きされる前の状態を保存できている）
+      ② 同ブロックより後に、ドリフト検査（check 呼び出し）が行われる（上書き後の状態と比較できている）
+      ③ .claude/settings.json が DRIFT_SYNC_PATHS_FILE の生成対象（宣言パス一覧）に含まれる
+         （#828 実測: 従来は SYNC_PATHS だけを書き出しており、settings.json は §4 で SYNC_PATHS とは
+         別ロジック・別タイミングで上書きされるため検査が一切走査していなかった）
+    """
+    script_path = Path(__file__).resolve().parent.parent / "scripts" / "apply-to-repo.sh"
+    if not script_path.exists():
+        check("apply-script order: file exists", False, f"見つかりません: {script_path}")
+        return
+    text = script_path.read_text(encoding="utf-8")
+
+    settings_block_idx = text.find(".claude/settings.json（ハーネス本体）の導入")
+    snapshot_call_idx = text.find('"$DRIFT_TOOL" snapshot')
+    check_call_idx = text.find('"$DRIFT_TOOL" check')
+
+    check("apply-script order: has settings block", settings_block_idx != -1,
+          "settings.json 導入ブロックの見出しが見つかりません")
+    check("apply-script order: has snapshot call", snapshot_call_idx != -1,
+          "ドリフト検査 snapshot 呼び出しが見つかりません")
+    check("apply-script order: has check call", check_call_idx != -1,
+          "ドリフト検査 check 呼び出しが見つかりません")
+
+    if -1 not in (settings_block_idx, snapshot_call_idx, check_call_idx):
+        check(
+            "apply-script order: snapshot before settings.json overwrite",
+            snapshot_call_idx < settings_block_idx,
+            f"snapshot_call_idx={snapshot_call_idx} settings_block_idx={settings_block_idx}",
+        )
+        check(
+            "apply-script order: check after settings.json overwrite",
+            check_call_idx > settings_block_idx,
+            f"check_call_idx={check_call_idx} settings_block_idx={settings_block_idx}",
+        )
+
+    # .claude/settings.json が DRIFT_SYNC_PATHS_FILE の書き出し対象に含まれているか。
+    # 🔴 コメント行を除去してから探す（コメント除去なしだと、near-miss な変異
+    #  ＝実コードから追加を削っても直前のコメントに ".claude/settings.json" という
+    #  文字列だけが残っていれば誤って PASS してしまう。変異テストで実測済み・#828）。
+    code_only = "\n".join(
+        line for line in text.splitlines() if not line.strip().startswith("#")
+    )
+    marker = '> "$DRIFT_SYNC_PATHS_FILE"'
+    write_idx = code_only.find(marker)
+    if write_idx == -1:
+        check("apply-script order: settings.json in drift paths", False,
+              "DRIFT_SYNC_PATHS_FILE の書き出し箇所（コメント除去後）が見つかりません")
+    else:
+        window_start = max(0, write_idx - 400)
+        block = code_only[window_start:write_idx + len(marker)]
+        check(
+            "apply-script order: settings.json in drift paths",
+            ".claude/settings.json" in block,
+            "DRIFT_SYNC_PATHS_FILE の生成コード（コメント除去後）に .claude/settings.json が"
+            "含まれていません（#828 CRITICAL-1）",
+        )
 
 
 def self_test() -> int:
@@ -509,7 +630,122 @@ def self_test() -> int:
         check("case-i unrelated-path ignored clean", code == 0, out)
         (repo / "README_UNRELATED.md").unlink()
 
+        # (2j) CRITICAL-2 回帰（#828・実測）: 「別内容への置換」が改変（modify）閾値で
+        #      握り潰されず、削除候補として上流照合まで到達すること。
+        #      old/new の類似度は実測 ratio ≈ 0.660（旧閾値 0.6 は超過して改変扱い＝見逃し、
+        #      新閾値 0.85 は未満のため削除候補として残る）。
+        old_with_r1 = list(rule_lines)
+        old_with_r1[5] = "🔴 本リポジトリは R-1 ルーティン稼働のため Hot 化済み（E-B #20・PR #176）。"
+        _write(repo / "docs/rules/sample.md", old_with_r1)
+        code, _ = _run_main_capture([
+            "snapshot", "--repo-root", str(repo), "--paths-file", str(paths_file), "--out", str(snap),
+        ])
+        new_with_r2 = list(old_with_r1)
+        new_with_r2[5] = "🔴 本リポジトリは R-2 バッチ処理のため Warm 降格済み（E-C #40・PR #200）。"
+        _write(repo / "docs/rules/sample.md", new_with_r2)
+        code, out = _run_main_capture([
+            "check", "--repo-root", str(repo), "--paths-file", str(paths_file),
+            "--snapshot", str(snap), "--base-clone", str(base),
+        ])
+        check("case-j threshold-regression drift exit1", code == 1, out)
+        check("case-j old line reported", "R-1 ルーティン稼働" in out, out)
+
+        # (2k) CRITICAL-2 回帰（#828）: 上流照合は削除行の近傍窓だけを見る。同一テキストが
+        #      上流ファイルの遠く離れた位置（窓の外）に偶然存在しても「上流にも存在する」と
+        #      誤判定してはならない（全文探索だと握り潰す＝fail-open）。
+        _write(repo / "docs/rules/sample.md", rule_lines)
+        code, _ = _run_main_capture([
+            "snapshot", "--repo-root", str(repo), "--paths-file", str(paths_file), "--out", str(snap),
+        ])
+        deleted_r1 = [
+            "# サンプルルール", "", "## 大原則", "汎用の説明行A。", "汎用の説明行B。", "",
+            "## 完了条件", "- 項目1",
+        ]
+        _write(repo / "docs/rules/sample.md", deleted_r1)
+        far_base_lines = (
+            [f"filler {i}" for i in range(BASE_MATCH_WINDOW + 30)]
+            + ["本リポジトリは R-1 ルーティン稼働のため Hot 化済み。"]  # 窓の外（削除行から遠い）
+            + [f"filler-tail {i}" for i in range(10)]
+        )
+        _write(base / "docs/rules/sample.md", far_base_lines)
+        code, out = _run_main_capture([
+            "check", "--repo-root", str(repo), "--paths-file", str(paths_file),
+            "--snapshot", str(snap), "--base-clone", str(base),
+        ])
+        check("case-k window-scope-far drift exit1", code == 1, out)
+        check("case-k line reported", "R-1 ルーティン稼働" in out, out)
+
+        # (2k2) 上記の対（陽性側）: 行番号が数行ズレていても窓内なら正しく「上流にも存在」と判定する
+        near_base_lines = (
+            ["extra-1", "extra-2"]
+            + base_rule_lines[:5]
+            + ["本リポジトリは R-1 ルーティン稼働のため Hot 化済み。"]
+            + base_rule_lines[5:]
+        )
+        _write(base / "docs/rules/sample.md", near_base_lines)
+        code, out = _run_main_capture([
+            "check", "--repo-root", str(repo), "--paths-file", str(paths_file),
+            "--snapshot", str(snap), "--base-clone", str(base),
+        ])
+        check("case-k2 window-scope-near clean", code == 0, out)
+        _write(base / "docs/rules/sample.md", base_rule_lines)  # 元に戻す
+
+        # (2l) CRITICAL-3a 回帰: --paths-file 不在で FileNotFoundError の生 traceback による
+        #      exit1（apply-to-repo.sh 側が「drift 検出」と誤読する）にならず、判定不能 exit2 になる。
+        code, out = _run_main_capture([
+            "snapshot", "--repo-root", str(repo), "--paths-file", str(tmp_p / "no-such-paths.txt"),
+            "--out", str(snap),
+        ])
+        check("case-l missing-paths-file exit2", code == 2, out)
+        check("case-l RESULT undetermined", "RESULT: undetermined" in out, out)
+
+        # (2m) WARNING-3 回帰: glob 文字を含む宣言パスは黙って対象 0 件にせず exit2 で明示的に失敗する
+        glob_paths_file = tmp_p / "glob_paths.txt"
+        glob_paths_file.write_text("docs/rules/*.md\n", encoding="utf-8")
+        code, out = _run_main_capture([
+            "snapshot", "--repo-root", str(repo), "--paths-file", str(glob_paths_file),
+            "--out", str(tmp_p / "snap_glob"),
+        ])
+        check("case-m glob-path exit2", code == 2, out)
+        check("case-m RESULT undetermined", "RESULT: undetermined" in out, out)
+
+        # (2n) WARNING-1 回帰: リポジトリルート外を指す宣言パス（`..` トラバーサル）は
+        #      黙って走査対象外にする/root 外を読むのではなく exit2 で明示的に失敗する
+        outside_paths_file = tmp_p / "outside_paths.txt"
+        outside_paths_file.write_text("../outside-of-repo\n", encoding="utf-8")
+        code, out = _run_main_capture([
+            "snapshot", "--repo-root", str(repo), "--paths-file", str(outside_paths_file),
+            "--out", str(tmp_p / "snap_outside"),
+        ])
+        check("case-n outside-root exit2", code == 2, out)
+        check("case-n RESULT undetermined", "RESULT: undetermined" in out, out)
+
+        # (2o) WARNING-2 回帰: 適用後に壊れたシンボリックリンクが残っていたら、内容を確認できない
+        #      ため「バイナリとして無視」ではなく判定不能 exit2（fail-closed）として扱う
+        _write(repo / "docs/rules/sample.md", rule_lines)
+        code, _ = _run_main_capture([
+            "snapshot", "--repo-root", str(repo), "--paths-file", str(paths_file), "--out", str(snap),
+        ])
+        broken_link = repo / "docs/rules" / "broken_link.md"
+        symlink_supported = True
+        try:
+            os.symlink(str(tmp_p / "does_not_exist_target.md"), str(broken_link))
+        except OSError:
+            symlink_supported = False
+        if symlink_supported:
+            code, out = _run_main_capture([
+                "check", "--repo-root", str(repo), "--paths-file", str(paths_file),
+                "--snapshot", str(snap), "--base-clone", str(base),
+            ])
+            check("case-o broken-symlink undetermined exit2", code == 2, out)
+            broken_link.unlink()
+
         shutil.rmtree(repo, ignore_errors=True)
+
+    # (2p) 干渉検証: CRITICAL-1（apply-to-repo.sh の静的順序契約・.claude/settings.json の
+    #      ドリフト対象化）が CRITICAL-2/3・WARNING-1〜3 のいずれとも独立して成立していることを、
+    #      同じ self_test() 呼び出し内で確認する（#725 型の相互作用漏れの再発防止）。
+    _self_test_apply_script_static_order(check)
 
     if failures:
         print(f"[{SCRIPT_NAME}] SELF-TEST FAILED ({len(failures)} 件):")
@@ -547,10 +783,18 @@ def main() -> None:
     if args.self_test:
         sys.exit(self_test())
 
-    if args.command == "snapshot":
-        sys.exit(cmd_snapshot(args))
-    if args.command == "check":
-        sys.exit(cmd_check(args))
+    # 未捕捉例外は判定不能 exit 2 として処理する（fail-closed）。sys.exit() が送出する
+    # SystemExit は Exception のサブクラスではないため、この except では捕まらず素通りする
+    # （cmd_snapshot/cmd_check の正常な戻り値・self_test() の戻り値には影響しない）。
+    try:
+        if args.command == "snapshot":
+            sys.exit(cmd_snapshot(args))
+        if args.command == "check":
+            sys.exit(cmd_check(args))
+    except Exception as e:
+        print(f"[{SCRIPT_NAME}] ERROR: 未捕捉例外: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"[{SCRIPT_NAME}] RESULT: undetermined（内部エラー・fail-closed）")
+        sys.exit(2)
 
     parser.print_help()
     sys.exit(2)

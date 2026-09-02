@@ -384,14 +384,18 @@ copy_path() {
 # --- 3.4 ドリフト検査用スナップショット（copy_path で上書きされる直前の状態を保存・Issue #60）---
 # 「本リポジトリ固有の拡張行が消えていないか」を適用前後で機械判定するため、SYNC_PATHS を
 # 上書きする直前の状態を記録する。保存先は $TMP 配下（trap で EXIT 時に自動削除・リポジトリには
-# コミットされない）。python3 が無い環境ではドリフト検査自体を丸ごとスキップする（fail-closed 側
-# へは倒さない: 適用自体は python3 非依存で完結させたいため、検査省略は §7 完了サマリーで明示する）。
+# コミットされない）。python3 が無い環境、または `$DRIFT_TOOL`（$TARGET 側のパス）が未反映の
+# 初回適用ではドリフト検査自体を丸ごとスキップする（fail-closed 側へは倒さない: 適用自体は
+# python3 非依存で完結させたいため、検査省略は §7 完了サマリーで明示する）。
 DRIFT_TOOL="$TARGET/tools/check_apply_base_drift.py"
 DRIFT_SYNC_PATHS_FILE="$TMP/drift_sync_paths.txt"
 DRIFT_SNAPSHOT_DIR="$TMP/drift_pre_sync_snapshot"
 DRIFT_ENABLED=false
 if ! $DRY_RUN && command -v python3 >/dev/null 2>&1 && [ -f "$DRIFT_TOOL" ]; then
-  printf '%s\n' "${SYNC_PATHS[@]}" > "$DRIFT_SYNC_PATHS_FILE"
+  # 🔴 .claude/settings.json は SYNC_PATHS に含まれず §4 で別ロジック・別タイミングで
+  # 上書きされるため、明示的に検査対象へ追加する（Issue #60 完了条件・実測 #828 CRITICAL-1:
+  # 追加を忘れると同ファイルの固有拡張の消失が一切検知されない）。
+  { printf '%s\n' "${SYNC_PATHS[@]}"; printf '%s\n' ".claude/settings.json"; } > "$DRIFT_SYNC_PATHS_FILE"
   if python3 "$DRIFT_TOOL" snapshot \
       --repo-root "$TARGET" --paths-file "$DRIFT_SYNC_PATHS_FILE" --out "$DRIFT_SNAPSHOT_DIR" \
       >/dev/null 2>&1; then
@@ -546,7 +550,7 @@ if $DRIFT_ENABLED; then
     *) echo "  - ドリフト検査 : ⚠ 予期しない終了コード（$DRIFT_RESULT_RC）" ;;
   esac
 else
-  echo "  - ドリフト検査 : スキップ（python3 不在 / --dry-run / スナップショット取得失敗のいずれか）"
+  echo "  - ドリフト検査 : スキップ（python3 不在 / --dry-run / スナップショット取得失敗 / 初回適用でツール自体が未反映のいずれか）"
 fi
 echo ""
 echo "注意: 配布されたルール・スキル本文中の Issue/PR 番号（例: Issue #123）は"
