@@ -27,12 +27,12 @@ type LoginLinkProps = {
  * ログアウトは副作用のある操作を GET に置かない方針（`route.ts` 側の POST 化）に合わせ、
  * クライアント JS 不要のプレーンな `<form method="post">` から叩く。
  *
- * `buttonVariants({ variant: 'ghost', size: 'sm' })` 経由で描画する（`ui-ux-guidelines.md` §2.4
+ * `buttonVariants()` の size variant 経由で描画する（`ui-ux-guidelines.md` §2.4
  * 必須「高さとフォントサイズは cva の size variant 経由でのみ指定する」・PR #141 レビュー指摘）。
  */
 export function LoginLink({ isLoggedIn, labels }: LoginLinkProps) {
-  // 二次導線だが sm を追認: §2.4 の「二次的なコントロールは md 以上」は 🔵 推奨であり必須ではなく、
-  // md へ引き上げるとヘッダーの見た目が変わるため現状を要件として登録した（Issue #829）。
+  // 高さ tier は現状維持を追認（根拠と例外登録: tools/check_ui_dimensions.py・Issue #829 /
+  // 引き上げの是非: Issue #842）。
   const className = buttonVariants({ variant: 'ghost', size: 'sm' })
 
   if (isLoggedIn) {
