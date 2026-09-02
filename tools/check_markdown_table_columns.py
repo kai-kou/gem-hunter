@@ -71,6 +71,7 @@ KIND_TRAILING_CONTENT = "trailing_content"
 SEPARATOR_CELL_RE = re.compile(r"^:?-+:?$")
 
 # HTML コメント（描画されない＝終端に残っても「黙って落とされる」実害が無い・#772 指摘 3）
+# dup-ok: check_delegation_preamble.py と用途が異なる 1 行の正規表現。共通化の実体が無い（#816）
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 

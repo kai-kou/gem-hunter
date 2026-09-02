@@ -85,6 +85,8 @@ PR 作成後に **自前 `code-review` スキルを `Skill(code-review)` で必�
 > 同名 project スキルとして置換した自前実装（#275 → #280）。対話セッションの手打ちも同スキルに解決される。
 > 万一 `Skill(code-review)` が disable-model-invocation エラーを返す場合（bundled 側に解決が倒れた場合）のみ、
 > 旧手段としてサブエージェント（`general-purpose`/`Explore`）に Step 2 の観点表を渡す直接レビューへフォールバックする。
+>
+> 🔴 **このフォールバックで `Agent` を起動するときは、起動前に `docs/rules/agent-team-summary.md` の「並行安全プリアンブル」節（SSOT）を Read し、その節のコードブロックの中身を実テキストのまま委譲プロンプトの先頭へ展開する**（パス・節名を書くだけでは実行時に解決されず、サブエージェントには何も届かない）。このレビュー役は読み取り専用なので、展開したテキストの直後に `ファイルの編集も禁止する。` の 1 行を足す（禁止文言そのものを本ファイルへ複製しない・二重管理の再発防止・#816）。
 
 diff ≥300行 / `type:security` / `type:breaking-change` の PR は Layer 2（`discussion_review_trigger.py`）も起動する。
 critical 指摘は修正必須（自動ゲート扱い）。**外部 AI レビュアー（Copilot / Gemini）への依頼はしない。**
