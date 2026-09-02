@@ -502,6 +502,12 @@ else
   skip_check "デプロイゲート self-test (check_deploy_gate.py --self-test)" "スクリプトが見つかりません"
 fi
 
+if [ -f "$REPO_ROOT/tools/github_rest.py" ]; then
+  run_check "GitHub REST 共通ヘルパー self-test (github_rest.py --self-test)" python3 tools/github_rest.py --self-test
+else
+  skip_check "GitHub REST 共通ヘルパー self-test (github_rest.py --self-test)" "スクリプトが見つかりません"
+fi
+
 if [ -f "$REPO_ROOT/tools/workers_build_deploy.sh" ]; then
   run_check "Workers Builds デプロイ入口 self-test (workers_build_deploy.sh --self-test)" bash tools/workers_build_deploy.sh --self-test
 else

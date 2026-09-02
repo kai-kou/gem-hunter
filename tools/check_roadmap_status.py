@@ -112,13 +112,14 @@ import os
 import re
 import sys
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
+from github_rest import http_get as _github_rest_http_get  # noqa: E402
+from github_rest import exclude_pull_requests  # noqa: E402
+from github_rest import paginate_json_array  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOC_PATH = "docs/02_requirements/roadmap.md"
@@ -160,11 +161,6 @@ def extract_sp_number_from_title(title: str) -> int | None:
         if m:
             return int(m.group(1))
     return None
-
-
-def filter_out_pull_requests(items: list[dict]) -> list[dict]:
-    """`/issues` エンドポイントの応答から PR（`pull_request` キーを持つ要素）を除外する。"""
-    return [i for i in items if "pull_request" not in i]
 
 
 # ──────────────────────────────────────────────
@@ -477,7 +473,7 @@ def build_sp_state_index(items: list[dict]) -> dict[int, list[str]]:
     1 件でも Closed でなければ「全件 Closed」ではないと判定できるようリストで保持する。
     """
     index: dict[int, list[str]] = {}
-    for item in filter_out_pull_requests(items):
+    for item in exclude_pull_requests(items):
         n = extract_sp_number_from_title(str(item.get("title", "")))
         if n is None:
             continue
@@ -622,44 +618,33 @@ def evaluate_roadmap(
 # ──────────────────────────────────────────────
 
 def _http_get(url: str, token: str, timeout: int = 30) -> tuple[bool, str]:
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "gem-hunter-check-roadmap-status",
-    }
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
-            return True, res.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        return False, f"HTTP {e.code}"
-    except urllib.error.URLError as e:
-        return False, f"接続失敗（{type(e).__name__}）"
-    except TimeoutError:
-        return False, "リクエストがタイムアウトしました"
+    """`tools/github_rest.py` の共通実装への薄いラッパー（Issue #602）。
+
+    module-level 関数として残す（self-test / 将来のモック差し替えで `_http_get` という
+    名前をこのファイル内で参照する既存パターンとの互換のため）。
+    """
+    return _github_rest_http_get(url, token, user_agent="gem-hunter-check-roadmap-status", timeout=timeout)
 
 
 def fetch_all_issues(repo: str, token: str, max_pages: int = 20) -> tuple[list[dict] | None, str | None]:
     """`GET /repos/{repo}/issues?state=all` を全ページ走査する（PR 込み。除外は呼び出し側）。"""
-    items: list[dict] = []
-    for page in range(1, max_pages + 1):
-        ok, out = _http_get(
+    def fetch_page(page: int) -> tuple[bool, str]:
+        return _http_get(
             f"https://api.github.com/repos/{repo}/issues?state=all&per_page=100&page={page}",
             token,
         )
-        if not ok:
-            return None, f"GitHub API 取得に失敗しました（{out}）"
-        try:
-            batch = json.loads(out)
-        except json.JSONDecodeError:
+
+    ok, result = paginate_json_array(fetch_page, per_page=100, max_pages=max_pages, on_truncate="error")
+    if not ok:
+        reason = str(result)
+        if "ページネーション上限" in reason:
+            return None, f"ページネーションが上限（{max_pages} ページ）に達しました"
+        if "JSON 解析" in reason:
             return None, "GitHub API 応答の JSON パースに失敗しました"
-        if not isinstance(batch, list):
+        if "配列ではありません" in reason:
             return None, "GitHub API 応答の形式が想定外です（配列でない）"
-        items.extend(batch)
-        if len(batch) < 100:
-            return items, None
-    return None, f"ページネーションが上限（{max_pages} ページ）に達しました"
+        return None, f"GitHub API 取得に失敗しました（{reason}）"
+    return result, None
 
 
 # ──────────────────────────────────────────────
@@ -810,7 +795,7 @@ def _self_test_pull_request_filter() -> list[str]:
         {"title": "SP-11: a", "state": "closed"},
         {"title": "feat(SP-11): a", "state": "open", "pull_request": {"url": "x"}},
     ]
-    got = filter_out_pull_requests(items)
+    got = exclude_pull_requests(items)
     if len(got) != 1 or got[0]["title"] != "SP-11: a":
         failures.append(f"PR 除外: {got}")
     return failures

@@ -86,14 +86,14 @@ import os
 import re
 import subprocess
 import sys
-import urllib.error
 import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
+from github_rest import http_get as _github_rest_http_get  # noqa: E402
+from github_rest import paginate_json_array, exclude_pull_requests  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 
@@ -154,25 +154,12 @@ def _run_gh(args: list[str]) -> tuple[bool, str]:
 
 
 def _http_get(url: str, token: str) -> tuple[bool, str]:
-    """GitHub REST を GET する。token をサブプロセス引数に載せず Python プロセス内で
-    ヘッダを組み立てる（`ps` / `/proc/<pid>/cmdline` 経由の露出防止・既存パターン踏襲）。
+    """`tools/github_rest.py` の共通実装への薄いラッパー（Issue #602）。
+
+    module-level 関数として残す（self-test が `globals()["_http_get"]` でモック差し替える
+    既存パターンとの互換のため）。
     """
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "gem-hunter-check-deploy-gate",
-    }
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as res:
-            return True, res.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        return False, f"HTTP {e.code}"
-    except urllib.error.URLError as e:
-        return False, f"接続失敗（{type(e).__name__}）"
-    except TimeoutError:
-        return False, "リクエストがタイムアウトしました"
+    return _github_rest_http_get(url, token, user_agent="gem-hunter-check-deploy-gate")
 
 
 def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
@@ -202,29 +189,27 @@ def fetch_in_progress_sprint_candidates() -> tuple[list[dict], str | None]:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
     label_q = urllib.parse.quote("status:in-progress", safe="")
-    issues: list[dict] = []
-    for page in range(1, 4):  # 100件 x 3ページ = 最大300件
-        ok2, out2 = _http_get(
+
+    def fetch_page(page: int) -> tuple[bool, str]:
+        return _http_get(
             f"https://api.github.com/repos/{REPO}/issues"
             f"?state=open&labels={label_q}&per_page=100&page={page}",
             token,
         )
-        if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
-        try:
-            batch = json.loads(out2)
-        except json.JSONDecodeError:
+
+    # 100件 x 3ページ = 最大300件。3ページ到達時になお続きがある可能性を否定できなくても、
+    # ここは従来どおり黙って打ち切る（on_truncate="stop"・既存挙動を変えない）。
+    ok2, result = paginate_json_array(fetch_page, per_page=100, max_pages=3, on_truncate="stop")
+    if not ok2:
+        reason = str(result)
+        if "JSON 解析" in reason:
             return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
-        if not batch:
-            break
-        # /issues エンドポイントは PR も含むため pull_request キーで除外する
-        issues.extend(
-            {"number": i["number"], "title": i.get("title", ""), "body": i.get("body") or ""}
-            for i in batch
-            if "pull_request" not in i
-        )
-        if len(batch) < 100:
-            break
+        return [], f"gh 失敗（{gh_err}）・REST も失敗（{reason}）"
+    # /issues エンドポイントは PR も含むため pull_request キーで除外する
+    issues = [
+        {"number": i["number"], "title": i.get("title", ""), "body": i.get("body") or ""}
+        for i in exclude_pull_requests(result)
+    ]
     return issues, None
 
 
@@ -258,31 +243,27 @@ def fetch_issue_comments(number: int) -> tuple[list[dict], str | None]:
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
-    comments: list[dict] = []
-    for page in range(1, 4):
-        ok2, out2 = _http_get(
+    def fetch_page(page: int) -> tuple[bool, str]:
+        return _http_get(
             f"https://api.github.com/repos/{REPO}/issues/{number}/comments"
             f"?per_page=100&page={page}",
             token,
         )
-        if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST も失敗（{out2}）"
-        try:
-            batch = json.loads(out2)
-        except json.JSONDecodeError:
+
+    ok2, result = paginate_json_array(fetch_page, per_page=100, max_pages=3, on_truncate="stop")
+    if not ok2:
+        reason = str(result)
+        if "JSON 解析" in reason:
             return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
-        if not batch:
-            break
-        comments.extend(
-            {
-                "body": c.get("body", ""),
-                "created_at": c.get("created_at", ""),
-                "author_association": c.get("author_association", ""),
-            }
-            for c in batch
-        )
-        if len(batch) < 100:
-            break
+        return [], f"gh 失敗（{gh_err}）・REST も失敗（{reason}）"
+    comments = [
+        {
+            "body": c.get("body", ""),
+            "created_at": c.get("created_at", ""),
+            "author_association": c.get("author_association", ""),
+        }
+        for c in result
+    ]
     return comments, None
 
 
@@ -1175,6 +1156,123 @@ def _self_test_fetch_merged_pr_commit_shas() -> list[str]:
     return failures
 
 
+def _self_test_fetch_in_progress_sprint_candidates() -> list[str]:
+    """#824 Layer 1 指摘: 本 PR で paginate_json_array / exclude_pull_requests へ移行した
+    `fetch_in_progress_sprint_candidates` / `fetch_issue_comments` の REST 経路を、`_run_gh` / `_http_get` の
+    モック差し替えでエントリポイントから実測する（移行前後の挙動不変の証跡・#602 完了条件3）。
+
+    入力バリアント: ① 複数ページ結合（1 ページ目が per_page ちょうど → 2 ページ目で終端）
+    ② PR 混入時の除外 ③ 打ち切り（max_pages=3 到達）でも既存どおり黙って取得済み分を返す
+    （`on_truncate="stop"`）④ REST 失敗はエラー文字列で伝播する。⑤〜⑦ は `fetch_issue_comments`
+    について同じ 3 点（複数ページ結合とフィールド写し替え / 打ち切り stop / REST 失敗の伝播）を見る。
+    """
+    failures = []
+    orig_run_gh = _run_gh
+    orig_http_get = _http_get
+    orig_gh_token = os.environ.get("GH_TOKEN")
+    orig_github_token = os.environ.get("GITHUB_TOKEN")
+
+    def page_of(url: str) -> int:
+        m = re.search(r"[?&]page=(\d+)", url)
+        return int(m.group(1)) if m else 1
+
+    try:
+        globals()["_run_gh"] = lambda args: (False, "gh 不在")
+        os.environ["GH_TOKEN"] = "dummy-token-for-selftest"
+
+        # ① 複数ページ結合: 1 ページ目 100 件（= per_page）→ 2 ページ目 2 件で終端
+        def http_multi(url, token):
+            page = page_of(url)
+            if page == 1:
+                return True, json.dumps([{"number": i, "title": f"SP-{i}: x", "body": ""} for i in range(100)])
+            if page == 2:
+                return True, json.dumps([{"number": 100, "title": "SP-100: x", "body": ""}])
+            return True, json.dumps([])  # 呼ばれてはいけない
+
+        globals()["_http_get"] = http_multi
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is not None or len(issues) != 101:
+            failures.append(f"① 複数ページ結合: 期待 101 件 / err=None だが {(len(issues) if isinstance(issues, list) else issues, err)!r}")
+
+        # ② PR 混入の除外（/issues は PR も返す）
+        def http_with_pr(url, token):
+            if page_of(url) != 1:
+                return True, json.dumps([])
+            return True, json.dumps([
+                {"number": 1, "title": "SP-1: 本体", "body": ""},
+                {"number": 2, "title": "feat(SP-1): PR", "body": "", "pull_request": {"url": "x"}},
+            ])
+
+        globals()["_http_get"] = http_with_pr
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is not None or [i["number"] for i in issues] != [1]:
+            failures.append(f"② PR 除外: 期待 [1] だが {(issues, err)!r}")
+
+        # ③ 打ち切り（毎ページ per_page ちょうど）→ on_truncate="stop" で 3 ページ分を黙って返す
+        globals()["_http_get"] = lambda url, token: (
+            True,
+            json.dumps([{"number": page_of(url) * 1000 + i, "title": "SP-9: x", "body": ""} for i in range(100)]),
+        )
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is not None or len(issues) != 300:
+            failures.append(f"③ 打ち切り(stop): 期待 300 件 / err=None だが {(len(issues) if isinstance(issues, list) else issues, err)!r}")
+
+        # ④ REST 失敗 → エラー文字列で伝播（fail-closed）
+        globals()["_http_get"] = lambda url, token: (False, "HTTP 502")
+        issues, err = fetch_in_progress_sprint_candidates()
+        if err is None or issues != []:
+            failures.append(f"④ REST 失敗: エラーを期待したが {(issues, err)!r}")
+
+        # ⑤ fetch_issue_comments も同じ移行対象なので REST 経路を実測する
+        #    （複数ページ結合 + フィールド写し替え + 打ち切り stop）。REST 応答は snake_case
+        #    （`created_at` / `author_association`）で、gh 経路の camelCase とは別系統である点も固定する。
+        def http_comments(url, token):
+            page = page_of(url)
+            if page == 1:
+                return True, json.dumps([
+                    {"body": f"c{i}", "created_at": "2026-09-02T00:00:00Z", "author_association": "OWNER"}
+                    for i in range(100)
+                ])
+            if page == 2:
+                return True, json.dumps([
+                    {"body": "last", "created_at": "2026-09-02T01:00:00Z", "author_association": "MEMBER"}
+                ])
+            return True, json.dumps([])  # 呼ばれてはいけない
+
+        globals()["_http_get"] = http_comments
+        comments, err = fetch_issue_comments(123)
+        if err is not None or len(comments) != 101:
+            failures.append(f"⑤ コメント複数ページ結合: 期待 101 件 / err=None だが {(len(comments) if isinstance(comments, list) else comments, err)!r}")
+        elif comments[-1] != {"body": "last", "created_at": "2026-09-02T01:00:00Z", "author_association": "MEMBER"}:
+            failures.append(f"⑤ コメントのフィールド写し替え: {comments[-1]!r}")
+
+        # ⑥ コメント側の打ち切りも既存どおり stop（3 ページ分を黙って返す）
+        globals()["_http_get"] = lambda url, token: (
+            True,
+            json.dumps([{"body": "x", "created_at": "", "author_association": ""}] * 100),
+        )
+        comments, err = fetch_issue_comments(123)
+        if err is not None or len(comments) != 300:
+            failures.append(f"⑥ コメント打ち切り(stop): 期待 300 件 / err=None だが {(len(comments) if isinstance(comments, list) else comments, err)!r}")
+
+        # ⑦ コメント取得の REST 失敗はエラーで伝播（fail-closed）
+        globals()["_http_get"] = lambda url, token: (False, "HTTP 502")
+        comments, err = fetch_issue_comments(123)
+        if err is None or comments != []:
+            failures.append(f"⑦ コメント REST 失敗: エラーを期待したが {(comments, err)!r}")
+    finally:
+        globals()["_run_gh"] = orig_run_gh
+        globals()["_http_get"] = orig_http_get
+        os.environ.pop("GH_TOKEN", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+        if orig_gh_token is not None:
+            os.environ["GH_TOKEN"] = orig_gh_token
+        if orig_github_token is not None:
+            os.environ["GITHUB_TOKEN"] = orig_github_token
+
+    return failures
+
+
 def _self_test_fetch_open_pr_numbers() -> list[str]:
     """#723 指摘1 の補助関数 fetch_open_pr_numbers を gh→REST フォールバック込みで実測する。
 
@@ -1284,6 +1382,7 @@ def run_self_test() -> int:
         ("main 祖先判定・fetch メモ化（git 呼び出しのモック差し替え・#471/#723）", _self_test_is_ancestor_of_main),
         ("merged PR 検索の gh/REST フォールバック（#723 指摘3）", _self_test_fetch_merged_pr_commit_shas),
         ("open PR 検索の gh/REST フォールバック（#723 指摘1）", _self_test_fetch_open_pr_numbers),
+        ("in-progress Issue / コメント取得の REST 経路（#602 移行の挙動不変・#824）", _self_test_fetch_in_progress_sprint_candidates),
         ("集約判定と終了コードのマッピング", _self_test_decide_and_exit_code),
     ]
     failed_groups = 0

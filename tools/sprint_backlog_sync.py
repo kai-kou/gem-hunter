@@ -65,6 +65,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
+from github_rest import paginate_json_array, exclude_pull_requests  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOC_PATH = "docs/02_requirements/user-story-map.md"
@@ -579,34 +580,33 @@ def list_all_issues() -> tuple[list[dict], str | None]:
     if not token:
         return [], f"gh 失敗（{gh_err}）かつ GH_TOKEN/GITHUB_TOKEN 未設定"
 
-    issues: list[dict] = []
-    for page in range(1, FETCH_MAX_PAGES + 1):
-        ok2, out2 = _http_request(
+    def fetch_page(page: int) -> tuple[bool, str]:
+        return _http_request(
             f"https://api.github.com/repos/{REPO}/issues?state=all&per_page={FETCH_PER_PAGE}&page={page}",
             token,
         )
-        if not ok2:
-            return [], f"gh 失敗（{gh_err}）・REST もページ {page} で失敗（{out2}）"
-        try:
-            batch = json.loads(out2)
-        except json.JSONDecodeError:
-            return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
-        if not isinstance(batch, list):
-            return [], f"gh 失敗（{gh_err}）・REST 応答の形式が想定外です（配列でない）"
-        if not batch:
-            return issues, None
-        # /issues エンドポイントは PR も含むため pull_request キーで除外する
-        issues.extend(
-            {"title": i.get("title", ""), "state": i.get("state", "")}
-            for i in batch
-            if "pull_request" not in i
-        )
-        if len(batch) < FETCH_PER_PAGE:
-            return issues, None
-    return [], (
-        f"gh 失敗（{gh_err}）・REST もページネーション上限（{FETCH_MAX_PAGES} ページ）に達し、"
-        "全件取得を保証できません（判定不能）"
+
+    ok2, result = paginate_json_array(
+        fetch_page, per_page=FETCH_PER_PAGE, max_pages=FETCH_MAX_PAGES, on_truncate="error",
     )
+    if not ok2:
+        reason = str(result)
+        if "ページネーション上限" in reason:
+            return [], (
+                f"gh 失敗（{gh_err}）・REST もページネーション上限（{FETCH_MAX_PAGES} ページ）に達し、"
+                "全件取得を保証できません（判定不能）"
+            )
+        if "JSON 解析" in reason:
+            return [], f"gh 失敗（{gh_err}）・REST 応答のパースに失敗"
+        if "配列ではありません" in reason:
+            return [], f"gh 失敗（{gh_err}）・REST 応答の形式が想定外です（配列でない）"
+        return [], f"gh 失敗（{gh_err}）・REST もページ取得で失敗（{reason}）"
+    # /issues エンドポイントは PR も含むため pull_request キーで除外する
+    issues = [
+        {"title": i.get("title", ""), "state": i.get("state", "")}
+        for i in exclude_pull_requests(result)
+    ]
+    return issues, None
 
 
 def create_issue(title: str, body: str, labels: list[str]) -> tuple[bool, str]:

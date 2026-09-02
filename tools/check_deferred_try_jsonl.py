@@ -29,27 +29,29 @@
   4. トップレベルが JSON オブジェクトでない行（配列・文字列・数値）
   5. 必須フィールド（date / title / q1 / q2 / defer_reason）の欠落
   6. 値域違反: q1 / q2 が "YES" / "NO" 以外、defer_reason が
-     medium / over_quota / low_single_file / high_commented 以外
+     medium / medium_commented / over_quota / low_single_file / high_commented 以外
   7. date が `YYYY-MM-DD JST` 形式でない、または実在しない日付（2026-13-45 JST 等）
   8. title が文字列でない、または空文字
   9. related_issue の型違反（**存在する場合のみ** 検査。下記「採用した仮定」を参照）
   10. reevaluated_at の型違反（**存在する場合のみ** 検査。null または `YYYY-MM-DD HH:MM JST`
       形式の実在日時以外は違反。Issue #707: 空文字・JST 抜けだと `jq 'select(.reevaluated_at
       == null)'` が false になり over_quota Try が「消費済み」と誤判定され永久に合流しなくなる）
-  11. defer_reason と q1/q2 の組み合わせ矛盾（Issue #727）: `medium` / `low_single_file` は
-      priority:high 相当ではなかった見送り（`q1 == "NO"` かつ `q2 == "NO"`）を表すため、
-      どちらかが `"YES"` なのにこれらの defer_reason が付いていたら矛盾（「high 相当だったのに
-      優先度不足として見送った」という誤った履歴になる）。逆に `over_quota` / `high_commented` は
-      priority:high 相当だった見送り（`q1` または `q2` が `"YES"`）を表すため、両方 `"NO"` なのに
-      これらが付いていたら矛盾。**q1 / q2 / defer_reason のいずれかが既に値域違反（違反 6）の
-      行は、この整合性検査の対象外とする**（値が不正な状態で high 相当か否かを判定すると
-      二重に誤った違反メッセージを出すため。値域違反として既に検出済みなので見逃しにはならない）
-  12. `defer_reason` が `high_commented`（既存 Issue へ追記して完了）なのに `related_issue` が
-      空（Issue #727 のフォローアップ）: `related_issue` フィールドの欠落・`null`・空文字
-      （空白のみを含む）のいずれも「空」として検出する。`high_commented` は「既存 Issue へ
-      追記した」ことを表す値であり、追記先 Issue 番号（`related_issue`）を伴わない
-      `high_commented` は値の意味そのものと矛盾する（SKILL.md Step 3-0 見送りログのフィールド表）。
-      **defer_reason が値域違反（違反 6）の行は、この検査の対象外とする**（違反 11 と同じ理由）
+  11. defer_reason と q1/q2 の組み合わせ矛盾（Issue #727）: `medium` / `low_single_file` /
+      `medium_commented` は priority:high 相当ではなかった見送り（`q1 == "NO"` かつ
+      `q2 == "NO"`）を表すため、どちらかが `"YES"` なのにこれらの defer_reason が付いていたら
+      矛盾（「high 相当だったのに優先度不足として見送った」という誤った履歴になる）。逆に
+      `over_quota` / `high_commented` は priority:high 相当だった見送り（`q1` または `q2` が
+      `"YES"`）を表すため、両方 `"NO"` なのにこれらが付いていたら矛盾。**q1 / q2 / defer_reason
+      のいずれかが既に値域違反（違反 6）の行は、この整合性検査の対象外とする**（値が不正な状態で
+      high 相当か否かを判定すると二重に誤った違反メッセージを出すため。値域違反として既に検出済み
+      なので見逃しにはならない）
+  12. `defer_reason` が `high_commented` / `medium_commented`（いずれも既存 Issue へ追記して
+      完了）なのに `related_issue` が空（Issue #727 のフォローアップ・#815 で `medium_commented`
+      へ拡張）: `related_issue` フィールドの欠落・`null`・空文字（空白のみを含む）のいずれも
+      「空」として検出する。これら 2 値は「既存 Issue へ追記した」ことを表す値であり、追記先
+      Issue 番号（`related_issue`）を伴わないと値の意味そのものと矛盾する（SKILL.md Step 3-0
+      見送りログのフィールド表）。**defer_reason が値域違反（違反 6）の行は、この検査の対象外と
+      する**（違反 11 と同じ理由）
 
 さらに **違反ではなく WARNING**（exit code には影響しない）として、既知フィールド集合の外に
 あるキー（`reevaluted_at` のような typo）を報告する（Issue #707・値域は締めるがキー集合は
@@ -85,11 +87,23 @@
     見送られた」という誤った履歴が残り Q1 の再発カウントが壊れるため、defer_reason と q1/q2 の
     組み合わせを整合性検査する（実データ 75 行は全て q1/q2 が NO のため、既存行は本検査を
     無改修で通過する・2026-08-31 JST 時点で実測）。
-  - `defer_reason: "high_commented"` は `related_issue` を必須とする（違反 12・Issue #727 フォロー
-    アップ）。「既存 Issue へ追記して完了した」という値の意味が追記先 Issue 番号を要求するため、
-    `related_issue` が欠落 / `null` / 空文字（空白のみ含む）のいずれかだと矛盾する行として検出する。
-    実データ 75 行の `high_commented` 該当行はいずれも `related_issue` が非 null のため、既存行は
-    本検査を無改修で通過する（2026-08-31 JST 時点で実測）。
+  - `defer_reason: "medium_commented"`（Issue #815・SKILL.md Step 3-0 判定フロー「NO → Step 3-A →
+    類似 Issue あり」の出口）は、priority:high 相当ではない（Q1 も Q2 も NO）が既存 Issue への
+    追記で完了したケースを表す。#815 以前はこの出口専用の値が無く、`medium`（「優先度不足・
+    重複なし」の意味）へ記録すると値の意味と実態（重複あり）が食い違っていた。`medium_commented`
+    は non-high 側（q1/q2 が両方 NO）に属するため `NOT_HIGH_REASONS` に加えるが、`high_commented`
+    と同じ理由で `related_issue` を必須とする（違反 12 の対象を 2 値へ拡張）。実データの既存
+    `medium` 行（`related_issue` が非 null のものを含む・2026-09-02 JST 時点で 23 行実測）は
+    「重複チェックで類似 Issue が見つからず、たまたま関連 Issue 番号だけ書き添えた」ケースであり
+    `medium_commented` への遡及的な書き換えは対象外（本 PR は担当ファイル外の既存ログを変更しない
+    ・Issue #815 完了条件）。`medium` は `related_issue` の有無を型検査の対象にするだけで値の
+    有無自体は問わないため、これらの既存行は無改修で本検査を通過する。
+  - `defer_reason: "high_commented"` / `"medium_commented"` はいずれも `related_issue` を必須と
+    する（違反 12・Issue #727 フォローアップ・#815 で 2 値へ拡張）。「既存 Issue へ追記して完了
+    した」という値の意味が追記先 Issue 番号を要求するため、`related_issue` が欠落 / `null` /
+    空文字（空白のみ含む）のいずれかだと矛盾する行として検出する。実データ 75 行の
+    `high_commented` 該当行はいずれも `related_issue` が非 null のため、既存行は本検査を無改修で
+    通過する（2026-08-31 JST 時点で実測。`medium_commented` は #815 時点で実データに 0 件）。
 
 ## 終了コード
 
@@ -124,14 +138,18 @@ DEFERRED_TRY_PATH = REPO_ROOT / "content" / "analytics" / "retro" / "deferred_tr
 SKILL_FIELD_SSOT = ".claude/skills/retrospective/SKILL.md §「見送りログのフィールド」表"
 REQUIRED_FIELDS = ("date", "title", "q1", "q2", "defer_reason")
 YES_NO = ("YES", "NO")
-DEFER_REASONS = ("medium", "over_quota", "low_single_file", "high_commented")
+DEFER_REASONS = ("medium", "medium_commented", "over_quota", "low_single_file", "high_commented")
 # Issue #727: defer_reason は「Q1/Q2 が priority:high 相当（YES）だったか」を裏切ってはならない。
 # NOT_HIGH_REASONS は「high 相当ではなかった」見送り、HIGH_REASONS は「high 相当だった」見送り。
-NOT_HIGH_REASONS = ("medium", "low_single_file")
+# Issue #815: medium_commented（Step 3-0 判定フロー NO 分岐・類似 Issue あり）は non-high 側。
+NOT_HIGH_REASONS = ("medium", "low_single_file", "medium_commented")
 HIGH_REASONS = ("over_quota", "high_commented")
 assert set(NOT_HIGH_REASONS) | set(HIGH_REASONS) == set(DEFER_REASONS), (
     "NOT_HIGH_REASONS / HIGH_REASONS が DEFER_REASONS と分割一致していません"
 )
+# Issue #815: 「既存 Issue へ追記して完了した」ことを表す defer_reason はいずれも related_issue
+# （追記先 Issue 番号）を必須とする（違反 12）。high 相当 / non-high 相当の両側にまたがる。
+RELATED_ISSUE_REQUIRED_REASONS = ("high_commented", "medium_commented")
 DATE_SUFFIX = " JST"
 DATE_FORMAT = "%Y-%m-%d"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M"
@@ -213,14 +231,23 @@ def is_valid_related_issue(value: object) -> bool:
 def is_empty_related_issue(obj: dict) -> bool:
     """`high_commented` の related_issue 必須検査で使う「空」判定（違反 12）。
 
-    欠落・`None`・空文字（空白のみ含む）のいずれも「空」として扱う。「空文字も空とみなす」判定を
-    `None` のみに緩めると、`"related_issue": ""` の行を見逃す（Issue #727 フォローアップ）。
+    欠落・`None`・空文字（空白のみ含む）・`bool`・0 以下の整数のいずれも「空」として扱う。
+    「空文字も空とみなす」判定を `None` のみに緩めると、`"related_issue": ""` の行を見逃す
+    （Issue #727 フォローアップ）。整数の非正値を空に含めるのは、`related_issue: 0` が
+    「追記先 Issue が実在する」という値の意味を満たさないのに必須検査を素通りしていたため
+    （#824 Layer 1 指摘・fail-open の是正）。
     """
     if "related_issue" not in obj:
         return True
     value = obj["related_issue"]
     if value is None:
         return True
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, int):
+        # Issue 番号は 1 以上。0 / 負数は「追記先が実在する」という値の意味を満たさないため
+        # 空として扱う（#824 Layer 1 指摘: 数値だと非空扱いになり必須検査が fail-open していた）。
+        return value <= 0
     return isinstance(value, str) and not value.strip()
 
 
@@ -289,12 +316,12 @@ def check_record(obj: object, lineno: int) -> list[str]:
             f"{_fmt(obj['related_issue'])}"
         )
 
-    # Issue #727 フォローアップ（違反 12）: defer_reason が値域内で high_commented のときだけ
-    # related_issue の必須性を検査する（defer_reason 自体が値域違反の行は違反 6 で既に検出済みの
-    # ため対象外・違反 11 と同じ理由）。
-    if defer_valid and defer_reason == "high_commented" and is_empty_related_issue(obj):
+    # Issue #727 フォローアップ（違反 12・#815 で high_commented / medium_commented の 2 値へ拡張）:
+    # defer_reason が値域内で related_issue 必須の値のときだけ必須性を検査する（defer_reason 自体が
+    # 値域違反の行は違反 6 で既に検出済みのため対象外・違反 11 と同じ理由）。
+    if defer_valid and defer_reason in RELATED_ISSUE_REQUIRED_REASONS and is_empty_related_issue(obj):
         violations.append(
-            f"L{lineno}: defer_reason が high_commented のとき related_issue は必須です"
+            f"L{lineno}: defer_reason が {_fmt(defer_reason)} のとき related_issue は必須です"
             f"（欠落 / null / 空文字は不可）: {_fmt(obj.get('related_issue'))}（SSOT: {SKILL_FIELD_SSOT}）"
         )
 
@@ -609,6 +636,7 @@ def _run_self_test() -> None:
         ("YES", "YES", "high_commented", "727"),
         ("NO", "NO", "medium", None),
         ("NO", "NO", "low_single_file", None),
+        ("NO", "NO", "medium_commented", "815"),  # Issue #815: non-high の既存 Issue 追記完了
     ):
         v, _, _w = check_text(
             _line(q1=q1, q2=q2, defer_reason=reason, related_issue=related_issue) + "\n"
@@ -617,12 +645,17 @@ def _run_self_test() -> None:
         cases += 1
 
     # 異常系: high 相当なのに non-high 用の defer_reason（誤って「優先度不足」と記録される事故）
-    for q1, q2, reason in (
-        ("YES", "NO", "medium"),
-        ("NO", "YES", "low_single_file"),
-        ("YES", "YES", "medium"),
+    # medium_commented は related_issue 必須（違反 12）でもあるため related_issue を明示し、
+    # 違反 11（このテストの検証対象）だけを分離して検証する（違反 12 と混ざると len(v)==1 が崩れる）。
+    for q1, q2, reason, related_issue in (
+        ("YES", "NO", "medium", None),
+        ("NO", "YES", "low_single_file", None),
+        ("YES", "YES", "medium", None),
+        ("YES", "NO", "medium_commented", "815"),  # Issue #815: 非 high 専用値を high に誤用
     ):
-        v, _, _w = check_text(_line(q1=q1, q2=q2, defer_reason=reason) + "\n")
+        v, _, _w = check_text(
+            _line(q1=q1, q2=q2, defer_reason=reason, related_issue=related_issue) + "\n"
+        )
         assert len(v) == 1 and "priority:high 相当（YES）です" in v[0], (
             f"defer_reason 整合性 異常系(high 相当) 失敗({q1},{q2},{reason}): {v}"
         )
@@ -646,33 +679,39 @@ def _run_self_test() -> None:
     assert len(v) == 1 and "q1" in v[0], f"defer_reason 整合性 境界(q1 値域外) 失敗: {v}"
     cases += 1
 
-    # (g-3) Issue #727 フォローアップ（違反 12）: high_commented は related_issue が必須
-    # 正常系: 文字列 / 整数のいずれでも related_issue が非空なら PASS
-    for related_issue in ("660", 660, "L-138"):
-        v, _, _w = check_text(
-            _line(q1="YES", q2="NO", defer_reason="high_commented", related_issue=related_issue) + "\n"
-        )
-        assert v == [], f"high_commented related_issue 正常系 失敗({related_issue!r}): {v}"
-        cases += 1
+    # (g-3) Issue #727 フォローアップ（違反 12・#815 で medium_commented へ拡張）:
+    # high_commented / medium_commented は related_issue が必須
+    # 正常系: 文字列 / 整数のいずれでも related_issue が非空なら PASS（q1/q2 は各 reason の
+    # NOT_HIGH_REASONS / HIGH_REASONS の分類と矛盾しない組み合わせを使う）
+    for reason, q1, q2 in (("high_commented", "YES", "NO"), ("medium_commented", "NO", "NO")):
+        for related_issue in ("660", 660, "L-138"):
+            v, _, _w = check_text(
+                _line(q1=q1, q2=q2, defer_reason=reason, related_issue=related_issue) + "\n"
+            )
+            assert v == [], f"{reason} related_issue 正常系 失敗({related_issue!r}): {v}"
+            cases += 1
 
     # 異常系: 欠落 / null / 空文字 / 空白のみ のいずれも FAIL（「空文字も空とみなす」を実証）
-    missing_related = dict(VALID_RECORD)
-    missing_related.update(q1="YES", q2="NO", defer_reason="high_commented")
-    del missing_related["related_issue"]
-    v, _, _w = check_text(json.dumps(missing_related, ensure_ascii=False) + "\n")
-    assert len(v) == 1 and "related_issue" in v[0] and "必須" in v[0], (
-        f"high_commented related_issue 欠落 失敗: {v}"
-    )
-    cases += 1
-
-    for bad_related in (None, "", "   "):
-        v, _, _w = check_text(
-            _line(q1="YES", q2="NO", defer_reason="high_commented", related_issue=bad_related) + "\n"
-        )
+    for reason, q1, q2 in (("high_commented", "YES", "NO"), ("medium_commented", "NO", "NO")):
+        missing_related = dict(VALID_RECORD)
+        missing_related.update(q1=q1, q2=q2, defer_reason=reason)
+        del missing_related["related_issue"]
+        v, _, _w = check_text(json.dumps(missing_related, ensure_ascii=False) + "\n")
         assert len(v) == 1 and "related_issue" in v[0] and "必須" in v[0], (
-            f"high_commented related_issue 異常系 失敗({bad_related!r}): {v}"
+            f"{reason} related_issue 欠落 失敗: {v}"
         )
         cases += 1
+
+        # 0 / 負数は Issue 番号として無効なので「空」に含める（#824 Layer 1 指摘の fail-open 是正）。
+        # bool は違反 9（型違反）で先に落ちるためここでは扱わない。
+        for bad_related in (None, "", "   ", 0, -1):
+            v, _, _w = check_text(
+                _line(q1=q1, q2=q2, defer_reason=reason, related_issue=bad_related) + "\n"
+            )
+            assert len(v) == 1 and "related_issue" in v[0] and "必須" in v[0], (
+                f"{reason} related_issue 異常系 失敗({bad_related!r}): {v}"
+            )
+            cases += 1
 
     # 境界: defer_reason が値域違反のとき（例: "high"）は違反 12 の検査対象外
     # （related_issue が null でも二重の違反にならず、値域違反 1 件だけが出る）
