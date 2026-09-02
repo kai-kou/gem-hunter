@@ -31,6 +31,19 @@ vi.mock('@/src/composition/container', () => ({
   getRepositoryReadmeUseCase: () => async () => null,
 }))
 
+// Issue #190: 詳細取得のレート制限配線。`app/[locale]/gems/page.test.tsx` と同じ検査方式
+// （配線の順序・条件を返り値の要素ツリーで確かめる。理由は同ファイルの JSDoc を参照）。
+const enforceDetailRateLimitMock = vi.fn<(headers: Headers) => Promise<void>>()
+vi.mock('@/src/composition/rate-limit', () => ({
+  enforceDetailRateLimit: (...args: [Headers]) => enforceDetailRateLimitMock(...args),
+}))
+
+// `headers()` は Workers/Next のリクエストスコープでしか動かないため空の `Headers` を返す。
+// 中身はモックした `enforceDetailRateLimit` が受け取るだけで、判定には使われない。
+vi.mock('next/headers', () => ({
+  headers: async () => new Headers(),
+}))
+
 function renderPage(owner: string, repo: string) {
   return RepositoryDetailPage({
     params: Promise.resolve({ locale: 'ja', owner, repo }),
@@ -63,6 +76,8 @@ beforeEach(() => {
       retryAfter: new Date('2026-08-30T00:00:00Z'),
     }),
   )
+  enforceDetailRateLimitMock.mockReset()
+  enforceDetailRateLimitMock.mockResolvedValue(undefined)
 })
 
 describe('RepositoryDetailPage — showAuthLink の配線（Issue #365 / #549）', () => {
@@ -98,5 +113,51 @@ describe('RepositoryDetailPage — showAuthLink の配線（Issue #365 / #549）
     expect(props.presentation.loginHint).toBeUndefined()
     expect(props.loginHref).toBeUndefined()
     expect(props.loginLabel).toBeUndefined()
+  })
+})
+
+describe('RepositoryDetailPage — 詳細取得のレート制限配線（Issue #190）', () => {
+  it('正常時は enforceDetailRateLimit が 1 回だけ、かつ取得より先に呼ばれる', async () => {
+    getRepositoryDetailMock.mockResolvedValue({
+      fullName: 'facebook/react',
+      htmlUrl: 'https://github.com/facebook/react',
+    })
+
+    await renderPage('facebook', 'react')
+
+    expect(enforceDetailRateLimitMock).toHaveBeenCalledTimes(1)
+    expect(getRepositoryDetailMock).toHaveBeenCalledTimes(1)
+    // 🔴 「重い処理（GitHub API 呼び出し）の前で判定する」という配線の主張そのもの
+    //    （順序が逆だと間引きの意味がない）。
+    expect(enforceDetailRateLimitMock.mock.invocationCallOrder[0]).toBeLessThan(
+      getRepositoryDetailMock.mock.invocationCallOrder[0] as number,
+    )
+  })
+
+  it('超過（RateLimitExceededError）時は取得へ進まず、ローカライズ済みの ErrorNotice を出す', async () => {
+    enforceDetailRateLimitMock.mockRejectedValue(
+      new RateLimitExceededError('rateLimitSecondary', { retryAfterSeconds: 60 }),
+    )
+
+    const tree = await renderPage('facebook', 'react')
+
+    // 詳細取得（getRepositoryDetailUseCase）自体は呼ばれない（レート制限が先に弾く）。
+    expect(getRepositoryDetailMock).not.toHaveBeenCalled()
+    const notice = findByType(tree, ErrorNotice)
+    expect(notice).toBeDefined()
+    const props = notice?.props as { presentation: ErrorPresentation; retryHref?: string }
+    // 一次（`rateLimitPrimary`）と異なる二次レート制限の文言が既存の `toErrorPresentation`
+    // 経由で組み立てられている（新しい表示分岐を増やさず既存のエラー処理へ合流している証拠）。
+    expect(props.presentation.message).toBeDefined()
+    expect(props.presentation.loginHint).toBeUndefined()
+    // 再試行先はいま弾かれた詳細 URL（`US-24`）。
+    expect(props.retryHref).toContain('/repos/facebook/react')
+  })
+
+  it('レート制限以外の例外は握り潰さずそのまま投げ直す', async () => {
+    enforceDetailRateLimitMock.mockRejectedValue(new Error('headers() が使えない実行環境'))
+
+    await expect(renderPage('facebook', 'react')).rejects.toThrow('headers() が使えない実行環境')
+    expect(getRepositoryDetailMock).not.toHaveBeenCalled()
   })
 })
