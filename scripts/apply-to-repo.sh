@@ -381,6 +381,26 @@ copy_path() {
   log "  + $rel"
 }
 
+# --- 3.4 ドリフト検査用スナップショット（copy_path で上書きされる直前の状態を保存・Issue #60）---
+# 「本リポジトリ固有の拡張行が消えていないか」を適用前後で機械判定するため、SYNC_PATHS を
+# 上書きする直前の状態を記録する。保存先は $TMP 配下（trap で EXIT 時に自動削除・リポジトリには
+# コミットされない）。python3 が無い環境ではドリフト検査自体を丸ごとスキップする（fail-closed 側
+# へは倒さない: 適用自体は python3 非依存で完結させたいため、検査省略は §7 完了サマリーで明示する）。
+DRIFT_TOOL="$TARGET/tools/check_apply_base_drift.py"
+DRIFT_SYNC_PATHS_FILE="$TMP/drift_sync_paths.txt"
+DRIFT_SNAPSHOT_DIR="$TMP/drift_pre_sync_snapshot"
+DRIFT_ENABLED=false
+if ! $DRY_RUN && command -v python3 >/dev/null 2>&1 && [ -f "$DRIFT_TOOL" ]; then
+  printf '%s\n' "${SYNC_PATHS[@]}" > "$DRIFT_SYNC_PATHS_FILE"
+  if python3 "$DRIFT_TOOL" snapshot \
+      --repo-root "$TARGET" --paths-file "$DRIFT_SYNC_PATHS_FILE" --out "$DRIFT_SNAPSHOT_DIR" \
+      >/dev/null 2>&1; then
+    DRIFT_ENABLED=true
+  else
+    log "  ⚠ ドリフト検査用スナップショットの取得に失敗しました（検査はスキップします）"
+  fi
+fi
+
 log "── ルール・スキル・ハーネスを同期 ──"
 # modules.yaml は再適用のたびにベース最新版で無条件上書きされるため、事前に退避して
 # 派生側の enabled:false を復元できるようにする（Issue #196）
@@ -392,6 +412,8 @@ fi
 for p in "${SYNC_PATHS[@]}"; do
   copy_path "$p"
 done
+
+DRIFT_RESULT_RC=""  # § 6.7 のドリフト検査（bootstrap 完了後）でセットする
 if [ -n "$MODULES_YAML_BACKUP" ] && [ -f "$TARGET/scripts/merge_modules_yaml.py" ]; then
   if command -v python3 >/dev/null 2>&1; then
     python3 "$TARGET/scripts/merge_modules_yaml.py" "$MODULES_YAML_BACKUP" "$TARGET/modules.yaml"
@@ -463,6 +485,31 @@ else
   [ -x "$TARGET/tools/check_rules_sync.sh" ] && bash "$TARGET/tools/check_rules_sync.sh" --fix || true
 fi
 
+# --- 6.7 ドリフト検査の実行（Issue #60）---
+# 🔴 干渉検証（#725 型の教訓）: 本検査は「§3.4 のスナップショット取得」と「§3 のコピー」という
+# 独立した対策の組み合わせだが、当初は copy_path 直後（bootstrap 実行前）に検査していたところ、
+# 実機（drift_smoke_target での再適用テスト）で **プレースホルダ未置換による大量の偽陽性**
+# （旧ファイルは前回の bootstrap で `example/xxx` 置換済み、新ファイルはベースの雛形プレースホルダの
+# ままのため、両者の差分が「本リポジトリ固有行の消失」と誤判定される）を実測した。
+# そのため本検査は **bootstrap のプレースホルダ置換が完了した後** に実行する（新旧とも
+# 置換済みの状態で比較することで、置換タイミングのズレによる偽陽性を消す）。
+if $DRIFT_ENABLED; then
+  log "── 本リポジトリ固有拡張のドリフト検査 ──"
+  set +e
+  DRIFT_OUTPUT="$(python3 "$DRIFT_TOOL" check \
+    --repo-root "$TARGET" --paths-file "$DRIFT_SYNC_PATHS_FILE" \
+    --snapshot "$DRIFT_SNAPSHOT_DIR" --base-clone "$CLONE_DIR" 2>&1)"
+  DRIFT_RESULT_RC=$?
+  set -e
+  printf '%s\n' "$DRIFT_OUTPUT" | sed 's/^/[apply]   /'
+  case "$DRIFT_RESULT_RC" in
+    0) log "  drift なし: 本リポジトリ固有の拡張行の消失は検出されませんでした" ;;
+    1) log "  ⚠ drift 検出: 本リポジトリ固有の拡張行が消失した可能性があります（上記の出力を確認し、必要なら手動で復元してください）" ;;
+    2) log "  ⚠ 判定不能（fail-closed）: 上流ベースとの突合ができず、削除された行を全件報告しました（上記の出力を確認してください）" ;;
+    *) log "  ⚠ check_apply_base_drift.py が予期しない終了コード（$DRIFT_RESULT_RC）を返しました" ;;
+  esac
+fi
+
 # --- 6.5 同期マーカーの記録（次回のアップデート確認の基準点）---
 json_escape() {  # $1=value → \ と " をエスケープ（--base/--ref の任意文字列が JSON を壊すのを防ぐ）
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
@@ -491,6 +538,16 @@ echo "  - ルール     : docs/rules/ + .claude/rules/（symlink）"
 echo "  - スキル     : .claude/skills/"
 echo "  - ハーネス   : .claude/hooks/ + .claude/settings.json"
 echo "  - エージェント: .claude/agents/ / コマンド: .claude/commands/"
+if $DRIFT_ENABLED; then
+  case "$DRIFT_RESULT_RC" in
+    0) echo "  - ドリフト検査 : drift なし（check_apply_base_drift.py）" ;;
+    1) echo "  - ドリフト検査 : ⚠ drift 検出（本リポジトリ固有の拡張行が消失した可能性。上記の出力を確認してください）" ;;
+    2) echo "  - ドリフト検査 : ⚠ 判定不能（fail-closed・上流ベースと突合できませんでした。上記の出力を確認してください）" ;;
+    *) echo "  - ドリフト検査 : ⚠ 予期しない終了コード（$DRIFT_RESULT_RC）" ;;
+  esac
+else
+  echo "  - ドリフト検査 : スキップ（python3 不在 / --dry-run / スナップショット取得失敗のいずれか）"
+fi
 echo ""
 echo "注意: 配布されたルール・スキル本文中の Issue/PR 番号（例: Issue #123）は"
 echo "      ベース（$BASE_REPO）内部の参照です。このリポジトリの Issue とは無関係です。"
