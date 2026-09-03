@@ -17,6 +17,8 @@
 | 外部 API に認証を足す・トークン種別を変える（レート枠だけでなく取得できるデータの可視範囲が変わる） | `docs/rules/lessons/api-integration.md`（L-128） |
 | 実装をわざと壊す検証（変異テスト）中や **並列委譲で他役が編集している最中** に、意図しない一時状態が commit / push されてしまう・Stop フックがコミットを迫る・**変異を戻す `git checkout --` で未コミットの実装ごと消える** | `docs/rules/lessons/session-safety.md`（L-131 / **L-133**・`tools/mutation_guard.sh`） |
 | 居残りプロセスを `pkill -f` / `pgrep -f` で掃除しようとしている・掃除コマンドを打ったらセッションが `exit 144` で落ちた | `docs/rules/lessons/session-safety.md`（**L-139**・`tools/safe_process_kill.sh`） |
+| auto モードなのに Bash の `grep` 系コマンドで承認プロンプトが出る・自動モードで権限プロンプトが増えた | `docs/rules/lessons/permissions.md`（L-153） |
+| 同趣旨の Stop 差し戻しが `~/.claude/...` と `.claude/hooks/...` の両方から二重に届く | `docs/rules/lessons/cloud-environment.md`（L-154） |
 | PR レビュー・CI 系 | `docs/rules/lessons/pr-review.md` / `ci-cd.md` |
 | その他カテゴリ | `docs/rules/lessons/<category>.md` |
 
