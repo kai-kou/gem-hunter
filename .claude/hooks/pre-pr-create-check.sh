@@ -322,7 +322,7 @@ if [ -f "$repo_root/tools/self_review_check.py" ]; then
     _srx_args=(--pr-body-stdin)
   fi
   if command -v timeout >/dev/null 2>&1; then
-    check_output=$(printf '%s' "$pr_body" | timeout 60 python3 tools/self_review_check.py ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
+    check_output=$(printf '%s' "$pr_body" | timeout 90 python3 tools/self_review_check.py ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
   else
     # macOS 等 timeout 不在環境のフォールバック
     check_output=$(printf '%s' "$pr_body" | python3 tools/self_review_check.py ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
@@ -335,8 +335,10 @@ ${check_output}
 
 Error を修正してから PR 作成を再実行してください（チェックシート: docs/rules/self-review-checklist.md）。"
   elif [ "$check_exit" -ne 0 ]; then
-    # self_review_check.py 自体の異常終了（内部未捕捉例外 exit=2 / 外側 `timeout 60` による
+    # self_review_check.py 自体の異常終了（内部未捕捉例外 exit=2 / 外側 `timeout 90` による
     # プロセス kill exit=124 等）。ブロックはしない（fail-open・無人ルーティンを止めない）が、
+    # ⚠️ ベース（base#508）は exit=124 をブロックへ変更したが、本リポジトリは R-1 ルーティンが
+    # 無人で PR を作るため fail-open + 可視化を維持する（意図的なベースとの分岐）。
     # 従来は check_output が誰にも表示されず握りつぶされていた（SP-1 で実際に発生した事故・
     # content/discussions/sp1-review-retro-20260819）ため可視化する。
     check_output="${check_output}
