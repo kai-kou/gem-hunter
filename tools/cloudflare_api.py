@@ -30,6 +30,8 @@ from typing import Any
 # 一覧取得の既定ページサイズ。#476 以前は退役スクリプトが 100・再トリガースクリプトが 50 と
 # バラついていた（害は無いが共通化にあたり判断が要る）。Cloudflare の一覧系エンドポイントは
 # `per_page` の上限が 100 なので、往復回数が最小になる 100 へ揃える。
+# 実測（2026-09-03 JST・PR #856 Layer 1 セルフレビュー）: 50 から引き上げた側の
+# `GET /accounts/{id}/workers/scripts?per_page=100&page=1` は `success: true` を返す（13 件）。
 CF_PAGE_SIZE = 100
 
 
@@ -40,6 +42,12 @@ def should_fetch_next_page(result_info: dict[str, Any], fetched_count: int, page
     実測（2026-08-20 JST・GET .../versions?per_page=100）: `result_info` はペイロード直下にあり、
     `{"page": 1, "per_page": 100, "count": 35, "total_count": 35}` の形。`total_pages` フィールドは
     無いため `total_count` との比較で継続判定する。
+
+    🔴 **`result_info` の有無はエンドポイントごとに違う**（実測 2026-09-03 JST・PR #856）:
+    `GET .../workers/scripts` は `success: true` でも `result_info` を返さない（キー自体が無い）。
+    その場合は下の fail-safe（`total_count is None` → 打ち切り）に落ちるため、当該エンドポイントは
+    **常に 1 ページ目で打ち切られる = `CF_PAGE_SIZE` が実質の取得上限** になる。ページングが効いて
+    いる前提で読まないこと（100 件超のアカウントが現れたら Cloudflare 側の応答形式を再確認する）。
     """
     if page_item_count == 0:
         return False
@@ -111,6 +119,8 @@ def _self_test() -> int:
         if got != expected:
             failures.append(f"{label}: 期待 {expected} / 実際 {got}")
 
+    # 定数のリグレッションガード。`should_fetch_next_page` のロジックテストではないため、
+    # 関数側をどう変異させてもこの行は落ちない（変異テストの被覆評価で数に入れない）。
     if CF_PAGE_SIZE > 100:
         failures.append(f"CF_PAGE_SIZE={CF_PAGE_SIZE} は Cloudflare の per_page 上限 100 を超えている")
 
