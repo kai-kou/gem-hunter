@@ -32,6 +32,13 @@ export function uniqueGemBadgeKeyword(): string {
  * コンテナになって viewport への伝播が止まり、**この述語は恒久的に成立してしまう**
  * （溢れが復活しても検知できなくなる）。塞ぐのは常に折り返し指定の側で行う。
  *
+ * 🔴 **失敗時のみ**、`getBoundingClientRect().right` が最大の要素（＝溢れの実際の発生源）を DOM 走査で
+ * 特定し、タグ・class・テキストの抜粋・`font-family` / `letter-spacing` の実効値をエラー
+ * メッセージへ含める（Issue #831）。フルスイート実行時にだけ数 px 溢れる再現困難な事例は、
+ * 発生源の要素が分からないと次回の調査が同じ範囲の再実測からやり直しになる。走査は失敗時
+ * にしか実行しないため、本ヘルパーの呼び出し元（`a11y-text-spacing` / `overflow-guard` /
+ * `sp-10` の 3 spec・計 8 箇所）の通常経路には負荷を追加しない。
+ *
  * @param label 失敗時にどの画面での測定かを示す短い語（省略時は測定値だけを出す）
  */
 export async function expectNoHorizontalScroll(page: Page, label?: string): Promise<void> {
@@ -39,12 +46,49 @@ export async function expectNoHorizontalScroll(page: Page, label?: string): Prom
     const el = document.scrollingElement ?? document.documentElement
     return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
   })
-  const detail = JSON.stringify(overflow)
   // +1px は sub-pixel 丸め対策
+  const overflowing = overflow.scrollWidth > overflow.clientWidth + 1
+  const culprit = overflowing ? await findWidestElement(page) : null
+  const detail = JSON.stringify({ ...overflow, culprit })
   expect(
     overflow.scrollWidth,
     label === undefined ? detail : `${label}: ${detail}`,
   ).toBeLessThanOrEqual(overflow.clientWidth + 1)
+}
+
+/**
+ * ページ内で右端（`getBoundingClientRect().right`）が最大の要素を 1 つ特定し、診断情報を返す。
+ * `expectNoHorizontalScroll` の失敗時診断専用（本体を呼ぶたびの通常経路では実行しない）。
+ */
+async function findWidestElement(page: Page): Promise<{
+  selector: string
+  textExcerpt: string
+  right: number
+  fontFamily: string
+  letterSpacing: string
+} | null> {
+  return page.evaluate(() => {
+    let widest: Element | null = null
+    let maxRight = -Infinity
+    for (const el of document.querySelectorAll('body *')) {
+      const rect = el.getBoundingClientRect()
+      if (rect.width > 0 && rect.right > maxRight) {
+        maxRight = rect.right
+        widest = el
+      }
+    }
+    if (widest === null) return null
+    const style = getComputedStyle(widest)
+    const classAttr = widest.getAttribute('class') ?? ''
+    const idAttr = widest.id ? `#${widest.id}` : ''
+    return {
+      selector: `${widest.tagName.toLowerCase()}${idAttr}${classAttr ? `.${classAttr.split(/\s+/).filter(Boolean).join('.')}` : ''}`,
+      textExcerpt: (widest.textContent ?? '').trim().slice(0, 80),
+      right: maxRight,
+      fontFamily: style.fontFamily,
+      letterSpacing: style.letterSpacing,
+    }
+  })
 }
 
 /**

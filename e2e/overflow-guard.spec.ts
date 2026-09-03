@@ -62,4 +62,58 @@ test.describe('横スクロール退行ガード（NFR-15 / SC 1.4.10）', () =>
 
     await expectNoHorizontalScroll(page, '詳細ページ（長い URL 入り description）')
   })
+
+  test('横スクロールを検知した際、診断情報（culprit）に発生源要素の情報が埋まる（#831 回帰ガード）', async ({
+    page,
+  }) => {
+    // `findWidestElement`（helpers.ts）は expectNoHorizontalScroll の失敗時にしか実行されない
+    // 経路のため、このテストが無いと将来の変更で壊れても誰も気づかない。意図的に横溢れを起こす
+    // 要素を注入し、`expectNoHorizontalScroll` が投げる診断情報（culprit）の各フィールドが
+    // 発生源要素を正しく指しているかを検証する。
+    await page.goto('/ja')
+
+    await page.evaluate(() => {
+      const probe = document.createElement('div')
+      probe.id = 'overflow-guard-diagnostic-probe'
+      // 前後・連続空白入りの class 属性（helpers.ts のセレクタ組み立てが空要素を混入させないことも兼ねて検証）
+      probe.className = '  diagnostic-probe   marker  '
+      probe.style.position = 'absolute'
+      probe.style.left = '0'
+      probe.style.top = '0'
+      probe.style.width = '500px'
+      probe.style.height = '1px'
+      document.body.appendChild(probe)
+    })
+
+    let caught: Error | undefined
+    try {
+      await expectNoHorizontalScroll(page, '診断プローブ')
+    } catch (error) {
+      caught = error as Error
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    const message = caught?.message ?? ''
+    // `expect(value, message)` の message は 1 行の JSON（`JSON.stringify` は改行を入れない）。
+    // Playwright がその後ろに Expected/Received 等を追記するため、1 行分だけを正規表現で切り出す。
+    const jsonLine = /\{.*\}/.exec(message)?.[0] ?? ''
+    const detail = JSON.parse(jsonLine) as {
+      culprit: {
+        selector: string
+        textExcerpt: string
+        right: number
+        fontFamily: string
+        letterSpacing: string
+      } | null
+    }
+
+    expect(detail.culprit).not.toBeNull()
+    // セレクタに空 class（連続・前後空白由来）が混入していない（`..` を含まない）ことを確認
+    expect(detail.culprit?.selector).toBe(
+      'div#overflow-guard-diagnostic-probe.diagnostic-probe.marker',
+    )
+    expect(detail.culprit?.right).toBeGreaterThanOrEqual(499)
+    expect(detail.culprit?.fontFamily.length).toBeGreaterThan(0)
+    expect(typeof detail.culprit?.letterSpacing).toBe('string')
+  })
 })
