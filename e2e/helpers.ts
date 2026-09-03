@@ -32,7 +32,7 @@ export function uniqueGemBadgeKeyword(): string {
  * コンテナになって viewport への伝播が止まり、**この述語は恒久的に成立してしまう**
  * （溢れが復活しても検知できなくなる）。塞ぐのは常に折り返し指定の側で行う。
  *
- * 🔴 **失敗時のみ**、`clientWidth` を最初に超えた要素（＝溢れの実際の発生源）を DOM 走査で
+ * 🔴 **失敗時のみ**、`getBoundingClientRect().right` が最大の要素（＝溢れの実際の発生源）を DOM 走査で
  * 特定し、タグ・class・テキストの抜粋・`font-family` / `letter-spacing` の実効値をエラー
  * メッセージへ含める（Issue #831）。フルスイート実行時にだけ数 px 溢れる再現困難な事例は、
  * 発生源の要素が分からないと次回の調査が同じ範囲の再実測からやり直しになる。走査は失敗時
@@ -82,7 +82,7 @@ async function findWidestElement(page: Page): Promise<{
     const classAttr = widest.getAttribute('class') ?? ''
     const idAttr = widest.id ? `#${widest.id}` : ''
     return {
-      selector: `${widest.tagName.toLowerCase()}${idAttr}${classAttr ? `.${classAttr.split(/\s+/).join('.')}` : ''}`,
+      selector: `${widest.tagName.toLowerCase()}${idAttr}${classAttr ? `.${classAttr.split(/\s+/).filter(Boolean).join('.')}` : ''}`,
       textExcerpt: (widest.textContent ?? '').trim().slice(0, 80),
       right: maxRight,
       fontFamily: style.fontFamily,
