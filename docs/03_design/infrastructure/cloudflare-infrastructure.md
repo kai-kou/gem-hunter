@@ -101,8 +101,8 @@ flowchart TB
 | `INF-21` ロールバック | `wrangler rollback` / `wrangler versions deploy` | ✅ |
 | `INF-22` 失敗の通知 | GitHub Actions の失敗通知 | ✅ |
 | `INF-1` 個人情報を保持しない | §9 の設定で満たす。⚠️ アカウント運用ログ（Audit 18 か月等）はアプリの制御外 | ⚠️ 一部のみ |
-| `INF-2` 定常コストをゼロに | Free plan を維持する限り超過は課金ではなく停止（§5） | ⚠️ 実測待ち |
-| `INF-3` 与件の技術スタック | Next.js 16 App Router が動く。⚠️ Free の CPU / バンドル上限に収まるかは実測待ち（§5.3） | ⚠️ 実測待ち |
+| `INF-2` 定常コストをゼロに | Free plan を維持する限り超過は課金ではなく停止（§5） | ❌ **実測により不成立が確定**（本番 p95 CPU 320 ms・§5.3 の実測待ちが解消。§5 のとおり本アカウントは Paid で運用） |
+| `INF-3` 与件の技術スタック | Next.js 16 App Router が動く。Free の CPU / バンドル上限に収まるかは実測済み（§5.3） | ✅ 動作は満たす（Free の上限には収まらず Paid が必要と確定・§5） |
 | `INF-4` 人手の定常運用ゼロ | ブートストラップ以外の定常作業はゼロ（**トークンに TTL を設定しない** ことが条件・§11.3） | ✅ 条件付き |
 | `INF-5` 事業者を決め打たない | §10 の境界（`src/infrastructure/platform/` 限定 + grep 2 本）で機械的に守る | ✅ |
 
@@ -1049,14 +1049,14 @@ Cloudflare を離れるときに **追加で** 破棄・置換するもの。
 | # | 未確認事項 | 潰し方 | 影響 |
 |---|---|---|---|
 | 1 | Next.js 16 + shadcn/ui の Worker バンドルが 3 MB（gzip）に収まるか | `SP-1` で計測（§5.3） | 大（Paid 要否） |
-| 2 | RSC レンダリングの p95 CPU が 10 ms に収まるか | `SP-1` で計測（§5.3） | 大（Paid 要否） |
+| 2 | ~~RSC レンダリングの p95 CPU が 10 ms に収まるか~~ | ✅ **解消済み**（Issue #782・2026-09-03 JST）: 本番 `wrangler tail --format json` 実測で p95 = **320 ms**（n=25・nearest-rank）。Free 上限 10 ms を大幅に超過し **Paid が必須** であることを実測で確定した（詳細は [`roadmap.md`](../../02_requirements/roadmap.md) §3 `M-1` の `D-17` 項目） | 解消済み |
 | 3 | `next-intl` のミドルウェアレス構成が現行版でサポートされるか | `SP-2` 着手前に context7 で一次確認。ダメならルーティングは自作に閉じる | 中 |
 | 4 | Workers invocation log にクライアント IP が含まれるか | 含まれる前提で無効化（設計で回避済み） | 小 |
 | 5 | Rate Limiting binding の課金有無 | 実装直前に料金ページを再確認 | 小 |
 | 6 | `WRANGLER_OUTPUT_FILE_PATH` の `version-upload` エントリのフィールド名 | 初回 CI 実行で確認（主経路にしないので blocking ではない） | 小 |
 | 7 | workers.dev サブドメインの初期登録を非対話で完結できるか | 初回デプロイで確認。失敗したら `H-1` と同時に Dashboard で 1 回設定 | 小 |
 | 8 | GitHub アバターを `?s=N` で出す方式で `NFR-6`（CLS 0.1 以下）を満たせるか | `SP-1`〜`SP-2` で Lighthouse / DevTools により実測 | 中 |
-| 9 | `observability.logs.invocation_logs: false` でも `wrangler tail` がライブログを拾えるか | `SP-5` の補助経路。主経路（`X-Cache-Status`）があるため blocking ではない | 小 |
+| 9 | ~~`observability.logs.invocation_logs: false` でも `wrangler tail` がライブログを拾えるか~~ | ✅ **解消済み**（Issue #782・2026-09-03 JST）: `invocation_logs: false` のままでも `wrangler tail --format json` は本番リクエストのイベント（`cpuTime` 含む）を実際に受信できた。過去の `SP-18`/`SP-19` 実測追記が記した「WebSocket が実行環境のプロキシを通らない」という制約は本セッションの実行環境では再現しなかった（環境個体差の可能性あり） | 解消済み |
 
 ---
 
