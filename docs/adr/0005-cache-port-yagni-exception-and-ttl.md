@@ -19,6 +19,8 @@
 
 ### 2.1. Cache Port は維持する（YAGNI の意図的な例外）
 
+> 🔴 **`InMemoryCache` 単独という部分は [ADR 0016](./0016-cloudflare-cache-api-for-cross-isolate-cache.md) で 2 段構成（`LayeredCache` = `InMemoryCache` + `WorkersCache`）へ改訂済み（2026-09-03）**（`open-questions.md` `D-47`）。**本 ADR 全体が Superseded になったわけではない** — 差し替わったのは L2 の実装だけで、Cache Port の面積・TTL 値・single-flight・`CachingRepositoryQuery` による差し込み方の決定は **本 ADR が正本のまま** である。現行の構成は [Cloudflare インフラ設計](../03_design/infrastructure/cloudflare-infrastructure.md) §4.2 が正本。
+
 `CachePort`（`get` / `set` / `invalidate` + TTL）を撤廃せず維持する。実装は `src/infrastructure/platform/cache.ts` の `InMemoryCache` を使い、**composition root（`src/composition/container.ts`）のモジュールスコープで 1 インスタンスだけ生成し、全リクエストで共有する singleton** にする（関数内で毎回 `new` すると、isolate の生存期間以前にリクエストごとに空の `Map` となり常に `MISS` になるため）。
 
 キャッシュ参照は **`CachingRepositoryQuery`**（`RepositoryQueryPort` を実装するデコレータ・`src/infrastructure/platform/cached-repository-query.ts` に新設）を composition root で合成する形で差し込む。`src/usecases/*` は無改修とし、`CachePort` / `RepositoryQueryPort` のポート面積も広げない。HIT / MISS の呼び出し元への伝達は、デコレータのコンストラクタ引数 `onCacheStatus?: (status: "HIT" | "MISS") => void` コールバックで行う。404（`null`）はキャッシュしない。`invalidate` は本スプリントでは呼び出し箇所を作らない。
@@ -115,7 +117,7 @@
 
 | 代償 | 緩和策 |
 |---|---|
-| `InMemoryCache` は isolate をまたいで永続しない | 本スプリントでは追わない設計判断（[`cloudflare-infrastructure.md`](../03_design/infrastructure/cloudflare-infrastructure.md) §4.2）。将来の格上げ候補として Cache API（`caches.default`）の能動利用を記録するに留める |
+| `InMemoryCache` は isolate をまたいで永続しない | 🔴 **本行の「将来の格上げ候補として記録するに留める」は [ADR 0016](./0016-cloudflare-cache-api-for-cross-isolate-cache.md) で解消済み（2026-09-03・`D-47`）**。Cache API（`caches.default`）の能動利用は **格上げ候補ではなく採用済み** であり、L2 は 2 段構成（`LayeredCache` = `InMemoryCache` + `WorkersCache`）になった。構成の正本は [`cloudflare-infrastructure.md`](../03_design/infrastructure/cloudflare-infrastructure.md) §4.2 |
 | TTL が暫定値で根拠が実測でない | `R-5` 確定後に見直す再決定条件を明記（§3.4） |
 
 ---

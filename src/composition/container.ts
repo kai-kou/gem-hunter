@@ -6,6 +6,8 @@ import { GithubRepositoryQuery } from '../infrastructure/github/github-repositor
 import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
 import { CachingRepositoryQuery } from '../infrastructure/platform/cached-repository-query'
 import { InMemoryCache } from '../infrastructure/platform/cache'
+import { LayeredCache } from '../infrastructure/platform/layered-cache'
+import { WorkersCache, workersCacheStorage } from '../infrastructure/platform/workers-cache'
 import { SystemClock } from '../infrastructure/system-clock'
 import { StaticGemDigest } from '../infrastructure/platform/static-gem-digest'
 import { StaticGemIndex } from '../infrastructure/platform/static-gem-index'
@@ -32,8 +34,12 @@ import { makeSearchRepositories, type SearchRepositories } from '../usecases/sea
  * 逆算の前提・計算は `docs/05_release/repository-publication-review.md` §7.2、決定の記録は
  * `docs/adr/0005-cache-port-yagni-exception-and-ttl.md` §3.4 の追補が正本。
  * 想定利用規模（`D-3`）が変わったら再逆算する。
+ *
+ * 🔴 **export しているのは `LayeredCache` の充填 TTL（`refillTtlSeconds`）の上限根拠だから**
+ * （`layered-cache.ts` の `DEFAULT_REFILL_TTL_SECONDS` JSDoc）。両者が乖離していないことを
+ * `container.test.ts` が機械で固定する（アプリコードからは本ファイル内でしか使わない）。
  */
-const TTL_SEARCH_SECONDS = 60
+export const TTL_SEARCH_SECONDS = 60
 
 /**
  * リポジトリ詳細のキャッシュ TTL（秒）。詳細情報は検索結果より更新頻度が低いと見なし
@@ -57,8 +63,72 @@ export const DAILY_DIGEST_LIMIT = 5
  * 関数内で `new` すると呼び出しのたびに空の `Map` になり常に MISS になるため、
  * モジュール読み込み時（isolate 起動時）に 1 回だけ生成する
  * （whiteboard `content/discussions/sp5-cache-design-20260819/whiteboard.md` round3 決定）。
+ *
+ * ⚠️ Workers は複数 isolate へリクエストを分散するため、これ **だけ** では isolate をまたいで
+ * 共有されない（プレビュー実測で HIT 率 ≒17%・Issue #121）。実行環境が Cache API を
+ * 提供するときは本インスタンスを **1 段目** として残したまま `WorkersCache` を 2 段目に重ね
+ * （`LayeredCache`）、Cache API が無い環境（Vitest / Node / ビルド時）では単独で使う。
  */
-const sharedCache: CachePort = new InMemoryCache(new SystemClock())
+const inMemoryCache: CachePort = new InMemoryCache(new SystemClock())
+
+/**
+ * 実際に使うキャッシュ実装（初回利用時に一度だけ解決する）。
+ *
+ * 🔴 **モジュール評価時ではなく実行時に判定する**: `caches` は Workers 実行環境のグローバルで、
+ * モジュール評価のタイミングによっては未注入でありうる。初回の `get` / `set` まで判定を遅らせる。
+ *
+ * 🔴 **メモ化するのは成功したときだけ（負のメモ化を作らない）**: フォールバック結果まで
+ * 恒久メモ化すると、判定を実行時へ遅らせた狙い（`caches` が後から注入される可能性）が潰れ、
+ * その isolate は生存する限り 2 段目を失う。フォールバック時は毎回やり直し、
+ * `console.warn` だけを 1 回に抑える（毎リクエストのログ氾濫を避ける）。
+ *
+ * 🔴 **Cache API で `InMemoryCache` を「置き換え」ない（2 段構成）**: Cloudflare 公式ドキュメント
+ * には合成 URL をキーにできるかの記載が無く、プレビュー（ダッシュボードエディタ / Playground）
+ * では Cache API 操作が無効と明記されている。置き換えると Cache API が実質 no-op だった場合に
+ * HIT 率が現状より悪化しうるため、2 段（isolate 内 → isolate 跨ぎ）にして
+ * 最悪でも現状維持に留める（根拠の詳細は `LayeredCache` の JSDoc）。
+ */
+let resolvedCache: CachePort | undefined
+
+/** フォールバックの警告を isolate ごと 1 回に抑える（再判定のたびには出さない）。 */
+let warnedCacheFallback = false
+
+function resolveCache(): CachePort {
+  if (resolvedCache) {
+    return resolvedCache
+  }
+  const storage = workersCacheStorage()
+  if (storage) {
+    // 🔴 **成功したときだけメモ化する**（下の JSDoc の「負のメモ化」を作らない）。
+    resolvedCache = new LayeredCache(inMemoryCache, new WorkersCache(storage), {
+      // 🔴 充填 TTL を composition root から明示注入する（`layered-cache.ts` の
+      //    `DEFAULT_REFILL_TTL_SECONDS` は「合わせる先」を JSDoc で宣言しているだけで、
+      //    別ファイルの独立定数なので黙って乖離しうる）。
+      refillTtlSeconds: TTL_SEARCH_SECONDS,
+    })
+    return resolvedCache
+  }
+  // フォールバックを黙って隠さない（`[AssetReader]` / `[rate-limit]` と同じ流儀の console.warn）。
+  // 本番 Workers でこれが出ていたら Cache API の判定が壊れている（isolate 跨ぎの共有が失われる）。
+  if (!warnedCacheFallback) {
+    warnedCacheFallback = true
+    console.warn(
+      '[cache] Cache API が使えないため isolate 内メモリキャッシュへフォールバックします',
+    )
+  }
+  // 🔴 **メモ化しない**（次の呼び出しでもう一度判定する）。
+  return inMemoryCache
+}
+
+/**
+ * 上記の解決を挟むだけの委譲。`CachingRepositoryQuery` から見える面は `CachePort` のまま
+ * （既存の配線・API シグネチャを変えない）。
+ */
+const sharedCache: CachePort = {
+  get: (key) => resolveCache().get(key),
+  set: (key, value, ttlSeconds) => resolveCache().set(key, value, ttlSeconds),
+  invalidate: (key) => resolveCache().invalidate(key),
+}
 
 /**
  * 日次ダイジェスト（`getDailyDigestUseCase`）が読む候補プールの単一インスタンス

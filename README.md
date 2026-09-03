@@ -204,23 +204,24 @@ Gem Index が「説明できる指標」であるためには、順位の母集�
 
 `NFR-32` に対応。技術的意思決定は「なぜその選択をしたか / 何を捨てたか」を [`docs/adr/`](./docs/adr) に ADR として記録する。記録すべき主題の一覧は [PRD §12](./docs/02_requirements/prd.md#12-記録すべき-adr) が正本であり、下表はそこへの索引として、各 ADR の見出しから `ADR NNNN: ` を除いたタイトルを転記したもの（転記漏れ・言い換えによる食い違いは `tools/check_adr_coverage.py` が機械検査する）。
 
-| ADR                                                            | タイトル（各 ADR の見出しから `ADR NNNN: ` を除いて転記）                                              |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| [0001](./docs/adr/0001-ui-stack.md)                            | UI スタックに Tailwind CSS v4 + shadcn/ui（Radix UI 明示指定）を採用する                               |
-| [0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)   | インフラを Cloudflare Workers（`@opennextjs/cloudflare`）に確定し、wrangler CLI を運用の一次経路にする |
-| [0003](./docs/adr/0003-github-app-authentication.md)           | サーバー側の GitHub 認証を GitHub App の installation token にする                                     |
-| [0004](./docs/adr/0004-release-cycle-trunk-based.md)           | リリースサイクルを trunk-based（PR プレビュー + `main` = 本番）に確定し、常設の dev 環境を持たない     |
-| [0005](./docs/adr/0005-cache-port-yagni-exception-and-ttl.md)  | Cache Port を YAGNI の意図的な例外として維持し、TTL 暫定値を確定する                                   |
-| [0006](./docs/adr/0006-nextjs16-app-router.md)                 | Next.js 16 + App Router を採用する                                                                     |
-| [0007](./docs/adr/0007-no-database-client-side-state.md)       | DB を持たない設計原則と、状態をクライアント側へ寄せる判断                                              |
-| [0008](./docs/adr/0008-pagination-over-infinite-scroll.md)     | `FR-7` でページネーションを選び、無限スクロールを採らない                                              |
-| [0009](./docs/adr/0009-hidden-gem-score-definition.md)         | Hidden Gem を「被依存数に対する star の残差」と定義し、既存スコアを再実装しない                        |
-| [0010](./docs/adr/0010-no-token-rotation.md)                   | 複数トークンのローテーションを採用しない                                                               |
-| [0011](./docs/adr/0011-i18n-routing-and-default-locale.md)     | i18n のルーティング設計と既定ロケールを、`next-intl` を不採用として自前実装で確定する                  |
-| [0012](./docs/adr/0012-optional-github-oauth.md)               | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする                                     |
-| [0013](./docs/adr/0013-public-operation-under-github-terms.md) | 第三者へ公開して運用する際の GitHub 利用規約上の立場を確定する                                         |
-| [0014](./docs/adr/0014-zero-query-daily-digest.md)             | キーワード非依存の発見面を日次の有限ダイジェストとして実装する                                         |
-| [0015](./docs/adr/0015-ai-generated-visual-assets.md)          | AI 生成ビジュアルアセットを透過 WebP のまま配信する                                                    |
+| ADR                                                                     | タイトル（各 ADR の見出しから `ADR NNNN: ` を除いて転記）                                              |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [0001](./docs/adr/0001-ui-stack.md)                                     | UI スタックに Tailwind CSS v4 + shadcn/ui（Radix UI 明示指定）を採用する                               |
+| [0002](./docs/adr/0002-cloudflare-workers-infrastructure.md)            | インフラを Cloudflare Workers（`@opennextjs/cloudflare`）に確定し、wrangler CLI を運用の一次経路にする |
+| [0003](./docs/adr/0003-github-app-authentication.md)                    | サーバー側の GitHub 認証を GitHub App の installation token にする                                     |
+| [0004](./docs/adr/0004-release-cycle-trunk-based.md)                    | リリースサイクルを trunk-based（PR プレビュー + `main` = 本番）に確定し、常設の dev 環境を持たない     |
+| [0005](./docs/adr/0005-cache-port-yagni-exception-and-ttl.md)           | Cache Port を YAGNI の意図的な例外として維持し、TTL 暫定値を確定する                                   |
+| [0006](./docs/adr/0006-nextjs16-app-router.md)                          | Next.js 16 + App Router を採用する                                                                     |
+| [0007](./docs/adr/0007-no-database-client-side-state.md)                | DB を持たない設計原則と、状態をクライアント側へ寄せる判断                                              |
+| [0008](./docs/adr/0008-pagination-over-infinite-scroll.md)              | `FR-7` でページネーションを選び、無限スクロールを採らない                                              |
+| [0009](./docs/adr/0009-hidden-gem-score-definition.md)                  | Hidden Gem を「被依存数に対する star の残差」と定義し、既存スコアを再実装しない                        |
+| [0010](./docs/adr/0010-no-token-rotation.md)                            | 複数トークンのローテーションを採用しない                                                               |
+| [0011](./docs/adr/0011-i18n-routing-and-default-locale.md)              | i18n のルーティング設計と既定ロケールを、`next-intl` を不採用として自前実装で確定する                  |
+| [0012](./docs/adr/0012-optional-github-oauth.md)                        | 任意の GitHub OAuth ログインを、与件が対象外とした認証に上乗せする                                     |
+| [0013](./docs/adr/0013-public-operation-under-github-terms.md)          | 第三者へ公開して運用する際の GitHub 利用規約上の立場を確定する                                         |
+| [0014](./docs/adr/0014-zero-query-daily-digest.md)                      | キーワード非依存の発見面を日次の有限ダイジェストとして実装する                                         |
+| [0015](./docs/adr/0015-ai-generated-visual-assets.md)                   | AI 生成ビジュアルアセットを透過 WebP のまま配信する                                                    |
+| [0016](./docs/adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) | Cloudflare Cache API を 2 段目に重ね、isolate を跨いでキャッシュを共有する                             |
 
 ## ライセンスと権利表示
 
