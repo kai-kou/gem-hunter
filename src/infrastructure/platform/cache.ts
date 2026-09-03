@@ -1,6 +1,7 @@
 import type { CacheKey, CachePort } from '../../domain/ports/cache-port'
 import type { ClockPort } from '../../domain/ports/clock-port'
 import { SystemClock } from '../system-clock'
+import { assertPositiveTtlSeconds } from './ttl'
 
 type Entry = {
   readonly value: unknown
@@ -33,11 +34,7 @@ export class InMemoryCache implements CachePort {
   }
 
   async set<T>(key: CacheKey, value: T, ttlSeconds: number): Promise<void> {
-    if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
-      throw new RangeError(
-        `ttlSeconds は正の有限数である必要があります（受け取った値: ${ttlSeconds}）`,
-      )
-    }
+    assertPositiveTtlSeconds(ttlSeconds)
     this.store.set(key, { value, expiresAt: this.clock.now().getTime() + ttlSeconds * 1000 })
   }
 

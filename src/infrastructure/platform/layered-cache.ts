@@ -1,4 +1,5 @@
 import type { CacheKey, CachePort } from '../../domain/ports/cache-port'
+import { assertPositiveTtlSeconds } from './ttl'
 
 /**
  * secondary HIT のときに primary へ充填する TTL（秒）の既定値。
@@ -31,12 +32,13 @@ export const DEFAULT_REFILL_TTL_SECONDS = 60
  * ② **ダッシュボードエディタ / Playground のプレビューでは Cache API 操作が無効（no impact）**、
  * ③ `*.workers.dev` での動作可否が明示されていない、という未確定要因がある。
  * Cache API で `InMemoryCache` を **置き換える** と、Cache API が実質 no-op だった場合に
- * HIT 率が現状（プレビュー実測 ≒17%）から **0% へ悪化しうる**。2 段にすれば
+ * HIT 率が現状（ADR 0016 §1.1 の起票時点の実測）から **0% へ悪化しうる**。2 段にすれば
  * 最悪でも現状維持（primary だけが効く）で、変化は片方向の改善に限定される。
  *
  * 契約（`cache-port.ts`）の遵守:
  * - `get` は throw しない（どちらの層の失敗も `null` / フォールバックへ倒す）
- * - `set` の `RangeError`（TTL 値域外）は **呼び出し側へ伝播** させる（fail-open を作らない）
+ * - `set` の `RangeError`（TTL 値域外）は **自身の先頭で検証して伝播** させる（fail-open も、
+ *   片方の層にだけ書かれる非対称も作らない）
  * - `invalidate` は片方が throw してももう片方を実行し、自身は throw しない（冪等）
  */
 export class LayeredCache implements CachePort {
@@ -48,13 +50,9 @@ export class LayeredCache implements CachePort {
     options: { refillTtlSeconds?: number } = {},
   ) {
     const refillTtlSeconds = options.refillTtlSeconds ?? DEFAULT_REFILL_TTL_SECONDS
-    if (!Number.isFinite(refillTtlSeconds) || refillTtlSeconds <= 0) {
-      // 充填は `get` の中で行うため、ここで弾かないと「毎回 RangeError が握り潰されて
-      // 充填だけ静かに効かない」状態になる（生成時に落とす）。
-      throw new RangeError(
-        `refillTtlSeconds は正の有限数である必要があります（受け取った値: ${refillTtlSeconds}）`,
-      )
-    }
+    // 充填は `get` の中で行うため、ここで弾かないと「毎回 RangeError が握り潰されて
+    // 充填だけ静かに効かない」状態になる（生成時に落とす）。
+    assertPositiveTtlSeconds(refillTtlSeconds, 'refillTtlSeconds')
     this.refillTtlSeconds = refillTtlSeconds
   }
 
@@ -81,14 +79,22 @@ export class LayeredCache implements CachePort {
   }
 
   async set<T>(key: CacheKey, value: T, ttlSeconds: number): Promise<void> {
-    // 🔴 primary の `set` は try で包まない。TTL 値域外の `RangeError` をここで握ると
-    //    fail-open（黙って無期限保持・黙って未保存）になる。
-    await this.primary.set(key, value, ttlSeconds)
+    // 🔴 **TTL 検証は層へ委ねず自分の先頭で行う**（`assertPositiveTtlSeconds` は 3 実装の共通関数）。
+    //    層に委ねると「primary は受理したが secondary だけ RangeError → その例外が下の catch に
+    //    握り潰されて **primary にだけ書かれる非対称**」が無音で起きる。ここで弾けば
+    //    「どちらの層にも書かれない」で確定する（fail-open も非対称も作らない）。
+    assertPositiveTtlSeconds(ttlSeconds)
+    // TTL 以外の理由（層の内部障害）で片方が throw しても、もう片方の書き込みは活かす。
+    // キャッシュ書き込みの失敗でリクエスト本体を壊さない。
+    try {
+      await this.primary.set(key, value, ttlSeconds)
+    } catch {
+      // primary へ書けなくても secondary には書ける（次の isolate が HIT できる）。
+    }
     try {
       await this.secondary.set(key, value, ttlSeconds)
     } catch {
       // secondary へ書けなくても primary には書けている（isolate 内では HIT する）。
-      // キャッシュ書き込みの失敗でリクエスト本体を壊さない。
     }
   }
 

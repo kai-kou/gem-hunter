@@ -2,7 +2,10 @@ import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { DEFAULT_REFILL_TTL_SECONDS } from '../infrastructure/platform/layered-cache'
+import { fakeCacheStorage } from '../infrastructure/platform/workers-cache.test-fake'
 import {
+  TTL_SEARCH_SECONDS,
   getRepositoryDetailUseCase,
   lookupGemIndexes,
   searchRepositoriesUseCase,
@@ -16,6 +19,34 @@ import {
  * キャッシュ衝突を避ける（`app/api/search/route.test.ts` と同じ方針）。
  */
 const emptySearchResponse = { total_count: 0, incomplete_results: false, items: [] }
+
+/**
+ * `items` を 1 件持つ検索レスポンス（Issue #121 のキャッシュ経路テスト用）。
+ *
+ * 🔴 **`pushed_at` を持たせるのが要点**: マッパーはこれを `RepositorySummary.lastPushedAt`
+ * （`Date`）へ写すため、キャッシュ往復で `Date` が壊れる欠陥（JSON 直列化で ISO 文字列に
+ * 化ける）を戻り値の型で検知できる。空 `items` のレスポンスでは検知できない。
+ */
+const searchResponseWithOneItem = {
+  total_count: 1,
+  incomplete_results: false,
+  items: [
+    {
+      id: 10270250,
+      name: 'react',
+      full_name: 'facebook/react',
+      html_url: 'https://github.com/facebook/react',
+      description: 'The library for web and native user interfaces.',
+      language: 'JavaScript',
+      stargazers_count: 233000,
+      updated_at: '2026-08-18T09:00:00Z',
+      pushed_at: '2026-08-15T03:00:00Z',
+      private: false,
+      topics: ['javascript', 'react'],
+      owner: { login: 'facebook', avatar_url: 'https://avatars.githubusercontent.com/u/69631?v=4' },
+    },
+  ],
+}
 const detailFixture = {
   id: 1,
   name: 'octo-token-check',
@@ -181,33 +212,14 @@ describe('lookupGemIndexes — Gem バッジ判定材料の照会（SP-18）', (
 describe('sharedCache の実装選択（Cache API の有無・Issue #121）', () => {
   type CachesGlobal = { caches?: unknown }
 
-  /** `caches.default` の fake（呼び出しを記録する。終了値の差し替えだけにしない）。 */
-  function fakeCacheApi() {
-    const entries = new Map<string, string>()
-    const puts: string[] = []
-    const matches: string[] = []
-    const deletes: string[] = []
-    return {
-      puts,
-      matches,
-      deletes,
-      default: {
-        async put(request: Request, response: Response): Promise<void> {
-          puts.push(request.url)
-          entries.set(request.url, await response.text())
-        },
-        async match(request: Request): Promise<Response | undefined> {
-          matches.push(request.url)
-          const body = entries.get(request.url)
-          return body === undefined ? undefined : new Response(body)
-        },
-        async delete(request: Request): Promise<boolean> {
-          deletes.push(request.url)
-          return entries.delete(request.url)
-        },
-      },
-    }
-  }
+  /**
+   * `caches.default` の fake は `workers-cache.test.ts` と **同じ実装を共有する**
+   * （`workers-cache.test-fake.ts`）。
+   *
+   * 🔴 以前ここに置いていた自前の fake は `Cache-Control` を一切見ない劣化コピーで、
+   * `max-age` の計算を壊す変異が container 側では緑のまま通っていた（PR #874 レビュー F9）。
+   * 共有 fake は `max-age` を解釈して期限判定するため、TTL 経過で MISS になることも試せる。
+   */
 
   const originalCachesDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'caches')
 
@@ -218,13 +230,20 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
     vi.stubEnv('GITHUB_APP_PRIVATE_KEY_PKCS8', '')
   }
 
-  /** 上流 GitHub 検索 API のハンドラを張り、呼ばれた回数を返す。 */
+  /**
+   * 上流 GitHub 検索 API のハンドラを張り、呼ばれた回数を返す。
+   *
+   * 🔴 既定で **`items` を 1 件返す**（`pushed_at` 付き）。空配列を返していると
+   * `WorkersCache.get` を `return {} as T` に潰す変異でも「上流呼び出し回数」と
+   * `X-Cache-Status` だけは一致してしまい、2 段目 HIT が壊れていることを検知できない
+   * （`Date` が ISO 文字列へ化ける欠陥もここをすり抜けた・PR #874 レビュー F8）。
+   */
   function countUpstreamSearchCalls(): { get count(): number } {
     let calls = 0
     server.use(
       http.get('https://api.github.com/search/repositories', () => {
         calls += 1
-        return HttpResponse.json(emptySearchResponse)
+        return HttpResponse.json(searchResponseWithOneItem)
       }),
     )
     return {
@@ -246,8 +265,8 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
 
   it('caches.default が使える環境では 2 段目（Cache API）へ実際に put / match する', async () => {
     stubGithubAppEnvEmpty()
-    const fake = fakeCacheApi()
-    ;(globalThis as CachesGlobal).caches = { default: fake.default }
+    const fake = fakeCacheStorage()
+    ;(globalThis as CachesGlobal).caches = { default: fake.storage }
     vi.resetModules()
     const container = await import('./container')
     const upstream = countUpstreamSearchCalls()
@@ -261,7 +280,7 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
     // 1 段目（isolate 内メモリ）が MISS したので 2 段目が引かれ、両段へ書かれる。
     expect(fake.matches).toHaveLength(1)
     expect(fake.puts).toHaveLength(1)
-    expect(fake.puts[0]).toMatch(/^https:\/\/cache\.gem-hunter\.internal\//)
+    expect(fake.puts[0]!.url).toMatch(/^https:\/\/cache\.gem-hunter\.internal\//)
 
     const second = container.searchRepositoriesWithCacheStatus()
     await second.search({ keyword })
@@ -276,9 +295,45 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
     stubGithubAppEnvEmpty()
     // fake は同一インスタンスのまま、container だけ読み込み直す
     // （= isolate 内メモリは空・Cache API のエントリは残っている状況を再現する）。
-    const fake = fakeCacheApi()
-    ;(globalThis as CachesGlobal).caches = { default: fake.default }
+    const fake = fakeCacheStorage()
+    ;(globalThis as CachesGlobal).caches = { default: fake.storage }
     const keyword = 'container-cache-cross-isolate'
+
+    vi.resetModules()
+    const containerA = await import('./container')
+    const upstream = countUpstreamSearchCalls()
+    const first = await containerA.searchRepositoriesUseCase()({ keyword })
+    expect(upstream.count).toBe(1)
+
+    vi.resetModules()
+    const containerB = await import('./container')
+    const cached = containerB.searchRepositoriesWithCacheStatus()
+    const second = await cached.search({ keyword })
+
+    expect(cached.getCacheStatus()).toBe('HIT')
+    // 上流 API は増えない（Cache API 経由で別 isolate へ引き継がれた）
+    expect(upstream.count).toBe(1)
+    expect(fake.matches).toHaveLength(2)
+
+    // 🔴 **戻り値そのものを突き合わせる**（PR #874 レビュー F8）。`X-Cache-Status` と
+    //    上流呼び出し回数だけを見ていると、2 段目が壊れた値（`{}` や ISO 文字列化した
+    //    `Date`）を返していても全緑になる。
+    expect(second.totalCount).toBe(first.totalCount)
+    expect(second.items).toHaveLength(first.items.length)
+    expect(second.items[0]!.fullName).toBe(first.items[0]!.fullName)
+    expect(second.items[0]!.stars).toBe(first.items[0]!.stars)
+    // 🔴 `Date` は JSON 往復で復元されない。`instanceof` と実値の両方を見る
+    //    （`toEqual` だけだと ISO 文字列との差を見逃す場合がある）。
+    expect(second.items[0]!.lastPushedAt).toBeInstanceOf(Date)
+    expect(second.items[0]!.lastPushedAt.getTime()).toBe(first.items[0]!.lastPushedAt.getTime())
+    expect(second.items[0]!.lastPushedAt.getTime()).toBe(Date.parse('2026-08-15T03:00:00Z'))
+  })
+
+  it('2 段目のエントリも TTL で失効する（別 isolate でも TTL 経過後は MISS）', async () => {
+    stubGithubAppEnvEmpty()
+    const fake = fakeCacheStorage()
+    ;(globalThis as CachesGlobal).caches = { default: fake.storage }
+    const keyword = 'container-cache-secondary-ttl'
 
     vi.resetModules()
     const containerA = await import('./container')
@@ -286,15 +341,16 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
     await containerA.searchRepositoriesUseCase()({ keyword })
     expect(upstream.count).toBe(1)
 
+    // 検索 TTL（60 秒）を跨がせる。fake は `Cache-Control: max-age` を解釈して期限判定する。
+    fake.advance((TTL_SEARCH_SECONDS + 1) * 1000)
+
     vi.resetModules()
     const containerB = await import('./container')
-    const second = containerB.searchRepositoriesWithCacheStatus()
-    await second.search({ keyword })
+    const cached = containerB.searchRepositoriesWithCacheStatus()
+    await cached.search({ keyword })
 
-    expect(second.getCacheStatus()).toBe('HIT')
-    // 上流 API は増えない（Cache API 経由で別 isolate へ引き継がれた）
-    expect(upstream.count).toBe(1)
-    expect(fake.matches).toHaveLength(2)
+    expect(cached.getCacheStatus()).toBe('MISS')
+    expect(upstream.count).toBe(2)
   })
 
   it('caches が無い環境では InMemoryCache へフォールバックし、console.warn で表明する', async () => {
@@ -350,13 +406,13 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
 
   it('実装の判定は初回利用時の 1 回だけで、2 回目以降は再判定しない（メモ化）', async () => {
     stubGithubAppEnvEmpty()
-    const fake = fakeCacheApi()
+    const fake = fakeCacheStorage()
     let cachesAccesses = 0
     Object.defineProperty(globalThis, 'caches', {
       configurable: true,
       get() {
         cachesAccesses += 1
-        return { default: fake.default }
+        return { default: fake.storage }
       },
     })
     vi.resetModules()
@@ -369,5 +425,39 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
     // `set` / `get` が複数回走っても、`globalThis.caches` を読むのは初回解決の 1 度だけ。
     expect(cachesAccesses).toBe(1)
     expect(fake.matches.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('Cache API が使えないときは判定をメモ化しない（後から注入されたら 2 段目を使う）', async () => {
+    stubGithubAppEnvEmpty()
+    delete (globalThis as CachesGlobal).caches
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      vi.resetModules()
+      const container = await import('./container')
+      const upstream = countUpstreamSearchCalls()
+
+      // 1 回目: `caches` が無いのでフォールバック（2 段目は無い）。
+      await container.searchRepositoriesUseCase()({ keyword: 'container-cache-late-inject-1' })
+
+      // 🔴 実行環境が後から `caches` を注入する（判定を実行時へ遅らせた狙い）。
+      const fake = fakeCacheStorage()
+      ;(globalThis as CachesGlobal).caches = { default: fake.storage }
+      await container.searchRepositoriesUseCase()({ keyword: 'container-cache-late-inject-2' })
+
+      // フォールバック結果までメモ化していると、この isolate は永久に 2 段目を失う。
+      expect(fake.puts.length).toBeGreaterThanOrEqual(1)
+      expect(upstream.count).toBe(2)
+      // 警告は毎回ではなく 1 回だけ（ログ氾濫を避ける）。
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('LayeredCache の充填 TTL は検索 TTL（TTL_SEARCH_SECONDS）を超えない', () => {
+    // 🔴 `container.ts` が `refillTtlSeconds: TTL_SEARCH_SECONDS` を明示注入している前提の
+    //    上限ガード（PR #874 レビュー F6 / F10）。既定値が検索 TTL より長くなると、充填した
+    //    primary のコピーが「今 secondary へ新規に書いた場合の寿命」を超えて生き残る。
+    expect(DEFAULT_REFILL_TTL_SECONDS).toBeLessThanOrEqual(TTL_SEARCH_SECONDS)
   })
 })

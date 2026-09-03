@@ -112,9 +112,10 @@ describe('LayeredCache', () => {
 
       await expect(cache.get(testKey('k'))).resolves.toBe('from-secondary')
       expect(secondary.gets).toEqual(['k'])
-      expect(primary.sets).toEqual([
-        { key: 'k', value: 'from-secondary', ttlSeconds: DEFAULT_REFILL_TTL_SECONDS },
-      ])
+      // 🔴 期待値に実装側の定数（`DEFAULT_REFILL_TTL_SECONDS`）を使わない
+      //    （`testing-strategy.md` §7 / Issue #154: 自己参照トートロジーになり、定数を
+      //    どんな値へ変えてもテストが緑のまま通る）。既定値そのものをリテラルで固定する。
+      expect(primary.sets).toEqual([{ key: 'k', value: 'from-secondary', ttlSeconds: 60 }])
     })
 
     it('充填後は同じ isolate の次の get で secondary を引かない', async () => {
@@ -224,6 +225,26 @@ describe('LayeredCache', () => {
       await expect(cache.set(testKey('k'), 'v', 60)).resolves.toBeUndefined()
     })
 
+    it('primary が RangeError 以外で throw しても set は解決し、secondary には書けている', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      primary.failSetWith(new Error('primary set failed'))
+      const cache = new LayeredCache(primary.port, secondary.port)
+
+      await expect(cache.set(testKey('k'), 'v', 60)).resolves.toBeUndefined()
+      expect(secondary.store.get('k')).toBe('v')
+    })
+
+    it('primary が同期 throw しても secondary へは書かれる', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      primary.failSynchronously()
+      const cache = new LayeredCache(primary.port, secondary.port)
+
+      await expect(cache.set(testKey('k'), 'v', 60)).resolves.toBeUndefined()
+      expect(secondary.store.get('k')).toBe('v')
+    })
+
     describe('TTL 入力検証（fail-open を作らない）', () => {
       it.each([
         ['NaN', Number.NaN],
@@ -238,6 +259,10 @@ describe('LayeredCache', () => {
           const cache = new LayeredCache(primary.port, secondary.port)
 
           await expect(cache.set(testKey('k'), 'v', ttl)).rejects.toThrow(RangeError)
+          // 🔴 **どちらの層も呼ばれない**（LayeredCache 自身が先頭で検証する）。層に委ねると
+          //    「primary は受理・secondary だけ RangeError → catch で握り潰されて片側だけ書かれる」
+          //    という非対称が無音で起きる（PR #874 レビュー F7）。
+          expect(primary.sets).toEqual([])
           expect(primary.store.has('k')).toBe(false)
           expect(secondary.sets).toEqual([])
         },
@@ -294,6 +319,16 @@ describe('LayeredCache', () => {
 
       await expect(cache.invalidate(testKey('missing'))).resolves.toBeUndefined()
       await expect(cache.invalidate(testKey('missing'))).resolves.toBeUndefined()
+    })
+  })
+
+  describe('既定の充填 TTL', () => {
+    it('container.ts の TTL_SEARCH_SECONDS（60 秒）を超えない', () => {
+      // 超えると「充填したコピーが、その値を今 secondary へ新規に書いた場合の寿命より長生きする」
+      // ことになる（`DEFAULT_REFILL_TTL_SECONDS` の JSDoc が置いた前提が崩れる）。
+      // 実際の注入は `container.ts` が行い、両者の一致は `container.test.ts` が固定する。
+      expect(DEFAULT_REFILL_TTL_SECONDS).toBeLessThanOrEqual(60)
+      expect(DEFAULT_REFILL_TTL_SECONDS).toBeGreaterThan(0)
     })
   })
 

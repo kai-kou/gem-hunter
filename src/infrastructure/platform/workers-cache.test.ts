@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { CacheKey } from '../../domain/ports/cache-port'
 import {
@@ -6,8 +6,8 @@ import {
   WorkersCache,
   cacheKeyToRequest,
   workersCacheStorage,
-  type WorkersCacheStorage,
 } from './workers-cache'
+import { fakeCacheStorage } from './workers-cache.test-fake'
 
 /**
  * `WorkersCache` はキーの意味論を持たない（生成関数は `cache-key.ts` の責務）ため、
@@ -15,86 +15,6 @@ import {
  */
 function testKey(raw: string): CacheKey {
   return raw as CacheKey
-}
-
-type PutRecord = {
-  readonly url: string
-  readonly method: string
-  readonly cacheControl: string | null
-  readonly body: string
-}
-
-/**
- * `caches.default` の fake。
- *
- * 🔴 終了値を差し替えるだけの fake にしない（`sprint-development-rules.md` `SD-2` / #710）:
- * `put` / `match` / `delete` が **実際に受け取った `Request` の URL と `Cache-Control`** を
- * 記録し、テスト側で assert できるようにする。TTL は `Cache-Control: max-age` を fake が
- * 解釈して期限判定するので、実装が誤った max-age を書けばテストが落ちる。
- */
-function fakeCacheStorage(initialMs = 0) {
-  let now = initialMs
-  const entries = new Map<string, { body: string; expiresAt: number }>()
-  const puts: PutRecord[] = []
-  const matches: string[] = []
-  const deletes: string[] = []
-  let throwOnMatch: Error | undefined
-  let throwOnPut: Error | undefined
-  let throwOnDelete: Error | undefined
-
-  const storage: WorkersCacheStorage = {
-    async put(request: Request, response: Response): Promise<void> {
-      if (throwOnPut) throw throwOnPut
-      const cacheControl = response.headers.get('Cache-Control')
-      const body = await response.text()
-      puts.push({ url: request.url, method: request.method, cacheControl, body })
-      const maxAge = /max-age=(\d+)/.exec(cacheControl ?? '')
-      if (!maxAge) {
-        // max-age が無いレスポンスは保存しない（実装が TTL を書き忘れたら HIT しなくなる）
-        return
-      }
-      entries.set(request.url, { body, expiresAt: now + Number(maxAge[1]) * 1000 })
-    },
-    async match(request: Request): Promise<Response | undefined> {
-      if (throwOnMatch) throw throwOnMatch
-      matches.push(request.url)
-      const entry = entries.get(request.url)
-      if (!entry) return undefined
-      if (entry.expiresAt <= now) {
-        entries.delete(request.url)
-        return undefined
-      }
-      return new Response(entry.body)
-    },
-    async delete(request: Request): Promise<boolean> {
-      if (throwOnDelete) throw throwOnDelete
-      deletes.push(request.url)
-      return entries.delete(request.url)
-    },
-  }
-
-  return {
-    storage,
-    puts,
-    matches,
-    deletes,
-    advance(ms: number) {
-      now += ms
-    },
-    failMatchWith(error: Error) {
-      throwOnMatch = error
-    },
-    failPutWith(error: Error) {
-      throwOnPut = error
-    },
-    failDeleteWith(error: Error) {
-      throwOnDelete = error
-    },
-    /** Cache API が壊れた JSON を返す状況（他者が書いた・スキーマが変わった等）を作る */
-    seedRaw(url: string, body: string, ttlSeconds: number) {
-      entries.set(url, { body, expiresAt: now + ttlSeconds * 1000 })
-    },
-  }
 }
 
 describe('cacheKeyToRequest', () => {
@@ -274,6 +194,11 @@ describe('WorkersCache', () => {
     it.each([
       ['文字列本文', '"just a string"'],
       ['数値本文', '42'],
+      // 🔴 `ok` マーカーが無いと、`typeof === 'object'` を通過して `.value === undefined` になり
+      //    「MISS」ではなく「undefined を保存済み」として HIT 扱いされる（PR #874 レビュー F2）。
+      ['value を持たないオブジェクト本文', '{"foo":1}'],
+      ['配列本文', '[]'],
+      ['ok が false の本文', '{"ok":false,"value":1}'],
     ])('保存されている本文が想定の封筒形でなければ null を返す（%s）', async (_label, body) => {
       const fake = fakeCacheStorage()
       fake.seedRaw(cacheKeyToRequest(testKey('k')).url, body, 60)
@@ -303,6 +228,168 @@ describe('WorkersCache', () => {
       const cache = new WorkersCache(fake.storage)
       await expect(cache.invalidate(testKey('k'))).resolves.toBeUndefined()
     })
+  })
+})
+
+describe('WorkersCache — Date の往復（JSON では復元されない・PR #874 F1）', () => {
+  it('Date を含む値を往復させても Date のまま返る（ISO 文字列に化けない）', async () => {
+    const fake = fakeCacheStorage()
+    const cache = new WorkersCache(fake.storage)
+    const lastPushedAt = new Date('2026-08-15T03:00:00.000Z')
+
+    await cache.set(testKey('d'), { items: [{ fullName: 'a/b', lastPushedAt }] }, 60)
+    const got = await cache.get<{ items: { fullName: string; lastPushedAt: Date }[] }>(testKey('d'))
+
+    // 🔴 `toEqual` だけでは ISO 文字列と Date を区別できない場合があるため、型と値を個別に見る。
+    expect(got?.items[0]?.lastPushedAt).toBeInstanceOf(Date)
+    expect(got?.items[0]?.lastPushedAt.getTime()).toBe(lastPushedAt.getTime())
+    expect(got?.items[0]?.fullName).toBe('a/b')
+  })
+
+  it('トップレベルが Date でも往復する', async () => {
+    const fake = fakeCacheStorage()
+    const cache = new WorkersCache(fake.storage)
+    const date = new Date('2026-01-02T03:04:05.000Z')
+
+    await cache.set(testKey('top'), date, 60)
+    const got = await cache.get<Date>(testKey('top'))
+
+    expect(got).toBeInstanceOf(Date)
+    expect(got?.getTime()).toBe(date.getTime())
+  })
+
+  it('Invalid Date は null になり、同じ値の他のフィールドは失われない（set 全体を壊さない）', async () => {
+    const fake = fakeCacheStorage()
+    const cache = new WorkersCache(fake.storage)
+
+    await expect(
+      cache.set(testKey('bad'), { name: 'x', at: new Date('not a date') }, 60),
+    ).resolves.toBeUndefined()
+    // 直列化が失敗して put ごと落ちていないこと（＝エントリが書かれている）
+    expect(fake.puts).toHaveLength(1)
+    await expect(cache.get(testKey('bad'))).resolves.toEqual({ name: 'x', at: null })
+  })
+
+  it('Date を含まない値の往復は素の JSON と同じ（余計なタグを混ぜない）', async () => {
+    const fake = fakeCacheStorage()
+    const cache = new WorkersCache(fake.storage)
+
+    await cache.set(testKey('plain'), { a: 1, b: [true, 'x', null] }, 60)
+
+    expect(fake.puts[0]!.body).toBe('{"ok":true,"value":{"a":1,"b":[true,"x",null]}}')
+    await expect(cache.get(testKey('plain'))).resolves.toEqual({ a: 1, b: [true, 'x', null] })
+  })
+})
+
+describe('WorkersCache — max-age の値域（不正な delta-seconds を書かない・PR #874 F3）', () => {
+  it.each([
+    ['1e21（指数表記に化ける値）', 1e21],
+    ['2 ** 31（32bit 境界）', 2 ** 31],
+    ['Number.MAX_SAFE_INTEGER', Number.MAX_SAFE_INTEGER],
+  ])('%s でも Cache-Control は max-age=<整数> になる', async (_label, ttl) => {
+    const fake = fakeCacheStorage()
+    const cache = new WorkersCache(fake.storage)
+
+    await cache.set(testKey('k'), 'v', ttl)
+
+    // 🔴 `max-age=1e+21` は RFC 9111 の delta-seconds として不正（受け側の解釈が実装依存になる）。
+    expect(fake.puts[0]!.cacheControl).toMatch(/^max-age=\d+$/)
+    // 上限（1 年）でクランプされていること
+    expect(Number(/^max-age=(\d+)$/.exec(fake.puts[0]!.cacheControl ?? '')?.[1])).toBe(31_536_000)
+    // 実際に保存され、HIT すること（fake は不正な max-age を保存しない）
+    await expect(cache.get(testKey('k'))).resolves.toBe('v')
+  })
+
+  it('上限以下の TTL はそのまま書く（一律クランプではない）', async () => {
+    const fake = fakeCacheStorage()
+    const cache = new WorkersCache(fake.storage)
+    await cache.set(testKey('k'), 'v', 3600)
+    expect(fake.puts[0]!.cacheControl).toBe('max-age=3600')
+  })
+})
+
+describe('WorkersCache — Cache API の失敗を無音にしない（PR #874 F4）', () => {
+  it('put が失敗したら警告する。2 回失敗しても警告は 1 回だけ（isolate ごとに抑制）', async () => {
+    const fake = fakeCacheStorage()
+    fake.failPutWith(new Error('cache put failed'))
+    const cache = new WorkersCache(fake.storage)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await cache.set(testKey('search:v2:secret-keyword'), 'secret-value', 60)
+      await cache.set(testKey('search:v2:another-keyword'), 'secret-value', 60)
+
+      expect(warn).toHaveBeenCalledTimes(1)
+      const [message, error] = warn.mock.calls[0]!
+      expect(String(message)).toContain('[cache]')
+      expect(String(message)).toContain('put')
+      // 🔴 キー・値はログに出さない（キーは検索語を含み、値は API レスポンス本体）。
+      expect(String(message)).not.toContain('secret-keyword')
+      expect(String(message)).not.toContain('secret-value')
+      expect(error).toBeInstanceOf(Error)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('match が失敗したら警告する。2 回失敗しても警告は 1 回だけ', async () => {
+    const fake = fakeCacheStorage()
+    fake.failMatchWith(new Error('cache unavailable'))
+    const cache = new WorkersCache(fake.storage)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await expect(cache.get(testKey('a'))).resolves.toBeNull()
+      await expect(cache.get(testKey('b'))).resolves.toBeNull()
+
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('match')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('put と match は別々に 1 回ずつ警告する（片方の抑制が他方を巻き込まない）', async () => {
+    const fake = fakeCacheStorage()
+    fake.failPutWith(new Error('put failed'))
+    fake.failMatchWith(new Error('match failed'))
+    const cache = new WorkersCache(fake.storage)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await cache.set(testKey('a'), 'v', 60)
+      await cache.get(testKey('a'))
+
+      expect(warn).toHaveBeenCalledTimes(2)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('直列化できない値（循環参照）では警告しない（Cache API の障害ではない）', async () => {
+    const fake = fakeCacheStorage()
+    const cache = new WorkersCache(fake.storage)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const circular: { self?: unknown } = {}
+      circular.self = circular
+      await expect(cache.set(testKey('k'), circular, 60)).resolves.toBeUndefined()
+
+      expect(warn).not.toHaveBeenCalled()
+      expect(fake.puts).toHaveLength(0)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('本文が壊れているだけでは警告しない（Cache API は生きている）', async () => {
+    const fake = fakeCacheStorage()
+    fake.seedRaw(cacheKeyToRequest(testKey('k')).url, 'not json', 60)
+    const cache = new WorkersCache(fake.storage)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await expect(cache.get(testKey('k'))).resolves.toBeNull()
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

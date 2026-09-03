@@ -64,8 +64,12 @@ IMPORT_RE = re.compile(
 )
 
 # 事業者固有バインディング（Cloudflare）— 触ってよいのは src/infrastructure/platform/ だけ
+# 🔴 `caches.default` は Cloudflare Workers 固有のグローバル（Web 標準の CacheStorage は
+#    `default` を持たない）。Issue #121 で 2 段目キャッシュとして導入したので、`app/` や
+#    `src/composition/` へ直接書かれたら ARCH-4 として弾く（PR #874 レビュー F12）。
 VENDOR_BINDING_RE = re.compile(
-    r"\bgetCloudflareContext\b|\bcloudflare:workers\b|\benv\.(?:KV|R2|D1|CACHE|IMAGES|RATE_LIMITER|ASSETS)\b"
+    r"\bgetCloudflareContext\b|\bcloudflare:workers\b|\bcaches\.default\b"
+    r"|\benv\.(?:KV|R2|D1|CACHE|IMAGES|RATE_LIMITER|ASSETS)\b"
 )
 # GitHub API・GitHub 認証情報 — 触ってよいのは src/infrastructure/github/（認証は platform/ も可）
 GITHUB_ACCESS_RE = re.compile(
@@ -376,6 +380,14 @@ CASES: list[tuple[str, str, int, int]] = [
     ("src/infrastructure/cache/kv.ts", "const c = getCloudflareContext()\n", 1, 0),
     ("app/api/x/route.ts", "const v = env.KV\n", 1, 0),
     ("src/ui/list.tsx", "const v = env.KV // arch-ok\n", 1, 0),
+    # ARCH-4: `caches.default`（Cloudflare 固有のグローバル・Issue #121 / PR #874）
+    ("src/infrastructure/platform/workers-cache.ts", "const s = caches.default\n", 0, 0),
+    ("src/composition/container.ts", "await caches.default.match(request)\n", 1, 0),
+    ("app/api/search/route.ts", "const c = caches.default\n", 1, 0),
+    ("src/ui/list.tsx", "await caches.default.put(req, res) // arch-ok\n", 1, 0),
+    # 近接する別物は誤検知しない（Web 標準の CacheStorage・自前の変数名）
+    ("src/composition/container.ts", "await caches.open('v1')\n", 0, 0),
+    ("src/composition/container.ts", "const d = myCaches.defaults\n", 0, 0),
     # 配置（Warning）
     ("src/services/gem-index.ts", "export const x = 1\n", 0, 1),
     ("src/env.d.ts", "declare const x: number\n", 0, 0),
