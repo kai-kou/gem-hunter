@@ -226,13 +226,13 @@
 {"date": "2026-09-03 JST", "title": "ドキュメントが『実装の型として参照せよ』と名指ししたシンボルの実在と実体を機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 660}
 {"date": "2026-09-03 JST", "title": "コンテナ・ワーカー再起動でもサブエージェント結果が失われる（PreCompact 以外の喪失経路）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 702}
 {"date": "2026-09-03 JST", "title": "Layer 1 の観点別メトリクス（指摘発生率・再実行率・所要時間）を残す", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 375}
-{"date": "2026-09-03 JST", "title": "exceededCpu 未発火の切り分け（cpuTime と判定対象の関係・limits の反映確認）", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 860}
+{"date": "2026-09-03 JST", "title": "exceededCpu 未発火（cpuTime が CPU 時間の上限 limits.cpu_ms を超えても判定されない）の切り分け", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 860}
 {"date": "2026-09-03 JST", "title": "Sprint Goal 必須と Closes 禁止ゲートの衝突を spec で統合する", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 833}
-{"date": "2026-09-03 JST", "title": "設定ファイルのコメントと設計ドキュメントの desync を機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 762}
+{"date": "2026-09-03 JST", "title": "実装変更で利用側に残る説明が無効化される desync を機械検査する（設定ファイルのコメント ↔ 設計ドキュメントの実例を PR #859 で確認）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 762}
 {"date": "2026-09-03 JST", "title": "CSS 変数の自己参照・間接サイクルを検知する検査ツールを新設する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 858}
 {"date": "2026-09-03 JST", "title": "フルスイート時だけ 2px 溢れるメカニズムの検証設計（複合条件で再現を狙う）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 831}
-{"date": "2026-09-03 JST", "title": "E2E と Lighthouse を変更対象別に絞る（フル実行 2 回で 7〜8 分）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 851}
+{"date": "2026-09-03 JST", "title": "E2E と Lighthouse を変更対象別に絞る（フル実行 2 回で 7〜8 分）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
 {"date": "2026-09-03 JST", "title": "初期雛形から一度も検証されていない設定を定期的に洗い出すレーンを作る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-03 JST", "title": "本番ドリフト検査（Step 0.2）の実行結果を Issue コメントか Slack に記録して可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-03 JST", "title": "実測値の SSOT 参照チェーンが 3 段以上に伸びていないかを機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-03 JST", "title": "cpuTime 実測スナップショットを content/analytics へ蓄積し p95 の推移を追えるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-03 JST", "title": "本番ドリフト検査（Step 0.2）の実行結果を Issue コメントか Slack に記録して可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 626}
+{"date": "2026-09-03 JST", "title": "実測値の SSOT 参照チェーンが 3 段以上に伸びていないかを機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 396}
+{"date": "2026-09-03 JST", "title": "cpuTime 実測スナップショット（Workers の CPU 時間・p95）を content/analytics へ蓄積し推移を追えるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 340}
