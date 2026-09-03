@@ -49,6 +49,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -517,7 +518,10 @@ def _test_run_loop_reject_gate() -> int:
     def fake_run_checker(text: str, checker_cmd: list[str], workdir: Path, timeout: int = 30) -> tuple[bool, str]:
         return False, "always fail (self-test stub)"
 
-    tmp_buffer = Path(tempfile.mktemp(suffix=".jsonl"))
+    # tempfile.mktemp は生成と使用の間に競合の余地がある（CodeQL py/insecure-temporary-file）。
+    # 専用ディレクトリを掘って、その中のパスを使う（作成はテスト対象の append_rejected が行う）。
+    tmp_dir = Path(tempfile.mkdtemp(prefix="run_body_loop_selftest_"))
+    tmp_buffer = tmp_dir / "rejected.jsonl"
     module = sys.modules[__name__]
     try:
         with mock.patch.object(module, "call_claude_text", side_effect=fake_call_claude_text), mock.patch.object(
@@ -553,7 +557,7 @@ def _test_run_loop_reject_gate() -> int:
             print(f"FAIL: rejected buffer record missing expected reason, got {buffered[-1]}")
             failed += 1
     finally:
-        tmp_buffer.unlink(missing_ok=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return failed
 
@@ -586,7 +590,9 @@ def self_test() -> int:
         pass
 
     # load_recent_rejected: k<=0 は空、壊れた/非dict行はスキップ
-    tmp_path = Path(tempfile.mktemp(suffix=".jsonl"))
+    # 同上（CodeQL py/insecure-temporary-file）。専用ディレクトリ配下のパスを使う。
+    tmp_path_dir = Path(tempfile.mkdtemp(prefix="run_body_loop_selftest_"))
+    tmp_path = tmp_path_dir / "rejected.jsonl"
     try:
         append_rejected(tmp_path, {"skill": "s", "reason": "r1"})
         append_rejected(tmp_path, {"skill": "s", "reason": "r2"})
@@ -605,7 +611,7 @@ def self_test() -> int:
             print(f"FAIL: load_recent_rejected k=1, got {loaded_k1}")
             failed += 1
     finally:
-        tmp_path.unlink(missing_ok=True)
+        shutil.rmtree(tmp_path_dir, ignore_errors=True)
 
     # build_edit_prompt: rejected-edit buffer の内容が次の提案プロンプトへ埋め込まれること
     train_results = {"results": [{"input_text": "in", "output_text": "out", "pass": False, "checker_output": "ng"}]}
