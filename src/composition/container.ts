@@ -6,6 +6,8 @@ import { GithubRepositoryQuery } from '../infrastructure/github/github-repositor
 import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
 import { CachingRepositoryQuery } from '../infrastructure/platform/cached-repository-query'
 import { InMemoryCache } from '../infrastructure/platform/cache'
+import { LayeredCache } from '../infrastructure/platform/layered-cache'
+import { WorkersCache, workersCacheStorage } from '../infrastructure/platform/workers-cache'
 import { SystemClock } from '../infrastructure/system-clock'
 import { StaticGemDigest } from '../infrastructure/platform/static-gem-digest'
 import { StaticGemIndex } from '../infrastructure/platform/static-gem-index'
@@ -57,8 +59,55 @@ export const DAILY_DIGEST_LIMIT = 5
  * 関数内で `new` すると呼び出しのたびに空の `Map` になり常に MISS になるため、
  * モジュール読み込み時（isolate 起動時）に 1 回だけ生成する
  * （whiteboard `content/discussions/sp5-cache-design-20260819/whiteboard.md` round3 決定）。
+ *
+ * ⚠️ Workers は複数 isolate へリクエストを分散するため、これ **だけ** では isolate をまたいで
+ * 共有されない（プレビュー実測で HIT 率 ≒17%・Issue #121）。実行環境が Cache API を
+ * 提供するときは本インスタンスを **1 段目** として残したまま `WorkersCache` を 2 段目に重ね
+ * （`LayeredCache`）、Cache API が無い環境（Vitest / Node / ビルド時）では単独で使う。
  */
-const sharedCache: CachePort = new InMemoryCache(new SystemClock())
+const inMemoryCache: CachePort = new InMemoryCache(new SystemClock())
+
+/**
+ * 実際に使うキャッシュ実装（初回利用時に一度だけ解決する）。
+ *
+ * 🔴 **モジュール評価時ではなく実行時に判定する**: `caches` は Workers 実行環境のグローバルで、
+ * モジュール評価のタイミングによっては未注入でありうる。初回の `get` / `set` まで判定を遅らせる。
+ *
+ * 🔴 **Cache API で `InMemoryCache` を「置き換え」ない（2 段構成）**: Cloudflare 公式ドキュメント
+ * には合成 URL をキーにできるかの記載が無く、プレビュー（ダッシュボードエディタ / Playground）
+ * では Cache API 操作が無効と明記されている。置き換えると Cache API が実質 no-op だった場合に
+ * HIT 率が現状より悪化しうるため、2 段（isolate 内 → isolate 跨ぎ）にして
+ * 最悪でも現状維持に留める（根拠の詳細は `LayeredCache` の JSDoc）。
+ */
+let resolvedCache: CachePort | undefined
+
+function resolveCache(): CachePort {
+  if (resolvedCache) {
+    return resolvedCache
+  }
+  const storage = workersCacheStorage()
+  if (storage) {
+    resolvedCache = new LayeredCache(inMemoryCache, new WorkersCache(storage))
+  } else {
+    // フォールバックを黙って隠さない（`[AssetReader]` / `[rate-limit]` と同じ流儀の console.warn）。
+    // 本番 Workers でこれが出ていたら Cache API の判定が壊れている（isolate 跨ぎの共有が失われる）。
+    console.warn(
+      '[cache] Cache API が使えないため isolate 内メモリキャッシュへフォールバックします',
+    )
+    resolvedCache = inMemoryCache
+  }
+  return resolvedCache
+}
+
+/**
+ * 上記の解決を挟むだけの委譲。`CachingRepositoryQuery` から見える面は `CachePort` のまま
+ * （既存の配線・API シグネチャを変えない）。
+ */
+const sharedCache: CachePort = {
+  get: (key) => resolveCache().get(key),
+  set: (key, value, ttlSeconds) => resolveCache().set(key, value, ttlSeconds),
+  invalidate: (key) => resolveCache().invalidate(key),
+}
 
 /**
  * 日次ダイジェスト（`getDailyDigestUseCase`）が読む候補プールの単一インスタンス
