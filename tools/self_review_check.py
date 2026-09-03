@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -1534,6 +1535,91 @@ def _self_test_sprint_pr_closes_wiring() -> list[str]:
     return failures
 
 
+
+def _self_test_self_test_target_selection() -> list[str]:
+    """self_test_errors() の対象判定（base#508 + PR #867 の絞り込み）を検証する。
+
+    変異テスト: `if "__main__" not in text: continue` を削除すると 1-b が FAIL する。
+    `if not f.endswith(".py")` 相当の拡張子判定を緩めると 1-c が FAIL する。
+    """
+    failures: list[str] = []
+    tmp_dir = Path(tempfile.mkdtemp(prefix="self_review_selftest_"))
+    try:
+        tools_dir = tmp_dir / "tools"
+        tools_dir.mkdir()
+        # 1-a: 正ケース（--self-test を実装し、__main__ を持つ）→ 実行され、失敗が Error になる
+        (tools_dir / "failing_tool.py").write_text(
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    if "--self-test" in sys.argv:\n'
+            '        sys.exit(1)\n',
+            encoding="utf-8",
+        )
+        # 1-b: 負ケース（境界の外側）: --self-test を docstring で *言及* するだけのライブラリ。
+        #      実行しても何も検証されないので、対象に含めてはならない
+        #      実体は「単体実行すると失敗しうるライブラリ」（相対 import 等）で、誤って対象化すると
+        #      無関係な Error で PR 作成をブロックする（fail-closed の誤検知）
+        (tools_dir / "library_only.py").write_text(
+            '"""定数だけを持つ。振る舞いは呼び出し側の `--self-test` が検証する。"""\n'
+            'from .helpers import VALUE  # 単体実行では ImportError になる（パッケージ前提）\n',
+            encoding="utf-8",
+        )
+        # 1-c: 負ケース: 拡張子が .py でない（.py.bak）→ 対象外
+        (tools_dir / "failing_tool.py.bak").write_text(
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    if "--self-test" in sys.argv:\n'
+            '        sys.exit(1)\n',
+            encoding="utf-8",
+        )
+        cwd = os.getcwd()
+        os.chdir(tmp_dir)
+        try:
+            errs = self_test_errors([
+                "tools/failing_tool.py",
+                "tools/library_only.py",
+                "tools/failing_tool.py.bak",
+                "tools/deleted_tool.py",  # 差分にあるが実体が無い（削除）→ 落ちずに無視されること
+            ])
+        finally:
+            os.chdir(cwd)
+        joined = " / ".join(errs)
+        if not any("failing_tool.py" in e for e in errs):
+            failures.append(f"1-a: --self-test 実装済みツールの失敗を検出できていない: {joined}")
+        if any("library_only.py" in e for e in errs):
+            failures.append(f"1-b: 文字列を含むだけのライブラリを対象にしてしまった: {joined}")
+        if any(".py.bak" in e for e in errs):
+            failures.append(f"1-c: .py 以外を対象にしてしまった: {joined}")
+        if any("deleted_tool.py" in e for e in errs):
+            failures.append(f"1-d: 実体が無いパスでエラーを出してしまった: {joined}")
+
+        # 1-e: 自己除外（self_review_check.py 自身は docstring に "--self-test" を含むため、
+        #      除外しないとサブプロセスとして自分を再帰起動する）
+        os.chdir(Path(__file__).resolve().parent.parent)
+        try:
+            self_rel = str(Path(__file__).resolve().relative_to(Path.cwd()))
+            self_errs = self_test_errors([self_rel])
+        finally:
+            os.chdir(cwd)
+        if self_errs:
+            failures.append(f"1-e: 自分自身を対象にしてしまった: {self_errs}")
+
+        # 2: 実行時間予算を使い切ったら「未実行」として Error に積む（黙って素通りさせない）
+        os.chdir(tmp_dir)
+        saved_budget = globals()["SELF_TEST_BUDGET_SECONDS"]
+        globals()["SELF_TEST_BUDGET_SECONDS"] = -1  # 開始直後に予算超過とみなす
+        try:
+            budget_errs = self_test_errors(["tools/failing_tool.py"])
+        finally:
+            globals()["SELF_TEST_BUDGET_SECONDS"] = saved_budget
+            os.chdir(cwd)
+        if not any("未実行" in e for e in budget_errs):
+            failures.append(f"2: 予算超過時に『未実行』を報告していない: {budget_errs}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return failures
+
+
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
@@ -1553,6 +1639,7 @@ def run_self_test() -> int:
         ("Closes 検出の main() 配線（exit code 通貫・PR #772）", _self_test_sprint_pr_closes_wiring),
         ("スタイル変更検出（#698）", _self_test_style_change_detection),
         ("変異テスト記録リマインド（#698）", _self_test_mutation_test_record_warning),
+        ("--self-test 対象判定（base#508 / PR #867）", _self_test_self_test_target_selection),
     ]
     failed_groups = 0
     total_failures = 0
@@ -1570,6 +1657,99 @@ def run_self_test() -> int:
         return 1
     print(f"セルフテスト: {len(groups)} グループ全て PASS")
     return 0
+
+
+
+# ⚠️ 本リポジトリでは同じ self-test が二重に走る（PR #867 Layer 1 指摘）。`tools/run_checks.sh`
+# （PR 作成前に必須・予算は 1 チェックあたり既定 300 秒）が `check_selftest_wiring.py` の配線検査
+# 込みで全 `--self-test` を実行しており、ここでの実行はその早期検知を目的とした重複である。
+# 予算が桁違い（こちらは 1 ツール 15 秒・合計 40 秒）なので、**run_checks.sh では緑だった重い
+# self-test がここでだけタイムアウトし PR 作成をブロックしうる**。その場合は self-test を速くするのが
+# 本筋だが、急ぐときは `SELF_REVIEW_SELFTEST=warn` で非ブロック化できる。
+# pre-pr-create-check.sh は self_review_check.py プロセス全体を外側 timeout 90 秒で包む。
+# ツール単体に近い秒数を許すと合計が外側予算を超え、timeout コマンドが exit=124 で
+# プロセスごと強制終了する（本リポジトリのフックは 124 を fail-open で可視化する運用のため、
+# ここでの自制が主防衛線になる）。
+SELF_TEST_PER_TOOL_TIMEOUT = 15
+SELF_TEST_BUDGET_SECONDS = 40
+
+
+def self_test_errors(files: list[str]) -> list[str]:
+    """差分に含まれる --self-test 対応ツールを実行し、失敗を Error として返す（base#508）。
+
+    対象判定はソース内の "--self-test" 文字列の有無で機械的に拾う（ハードコードの
+    許可リストを持たないため、新設ツールが自動的に対象へ加わる）。差分に該当ツールが
+    無ければ何も実行しない（既存 PR の所要時間を増やさない）。
+
+    本ファイル自身はこの docstring 内にも "--self-test" 文字列を含むため、対象判定に
+    そのまま乗せると自分自身をサブプロセスとして再帰起動し無限にハングする。ファイル
+    パスで自己除外する。
+
+    対象はさらに、解決後の実パスが tools/ または scripts/ の実体配下にあるものに限定する
+    （シンボリックリンク経由でリポジトリ外の任意ファイルを実行させない）。
+    """
+    errs: list[str] = []
+    repo_root = Path(".").resolve()
+    self_path = Path(__file__).resolve()
+    allowed_dirs = (repo_root / "tools", repo_root / "scripts")
+
+    def _is_allowed(path: Path) -> bool:
+        for d in allowed_dirs:
+            try:
+                if path.is_relative_to(d):
+                    return True
+            except AttributeError:  # pragma: no cover - Python 3.8 互換フォールバック
+                try:
+                    path.relative_to(d)
+                    return True
+                except ValueError:
+                    pass
+        return False
+
+    targets = [
+        f for f in files
+        if (f.startswith("tools/") or f.startswith("scripts/")) and f.endswith(".py")
+        and Path(f).resolve() != self_path
+        and _is_allowed(Path(f).resolve())
+    ]
+
+    started = time.monotonic()
+    for f in targets:
+        elapsed = time.monotonic() - started
+        if elapsed > SELF_TEST_BUDGET_SECONDS:
+            errs.append(
+                f"--self-test 未実行: {f}（PR 前ゲートの実行時間予算 {SELF_TEST_BUDGET_SECONDS}秒を"
+                f"超過。ローカルで `python3 {f} --self-test` を確認してから再度 PR 作成してください）"
+            )
+            continue
+        try:
+            text = Path(f).read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        if "--self-test" not in text:
+            continue
+        # 🔴 文字列 "--self-test" を含むだけのファイルを対象にしない（PR #867 Layer 1 指摘）。
+        # 実例: tools/pr_meta_patterns.py は定数とファクトリだけのライブラリで、docstring で
+        # 「振る舞いは呼び出し側の `--self-test` が検証する」と *他ファイルの* self-test に言及して
+        # いるだけ。エントリポイントが無いため `python3 <file> --self-test` は何も検証せず exit=0 で
+        # 終わり、予算だけ消費したうえで「self-test 済み」という誤った安心感を与える（vacuous pass）。
+        if "__main__" not in text:
+            continue
+        remaining = max(1, int(SELF_TEST_BUDGET_SECONDS - elapsed))
+        per_call_timeout = min(SELF_TEST_PER_TOOL_TIMEOUT, remaining)
+        try:
+            proc = sh([sys.executable, f, "--self-test"], timeout=per_call_timeout)
+        except subprocess.TimeoutExpired:
+            errs.append(f"--self-test タイムアウト: {f}（{per_call_timeout}秒超）")
+            continue
+        except Exception as e:  # noqa: BLE001 - サブプロセス起動失敗等もフェイルオープンさせない
+            errs.append(f"--self-test 実行エラー: {f}: {e}")
+            continue
+        if proc.returncode != 0:
+            tail = (proc.stderr or proc.stdout or "").strip().splitlines()
+            detail = tail[-1] if tail else "(出力なし)"
+            errs.append(f"--self-test 失敗: {f}（exit={proc.returncode}）: {detail[:200]}")
+    return errs
 
 
 def main(pr_body: str | None = None) -> int:
@@ -1629,6 +1809,15 @@ def main(pr_body: str | None = None) -> int:
                         warnings.append(entry)
             except Exception as e:  # noqa: BLE001
                 warnings.append(f"危険パターン検査でエラー: {f}: {e}")
+
+    # --self-test を持つツールの自動実行（base#508・PR 作成前ゲート）
+    # SELF_REVIEW_SELFTEST=warn で Error を非ブロック化する逃げ道を用意
+    # （SELF_REVIEW_SECURITY と同じパターン。フレークな self-test 調査中の一時回避用）。
+    selftest_findings = self_test_errors(files)
+    if os.environ.get("SELF_REVIEW_SELFTEST", "block").lower() == "warn":
+        warnings.extend(selftest_findings)
+    else:
+        errors.extend(selftest_findings)
 
     # TDD コミット順序 / 縦切り(3層) / C-5 検査（whiteboard sprint-cycle-design-20260818 確定内容）
     tdd_errors, tdd_warnings = tdd_and_sprint_checks(files)

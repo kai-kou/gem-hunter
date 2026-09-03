@@ -399,6 +399,13 @@ else
   skip_check "self-test 配線検査 (check_selftest_wiring.py)" "スクリプトが見つかりません"
 fi
 
+# 4.10.6. 3 方向マージヘルパの self-test（base#500・apply-base の同期で衝突マーカー・JSON 壊れを出さない担保）
+if [ -f "$REPO_ROOT/tools/merge_three_way.py" ]; then
+  run_check "3 方向マージ self-test (merge_three_way.py --self-test)" python3 tools/merge_three_way.py --self-test
+else
+  skip_check "3 方向マージ self-test (merge_three_way.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 4.11. 正規表現リテラルの重複検査（Issue #612・コピーの再発防止）
 if [ -f "$REPO_ROOT/tools/check_duplicate_source_patterns.py" ]; then
   run_check "正規表現重複検査 (check_duplicate_source_patterns.py --strict)" python3 tools/check_duplicate_source_patterns.py --strict

@@ -18,12 +18,7 @@ Claude Code Scheduled Tasks は同時実行制御機能を持たないため、�
 | 6. アイデンティティベース所有判定（#47） | PR 本文の `Session-Id:` トレーラーで自 PR を決定論的に識別し `--mine` で責任継続（時間経過・圧縮後も見失わない） | レビューフェーズ（自スコープ） |
 | 7. `status:blocked` 解除の扱い + 着手前再チェック（#306） | 解除は着手表明とみなし同時に `in-progress` を付与（着手しないなら `waiting-claude` + コメント明記）。レイヤー 3 の重複チェックを PR 作成直前だけでなく実装着手前にも前倒しする | `blocked` 解除時・実装着手直前 |
 
-**二面モデル**: 自スコープ（レイヤー6・`--mine`＝自セッション作成 PR を責任持ってマージまで進める）と他保護（レイヤー5・`--actionable-only`＝他セッションの現役 PR に触れない安全網）。
-
-```bash
-python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json   # 自 PR で要対応のものだけ
-python3 tools/check_pending_pr_reviews.py --actionable-only --json         # 他セッション保護込みの全体ビュー
-```
+**二面モデル**: 自スコープ（レイヤー6・`--mine`＝自セッション作成 PR を責任持ってマージまで進める）と他保護（レイヤー5・`--actionable-only`＝他セッションの現役 PR に触れない安全網）。実行コマンドは `pr-review-flow-summary.md`「セッション復帰（PR 放置検出）」を参照（重複掲載しない）。
 
 > **PR 作成時の必須事項**: PR 本文に `Session-Id: $CLAUDE_CODE_SESSION_ID` を必ず記載する（`--mine` 所有判定の前提・`session-sprint-rules.md` §2）。
 
