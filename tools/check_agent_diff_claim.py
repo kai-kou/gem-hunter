@@ -275,21 +275,55 @@ def parse_diff_stat(output: str) -> set[str]:
     return files
 
 
-def get_real_diff_files(root: Path) -> dict:
+# `git diff --stat` の省略を抑止するための幅指定（Issue #850 の一次対策）。
+# `--stat=<width>,<name-width>` を明示すると端末幅・`git config` に依存せずパスが省略されなくなる。
+# 二次対策（`.../` を後段で解決する `normalize_abbreviated_paths()`）は、この指定が効かない
+# git 実装・過去に生成済みの出力を食わせた場合の受け皿として残す（多層防御）。
+STAT_WIDTH = 4096
+STAT_NAME_WIDTH = 4000
+
+
+def _stat_arg() -> str:
+    return f"--stat={STAT_WIDTH},{STAT_NAME_WIDTH}"
+
+
+def get_real_diff_files(root: Path, *, runner=subprocess.run) -> dict:  # noqa: ANN001
+    """作業ツリーの実差分ファイル一覧を集める。
+
+    `runner` は `normalize_abbreviated_paths()` が `.../` 解決のために呼ぶ `git ls-files` へ
+    転送される（self-test で実 git に依存せず検証するための差し替え口）。
+    """
     status_out = run_git(["status", "--short"], root)
-    diff_out = run_git(["diff", "--stat"], root)
-    cached_out = run_git(["diff", "--cached", "--stat"], root)
+    diff_out = run_git(["diff", _stat_arg()], root)
+    cached_out = run_git(["diff", "--cached", _stat_arg()], root)
     files: set[str] = set()
     files |= parse_status_short(status_out)
     files |= parse_diff_stat(diff_out)
     files |= parse_diff_stat(cached_out)
+    # Issue #850: `git diff --stat` は長いパスを `.../` で省略しうる。省略パスと完全パスが
+    # 同じ集合に混ざると同一ファイルが 2 件に数えられ、片方が `missing_from_report`
+    # （報告漏れ＝より重い警告）へ落ちて偽陽性になる。集合比較の前段でここを解決する。
+    files, unresolved = git_diff_utils.normalize_abbreviated_paths(
+        files, repo_root=root, runner=runner
+    )
     return {
         "files": files,
+        "unresolved": unresolved,
         "raw": {"status": status_out, "diff_stat": diff_out, "diff_cached_stat": cached_out},
     }
 
 
-def compare(claimed: set[str], real: set[str]) -> dict:
+def compare(
+    claimed: set[str],
+    real: set[str],
+    unresolved: set[str] | None = None,
+) -> dict:
+    """報告と実 diff を突き合わせる。
+
+    `unresolved`（Issue #850）は「`.../` 省略パスを一意に解決できなかった」もの。
+    どの実ファイルを指すか確定できない以上、報告漏れとも虚偽報告とも判定できないため
+    **`mismatch` には混ぜず**、警告として報告だけする（黙って捨てない）。
+    """
     missing_from_diff = sorted(claimed - real)
     missing_from_report = sorted(real - claimed)
     return {
@@ -297,6 +331,7 @@ def compare(claimed: set[str], real: set[str]) -> dict:
         "real": sorted(real),
         "missing_from_diff": missing_from_diff,
         "missing_from_report": missing_from_report,
+        "unresolved": sorted(unresolved or set()),
         "mismatch": bool(missing_from_diff or missing_from_report),
     }
 
@@ -312,6 +347,10 @@ def print_report(result: dict) -> None:
     if result["missing_from_report"]:
         print("❌ 実 diff にあるが報告に無い（報告漏れ・親が見落としやすい方向・より重い）:")
         for f in result["missing_from_report"]:
+            print(f"    - {f}")
+    if result.get("unresolved"):
+        print("⚠️  省略パス（.../）を一意に解決できませんでした（mismatch 判定には含めていません）:")
+        for f in result["unresolved"]:
             print(f"    - {f}")
     if not result["mismatch"]:
         print("✅ 報告と実 diff は一致")
@@ -675,9 +714,9 @@ def run_self_test() -> int:
         _wiring_calls.append((args, cwd))
         if args == ["status", "--short"]:
             return " M tools/wiring_marker.py\n"
-        if args == ["diff", "--stat"]:
+        if args == ["diff", _stat_arg()]:
             return ""
-        if args == ["diff", "--cached", "--stat"]:
+        if args == ["diff", "--cached", _stat_arg()]:
             return ""
         return ""
 
@@ -695,10 +734,83 @@ def run_self_test() -> int:
         and _wiring_calls
         == [
             (["status", "--short"], fake_root),
-            (["diff", "--stat"], fake_root),
-            (["diff", "--cached", "--stat"], fake_root),
+            (["diff", _stat_arg()], fake_root),
+            (["diff", "--cached", _stat_arg()], fake_root),
         ],
         f"result={wiring_result} calls={_wiring_calls}",
+    )
+
+    # #850 一次対策: `--stat` を素のまま渡すと端末幅・git config 次第でパスが `.../` 省略される。
+    # 幅指定を落とす変異（`_stat_arg()` → `"--stat"`）を検知するため、書式そのものを固定する。
+    _diff_args = [a for a, _ in _wiring_calls if a and a[0] == "diff"]
+    check(
+        "get_real_diff_files() が --stat=<width>,<name-width> で省略を抑止している（#850 一次対策）",
+        bool(_diff_args)
+        and all(any(x.startswith("--stat=") for x in a) for a in _diff_args)
+        and _stat_arg() == f"--stat={STAT_WIDTH},{STAT_NAME_WIDTH}"
+        and STAT_NAME_WIDTH >= 1000,
+        f"diff_args={_diff_args}",
+    )
+
+    # ── #850: `.../` 省略パスと完全パスの混在が同一ファイル 2 件に増えないこと（end-to-end）──
+    _full = "docs/03_design/infrastructure/cloudflare-infrastructure.md"
+
+    def _fake_abbrev_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["status", "--short"]:
+            return ""
+        if args == ["diff", _stat_arg()]:
+            # 実測（#850）どおり `git diff --stat` 側だけが省略表記を返す状況を再現する
+            return (
+                f" .../infrastructure/cloudflare-infrastructure.md | 4 ++--\n"
+                f" {_full} | 4 ++--\n"
+                " 1 file changed, 2 insertions(+), 2 deletions(-)\n"
+            )
+        if args == ["diff", "--cached", _stat_arg()]:
+            return ""
+        return ""
+
+    def _no_ls_files_runner(args, **kwargs):  # noqa: ANN001, ANN003
+        # `git ls-files` は空を返す（解決は集合内の完全パスだけで足りることを示す）
+        class _R:
+            stdout = ""
+            returncode = 0
+
+        return _R()
+
+    git_diff_utils.run_git_or_raise = _fake_abbrev_run_git_or_raise
+    try:
+        abbrev_real = get_real_diff_files(Path("/fake/abbrev/root"), runner=_no_ls_files_runner)
+    finally:
+        git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+
+    r_abbrev = compare({_full}, abbrev_real["files"], abbrev_real.get("unresolved"))
+    check(
+        "#850: 省略パスと完全パスの混在が 1 件に畳まれ mismatch を立てない",
+        abbrev_real["files"] == {_full}
+        and r_abbrev["missing_from_report"] == []
+        and r_abbrev["mismatch"] is False,
+        f"files={sorted(abbrev_real['files'])} result={r_abbrev}",
+    )
+
+    # ── #850: 一意に解決できない省略パスは unresolved として報告され mismatch を立てない ──
+    def _fake_unresolvable_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["diff", _stat_arg()]:
+            return " .../ghost/never-existed.md | 1 +\n"
+        return ""
+
+    git_diff_utils.run_git_or_raise = _fake_unresolvable_run_git_or_raise
+    try:
+        unresolvable_real = get_real_diff_files(Path("/fake/abbrev/root"), runner=_no_ls_files_runner)
+    finally:
+        git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+
+    r_unres = compare(set(), unresolvable_real["files"], unresolvable_real.get("unresolved"))
+    check(
+        "#850: 解決できない省略パスは unresolved に出て mismatch を立てない（黙って捨てない）",
+        unresolvable_real["files"] == set()
+        and r_unres["unresolved"] == [".../ghost/never-existed.md"]
+        and r_unres["mismatch"] is False,
+        f"real={unresolvable_real} result={r_unres}",
     )
 
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")
@@ -747,7 +859,7 @@ def main() -> int:
         print(f"❌ {e}", file=sys.stderr)
         return 2
 
-    result = compare(claimed, real["files"])
+    result = compare(claimed, real["files"], real.get("unresolved"))
     result["fallback_used"] = not used_block
 
     if args.json:
