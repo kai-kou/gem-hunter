@@ -225,10 +225,10 @@ flowchart TB
 | 層 | 実装 | 生存範囲 | MVP での採否 |
 |---|---|---|---|
 | **L1** | リクエスト内メモ化（React `cache` 等） | 1 リクエスト | ✅ 採用。同一レンダー内の重複呼び出しを消す |
-| **L2** | Next.js のデータキャッシュ | 事業者依存（インスタンス / 事業者のキャッシュ基盤） | ✅ 採用。MVP の主役 |
+| **L2** | アプリ内 `CachePort` の実装。前段 L2a = `InMemoryCache`、後段 L2b = Cloudflare Cache API（`caches.default`） | L2a はインスタンス（isolate）内。L2b は同一データセンター（colo）内で isolate をまたいで共有 | ✅ 採用。MVP の主役（`D-24` / [ADR 0016](../../adr/0016-workers-cache-api-for-cross-isolate-sharing.md)） |
 | **L3** | 外部 KV | 全インスタンス共有・永続的 | ❌ 未採用（`D-5`）。Cache Port の実装差し替えだけで入れられる状態に保つ |
 
-> 🔵 **Cloudflare での L2 の実体（`D-18`）**: Next.js のデータキャッシュではなく **HTTP `Cache-Control` + Workers Caching**（エッジ・リクエスト合体あり）に置く。OpenNext で incremental cache を設定しない構成では Next.js の Data Cache が isolate 内メモリに退化するため、`SP-5` の担保を Data Cache で説明しない。Cache Port の実装位置は `src/infrastructure/platform/`（[Cloudflare インフラ設計](./cloudflare-infrastructure.md) §4）。
+> 🔵 **Cloudflare での L2 の実体（`D-18` / `D-24` / [ADR 0016](../../adr/0016-workers-cache-api-for-cross-isolate-sharing.md)）**: Next.js のデータキャッシュではなく、アプリ内 `CachePort` の実装（`InMemoryCache` + Cloudflare Cache API の 2 段）に置く。OpenNext で incremental cache を設定しない構成では Next.js の Data Cache が isolate 内メモリに退化するため、`SP-5` の担保を Data Cache で説明しない。**L2b（Cache API）は同一 colo 内の共有に限られ、L3 が求める「全インスタンス共有・永続的」は満たさない** ため L3 導入には当たらない（ADR 0016 §2.2）。Cache Port の実装位置は `src/infrastructure/platform/`（[Cloudflare インフラ設計](./cloudflare-infrastructure.md) §4.2）。
 
 - **Cache Port の面積は `get` / `set` / `invalidate` + TTL に限定する**（`NFR-17`）。汎用キャッシュライブラリを自作しない。
 - キー命名規約は `NFR-18` に従い、**検索結果** と **単一リポジトリ** で名前空間を分ける。
@@ -238,7 +238,7 @@ flowchart TB
 「なんとなく不安だから」で入れない。以下のいずれかを **観測** したときに初めて検討し、ADR を起票する。
 
 1. レート制限起因のエラー（[`prd.md`](../../02_requirements/prd.md) §7 の該当種別）が実利用で発生した
-2. キャッシュヒット率が想定を下回り、`INF-2`（コスト）または `NFR-7`（レート制限耐性）を満たせない
+2. キャッシュヒット率が想定を下回り、`INF-2`（コスト）または `NFR-7`（レート制限耐性）を満たせない。🔵 「想定」の数値定義（同一 colo・TTL 内の 2 回目以降のリクエストに対する HIT 割合 80%）は [ADR 0016](../../adr/0016-workers-cache-api-for-cross-isolate-sharing.md) §2.3 が正本（本書には数値を複製しない）
 3. Phase 2 の静的データ配信（`GR-5`）で、配信物の置き場所が必要になった
 
 > 🔴 **Cloudflare で L3 を入れるときの追加コスト（`D-18`）**: R2 は **有効化に支払い方法の登録が必要**（`A-6`）で、Workers Paid への加入とは別のユーザー作業が発生する。ADR にこの点を明記してから導入する。

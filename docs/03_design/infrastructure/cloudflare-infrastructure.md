@@ -249,12 +249,13 @@ flowchart TB
 | 層 | 実装 | 役割 |
 |---|---|---|
 | **L1** | リクエスト内メモ化（React `cache`） | 同一レンダー内の重複呼び出しを消す |
-| **L2** | **アプリ内 `CachePort` の実装（`InMemoryCache`）** | 🔵 **MVP の主役**。composition root の **モジュールスコープで生成する単一インスタンス** として全リクエストから共有参照する（`NFR-17`） |
+| **L2a** | アプリ内 `CachePort` の実装（`InMemoryCache`） | composition root の **モジュールスコープで生成する単一インスタンス** として全リクエストから共有参照する（`NFR-17`）。同一 isolate 内は同期的な参照で完結する |
+| **L2b** | 🔵 **[ADR 0016](../../adr/0016-workers-cache-api-for-cross-isolate-sharing.md) で採用**。`WorkersCache`（Cloudflare Cache API `caches.default`） | L2a に無いキーを isolate をまたいで共有する後段。同一データセンター（colo）内に限り、L2a の isolate 破棄後も生存しうる |
 | **L3** | 外部ストア（R2 / D1 / KV） | ❌ **未採用**。§6.2 の観測条件を満たしたときだけ ADR とともに導入 |
 
 - `Cache-Control` ヘッダは付与してよいが、**「エッジが自動的に Worker をバイパスする」効果には依存しない**（依存すると HIT 時に `X-Cache-Status` を付与できなくなり §4.5 と矛盾するため）。ヘッダを付けても Workers Caching の tiered 化・リクエスト合体自体は副次的な効果として残るが、`SP-5` の検証手段としては当てにしない
 - `NFR-7`（request coalescing）は当初案（`infrastructure-design.md` §4）どおり **補助** に据え置く。エッジのリクエスト合体を主要な防波堤とする格上げは、L2 をエッジキャッシュに依存させないという本改訂と両立しないため撤回する。代わりに `CachingRepositoryQuery`（`src/infrastructure/platform/cached-repository-query.ts`）が **アプリ層の single-flight**（同一キー並行リクエストの in-flight `Promise` 合流）で `NFR-7` を担保する（詳細は [ADR 0005](../../adr/0005-cache-port-yagni-exception-and-ttl.md) §5）
-- **isolate をまたぐ永続性は本スプリントでは追わない**（`InMemoryCache` は isolate が破棄されると失われる）。将来の格上げ候補として、Cloudflare の Cache API（`caches.default`）を composition root から能動的に呼び出し isolate 間で共有する案が残っている（§6.2 の観測条件を満たしたときに ADR で検討する）
+- 🔵 **isolate をまたぐ永続性は [ADR 0016](../../adr/0016-workers-cache-api-for-cross-isolate-sharing.md) で採用済み**（`InMemoryCache`＝L2a のみでは isolate が破棄されると失われるため、Cloudflare の Cache API（`caches.default`）を後段 L2b として composition root から能動的に呼び出す）。共有範囲は同一データセンター（colo）内に限られ、複数 colo にまたがる共有ではない（ADR 0016 §4）。新しいバインディングの追加・支払い方法の登録を伴わないため L3 の導入には当たらない（同 §2.2）
 
 ⚠️ **Next.js の `fetch` Data Cache / `use cache` は当てにしない**。OpenNext で incremental cache を設定しない構成では isolate 内メモリに退化し、isolate の生存に依存する。**`SP-5`（同じ検索で API を二度叩かない）の担保は L2（アプリ内 `CachePort`）で説明する**。
 
@@ -272,6 +273,8 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 `infrastructure-design.md` §6.2 の条件を **そのまま維持する**（新しいルールを作らない）。加えて Cloudflare 固有の注意を 1 つ足す。
 
 > 🔴 **R2 の有効化は支払い方法の登録を伴う**（`A-6`）。L3 導入の ADR を起票するときは、Workers Paid への加入とは **別のユーザー作業** が発生することを明記する。
+
+🔵 **§4.2 の L2b（Cache API）は本節の L3 判定対象ではない**。新しいバインディングの追加・支払い方法の登録を伴わず、共有範囲も同一 colo 内に限られるため、`infrastructure-design.md` §6.1 が L3 に求める「全インスタンス共有・永続的」を満たさない（[ADR 0016](../../adr/0016-workers-cache-api-for-cross-isolate-sharing.md) §2.2）。`infrastructure-design.md` §6.2 条件 2 が言う「想定」ヒット率の数値定義（80%）も同 ADR §2.3 が正本。
 
 ---
 
