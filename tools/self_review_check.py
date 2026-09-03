@@ -1535,6 +1535,68 @@ def _self_test_sprint_pr_closes_wiring() -> list[str]:
     return failures
 
 
+
+def _self_test_self_test_target_selection() -> list[str]:
+    """self_test_errors() の対象判定（base#508 + PR #867 の絞り込み）を検証する。
+
+    変異テスト: `if "__main__" not in text: continue` を削除すると 1-b が FAIL する。
+    `if not f.endswith(".py")` 相当の拡張子判定を緩めると 1-c が FAIL する。
+    """
+    failures: list[str] = []
+    tmp_dir = Path(tempfile.mkdtemp(prefix="self_review_selftest_"))
+    try:
+        tools_dir = tmp_dir / "tools"
+        tools_dir.mkdir()
+        # 1-a: 正ケース（--self-test を実装し、__main__ を持つ）→ 実行され、失敗が Error になる
+        (tools_dir / "failing_tool.py").write_text(
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    if "--self-test" in sys.argv:\n'
+            '        sys.exit(1)\n',
+            encoding="utf-8",
+        )
+        # 1-b: 負ケース（境界の外側）: --self-test を docstring で *言及* するだけのライブラリ。
+        #      実行しても何も検証されないので、対象に含めてはならない
+        #      実体は「単体実行すると失敗しうるライブラリ」（相対 import 等）で、誤って対象化すると
+        #      無関係な Error で PR 作成をブロックする（fail-closed の誤検知）
+        (tools_dir / "library_only.py").write_text(
+            '"""定数だけを持つ。振る舞いは呼び出し側の `--self-test` が検証する。"""\n'
+            'from .helpers import VALUE  # 単体実行では ImportError になる（パッケージ前提）\n',
+            encoding="utf-8",
+        )
+        # 1-c: 負ケース: 拡張子が .py でない（.py.bak）→ 対象外
+        (tools_dir / "failing_tool.py.bak").write_text(
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    if "--self-test" in sys.argv:\n'
+            '        sys.exit(1)\n',
+            encoding="utf-8",
+        )
+        cwd = os.getcwd()
+        os.chdir(tmp_dir)
+        try:
+            errs = self_test_errors([
+                "tools/failing_tool.py",
+                "tools/library_only.py",
+                "tools/failing_tool.py.bak",
+                "tools/deleted_tool.py",  # 差分にあるが実体が無い（削除）→ 落ちずに無視されること
+            ])
+        finally:
+            os.chdir(cwd)
+        joined = " / ".join(errs)
+        if not any("failing_tool.py" in e for e in errs):
+            failures.append(f"1-a: --self-test 実装済みツールの失敗を検出できていない: {joined}")
+        if any("library_only.py" in e for e in errs):
+            failures.append(f"1-b: 文字列を含むだけのライブラリを対象にしてしまった: {joined}")
+        if any(".py.bak" in e for e in errs):
+            failures.append(f"1-c: .py 以外を対象にしてしまった: {joined}")
+        if any("deleted_tool.py" in e for e in errs):
+            failures.append(f"1-d: 実体が無いパスでエラーを出してしまった: {joined}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return failures
+
+
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
@@ -1554,6 +1616,7 @@ def run_self_test() -> int:
         ("Closes 検出の main() 配線（exit code 通貫・PR #772）", _self_test_sprint_pr_closes_wiring),
         ("スタイル変更検出（#698）", _self_test_style_change_detection),
         ("変異テスト記録リマインド（#698）", _self_test_mutation_test_record_warning),
+        ("--self-test 対象判定（base#508 / PR #867）", _self_test_self_test_target_selection),
     ]
     failed_groups = 0
     total_failures = 0
@@ -1635,6 +1698,13 @@ def self_test_errors(files: list[str]) -> list[str]:
         except Exception:
             continue
         if "--self-test" not in text:
+            continue
+        # 🔴 文字列 "--self-test" を含むだけのファイルを対象にしない（PR #867 Layer 1 指摘）。
+        # 実例: tools/pr_meta_patterns.py は定数とファクトリだけのライブラリで、docstring で
+        # 「振る舞いは呼び出し側の `--self-test` が検証する」と *他ファイルの* self-test に言及して
+        # いるだけ。エントリポイントが無いため `python3 <file> --self-test` は何も検証せず exit=0 で
+        # 終わり、予算だけ消費したうえで「self-test 済み」という誤った安心感を与える（vacuous pass）。
+        if "__main__" not in text:
             continue
         remaining = max(1, int(SELF_TEST_BUDGET_SECONDS - elapsed))
         per_call_timeout = min(SELF_TEST_PER_TOOL_TIMEOUT, remaining)
