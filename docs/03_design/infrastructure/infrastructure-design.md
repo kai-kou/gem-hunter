@@ -230,7 +230,7 @@ flowchart TB
 
 > 🔵 **なぜ L2 をフレームワークのデータキャッシュに置かないか（`D-18` → `D-24`）**: 当初は Next.js のデータキャッシュ、次いで HTTP `Cache-Control` + エッジキャッシュを L2 の主役に置いていたが、いずれも撤回した。前者は incremental cache を設定しない構成でインスタンス内メモリに退化するため、後者は **エッジが HIT するとサーバー関数自体が実行されず**、キャッシュが効いたことを応答ヘッダで外から検証できなくなるためである（`SP-5` の受け入れ条件）。よって L2 の主役は **アプリ内 `CachePort` の実装** とし、その実体はアプリコード側に置く（実装位置は `src/infrastructure/platform/`・`NFR-21` / `INF-5`）。
 >
-> 🔴 **L2 の実体（何段構成で、各段に何を使うか）は事業者依存であり、その正本は [Cloudflare インフラ設計](./cloudflare-infrastructure.md) §4.2 である**（本書は事業者非依存の 3 層モデルだけを定め、具体実装名・段数・数値をここに複製しない）。現行の Cloudflare 構成は事業者固有 API を使った 2 段構成で、決定の記録は [ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md)。
+> 🔴 **L2 の実体（何段構成で、各段に何を使うか）は事業者依存であり、その正本は [Cloudflare インフラ設計](./cloudflare-infrastructure.md) §4.2 である**（本書は事業者非依存の 3 層モデルだけを定め、具体実装名・段数・数値をここに複製しない）。現行の Cloudflare 構成は **事業者固有 API を含む多段構成** で、決定の記録は [ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md)。
 
 - **Cache Port の面積は `get` / `set` / `invalidate` + TTL に限定する**（`NFR-17`）。汎用キャッシュライブラリを自作しない。
 - キー命名規約は `NFR-18` に従い、**検索結果** と **単一リポジトリ** で名前空間を分ける。
