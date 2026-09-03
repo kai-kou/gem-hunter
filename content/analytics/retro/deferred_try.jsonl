@@ -237,3 +237,10 @@
 {"date": "2026-09-03 JST", "title": "実測値の SSOT 参照チェーンが 3 段以上に伸びていないかを機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 396}
 {"date": "2026-09-03 JST", "title": "cpuTime 実測スナップショット（Workers の CPU 時間・p95）を content/analytics へ蓄積し推移を追えるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 340}
 {"date": "2026-09-03 JST", "title": "Q1 予備検索を見送りログへの追記より前に実行することを retrospective SKILL.md Step 3-0 に明示する（追記後だと自分の行が自己ヒットして件数が狂う）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "長時間走る委譲先の未コミット成果がコンテナ再起動で消える（14 分損失）", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 861}
+{"date": "2026-09-04 JST", "title": "実装の性質を前提にした記述が実装変更で虚偽化する（ACL 是正時の bump 漏れへ波及）", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 762}
+{"date": "2026-09-04 JST", "title": "Workers Builds の build trigger 断線でフォールバックデプロイが常用化している", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 626}
+{"date": "2026-09-04 JST", "title": "実測値がドキュメント 2 箇所とコード JSDoc 2 箇所へ複製されていた", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 396}
+{"date": "2026-09-04 JST", "title": "無人 firing では委譲中にコミット粒度を決める主体が居ない", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 536}
+{"date": "2026-09-04 JST", "title": "run_checks.sh の検査件数を grep で数えると関数定義内の呼び出しを誤カウントする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "check_decision_ids.py を意味的一致（参照文と決定表のキーワード共有）まで拡張する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
