@@ -90,7 +90,7 @@ flowchart TB
     end
 
     subgraph CACHE["キャッシュ実装（差し替え可能）"]
-        L2["Next.js Data Cache"]
+        L2["アプリ内 CachePort の実装<br/>L2a: isolate 内メモリ / L2b: Cache API"]
         L3["外部 KV（任意・未採用）"]
     end
 

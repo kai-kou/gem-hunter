@@ -5,7 +5,7 @@ import type { TokenProvider } from '../infrastructure/github/github-repository-q
 import { GithubRepositoryQuery } from '../infrastructure/github/github-repository-query'
 import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
 import { CachingRepositoryQuery } from '../infrastructure/platform/cached-repository-query'
-import { InMemoryCache } from '../infrastructure/platform/cache'
+import { createSharedCache } from '../infrastructure/platform/workers-cache'
 import { SystemClock } from '../infrastructure/system-clock'
 import { StaticGemDigest } from '../infrastructure/platform/static-gem-digest'
 import { StaticGemIndex } from '../infrastructure/platform/static-gem-index'
@@ -53,12 +53,17 @@ const TTL_DETAIL_SECONDS = 300
 export const DAILY_DIGEST_LIMIT = 5
 
 /**
- * isolate 内で使い回すキャッシュの単一インスタンス（モジュールスコープ・SP-5）。
- * 関数内で `new` すると呼び出しのたびに空の `Map` になり常に MISS になるため、
+ * リクエスト間で使い回すキャッシュの単一インスタンス（モジュールスコープ・SP-5）。
+ * 関数内で `new` すると呼び出しのたびに空になり常に MISS になるため、
  * モジュール読み込み時（isolate 起動時）に 1 回だけ生成する
  * （whiteboard `content/discussions/sp5-cache-design-20260819/whiteboard.md` round3 決定）。
+ *
+ * 🔵 **2 段構成**（Issue #121・決定の正本は
+ * [ADR 0016](../../docs/adr/0016-workers-cache-api-for-cross-isolate-sharing.md)）:
+ * 前段 L2a = isolate 内メモリ（`InMemoryCache`）、後段 L2b = Cloudflare Cache API（`WorkersCache`）。
+ * L2b は **同一データセンター（colo）内でのみ** 共有される（全 isolate・全リージョン共有ではない）。
  */
-const sharedCache: CachePort = new InMemoryCache(new SystemClock())
+const sharedCache: CachePort = createSharedCache(new SystemClock())
 
 /**
  * 日次ダイジェスト（`getDailyDigestUseCase`）が読む候補プールの単一インスタンス
