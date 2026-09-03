@@ -215,6 +215,78 @@ def run_git_or_raise(
         raise RuntimeError(f"git {' '.join(args)} が失敗: {stderr}") from e
 
 
+# --------------------------------------------------------------------------- パス正規化
+# `git diff --stat` は長いパスを `.../` で省略して出力する（省略幅は端末幅・git config に依存する）。
+# 省略パスと完全パスが同じ集合に混ざると同一ファイルが 2 件に数えられるため、集合比較の前段で
+# 省略を解決する層をここに置く（Issue #850）。
+
+ABBREV_PREFIX = ".../"
+
+
+def resolve_abbreviated_path(path: str, candidates: set[str] | frozenset[str]) -> str | None:
+    """`.../` で省略されたパスを候補集合からサフィックス一致で解決する（Issue #850）。
+
+    戻り値:
+      - 省略パスでない場合: `path` をそのまま返す（呼び出し側の分岐を減らすため）
+      - 省略パスで候補が **一意に定まった** 場合: その完全パス
+      - 候補が 0 件、または 2 件以上に一致して一意に定まらない場合: `None`
+        （呼び出し側は `unresolved` として警告に落とし、集合比較には混ぜない）
+
+    サフィックス一致は **パス境界を跨がない**: `.../bar.md` は `foo/bar.md` に一致するが
+    `foobar.md` には一致しない（`str.endswith()` の素朴な前方/後方一致は別カテゴリまで巻き込む）。
+    """
+    if not path.startswith(ABBREV_PREFIX):
+        return path
+    suffix = path[len(ABBREV_PREFIX) :]
+    if not suffix:
+        return None
+    matches = {c for c in candidates if c == suffix or c.endswith("/" + suffix)}
+    if len(matches) == 1:
+        return next(iter(matches))
+    return None
+
+
+def normalize_abbreviated_paths(
+    paths: set[str] | frozenset[str],
+    *,
+    extra_candidates: set[str] | frozenset[str] | None = None,
+    repo_root: Path | str | None = None,
+    runner: Runner = subprocess.run,
+) -> tuple[set[str], set[str]]:
+    """パス集合から `.../` 省略を取り除き `(resolved, unresolved)` を返す（Issue #850）。
+
+    候補は次の順に積む（省略パスが 1 件も無ければ git は呼ばない）:
+      1. `paths` に含まれる **省略でないパス**（同じ収集で完全パスも得られていることが多い）
+      2. `extra_candidates`（呼び出し側が別経路で得た完全パス）
+      3. `repo_root` が与えられていれば `git ls-files`（作業ツリーの追跡ファイル全件）
+
+    解決できなかった省略パスは `unresolved` に入れる。**黙って捨てない**（呼び出し側が
+    「一意に解決できなかった」ことを報告できるようにするため）。
+    """
+    abbreviated = {p for p in paths if p.startswith(ABBREV_PREFIX)}
+    concrete = set(paths) - abbreviated
+    if not abbreviated:
+        return concrete, set()
+
+    candidates: set[str] = set(concrete)
+    if extra_candidates:
+        candidates |= set(extra_candidates)
+    if repo_root is not None:
+        tracked, rc = _run_git_paths(["ls-files", "-z"], cwd=repo_root, runner=runner)
+        if rc == 0:
+            candidates |= {t for t in tracked if t}
+
+    resolved = set(concrete)
+    unresolved: set[str] = set()
+    for p in sorted(abbreviated):
+        hit = resolve_abbreviated_path(p, candidates)
+        if hit is None:
+            unresolved.add(p)
+        else:
+            resolved.add(hit)
+    return resolved, unresolved
+
+
 # --------------------------------------------------------------------------- self-test
 # ネットワーク・実 git リポジトリに依存しない（runner を差し替えて決定的に検証する）
 
@@ -648,6 +720,70 @@ def _self_test_run_git_or_raise() -> list[str]:
     return failures
 
 
+def _k_ls_files() -> tuple[str, ...]:
+    return ("git", "-c", "core.quotePath=false", "ls-files", "-z")
+
+
+def _self_test_normalize_abbreviated_paths() -> list[str]:
+    """Issue #850: `git diff --stat` の `.../` 省略が同一ファイルを 2 件に増やさないこと。"""
+    failures: list[str] = []
+    full = "docs/03_design/infrastructure/cloudflare-infrastructure.md"
+    abbrev = ".../infrastructure/cloudflare-infrastructure.md"
+
+    # 1. 省略パスと完全パスの混在（#850 の実測ケース）→ 1 件に畳まれる
+    resolved, unresolved = normalize_abbreviated_paths({abbrev, full})
+    if resolved != {full} or unresolved:
+        failures.append(f"混在の畳み込み: resolved={sorted(resolved)} unresolved={sorted(unresolved)}")
+
+    # 2. 候補が 1 件も無い → unresolved（黙って捨てない・mismatch には混ぜない）
+    resolved2, unresolved2 = normalize_abbreviated_paths({abbrev, "tools/other.py"})
+    if resolved2 != {"tools/other.py"} or unresolved2 != {abbrev}:
+        failures.append(f"候補なし: resolved={sorted(resolved2)} unresolved={sorted(unresolved2)}")
+
+    # 3. 複数一致で一意に定まらない → unresolved（誤って片方へ寄せない）
+    ambiguous = ".../notes.md"
+    resolved3, unresolved3 = normalize_abbreviated_paths(
+        {ambiguous}, extra_candidates={"a/notes.md", "b/notes.md"}
+    )
+    if resolved3 or unresolved3 != {ambiguous}:
+        failures.append(f"曖昧一致: resolved={sorted(resolved3)} unresolved={sorted(unresolved3)}")
+
+    # 4. サフィックス一致がパス境界を跨がない（`foobar.md` は `.../bar.md` に一致しない）
+    resolved4, unresolved4 = normalize_abbreviated_paths(
+        {".../bar.md"}, extra_candidates={"docs/foobar.md"}
+    )
+    if resolved4 or unresolved4 != {".../bar.md"}:
+        failures.append(f"境界跨ぎ拒否: resolved={sorted(resolved4)} unresolved={sorted(unresolved4)}")
+
+    # 5. 候補が集合内に無くても `git ls-files` から解決できる
+    runner5 = _make_fake_runner({_k_ls_files(): f"{full}\0tools/x.py\0"})
+    resolved5, unresolved5 = normalize_abbreviated_paths(
+        {abbrev}, repo_root=".", runner=runner5
+    )
+    if resolved5 != {full} or unresolved5:
+        failures.append(f"ls-files 解決: resolved={sorted(resolved5)} unresolved={sorted(unresolved5)}")
+
+    # 6. 省略パスが 1 件も無ければ git を呼ばない（無駄な subprocess を出さない）
+    calls: list[tuple[str, ...]] = []
+
+    def recording_runner(args, **kwargs):  # noqa: ANN001, ANN003
+        calls.append(tuple(args))
+        return _FakeResult(stdout="", returncode=0)
+
+    resolved6, unresolved6 = normalize_abbreviated_paths(
+        {"a.py", "b.py"}, repo_root=".", runner=recording_runner
+    )
+    if resolved6 != {"a.py", "b.py"} or unresolved6 or calls:
+        failures.append(f"省略なしで git 未実行: resolved={sorted(resolved6)} calls={calls}")
+
+    # 7. `.../` だけ（サフィックスが空）は解決せず unresolved に落とす
+    resolved7, unresolved7 = normalize_abbreviated_paths({".../"}, extra_candidates={"a.py"})
+    if resolved7 or unresolved7 != {".../"}:
+        failures.append(f"空サフィックス: resolved={sorted(resolved7)} unresolved={sorted(unresolved7)}")
+
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("default_branch", _self_test_default_branch),
@@ -674,6 +810,7 @@ def run_self_test() -> int:
         ),
         ("_run_git cwd/timeout 転送", _self_test_run_git_cwd_and_timeout_forwarded),
         ("run_git_or_raise", _self_test_run_git_or_raise),
+        ("normalize_abbreviated_paths（#850）", _self_test_normalize_abbreviated_paths),
     ]
     total_fail = 0
     for label, fn in groups:
