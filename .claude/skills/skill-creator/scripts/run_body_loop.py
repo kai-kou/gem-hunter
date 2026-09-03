@@ -3,7 +3,7 @@
 
 `run_loop.py`（description 最適化。LLM実行による trigger 観測＋held-outでの
 過学習防止）と同じ骨格を、SKILL.md「本体」の add/delete/replace 編集に適用した
-最小 PoC（Issue #514）。description 最適化との違いは採点方式のみ:
+最小 PoC（base#514）。description 最適化との違いは採点方式のみ:
 
   - description 最適化: run_eval.py が `claude -p` の挙動（Skill/Read が呼ばれたか）
     を観測する統計的トリガー判定
@@ -32,7 +32,7 @@
   作成したものに限定して使うこと（本スクリプトは外部由来・未検証の eval セットを
   受け付ける想定では設計していない）。
 
-位置づけ（Issue #292 完了条件・#137 との関係）:
+位置づけ（base#292 完了条件・base#137 との関係）:
   #137（skill-audit）の「description 発火精度採点・書き換え案」は、静的なルーブリック
   採点（10 点満点・7 点未満は書き換え案）による定性的な最適化。本スクリプトはその
   定量最適化版に相当する: 「発火精度」ではなく「本体の指示に従ってタスクを完走できたか」
@@ -498,7 +498,7 @@ def _test_run_loop_reject_gate() -> int:
     通らない・提案編集も改善に寄与しない」状況を決定論的に再現する。実行中の PoC
     （`poc/cjk-markdown-fix/benchmark.json`）は 1 イテレーションで全 pass に達したため
     reject 分岐（train_after <= train_before）を一度も通っておらず、機構が「実装されている」
-    ことと「実際に弾く」ことは別の主張である（Issue #292 完了条件）。本テストはそのギャップを
+    ことと「実際に弾く」ことは別の主張である（base#292 完了条件）。本テストはそのギャップを
     外部呼び出しなしで埋める。
     """
     failed = 0
@@ -645,7 +645,7 @@ def self_test() -> int:
 
     # run_loop: per-edit validation gate が train を改善しない編集を実際に reject し、
     # rejected-edit buffer に記録することを、claude -p・実チェッカーを起動せずに検証する
-    # （Issue #292: 機構が実装されているだけでなく実際に発火することの実証）。
+    # （base#292: 機構が実装されているだけでなく実際に発火することの実証）。
     failed += _test_run_loop_reject_gate()
 
     print(f"[run_body_loop] self-test: {'PASS' if failed == 0 else f'{failed} FAILED'}")

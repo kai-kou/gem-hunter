@@ -1,6 +1,6 @@
 #!/bin/bash
 # pre-merge-layer1-check.sh — マージ直前に Layer 1 セルフレビュー未観測を非ブロッキング警告する
-# （Issue #512・post-review-write-mark.sh が立てるマーカーを読むだけの読み取り専用チェック）
+# （base#512・post-review-write-mark.sh が立てるマーカーを読むだけの読み取り専用チェック）
 #
 # 🔴 ハードブロックにしない。マーカーはセッションローカルであり、PR 作成セッション ≠
 # マージセッション（pr-review-watcher の復帰・`--mine` 判定）という正当なフローでは

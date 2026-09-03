@@ -1,8 +1,8 @@
 #!/bin/bash
 # hook_layer1_common.sh — post-review-write-mark.sh / pre-merge-layer1-check.sh の共通ヘルパー
-# （Issue #512 Layer 1 セルフレビュー指摘: 同一ロジックが2ファイルへコピペされていたため抽出）
+# （base#512 Layer 1 セルフレビュー指摘: 同一ロジックが2ファイルへコピペされていたため抽出）
 #
-# post-merge-publish-check.sh も同種の repo_slug_from_url() を独自に持つが、Issue #512 の
+# post-merge-publish-check.sh も同種の repo_slug_from_url() を独自に持つが、base#512 の
 # スコープ外（既存ファイル）のため本ライブラリへは統合していない。3ファイル揃えるなら別 Issue で。
 
 # origin リモート URL から owner/repo を切り出す

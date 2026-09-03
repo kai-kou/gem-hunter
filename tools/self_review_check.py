@@ -1637,6 +1637,12 @@ def run_self_test() -> int:
 
 
 
+# ⚠️ 本リポジトリでは同じ self-test が二重に走る（PR #867 Layer 1 指摘）。`tools/run_checks.sh`
+# （PR 作成前に必須・予算は 1 チェックあたり既定 300 秒）が `check_selftest_wiring.py` の配線検査
+# 込みで全 `--self-test` を実行しており、ここでの実行はその早期検知を目的とした重複である。
+# 予算が桁違い（こちらは 1 ツール 15 秒・合計 40 秒）なので、**run_checks.sh では緑だった重い
+# self-test がここでだけタイムアウトし PR 作成をブロックしうる**。その場合は self-test を速くするのが
+# 本筋だが、急ぐときは `SELF_REVIEW_SELFTEST=warn` で非ブロック化できる。
 # pre-pr-create-check.sh は self_review_check.py プロセス全体を外側 timeout 90 秒で包む。
 # ツール単体に近い秒数を許すと合計が外側予算を超え、timeout コマンドが exit=124 で
 # プロセスごと強制終了する（本リポジトリのフックは 124 を fail-open で可視化する運用のため、

@@ -1,6 +1,6 @@
 #!/bin/bash
 # post-review-write-mark.sh — PR レビュー投稿を検知し Layer 1 実施マーカーを記録する
-# （Issue #512・pre-merge-layer1-check.sh とペアで動く非ブロッキング nudge）
+# （base#512・pre-merge-layer1-check.sh とペアで動く非ブロッキング nudge）
 #
 # 背景: FAIR Layer 1（セルフレビュー）の実施はモデルの自主性に委ねられており、
 # ハーネスが機械観測していなかった（`.claude/settings.json` の PreToolUse matcher は

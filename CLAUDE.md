@@ -204,7 +204,7 @@ frontmatter は公式仕様（`name` / `description` 必須・`model` / `tools` 
 
 ## ハーネス（`.claude/hooks/`）
 
-配線は `.claude/settings.json`、実体は `.claude/hooks/*.sh`（全 22 スクリプト）。
+配線は `.claude/settings.json`、実体は `.claude/hooks/*.sh`（全 25 スクリプト）。
 役割グループのみ記す（各スクリプトの詳細・トグル環境変数は当該ファイル冒頭のコメントを参照）。
 
 | グループ   | スクリプト                                                                                                                                                | 役割                                                                                                                                                             |
