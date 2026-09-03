@@ -52,6 +52,16 @@ docs/rules/agent-team-summary.md
 - 「実 diff にあるが報告に無い」（`missing_from_report`）: 報告漏れ。親が見落としやすい方向
   のため **より重い警告** として扱う
 - どちらか一方でも非空なら exit 1
+- 「`.../` 省略パスを一意に解決できなかった」（`unresolved`）: どの実ファイルを指すか確定できず
+  報告漏れとも虚偽報告とも判定できない → `mismatch` には混ぜないが **exit 2（判定不能）** を返す
+  （`0` へ丸めると exit code だけを見る呼び出し元に「未検証のファイルが残っている」ことが届かない・
+  `docs/rules/check-tool-design-rules.md` §1 / §3 の fail-closed 既定）
+
+## 終了コード
+
+- `0`: 報告と実 diff が一致し、未解決の省略パスも無い
+- `1`: 虚偽報告・報告漏れを検出した
+- `2`: 判定不能（git 実行失敗・引数不足・解決できない省略パスが残った）
 
 ## 使い方
 
@@ -63,6 +73,8 @@ docs/rules/agent-team-summary.md
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import subprocess
@@ -323,6 +335,11 @@ def compare(
     `unresolved`（Issue #850）は「`.../` 省略パスを一意に解決できなかった」もの。
     どの実ファイルを指すか確定できない以上、報告漏れとも虚偽報告とも判定できないため
     **`mismatch` には混ぜず**、警告として報告だけする（黙って捨てない）。
+
+    ただし「`mismatch` に混ぜない」ことと「`0`（合格）で終わる」ことは別問題である。
+    残った `unresolved` は「報告漏れかもしれないが確定できない」状態であり、`main()` は
+    これを `2`（判定不能）で返す（`docs/rules/check-tool-design-rules.md` §1 / §3 の
+    fail-closed 既定。`0` に丸めると exit code だけを見る呼び出し元へ報告漏れが届かない）。
     """
     missing_from_diff = sorted(claimed - real)
     missing_from_report = sorted(real - claimed)
@@ -349,10 +366,10 @@ def print_report(result: dict) -> None:
         for f in result["missing_from_report"]:
             print(f"    - {f}")
     if result.get("unresolved"):
-        print("⚠️  省略パス（.../）を一意に解決できませんでした（mismatch 判定には含めていません）:")
+        print("⚠️  判定不能: 省略パス（.../）を一意に解決できず、実 diff の一部を検証できませんでした（exit 2・fail-closed）:")
         for f in result["unresolved"]:
             print(f"    - {f}")
-    if not result["mismatch"]:
+    if not result["mismatch"] and not result.get("unresolved"):
         print("✅ 報告と実 diff は一致")
 
 
@@ -813,6 +830,49 @@ def run_self_test() -> int:
         f"real={unresolvable_real} result={r_unres}",
     )
 
+    # ── PR #873 Layer 1: CLI の入口（main()）を通した終了コードの回帰テスト ──
+    # 内部関数の直呼びテストだけでは「`unresolved` が exit code に反映されず、報告漏れが
+    # exit 0 で素通りする」fail-open を検知できない（`sprint-development-rules.md` SD-2 の
+    # 完了条件 #686「変異対象に本番の主コードパスを含める・self-test は本番の入口を経由させる」）。
+    def _run_main_with(stdin_text: str, fake_real: dict) -> tuple[int, str]:
+        _orig_stdin, _orig_argv = sys.stdin, sys.argv
+        _orig_get_real = globals()["get_real_diff_files"]
+        buf = io.StringIO()
+        sys.stdin = io.StringIO(stdin_text)
+        sys.argv = ["check_agent_diff_claim.py", "--stdin"]
+        globals()["get_real_diff_files"] = lambda *a, **k: fake_real  # noqa: ANN003, ARG005
+        try:
+            with contextlib.redirect_stdout(buf):
+                code = main()
+        finally:
+            sys.stdin, sys.argv = _orig_stdin, _orig_argv
+            globals()["get_real_diff_files"] = _orig_get_real
+        return code, buf.getvalue()
+
+    _main_report = "CHANGED_FILES:\ntools/a.py\n"
+
+    _code_ok, _out_ok = _run_main_with(_main_report, {"files": {"tools/a.py"}, "unresolved": set()})
+    check(
+        "main() 経由: 報告と実 diff が一致 → exit 0",
+        _code_ok == 0 and "✅" in _out_ok,
+        f"code={_code_ok} out={_out_ok!r}",
+    )
+
+    _code_miss, _ = _run_main_with(
+        _main_report, {"files": {"tools/a.py", "tools/b.py"}, "unresolved": set()}
+    )
+    check("main() 経由: 報告漏れ → exit 1", _code_miss == 1, f"code={_code_miss}")
+
+    _code_unres, _out_unres = _run_main_with(
+        _main_report,
+        {"files": {"tools/a.py"}, "unresolved": {".../ghost/never-existed.md"}},
+    )
+    check(
+        "main() 経由: 解決できない省略パスを 0 に丸めず exit 2（判定不能・fail-closed）",
+        _code_unres == 2 and "✅" not in _out_unres,
+        f"code={_code_unres} out={_out_unres!r}",
+    )
+
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")
     return 0 if failed == 0 else 1
 
@@ -867,7 +927,18 @@ def main() -> int:
     else:
         print_report(result)
 
-    return 1 if result["mismatch"] else 0
+    if result["mismatch"]:
+        return 1
+    if result["unresolved"]:
+        # 解決できなかった省略パスは「報告漏れかもしれないが確定できない」状態。0（合格）へ
+        # 丸めると、exit code だけを見る呼び出し元には報告漏れが一切届かない（fail-open）。
+        # `docs/rules/check-tool-design-rules.md` §1 / §3 の既定どおり 2（判定不能）へ倒す。
+        print(
+            "⚠️  判定不能: 省略パスを解決できず、実 diff の一部を検証できませんでした（exit 2）",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
