@@ -1592,6 +1592,29 @@ def _self_test_self_test_target_selection() -> list[str]:
             failures.append(f"1-c: .py 以外を対象にしてしまった: {joined}")
         if any("deleted_tool.py" in e for e in errs):
             failures.append(f"1-d: 実体が無いパスでエラーを出してしまった: {joined}")
+
+        # 1-e: 自己除外（self_review_check.py 自身は docstring に "--self-test" を含むため、
+        #      除外しないとサブプロセスとして自分を再帰起動する）
+        os.chdir(Path(__file__).resolve().parent.parent)
+        try:
+            self_rel = str(Path(__file__).resolve().relative_to(Path.cwd()))
+            self_errs = self_test_errors([self_rel])
+        finally:
+            os.chdir(cwd)
+        if self_errs:
+            failures.append(f"1-e: 自分自身を対象にしてしまった: {self_errs}")
+
+        # 2: 実行時間予算を使い切ったら「未実行」として Error に積む（黙って素通りさせない）
+        os.chdir(tmp_dir)
+        saved_budget = globals()["SELF_TEST_BUDGET_SECONDS"]
+        globals()["SELF_TEST_BUDGET_SECONDS"] = -1  # 開始直後に予算超過とみなす
+        try:
+            budget_errs = self_test_errors(["tools/failing_tool.py"])
+        finally:
+            globals()["SELF_TEST_BUDGET_SECONDS"] = saved_budget
+            os.chdir(cwd)
+        if not any("未実行" in e for e in budget_errs):
+            failures.append(f"2: 予算超過時に『未実行』を報告していない: {budget_errs}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     return failures
