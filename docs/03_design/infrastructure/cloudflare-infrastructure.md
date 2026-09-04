@@ -44,7 +44,7 @@ Cloudflare の無料枠・上限・料金は変動する。本書は **判断に
 |---|---|
 | **`D-16`** | デプロイ先を **プレビュー・本番とも Cloudflare Workers** に確定する（`D-7` / `D-11` をクローズ） |
 | **`D-17`** | ランタイムは **`@opennextjs/cloudflare` アダプタ**。`next` は **16.2.11 以上** にピンする |
-| **`D-18`** | MVP のキャッシュは永続ストア（R2 / D1 / DO / KV）を採用しない。🔴 **L2 の実装方式は `D-24`（2026-08-19）で改訂済み**（§4.2 参照）: 当初案の「HTTP `Cache-Control` + Workers Caching のみ」は撤回し、**アプリ内 `CachePort` の実装（`InMemoryCache`）が主役** |
+| **`D-18`** | MVP のキャッシュは永続ストア（R2 / D1 / DO / KV）を採用しない。🔴 **L2 の実装方式は `D-24`（2026-08-19）→ `D-47`（2026-09-03）と 2 度改訂済み**（§4.2 参照）: 当初案の「HTTP `Cache-Control` + Workers Caching のみ」は `D-24` で撤回して **アプリ内 `CachePort` の実装が主役** となり、さらに `D-47`（[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md)）でその実装が **`LayeredCache`（isolate 内メモリ + Cache API `caches.default`）の 2 段構成** へ差し替わった（**isolate を跨ぐ共有は実装済み**）。構成・数値の正本は §4.2 |
 
 あわせて運用方針を 2 つ確定する。
 
@@ -249,12 +249,14 @@ flowchart TB
 | 層 | 実装 | 役割 |
 |---|---|---|
 | **L1** | リクエスト内メモ化（React `cache`） | 同一レンダー内の重複呼び出しを消す |
-| **L2** | **アプリ内 `CachePort` の実装（`InMemoryCache`）** | 🔵 **MVP の主役**。composition root の **モジュールスコープで生成する単一インスタンス** として全リクエストから共有参照する（`NFR-17`） |
+| **L2** | **アプリ内 `CachePort` の実装（`LayeredCache` = `InMemoryCache` + `WorkersCache`）** | 🔵 **MVP の主役**。**2 段構成**（1 段目 = isolate 内メモリ・2 段目 = Cloudflare Cache API `caches.default`）。composition root の **モジュールスコープで生成する単一インスタンス** として全リクエストから共有参照する（`NFR-17`）。`caches` が無い環境（Vitest / Node / ビルド時）では 1 段目単独へフォールバックする。決定は [ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) |
 | **L3** | 外部ストア（R2 / D1 / KV） | ❌ **未採用**。§6.2 の観測条件を満たしたときだけ ADR とともに導入 |
 
 - `Cache-Control` ヘッダは付与してよいが、**「エッジが自動的に Worker をバイパスする」効果には依存しない**（依存すると HIT 時に `X-Cache-Status` を付与できなくなり §4.5 と矛盾するため）。ヘッダを付けても Workers Caching の tiered 化・リクエスト合体自体は副次的な効果として残るが、`SP-5` の検証手段としては当てにしない
 - `NFR-7`（request coalescing）は当初案（`infrastructure-design.md` §4）どおり **補助** に据え置く。エッジのリクエスト合体を主要な防波堤とする格上げは、L2 をエッジキャッシュに依存させないという本改訂と両立しないため撤回する。代わりに `CachingRepositoryQuery`（`src/infrastructure/platform/cached-repository-query.ts`）が **アプリ層の single-flight**（同一キー並行リクエストの in-flight `Promise` 合流）で `NFR-7` を担保する（詳細は [ADR 0005](../../adr/0005-cache-port-yagni-exception-and-ttl.md) §5）
-- **isolate をまたぐ永続性は本スプリントでは追わない**（`InMemoryCache` は isolate が破棄されると失われる）。将来の格上げ候補として、Cloudflare の Cache API（`caches.default`）を composition root から能動的に呼び出し isolate 間で共有する案が残っている（§6.2 の観測条件を満たしたときに ADR で検討する）
+- 🔴 **isolate を跨ぐ共有は Cache API（`caches.default`）で採用済み**（2026-09-03・[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md)・Issue #121）。`InMemoryCache` 単独では同一キーへの連打でもヒット率が想定を大きく下回り、`infrastructure-design.md` §6.2 の観測条件 2 を満たした（**実測値の正本は [ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §1.1 の起票時点の計測**・「想定」の数値定義は同 ADR §3。いずれもここに複製しない）。`caches.default` は **新規バインディングも支払い方法の登録（`A-6`）も伴わず永続ストアでもない** ため、これは **L3 の導入ではなく L2 の実装差し替え** である（L3 は引き続き未採用）
+- 🔴 **置き換えではなく 2 段にする**: Cache API が本構成で実際に効くか（Worker 自身のゾーン外の合成 URL をキーにできるか・`*.workers.dev` での動作可否）は公式ドキュメントに記載が無かった。置き換えると no-op だった場合にヒット率が **起票時点の実測値（ADR 0016 §1.1）から 0% へ悪化しうる** が、2 段なら最悪でも現状維持で変化は片方向に限定される（ADR 0016 §2.2 / §5.4）。🔵 **この未確定 2 点は 2026-09-03 のプレビュー実測で決着した**（[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §6.1。ただし同節の **測定の限界**（`X-Cache-Status` は 2 段のどちらで HIT したかを区別しない）も併せて読むこと）
+- 🔵 **`D-24` の撤回ではない**: Cache API は Worker のコードが明示的に呼ぶため HIT しても Worker は実行される。エッジキャッシュと違い `X-Cache-Status` の動的付与（§4.5）と両立する
 
 ⚠️ **Next.js の `fetch` Data Cache / `use cache` は当てにしない**。OpenNext で incremental cache を設定しない構成では isolate 内メモリに退化し、isolate の生存に依存する。**`SP-5`（同じ検索で API を二度叩かない）の担保は L2（アプリ内 `CachePort`）で説明する**。
 
@@ -269,9 +271,13 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 ### 4.4. L3 を入れる判定条件
 
-`infrastructure-design.md` §6.2 の条件を **そのまま維持する**（新しいルールを作らない）。加えて Cloudflare 固有の注意を 1 つ足す。
+`infrastructure-design.md` §6.2 の条件を **そのまま維持する**（新しいルールを作らない）。加えて Cloudflare 固有の注意を 2 つ足す。
 
 > 🔴 **R2 の有効化は支払い方法の登録を伴う**（`A-6`）。L3 導入の ADR を起票するときは、Workers Paid への加入とは **別のユーザー作業** が発生することを明記する。
+
+> 🔴 **§6.2 の観測条件 2（ヒット率が想定を下回る）を満たしても、直ちに L3 とは限らない**。条件 2 が要求するのは「検討して ADR を起票すること」であり、Issue #121 では検討の結果 **L2 の実装差し替え（Cache API・§4.2）** を選び、L3 は未採用のまま維持した（[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §2.3 / §3.3）。条件 2 の「想定」の数値定義も同 ADR §3 が正本で、ここには複製しない（§0.2）。
+>
+> 🔴 **観測条件 2 は 2 段構成の導入後も、まだ解消していない（現在進行）。** ADR 0016 §6.1 のプレビュー実測でヒット率は改善したが、同 ADR §3.1 の判定式では依然として想定値を下回っており、条件 2 は **充足状態のまま** である（「ADR を起票する」という要求は満たしたが、条件そのものが解けたわけではない）。**残差の切り分けは Issue #875 で追跡中**。
 
 ---
 

@@ -4,7 +4,7 @@
 
 ---
 
-## L-153: auto モードでも read-only な `grep` が承認プロンプトを出す（deny/ask の静的評価が classifier より先に決着する）（2026-09-03）
+## L-154: auto モードでも read-only な `grep` が承認プロンプトを出す（deny/ask の静的評価が classifier より先に決着する）（2026-09-03）
 
 **パターン**: `defaultMode: "auto"` で稼働しているのに、`grep -rn "..." .` のような **read-only なはずの Bash コマンドが承認プロンプトを出す**。「auto モードが壊れた」「classifier が厳格化された」と誤診しやすい（下流リポジトリでの実測）。
 

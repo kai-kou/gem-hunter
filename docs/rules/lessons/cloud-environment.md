@@ -16,7 +16,7 @@
 | OpenNext Cloudflare のプレビューでのみリダイレクト / パス解決が期待どおりにならない | L-129 |
 | 本番デプロイ系コマンド（`wrangler deploy` 等）が `permissions.allow` 済みでも auto mode classifier にブロックされることがある（毎回ではない） | L-130 |
 | Cloudflare API に `DELETE` で未知のサブリソース名を投げて 404 を確認しようとしたら、本番リソースが消えた | L-134 |
-| 同趣旨の Stop 差し戻しが `~/.claude/...` と `.claude/hooks/...` の両方から二重に届く | L-154 |
+| 同趣旨の Stop 差し戻しが `~/.claude/...` と `.claude/hooks/...` の両方から二重に届く | L-155 |
 
 ---
 
@@ -435,10 +435,10 @@ triggers = fetch_build_triggers(account_id, token, tag)    # ← 0 件ならこ�
 
 ---
 
-## L-154: CCR プラットフォーム側の Stop フックがプロジェクト側と同文の差し戻しを二重に届ける
+## L-155: CCR プラットフォーム側の Stop フックがプロジェクト側と同文の差し戻しを二重に届ける
 
 > ベース（`claude-code-repository-base`）では base#543 の L-126 として収録されたが、本リポジトリの
-> L-126 / L-127 は別の教訓に採番済みのため L-154 とした（番号だけがベースと異なる）。
+> L-126 / L-127 は別の教訓に採番済みのため L-155 とした（番号だけがベースと異なる）。
 
 **症状**: セッション終了時に「There are untracked files in the repository. Please commit and push …」が
 `[~/.claude/stop-hook-git-check.sh]` と `[$CLAUDE_PROJECT_DIR/.claude/hooks/stop-router.sh]` の **2 系統** で届く。

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 品質チェックの二層構成のうち「層 2（セッション実行）」を担う（Issue #72 / base#543・決定ログ D-42）。
+# 品質チェックの二層構成のうち「層 2（セッション実行）」を担う（Issue #72 / #543・決定ログ D-42）。
 # 層 1（高速ゲート）は .github/workflows/quality-checks.yml が Prettier / ESLint / tsc / Vitest を自動実行する。
 # 本スクリプトはそれに加えて E2E・Lighthouse a11y ゲートなど CI に載せない重いチェックまで通し、
 # PR 作成前の証跡（PR 本文へ貼る Markdown サマリー）を生成する。
@@ -787,7 +787,7 @@ else
   skip_check "PR 確認観測マーカー e2e (test_pr_confirm_marker.sh)" "スクリプトが見つかりません"
 fi
 
-# 再帰 grep の除外オプション正規化（base#543 / L-153）の self-test。
+# 再帰 grep の除外オプション正規化（base#543 / L-154）の self-test。
 if [ -f "$REPO_ROOT/tools/test_grep_exclude_normalize.sh" ]; then
   run_check_timeout "grep 除外オプション正規化 self-test (test_grep_exclude_normalize.sh)" 60 \
     bash tools/test_grep_exclude_normalize.sh

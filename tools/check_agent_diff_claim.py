@@ -52,6 +52,16 @@ docs/rules/agent-team-summary.md
 - 「実 diff にあるが報告に無い」（`missing_from_report`）: 報告漏れ。親が見落としやすい方向
   のため **より重い警告** として扱う
 - どちらか一方でも非空なら exit 1
+- 「`.../` 省略パスを一意に解決できなかった」（`unresolved`）: どの実ファイルを指すか確定できず
+  報告漏れとも虚偽報告とも判定できない → `mismatch` には混ぜないが **exit 2（判定不能）** を返す
+  （`0` へ丸めると exit code だけを見る呼び出し元に「未検証のファイルが残っている」ことが届かない・
+  `docs/rules/check-tool-design-rules.md` §1 / §3 の fail-closed 既定）
+
+## 終了コード
+
+- `0`: 報告と実 diff が一致し、未解決の省略パスも無い
+- `1`: 虚偽報告・報告漏れを検出した
+- `2`: 判定不能（git 実行失敗・引数不足・解決できない省略パスが残った）
 
 ## 使い方
 
@@ -63,6 +73,8 @@ docs/rules/agent-team-summary.md
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import subprocess
@@ -275,21 +287,60 @@ def parse_diff_stat(output: str) -> set[str]:
     return files
 
 
-def get_real_diff_files(root: Path) -> dict:
+# `git diff --stat` の省略を抑止するための幅指定（Issue #850 の一次対策）。
+# `--stat=<width>,<name-width>` を明示すると端末幅・`git config` に依存せずパスが省略されなくなる。
+# 二次対策（`.../` を後段で解決する `normalize_abbreviated_paths()`）は、この指定が効かない
+# git 実装・過去に生成済みの出力を食わせた場合の受け皿として残す（多層防御）。
+STAT_WIDTH = 4096
+STAT_NAME_WIDTH = 4000
+
+
+def _stat_arg() -> str:
+    return f"--stat={STAT_WIDTH},{STAT_NAME_WIDTH}"
+
+
+def get_real_diff_files(root: Path, *, runner=subprocess.run) -> dict:  # noqa: ANN001
+    """作業ツリーの実差分ファイル一覧を集める。
+
+    `runner` は `normalize_abbreviated_paths()` が `.../` 解決のために呼ぶ `git ls-files` へ
+    転送される（self-test で実 git に依存せず検証するための差し替え口）。
+    """
     status_out = run_git(["status", "--short"], root)
-    diff_out = run_git(["diff", "--stat"], root)
-    cached_out = run_git(["diff", "--cached", "--stat"], root)
+    diff_out = run_git(["diff", _stat_arg()], root)
+    cached_out = run_git(["diff", "--cached", _stat_arg()], root)
     files: set[str] = set()
     files |= parse_status_short(status_out)
     files |= parse_diff_stat(diff_out)
     files |= parse_diff_stat(cached_out)
+    # Issue #850: `git diff --stat` は長いパスを `.../` で省略しうる。省略パスと完全パスが
+    # 同じ集合に混ざると同一ファイルが 2 件に数えられ、片方が `missing_from_report`
+    # （報告漏れ＝より重い警告）へ落ちて偽陽性になる。集合比較の前段でここを解決する。
+    files, unresolved = git_diff_utils.normalize_abbreviated_paths(
+        files, repo_root=root, runner=runner
+    )
     return {
         "files": files,
+        "unresolved": unresolved,
         "raw": {"status": status_out, "diff_stat": diff_out, "diff_cached_stat": cached_out},
     }
 
 
-def compare(claimed: set[str], real: set[str]) -> dict:
+def compare(
+    claimed: set[str],
+    real: set[str],
+    unresolved: set[str] | None = None,
+) -> dict:
+    """報告と実 diff を突き合わせる。
+
+    `unresolved`（Issue #850）は「`.../` 省略パスを一意に解決できなかった」もの。
+    どの実ファイルを指すか確定できない以上、報告漏れとも虚偽報告とも判定できないため
+    **`mismatch` には混ぜず**、警告として報告だけする（黙って捨てない）。
+
+    ただし「`mismatch` に混ぜない」ことと「`0`（合格）で終わる」ことは別問題である。
+    残った `unresolved` は「報告漏れかもしれないが確定できない」状態であり、`main()` は
+    これを `2`（判定不能）で返す（`docs/rules/check-tool-design-rules.md` §1 / §3 の
+    fail-closed 既定。`0` に丸めると exit code だけを見る呼び出し元へ報告漏れが届かない）。
+    """
     missing_from_diff = sorted(claimed - real)
     missing_from_report = sorted(real - claimed)
     return {
@@ -297,6 +348,7 @@ def compare(claimed: set[str], real: set[str]) -> dict:
         "real": sorted(real),
         "missing_from_diff": missing_from_diff,
         "missing_from_report": missing_from_report,
+        "unresolved": sorted(unresolved or set()),
         "mismatch": bool(missing_from_diff or missing_from_report),
     }
 
@@ -313,7 +365,11 @@ def print_report(result: dict) -> None:
         print("❌ 実 diff にあるが報告に無い（報告漏れ・親が見落としやすい方向・より重い）:")
         for f in result["missing_from_report"]:
             print(f"    - {f}")
-    if not result["mismatch"]:
+    if result.get("unresolved"):
+        print("⚠️  判定不能: 省略パス（.../）を一意に解決できず、実 diff の一部を検証できませんでした（exit 2・fail-closed）:")
+        for f in result["unresolved"]:
+            print(f"    - {f}")
+    if not result["mismatch"] and not result.get("unresolved"):
         print("✅ 報告と実 diff は一致")
 
 
@@ -675,9 +731,9 @@ def run_self_test() -> int:
         _wiring_calls.append((args, cwd))
         if args == ["status", "--short"]:
             return " M tools/wiring_marker.py\n"
-        if args == ["diff", "--stat"]:
+        if args == ["diff", _stat_arg()]:
             return ""
-        if args == ["diff", "--cached", "--stat"]:
+        if args == ["diff", "--cached", _stat_arg()]:
             return ""
         return ""
 
@@ -695,10 +751,126 @@ def run_self_test() -> int:
         and _wiring_calls
         == [
             (["status", "--short"], fake_root),
-            (["diff", "--stat"], fake_root),
-            (["diff", "--cached", "--stat"], fake_root),
+            (["diff", _stat_arg()], fake_root),
+            (["diff", "--cached", _stat_arg()], fake_root),
         ],
         f"result={wiring_result} calls={_wiring_calls}",
+    )
+
+    # #850 一次対策: `--stat` を素のまま渡すと端末幅・git config 次第でパスが `.../` 省略される。
+    # 幅指定を落とす変異（`_stat_arg()` → `"--stat"`）を検知するため、書式そのものを固定する。
+    _diff_args = [a for a, _ in _wiring_calls if a and a[0] == "diff"]
+    check(
+        "get_real_diff_files() が --stat=<width>,<name-width> で省略を抑止している（#850 一次対策）",
+        bool(_diff_args)
+        and all(any(x.startswith("--stat=") for x in a) for a in _diff_args)
+        and _stat_arg() == f"--stat={STAT_WIDTH},{STAT_NAME_WIDTH}"
+        and STAT_NAME_WIDTH >= 1000,
+        f"diff_args={_diff_args}",
+    )
+
+    # ── #850: `.../` 省略パスと完全パスの混在が同一ファイル 2 件に増えないこと（end-to-end）──
+    _full = "docs/03_design/infrastructure/cloudflare-infrastructure.md"
+
+    def _fake_abbrev_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["status", "--short"]:
+            return ""
+        if args == ["diff", _stat_arg()]:
+            # 実測（#850）どおり `git diff --stat` 側だけが省略表記を返す状況を再現する
+            return (
+                f" .../infrastructure/cloudflare-infrastructure.md | 4 ++--\n"
+                f" {_full} | 4 ++--\n"
+                " 1 file changed, 2 insertions(+), 2 deletions(-)\n"
+            )
+        if args == ["diff", "--cached", _stat_arg()]:
+            return ""
+        return ""
+
+    def _no_ls_files_runner(args, **kwargs):  # noqa: ANN001, ANN003
+        # `git ls-files` は空を返す（解決は集合内の完全パスだけで足りることを示す）
+        class _R:
+            stdout = ""
+            returncode = 0
+
+        return _R()
+
+    git_diff_utils.run_git_or_raise = _fake_abbrev_run_git_or_raise
+    try:
+        abbrev_real = get_real_diff_files(Path("/fake/abbrev/root"), runner=_no_ls_files_runner)
+    finally:
+        git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+
+    r_abbrev = compare({_full}, abbrev_real["files"], abbrev_real.get("unresolved"))
+    check(
+        "#850: 省略パスと完全パスの混在が 1 件に畳まれ mismatch を立てない",
+        abbrev_real["files"] == {_full}
+        and r_abbrev["missing_from_report"] == []
+        and r_abbrev["mismatch"] is False,
+        f"files={sorted(abbrev_real['files'])} result={r_abbrev}",
+    )
+
+    # ── #850: 一意に解決できない省略パスは unresolved として報告され mismatch を立てない ──
+    def _fake_unresolvable_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["diff", _stat_arg()]:
+            return " .../ghost/never-existed.md | 1 +\n"
+        return ""
+
+    git_diff_utils.run_git_or_raise = _fake_unresolvable_run_git_or_raise
+    try:
+        unresolvable_real = get_real_diff_files(Path("/fake/abbrev/root"), runner=_no_ls_files_runner)
+    finally:
+        git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+
+    r_unres = compare(set(), unresolvable_real["files"], unresolvable_real.get("unresolved"))
+    check(
+        "#850: 解決できない省略パスは unresolved に出て mismatch を立てない（黙って捨てない）",
+        unresolvable_real["files"] == set()
+        and r_unres["unresolved"] == [".../ghost/never-existed.md"]
+        and r_unres["mismatch"] is False,
+        f"real={unresolvable_real} result={r_unres}",
+    )
+
+    # ── PR #873 Layer 1: CLI の入口（main()）を通した終了コードの回帰テスト ──
+    # 内部関数の直呼びテストだけでは「`unresolved` が exit code に反映されず、報告漏れが
+    # exit 0 で素通りする」fail-open を検知できない（`sprint-development-rules.md` SD-2 の
+    # 完了条件 #686「変異対象に本番の主コードパスを含める・self-test は本番の入口を経由させる」）。
+    def _run_main_with(stdin_text: str, fake_real: dict) -> tuple[int, str]:
+        _orig_stdin, _orig_argv = sys.stdin, sys.argv
+        _orig_get_real = globals()["get_real_diff_files"]
+        buf = io.StringIO()
+        sys.stdin = io.StringIO(stdin_text)
+        sys.argv = ["check_agent_diff_claim.py", "--stdin"]
+        globals()["get_real_diff_files"] = lambda *a, **k: fake_real  # noqa: ANN003, ARG005
+        try:
+            with contextlib.redirect_stdout(buf):
+                code = main()
+        finally:
+            sys.stdin, sys.argv = _orig_stdin, _orig_argv
+            globals()["get_real_diff_files"] = _orig_get_real
+        return code, buf.getvalue()
+
+    _main_report = "CHANGED_FILES:\ntools/a.py\n"
+
+    _code_ok, _out_ok = _run_main_with(_main_report, {"files": {"tools/a.py"}, "unresolved": set()})
+    check(
+        "main() 経由: 報告と実 diff が一致 → exit 0",
+        _code_ok == 0 and "✅" in _out_ok,
+        f"code={_code_ok} out={_out_ok!r}",
+    )
+
+    _code_miss, _ = _run_main_with(
+        _main_report, {"files": {"tools/a.py", "tools/b.py"}, "unresolved": set()}
+    )
+    check("main() 経由: 報告漏れ → exit 1", _code_miss == 1, f"code={_code_miss}")
+
+    _code_unres, _out_unres = _run_main_with(
+        _main_report,
+        {"files": {"tools/a.py"}, "unresolved": {".../ghost/never-existed.md"}},
+    )
+    check(
+        "main() 経由: 解決できない省略パスを 0 に丸めず exit 2（判定不能・fail-closed）",
+        _code_unres == 2 and "✅" not in _out_unres,
+        f"code={_code_unres} out={_out_unres!r}",
     )
 
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")
@@ -747,7 +919,7 @@ def main() -> int:
         print(f"❌ {e}", file=sys.stderr)
         return 2
 
-    result = compare(claimed, real["files"])
+    result = compare(claimed, real["files"], real.get("unresolved"))
     result["fallback_used"] = not used_block
 
     if args.json:
@@ -755,7 +927,18 @@ def main() -> int:
     else:
         print_report(result)
 
-    return 1 if result["mismatch"] else 0
+    if result["mismatch"]:
+        return 1
+    if result["unresolved"]:
+        # 解決できなかった省略パスは「報告漏れかもしれないが確定できない」状態。0（合格）へ
+        # 丸めると、exit code だけを見る呼び出し元には報告漏れが一切届かない（fail-open）。
+        # `docs/rules/check-tool-design-rules.md` §1 / §3 の既定どおり 2（判定不能）へ倒す。
+        print(
+            "⚠️  判定不能: 省略パスを解決できず、実 diff の一部を検証できませんでした（exit 2）",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
 
 
 if __name__ == "__main__":

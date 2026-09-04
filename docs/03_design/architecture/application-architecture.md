@@ -139,7 +139,7 @@ export function searchRepositoriesUseCase(): SearchRepositories {
 }
 ```
 
-⚠️ `CachePort`（`InMemoryCache`）は `container.ts` の `sharedCache` として（`SP-5`）、`RateLimitPort`（`WorkersRateLimit`）は `src/composition/rate-limit.ts` の間引き関数として（Issue #122 / Issue #442）、**いずれも composition root へ配線済み**。🔵 **どのエントリポイントへ適用しているかの正本は [Cloudflare インフラ設計](../infrastructure/cloudflare-infrastructure.md) §3.3 の適用経路表** であり、本書に経路を複製しない（`tools/check_rate_limit_wiring.py` がその表と実装を機械検査する）。実装をポートへ束ねる場所は `src/composition/` 配下に限る（関心ごとにファイルを分けてよい）。
+⚠️ `CachePort`（`LayeredCache` = `InMemoryCache` + `WorkersCache`。Cache API が使えない環境では `InMemoryCache` 単独へフォールバックする・実装名と構成の正本は [Cloudflare インフラ設計](../infrastructure/cloudflare-infrastructure.md) §4.2 / [ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md)）は `container.ts` の `sharedCache` として（`SP-5`）、`RateLimitPort`（`WorkersRateLimit`）は `src/composition/rate-limit.ts` の間引き関数として（Issue #122 / Issue #442）、**いずれも composition root へ配線済み**。🔵 **どのエントリポイントへ適用しているかの正本は [Cloudflare インフラ設計](../infrastructure/cloudflare-infrastructure.md) §3.3 の適用経路表** であり、本書に経路を複製しない（`tools/check_rate_limit_wiring.py` がその表と実装を機械検査する）。実装をポートへ束ねる場所は `src/composition/` 配下に限る（関心ごとにファイルを分けてよい）。
 
 - ユースケースは **ポートを引数で受け取る高階関数（またはコンストラクタ注入）** として書く。`import` で実装を掴まない。
 - テストは composition root を経由せず、**フェイク実装を直接渡す**（[テスト戦略](../../04_development/testing-strategy.md) §4）。
