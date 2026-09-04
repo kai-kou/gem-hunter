@@ -38,11 +38,23 @@ mcp__github__pull_request_read で取得した値を引数として渡す:
 示すメッセージと非ゼロ終了コードを返す（呼び出し元は明示引数を渡す経路へ
 フォールバックできる）。リポジトリ名の解決は `gh repo view` が使えない場合
 `tools/repo_slug.py`（`git remote get-url origin` ベース）にフォールバックする。
+
+## 終了コード（`docs/rules/check-tool-design-rules.md` §1）
+
+  0 … 判定が成立した（Layer 2 不要、または起動プランを出力した / --legacy 実行が成功した）
+  1 … 判定に必要な入力を取得できない（PR 情報が引けない）、または --legacy 実行が失敗した
+  2 … 判定不能（spec が不在・壊れている・最小構造を満たさない）
+
+🔴 **2 を 0 に丸めない**（Issue #881）。トリガー該当時に spec が使えないなら「起動せよ」と
+出力してはいけない。判定器が起動を指示し実行系が起動できない状態は fail-open であり、
+Layer 2 の実施率が 0% のまま緑を返し続ける原因になった（実測: PR #873 で発覚するまで
+`tools/discussion_specs/code_review.json` は一度も存在しなかった）。
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -119,6 +131,58 @@ def should_trigger(diff_lines: int, labels: set[str]) -> tuple[bool, str]:
     return False, f"差分 {diff_lines} 行・対象ラベルなし（閾値未達）"
 
 
+# participant の name 規約（discussion-review SKILL.md Step 0）: 英数字と _- のみ・32 字以内
+_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+
+
+def validate_spec(spec_path: Path) -> tuple[bool, str]:
+    """議論 spec の実在と最小構造を検証する（Issue #881）。
+
+    返り値は `(ok, reason)`。`ok=False` のとき呼び出し元は「起動せよ」と出力せず
+    判定不能（exit 2）で終わる（fail-closed・`check-tool-design-rules.md` §1）。
+
+    検証項目は `discussion-review` スキル Step 0 が spec を Read した直後に行うものと同じ
+    （participants >= 2・name 規約）。実行系が読んで初めて落ちるのでは判定器の意味が無いため、
+    判定器側で先に同じ検証をする。
+    """
+    if not spec_path.is_file():
+        return False, f"spec が存在しません: {spec_path}"
+    try:
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return False, f"spec を JSON として読めません: {spec_path}（{exc}）"
+    except OSError as exc:
+        return False, f"spec を読み込めません: {spec_path}（{exc}）"
+    if not isinstance(spec, dict):
+        return False, f"spec のトップレベルがオブジェクトではありません: {spec_path}"
+
+    participants = spec.get("participants")
+    if not isinstance(participants, list) or len(participants) < 2:
+        return False, (
+            f"participants が 2 名未満です: {spec_path}"
+            "（議論型レビューは相互反論が成立しないと意味がない）"
+        )
+    for i, p in enumerate(participants):
+        if not isinstance(p, dict):
+            return False, f"participants[{i}] がオブジェクトではありません: {spec_path}"
+        name = p.get("name")
+        if not isinstance(name, str) or not _NAME_RE.match(name):
+            return False, (
+                f"participants[{i}].name が name 規約（英数字と _- ・32 字以内）に反します: "
+                f"{name!r}"
+            )
+        if not p.get("lens"):
+            return False, f"participants[{i}]（{name}）に lens がありません: {spec_path}"
+
+    synthesizer = spec.get("synthesizer")
+    if not isinstance(synthesizer, dict) or not synthesizer.get("instruction"):
+        return False, f"synthesizer（instruction 付き）がありません: {spec_path}"
+    if not spec.get("verdict_schema"):
+        return False, f"verdict_schema がありません: {spec_path}"
+
+    return True, f"spec 検証 OK: {spec_path}（participants {len(participants)} 名）"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Layer 2 議論型レビュー自動トリガー（Issue #97）",
@@ -133,6 +197,8 @@ def main() -> None:
                         help="カンマ区切りのラベル名一覧。省略時は gh CLI で取得を試みる")
     parser.add_argument("--changed-files", default="",
                         help="カンマ区切りの変更ファイルパス一覧。省略時は gh CLI で取得を試みる")
+    parser.add_argument("--spec", default=None,
+                        help=f"議論 spec JSON のパス（既定: {SPEC_PATH}）。下流リポジトリは自前の spec を指定する")
     parser.add_argument("--legacy", action="store_true",
                         help="旧経路（run_discussion_review.py = claude -p）を直接起動する（フォールバック用）")
     parser.add_argument("--self-test", action="store_true",
@@ -171,6 +237,20 @@ def main() -> None:
         print(f"ℹ️ Layer 2 レビュー不要: {reason}")
         sys.exit(0)
 
+    # 🔴 spec を検証してから「起動」と言う（Issue #881・fail-closed）。
+    # dry-run も含めてこの順序を崩さない（「起動する」と報告した後で実行系が spec 不在に
+    # 気づく設計だと、判定器の出力を信じた呼び出し元が Layer 2 を実施済みと誤認する）。
+    spec_path = Path(args.spec).expanduser() if args.spec else SPEC_PATH
+    spec_ok, spec_reason = validate_spec(spec_path)
+    if not spec_ok:
+        print(
+            f"⚠️ Layer 2 判定不能: {spec_reason}\n"
+            f"（トリガー条件は満たしています: {reason}）\n"
+            "spec を修復するか --spec で有効な spec を指定してください。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     # 実行プラン JSON（stdout）と混ざらないよう、進捗ログは stderr へ出す
     print(f"🔍 Layer 2 レビュー起動: {reason}", file=sys.stderr)
 
@@ -189,7 +269,7 @@ def main() -> None:
             "action": "run_native_discussion_review",
             "skill": "discussion-review",
             "id": f"pr-{args.pr}",
-            "spec": str(SPEC_PATH),
+            "spec": str(spec_path),
             "targets": existing,
             "rounds": 2,
             "reason": reason,
@@ -211,7 +291,7 @@ def main() -> None:
             sys.executable,
             str(REPO_ROOT / "tools" / "run_discussion_review.py"),
             "--id", f"pr-{args.pr}",
-            "--spec", str(SPEC_PATH),
+            "--spec", str(spec_path),
             *target_args,
             "--rounds", "2",
         ],
@@ -355,6 +435,105 @@ def _self_test() -> None:
         assert result2.returncode != 0, "gh も引数もない場合は非ゼロ終了で判定不能を示すはず"
         assert "FileNotFoundError" not in result2.stderr, (
             f"引数なし fallback 経路で FileNotFoundError が漏れている:\n{result2.stderr}"
+        )
+
+    # --- 4. spec の実在・構造検証（Issue #881） ---
+    # 失敗経路1: spec が存在しない → 判定不能（ok=False）
+    ok, why = validate_spec(REPO_ROOT / "tools" / "discussion_specs" / "__absent__.json")
+    assert ok is False and "存在しません" in why, f"spec 不在は ok=False のはず（実際: {ok} / {why}）"
+
+    import tempfile
+
+    def _write_spec(obj) -> Path:
+        fd = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(obj, fd, ensure_ascii=False)
+        fd.close()
+        return Path(fd.name)
+
+    valid_participants = [
+        {"name": "a", "model": "sonnet", "lens": "x"},
+        {"name": "b", "model": "sonnet", "lens": "y"},
+    ]
+    base = {
+        "topic": "t", "brief": "b", "participants": valid_participants,
+        "synthesizer": {"name": "lead", "instruction": "i"},
+        "verdict_schema": {"findings": []},
+    }
+
+    # 失敗経路2: JSON としてパースできない
+    bad = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
+    bad.write("{ not json")
+    bad.close()
+    ok, why = validate_spec(Path(bad.name))
+    assert ok is False and "JSON" in why, f"壊れた JSON は ok=False のはず（実際: {ok} / {why}）"
+
+    # 失敗経路3: participants が 2 名未満（discussion-review SKILL.md Step 0 の検証）
+    ok, why = validate_spec(_write_spec({**base, "participants": [valid_participants[0]]}))
+    assert ok is False and "participants" in why, f"participants 1 名は ok=False のはず（実際: {ok} / {why}）"
+
+    # 失敗経路4: name 規約違反（英数字と _- 以外 / 32 字超）
+    ok, _ = validate_spec(_write_spec(
+        {**base, "participants": [{"name": "a b", "model": "sonnet", "lens": "x"}, valid_participants[1]]}))
+    assert ok is False, "空白を含む name は ok=False のはず"
+    ok, _ = validate_spec(_write_spec(
+        {**base, "participants": [{"name": "a" * 33, "model": "sonnet", "lens": "x"}, valid_participants[1]]}))
+    assert ok is False, "33 字の name は ok=False のはず"
+
+    # 失敗経路5: synthesizer / verdict_schema の欠落
+    for missing in ("synthesizer", "verdict_schema"):
+        obj = {k: v for k, v in base.items() if k != missing}
+        ok, why = validate_spec(_write_spec(obj))
+        assert ok is False and missing in why, f"{missing} 欠落は ok=False のはず（実際: {ok} / {why}）"
+
+    # 正常系: リポジトリ同梱の本物の spec が検証を通る（これ自体が #881 の回帰テスト）
+    ok, why = validate_spec(SPEC_PATH)
+    assert ok is True, f"同梱 spec が検証を通らない: {why}"
+
+    # --- 5. 本番の入口（main()）から exit code までの到達確認（#686） ---
+    # 判定ロジックだけを直接呼ぶテストでは、main() が validate_spec を呼び忘れても緑になる。
+    # 起動条件を満たす引数（差分 400 行）で子プロセスを起動し、spec 不在時に
+    # 「起動プラン」を出さず非ゼロで終わることを本番経路で確認する。
+    if os.environ.get("_DRT_SELFTEST_CHILD") != "1":
+        env2 = dict(os.environ)
+        env2["_DRT_SELFTEST_CHILD"] = "1"
+        blocked = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--pr", "999", "--diff-lines", "400", "--labels", "type:bug",
+             "--spec", str(REPO_ROOT / "tools" / "discussion_specs" / "__absent__.json")],
+            capture_output=True, text=True, cwd=str(REPO_ROOT), env=env2, timeout=30,
+        )
+        assert blocked.returncode == 2, (
+            f"spec 不在は判定不能 exit 2 のはず（実際: {blocked.returncode}）\n{blocked.stderr}"
+        )
+        assert "run_native_discussion_review" not in blocked.stdout, (
+            f"spec 不在なのに起動プランを出力している:\n{blocked.stdout}"
+        )
+        assert "Layer 2 レビュー起動" not in blocked.stderr, (
+            f"spec 不在なのに「起動」と報告している:\n{blocked.stderr}"
+        )
+
+        # --dry-run でも同じ（「起動する」と言ってから spec 不在が判明する順序にしない）
+        blocked_dry = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--pr", "999", "--diff-lines", "400", "--dry-run",
+             "--spec", str(REPO_ROOT / "tools" / "discussion_specs" / "__absent__.json")],
+            capture_output=True, text=True, cwd=str(REPO_ROOT), env=env2, timeout=30,
+        )
+        assert blocked_dry.returncode == 2, (
+            f"--dry-run でも spec 不在は exit 2 のはず（実際: {blocked_dry.returncode}）"
+        )
+
+        # 正常系: 同梱 spec なら起動プランを出して exit 0（検証が常に落ちる実装への変異を検知する）
+        okrun = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--pr", "999", "--diff-lines", "400", "--labels", "type:bug"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT), env=env2, timeout=30,
+        )
+        assert okrun.returncode == 0, (
+            f"同梱 spec がある正常系は exit 0 のはず（実際: {okrun.returncode}）\n{okrun.stderr}"
+        )
+        assert "run_native_discussion_review" in okrun.stdout, (
+            f"正常系で起動プランが出ていない:\n{okrun.stdout}"
         )
 
     print("OK: discussion_review_trigger self-test passed")

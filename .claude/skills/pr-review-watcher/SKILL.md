@@ -65,6 +65,9 @@ python3 tools/discussion_review_trigger.py --pr {PR番号}
 - **トリガー該当時**: 実行プラン JSON（id / spec / targets / rounds）が出力される。そのプランに従い
   **`discussion-review` スキル（ネイティブ Agent Teams・既定）** で議論型レビューを実行する
 - ネイティブ実行が成立しない場合のみ、プランの `fallback_command`（`--legacy` = 旧 claude -p 経路）へ退避する（理由をログ）
+- **exit 2（判定不能・#881）**: spec が不在・壊れている・最小構造（participants ≥ 2 等）を満たさない。
+  この場合は起動プランが出力されないので、**Layer 2 を実施済みとみなさない**。spec を修復するか
+  `--spec` で有効な spec を指定して再実行する（exit 2 を 0 に丸めて先へ進まない）
 - Layer 2 失敗時: stderr に警告を出力し Layer 0+1 で継続（サイレントフォールバック禁止）
 - 詳細: `docs/rules/ai-reviewer-strategy.md` を参照
 

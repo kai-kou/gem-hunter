@@ -1,0 +1,56 @@
+{
+  "topic": "PR 差分の敵対的多観点レビュー（FAIR Layer 2）",
+  "brief": "Layer 1（観点別フレッシュ文脈セルフレビュー・`code-review` スキル）を通過した差分を、相互反論つきの議論で再検証する。Layer 1 との責務の違いは『独立レビューの寄せ集め』ではなく『互いの指摘を潰し合って残ったものだけを CRITICAL に昇格させる』こと（`docs/rules/ai-reviewer-strategy.md`）。目的は 2 つある。① 単一モデルの系統的な見落とし（同じ盲点を全観点が共有する）を、レンズを敵対させて破ること。② Layer 1 が出しがちな過剰指摘（実際には成立しない仮説・スタイル論）を、反証を通して落とすこと。round 1 は各レンズが独立に claim を出し、round 2 では**他レンズの claim を最低 1 件は名指しで反証または補強する**（同意だけの投稿は round 2 の成果とみなさない）。指摘は必ず『どの入力・どの状態で壊れるか』を具体化し、再現手順が書けないものは confidence を落とす。対象パスは targets として渡される。差分の取得は `mcp__github__pull_request_read(method=\"get_diff\")` を使い、リポジトリの現行コードは必要に応じて読んでよい。",
+  "participants": [
+    {
+      "name": "correctness",
+      "model": "sonnet",
+      "lens": "正確性とセキュリティ境界。ロジック分岐・境界値・null / 空・例外処理・数値と日付の整合を、実際に壊れる入力を挙げて指摘する（『壊れそう』では不足で、失敗シナリオを具体化できないものは出さない）。あわせて秘密情報のハードコード・入力検証の欠落・インジェクション・権限境界の逸脱を見る。表示・記録用の日時が JST 基準か（`docs/rules/datetime-rules.md`）も対象。round 2 では他レンズの指摘に対し『その入力では実際には壊れない』という反証を優先して探す。"
+    },
+    {
+      "name": "counterexample",
+      "model": "sonnet",
+      "lens": "反例作成（専任・他レンズと兼務しない・#429）。差分に含まれる抽出・判定ロジック（正規表現・文字列マッチ・条件式・パーサ・バリデータ）を**打ち破ることを目的に**設計し、実際に通してみせる具体的な入力例を作る。チェック項目は 4 点（`code-review` スキルの観点『判定ロジックの適用範囲』と同じ・#244）: ① マッチのアンカー（行単位のつもりが文書全体に一致していないか。`re.MULTILINE` / `^$` の有無・`grep` と `grep -x`）② 対象層の取り違え（タイトルを見るべき判定が本文やコメントに一致していないか）③ 区別テストの有無（複数層を見る判定で各層が別ケースとして self-test にあるか）④ 倒れる向き（広すぎる一致が fail-open（素通り）と fail-closed（止まる）のどちらへ倒れるか。fail-open なら CRITICAL 相当）。対象が検査ツール（`tools/check_*.py` / hooks / quality gate）のときは、self-test が通る変異（条件分岐を 1 つ緩める・alternation から 1 語削る・閾値をずらす）を挙げ、それが検知されないことを示す。"
+    },
+    {
+      "name": "scope",
+      "model": "sonnet",
+      "lens": "Spec 忠実性とスコープ。対象 Issue / spec が求めた要件の欠落・部分実装・誤解釈と、依頼スコープ外の変更混入（YAGNI 違反・1 箇所しか使わない抽象化・先回りのレイヤ追加）を見る。既存関数で代替できる新規実装・コピペ重複も対象。仕様とテストと実装が食い違うときは権威順（ユーザー明示 > 仕様 > テスト > 現行コード・`docs/rules/intent-gate-rules.md`）で解決し、テストを通すために正しいコードを書き換えていないかを確認する。round 2 では**他レンズの指摘が本 PR のスコープ内か**を厳しく問い、既存の壊れに便乗した拡張要求は落とす（判定の正本は `docs/rules/core-principles.md` CP-1『スコープ厳守との優先順位』）。"
+    },
+    {
+      "name": "maintenance",
+      "model": "sonnet",
+      "lens": "ドキュメント整合とテストの実効性。ルール・SKILL.md・README・SSOT との desync と参照切れ（片方だけ更新された定義・存在しないファイルやセクションへの参照）を見る。手順書に規律を足した差分では、追加位置の見出し階層を上へ辿りスコープ（対象読者・対象ケース）が一致するか確認する。テストについては件数ではなく**実効性**を問う: 追加されたテストが実装の欠落を実際に検知するか（変異テストで赤くなる証跡が PR 本文にあるか・`docs/rules/sprint-development-rules.md` SD-2）、本番の主コードパス（CLI の入口から副作用の発生点まで）を通っているか、外部コマンドを呼ぶ検査なら fake が argv を検証しているか。運用面では終了コードの契約（`docs/rules/check-tool-design-rules.md`）と、対象 0 件が fail-closed になっているかを見る。"
+    }
+  ],
+  "synthesizer": {
+    "name": "lead",
+    "instruction": "4 レンズの claim / rebuttal を突き合わせ、**反証されずに残った指摘だけ**を findings に載せる。反証で落ちた claim は dropped に理由つきで記録し、findings には混ぜない（Layer 2 の価値は指摘を増やすことではなく、過剰指摘を削ったうえで残りを確実にすることにある）。各 finding には severity（CRITICAL / WARNING / NIT）・confidence（CONFIRMED / PLAUSIBLE）・file:line・失敗シナリオ（どの入力・どの状態で何が起きるか）を必ず書く。CONFIRMED を名乗れるのは、実際にコードを読んで経路を追えたか、再現コマンドを示せる場合だけで、推測は PLAUSIBLE に落とす。fail-open（検査や判定が黙って素通りする）方向の欠陥は severity を 1 段上げる。マージをブロックすべきものは blocking に列挙し、そうでないものは非ブロッキングとして分ける。議論を経てもレンズ間で結論が割れた点は unresolved に残し、どちらの立場も 1 行で書く（多数決で潰さない）。"
+  },
+  "verdict_schema": {
+    "findings": [
+      {
+        "severity": "CRITICAL / WARNING / NIT",
+        "confidence": "CONFIRMED / PLAUSIBLE",
+        "lens": "指摘元のレンズ名",
+        "file": "パス:行番号",
+        "summary": "欠陥の 1 文",
+        "failure_scenario": "どの入力・どの状態で何が起きるか",
+        "fix": "推奨する直し方（1 行）"
+      }
+    ],
+    "dropped": [
+      {
+        "claim": "反証で落ちた指摘",
+        "rebuttal": "落とした根拠（誰がどう反証したか）"
+      }
+    ],
+    "blocking": ["マージ前に解消すべき finding の要約"],
+    "unresolved": [
+      {
+        "issue": "レンズ間で結論が割れた点",
+        "positions": ["立場 A（1 行）", "立場 B（1 行）"]
+      }
+    ]
+  }
+}
