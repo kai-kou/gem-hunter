@@ -2455,6 +2455,216 @@ def _test_main_mine_or_automation_e2e() -> list[str]:
     return failures
 
 
+def _test_main_actionable_only_exclusions_e2e() -> list[str]:
+    """`--actionable-only` の 2 系統の除外を `main()` 経由で **行動として** 固定する（#898）。
+
+    #870 実装後の敵対的検証（変異テスト）で見つかった fail-open な穴を塞ぐ:
+      - **M5b**: `main()` の `ACTIONABLE_EXCLUDED_STATUSES` 参照行を `if False:` へ潰しても
+        self-test が緑のままだった。既存の検査は `'blocked_circuit_breaker' in
+        ACTIONABLE_EXCLUDED_STATUSES` という **定数の中身** しか見ておらず、定数を使う
+        `main()` 側の配線が外れたことを構造的に検知できない。
+      - **M6**: `main()` の active_session 除外ブロックを `if False:` へ潰しても緑のままだった。
+        `_fake_pr_for_step2()` の PR は `createdAt` が十分古く gh スタブも全滅するため、既存 e2e では
+        `active_session` が **常に False** で、除外の可否を一度も分岐させていない。
+
+    🔴 bot PR にとって active_session 除外は **唯一の防御層** である（他者の人手 PR は
+    `select_step2_targets()` が別途落とすが、bot PR は Step 2 の対象そのものなので、
+    ここが外れると他セッションが対応中の bot PR を奪って無人マージ経路へ流し込む）。
+    したがって「active な bot PR が落ちること」を本テストの本丸に置く。
+
+    注入方法（既存 fake の設計は変えない・後方互換）: `get_pr_human_comment_times()` を
+    「`active_pr_numbers` に入れた PR 番号にだけ直近時刻を返す」スタブへ差し替える。既定
+    （空集合）では現状と同じ空リストを返すため、既存ケースの挙動は一切変わらない。注入する
+    時刻は表示・記録用ではなく `compute_last_activity_min()` の内部計算に食わせる機械処理用の
+    値なので UTC のまま扱う（`datetime-rules.md` §1 の例外）。
+
+    各シナリオは **対照（control）付き** で書く: 除外要因だけを外した同一入力でその PR が
+    出力へ現れることを併せて固定し、「たまたま別の理由で消えていた」（＝弁別力ゼロのテスト）を防ぐ。
+    """
+    import contextlib
+
+    failures: list[str] = []
+    active_pr_numbers: set[int] = set()
+    # 機械処理用 UTC（人間が読む日時ではない・datetime-rules.md §1）
+    recent_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_http_get = globals()["_http_get"]
+    orig_get_open_prs = globals()["get_open_prs"]
+    orig_human_times = globals()["get_pr_human_comment_times"]
+    orig_argv = sys.argv
+    saved_env = {
+        k: os.environ.pop(k, None)
+        for k in ("GH_TOKEN", "GITHUB_TOKEN", "CLAUDE_CODE_SESSION_ID")
+    }
+    globals()["_run_gh_raw"] = lambda args: (False, "gh 到達不可（テスト用スタブ）")
+    globals()["_http_get"] = lambda url, token: (False, "REST 到達不可（テスト用スタブ）")
+    globals()["get_pr_human_comment_times"] = (
+        lambda pr_number: [recent_iso] if pr_number in active_pr_numbers else []
+    )
+
+    mine = _fake_pr_for_step2(101, "feat/mine", "kai-kou", "OWNER", SELF_SESSION_ID_FOR_TEST)
+    other_human = _fake_pr_for_step2(
+        104, "feat/other", "someone-else", "OWNER", OTHER_SESSION_ID_FOR_TEST
+    )
+    dependabot = _fake_pr_for_step2(
+        102, "dependabot/npm_and_yarn/next-15.5.1", "dependabot[bot]", "NONE", None
+    )
+    automation = _fake_pr_for_step2(
+        103, "automation/gem-pool-refresh", "github-actions[bot]", "NONE", None
+    )
+    # 信頼境界の外（authorAssociation=NONE かつ bot でもない）→ status=no_action
+    outsider = _fake_pr_for_step2(120, "feat/outsider", "outsider", "NONE", None)
+    blocked = _fake_pr_for_step2(
+        108, "feat/blocked", "kai-kou", "OWNER", OTHER_SESSION_ID_FOR_TEST
+    )
+    blocked["labels"] = [{"name": "status:blocked"}]  # → blocked_circuit_breaker
+    waiting_user = _fake_pr_for_step2(
+        109, "feat/waiting-user", "kai-kou", "OWNER", OTHER_SESSION_ID_FOR_TEST
+    )
+    waiting_user["labels"] = [{"name": "status:waiting-user"}]  # → blocked_waiting_user
+
+    def run_main(argv: list[str], prs: list[dict]) -> tuple[int, str, str]:
+        globals()["get_open_prs"] = lambda: list(prs)
+        sys.argv = ["check_pending_pr_reviews.py"] + argv
+        out, err = io.StringIO(), io.StringIO()
+        code = 0
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                main()
+        except SystemExit as e:  # noqa: PERF203 - テスト用
+            code = e.code if isinstance(e.code, int) else 1
+        return code, out.getvalue(), err.getvalue()
+
+    # (label, 追加フラグ, active_session へ倒す PR 番号, 入力 PR, 期待される PENDING 番号)
+    scenarios: list[tuple[str, list[str], set[int], list[dict], list[int]]] = [
+        # --- 系統 1: active_session 除外（人手 PR）---
+        (
+            "(1-control) 人手 PR: active_session=False なら出力に残る",
+            ["--actionable-only"],
+            set(),
+            [mine, other_human],
+            [101, 104],
+        ),
+        (
+            "(1) 人手 PR: active_session=True は落ちる（自 PR は所有者本人なので残る・#47）",
+            ["--actionable-only"],
+            {104},
+            [mine, other_human],
+            [101],
+        ),
+        (
+            "(1-include-active) --include-active なら active でも残る（除外理由が active_session であることの証明）",
+            ["--actionable-only", "--include-active"],
+            {104},
+            [mine, other_human],
+            [101, 104],
+        ),
+        # --- 系統 1 の本丸: active_session 除外（bot PR・唯一の防御層）---
+        (
+            "(2-control) bot PR: active_session=False なら Step 2 の対象になる",
+            ["--mine-or-automation", "--actionable-only"],
+            set(),
+            [dependabot, automation],
+            [102, 103],
+        ),
+        (
+            "(2) bot PR: active_session=True は全件落ちる（他セッション対応中の bot PR を奪わない）",
+            ["--mine-or-automation", "--actionable-only"],
+            {102, 103},
+            [dependabot, automation],
+            [],
+        ),
+        (
+            "(2-partial) bot PR: active な側だけが落ちる（一括除外・一括通過になっていない）",
+            ["--mine-or-automation", "--actionable-only"],
+            {102},
+            [dependabot, automation],
+            [103],
+        ),
+        # --- 系統 2: ACTIONABLE_EXCLUDED_STATUSES によるステータス除外（M5b）---
+        (
+            "(3-control) --actionable-only 無しなら blocked / no_action も出力される",
+            [],
+            set(),
+            [mine, blocked, waiting_user, outsider],
+            [101, 108, 109, 120],
+        ),
+        (
+            "(3) --actionable-only で blocked_circuit_breaker / blocked_waiting_user / no_action が落ちる",
+            ["--actionable-only"],
+            set(),
+            [mine, blocked, waiting_user, outsider],
+            [101],
+        ),
+        # --- 干渉検証: 2 系統の除外が同じ main() のループで同時に効く ---
+        (
+            "(4) 干渉検証: ステータス除外と active_session 除外が同時に効く",
+            ["--actionable-only"],
+            {104},
+            [mine, other_human, blocked, waiting_user, outsider],
+            [101],
+        ),
+    ]
+
+    try:
+        for label, extra_argv, active_set, prs, expected in scenarios:
+            active_pr_numbers.clear()
+            active_pr_numbers.update(active_set)
+            argv = extra_argv + ["--session-id", SELF_SESSION_ID_FOR_TEST]
+            code, out, err = run_main(argv, prs)
+            if code != 0:
+                failures.append(
+                    f"  actionable-only 除外 {label}: exit={code} (expected 0) stderr={err[-200:]!r}"
+                )
+            got = [int(m) for m in re.findall(r"^PENDING:(\d+):", out, flags=re.MULTILINE)]
+            if sorted(got) != sorted(expected):
+                failures.append(
+                    f"  actionable-only 除外 {label}: PENDING={got!r} (expected {expected!r})\n"
+                    f"    stdout={out!r}"
+                )
+            if not expected and "NO_PENDING_PRS" not in out:
+                failures.append(
+                    f"  actionable-only 除外 {label}: 空選択なのに NO_PENDING_PRS が出ない (stdout={out!r})"
+                )
+
+        # 注入経路そのものの健全性: active に倒した PR は JSON でも active_session=True であること
+        # （PENDING から消えた理由が「そもそも active になっていない」ではないことを固定する）。
+        active_pr_numbers.clear()
+        active_pr_numbers.update({104})
+        code, out, _err = run_main(
+            ["--json", "--session-id", SELF_SESSION_ID_FOR_TEST], [mine, other_human]
+        )
+        try:
+            parsed = json.loads(out)
+        except json.JSONDecodeError:
+            parsed = []
+            failures.append(f"  actionable-only 除外 (注入検証): JSON 解析不能 (stdout={out!r})")
+        by_number = {r["pr_number"]: r for r in parsed}
+        if not by_number.get(104, {}).get("active_session"):
+            failures.append(
+                "  actionable-only 除外 (注入検証): PR#104 が active_session=True になっていない "
+                f"({by_number.get(104, {}).get('active_session')!r})"
+            )
+        if by_number.get(101, {}).get("active_session"):
+            failures.append(
+                "  actionable-only 除外 (注入検証): 注入していない PR#101 まで active_session=True になった"
+            )
+    finally:
+        active_pr_numbers.clear()
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_http_get"] = orig_http_get
+        globals()["get_open_prs"] = orig_get_open_prs
+        globals()["get_pr_human_comment_times"] = orig_human_times
+        sys.argv = orig_argv
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+    return failures
+
+
 def _run_self_test() -> None:
     """Session-Id 解析（純粋関数）の決定論テスト。CI / セルフレビューで実行する。"""
     uid = "ec373723-01dc-54c9-a204-9ebb221b2295"
@@ -2801,6 +3011,11 @@ def _run_self_test() -> None:
     failures.extend(step2_e2e_failures)
     STEP2_E2E_CASE_COUNT = 19  # e2e 7 + 0件 + JSON + 早期return経路 3 + --mine 回帰 + 同時指定 + セッションID必須 2 + argv 3
 
+    # --actionable-only の 2 系統の除外を main() 経由で行動固定する（#898・M5b / M6 の穴埋め）
+    actionable_excl_failures = _test_main_actionable_only_exclusions_e2e()
+    failures.extend(actionable_excl_failures)
+    ACTIONABLE_EXCL_CASE_COUNT = 11  # シナリオ 9 + 注入検証 2
+
     total_cases = (
         len(cases)
         + 1
@@ -2831,6 +3046,7 @@ def _run_self_test() -> None:
         + HEAD_SHA_FALLBACK_CASE_COUNT
         + STEP2_PURE_CASE_COUNT
         + STEP2_E2E_CASE_COUNT
+        + ACTIONABLE_EXCL_CASE_COUNT
     )
     if failures:
         print("FAIL: check_pending_pr_reviews self-test", file=sys.stderr)
