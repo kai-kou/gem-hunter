@@ -122,11 +122,13 @@ python3 tools/check_markdown_table_columns.py --changed --under docs/rules
 | `<footer><a href="#top" title="…/README.md">top</a></footer>` | PASS | 別要素の属性値 |
 | `<footer><a href="…/README.md.bak">…</a></footer>` | PASS | 前方一致（右境界なし） |
 
-**判定基準**: 「判定対象は構造を持つ文書か？」（HTML / XML / JSON / YAML / TSX / Markdown）→ YES なら正規表現の部分一致で判定しない。正規表現でよいのは行指向のログ・単純なトークン抽出・パーサが存在しない独自形式だけ。
+**判定基準**: 「判定対象は **標準ライブラリのパーサがある** 構造化文書か？」（HTML / XML / JSON / TSX の AST / Python の `ast`）→ YES なら正規表現の部分一致で判定しない。
+
+🔴 **Markdown と YAML は別扱い**（標準ライブラリにパーサが無く、外部依存を足す方が害が大きい）。本リポジトリの Markdown 検査（`tools/check_cjk_markdown.py` / `check_markdown_table_columns.py` / `check_rules_sync.sh` など）は行指向の正規表現走査が既定であり、**本エントリはそれらを違反として扱わない**。ただし Markdown を正規表現で走査するときは、**コードフェンス・HTML コメント・引用ブロックを先に除去してから判定する**（除去しない実装は本エントリと同じ fail-open になる。既存実装は `tools/md_fence.py` がフェンス判定を担う）。
 
 **対策**:
 
-- 標準ライブラリのパーサを使う（`html.parser.HTMLParser` / `json` / `ast` 等）。コメントは `handle_comment`、地の文は `handle_data` へ回るので、**実データだけを集める** 構造になる。参照実装は `tools/check_site.py` の `FooterLinkParser`（`<footer>` の入れ子深さを数えて `<a href>` だけを収集し、URL は完全一致で判定）
+- 標準ライブラリのパーサを使う（`html.parser.HTMLParser` / `json` / `ast` 等）。コメントは `handle_comment`、地の文は `handle_data` へ回るので、**実データだけを集める** 構造になる。参照実装は `tools/check_site.py` の `FooterLinkParser`（`<footer>` の入れ子深さを数えて `<a href>` だけを収集し、URL は完全一致——同一文書内アンカー `#…` のみ許容——で判定して `README.md.bak` のような派生パスを弾く）
 - self-test の負ケースに「構造上到達不能な位置」（コメント内・地の文・別要素の属性値）と「近似だが別カテゴリ」（`README.md.bak` / 同じディレクトリの別ファイル）を必ず置く。この 2 軸が無いと、判定を最弱まで潰す変異（`re.compile("README")` 相当）でも self-test が PASS する（実測）
 
 **関連**: #590（正規表現で走査する検査ツールの初版に毎回入る欠陥クラス・本エントリはその 5 種類目）/ #896（self-test の負ケースが構造異常に偏る）/ `docs/rules/check-tool-design-rules.md`
