@@ -1,0 +1,13 @@
+{
+  "id": "pr-893",
+  "topic": "PR #893 の敵対的多観点レビュー（FAIR Layer 2）",
+  "brief": "Layer 1（観点別フレッシュ文脈セルフレビュー）を通過した PR #893 の差分を、相互反論つきの議論で再検証する。対象は Layer 2 判定器の spec 新設と fail-closed 化。round 1 は各レンズが独立に claim を出し、round 2 では他レンズの claim を最低 1 件は名指しで反証または補強する。指摘は必ず『どの入力・どの状態で壊れるか』を具体化する。",
+  "participants": [
+    "correctness",
+    "counterexample",
+    "scope",
+    "maintenance"
+  ],
+  "created_at": "2026-09-04T11:42:36+09:00",
+  "updated_at": "2026-09-04T11:42:36+09:00"
+}

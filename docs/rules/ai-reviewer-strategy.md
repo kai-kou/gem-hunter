@@ -56,6 +56,9 @@ python3 tools/detect_pr_diff_type.py --risk-only   # true/false のみ
 
 条件を満たさない PR は Layer 0 + Layer 1（自前 `code-review` スキル）のみで対応する（Layer 2 スキップ）。
 Layer 2 失敗時は stderr に警告を出力し、Layer 0+1 で継続する（フォールバック禁止でなくサイレント禁止）。
+**ただし判定器が exit 2（判定不能）を返したときは別扱い**（#881）: spec が不在・壊れているという意味なので、
+Layer 2 をスキップ扱いにせず spec を修復してから再実行する（判定器が「起動せよ」と言いながら実行系が
+起動できない状態を放置すると、Layer 2 の実施率が 0% のまま緑を返し続ける）。
 
 ## マージ可否の判定（外部レビュアー非依存）
 
@@ -75,5 +78,5 @@ Layer 2 失敗時は stderr に警告を出力し、Layer 0+1 で継続する（
 
 - [#97] Layer 2 定常化 / [#2485] Gemini 廃止に伴う代替設計 / [#49] Claude 単独 FAIR への移行決定 / [Copilot 依頼廃止・`/code-review` セルフレビュー必須化タスク] / [#275] `/code-review` disable-model-invocation 対応 / [#280] 自前 `code-review` スキル新設（bundled 置換・Layer 1 標準実行手段）
 - `.claude/skills/code-review/SKILL.md`（Layer 1 実行主体・本方針の実装）
-- `tools/discussion_review_trigger.py`（Layer 2 議論スペック `discussion_specs/code_review.json` は開発リポジトリ側で管理・下流では `--spec` に自前のスペック JSON を指定する）
+- `tools/discussion_review_trigger.py`（Layer 2 議論スペック `tools/discussion_specs/code_review.json` は **本リポジトリで管理する既定 spec**（判定器の `SPEC_PATH`）。削除・改名すると判定器が exit 2 になり Layer 2 が起動できなくなる・#881。下流フォークが別の観点セットを使いたい場合のみ `--spec` に自前のスペック JSON を指定する）
 - `docs/rules/pr-review-flow.md` / `docs/rules/pr-review-flow-summary.md`
