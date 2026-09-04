@@ -44,8 +44,17 @@ import { SiteHeader } from '@/src/ui/site-header'
  * **HTTP 404 を返す** のが `AC-5` の要件で、Suspense fallback が描画された時点でレスポンス
  * ヘッダが送出済みになり 404 を返せなくなる（Next.js `file-conventions/loading.md`
  * 「Place `notFound()` before those boundaries」）。本ページに `loading.tsx` は依然として
- * 置かない（`notFound()` 判定より前に読み込み中表示が要る US-22 は検索一覧側
- * `app/[locale]/page.tsx` で担保する）。
+ * 置かない（`loading.tsx` は route segment 全体を Suspense 境界で包むため、`notFound()` の
+ * 判定が確定する前に fallback が流れ、`AC-5` の同期 404 を壊す）。
+ *
+ * 🔴 **サーバー側の読み込み中表示と `AC-5` が両立しないのは「`notFound()` 判定が確定する
+ * までの窓」だけ**である（判定確定後は上記のとおり `<Suspense>` を置き、README 用の
+ * スケルトンを本ページ内で描画している・Issue #334 F-4）。その窓のあいだの読み込み中表示
+ * （`US-22` のうち詳細取得分）は、遷移元の一覧側で担保する:
+ * `LinkPendingHint`（`src/ui/link-pending-hint.tsx`・詳細リンク内に常設する `aria-hidden`
+ * の視覚ヒント）と、一覧ごとに 1 個だけ常設する `LinkPendingAnnouncer`
+ * （`src/ui/link-pending-announcer.tsx`・支援技術向けライブリージョン）の 2 つを
+ * `src/ui/{repository-list,gem-list,daily-digest}.tsx` に組み込んである。
  */
 export default async function RepositoryDetailPage({
   params,
