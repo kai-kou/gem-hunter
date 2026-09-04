@@ -171,6 +171,7 @@ def validate_spec(spec_path: Path) -> tuple[bool, str]:
             f"participants が 2 名未満です: {spec_path}"
             "（議論型レビューは相互反論が成立しないと意味がない）"
         )
+    seen_names: dict[str, int] = {}
     for i, p in enumerate(participants):
         if not isinstance(p, dict):
             return False, f"participants[{i}] がオブジェクトではありません: {spec_path}"
@@ -184,10 +185,27 @@ def validate_spec(spec_path: Path) -> tuple[bool, str]:
             )
         if not p.get("lens"):
             return False, f"participants[{i}]（{name}）に lens がありません: {spec_path}"
+        # 🔴 name が重複していると、参加者が実質 1 名になっても participants >= 2 を満たしてしまう
+        # （whiteboard は重複名をそのまま保存し、SendMessage の宛先も一意に解決できない）。
+        # 相互反論という Layer 2 の存在意義そのものが成立しない状態なので fail-closed で弾く。
+        if name in seen_names:
+            return False, (
+                f"participants の name が重複しています: {name!r}"
+                f"（participants[{seen_names[name]}] と participants[{i}]）: {spec_path}"
+            )
+        seen_names[name] = i
 
     synthesizer = spec.get("synthesizer")
     if not isinstance(synthesizer, dict) or not synthesizer.get("instruction"):
         return False, f"synthesizer（instruction 付き）がありません: {spec_path}"
+    # synthesizer.name も whiteboard の --author として使われるため participants と同じ規約を課す
+    # （participants だけ検証する非対称だと、議論の最後（verdict 投稿）で初めて実行系が拒否する）。
+    syn_name = synthesizer.get("name")
+    if not isinstance(syn_name, str) or not _PARTICIPANT_NAME_RE.fullmatch(syn_name):
+        return False, (
+            f"synthesizer.name が name 規約（先頭は英数字・以降は英数字と _- ・32 字以内）"
+            f"に反します: {syn_name!r}"
+        )
     if not spec.get("verdict_schema"):
         return False, f"verdict_schema がありません: {spec_path}"
 
@@ -209,7 +227,9 @@ def main() -> None:
     parser.add_argument("--changed-files", default="",
                         help="カンマ区切りの変更ファイルパス一覧。省略時は gh CLI で取得を試みる")
     parser.add_argument("--spec", default=None,
-                        help=f"議論 spec JSON のパス（既定: {SPEC_PATH}）。下流リポジトリは自前の spec を指定する")
+                        help=("議論 spec JSON のパス（既定: リポジトリ同梱の "
+                              "tools/discussion_specs/code_review.json）。相対パスは **実行時の cwd 基準** で"
+                              "解決する（REPO_ROOT 基準ではない）。下流リポジトリは自前の spec を指定する"))
     parser.add_argument("--legacy", action="store_true",
                         help="旧経路（run_discussion_review.py = claude -p）を直接起動する（フォールバック用）")
     parser.add_argument("--self-test", action="store_true",
@@ -522,6 +542,19 @@ def _self_test() -> None:
             {**base, "participants": [{"name": bad_name, "model": "sonnet", "lens": "x"},
                                       valid_participants[1]]}))
         assert ok is False, f"先頭が英数字でない name（{bad_name}）は ok=False のはず"
+
+    # 失敗経路8: participants の name が重複している（Layer 2 の相互反論が成立しない・#893 Layer 2 verdict）
+    ok, why = validate_spec(_write_spec({**base, "participants": [
+        {"name": "a", "model": "sonnet", "lens": "x"},
+        {"name": "a", "model": "sonnet", "lens": "y"},
+    ]}))
+    assert ok is False and "重複" in why, f"name 重複は ok=False のはず（実際: {ok} / {why}）"
+
+    # 失敗経路9: synthesizer.name が name 規約に反する（participants だけ検証する非対称を塞ぐ）
+    for bad_syn in ("-lead", "lead\n", "le ad", "l" * 33, ""):
+        ok, _ = validate_spec(_write_spec(
+            {**base, "synthesizer": {"name": bad_syn, "instruction": "i"}}))
+        assert ok is False, f"synthesizer.name が規約違反（{bad_syn!r}）なら ok=False のはず"
 
     # 失敗経路7: participants の要素が dict でない（例外を漏らさず ok=False を返すこと）
     for bad_participant in ("alice", None, 42, ["alice"]):
