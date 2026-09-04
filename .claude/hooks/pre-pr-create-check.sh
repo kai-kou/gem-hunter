@@ -174,6 +174,9 @@ if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   #   - ## npm run check 結果  ── `## `npm run check` 結果`
   #
   # 判定は awk で単一パスで行い、以下 3 点のすり抜けを塞ぐ（PR #456 敵対的検証で実測）:
+  # ⚠️ 下の awk 正規表現・フェンス判定は tools/check_evidence_freshness.py の `_HEADING_RE` /
+  #    `find_evidence_shas()` と同義の独立実装（相互参照コメントを双方に付与済み・#906 WARNING 5）。
+  #    一本化（--check-section-only モードの追加と本 awk の廃止）は #906 のスコープ外（やらない）。
   #   1. 見出しが複数回出現する場合、最初の 1 個だけでなく全見出しを走査し、
   #      いずれか 1 つのセクションに表があれば合格にする（1 個目だけ見ると
   #      「後から正しく貼り直した」PR が誤ブロックされていた）
