@@ -76,9 +76,11 @@ effort: medium
    /repos/{owner}/{repo}/pulls?state=open` を直叩きし、PR 本文の `Session-Id:` トレーラーを
    クライアント側で grep して `--mine-or-automation` 相当を素朴に再実装する（最終手段としてのみ）。
    その手動実装でも **自 PR 優先の順序を守る**（#870）: `Session-Id:` 一致が 1 件でもあればそれだけ、
-   0 件のときだけ head ブランチが `dependabot/` 前方一致または `automation/gem-pool-refresh` 完全一致
-   かつ著者が `dependabot[bot]` / `github-actions[bot]`（**完全一致**。前方一致・部分一致にしない）
-   かつ fork でない PR を対象にする。**他者の人手 PR は対象にしない**（CP-4・L-109）。
+   0 件のときだけ **(head ブランチが `dependabot/` 前方一致 かつ 著者が `dependabot[bot]`) または
+   (head ブランチが `automation/gem-pool-refresh` 完全一致 かつ 著者が `github-actions[bot]`)** の
+   いずれかを満たし、かつ fork でない PR を対象にする（ブランチと著者は bot ごとに対で AND 判定する。
+   `dependabot/` ブランチに著者 `github-actions[bot]` が付くような誤ペアは対象にしない。著者は
+   **完全一致**。前方一致・部分一致にしない）。**他者の人手 PR は対象にしない**（CP-4・L-109）。
    🔴 **いずれの経路でも `status:blocked` / `status:waiting-user` ラベル付き PR は対象から外す**
    （#746・`--actionable-only` 相当。§3 Step 2 の 🔴 と同じ条件。手動実装で写し忘れると、
    curl 経路でのみ A-4 サーキットブレーカーが無効化され、止めたはずの修正ループへ再突入する）。

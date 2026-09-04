@@ -926,15 +926,22 @@ def select_step2_targets(results: list[dict]) -> list[dict]:
     3 が本関数の眼目である。孤児 PR の全件回収は Step 2 の責務ではなく、他セッションが対応中の
     PR を奪わない不介入（CP-4・L-109）を条文だけでなく実装にも残す。
 
-    `is_mine` は `main()` が全 PR へ無条件に設定し、`is_automation_pr` / `is_dependabot_pr` は
-    `analyze_pr()` の **両方の return 経路** が必ず格納する。したがって 3 キーとも `.get()` の
-    既定値に頼らず添字参照する（キー欠落は握り潰さず KeyError で表面化させる＝fail-closed）。
+    `is_mine` は `main()` が全 PR へ無条件に設定し、`is_trusted_bot_pr`
+    （= `is_automation_pr or is_dependabot_pr`）は `analyze_pr()` の **両方の return 経路** が
+    必ず格納する。したがって `is_mine` / `is_trusted_bot_pr` の 2 キーとも `.get()` の既定値に
+    頼らず添字参照する（キー欠落は握り潰さず KeyError で表面化させる＝fail-closed）。
     呼び出し経路は `main()` と self-test だけである（他所から部分的な dict を渡さないこと）。
+
+    🔴 definition drift 対策（Layer 1+2 レビュー指摘・CONFIRMED）: 「信頼済み bot か」の判定は
+    `analyze_pr()` が計算する `is_trusted_bot_pr` を **唯一の判定源** とし、本関数が
+    `is_automation_pr` / `is_dependabot_pr` を独立に OR して再実装しない。個別フラグは
+    JSON 出力・self-test の内訳検証用に dict へ残るが、選択ロジックは `is_trusted_bot_pr`
+    だけを見る（将来 3 系統目の信頼済み bot を足すときの更新漏れを構造的に防ぐ）。
     """
     mine = [r for r in results if r["is_mine"]]
     if mine:
         return mine
-    return [r for r in results if r["is_automation_pr"] or r["is_dependabot_pr"]]
+    return [r for r in results if r["is_trusted_bot_pr"]]
 
 
 
@@ -989,6 +996,10 @@ def analyze_pr(pr: dict) -> dict:
             # 早期 return 経路でもキーを必ず持たせ、呼び出し側が .get() の既定値に頼らないようにする。
             "is_automation_pr": is_automation_pr,
             "is_dependabot_pr": is_dependabot_pr,
+            # definition drift 対策（Layer 1+2 レビュー指摘・CONFIRMED）: 信頼境界判定に実際に
+            # 使う派生値 is_trusted_bot_pr（= is_automation_pr or is_dependabot_pr）を dict にも
+            # 載せる。select_step2_targets() はこのキーを参照する（個別フラグの OR を再実装しない）。
+            "is_trusted_bot_pr": is_trusted_bot_pr,
         }
 
     # レビューリクエスト（requested_reviewers）を確認
@@ -1178,6 +1189,9 @@ def analyze_pr(pr: dict) -> dict:
         # #870: bot 自動化 PR 判定を戻り値へ載せる（select_step2_targets() の入力）
         "is_automation_pr": is_automation_pr,
         "is_dependabot_pr": is_dependabot_pr,
+        # definition drift 対策（Layer 1+2 レビュー指摘・CONFIRMED）: 通常経路でも
+        # is_trusted_bot_pr を必ず載せる（早期 return 経路と同じキー構成を保つ）。
+        "is_trusted_bot_pr": is_trusted_bot_pr,
     }
 
 
@@ -2097,18 +2111,34 @@ def _test_select_step2_targets_pure() -> list[str]:
     """
     failures: list[str] = []
 
-    def rec(number: int, mine: bool, automation: bool, dependabot: bool) -> dict:
+    def rec(
+        number: int,
+        mine: bool,
+        automation: bool,
+        dependabot: bool,
+        trusted_bot_override: bool | None = None,
+    ) -> dict:
+        # trusted_bot_override: None なら analyze_pr() と同じ導出式（automation or dependabot）を
+        # 使う。明示指定すると個別フラグと乖離した dict を作れる（definition drift 固定用）。
+        trusted = automation or dependabot if trusted_bot_override is None else trusted_bot_override
         return {
             "pr_number": number,
             "is_mine": mine,
             "is_automation_pr": automation,
             "is_dependabot_pr": dependabot,
+            "is_trusted_bot_pr": trusted,
         }
 
     mine_pr = rec(1, True, False, False)
     dependabot_pr = rec(2, False, False, True)
     automation_pr = rec(3, False, True, False)
     other_human_pr = rec(4, False, False, False)
+    # definition drift 固定ケース（Layer 1+2 レビュー指摘・CONFIRMED）: is_trusted_bot_pr と
+    # 個別フラグが矛盾する入力で、選択ロジックが is_trusted_bot_pr 側だけを見ることを固定する。
+    # (h) 個別フラグは両方 True だが is_trusted_bot_pr が False → 選ばれない
+    conflicting_flags_true_trusted_false = rec(6, False, True, True, trusted_bot_override=False)
+    # (i) 個別フラグは両方 False だが is_trusted_bot_pr が True → 選ばれる
+    conflicting_flags_false_trusted_true = rec(7, False, False, False, trusted_bot_override=True)
 
     cases: list[tuple[str, list[dict], list[int]]] = [
         # (a) 自 PR あり + Dependabot PR あり → 自 PR のみ（--mine 優先が効いている）
@@ -2129,6 +2159,10 @@ def _test_select_step2_targets_pure() -> list[str]:
             [mine_pr, rec(5, True, False, False), dependabot_pr, automation_pr],
             [1, 5],
         ),
+        # (h) definition drift 固定: 個別フラグ True でも is_trusted_bot_pr が False なら選ばれない
+        ("(h) flags true / trusted false", [conflicting_flags_true_trusted_false], []),
+        # (i) definition drift 固定: 個別フラグ False でも is_trusted_bot_pr が True なら選ばれる
+        ("(i) flags false / trusted true", [conflicting_flags_false_trusted_true], [7]),
     ]
     for label, results, expected in cases:
         got = [r["pr_number"] for r in select_step2_targets(results)]
@@ -2297,6 +2331,11 @@ def _test_main_mine_or_automation_e2e() -> list[str]:
                     "  main --mine-or-automation --json: is_dependabot_pr が JSON に載っていない "
                     f"({parsed[0].get('is_dependabot_pr')!r})"
                 )
+            elif not parsed[0].get("is_trusted_bot_pr"):
+                failures.append(
+                    "  main --mine-or-automation --json: is_trusted_bot_pr が JSON に載っていない "
+                    f"({parsed[0].get('is_trusted_bot_pr')!r})"
+                )
 
         # --mine（従来経路）は bot PR を拾わない（既存の意味論を壊していないことの回帰固定）
         code, out, _err = run_main(
@@ -2359,6 +2398,16 @@ def _test_main_mine_or_automation_e2e() -> list[str]:
                     failures.append(
                         "  早期 return 経路: is_automation_pr が dict に載っていない "
                         f"({parsed_blocked[1].get('is_automation_pr')!r})"
+                    )
+                if not parsed_blocked[0].get("is_trusted_bot_pr"):
+                    failures.append(
+                        "  早期 return 経路: is_trusted_bot_pr が dict に載っていない (dependabot) "
+                        f"({parsed_blocked[0].get('is_trusted_bot_pr')!r})"
+                    )
+                if not parsed_blocked[1].get("is_trusted_bot_pr"):
+                    failures.append(
+                        "  早期 return 経路: is_trusted_bot_pr が dict に載っていない (automation) "
+                        f"({parsed_blocked[1].get('is_trusted_bot_pr')!r})"
                     )
 
         # セッション ID 不明のまま --mine-or-automation を使わせない（#870）。
@@ -2745,7 +2794,7 @@ def _run_self_test() -> None:
     # Step 2 対象選択（#870）: 純粋関数の直接検証
     step2_pure_failures = _test_select_step2_targets_pure()
     failures.extend(step2_pure_failures)
-    STEP2_PURE_CASE_COUNT = 7  # (a)〜(g)
+    STEP2_PURE_CASE_COUNT = 9  # (a)〜(i)
 
     # Step 2 対象選択（#870）: main() を経由した貫通検証（#686 本番の主コードパス）
     step2_e2e_failures = _test_main_mine_or_automation_e2e()

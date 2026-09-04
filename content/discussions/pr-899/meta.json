@@ -1,0 +1,13 @@
+{
+  "id": "pr-899",
+  "topic": "PR 差分の敵対的多観点レビュー（FAIR Layer 2）",
+  "brief": "PR #899（sprint-cycle-router 決定木 Step 2 を bot 自動化 PR まで広げる / Closes #870）の Layer 2 議論型レビュー。対象: tools/check_pending_pr_reviews.py / .claude/skills/sprint-cycle-router/SKILL.md。差分 484 行（閾値 300 行）でトリガー。Layer 1（7 観点）は CONFIRMED 1 件（select_step2_targets が is_trusted_bot_pr を再実装している definition drift）/ PLAUSIBLE 1 件（SKILL.md §2 b) と §3 Step 2 の条件重複）を出している。round 2 では他レンズの claim を最低 1 件は名指しで反証または補強すること。",
+  "participants": [
+    "correctness",
+    "counterexample",
+    "scope",
+    "maintenance"
+  ],
+  "created_at": "2026-09-04T15:31:13+09:00",
+  "updated_at": "2026-09-04T15:31:13+09:00"
+}
