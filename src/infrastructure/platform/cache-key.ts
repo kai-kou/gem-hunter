@@ -17,6 +17,8 @@ export type { CacheKey } from '../../domain/ports/cache-port'
 const NAMESPACE_SEARCH = 'search'
 const NAMESPACE_REPOSITORY = 'repository'
 const NAMESPACE_README = 'readme'
+const NAMESPACE_REPOSITORY_ETAG = 'repository-etag'
+const NAMESPACE_README_ETAG = 'readme-etag'
 
 /**
  * キャッシュスキーマバージョン（全キャッシュキーの共通セグメント）。
@@ -54,6 +56,16 @@ function normalizeSegment(segment: string): string {
 }
 
 /**
+ * `namespace:バージョン:owner/name` 形式のキーを組み立てる共通ヘルパー（PR #926 レビュー
+ * 指摘 #7）。`repositoryCacheKey` / `readmeCacheKey` / `repositoryEtagCacheKey` /
+ * `readmeEtagCacheKey` の 4 関数はテンプレートが同一のため、ここへ括り出す。
+ * `searchResultCacheKey` はキー構成要素が異なる（owner/name の組ではない）ため対象外。
+ */
+function ownerNameKey(namespace: string, owner: string, name: string): string {
+  return `${namespace}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}`
+}
+
+/**
  * 検索結果のキャッシュキー（スキーマバージョン + クエリ + ページ + ソート順 + 表示件数）。
  * ソート順（AR-2）・表示件数（AR-3）はキャッシュ断片化を招くため構成要素に含める（domain-model.md §4）。
  */
@@ -63,7 +75,7 @@ export function searchResultCacheKey(query: SearchQuery): CacheKey {
 
 /** 単一リポジトリのキャッシュキー（スキーマバージョン + owner/name）。 */
 export function repositoryCacheKey(owner: string, name: string): CacheKey {
-  return `${NAMESPACE_REPOSITORY}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}` as CacheKey
+  return ownerNameKey(NAMESPACE_REPOSITORY, owner, name) as CacheKey
 }
 
 /**
@@ -72,5 +84,34 @@ export function repositoryCacheKey(owner: string, name: string): CacheKey {
  * キャッシュする値として使う（表示都合のサニタイズはキャッシュ層の外・`src/ui/` 側の責務）。
  */
 export function readmeCacheKey(owner: string, name: string): CacheKey {
-  return `${NAMESPACE_README}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}` as CacheKey
+  return ownerNameKey(NAMESPACE_README, owner, name) as CacheKey
+}
+
+/**
+ * `GET /repos/{owner}/{repo}` の条件付きリクエスト（`If-None-Match` / ETag）用エントリのキー。
+ * 本文キャッシュ（`repositoryCacheKey`）とは **別の名前空間** にする（Issue #170）。
+ * 本文キャッシュは「マッピング済みドメイン値」を TTL 保持するのに対し、こちらは
+ * 「上流の生レスポンス + ETag」を保持し、本文 TTL 切れ後の再検証（primary rate limit の節約）
+ * に使う。同じキーにすると片方の書き込みがもう片方を破壊するため、必ず分ける。
+ *
+ * 🔴 **`invalidate` の契約（PR #926 レビュー指摘 #8）**: `CachePort.invalidate(repositoryCacheKey(...))`
+ * を呼んでも本エントリ（`repository-etag:` 名前空間）は削除されない。両者は別名前空間の
+ * 独立したキーであり、単独の `invalidate` では ETag エントリが生き残るため、直後の
+ * `If-None-Match` 再検証が 304 を受けて **古い生 body を復元してしまう**。将来キャッシュ
+ * バスター（強制再取得）を作るときは、本文キャッシュと ETag エントリの **両名前空間を
+ * まとめて破棄する** こと（本関数自体の変更は不要・契約の明記のみ）。
+ */
+export function repositoryEtagCacheKey(owner: string, name: string): CacheKey {
+  return ownerNameKey(NAMESPACE_REPOSITORY_ETAG, owner, name) as CacheKey
+}
+
+/**
+ * `GET /repos/{owner}/{repo}/readme` の条件付きリクエスト用エントリのキー。
+ * `readmeCacheKey`（本文 TTL キャッシュ）とは別の名前空間にする（`repositoryEtagCacheKey` と同じ理由）。
+ *
+ * 🔴 **`invalidate` の契約**: `repositoryEtagCacheKey` の JSDoc と同じ注意が本関数にも適用される
+ * （`readmeCacheKey` を `invalidate` しても本エントリ = `readme-etag:` 名前空間は残る）。
+ */
+export function readmeEtagCacheKey(owner: string, name: string): CacheKey {
+  return ownerNameKey(NAMESPACE_README_ETAG, owner, name) as CacheKey
 }
