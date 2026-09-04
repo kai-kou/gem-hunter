@@ -150,22 +150,30 @@ export function trySearchKeyword(raw: string): SearchKeyword | null { /* … */ 
 
 🔴 **厳格版はインフラ層・UI 層の実データ読み取りには使わないこと**。実在データの一部を拒否し、一覧からの消失・リンク破損を招く（`static-gem-index.ts` / `static-gem-digest.ts` / `gem-list.tsx` は過去に独自の緩い判定を重複実装していたが、許容版へ統合済み）。
 
-**`CacheKey` の実装位置（Issue #67・Issue #89 で改訂）**: **ブランド型の定義** は `src/domain/ports/cache-port.ts`（`CachePort` と同じファイル）に置く — `CachePort.get` / `set` / `invalidate` の引数を `key: CacheKey` にして、生成関数を経ない生の `string` を渡すとコンパイルエラーになるよう型で強制するため（ARCH-1 により domain は infrastructure を import できず、ポート側で型を持つほかない）。**生成関数（キーの組み立て）** は引き続き `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。キー形式が `CachePort` 実装詳細と不可分なため・`src/domain/model/` ではない）。domain 側はブランド型を **定義するだけ** で構築しない。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` / `readmeCacheKey(owner, name)` の 3 本。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
+**`CacheKey` の実装位置（Issue #67・Issue #89 で改訂）**: **ブランド型の定義** は `src/domain/ports/cache-port.ts`（`CachePort` と同じファイル）に置く — `CachePort.get` / `set` / `invalidate` の引数を `key: CacheKey` にして、生成関数を経ない生の `string` を渡すとコンパイルエラーになるよう型で強制するため（ARCH-1 により domain は infrastructure を import できず、ポート側で型を持つほかない）。**生成関数（キーの組み立て）** は引き続き `src/infrastructure/platform/cache-key.ts` に置く（`CachePort` の実装と同じ層。キー形式が `CachePort` 実装詳細と不可分なため・`src/domain/model/` ではない）。domain 側はブランド型を **定義するだけ** で構築しない。生成関数は `searchResultCacheKey(query: SearchQuery)` / `repositoryCacheKey(owner, name)` / `readmeCacheKey(owner, name)` / `repositoryEtagCacheKey(owner, name)` / `readmeEtagCacheKey(owner, name)` の **5 本**。正規化は `trim → toLowerCase → encodeURIComponent`、利用者識別子は含めない。実際のキー形式:
 
 ```text
 search:{バージョン}:{正規化キーワード}:page={ページ番号}:sort={ソート順}:per_page={表示件数}   # searchResultCacheKey
 repository:{バージョン}:{正規化owner}/{正規化name}                                             # repositoryCacheKey
 readme:{バージョン}:{正規化owner}/{正規化name}                                                 # readmeCacheKey
+repository-etag:{バージョン}:{正規化owner}/{正規化name}                                        # repositoryEtagCacheKey
+readme-etag:{バージョン}:{正規化owner}/{正規化name}                                            # readmeEtagCacheKey
 
 # 現行（CACHE_SCHEMA_VERSION = 'v2'）の実例
 search:v2:react:page=1:sort=stars:per_page=20
 repository:v2:vercel/next.js
 readme:v2:vercel/next.js
+repository-etag:v2:vercel/next.js
+readme-etag:v2:vercel/next.js
 ```
 
 ソート順（`AR-2`）・表示件数（`AR-3`）は `SearchQuery` の構成要素であり、キャッシュ断片化を招くため `searchResultCacheKey` に必ず含める。
 
-**🔴 バージョンセグメント（`CACHE_SCHEMA_VERSION`・Issue #142）**: 名前空間の直後に置く **キャッシュスキーマバージョン** で、3 つの生成関数すべてが同じ定数（`src/infrastructure/platform/cache-key.ts` の `export const CACHE_SCHEMA_VERSION`）を共有する。
+🔴 **`-etag` の 2 本は本文キャッシュと意味が異なる**（Issue #170）: `repositoryCacheKey` / `readmeCacheKey` は「マッピング済みドメイン値」を TTL 保持するのに対し、`repositoryEtagCacheKey` / `readmeEtagCacheKey` は「上流の生レスポンス + ETag」を保持し、本文 TTL 切れ後の条件付きリクエスト（`If-None-Match`）による再検証に使う。同じキーにすると片方の書き込みがもう片方を破壊するため、必ず別の名前空間にする。TTL の根拠は [ADR 0005](../../adr/0005-cache-port-yagni-exception-and-ttl.md) §3.4 の追補が正本。
+
+🔴 **層をまたぐ生成関数 import は意図的な設計判断**（`src/infrastructure/github/`＝`ARCH-5` が `src/infrastructure/platform/cache-key.ts`＝`ARCH-4` の生成関数を import する）: `check_architecture_boundaries.py` は infrastructure 内の横方向依存を検査しないため機械検査は素通りするが、ETag エントリのキーも本ファイル（`platform/cache-key.ts`）に置くと決めている。HTTP 条件付きリクエストは GitHub 通信の一部だが、キー形式は `CachePort` 実装と不可分なため、github 層に別実装を置くと生成関数が二重化する。
+
+**🔴 バージョンセグメント（`CACHE_SCHEMA_VERSION`・Issue #142）**: 名前空間の直後に置く **キャッシュスキーマバージョン** で、5 つの生成関数すべてが同じ定数（`src/infrastructure/platform/cache-key.ts` の `export const CACHE_SCHEMA_VERSION`）を共有する。
 
 - **bump する条件**: **キャッシュ値の「意味」が変わったとき** — 取得範囲・フィルタ条件・レスポンスのマッピングの変更が対象。キーの構成要素（キーワード・ページ・ソート順・表示件数）が同じままでも、**同じキーに対して返るべき値の中身が変われば bump する**。
 - **なぜ必要か**: キーが検索条件だけで構成されていると、**同一 isolate が生存している間**（および将来 L3 の外部ストアを導入した場合は、その TTL が切れるまで）**古い意味の値が入ったエントリがヒットし続ける**。バージョンを上げれば全キーが別物になり、既存エントリを一括で論理的に無効化できる（明示的なパージ機構を持たずに済む）。🔴 **現行の L2 は 2 段構成であり、2 段目は事業者のキャッシュ API に載るためデプロイでは失われない**（[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md)・構成と数値の正本は [Cloudflare インフラ設計](../infrastructure/cloudflare-infrastructure.md) §4.2。TTL・ポート面積の正本は [ADR 0005](../../adr/0005-cache-port-yagni-exception-and-ttl.md)）。したがって **キャッシュ値の意味を変える変更では `CACHE_SCHEMA_VERSION` の引き上げが必須である** — かつては「デプロイすれば isolate ごと消える」ことが事実上の無効化手段になっていたが、その退路は無くなり、バージョンセグメントは補助ではなく **唯一の一括無効化手段** になった。🔴 **可視範囲・ACL に関わる是正でも同じ**: 誤って広い範囲を返していた不具合を直してデプロイしても、旧挙動で書かれたエントリは（旧実装なら新しい isolate の空 `Map` で即座に消えていたのに対し）**TTL 満了まで配信され続ける**。是正と同じ変更で必ず bump すること。
