@@ -12,7 +12,7 @@ Lighthouse ゲート）のどれにも掛からない。公開面が壊れても
   4. ページ内アンカー（#foo）の参照先が存在すること
   5. 自リポジトリ docs への GitHub リンク（blob/tree/main/<path>）が実在すること
   6. LP に書いた ADR 本数が docs/adr/ の実数と一致すること
-  7. footer から README 本体への直リンクが存在すること（LP → README の導線）
+  7. **index.html の** footer から README 本体への直リンクが存在すること（LP → README の導線）
 
 使い方:
   python3 tools/check_site.py            # 検査（違反があれば exit 1）
@@ -21,6 +21,8 @@ Lighthouse ゲート）のどれにも掛からない。公開面が壊れても
 
 from __future__ import annotations
 
+import contextlib
+import io
 import re
 import struct
 import sys
@@ -31,13 +33,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SITE_DIR = REPO_ROOT / "site"
 PAGES = ["index.html", "404.html"]
-REPO_LINK_RE = re.compile(
-    r"https://github\.com/kai-kou/gem-hunter/(?:blob|tree)/main/([^\"'\s)#]+)"
-)
-FOOTER_RE = re.compile(r"<footer\b[^>]*>.*?</footer>", re.S)
-README_LINK_RE = re.compile(
-    r"https://github\.com/kai-kou/gem-hunter/blob/main/README\.md"
-)
+REPO_URL = "https://github.com/kai-kou/gem-hunter"
+REPO_LINK_RE = re.compile(re.escape(REPO_URL) + r"/(?:blob|tree)/main/([^\"'\s)#]+)")
+README_URL = f"{REPO_URL}/blob/main/README.md"
 # 自己終了・空要素（閉じタグを持たない）
 VOID_TAGS = {
     "area", "base", "br", "col", "embed", "hr", "img", "input",
@@ -195,22 +193,59 @@ def check_adr_count(errors: list[str]) -> None:
         )
 
 
-def check_footer_readme_link(errors: list[str], html: str | None = None) -> None:
+class FooterLinkParser(HTMLParser):
+    """<footer> 配下の <a href> だけを集める。
+
+    正規表現の部分一致では、コメントアウトされたリンク・地の文に書いた URL・
+    別要素の属性値（title 等）を「リンクがある」と誤判定して fail-open になる。
+    HTMLParser はコメントを handle_comment、地の文を handle_data へ回すため、
+    ここで集まるのは実際にクリックできる href だけになる。
+    footer が複数あるときは全ての footer を対象にする（最初の 1 個だけ見ると、
+    カード等の入れ子 footer が増えた瞬間に誤検知でゲートが赤くなる）。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.depth = 0
+        self.seen_footer = False
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "footer":
+            self.depth += 1
+            self.seen_footer = True
+            return
+        if self.depth > 0 and tag == "a":
+            for key, value in attrs:
+                if key == "href" and value:
+                    self.hrefs.append(value)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "footer" and self.depth > 0:
+            self.depth -= 1
+
+
+def check_footer_readme_link(
+    errors: list[str], html: str | None = None, page: str = "index.html"
+) -> None:
     """LP footer から README 本体へ 1 クリックで到達できることを検査する（Issue #403）。
 
     README → LP のリンクは成立しているのに LP → README が無い非対称を止める。
     footer 自体が見つからない場合も fail-closed で違反として報告する
     （footer の書き換えで検査が黙って素通りするのを防ぐ）。
+    href は完全一致で判定する（前方一致だと README.md.bak / README.mdx のような
+    別ファイルへのリンクを「README 本体への導線」と誤認する）。
     """
-    text = html if html is not None else (SITE_DIR / "index.html").read_text(encoding="utf-8")
-    match = FOOTER_RE.search(text)
-    if match is None:
-        errors.append("index.html: <footer> が見つからず README 直リンクを検査できない")
+    text = html if html is not None else (SITE_DIR / page).read_text(encoding="utf-8")
+    parser = FooterLinkParser()
+    parser.feed(text)
+    if not parser.seen_footer:
+        errors.append(f"{page}: <footer> が見つからず README 直リンクを検査できない")
         return
-    if not README_LINK_RE.search(match.group(0)):
-        errors.append(
-            "index.html: footer に README 本体（blob/main/README.md）への直リンクが無い"
-        )
+    for href in parser.hrefs:
+        if href == README_URL or href.startswith(f"{README_URL}#"):
+            return
+    errors.append(f"{page}: footer に README 本体（{README_URL}）への直リンクが無い")
 
 
 def self_test() -> int:
@@ -243,14 +278,26 @@ def self_test() -> int:
     if balanced.stack or balanced.unbalanced:
         failures.append("正常な HTML を誤検知した")
 
-    readme_href = "https://github.com/kai-kou/gem-hunter/blob/main/README.md"
+    readme_href = README_URL
     footer_cases = [
         # (説明, HTML, 期待する違反件数)
         ("footer 内に README 直リンクがある", f'<footer><a href="{readme_href}">README</a></footer>', 0),
+        ("アンカー付きの README リンク", f'<footer><a href="{readme_href}#使い方">README</a></footer>', 0),
+        # footer が複数ある構造でも、いずれかに導線があれば到達できる
+        ("2 つ目の footer にリンクがある", f'<footer><a href="#top">top</a></footer><footer><a href="{readme_href}">README</a></footer>', 0),
+        ("大文字タグの FOOTER", f'<FOOTER><A HREF="{readme_href}">README</A></FOOTER>', 0),
         # 境界の外側: footer の外にだけあっても到達導線にならない（#750 の負ケース規律）
         ("footer の外にだけ README リンクがある", f'<a href="{readme_href}">README</a><footer><a href="#top">top</a></footer>', 1),
-        # 近似だが別対象: docs ツリーへのリンクは README 本体ではない
-        ("footer 内が docs リンクのみ", '<footer><a href="https://github.com/kai-kou/gem-hunter/tree/main/docs">docs</a></footer>', 1),
+        # 近似だが別対象: 同じ blob/main 配下でも README 本体ではない
+        ("footer 内が docs ツリーリンクのみ", f'<footer><a href="{REPO_URL}/tree/main/docs">docs</a></footer>', 1),
+        ("footer 内が LICENSE リンクのみ", f'<footer><a href="{REPO_URL}/blob/main/LICENSE">LICENSE</a></footer>', 1),
+        # 前方一致だと素通りする派生パス（README.md で終わらない）
+        ("README.md.bak へのリンクのみ", f'<footer><a href="{readme_href}.bak">古い README</a></footer>', 1),
+        ("README.mdx へのリンクのみ", f'<footer><a href="{REPO_URL}/blob/main/README.mdx">x</a></footer>', 1),
+        # クリックできない形（部分一致だと fail-open になる経路）
+        ("リンクがコメントアウトされている", f'<footer><!-- <a href="{readme_href}">README</a> --></footer>', 1),
+        ("地の文に URL があるだけ", f'<footer><p>README は {readme_href} にあります</p></footer>', 1),
+        ("別要素の属性値に URL があるだけ", f'<footer><a href="#top" title="{readme_href}">top</a></footer>', 1),
         ("footer 自体が無い", f'<div><a href="{readme_href}">README</a></div>', 1),
     ]
     for label, html, expected in footer_cases:
@@ -266,22 +313,36 @@ def self_test() -> int:
     global SITE_DIR, PAGES
     original_site_dir, original_pages = SITE_DIR, PAGES
     footer_only = '<html><body><footer><ul><li>{link}</li></ul></footer></body></html>'
+    marker = "footer に README 本体"
     try:
         with tempfile.TemporaryDirectory() as tmp:
             SITE_DIR = Path(tmp)
             PAGES = ["index.html"]
             wiring_cases = [
-                ("README 直リンク無し", '<a href="#top">top</a>', 1),
-                ("README 直リンク有り", f'<a href="{readme_href}">README</a>', 0),
+                # (説明, footer に置くリンク, 期待 exit, 期待するこの検査由来の違反件数)
+                ("README 直リンク無し", '<a href="#top">top</a>', 1, 1),
+                ("README 直リンク有り", f'<a href="{readme_href}">README</a>', 0, 0),
             ]
-            for label, link, expected_exit in wiring_cases:
+            for label, link, expected_exit, expected_hits in wiring_cases:
                 (SITE_DIR / "index.html").write_text(
                     footer_only.format(link=link), encoding="utf-8"
                 )
-                actual = main([])  # 本判定の入口を通す（--self-test を渡さない）
+                # 意図的な負ケースの FAIL 出力で self-test のログを汚さないよう捕捉する。
+                # 捕捉した文字列は「exit 1 の原因が本当に footer 検査か」の突合にも使う
+                # （exit code だけを見ると、他の検査が出した違反と区別できない）。
+                buffer = io.StringIO()
+                with contextlib.redirect_stdout(buffer):
+                    actual = main([])  # 本判定の入口を通す（--self-test を渡さない）
+                output = buffer.getvalue()
+                hits = output.count(marker)
                 if actual != expected_exit:
                     failures.append(
                         f"main() 経由の配線検査（{label}）: exit {actual}（期待 {expected_exit}）"
+                    )
+                if hits != expected_hits:
+                    failures.append(
+                        f"main() 経由の配線検査（{label}）: footer 検査由来の違反 {hits} 件"
+                        f"（期待 {expected_hits} 件）"
                     )
     finally:
         SITE_DIR, PAGES = original_site_dir, original_pages
@@ -319,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
         for line in errors:
             print(f"  - {line}")
         return 1
-    print("[check_site] OK（site/ の参照・寸法・アンカー・ADR 本数に違反なし）")
+    print("[check_site] OK（site/ の参照・寸法・アンカー・ADR 本数・README 導線に違反なし）")
     return 0
 
 
