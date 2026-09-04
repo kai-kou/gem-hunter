@@ -266,3 +266,10 @@
 {"date": "2026-09-04 JST", "title": "他セッションの needs_prompt PR を決定木の捕捉ルートに組み入れる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 898}
 {"date": "2026-09-04 JST", "title": "並行安全プリアンブルに読み取り（Read / Grep / Glob）の可否を 1 行明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "Issue 起票時・着手時に sp と実スコープの整合をチェックする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "self-test の「配線が生きているか」軸を常規ルール化する（定数検査だけでは fail-open）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 770}
+{"date": "2026-09-04 JST", "title": "テストの fake PR が本番 API 応答構造と同形であることを固定する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 876}
+{"date": "2026-09-04 JST", "title": "敵対的検証役（変異テスト）の自動配置をデフォルト化する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 775}
+{"date": "2026-09-04 JST", "title": "複数 Stop フックの差し戻しを集約し並列委譲中のターン消費を減らす", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-04 JST", "title": "GitHub API 呼び出し（_run_gh_raw / _http_get）を共通モジュールへ統一する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 825}
+{"date": "2026-09-04 JST", "title": "SD-3 第 2 系統の条件 3 判定を「差し戻し対象 / 決定と独立 / テスト追加」へ自動分解する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "決定木 Step 2 の判定条件セルに「拾わない理由」を 1 行足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
