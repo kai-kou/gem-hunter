@@ -926,11 +926,12 @@ def select_step2_targets(results: list[dict]) -> list[dict]:
     3 が本関数の眼目である。孤児 PR の全件回収は Step 2 の責務ではなく、他セッションが対応中の
     PR を奪わない不介入（CP-4・L-109）を条文だけでなく実装にも残す。
 
-    `is_automation_pr` / `is_dependabot_pr` は `analyze_pr()` の **両方の return 経路** が必ず
-    格納するため、ここでは `.get()` の既定値に頼らず添字参照する（キー欠落は握り潰さず
-    KeyError で表面化させる＝fail-closed）。
+    `is_mine` は `main()` が全 PR へ無条件に設定し、`is_automation_pr` / `is_dependabot_pr` は
+    `analyze_pr()` の **両方の return 経路** が必ず格納する。したがって 3 キーとも `.get()` の
+    既定値に頼らず添字参照する（キー欠落は握り潰さず KeyError で表面化させる＝fail-closed）。
+    呼び出し経路は `main()` と self-test だけである（他所から部分的な dict を渡さないこと）。
     """
-    mine = [r for r in results if bool(r.get("is_mine"))]
+    mine = [r for r in results if r["is_mine"]]
     if mine:
         return mine
     return [r for r in results if r["is_automation_pr"] or r["is_dependabot_pr"]]
@@ -2192,6 +2193,20 @@ def _test_main_mine_or_automation_e2e() -> list[str]:
     automation_prefix = _fake_pr_for_step2(
         107, "automation/gem-pool-refresh-evil", "github-actions[bot]", "NONE", None
     )
+    # 3 条件 AND のうち **③ 著者ログインだけ** が外れる負ケース（#870 敵対的検証の指摘1）。
+    # ブランチ名と isCrossRepository は正しいので、著者比較が完全一致から前方一致・部分一致へ
+    # 緩んだ瞬間にこれらが Step 2 の対象に混ざり、pr-review-watcher の無人マージ経路へ直行する。
+    # `_is_dependabot_pr()` がブランチ名の前方一致を許してなお安全な理由は ③ であり、
+    # ③ 自体をテストしていなければその安全性は一度も検証されていない。
+    dependabot_author_suffix = _fake_pr_for_step2(
+        110, "dependabot/npm_and_yarn/x-1.0", "dependabot[bot]-evil", "NONE", None
+    )
+    automation_author_trailing_space = _fake_pr_for_step2(
+        111, "automation/gem-pool-refresh", "github-actions[bot] ", "NONE", None
+    )
+    dependabot_author_prefix = _fake_pr_for_step2(
+        112, "dependabot/npm_and_yarn/x-1.0", "evil-dependabot[bot]", "NONE", None
+    )
 
     def run_main(argv: list[str], prs: list[dict]) -> tuple[int, str, str]:
         globals()["get_open_prs"] = lambda: list(prs)
@@ -2221,6 +2236,18 @@ def _test_main_mine_or_automation_e2e() -> list[str]:
         (
             "(variants) 3条件ANDを満たさない bot 風 PR",
             [dependabot_upper, dependabot_fork_unknown, automation_prefix, other_human],
+            [],
+        ),
+        # 著者ログインだけが外れる負ケース（指摘1）。ブランチ・fork 条件は正しいので、
+        # 著者比較が完全一致から緩んだときにだけ緑が壊れる（＝③ を単独で固定する）。
+        (
+            "(variants) 著者ログインだけ外れる bot 風 PR",
+            [
+                dependabot_author_suffix,
+                automation_author_trailing_space,
+                dependabot_author_prefix,
+                other_human,
+            ],
             [],
         ),
     ]
@@ -2723,7 +2750,7 @@ def _run_self_test() -> None:
     # Step 2 対象選択（#870）: main() を経由した貫通検証（#686 本番の主コードパス）
     step2_e2e_failures = _test_main_mine_or_automation_e2e()
     failures.extend(step2_e2e_failures)
-    STEP2_E2E_CASE_COUNT = 18  # e2e 6 + 0件 + JSON + 早期return経路 3 + --mine 回帰 + 同時指定 + セッションID必須 2 + argv 3
+    STEP2_E2E_CASE_COUNT = 19  # e2e 7 + 0件 + JSON + 早期return経路 3 + --mine 回帰 + 同時指定 + セッションID必須 2 + argv 3
 
     total_cases = (
         len(cases)
