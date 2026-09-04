@@ -282,7 +282,10 @@ describe('GithubRepositoryQuery のETag / 条件付きリクエスト（Issue #1
     token: () => Promise<string | null> = async () => 'ghs_dummy',
     cache = new InMemoryCache(),
   ) {
-    return { query: new GithubRepositoryQuery({ token, cache, etagTtlSeconds: ETAG_TTL_SECONDS }), cache }
+    return {
+      query: new GithubRepositoryQuery({ token, cache, etagTtlSeconds: ETAG_TTL_SECONDS }),
+      cache,
+    }
   }
 
   describe('findDetail', () => {
@@ -313,8 +316,9 @@ describe('GithubRepositoryQuery のETag / 条件付きリクエスト（Issue #1
         ETAG_TTL_SECONDS,
       )
       server.use(
-        http.get('https://api.github.com/repos/:owner/:repo', () =>
-          new HttpResponse(null, { status: 304 }),
+        http.get(
+          'https://api.github.com/repos/:owner/:repo',
+          () => new HttpResponse(null, { status: 304 }),
         ),
       )
 
@@ -394,8 +398,9 @@ describe('GithubRepositoryQuery のETag / 条件付きリクエスト（Issue #1
       const { query } = makeQueryWithCache()
       // ETag ストアが空 = If-None-Match を送っていない状態で 304 を返す壊れた上流を模す
       server.use(
-        http.get('https://api.github.com/repos/:owner/:repo', () =>
-          new HttpResponse(null, { status: 304 }),
+        http.get(
+          'https://api.github.com/repos/:owner/:repo',
+          () => new HttpResponse(null, { status: 304 }),
         ),
       )
 
