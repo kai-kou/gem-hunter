@@ -34,27 +34,21 @@ import { SiteHeader } from '@/src/ui/site-header'
  * ここで追加のデコードは行わない（ドット入りリポジトリ名等もそのまま扱える）。
  *
  * `searchParams`（SP-7）: 一覧から遷移してきたときに検索条件（keyword/page/sort/perPage）が
- * `repository-list.tsx` の詳細リンクからクエリとして継ぎ足されて届く。ここで受け取り、
- * 一覧へ戻るリンク（`backHref`）へそのまま乗せ直す（`RepositoryDetail` → `BackLink`）。
- * 直接この URL を開いた場合（検索条件なし）は既定値へ倒れ、`buildSearchUrl` が
- * クエリなしの `/{locale}` を返す（`BackLink` の既定と同じ挙動）。
+ * `repository-list.tsx` の詳細リンクからクエリで届く。一覧へ戻るリンク（`backHref`）へそのまま
+ * 乗せ直す。直接開いた場合（検索条件なし）は既定値へ倒れ `buildSearchUrl` がクエリなしの
+ * `/{locale}` を返す（`BackLink` の既定と同じ挙動）。
  *
- * 🔴 **`<Suspense>` は必ず `notFound()` の後にのみ置く**（SP-9 で検討のうえ見送っていたが、
- * Issue #334 F-4 の README 遅延表示のために復活。取得結果が `null` のとき `notFound()` で
- * **HTTP 404 を返す** のが `AC-5` の要件で、Suspense fallback が描画された時点でレスポンス
- * ヘッダが送出済みになり 404 を返せなくなる（Next.js `file-conventions/loading.md`
- * 「Place `notFound()` before those boundaries」）。本ページに `loading.tsx` は依然として
- * 置かない（`loading.tsx` は route segment 全体を Suspense 境界で包むため、`notFound()` の
- * 判定が確定する前に fallback が流れ、`AC-5` の同期 404 を壊す）。
+ * 🔴 **`<Suspense>` は必ず `notFound()` の後にのみ置く**（Issue #334 F-4 の README 遅延表示。
+ * 取得結果が `null` のとき `notFound()` で **HTTP 404 を返す** のが `AC-5` の要件で、fallback が
+ * 描画された時点でヘッダが送出済みになり 404 を返せなくなる。Next.js `file-conventions/loading.md`
+ * 「Place `notFound()` before those boundaries」）。`loading.tsx` は route segment 全体を
+ * Suspense 境界で包み判定前に fallback が流れるため、本ページには置かない。
  *
- * 🔴 **サーバー側の読み込み中表示と `AC-5` が両立しないのは「`notFound()` 判定が確定する
- * までの窓」だけ**である（判定確定後は上記のとおり `<Suspense>` を置き、README 用の
- * スケルトンを本ページ内で描画している・Issue #334 F-4）。その窓のあいだの読み込み中表示
- * （`US-22` のうち詳細取得分）は、遷移元の一覧側で担保する:
- * `LinkPendingHint`（`src/ui/link-pending-hint.tsx`・詳細リンク内に常設する `aria-hidden`
- * の視覚ヒント）と、一覧ごとに 1 個だけ常設する `LinkPendingAnnouncer`
- * （`src/ui/link-pending-announcer.tsx`・支援技術向けライブリージョン）の 2 つを
- * `src/ui/{repository-list,gem-list,daily-digest}.tsx` に組み込んである。
+ * 🔴 **サーバー側の読み込み中表示が `AC-5` と両立しないのは「`notFound()` 判定が確定するまでの
+ * 窓」だけ**（確定後は上記の `<Suspense>` で README スケルトンを本ページ内に描画している）。
+ * その窓ぶんの読み込み中表示（`US-22` の詳細取得分）は遷移元の一覧側が担保する:
+ * `LinkPendingHint`（詳細リンク内の `aria-hidden` な視覚ヒント）と、一覧ごとに 1 個だけ常設する
+ * `LinkPendingAnnouncer`（支援技術向けライブリージョン）を `src/ui/` の 3 一覧に組み込んである。
  */
 export default async function RepositoryDetailPage({
   params,
