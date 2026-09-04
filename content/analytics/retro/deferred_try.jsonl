@@ -249,7 +249,7 @@
 {"date": "2026-09-04 JST", "title": "ベース上流フィードバックの Issue 化を自動化する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 887}
 {"date": "2026-09-04 JST", "title": "3 方向マージの衝突結果を構造化ログで記録し次回参照できるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 683}
 {"date": "2026-09-04 JST", "title": "check_parallel_safety.py の --candidate 書式エラーをヘルプに明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-04 JST", "title": "Hot 層予算の増減トレンド（対前回比・月間換算・予測超過時期）を可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "Hot 層予算の増減トレンド（対前回比・月間換算・予測超過時期）を可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 798}
 {"date": "2026-09-04 JST", "title": "base#N 置換の範囲を SYNC_PATHS の新規追加行に限定し検査ツール化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "CLAUDE.md の run_checks 件数記載を実測値へ更新する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "マージ不能な PR では pull_request 起動の CI が生成されない仕様を記録する", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-156"}
