@@ -91,3 +91,26 @@ console.log(displayScore); // "100" が出力（一貫性あり）
 ```
 
 **判定基準**: 「ゲートの合否判定」と「ログ表示」に数値変換（四捨五入・スケーリング）が挟まる場合、両者で同じ丸め処理を使っているか確認する。
+
+---
+
+## L-156: マージ不能（`mergeable_state: dirty`）な PR では `pull_request` 起動の CI が生成されない（2026-09-04・PR #883）
+
+**症状**: PR を作成したのに、`quality-checks.yml`（`on: pull_request`）の check run が **いつまでも現れない**。
+`mcp__github__pull_request_read(method="get_check_runs")` には CodeQL や GitGuardian など他系統だけが並び、
+`mcp__github__actions_list(method="list_workflow_runs", resource_id="quality-checks.yml", workflow_runs_filter={"branch": "<作業ブランチ>"})`
+も `total_count: 0` を返す。`get_status` も `state: pending / total_count: 0`。
+
+**原因**: GitHub の `pull_request` イベントは **マージコミット（`refs/pull/<N>/merge`）** に対して走る。
+ベースブランチと衝突していて `mergeable_state` が `dirty` の PR ではそのマージコミットを作れないため、
+**run 自体が生成されない**（失敗するのではなく最初から存在しない）。実測: PR #883 は作成直後に
+`origin/main` が別 PR で進んでおり `dirty` → 25 分間 CI 不在 → `origin/main` をマージして解消した直後に
+`checks` が走り success。
+
+**判定基準**: 「CI が走らない」と感じたら、失敗を疑う前に
+`mcp__github__pull_request_read(method="get", ...)` の **`mergeable_state`** を先に見る。
+`dirty` なら CI の問題ではなくコンフリクトの問題であり、`origin/main` をマージすれば直る。
+`clean` なのに run が無いときだけ、ワークフローの `on:` 条件・`paths-ignore`・Actions の有効状態を疑う。
+
+**なぜ Warm 層に置くか**: 症状（CI が走らない）と原因（コンフリクト）が結び付かず、
+ワークフロー定義の調査に時間を溶かしやすい。ただし観測したときにだけ必要な知識で、常駐は不要。
