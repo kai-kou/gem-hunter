@@ -141,6 +141,9 @@ Step 3: Projects V2 Assignee Type 同期
 Step 3.5: Orphan PR 検出（全実行時）— CP-3 準拠
   ├─ オープン PR を全取得（gh pr list / mcp__github__list_pull_requests）
   ├─ 最終更新が 24 時間以上前の PR を「Orphan」と判定
+  │   （他セッションが作成した人手 PR（is_mine: false）も対象に含む。これらは
+  │    sprint-cycle-router 決定木 Step 2 の対象外（CP-4・L-109 の不介入）であり、
+  │    本 Step 3.5 が唯一の回収経路になる・#898）
   ├─ check_pending_pr_reviews.py の結果と照合
   ├─ needs_response → pr-review-watcher フローに復帰して指摘対応
   ├─ awaiting_review（24h超）→ 催促 or 問題なし判定 → 自動マージ
