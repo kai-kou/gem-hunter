@@ -17,6 +17,8 @@ export type { CacheKey } from '../../domain/ports/cache-port'
 const NAMESPACE_SEARCH = 'search'
 const NAMESPACE_REPOSITORY = 'repository'
 const NAMESPACE_README = 'readme'
+const NAMESPACE_REPOSITORY_ETAG = 'repository-etag'
+const NAMESPACE_README_ETAG = 'readme-etag'
 
 /**
  * キャッシュスキーマバージョン（全キャッシュキーの共通セグメント）。
@@ -73,4 +75,23 @@ export function repositoryCacheKey(owner: string, name: string): CacheKey {
  */
 export function readmeCacheKey(owner: string, name: string): CacheKey {
   return `${NAMESPACE_README}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}` as CacheKey
+}
+
+/**
+ * `GET /repos/{owner}/{repo}` の条件付きリクエスト（`If-None-Match` / ETag）用エントリのキー。
+ * 本文キャッシュ（`repositoryCacheKey`）とは **別の名前空間** にする（Issue #170）。
+ * 本文キャッシュは「マッピング済みドメイン値」を TTL 保持するのに対し、こちらは
+ * 「上流の生レスポンス + ETag」を保持し、本文 TTL 切れ後の再検証（primary rate limit の節約）
+ * に使う。同じキーにすると片方の書き込みがもう片方を破壊するため、必ず分ける。
+ */
+export function repositoryEtagCacheKey(owner: string, name: string): CacheKey {
+  return `${NAMESPACE_REPOSITORY_ETAG}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}` as CacheKey
+}
+
+/**
+ * `GET /repos/{owner}/{repo}/readme` の条件付きリクエスト用エントリのキー。
+ * `readmeCacheKey`（本文 TTL キャッシュ）とは別の名前空間にする（`repositoryEtagCacheKey` と同じ理由）。
+ */
+export function readmeEtagCacheKey(owner: string, name: string): CacheKey {
+  return `${NAMESPACE_README_ETAG}:${CACHE_SCHEMA_VERSION}:${normalizeSegment(owner)}/${normalizeSegment(name)}` as CacheKey
 }

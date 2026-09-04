@@ -50,6 +50,17 @@ export const TTL_SEARCH_SECONDS = 60
 const TTL_DETAIL_SECONDS = 300
 
 /**
+ * `findDetail` / `findReadme` の ETag エントリの TTL（秒・Issue #170）。本文 TTL キャッシュ
+ * （`TTL_DETAIL_SECONDS` = 300 秒）が切れた後に条件付きリクエスト（`If-None-Match`）で
+ * 再検証し、304 なら upstream の primary rate limit を消費せずに済ませるのが目的。
+ * **本文 TTL より十分長くする**（同じ長さだと本文 TTL 切れと同時に ETag も失効し、
+ * 再検証の機会そのものが生まれず節約効果が出ない）。24 時間としたのは GitHub の ETag の
+ * 実効期限について公式ドキュメントに具体的な記載が無いため、キャッシュ層の保守的な目安値
+ * として採用した実務判断（仕様解釈の分岐ではなく実装手段レベルの仮定・`SD-3` 対象外）。
+ */
+const TTL_DETAIL_ETAG_SECONDS = 60 * 60 * 24
+
+/**
  * トップページの日次ダイジェスト表示件数（`ADR 0014` §2.1 の既定 5 件）。
  *
  * 🔴 元は `src/composition/digest-feed.ts`（RSS 配信専用の composition）に置かれていたが、
@@ -170,7 +181,13 @@ function makeCachingRepositoryQuery(
 ) {
   const clock = new SystemClock()
   return new CachingRepositoryQuery({
-    inner: new GithubRepositoryQuery({ token: makeTokenProvider(clock, deps.accessToken) }),
+    inner: new GithubRepositoryQuery({
+      token: makeTokenProvider(clock, deps.accessToken),
+      // 🔴 Issue #170: findDetail / findReadme の ETag 保存も同じ sharedCache を使う
+      //    （名前空間は cache-key.ts で本文 TTL キャッシュと分離済み・互いを上書きしない）。
+      cache: sharedCache,
+      etagTtlSeconds: TTL_DETAIL_ETAG_SECONDS,
+    }),
     cache: sharedCache,
     ttlSeconds: { search: TTL_SEARCH_SECONDS, detail: TTL_DETAIL_SECONDS },
     onCacheStatus: deps.onCacheStatus,

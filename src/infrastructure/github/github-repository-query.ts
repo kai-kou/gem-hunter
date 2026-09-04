@@ -10,7 +10,9 @@ import {
 import type { RepositoryDetail, SearchResult } from '../../domain/model/repository'
 import { ownerOf, repoOf, type RepositoryFullName } from '../../domain/model/repository-full-name'
 import type { SearchQuery } from '../../domain/model/search-query'
+import type { CachePort } from '../../domain/ports/cache-port'
 import type { RepositoryQueryPort } from '../../domain/ports/repository-query-port'
+import { readmeEtagCacheKey, repositoryEtagCacheKey, type CacheKey } from '../platform/cache-key'
 import { resolveLoopbackOverridableOrigin } from './loopback-origin'
 import { toPublicRepositoryDetail, toSearchResult } from './mapper'
 
@@ -31,14 +33,43 @@ const PUBLIC_ONLY_QUALIFIER = 'is:public'
 /** アクセストークンの供給口。未認証で叩く場合は null を返す。 */
 export type TokenProvider = () => Promise<string | null>
 
+/** ETag 条件付きリクエストのキャッシュエントリ（上流の生レスポンス + ETag）。 */
+type EtagEntry<T> = { readonly etag: string; readonly body: T }
+
 /**
  * 🔴 GitHub API に触れてよい唯一の場所（ACL・NFR-16 / TR-4）。
  * データソースは GET /search/repositories と GET /repos/{owner}/{repo} に限定する（E-2）。
  * 🔵 GET /repos/{owner}/{repo}/readme を追加（Issue #334 F-4・whiteboard round3 裁定）。
  */
 export class GithubRepositoryQuery implements RepositoryQueryPort {
-  constructor(private readonly deps: { token: TokenProvider }) {}
+  constructor(
+    private readonly deps: {
+      token: TokenProvider
+      /**
+       * ETag / 条件付きリクエストの保存先（Issue #170）。省略時は条件付きリクエストを
+       * 一切行わず、従来どおり毎回フル GET する（`etagTtlSeconds` も省略時と同じ扱い）。
+       * 対象は `findDetail` / `findReadme` のみ（`search` は下記 JSDoc の理由で対象外）。
+       * `etagTtlSeconds` とセットで渡すこと（片方だけ渡しても ETag 経路は無効のまま）。
+       */
+      cache?: CachePort
+      /**
+       * ETag エントリの TTL（秒）。`cache` を渡すときは必ず一緒に渡すこと
+       * （省略時は ETag 経路が無効のまま・fail-closed。値域は `CachePort.set` と同じ
+       * ＝正の有限数。値域外は `CachePort` 実装側の `RangeError` に委ねる）。
+       */
+      etagTtlSeconds?: number
+    },
+  ) {}
 
+  /**
+   * 🔴 **ETag / 条件付きリクエストの対象外**（Issue #170 の意図的なスコープ縮小）。
+   * `GET /search/repositories` は 304 を返しうるが、GitHub 公式は「条件付きリクエストで
+   * 304 が返ると primary rate limit を消費しない」としか明記しておらず、Search 専用枠
+   * （30 req/min）を消費しないとは明記していない
+   * （ https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api ）。
+   * 節約できる保証が無い枠に ETag 保存のコストを払わないため、対象は `findDetail` /
+   * `findReadme` の 2 経路（`GET /repos/{owner}/{repo}` 系・primary 枠）のみに限定する。
+   */
   async search(query: SearchQuery): Promise<SearchResult> {
     const url = new URL('/search/repositories', apiOrigin())
     // 🔴 公開限定の修飾子は **キーワードより前** に置く（多層防御の 2 層目）。
@@ -68,14 +99,18 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
       apiOrigin(),
     )
 
-    const response = await this.request(url, { notFoundAsNull: true })
-    if (response === null) {
+    const json = await this.fetchWithConditionalCache<unknown>(
+      url,
+      repositoryEtagCacheKey(ownerOf(name), repoOf(name)),
+      {},
+    )
+    if (json === null) {
       return null
     }
 
     // 🔴 非公開リポジトリを「見つからない」として扱う判定は ACL（mapper）に集約している
     //    （検索側の is:public だけでは詳細エンドポイントの直接アクセスを防げないため・NFR-33 / AC-12）。
-    return toPublicRepositoryDetail(await response.json())
+    return toPublicRepositoryDetail(json)
   }
 
   /**
@@ -93,32 +128,106 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
       apiOrigin(),
     )
 
-    const response = await this.request(url, {
-      notFoundAsNull: true,
-      accept: 'application/vnd.github.html+json',
-    })
-    if (response === null) {
+    return this.fetchWithConditionalCache<string>(
+      url,
+      readmeEtagCacheKey(ownerOf(name), repoOf(name)),
+      {
+        accept: 'application/vnd.github.html+json',
+        parse: (response) => response.text(),
+      },
+    )
+  }
+
+  /**
+   * `findDetail` / `findReadme` 共通の条件付きリクエスト（ETag）手順（Issue #170）。
+   * `cache` / `etagTtlSeconds` の両方が渡されているときだけ有効化する（片方欠けは無効扱い・
+   * fail-closed）。
+   *
+   * 手順:
+   * 1. 有効かつ **認証済み**（`token` が非 null）のときだけ、保存済み ETag があれば
+   *    `If-None-Match` を送る（🔴 未認証では 304 でも primary rate limit を消費してしまう
+   *    仕様のため、未認証時に送る意味が無い）。
+   * 2. `304` が返り、送った ETag に対応する保存値があれば、それを再取得せず返す。
+   *    `304` が返ったのに保存値が無い（＝ `If-None-Match` を送っていない）場合は、上流が
+   *    仕様外の応答をしたとみなし `UpstreamError` にする（呼び出し側の型契約
+   *    `Promise<T | null>` の `null` は「対象が存在しない」専用のため、異常応答をそこに
+   *    紛れ込ませない）。
+   * 3. `404` は従来どおり `null`。
+   * 4. `200` なら本文をパースし、`etag` レスポンスヘッダがあれば ETag ストアへ保存する。
+   */
+  private async fetchWithConditionalCache<T>(
+    url: URL,
+    cacheKey: CacheKey,
+    options: { accept?: string; parse?: (response: Response) => Promise<T> },
+  ): Promise<T | null> {
+    const parse = options.parse ?? ((response: Response) => response.json() as Promise<T>)
+    const { cache, etagTtlSeconds } = this.deps
+    const etagStoreEnabled = Boolean(cache && etagTtlSeconds)
+
+    const token = await this.deps.token()
+    // 🔴 未認証（token が null）では If-None-Match を送らない（GitHub 公式 best-practices:
+    //    条件付きリクエストが primary rate limit を消費しないのは認証済みリクエストに限る）。
+    const sendConditional = etagStoreEnabled && token !== null
+
+    let stored: EtagEntry<T> | null = null
+    if (sendConditional && cache) {
+      stored = await cache.get<EtagEntry<T>>(cacheKey)
+    }
+
+    const headers: Record<string, string> = {
+      accept: options.accept ?? 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
+      'user-agent': 'gem-hunter',
+    }
+    if (token) {
+      headers.authorization = `Bearer ${token}`
+    }
+    if (sendConditional && stored) {
+      headers['if-none-match'] = stored.etag
+    }
+
+    let response: Response
+    try {
+      response = await fetch(url, { headers })
+    } catch (cause) {
+      throw new NetworkError('GitHub API へ到達できませんでした', { cause })
+    }
+
+    if (response.status === 304) {
+      if (sendConditional && stored) {
+        return stored.body
+      }
+      throw new UpstreamError(
+        `GitHub API が If-None-Match 未送信のリクエストに 304 を返しました（${url.pathname}）`,
+      )
+    }
+
+    if (response.status === 404) {
       return null
     }
 
-    return response.text()
+    if (!response.ok) {
+      throw toDomainError(response, url)
+    }
+
+    const body = await parse(response)
+    if (cache && etagTtlSeconds) {
+      const etag = response.headers.get('etag')
+      if (etag) {
+        await cache.set<EtagEntry<T>>(cacheKey, { etag, body }, etagTtlSeconds)
+      }
+    }
+    return body
   }
 
-  private async request(
-    url: URL,
-    options: { notFoundAsNull: true; accept?: string },
-  ): Promise<Response | null>
-  private async request(
-    url: URL,
-    options?: { notFoundAsNull?: false; accept?: string },
-  ): Promise<Response>
-  private async request(
-    url: URL,
-    options?: { notFoundAsNull?: boolean; accept?: string },
-  ): Promise<Response | null> {
+  /**
+   * `search()` 専用のリクエスト実行（ETag 非対応・NotFoundError を throw する）。
+   * `findDetail` / `findReadme` は `fetchWithConditionalCache` を使う（本メソッドは使わない）。
+   */
+  private async request(url: URL): Promise<Response> {
     const token = await this.deps.token()
     const headers: Record<string, string> = {
-      accept: options?.accept ?? 'application/vnd.github+json',
+      accept: 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
       'user-agent': 'gem-hunter',
     }
@@ -135,9 +244,6 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
 
     if (response.ok) {
       return response
-    }
-    if (options?.notFoundAsNull && response.status === 404) {
-      return null
     }
     throw toDomainError(response, url)
   }
