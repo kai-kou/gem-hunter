@@ -149,11 +149,15 @@ fail-open な検査は **緑を返しながら何も守っていない**。検�
 | `check_agent_scope_overlap.py` | 並列委譲の直前に親が手動実行（`docs/rules/agent-team-summary.md` の指示）    | 委譲前に効く判定で、PR 直前の一括検査では手遅れ                                            |
 | `check_issue_labels.py`        | Issue 棚卸し時に手動実行（`--self-test` のみ配線済み）                      | 本判定（`--check`）は GitHub API への実疎通が必要（#288 と同じ扱い）                       |
 | `check_roadmap_status.py`      | ロードマップ更新時に手動実行（`--self-test` のみ配線済み）                  | 同上（GitHub API への実疎通が必要）                                                        |
-| `check_tracked_intent.py`      | 追跡ファイルを投入した時点で `run_checks.sh` へ配線する（現在は `--self-test` のみ配線済み） | 本判定は追跡ファイルが 0 件の間つねに FAIL する（`run_checks.sh` 4.12 節・PR #638 レビュー） |
 
-🔴 **下 3 本は #164 の本文が名指ししていなかった非配線**（`tools/check_tool_wiring.py` の新設で初めて機械検出された）。
-いずれも `run_checks.sh` のコメントには実行場所と理由が書かれており、§5 冒頭の定義でいう「死蔵」ではない
-（**機械には見えていなかった非配線** である）。「死蔵」の語は実行場所そのものが決まっていないものにだけ使う。
+🔴 **下 2 本（`check_issue_labels.py` / `check_roadmap_status.py`）は #164 の本文が名指ししていなかった非配線**
+（`tools/check_tool_wiring.py` の新設で初めて機械検出された）。いずれも `run_checks.sh` のコメントには実行場所と
+理由が書かれており、§5 冒頭の定義でいう「死蔵」ではない（**機械には見えていなかった非配線** である）。
+「死蔵」の語は実行場所そのものが決まっていないものにだけ使う。
+
+🔵 **`check_tracked_intent.py` はマーカーを使わず条件付き配線にした**（`run_checks.sh` 4.12 節）。`.gitignore` の
+全否定パターンに追跡ファイルがあるときだけ本判定を実行し、無ければ `skip_check` で理由を出す。マーカーで恒久的に
+除外すると「実行場所がゼロのまま外し忘れる」形が前例になるため、データ投入時に自動で本判定が走る形を選んだ。
 
 #### 表 B: #164 が名指しした 5 本の実行場所
 

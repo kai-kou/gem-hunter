@@ -435,15 +435,34 @@ else
   skip_check "正規表現重複検査 (check_duplicate_source_patterns.py)" "スクリプトが見つかりません"
 fi
 
-# 4.12. .gitignore 追跡意図検査（Issue #607）
+# 4.12. .gitignore 追跡意図検査（Issue #607 / #164）
 #       .gitignore の否定パターン（! で始まる行）が、実際に git で追跡対象に
 #       なっているかを検査。追跡対象のはずが削除された・無視されたのを検知する。
-#       本判定（引数なし実行）は現状 !content/analytics/sprint/ 配下に追跡ファイルが
-#       0件（まだデータ未生成）のため常に FAIL する。ディレクトリが空の場合と
-#       「かつて追跡されていたが消えた」場合を区別する実装が無いため、実データが
-#       投入されるまで real check は配線せず self-test のみ配線する（PR #638 レビュー）。
+#       本判定（引数なし実行）は否定パターンの指すパスに追跡ファイルが 0 件の間つねに
+#       FAIL する（ディレクトリが空の場合と「かつて追跡されていたが消えた」場合を
+#       区別する実装が無いため・PR #638 レビュー）。そこで **全ての否定パターンに
+#       追跡ファイルが 1 件以上あるときだけ本判定を配線** し、それ以外は skip_check で
+#       理由を明示する（マーカーで恒久免罪せず、実データが揃った時点で自動的に本判定が
+#       走るようにする・Issue #164 レビュー）。
 if [ -f "$REPO_ROOT/tools/check_tracked_intent.py" ]; then
   run_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" python3 tools/check_tracked_intent.py --self-test
+
+  TRACKED_INTENT_READY=true
+  TRACKED_INTENT_PENDING=""
+  while IFS= read -r negation; do
+    negation_path="${negation#!}"
+    [ -n "$negation_path" ] || continue
+    if [ -z "$(git -C "$REPO_ROOT" ls-files -- "$negation_path" 2>/dev/null)" ]; then
+      TRACKED_INTENT_READY=false
+      TRACKED_INTENT_PENDING="${TRACKED_INTENT_PENDING}${TRACKED_INTENT_PENDING:+, }${negation_path}"
+    fi
+  done < <(grep -E '^!' "$REPO_ROOT/.gitignore" 2>/dev/null || true)
+
+  if [ "$TRACKED_INTENT_READY" = true ]; then
+    run_check ".gitignore 追跡意図検査 (check_tracked_intent.py)" python3 tools/check_tracked_intent.py
+  else
+    skip_check ".gitignore 追跡意図検査 (check_tracked_intent.py)" "追跡ファイル未投入: ${TRACKED_INTENT_PENDING}"
+  fi
 else
   skip_check ".gitignore 追跡意図検査 self-test (check_tracked_intent.py --self-test)" "スクリプトが見つかりません"
 fi
