@@ -266,3 +266,11 @@
 {"date": "2026-09-04 JST", "title": "他セッションの needs_prompt PR を決定木の捕捉ルートに組み入れる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 898}
 {"date": "2026-09-04 JST", "title": "並行安全プリアンブルに読み取り（Read / Grep / Glob）の可否を 1 行明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "Issue 起票時・着手時に sp と実スコープの整合をチェックする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "self-test に fail-open 脅威（入れ子フェンス・除外マーカー・prefix 類似ラベル）のケースを追加する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 896}
+{"date": "2026-09-04 JST", "title": "Layer 1 セルフレビュー観点『テスト』に fail-open 検査のフレーズを追加する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 896}
+{"date": "2026-09-04 JST", "title": "check_selftest_wiring.py のマーカー仕様をドキュメント化・テスト化する", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 770}
+{"date": "2026-09-04 JST", "title": "run_checks.sh の高速チェック（prettier / eslint / tsc）を先頭に移し即 exit する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-04 JST", "title": "委譲の返り値に「変異テストをどこで測ったか（共有ツリー / 隔離 worktree）」を必須項目化する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 775}
+{"date": "2026-09-04 JST", "title": "pre-pr-create-check.sh の PR 本文検証ロジック（4.5 / 4.6 / 4.7 節）を Python ツールへモジュール化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "証跡鮮度チェックに --auto-update-pr-body / インクリメンタルモードを足して追記コミット時の摩擦を下げる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "ドキュメント変更と機能実装を別 PR に分離するポリシーを sp:5 以上で試行する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
