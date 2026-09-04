@@ -84,8 +84,14 @@ fi
 #     `` `cat x` ``）・サブシェル（`(cat x)`）経由も対象にする。ただし **パス途中でクォートを割る
 #     難読化**（`cat ~/.ss''h/id_rsa`）は塞げない。`eval` 経由と同じ「意図的な回避」の類であり、
 #     字面から実パスを復元するにはシェルの語彙解析が要るため本層の射程外とする
-#   - **grep は対象に含めない**: `grep -rn .netrc docs/` のような文字列検索とファイル読み取りを
-#     区別できず、正当な調査コマンドを止める実害が防御価値を上回るため
+#   - **grep / rg は「検索パターン以外の位置引数」を対象にする**: 検索パターンとファイル引数を
+#     字面で区別できないため長らく対象外にしていたが、`Bash(grep:*)` / `Bash(rg:*)` を
+#     `permissions.allow` に載せると静的評価で決着して classifier の審査にも到達しなくなるため、
+#     第2層で見張る必要が生じた（Layer 1 セキュリティ指摘）。**`/` か `~` を含むトークンだけに
+#     絞ると `grep secret .env` のような cwd 相対の機密ファイルが素通りする**（実測）ので、
+#     `<cmd> [フラグ] <パターン> [ファイル...]` という呼び出し形を使い
+#     **非フラグトークンの 2 個目以降**（＋パス様トークン）を候補にする。
+#     `grep -rn "id_rsa" docs/` のような検索語は 1 個目なので誤ブロックしない
 #   - **`.`（dot source）はコマンド位置に現れたときだけ対象にする**: `_sfa_cmds` に素で足すと
 #     `find . -name credentials` / `git status . x` のカレントディレクトリ引数を誤ブロックするため、
 #     行頭または `;` `&` `|` `(` 等の区切り直後の `.` に限定して抽出する（`source` と `.` は
@@ -122,6 +128,34 @@ _sfa_candidate_tokens() {
     | grep -oE "(^|[[:space:];|&(\`{])(${_sfa_multi_cmds})[[:space:]]+[^;|&\`)]*" \
     | sed -E "s/^[[:space:];|&(\`{]?(${_sfa_multi_cmds})[[:space:]]+//" \
     | _sfa_tokenize_block || true
+  # grep / rg 系（検索コマンド）は、パターンとファイル引数を字面で区別できない。
+  # 🔴 `/` か `~` を含むパス様トークンだけに絞ると **cwd 相対の機密ファイルが素通りする**
+  #    （実測: `grep secret .env` / `rg secret .env` が rc=0 で通り、`rg . ./.env` だけが止まる。
+  #    `Bash(grep:*)` / `Bash(rg:*)` を allow に載せた以上、静的評価で決着して classifier にも
+  #    到達しないため、この穴は `.env` 全文がそのまま文脈へ入ることを意味する）。
+  # そこで候補を **「非フラグトークンのうち 2 個目以降」＋「`/` か `~` を含むトークン」** にする。
+  # grep / rg の呼び出し形は `<cmd> [フラグ...] <パターン> [ファイル...]` であり、`_sfa_tokenize_block`
+  # がフラグを落とすので **1 個目の非フラグトークン = 検索パターン**、2 個目以降がファイル操作対象。
+  # これで `grep -rn "id_rsa" docs/`（パターンが機密名）は従来どおり誤ブロックせず、
+  # `grep secret .env`（ファイルが機密）は捕捉できる。
+  _sfa_search_cmds='grep|egrep|fgrep|rg|ag|ack'
+  printf '%s\n' "$COMMAND" \
+    | grep -oE "(^|[[:space:];|&(\`{])(${_sfa_search_cmds})[[:space:]]+[^;|&\`)]*" \
+    | sed -E "s/^[[:space:];|&(\`{]?(${_sfa_search_cmds})[[:space:]]+//" \
+    | _sfa_tokenize_block \
+    | awk '
+        { if (NF) a[++n] = $0 }
+        END {
+          if (n <= 1) {
+            # トークンが 1 個だけのときは「パターンだけ」か「パターンが空文字で消えてファイルだけが
+            # 残った」かを字面で区別できない（`grep -n "" ~/.ssh/id_rsa` は `""` が空になり
+            # ファイルだけが残る）。パス様のときだけ候補にする（fail-closed 側）。
+            if (n == 1 && a[1] ~ /[\/~]/) print a[1]
+          } else {
+            # 2 個以上あるなら 1 個目は検索パターン。2 個目以降がファイル操作対象。
+            for (i = 2; i <= n; i++) print a[i]
+          }
+        }' || true
   # curl は上記5コマンドと違い「書き込み先（-o/--output/--output-dir）」を持つダウンロードが
   # 主用途のため別パイプラインにする（#419）。上記と同列に混ぜると書き込み先の値（ローカルへの
   # 保存先）が読み取り候補に混入し誤検知する（例: `curl -o /tmp/id_rsa https://example.com/file` は
@@ -233,6 +267,101 @@ if _sensitive_file_access; then
       （.md 等の文書と .pub の公開鍵は対象外）
 理由: permissions.deny は cwd アンカーのため cwd 外を守れず、本フックが第2層を担う。
 デグレ検証: bash tools/test_sensitive_file_guard.sh"
+fi
+
+# 再帰 grep への deny 除外オプション自動付与（auto モードの承認プロンプト削減・L-154）
+#
+# 🔴 なぜ必要か: 権限ルールは **deny → ask → allow の順**に評価され、最初に一致した段で決着する
+#    （公式 permissions: "Rules are evaluated in order: deny, then ask, then allow"）。そのため
+#    `grep -rn "x" .` のように **走査範囲に deny 対象（.env 等）が含まれる再帰検索**は、read-only でも・
+#    allow に `Bash(grep:*)` を置いても deny/ask 側で決着して承認待ちになる。フックが allow を返しても
+#    上書きできない（公式 permissions: "Hook decisions don't bypass permission rules"）。唯一の解が
+#    **走査範囲から deny 対象を外すこと**なので、PreToolUse の `updatedInput`（公式仕様）でコマンド
+#    自体に除外オプションを機械付与する。
+#    ⚠️ ただし「除外を付ければ v2.1.259 の ask 条件（`grep -r` がディレクトリ経由で deny 対象へ到達）を
+#    実際に回避できるか」は **未検証**（`docs/rules/lessons/permissions.md` の未検証セクション）。
+#    効かないケースを観測したら同 lesson を更新すること。
+#
+# 安全性: 付与するのは「元々 deny で読めないファイル」の除外だけで、検索結果の意味は変わらない。
+#         deny ルールも上の機密ファイルガード（_sensitive_file_access）も一切緩めない
+#         （本ブロックはガード評価を通過した後にのみ到達する）。
+# 除外パターンは **`settings.json` の `permissions.deny` を SSOT として動的生成** する。
+# ここに静的リストを持つと deny 設定との 3 つ目の重複定義になり、deny にパターンを足したときの
+# 更新漏れで「除外し損ねて再びプロンプトが出る」ドリフトが起きる（Layer 1 セルフレビュー指摘）。
+# 変換規則: `Read(X)` の X について ① 末尾 `/**` はディレクトリ指定 → `--exclude-dir`
+# ② 先頭 `**/` を除去 ③ 残りに `/` があればベース名のみ使う（grep の --exclude は glob が
+# パス区切りを跨がないため）。
+# 併せて、同ファイルの機密ファイルガード（_sensitive_file_access）だけが対象にしていて deny には
+# 現れないパターン（*.pfx / *.jks / id_dsa 等）と、走査コスト上ほぼ常に不要な `.git` を補完する。
+_grep_deny_excludes() {
+  local settings="${CLAUDE_PROJECT_DIR:-$(cd "$HOOK_DIR/../.." && pwd)}/.claude/settings.json"
+  local pat base out=""
+
+  # 🔴 deny パターンは `--exclude='<値>'` としてコマンド文字列へ連結されるため、
+  #    値に `'` / 空白 / シェルのメタ文字が混ざると **クォート境界を脱出して任意コマンドが実行される**
+  #    （Layer 1 セキュリティ指摘）。`.claude/settings.json` は `permission-request-auto-allow.sh` で
+  #    編集が自動許可される＝悪意ある PR やプロンプトインジェクション経由で到達しうるので、
+  #    glob として妥当な文字だけを通す allowlist で弾く（弾いた値は除外に使わないだけで、
+  #    deny ルール自体の効力は一切変わらない＝安全側）。
+  _grep_exclude_safe() { # $1 = ベース名候補
+    case "$1" in
+      '' | *[!A-Za-z0-9._*?\[\]-]*) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+
+  if [ -f "$settings" ]; then
+    while IFS= read -r pat; do
+      [ -n "$pat" ] || continue
+      case "$pat" in
+        */\*\*)
+          base="${pat%/**}"; base="${base##*/}"
+          _grep_exclude_safe "$base" && out="$out --exclude-dir='$base'"
+          ;;
+        *)
+          base="${pat#\*\*/}"
+          case "$base" in */*) base="${base##*/}" ;; esac
+          _grep_exclude_safe "$base" && out="$out --exclude='$base'"
+          ;;
+      esac
+    done <<EOF
+$(jq -r '.permissions.deny[]? | capture("^Read\\((?<p>.+)\\)$").p // empty' "$settings" 2>/dev/null)
+EOF
+  fi
+
+  # ガード側だけが持つパターンの補完（deny が薄いプロジェクトでも最低限を除外する）
+  for base in '*.pem' '*.key' '*.p12' '*.pfx' '*.jks' '*.keystore' 'id_rsa' 'id_dsa' 'id_ecdsa' 'id_ed25519' '.netrc' '.git-credentials'; do
+    case "$out" in *"--exclude='$base'"*) ;; *) out="$out --exclude='$base'" ;; esac
+  done
+  for base in '.git' '.ssh' '.aws' '.gnupg'; do
+    case "$out" in *"--exclude-dir='$base'"*) ;; *) out="$out --exclude-dir='$base'" ;; esac
+  done
+
+  printf '%s' "${out# }"
+}
+
+# 判定と書き換えは `lib/grep_exclude_normalize.py` に委ねる（クォート状態を追跡して
+# **実行位置の grep だけ**を書き換える）。素朴な sed 置換ではヒアドキュメント本文・引用符内の
+# 文字列に現れた `grep -r` まで書き換わり、**書き出されるファイルの中身が化ける**
+# （Layer 1 セルフレビューで CRITICAL 指摘・実測再現あり）。
+# ここでの `grep -q grep` は Python 起動を避けるための前段フィルタにすぎない。
+if printf '%s' "$COMMAND" | grep -q 'grep'; then
+  _NEW_COMMAND=$(printf '%s' "$COMMAND" \
+    | python3 "$HOOK_DIR/lib/grep_exclude_normalize.py" "$(_grep_deny_excludes)" 2>/dev/null) || _NEW_COMMAND=""
+  if [ -n "$_NEW_COMMAND" ] && [ "$_NEW_COMMAND" != "$COMMAND" ]; then
+    # 🔴 何を除外したかを必ず出す。除外の内訳が見えないと、機密混入の有無を確かめる目的の
+    #    再帰 grep（`grep -rn "AKIA" .` 等）が「探すべきファイルだけ除外された 0 件」を返したとき、
+    #    それを「クリーン」と誤読する（fail-open・Layer 1 セキュリティ指摘）。
+    echo "[pre-tool-use-router] 再帰 grep に deny 対象の除外オプションを付与しました（L-154）: $(_grep_deny_excludes)" >&2
+    echo "[pre-tool-use-router] ⚠️ 機密の混入有無を確かめる検索では、この除外により対象ファイルが走査されない。除外なしで確認したいときは grep 以外の手段（git grep --no-index 等）か明示パス指定を使うこと" >&2
+    jq -n --arg cmd "$_NEW_COMMAND" '{
+      "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "updatedInput": { "command": $cmd }
+      }
+    }'
+    exit 0
+  fi
 fi
 
 # 該当なし: 許可

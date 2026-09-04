@@ -770,6 +770,31 @@ else
   skip_check "PR 確認済みマーカー self-test (stop-pr-check.sh --self-test)" "スクリプトが見つかりません"
 fi
 
+# PostToolUse 観測マーカー（base#543）の self-test と、stop-pr-check.sh との e2e。
+# 本リポジトリは Issue #478 の `--mark-confirmed` 経路とベースの観測経路を併存させているため、
+# 観測側が壊れても #478 側の self-test は緑のままになる。両経路を別々に実測する。
+if [ -f "$REPO_ROOT/.claude/hooks/post-pr-confirm-mark.sh" ]; then
+  run_check_timeout "PR 確認観測マーカー self-test (post-pr-confirm-mark.sh --self-test)" 60 \
+    bash .claude/hooks/post-pr-confirm-mark.sh --self-test
+else
+  skip_check "PR 確認観測マーカー self-test (post-pr-confirm-mark.sh --self-test)" "スクリプトが見つかりません"
+fi
+
+if [ -f "$REPO_ROOT/tools/test_pr_confirm_marker.sh" ]; then
+  run_check_timeout "PR 確認観測マーカー e2e (test_pr_confirm_marker.sh)" 120 \
+    bash tools/test_pr_confirm_marker.sh
+else
+  skip_check "PR 確認観測マーカー e2e (test_pr_confirm_marker.sh)" "スクリプトが見つかりません"
+fi
+
+# 再帰 grep の除外オプション正規化（base#543 / L-154）の self-test。
+if [ -f "$REPO_ROOT/tools/test_grep_exclude_normalize.sh" ]; then
+  run_check_timeout "grep 除外オプション正規化 self-test (test_grep_exclude_normalize.sh)" 60 \
+    bash tools/test_grep_exclude_normalize.sh
+else
+  skip_check "grep 除外オプション正規化 self-test (test_grep_exclude_normalize.sh)" "スクリプトが見つかりません"
+fi
+
 # 安全なプロセス掃除ヘルパー self-test（Issue #490 / L-139）。
 # 自分自身・祖先プロセスを除外集合に入れているか、無関係なプロセスは検出して終了できるかを実測する。
 if [ -f "$REPO_ROOT/tools/safe_process_kill.sh" ]; then

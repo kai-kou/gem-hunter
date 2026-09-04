@@ -6,6 +6,9 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/hook_block.sh
 source "$HOOK_DIR/lib/hook_block.sh"
+# shellcheck source=lib/hook_layer1_common.sh
+# ベース由来の PostToolUse 観測マーカー（post-pr-confirm-mark.sh）を読むための共通関数。
+source "$HOOK_DIR/lib/hook_layer1_common.sh"
 
 # `.git` 共通ディレクトリの解決と stat の GNU/BSD フォールバックは
 # lib/wip_guard.sh が既に解いている（同じ「.git 配下の TTL マーカー」という目的）。
@@ -69,9 +72,13 @@ pr_check_head() {
 }
 
 # マーカーのファイル名（セッション ID + ブランチ + HEAD sha）
+# 🔴 ブランチ成分は `hook_branch_key`（サニタイズ済み接頭辞 + ブランチ名全体の sha256 先頭 12 桁）を使う。
+#    `pr_check_sanitize` は許可文字だけを残す **非単射** な変換で、`feat/認証` と `feat/決済` が
+#    どちらも同じキーに潰れる（実測）。同一セッション・同一 HEAD で両ブランチを行き来すると、
+#    片方で立てたマーカーがもう片方の「PR 未作成」リマインドを消してしまう（L-103 防御の抜け）。
 pr_check_marker_key() { # $1=session id, $2=branch, $3=head sha
   printf '%s__%s__%s\n' \
-    "$(pr_check_sanitize "${1:-none}")" "$(pr_check_sanitize "${2:-none}")" "$(pr_check_sanitize "${3:-none}")"
+    "$(pr_check_sanitize "${1:-none}")" "$(hook_branch_key "${2:-none}")" "$(pr_check_sanitize "${3:-none}")"
 }
 
 # マーカーの mtime（エポック秒）。stat の GNU/BSD 差異は wip_guard 側の実装に寄せる
@@ -113,6 +120,52 @@ pr_check_is_confirmed() {
     age=$(( (now - mtime) / 60 ))
     (( age < 0 )) && age=0
     if (( age < ttl )); then return 0; fi
+  done
+  return 1
+}
+
+# ── ベース由来の PostToolUse 観測マーカー（base#543）─────────────────────────
+# post-pr-confirm-mark.sh が「現在ブランチの PR が実在すると確認できた」ツール呼び出しを
+# PostToolUse で観測して立てるマーカー。本リポジトリ独自の `--mark-confirmed`（Issue #478）と
+# **併存** させる（ベースの移行ノートが下流に求める「置き換えるか両立させるか」の判断結果）。
+#   - #478 側: Claude が明示的にコマンドを打つ。セッション + ブランチ + HEAD sha + TTL で厳格に判定
+#   - base#543 側: ツール応答の観測で自動。セッション + ブランチ（HEAD・TTL は持たない）
+# どちらも「PR の実在を確認できたとき」にしか立たないため、L-103 防御（PR 未作成なら
+# リマインドが出続ける）は両経路とも維持される。
+#
+# 🔴 観測マーカーは **ファイル名に HEAD sha を持たず TTL も持たない**（ベース側の設計）。
+#    そのまま OR で足すと、#478 が持っていた「追加コミット後・TTL 経過後は再確認させる」無効化が
+#    緩い側に引きずられて事実上死ぬ（Layer 1 の 3 観点が独立に実測再現）。実害の形は 2 つ:
+#      ① マージ済み PR が 1 件返っただけでマーカーが立ち、その後ブランチに新規コミットを積んでも
+#         「PR 未作成」のリマインドが出ない（L-103 防御の抜け）
+#      ② セッションが長引くほど古い確認結果が効き続ける
+#    ファイル名は変えられないので、**マーカーの mtime** を使って同じ 2 条件を課す:
+#      - TTL 内であること（`--mark-confirmed` と同じ `pr_check_ttl_minutes`）
+#      - **現在の HEAD コミット時刻より後に立っていること**（＝確認後に積んだコミットで失効する）
+pr_check_is_confirmed_by_observation() { # $1=ブランチ, $2.. = セッション ID 候補
+  local branch="$1"; shift
+  local dir sid file mtime ttl now age head_time
+  declare -F hook_pr_confirm_marker_path >/dev/null 2>&1 || return 1
+  dir="${CLAUDE_HOOK_PR_MARKER_DIR:-$(git rev-parse --git-dir 2>/dev/null || echo "")}"
+  [[ -n "$dir" ]] || return 1
+  ttl=$(pr_check_ttl_minutes)
+  now=$(date +%s)
+  head_time=$(git log -1 --format=%ct HEAD 2>/dev/null || echo "")
+  for sid in "$@"; do
+    [[ -n "$sid" ]] || continue
+    file="$(hook_pr_confirm_marker_path "$sid" "$branch" "$dir")"
+    [[ -f "$file" ]] || continue
+    mtime=$(pr_check_marker_mtime "$file")
+    # 算術評価へ流す前に必ず数値検証する（stat 失敗時の文字列混入を遮断）
+    [[ "$mtime" =~ ^[0-9]+$ ]] || continue
+    age=$(( (now - mtime) / 60 ))
+    (( age < 0 )) && age=0
+    (( age < ttl )) || continue
+    # 確認より後にコミットが積まれていたら、その確認は現在の HEAD を保証しない
+    if [[ "$head_time" =~ ^[0-9]+$ ]] && (( mtime < head_time )); then
+      continue
+    fi
+    return 0
   done
   return 1
 }
@@ -207,6 +260,15 @@ if [[ "${1:-}" == "--self-test" ]]; then
 
   MARKER_DIR="$(pr_check_marker_dir)"
 
+  # 0. マーカーキーの単射性（`pr_check_sanitize` の非単射性が残っていると同一キーに潰れる）。
+  #    純関数なので実 git 操作なしで判定できる。
+  if [[ "$(pr_check_marker_key S1 'feat/認証' abc123456789)" \
+     != "$(pr_check_marker_key S1 'feat/決済' abc123456789)" ]]; then
+    ok "除去対象文字だけが異なるブランチが別のマーカーキーになる"
+  else
+    ng "除去対象文字だけが異なるブランチが別のマーカーキーになる" "同一キーに潰れた"
+  fi
+
   # 1. マーカー無し → リマインド発火（exit 2）。かつリマインドはマーカーを作らない（Issue #478）
   expect_rc 2 "$(run_hook S1 S1)" "マーカー無し → リマインド発火"
   if [[ -d "$MARKER_DIR" ]] && [[ -n "$(ls -A "$MARKER_DIR" 2>/dev/null)" ]]; then
@@ -223,6 +285,28 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect_rc 0 "$(run_hook OTHER S1)" "stdin 不一致・env 一致 → 抑制"
   # 3b. どちらのセッション ID も一致しない → 抑制しない
   expect_rc 2 "$(run_hook S2 S2)" "別セッション → 抑制しない"
+
+  # 3c. ベース由来の PostToolUse 観測マーカー（base#543）でも抑制される（併存経路）
+  OBS_MARKER=$(hook_pr_confirm_marker_path S3 feat/selftest "$TMP_ROOT/work/.git")
+  expect_rc 2 "$(run_hook S3 S3)" "観測マーカー無しの別セッション → 抑制しない"
+  : >"$OBS_MARKER"
+  expect_rc 0 "$(run_hook S3 S3)" "観測マーカーあり → 抑制する（base#543 併存）"
+  expect_rc 2 "$(run_hook S4 S4)" "他セッションの観測マーカーでは抑制しない"
+  # 観測マーカーにも #478 と同じ 2 条件（TTL 内 / HEAD より後）を課していることを実測する。
+  # ファイル名に HEAD sha を持たないベース仕様のままだと、下の 2 ケースが両方とも抑制側へ倒れる。
+  touch -d "@$(( $(date +%s) - 7200 ))" "$OBS_MARKER"
+  expect_rc 2 "$(run_hook S3 S3)" "観測マーカーが TTL 超過（2 時間前）→ 抑制しない"
+  : >"$OBS_MARKER"
+  expect_rc 0 "$(run_hook S3 S3)" "観測マーカーを立て直すと再び抑制する"
+  echo obs >>a.txt && git add a.txt && git commit -q -m obs-head
+  OBS_MARKER_NEW=$(hook_pr_confirm_marker_path S3 feat/selftest "$TMP_ROOT/work/.git")
+  : >"$OBS_MARKER_NEW"
+  touch -d "@$(( $(git log -1 --format=%ct HEAD) - 60 ))" "$OBS_MARKER_NEW"
+  expect_rc 2 "$(run_hook S3 S3)" "観測マーカーが HEAD コミットより古い（確認後に追加コミット）→ 抑制しない"
+  : >"$OBS_MARKER_NEW"
+  expect_rc 0 "$(run_hook S3 S3)" "HEAD より後に立て直した観測マーカーは抑制する"
+  rm -f "$OBS_MARKER" "$OBS_MARKER_NEW"
+  expect_rc 2 "$(run_hook S3 S3)" "観測マーカー削除後 → 再び抑制しない"
 
   # 4. マーカーの中身が PR 番号でない → 未確認扱い
   MK="$(marker_of S1 feat/selftest)"
@@ -417,6 +501,11 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" == "true" ]]; then
 
   if pr_check_is_confirmed "$current_branch" "$session_id_stdin" "$session_id_env"; then
     # 同一セッション・同一ブランチ・同一 HEAD で PR 実在を確認済み → 確認依頼を出さない
+    exit 0
+  fi
+
+  # ベース由来の PostToolUse 観測マーカー（base#543）でも抑制する（併存・上の関数コメント参照）
+  if pr_check_is_confirmed_by_observation "$current_branch" "$session_id_stdin" "$session_id_env"; then
     exit 0
   fi
 

@@ -105,7 +105,21 @@ run block 'cat backup-id_ecdsa'
 run block 'cat backup-id_ed25519'
 run block 'cat myproj-service-accounts.json'
 
+echo "== BLOCK 期待（検索コマンドのファイル引数・base#543 で allow に載った grep/rg の第2層） =="
+# 🔴 `Bash(grep:*)` / `Bash(rg:*)` を permissions.allow に載せると静的評価で決着し classifier にも
+#    到達しないため、この 2 層目だけが cwd 相対の機密ファイル読み取りを止める。
+run block 'grep secret .env'
+run block 'rg secret .env'
+run block 'grep -e AKIA .env'
+run block 'grep -rn foo src/ .env'
+run block 'grep -n "" ~/.ssh/id_rsa'
+
 echo "== ALLOW 期待（誤検知が出てはいけない通常運用） =="
+# 検索コマンドの **第1非フラグ引数は検索パターン** であり、機密名・パス様でもファイル読み取りではない
+run allow 'grep -rn "id_rsa" docs/'
+run allow 'grep -rn "config/credentials.json" src/'
+run allow 'grep -rn "~/.ssh/config" docs/'
+run allow 'grep -rn AKIA .'
 run allow 'cat docs/setup/aws-credentials-setup.md'
 run allow 'grep -rn credentials docs/'
 run allow 'cat package.json'
