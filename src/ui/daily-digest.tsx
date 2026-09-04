@@ -3,6 +3,7 @@ import type { Locale } from '../domain/model/locale'
 import type { DailyDigest } from '../domain/model/gem'
 import { ownerOf, repoOf, type RepositoryFullName } from '../domain/model/repository-full-name'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
+import { LinkPendingHint } from './link-pending-hint'
 import { FirstVisitNote } from './seen-digest/first-visit-note'
 import { NewSinceLastVisitBadge } from './seen-digest/new-since-last-visit-badge'
 import { SeenDigestProvider } from './seen-digest/seen-digest-provider'
@@ -125,6 +126,9 @@ export function DailyDigest({
                       className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
                     >
                       {gem.packageName}
+                      {/* 詳細ページは `AC-5` の 404 ステータスを保つため `loading.tsx` を持てない（Issue #167）。
+                          遷移中であることは `<Link>` の内側のこのヒントで伝える（`US-22`）。 */}
+                      <LinkPendingHint />
                     </Link>{' '}
                     <NewSinceLastVisitBadge packageName={gem.packageName} label={labels.newBadge} />
                     <p className="text-muted-foreground mt-1 text-xs">{gem.repositoryFullName}</p>

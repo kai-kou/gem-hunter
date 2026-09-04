@@ -9,6 +9,7 @@ import type { Locale } from '../domain/model/locale'
 import { tryParseLenientRepositoryFullName } from '../domain/model/repository-full-name'
 import { AttributionNotice } from './attribution-notice'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
+import { LinkPendingHint } from './link-pending-hint'
 import { buildSearchUrl } from './url/build-search-url'
 import { GEM_LIST_SOURCE_PARAM_KEY, GEM_LIST_SOURCE_PARAM_VALUE } from './url/search-params'
 
@@ -252,6 +253,9 @@ export function GemList({
                           className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
                         >
                           {entry.repositoryFullName}
+                          {/* 詳細ページは `AC-5` の 404 ステータスを保つため `loading.tsx` を持てない（Issue #167）。
+                              遷移中であることは `<Link>` の内側のこのヒントで伝える（`US-22`）。 */}
+                          <LinkPendingHint />
                         </Link>
                       ) : (
                         <span className="font-medium">{entry.repositoryFullName}</span>

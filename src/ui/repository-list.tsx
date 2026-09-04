@@ -3,6 +3,7 @@ import type { GemIndex } from '../domain/model/gem-index'
 import type { Locale } from '../domain/model/locale'
 import type { RepositorySummary } from '../domain/model/repository'
 import { GemBadge } from './gem-badge'
+import { LinkPendingHint } from './link-pending-hint'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
 import { buildSearchUrl, type SearchUrlState } from './url/build-search-url'
 
@@ -143,6 +144,9 @@ export function RepositoryList({
                 className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
               >
                 {item.fullName}
+                {/* 詳細ページは `AC-5` の 404 ステータスを保つため `loading.tsx` を持てない（Issue #167）。
+                    遷移中であることは `<Link>` の内側のこのヒントで伝える（`US-22`）。 */}
+                <LinkPendingHint />
               </Link>
               {/*
               Gem バッジはリポジトリ名リンクの直後（同じ行）に置く（SP-18 / D-36）。
