@@ -21,6 +21,9 @@
   //    実行環境のプロキシを通らず、Observability のクエリでもプレビュー版のイベントが出ない。
   //    プレビュー（`pr-388`）へ 14 リクエスト投げて全て 200・CPU 超過（`exceededCpu`）ゼロという
   //    間接証拠はあるが、cold start が実際に起きたかまでは確認できていない。
+  //    🔴 **後日訂正（Issue #860・2026-09-05 JST）**: この「`exceededCpu` ゼロ」は
+  //    **上限内に収まっている証拠にならない**（散発的な超過は 200 として観測されるため）。
+  //    下の `SP-19` ブロック末尾の後日追記を参照。
   //    本番で p95 を測れるようになったら締め直す。
   //    🔵 **後日追記（Issue #782・2026-09-03 JST）**: 別セッションでは同じ `wrangler tail` の
   //    WebSocket 接続が本番環境に対して成功し、p95 CPU 時間を実測できた（詳細は
@@ -54,6 +57,25 @@
   //    🔵 `limits.cpu_ms` は **上限のキャップであって予約ではない**（課金は実使用 CPU に対して
   //    起きる）。400 へ上げても平常時のコストは変わらず、増えるのは「暴走したリクエストが
   //    打ち切られるまでの最大 CPU」だけである。
+  //    🔵 **後日追記（Issue #860・2026-09-05 JST）**: 本番の実測で **496ms のリクエストが
+  //    `exceededCpu` にならず 200 で完了した**（#782 の p95 実測・25 件中 1 件）。これは設定の
+  //    未反映ではない — Cloudflare API の script settings で本番に `"limits": {"cpu_ms": 400}` が
+  //    適用されていることを実測確認済み（`usage_model: "standard"` / 確認日 2026-09-05 JST）。
+  //    公式は *some* built-in flexibility があるとだけ述べており、**許容の幅・回数は明示されて
+  //    いない**。読み取れるのは「毎回必ず打ち切る閾値ではない」ことまでである:
+  //      > Each isolate has some built-in flexibility to allow for cases where your Worker
+  //      > infrequently runs over the configured limit. If your Worker starts hitting the limit
+  //      > consistently, its execution will be terminated according to the limit configured.
+  //      （典拠: https://developers.cloudflare.com/workers/wrangler/configuration/ の Limits 節）
+  //    🔴 **許容は isolate 単位**（"Each isolate has…"）なので、同一 isolate で超過が続けば
+  //    単発リクエストでも打ち切られうる。「1 回なら必ず通る」という保証ではない。
+  //    つまり `cpu_ms` は **1 回超えたら即 Error 1102 になる閾値ではなく、常態的に超えたときに
+  //    効く上限**である。したがって上記の「**Error 1102**（`exceededCpu`）で落ちるリスクを潰せる」は
+  //    **散発的な超過を必ず防ぐ**という意味ではなく、**超過が常態化しないだけの余裕を取る**という
+  //    意味で読む（400 を選んだ判断自体は有効なまま）。
+  //    🔴 この非対称性は測定にも効く: **`exceededCpu` がゼロであることは「上限内に収まっている」
+  //    証拠にならない**（散発的な超過は成功として観測される）。上限の妥当性は outcome ではなく
+  //    `cpuTime` の分布（最大値・上位パーセンタイル）で判断すること。
   "limits": { "cpu_ms": 400 },
   // 🔴 `period` を変えたら src/infrastructure/platform/rate-limit.ts の RATE_LIMIT_PERIOD_SECONDS も
   //    同じ値へ更新する（超過時の Retry-After に使うため、ずれると案内した秒数と実際の窓が食い違う）。

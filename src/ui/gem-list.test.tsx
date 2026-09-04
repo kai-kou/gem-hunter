@@ -20,6 +20,7 @@ const labels: GemListLabels = {
   registryLabel: 'レジストリ',
   attribution: 'このデータについて: {source}（{license}）のオープンデータをもとにしています。',
   opensInNewTab: '（新しいタブで開きます）',
+  linkPending: '詳細ページを読み込んでいます',
 }
 
 const meta: DigestMeta = {
@@ -62,6 +63,27 @@ describe('GemList', () => {
     render(<GemList view={viewOf()} query="left pad" locale={locale('ja')} labels={labels} />)
 
     expect(screen.getByRole('heading', { name: '「left pad」の Gem' })).toBeInTheDocument()
+  })
+
+  it('遷移中の読み上げ用ライブリージョンを一覧の外（兄弟）に 1 個だけ常設する（§7.2 / Issue #167）', () => {
+    const { container } = render(
+      <GemList view={viewOf()} query="pad" locale={locale('ja')} labels={labels} />,
+    )
+
+    const region = container.querySelector('span[role="status"][aria-live="polite"]')
+    expect(region).toBeInTheDocument()
+    // 🔴 一覧（`<ul>`）の **内側** に入れない（ライブリージョンの入れ子・§7.2）。
+    expect(container.querySelector('ul')?.contains(region ?? null)).toBe(false)
+  })
+
+  it('詳細リンクの内側に遷移ペンディング表示（LinkPendingHint）を 1 個持つ（US-22 / Issue #167）', () => {
+    render(<GemList view={viewOf()} query="pad" locale={locale('ja')} labels={labels} />)
+
+    const link = screen.getByRole('link', { name: 'stevemao/left-pad' })
+    // 🔴 ページ全体ではなく **リンクの内側** をスコープにする: `useLinkStatus` は直近の
+    // `<Link>` の遷移状態しか読めないため、ヒントをリンクの外（`<li>` 直下など）へ移すと
+    // 機能しなくなる。ページ全体スコープの `getByTestId` はその変異を検知できない。
+    expect(within(link).getAllByTestId('link-pending-hint')).toHaveLength(1)
   })
 
   /**

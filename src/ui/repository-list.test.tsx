@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { type GemIndex, gemIndex } from '../domain/model/gem-index'
@@ -10,6 +10,7 @@ const labels = {
   empty: '条件に合うリポジトリは見つかりませんでした。キーワードを変えて試してください。',
   starCount: 'star 数',
   updatedAt: '最終更新',
+  linkPending: '詳細ページを読み込んでいます',
 }
 
 const items: RepositorySummary[] = [
@@ -48,6 +49,27 @@ describe('RepositoryList', () => {
       'href',
       '/ja/repos/facebook/react',
     )
+  })
+
+  it('遷移中の読み上げ用ライブリージョンを一覧の外（兄弟）に 1 個だけ常設する（§7.2 / Issue #167）', () => {
+    const { container } = render(
+      <RepositoryList items={items} labels={labels} locale={locale('ja')} />,
+    )
+
+    const region = container.querySelector('span[role="status"][aria-live="polite"]')
+    expect(region).toBeInTheDocument()
+    // 🔴 一覧（`<ul>`）の **内側** に入れない（ライブリージョンの入れ子・§7.2）。
+    expect(container.querySelector('ul')?.contains(region ?? null)).toBe(false)
+  })
+
+  it('詳細リンクの内側に遷移ペンディング表示（LinkPendingHint）を 1 個持つ（US-22 / Issue #167）', () => {
+    render(<RepositoryList items={items} labels={labels} locale={locale('ja')} />)
+
+    const link = screen.getByRole('link', { name: /facebook\/react/ })
+    // 🔴 ページ全体ではなく **リンクの内側** をスコープにする: `useLinkStatus` は直近の
+    // `<Link>` の遷移状態しか読めないため、ヒントをリンクの外（`<li>` 直下など）へ移すと
+    // 機能しなくなる。ページ全体スコープの `getByTestId` はその変異を検知できない。
+    expect(within(link).getAllByTestId('link-pending-hint')).toHaveLength(1)
   })
 
   it('リポジトリ名にドットを含む場合も正しい href になる（例: user.github.io）', () => {
@@ -123,7 +145,12 @@ describe('RepositoryList', () => {
     render(
       <RepositoryList
         items={items}
-        labels={{ empty: 'No repositories matched.', starCount: 'stars', updatedAt: 'Updated' }}
+        labels={{
+          empty: 'No repositories matched.',
+          starCount: 'stars',
+          updatedAt: 'Updated',
+          linkPending: 'Loading the detail page',
+        }}
         locale={locale('en')}
       />,
     )
@@ -143,7 +170,12 @@ describe('RepositoryList', () => {
     render(
       <RepositoryList
         items={items}
-        labels={{ empty: 'No repositories matched.', starCount: 'stars', updatedAt: 'Updated' }}
+        labels={{
+          empty: 'No repositories matched.',
+          starCount: 'stars',
+          updatedAt: 'Updated',
+          linkPending: 'Loading the detail page',
+        }}
         locale={locale('en')}
       />,
     )

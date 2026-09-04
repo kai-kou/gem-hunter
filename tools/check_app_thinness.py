@@ -354,15 +354,20 @@ ALLOWLIST: dict[str, Metrics] = {
     # （検索結果ポートと Gem バッジポートの結果をここで組み合わせている）を含む最大のファイル。
     # 2026-09-01: Issue #287（ライセンスリンクの sr-only 告知）で i18n ラベルを 1 個渡すため
     # `labels` が複数行に折れ 547 → 550 行。機能追加に伴う最小増分として実測値を更新した。
-    "app/[locale]/page.tsx": Metrics(lines=550, func_defs=3, domain_imports=7, array_chains=4),
+    # 2026-09-05: Issue #167 で `labels.linkPending`（読み上げ文言）を 2 一覧へ渡すため 550 → 552 行。
+    "app/[locale]/page.tsx": Metrics(lines=552, func_defs=3, domain_imports=7, array_chains=4),
     # Gem 一覧ページ。ドメインの値オブジェクト（locale/page-number/per-page/sort-order/errors）を
     # 直接 5 つ import しており、表示用の整形が app/ 側に残っている疑いがあるが、行数以外は
     # 大きく逸脱していないため現状維持で allowlist する。
     # 2026-09-01: Issue #287 で `opensInNewTab` ラベルを 1 行渡すため 422 → 423 行。
-    "app/[locale]/gems/page.tsx": Metrics(lines=423, func_defs=1, domain_imports=5, array_chains=0),
+    # 2026-09-05: Issue #167 で `labels.linkPending` を渡すため 423 → 424 行。
+    "app/[locale]/gems/page.tsx": Metrics(lines=424, func_defs=1, domain_imports=5, array_chains=0),
     # リポジトリ詳細ページ。domain import 4 個がデフォルト上限 3 を超える。
     "app/[locale]/repos/[owner]/[repo]/page.tsx": Metrics(
-        lines=301, func_defs=1, domain_imports=4, array_chains=0
+        # 2026-09-05: Issue #167 の Layer 1 レビュー指摘（冒頭コメントが実態と食い違い、
+        # 実装側 JSDoc と互いに古い記述を指し合う循環になっていた）を直すため 301 → 304 行。
+        # 圧縮できる冗長箇所は同時に削ったうえでの最小増分。
+        lines=304, func_defs=1, domain_imports=4, array_chains=0
     ),
     # 検索 API Route Handler。トップレベル関数定義が 3 個（デフォルト上限 2 を超える）。
     "app/api/search/route.ts": Metrics(lines=144, func_defs=3, domain_imports=1, array_chains=0),

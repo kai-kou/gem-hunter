@@ -9,6 +9,8 @@ import type { Locale } from '../domain/model/locale'
 import { tryParseLenientRepositoryFullName } from '../domain/model/repository-full-name'
 import { AttributionNotice } from './attribution-notice'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
+import { LinkPendingAnnouncer } from './link-pending-announcer'
+import { LinkPendingHint } from './link-pending-hint'
 import { buildSearchUrl } from './url/build-search-url'
 import { GEM_LIST_SOURCE_PARAM_KEY, GEM_LIST_SOURCE_PARAM_VALUE } from './url/search-params'
 
@@ -84,6 +86,11 @@ export type GemListLabels = {
   attribution: string
   /** ライセンスリンクが新しいタブで開くことの `sr-only` 告知（`ui-ux-guidelines.md` §7.4a）。 */
   opensInNewTab: string
+  /**
+   * 詳細ページへの遷移中であることを支援技術へ伝える 1 文（`sr-only` のライブリージョンに載る）。
+   * 理由の正本は `link-pending-hint.tsx` / `link-pending-announcer.tsx` の JSDoc（Issue #167）。
+   */
+  linkPending: string
 }
 
 /**
@@ -185,108 +192,113 @@ export function GemList({
             {formatMessage(labels.totalCount, { count: numberFormat.format(view.totalCount) })}
           </p>
           {view.items.length > 0 ? (
-            <ul className="divide-border mt-2 divide-y">
-              {view.items.map((entry) => {
-                const repo = tryParseLenientRepositoryFullName(entry.repositoryFullName)
-                return (
-                  <li
-                    // 🔴 `repositoryFullName` を key にする（`byRepo` のキーがその小文字なので
-                    // 一意性が構造的に保証されている）。`registry/packageName` は
-                    // `packageName` 欠損時に空文字で埋まる仕様のため同一ページ内で衝突する。
-                    key={entry.repositoryFullName}
-                    className="relative flex gap-3 py-4"
-                    // E2E（`e2e/sp-19.spec.ts`）が並び順を機械的に検証するための値。可視テキストは
-                    // ロケール桁区切り・丸めで表記が変わるため、生値を `data-` 属性で出す。
-                    data-gem-index={String(gemIndexValue(entry.gemIndex))}
-                    data-repository-full-name={entry.repositoryFullName}
-                  >
-                    {/*
-                      avatar 画像（飼い主フィードバック「通常の一覧で表示している項目も含める」）。
-                      🔴 候補プールの静的シャードには description/primaryLanguage/topics/lastPushedAt
-                      が存在しない（実測確認済み）ため、GitHub API 呼び出しなしで足せるのは
-                      avatar だけ。`repository-list.tsx` の 2 カラム構造をそのまま複製する
-                      （器は揃え、載せる情報は変えない）。
-                      🔴 `repo` が `null`（`owner/name` に割れない）のときは avatar も出さない
-                      （壊れたリンクを出さないのと同じ判定を再利用し、壊れた画像 URL を出さない）。
-                      Link の **外**（兄弟）に置く（`repository-list.tsx` と同じ配置理由）。
-                      🔴 **なぜ `avatars.githubusercontent.com/u/{id}` ではないか**（`AR-11` の詳細）:
-                      候補プールのシャードに `avatar_url` / owner の数値 ID の列が無く、`AR-11` の
-                      方針でこの表示のためだけに GitHub API を追加で呼ばない。そのため公式には非推奨の
-                      `github.com/{owner}.png` を使う。
-                      ⚠️ **既知の制約**: owner のリネーム・削除後にスナップショットが古いままだと
-                      404 になり avatar が表示されないことがある（Server Component のため
-                      `onError` での差し替えはできない）。`bg-muted` を敷いておき、404 時も
-                      壊れたアイコンではなく丸い無地のプレースホルダに見えるようにする。
-                    */}
-                    {repo ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image 最適化は使わない
-                      <img
-                        src={`https://github.com/${encodeURIComponent(repo.owner)}.png?size=80`}
-                        // オーナー名は repositoryFullName として隣接テキスト表示されるため装飾扱い
-                        // （ui-ux-guidelines.md §7.4・repository-list.tsx と同じ方針）
-                        alt=""
-                        width={40}
-                        height={40}
-                        loading="lazy"
-                        decoding="async"
-                        className="size-10 shrink-0 rounded-full bg-muted"
-                      />
-                    ) : null}
-                    {/* 第三者由来テキスト（`repositoryFullName` / `packageName`）の折り返し。
-                        この `<div>` は flex アイテムだが `min-w-0` で floor を外してあるため、
-                        ここに `break-words` を 1 回当てれば配下へ継承で届く
-                        （判定規則は `ui-ux-guidelines.md` §3・`repository-list.tsx` と同型）。 */}
-                    <div className="min-w-0 flex-1 break-words">
+            // 遷移中の読み上げは一覧に 1 個だけ（`link-pending-announcer.tsx` の JSDoc・Issue #167）。
+            <LinkPendingAnnouncer label={labels.linkPending}>
+              <ul className="divide-border mt-2 divide-y">
+                {view.items.map((entry) => {
+                  const repo = tryParseLenientRepositoryFullName(entry.repositoryFullName)
+                  return (
+                    <li
+                      // 🔴 `repositoryFullName` を key にする（`byRepo` のキーがその小文字なので
+                      // 一意性が構造的に保証されている）。`registry/packageName` は
+                      // `packageName` 欠損時に空文字で埋まる仕様のため同一ページ内で衝突する。
+                      key={entry.repositoryFullName}
+                      className="relative flex gap-3 py-4"
+                      // E2E（`e2e/sp-19.spec.ts`）が並び順を機械的に検証するための値。可視テキストは
+                      // ロケール桁区切り・丸めで表記が変わるため、生値を `data-` 属性で出す。
+                      data-gem-index={String(gemIndexValue(entry.gemIndex))}
+                      data-repository-full-name={entry.repositoryFullName}
+                    >
                       {/*
-                        詳細ページ（独立 URL・`AC-4`）への遷移。カード全体をクリック可能にするが
-                        `<a>` で全体を包まず、リポジトリ名だけをリンクにして `::after` で領域を
-                        広げる（`ui-ux-guidelines.md` §4.3）。`::after` は `<li className="relative">`
-                        基準なので avatar の上にもクリック領域が及ぶ。
-                        🔴 `repositoryFullName` が `owner/name` に割れない値のときはリンクを作らない
-                        （壊れたリンクを出すより、テキストとして見せる方が害が小さい）。
+                        avatar 画像（飼い主フィードバック「通常の一覧で表示している項目も含める」）。
+                        🔴 候補プールの静的シャードには description/primaryLanguage/topics/lastPushedAt
+                        が存在しない（実測確認済み）ため、GitHub API 呼び出しなしで足せるのは
+                        avatar だけ。`repository-list.tsx` の 2 カラム構造をそのまま複製する
+                        （器は揃え、載せる情報は変えない）。
+                        🔴 `repo` が `null`（`owner/name` に割れない）のときは avatar も出さない
+                        （壊れたリンクを出さないのと同じ判定を再利用し、壊れた画像 URL を出さない）。
+                        Link の **外**（兄弟）に置く（`repository-list.tsx` と同じ配置理由）。
+                        🔴 **なぜ `avatars.githubusercontent.com/u/{id}` ではないか**（`AR-11` の詳細）:
+                        候補プールのシャードに `avatar_url` / owner の数値 ID の列が無く、`AR-11` の
+                        方針でこの表示のためだけに GitHub API を追加で呼ばない。そのため公式には非推奨の
+                        `github.com/{owner}.png` を使う。
+                        ⚠️ **既知の制約**: owner のリネーム・削除後にスナップショットが古いままだと
+                        404 になり avatar が表示されないことがある（Server Component のため
+                        `onError` での差し替えはできない）。`bg-muted` を敷いておき、404 時も
+                        壊れたアイコンではなく丸い無地のプレースホルダに見えるようにする。
                       */}
                       {repo ? (
-                        <Link
-                          href={`/${locale}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}${backQuery}`}
-                          // ネイティブ <a> の既定フォーカスは太さが足りないため `ring-3` に揃える（§7.3）。
-                          className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
-                        >
-                          {entry.repositoryFullName}
-                        </Link>
-                      ) : (
-                        <span className="font-medium">{entry.repositoryFullName}</span>
-                      )}
-                      <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                        {/* この `<span>` は `p.flex.flex-wrap` の flex アイテムなので `wrap-anywhere`
-                            を直付けする（`ui-ux-guidelines.md` §3 の表・`repository-list.tsx` の
-                            topics `<li>` と同じ理由）。パッケージ名は第三者由来で区切りが無いことがある。 */}
-                        <span className="wrap-anywhere">{entry.packageName}</span>
-                        <span>
-                          {labels.registryLabel} {entry.registry}
-                        </span>
-                        <span>
-                          <span aria-hidden="true">★ </span>
-                          <span className="sr-only">{labels.starCount} </span>
-                          {numberFormat.format(entry.stars)}
-                        </span>
+                        // eslint-disable-next-line @next/next/no-img-element -- INF-11: next/image 最適化は使わない
+                        <img
+                          src={`https://github.com/${encodeURIComponent(repo.owner)}.png?size=80`}
+                          // オーナー名は repositoryFullName として隣接テキスト表示されるため装飾扱い
+                          // （ui-ux-guidelines.md §7.4・repository-list.tsx と同じ方針）
+                          alt=""
+                          width={40}
+                          height={40}
+                          loading="lazy"
+                          decoding="async"
+                          className="size-10 shrink-0 rounded-full bg-muted"
+                        />
+                      ) : null}
+                      {/* 第三者由来テキスト（`repositoryFullName` / `packageName`）の折り返し。
+                          この `<div>` は flex アイテムだが `min-w-0` で floor を外してあるため、
+                          ここに `break-words` を 1 回当てれば配下へ継承で届く
+                          （判定規則は `ui-ux-guidelines.md` §3・`repository-list.tsx` と同型）。 */}
+                      <div className="min-w-0 flex-1 break-words">
                         {/*
-                          🔴 メタ情報は可視ラベルを添える（`ui-ux-guidelines.md` §4.2）。
-                          ここだけ裸の数値にすると、支援技術なしの利用者には star の別表記なのか
-                          利用パッケージ数なのか判別できない（`sr-only` の方が情報量が多い逆転）。
+                          詳細ページ（独立 URL・`AC-4`）への遷移。カード全体をクリック可能にするが
+                          `<a>` で全体を包まず、リポジトリ名だけをリンクにして `::after` で領域を
+                          広げる（`ui-ux-guidelines.md` §4.3）。`::after` は `<li className="relative">`
+                          基準なので avatar の上にもクリック領域が及ぶ。
+                          🔴 `repositoryFullName` が `owner/name` に割れない値のときはリンクを作らない
+                          （壊れたリンクを出すより、テキストとして見せる方が害が小さい）。
                         */}
-                        <span>
-                          {labels.dependentCount} {numberFormat.format(entry.dependentCount)}
-                        </span>
-                        <span>
-                          {labels.gemIndexLabel}{' '}
-                          {gemIndexFormat.format(gemIndexValue(entry.gemIndex))}
-                        </span>
-                      </p>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+                        {repo ? (
+                          <Link
+                            href={`/${locale}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}${backQuery}`}
+                            // ネイティブ <a> の既定フォーカスは太さが足りないため `ring-3` に揃える（§7.3）。
+                            className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                          >
+                            {entry.repositoryFullName}
+                            {/* 遷移中の視覚ヒント。理由の正本は `link-pending-hint.tsx` の JSDoc（Issue #167）。 */}
+                            <LinkPendingHint />
+                          </Link>
+                        ) : (
+                          <span className="font-medium">{entry.repositoryFullName}</span>
+                        )}
+                        <p className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                          {/* この `<span>` は `p.flex.flex-wrap` の flex アイテムなので `wrap-anywhere`
+                              を直付けする（`ui-ux-guidelines.md` §3 の表・`repository-list.tsx` の
+                              topics `<li>` と同じ理由）。パッケージ名は第三者由来で区切りが無いことがある。 */}
+                          <span className="wrap-anywhere">{entry.packageName}</span>
+                          <span>
+                            {labels.registryLabel} {entry.registry}
+                          </span>
+                          <span>
+                            <span aria-hidden="true">★ </span>
+                            <span className="sr-only">{labels.starCount} </span>
+                            {numberFormat.format(entry.stars)}
+                          </span>
+                          {/*
+                            🔴 メタ情報は可視ラベルを添える（`ui-ux-guidelines.md` §4.2）。
+                            ここだけ裸の数値にすると、支援技術なしの利用者には star の別表記なのか
+                            利用パッケージ数なのか判別できない（`sr-only` の方が情報量が多い逆転）。
+                          */}
+                          <span>
+                            {labels.dependentCount} {numberFormat.format(entry.dependentCount)}
+                          </span>
+                          <span>
+                            {labels.gemIndexLabel}{' '}
+                            {gemIndexFormat.format(gemIndexValue(entry.gemIndex))}
+                          </span>
+                        </p>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </LinkPendingAnnouncer>
           ) : null}
         </>
       )}

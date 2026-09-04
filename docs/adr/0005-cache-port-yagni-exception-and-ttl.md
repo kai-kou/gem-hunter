@@ -31,6 +31,7 @@
 |---|---|---|
 | 検索結果 | 60 秒 | `TTL_SEARCH_SECONDS`（`src/composition/container.ts`） |
 | リポジトリ詳細 | 300 秒 | `TTL_DETAIL_SECONDS`（`src/composition/container.ts`） |
+| リポジトリ詳細・README の ETag エントリ | 86,400 秒（24 時間） | `TTL_DETAIL_ETAG_SECONDS`（`src/composition/container.ts`・Issue #170。追補は §3.4） |
 
 ### 2.3. 観測経路の決定（`X-Cache-Status` をどこに付与するか）
 
@@ -86,6 +87,15 @@
 #### 追補（2026-08-21・`D-33` により本追補は解消）
 
 `sort=gem-index` の経路自体が [`open-questions.md`](../02_requirements/open-questions.md) `D-33` により撤去された。上記追補が扱っていた「10 リクエストになる経路」が存在しなくなったため、検索 TTL 60 秒は §3.3 の「1 検索 = 1 API 呼び出し」の前提のまま成り立つ。再逆算は不要（履歴として上記追補は残す）。
+
+#### 追補（2026-09-04・Issue #170 実施）
+
+`findDetail` / `findReadme` の 2 経路に GitHub REST の条件付きリクエスト（`If-None-Match` / ETag）を実装した。第 3 の TTL `TTL_DETAIL_ETAG_SECONDS`（86,400 秒・24 時間）を追加する（§2.2 に反映済み）。
+
+- **本文 TTL より十分長くする**: ETag エントリは本文 TTL（`TTL_DETAIL_SECONDS` = 300 秒）が切れた後の再検証に使う。本文 TTL と同じ長さにすると本文の失効と同時に ETag も失効し、再検証の機会そのものが生まれず節約効果が出ない。
+- **24 時間とした根拠**: GitHub は ETag の実効期限を公式ドキュメントに具体的に明記していない。24 時間はキャッシュ層側の保守的な目安値であり、**実装手段レベルの仮定**（`SD-3` 対象外・確認不要で自律決定）である。
+- **対象は詳細・README の 2 経路のみ**: 検索（`search`）は対象外とする。GitHub 公式ドキュメントは Search API 専用のレート枠（30 req/分・installation token）に対して 304 応答が消費ゼロになることを明記しておらず、条件付きリクエストの効果を保証できないため対象に含めない。
+- **未認証時は `If-None-Match` を送らない**: GitHub 公式（Best practices for using REST API）は「条件付きリクエストが primary rate limit を消費しない」効果を認証済みリクエストに限定しており、未認証では 304 応答でも消費してしまう。したがって未認証時（`token` が `null`）は `If-None-Match` を送らない。
 
 ---
 

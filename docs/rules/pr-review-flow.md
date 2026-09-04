@@ -287,6 +287,8 @@ python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json
 python3 tools/check_pending_pr_reviews.py --actionable-only --json
 ```
 
+🔴 **② を使う場面の限定（#898）**: 対話セッションの復帰時と、`project-sync`（決定木 Step 6）の Step 3.5（Orphan PR・最終更新 24 時間超）から呼ばれるときは ② が正しい経路。一方 **決定木 Step 2 から委譲された無人 firing では ① 相当（`--mine-or-automation`）だけを見る**（CP-4・L-109 の不介入）。他者の人手 PR をレイヤー 5 の 10 分窓で救済せず、Step 3.5 の 24 時間超で回収する。
+
 **出力ステータス**:
 
 | status | 意味 | 対応 |
