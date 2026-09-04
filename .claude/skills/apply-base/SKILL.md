@@ -57,7 +57,9 @@ git ls-remote https://github.com/kai-kou/claude-code-repository-base.git HEAD >/
 既に存在するか（＝2 回目以降の適用か）で実行経路を分ける**（Issue #889。`--base` はベース
 リポジトリの **`owner/repo` スラッグ** しか受け付けず、ローカル clone のパスは渡せないため
 「ベースを一旦 clone してそちらの `--base` にパスを渡す」という経路は成立しない。実装の裏取りは
-`scripts/apply-to-repo.sh` 90〜94 行目の `case "$BASE_REPO" in */*) ;; *) die ... ;; esac` を参照）。
+`scripts/apply-to-repo.sh` 156 行目の `local url="https://github.com/${BASE_REPO}.git"` を参照
+— 値を無条件に GitHub の URL へ組み立てるのはこの行である。90〜94 行目の `case "$BASE_REPO" in */*)` は
+`/` を 1 つも含まない文字列だけを弾く書式検査で、`/tmp/base-clone` のようなローカルパスは素通りする）。
 
 **a. 2 回目以降の適用（対象リポジトリに `scripts/apply-to-repo.sh` が既にある・通常はこちら）**
 
@@ -78,6 +80,7 @@ bash scripts/apply-to-repo.sh            # オプションは末尾に付与（�
 tmp="$(mktemp -d)"
 git clone --depth 1 https://github.com/kai-kou/claude-code-repository-base.git "$tmp/base" >/dev/null 2>&1 \
   || { echo "ベースの clone に失敗しました" >&2; exit 1; }
+echo "[apply-base] 初回適用: ベース側スクリプトにはドリフト検査が配線されていないため、今回の適用ログに検査の記録は出ません（§2.7）"
 bash "$tmp/base/scripts/apply-to-repo.sh"            # オプションは末尾に付与（例: --prune --tz Asia/Tokyo）
 rm -rf "$tmp"
 ```
@@ -128,8 +131,10 @@ rm -rf "$tmp"
   SKIP ログ（上記）はこの実行では **出ない**——検査コード自体が存在しないため、
   `── 本リポジトリ固有拡張のドリフト検査 ──` セクションも「ドリフト検査」を含む行も、
   完了サマリーを含めログのどこにも一切現れない（§2-a のような SKIP 行が出るわけではなく、
-  項目そのものが無音で欠落する）。読み手は「SKIP 行を探して見つからない」ことに戸惑わず、
-  「初回適用のログにはドリフト検査への言及が最初から無い」と理解すればよい。この回はドリフトが
+  項目そのものが無音で欠落する）。読み手が「SKIP 行を探して見つからない」ことに戸惑わないよう、
+  🔴 **§2-b の手順は clone 直後に `echo "[apply-base] 初回適用: …検査の記録は出ません（§2.7）"` を
+  出力する**（この 1 行だけが「今回は検査が無い」ことをログ上で示す証跡になる。手順書を読まずに
+  ログだけを受け取った読み手にも伝わるようにするため・Issue #889 完了条件②）。この回はドリフトが
   検出不能であることを前提に §3.0 の同期サマリーを普段より注意深く確認する。この実行で
   `scripts/apply-to-repo.sh`（ドリフト検査配線済みの下流コピー）が対象リポジトリへ配置される
   ため、**次回以降は §2-a に切り替わり、検査自体と SKIP ログの両方が有効になる**。
