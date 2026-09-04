@@ -46,8 +46,12 @@ export const TTL_SEARCH_SECONDS = 60
  * 検索より長い 5 分とした。`R-5` の逆算では検索 API（30 req/分）が先に枯れるため詳細側は
  * 律速にならず、300 秒のままで必要枠を満たすことを確認済み（**確定値**）。
  * 根拠の所在・再逆算の条件は `TTL_SEARCH_SECONDS` と同じ。
+ *
+ * 🔴 **export しているのは `container.test.ts` が本文 TTL 経過を明示的に跨がせて
+ * ETag 再検証（composition root の配線）を検証するため**（`TTL_SEARCH_SECONDS` と同じ理由。
+ * PR #926 レビュー指摘 #9）。アプリコードからは本ファイル内でしか使わない。
  */
-const TTL_DETAIL_SECONDS = 300
+export const TTL_DETAIL_SECONDS = 300
 
 /**
  * `findDetail` / `findReadme` の ETag エントリの TTL（秒・Issue #170）。本文 TTL キャッシュ
@@ -185,8 +189,8 @@ function makeCachingRepositoryQuery(
       token: makeTokenProvider(clock, deps.accessToken),
       // 🔴 Issue #170: findDetail / findReadme の ETag 保存も同じ sharedCache を使う
       //    （名前空間は cache-key.ts で本文 TTL キャッシュと分離済み・互いを上書きしない）。
-      cache: sharedCache,
-      etagTtlSeconds: TTL_DETAIL_ETAG_SECONDS,
+      //    PR #926 レビュー指摘 #1: cache / etagTtlSeconds は複合 optional `etag` へ統合済み。
+      etag: { cache: sharedCache, ttlSeconds: TTL_DETAIL_ETAG_SECONDS },
     }),
     cache: sharedCache,
     ttlSeconds: { search: TTL_SEARCH_SECONDS, detail: TTL_DETAIL_SECONDS },

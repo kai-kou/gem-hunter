@@ -33,8 +33,78 @@ const PUBLIC_ONLY_QUALIFIER = 'is:public'
 /** アクセストークンの供給口。未認証で叩く場合は null を返す。 */
 export type TokenProvider = () => Promise<string | null>
 
-/** ETag 条件付きリクエストのキャッシュエントリ（上流の生レスポンス + ETag）。 */
+/**
+ * ETag 条件付きリクエストのキャッシュエントリ（上流の生レスポンス + ETag）。
+ *
+ * 🔴 **`body` は ACL 適用前・トークン非依存キーで共有される生データである**（Issue #170 /
+ * PR #926 レビュー指摘 #3）。`cache-key.ts` のキー（`repository-etag:` / `readme-etag:`）は
+ * 利用者識別子を持たないため、private リポジトリの生 JSON が一時的にこのエントリへ
+ * 保存された場合でも、そのまま画面へ出してはならない。**呼び出し元（`findDetail` /
+ * `findReadme`）は必ず ACL（`toPublicRepositoryDetail` 等）を経由してから使うこと**
+ * （`fetchWithConditionalCache` はキャッシュ透過の配管に徹し、ACL 判定を持たない）。
+ */
 type EtagEntry<T> = { readonly etag: string; readonly body: T }
+
+/**
+ * `unknown` を `EtagEntry<T>` として信頼してよいかをランタイムで検証する（PR #926 レビュー
+ * 指摘 #2）。`CachePort.get` は「異常時は throw せず値を返す」契約のため、保存後に値が
+ * 破損しても（実装バグ・手動での書き込み等）例外にはならない。破損したエントリを
+ * そのまま信頼すると、`body` が `null` に壊れているケースで `findDetail` が
+ * 「対象が存在しない」と誤判定し、実在する公開リポジトリが 404 相当になってしまう。
+ *
+ * 検証するのは構造だけ（`etag` が非空文字列 / `body` が null・undefined でない）。
+ * `body` の中身（ドメインスキーマとの一致）は呼び出し元の ACL（`toPublicRepositoryDetail` 等）
+ * が別途 zod で検証するため、ここで二重に検証しない。
+ */
+function isValidEtagEntry<T>(candidate: unknown): candidate is EtagEntry<T> {
+  if (typeof candidate !== 'object' || candidate === null) {
+    return false
+  }
+  const value = candidate as { etag?: unknown; body?: unknown }
+  return typeof value.etag === 'string' && value.etag !== '' && value.body != null
+}
+
+/** `token` が実際に送信してよい値（`null` でも空文字列でもない）かを判定する。 */
+function isUsableToken(token: string | null): token is string {
+  return token !== null && token !== ''
+}
+
+/**
+ * `findDetail` / `findReadme` / `search` 共通のリクエストヘッダを組み立てる
+ * （PR #926 レビュー指摘 #4: `fetchWithConditionalCache` と `request` の重複を解消）。
+ * 認証ヘッダは `isUsableToken` で統一判定する（レビュー指摘 #5: `sendConditional` の
+ * `token !== null` 判定と食い違わせない）。
+ */
+function buildRequestHeaders(
+  accept: string | undefined,
+  token: string | null,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    accept: accept ?? 'application/vnd.github+json',
+    'x-github-api-version': '2022-11-28',
+    'user-agent': 'gem-hunter',
+  }
+  if (isUsableToken(token)) {
+    headers.authorization = `Bearer ${token}`
+  }
+  return headers
+}
+
+/**
+ * `fetch` を実行し、ネットワーク層の失敗（DNS 解決不能・接続拒否等）を `NetworkError` へ
+ * 変換する共通ヘルパー（PR #926 レビュー指摘 #4）。HTTP レベルのエラー（4xx/5xx）は
+ * ここでは判定しない（呼び出し元が `response.status` を見て判断する）。
+ */
+async function fetchOrThrowNetworkError(
+  url: URL,
+  headers: Record<string, string>,
+): Promise<Response> {
+  try {
+    return await fetch(url, { headers })
+  } catch (cause) {
+    throw new NetworkError('GitHub API へ到達できませんでした', { cause })
+  }
+}
 
 /**
  * 🔴 GitHub API に触れてよい唯一の場所（ACL・NFR-16 / TR-4）。
@@ -46,20 +116,31 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     private readonly deps: {
       token: TokenProvider
       /**
-       * ETag / 条件付きリクエストの保存先（Issue #170）。省略時は条件付きリクエストを
-       * 一切行わず、従来どおり毎回フル GET する（`etagTtlSeconds` も省略時と同じ扱い）。
+       * ETag / 条件付きリクエストの設定一式（Issue #170 / PR #926 レビュー指摘 #1）。
        * 対象は `findDetail` / `findReadme` のみ（`search` は下記 JSDoc の理由で対象外）。
-       * `etagTtlSeconds` とセットで渡すこと（片方だけ渡しても ETag 経路は無効のまま）。
+       *
+       * 🔴 **値域**: 渡す場合、`ttlSeconds` は **正の有限数**（秒）でなければならない
+       * （`0` / 負値 / `NaN` / `Infinity` は不正・`CachePort.set` と同じ値域）。
+       * 🔴 **異常時の振る舞い**: 値域外の `ttlSeconds` を渡すとコンストラクタが
+       * `RangeError` を **即座に throw する**（fail-loud）。以前は `cache` /
+       * `etagTtlSeconds` を独立した省略可能フィールドにしていたため「片方だけ渡す」
+       * （例: `etagTtlSeconds` が `0` で `cache` だけ渡す）ことが型上可能で、
+       * `Boolean(cache && etagTtlSeconds)` という値域非対称な判定（`0`/`NaN` は無音で
+       * 無効化するが負値/`Infinity` は `cache.set` まで到達して `RangeError` になる）を
+       * 生んでいた。1 つの複合フィールドへまとめることで「片方だけ渡す」を型で
+       * 不可能にし、値域チェックもコンストラクタへ前倒しする。
+       *
+       * 省略時（`undefined`）は条件付きリクエストを一切行わず、従来どおり毎回フル GET する。
        */
-      cache?: CachePort
-      /**
-       * ETag エントリの TTL（秒）。`cache` を渡すときは必ず一緒に渡すこと
-       * （省略時は ETag 経路が無効のまま・fail-closed。値域は `CachePort.set` と同じ
-       * ＝正の有限数。値域外は `CachePort` 実装側の `RangeError` に委ねる）。
-       */
-      etagTtlSeconds?: number
+      etag?: { cache: CachePort; ttlSeconds: number }
     },
-  ) {}
+  ) {
+    if (deps.etag !== undefined && !isPositiveFiniteNumber(deps.etag.ttlSeconds)) {
+      throw new RangeError(
+        `GithubRepositoryQuery: etag.ttlSeconds は正の有限数である必要があります（受け取った値: ${deps.etag.ttlSeconds}）`,
+      )
+    }
+  }
 
   /**
    * 🔴 **ETag / 条件付きリクエストの対象外**（Issue #170 の意図的なスコープ縮小）。
@@ -161,37 +242,29 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     options: { accept?: string; parse?: (response: Response) => Promise<T> },
   ): Promise<T | null> {
     const parse = options.parse ?? ((response: Response) => response.json() as Promise<T>)
-    const { cache, etagTtlSeconds } = this.deps
-    const etagStoreEnabled = Boolean(cache && etagTtlSeconds)
+    const { etag } = this.deps
 
     const token = await this.deps.token()
-    // 🔴 未認証（token が null）では If-None-Match を送らない（GitHub 公式 best-practices:
-    //    条件付きリクエストが primary rate limit を消費しないのは認証済みリクエストに限る）。
-    const sendConditional = etagStoreEnabled && token !== null
+    // 🔴 未認証（token が null・空文字列）では If-None-Match を送らない（GitHub 公式
+    //    best-practices: 条件付きリクエストが primary rate limit を消費しないのは
+    //    認証済みリクエストに限る）。判定は `isUsableToken` に一本化し（レビュー指摘 #5）、
+    //    下の Authorization ヘッダ付与判定と食い違わせない。
+    const sendConditional = etag !== undefined && isUsableToken(token)
 
     let stored: EtagEntry<T> | null = null
-    if (sendConditional && cache) {
-      stored = await cache.get<EtagEntry<T>>(cacheKey)
+    if (sendConditional) {
+      const candidate = await etag.cache.get<EtagEntry<T>>(cacheKey)
+      // 🔴 ランタイムで破損したエントリを信頼しない（レビュー指摘 #2）。弾いた場合は
+      //    `stored = null` のまま通常のフルフェッチへフォールバックする。
+      stored = isValidEtagEntry<T>(candidate) ? candidate : null
     }
 
-    const headers: Record<string, string> = {
-      accept: options.accept ?? 'application/vnd.github+json',
-      'x-github-api-version': '2022-11-28',
-      'user-agent': 'gem-hunter',
-    }
-    if (token) {
-      headers.authorization = `Bearer ${token}`
-    }
+    const headers = buildRequestHeaders(options.accept, token)
     if (sendConditional && stored) {
       headers['if-none-match'] = stored.etag
     }
 
-    let response: Response
-    try {
-      response = await fetch(url, { headers })
-    } catch (cause) {
-      throw new NetworkError('GitHub API へ到達できませんでした', { cause })
-    }
+    const response = await fetchOrThrowNetworkError(url, headers)
 
     if (response.status === 304) {
       if (sendConditional && stored) {
@@ -211,10 +284,10 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
     }
 
     const body = await parse(response)
-    if (cache && etagTtlSeconds) {
-      const etag = response.headers.get('etag')
-      if (etag) {
-        await cache.set<EtagEntry<T>>(cacheKey, { etag, body }, etagTtlSeconds)
+    if (etag) {
+      const etagHeader = response.headers.get('etag')
+      if (etagHeader) {
+        await etag.cache.set<EtagEntry<T>>(cacheKey, { etag: etagHeader, body }, etag.ttlSeconds)
       }
     }
     return body
@@ -226,27 +299,20 @@ export class GithubRepositoryQuery implements RepositoryQueryPort {
    */
   private async request(url: URL): Promise<Response> {
     const token = await this.deps.token()
-    const headers: Record<string, string> = {
-      accept: 'application/vnd.github+json',
-      'x-github-api-version': '2022-11-28',
-      'user-agent': 'gem-hunter',
-    }
-    if (token) {
-      headers.authorization = `Bearer ${token}`
-    }
+    const headers = buildRequestHeaders(undefined, token)
 
-    let response: Response
-    try {
-      response = await fetch(url, { headers })
-    } catch (cause) {
-      throw new NetworkError('GitHub API へ到達できませんでした', { cause })
-    }
+    const response = await fetchOrThrowNetworkError(url, headers)
 
     if (response.ok) {
       return response
     }
     throw toDomainError(response, url)
   }
+}
+
+/** `ttlSeconds` の値域（`CachePort.set` と同じ＝正の有限数）を満たすかを判定する。 */
+function isPositiveFiniteNumber(value: number): boolean {
+  return Number.isFinite(value) && value > 0
 }
 
 /**
