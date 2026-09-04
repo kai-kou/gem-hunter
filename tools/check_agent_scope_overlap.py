@@ -59,6 +59,9 @@
 `OSError` は exit 2（`❌ 入力の解析に失敗: ...`）に正規化する。
 """
 
+# tool-wiring-ok: 並列委譲の直前に親セッションが手動実行する運用ツール
+# （docs/rules/agent-team-summary.md）。委譲前に効く判定で、PR 直前の一括検査では手遅れになる。
+
 from __future__ import annotations
 
 import argparse

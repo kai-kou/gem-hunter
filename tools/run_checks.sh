@@ -409,6 +409,17 @@ else
   skip_check "self-test 配線検査 (check_selftest_wiring.py)" "スクリプトが見つかりません"
 fi
 
+# 4.10.55. 未配線検査（死蔵）の検知（Issue #164）
+#          check_selftest_wiring.py が「--self-test の配線漏れ」を見るのに対し、こちらは
+#          「本判定がどこからも実行されないスクリプト」を見る（--self-test を持たない
+#          スクリプトは前者の走査対象にすらならないため、この穴が残っていた）
+if [ -f "$REPO_ROOT/tools/check_tool_wiring.py" ]; then
+  run_check "未配線検査の検知 (check_tool_wiring.py)" python3 tools/check_tool_wiring.py
+  run_check "未配線検査の検知 self-test (check_tool_wiring.py --self-test)" python3 tools/check_tool_wiring.py --self-test
+else
+  skip_check "未配線検査の検知 (check_tool_wiring.py)" "スクリプトが見つかりません"
+fi
+
 # 4.10.6. 3 方向マージヘルパの self-test（base#500・apply-base の同期で衝突マーカー・JSON 壊れを出さない担保）
 if [ -f "$REPO_ROOT/tools/merge_three_way.py" ]; then
   run_check "3 方向マージ self-test (merge_three_way.py --self-test)" python3 tools/merge_three_way.py --self-test

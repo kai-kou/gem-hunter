@@ -16,6 +16,9 @@
 
 終了コード: 0=OK / 1=違反あり / 2=ツール異常
 """
+
+# tool-wiring-ok: 本判定は追跡ファイルが 0 件の間つねに FAIL するため実データ投入まで配線しない
+# （run_checks.sh 4.12 節・PR #638 レビュー。self-test のみ配線済み）。
 import argparse
 import subprocess
 import sys

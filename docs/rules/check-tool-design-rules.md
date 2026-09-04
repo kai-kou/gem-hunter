@@ -143,6 +143,12 @@ fail-open な検査は **緑を返しながら何も守っていない**。検�
 | `check_claude_code_updates.py` | `claude-code-spec-sync` スキルの定期スロット                                                                        | 実行にネットワーク（GitHub API）が要る。PR ごとに叩くと外部要因で赤くなる                  |
 | `check_parallel_safety.py`     | `sprint-cycle-router` SKILL.md Step 4-1.5（着手前）。`pre-pr-create-check.sh` は PR 本文への記載有無だけを検知      | 着手前に効く判定で、PR 直前では手遅れ                                                      |
 | `check_skill_references.py`    | `skill-audit` スキル                                                                                                | 本判定が現在 exit 1（既存の参照切れ・肥大化）。既存の赤を PR ゲートに持ち込むと全 PR が止まる |
+| `check_issue_labels.py`        | Issue 棚卸し時に手動実行（`--self-test` のみ配線済み）                                                              | 本判定（`--check`）は GitHub API への実疎通が必要（#288 と同じ扱い）                       |
+| `check_roadmap_status.py`      | ロードマップ更新時に手動実行（`--self-test` のみ配線済み）                                                          | 同上（GitHub API への実疎通が必要）                                                        |
+| `check_tracked_intent.py`      | 追跡ファイルを投入した時点で `run_checks.sh` へ配線する（現在は `--self-test` のみ配線済み）                        | 本判定は追跡ファイルが 0 件の間つねに FAIL する（`run_checks.sh` 4.12 節・PR #638 レビュー） |
+
+🔴 **下 3 本は #164 の本文が名指ししていなかった死蔵**（`tools/check_tool_wiring.py` の新設で初めて機械検出された）。
+いずれも `run_checks.sh` のコメントには理由が書かれていたが、**スクリプト側にマーカーが無く機械には見えていなかった**。
 
 上記はいずれも `--self-test` 側の扱いを独立に決めている（§5.2）。表の内容とコード側のマーカーが食い違ったら、
 **コード側のマーカーを正** として本表を直す（マーカーは機械検査が読む唯一の契約であるため）。
