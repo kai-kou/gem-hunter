@@ -109,8 +109,14 @@ console.log(displayScore); // "100" が出力（一貫性あり）
 
 **判定基準**: 「CI が走らない」と感じたら、失敗を疑う前に
 `mcp__github__pull_request_read(method="get", ...)` の **`mergeable_state`** を先に見る。
-`dirty` なら CI の問題ではなくコンフリクトの問題であり、`origin/main` をマージすれば直る。
-`clean` なのに run が無いときだけ、ワークフローの `on:` 条件・`paths-ignore`・Actions の有効状態を疑う。
+`mergeable_state` は 2 値ではないので、観測した値ごとに分岐する（`dirty` / `clean` だけを見ると、
+`unknown` や `unstable` を引いたときに次の一手が決まらず、本エントリが防ごうとした調査の空転を再現する）。
+
+| `mergeable_state` | 意味 | 次の一手 |
+|---|---|---|
+| `dirty` | ベースブランチとコンフリクトしている | CI の問題ではない。`origin/main` をマージして解消する |
+| `unknown` | mergeability を非同期計算中（PR 作成直後に出やすい） | 数十秒待って `pull_request_read(method="get")` を取り直す |
+| `clean` / `unstable` / `blocked` / `behind` | マージコミットは作れている（`unstable` は他チェックが赤、`blocked` は保護ルール待ち、`behind` はベースより古い） | ここで初めてワークフロー側を疑う（`on:` 条件・`paths-ignore`・Actions の有効状態） |
 
 **なぜ Warm 層に置くか**: 症状（CI が走らない）と原因（コンフリクト）が結び付かず、
 ワークフロー定義の調査に時間を溶かしやすい。ただし観測したときにだけ必要な知識で、常駐は不要。
