@@ -14,6 +14,7 @@
     },
     "skipLink": "本文へスキップ",
     "loading": "読み込み中",
+    "linkPending": "詳細ページを読み込んでいます",
     "retry": "再試行",
     "opensInNewTab": "（新しいタブで開きます）",
     "errors": {

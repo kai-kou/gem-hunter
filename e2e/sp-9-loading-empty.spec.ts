@@ -77,7 +77,7 @@ test.describe('SP-9: 読み込み中と 0 件が区別できる', () => {
 
     await test.step('2. 次のページへのリンク（クライアント遷移）を押すと読み込み中が出る', async () => {
       await page.getByRole('link', { name: ja.home.pageNext }).click()
-      await expect(page.locator('main').getByRole('status')).toContainText(ja.common.loading)
+      await expect(page.locator('#search-status')).toContainText(ja.common.loading)
     })
 
     await test.step('3. 2 ページ目の結果が届くと読み込み中は消える', async () => {

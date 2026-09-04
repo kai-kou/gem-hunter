@@ -14,6 +14,7 @@
     },
     "skipLink": "Skip to main content",
     "loading": "Loading",
+    "linkPending": "Loading the detail page",
     "retry": "Try again",
     "opensInNewTab": "(opens in a new tab)",
     "errors": {
