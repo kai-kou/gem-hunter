@@ -283,3 +283,6 @@
 {"date": "2026-09-05 JST", "title": "ライブリージョン規約の例外ケース（modal / popover 内の一覧）の境界を §7.2 に明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "決定木 Step 5.5 の空振り（対象 retro-try が既に PR 待ち）を事前判定する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "Next.js の useLinkStatus 廃止・改名を検知する仕組みを用意する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "check_pending_pr_reviews.py のフォールバック WARNING を集約し、結果が埋もれないようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "マージ前の expectedHeadSha を実測値（git rev-parse）から取ることを構造的に強制する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "消化モードの候補選定に着手可能性の pre-filter を入れ、射程未確定 Issue の空回りを減らす", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
