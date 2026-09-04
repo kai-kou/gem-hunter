@@ -13,6 +13,13 @@ import {
 } from '../../domain/errors'
 import { repositoryFullName } from '../../domain/model/repository-full-name'
 import { searchQuery } from '../../domain/model/search-query'
+import { InMemoryCache } from '../platform/cache'
+import {
+  readmeEtagCacheKey,
+  repositoryCacheKey,
+  repositoryEtagCacheKey,
+} from '../platform/cache-key'
+import { CachingRepositoryQuery } from '../platform/cached-repository-query'
 import detailFixture from './__fixtures__/repository-detail.json'
 import fixture from './__fixtures__/search-repositories.json'
 import { GithubRepositoryQuery } from './github-repository-query'
@@ -260,6 +267,257 @@ describe('GithubRepositoryQuery#findReadme', () => {
     await expect(makeQuery().findReadme(repositoryFullName('facebook', 'react'))).rejects.toThrow(
       RateLimitExceededError,
     )
+  })
+})
+
+/**
+ * Issue #170 残射程: ETag / 条件付きリクエスト（`findDetail` / `findReadme` のみ）。
+ * `search` は Search 専用レート枠（30 req/min）を条件付きリクエストが消費しないという明記が
+ * GitHub 公式に無いため対象外（ https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api ）。
+ */
+describe('GithubRepositoryQuery のETag / 条件付きリクエスト（Issue #170）', () => {
+  const ETAG_TTL_SECONDS = 3600
+
+  function makeQueryWithCache(
+    token: () => Promise<string | null> = async () => 'ghs_dummy',
+    cache = new InMemoryCache(),
+  ) {
+    return { query: new GithubRepositoryQuery({ token, cache, etagTtlSeconds: ETAG_TTL_SECONDS }), cache }
+  }
+
+  describe('findDetail', () => {
+    it('ETag 保存済み + 認証済み → If-None-Match が送られる', async () => {
+      const { query, cache } = makeQueryWithCache()
+      await cache.set(
+        repositoryEtagCacheKey('facebook', 'react'),
+        { etag: 'W/"stored-etag"', body: detailFixture },
+        ETAG_TTL_SECONDS,
+      )
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', ({ request }) => {
+          requestHeaders.push(request.headers)
+          return new HttpResponse(null, { status: 304 })
+        }),
+      )
+
+      await query.findDetail(repositoryFullName('facebook', 'react'))
+
+      expect(requestHeaders[0].get('if-none-match')).toBe('W/"stored-etag"')
+    })
+
+    it('304 応答 → 上流本文を再取得せずキャッシュ済み payload を返す', async () => {
+      const { query, cache } = makeQueryWithCache()
+      await cache.set(
+        repositoryEtagCacheKey('facebook', 'react'),
+        { etag: 'W/"stored-etag"', body: detailFixture },
+        ETAG_TTL_SECONDS,
+      )
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', () =>
+          new HttpResponse(null, { status: 304 }),
+        ),
+      )
+
+      const result = await query.findDetail(repositoryFullName('facebook', 'react'))
+
+      expect(result?.fullName).toBe('facebook/react')
+    })
+
+    it('200 応答 → 新しい ETag と生レスポンスが保存される', async () => {
+      const { query, cache } = makeQueryWithCache()
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', () =>
+          HttpResponse.json(detailFixture, { headers: { etag: 'W/"new-etag"' } }),
+        ),
+      )
+
+      await query.findDetail(repositoryFullName('facebook', 'react'))
+
+      const stored = await cache.get<{ etag: string; body: unknown }>(
+        repositoryEtagCacheKey('facebook', 'react'),
+      )
+      expect(stored?.etag).toBe('W/"new-etag"')
+      expect(stored?.body).toEqual(detailFixture)
+    })
+
+    it('未認証（token が null）→ ETag 保存済みでも If-None-Match を送らない', async () => {
+      const { query, cache } = makeQueryWithCache(async () => null)
+      await cache.set(
+        repositoryEtagCacheKey('facebook', 'react'),
+        { etag: 'W/"stored-etag"', body: detailFixture },
+        ETAG_TTL_SECONDS,
+      )
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', ({ request }) => {
+          requestHeaders.push(request.headers)
+          return HttpResponse.json(detailFixture)
+        }),
+      )
+
+      await query.findDetail(repositoryFullName('facebook', 'react'))
+
+      expect(requestHeaders[0].has('if-none-match')).toBe(false)
+    })
+
+    it('cache 未注入 → 現在とまったく同じ挙動（If-None-Match を送らない）', async () => {
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', ({ request }) => {
+          requestHeaders.push(request.headers)
+          return HttpResponse.json(detailFixture)
+        }),
+      )
+
+      await makeQuery().findDetail(repositoryFullName('facebook', 'react'))
+
+      expect(requestHeaders[0].has('if-none-match')).toBe(false)
+    })
+
+    it('ETag ストアに値があるが 304 ではなく 404 が返った → 従来どおり null', async () => {
+      const { query, cache } = makeQueryWithCache()
+      await cache.set(
+        repositoryEtagCacheKey('facebook', 'react'),
+        { etag: 'W/"stored-etag"', body: detailFixture },
+        ETAG_TTL_SECONDS,
+      )
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', () =>
+          HttpResponse.json({ message: 'Not Found' }, { status: 404 }),
+        ),
+      )
+
+      const result = await query.findDetail(repositoryFullName('facebook', 'does-not-exist'))
+
+      expect(result).toBeNull()
+    })
+
+    it('If-None-Match を送っていないのに 304 が返るのは異常応答として UpstreamError にする', async () => {
+      const { query } = makeQueryWithCache()
+      // ETag ストアが空 = If-None-Match を送っていない状態で 304 を返す壊れた上流を模す
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', () =>
+          new HttpResponse(null, { status: 304 }),
+        ),
+      )
+
+      await expect(query.findDetail(repositoryFullName('facebook', 'react'))).rejects.toThrow(
+        UpstreamError,
+      )
+    })
+  })
+
+  describe('findReadme', () => {
+    it('ETag 保存済み + 認証済み → If-None-Match が送られ、304 応答でキャッシュ済み HTML を返す', async () => {
+      const { query, cache } = makeQueryWithCache()
+      await cache.set(
+        readmeEtagCacheKey('facebook', 'react'),
+        { etag: 'W/"readme-etag"', body: '<h1>cached</h1>' },
+        ETAG_TTL_SECONDS,
+      )
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo/readme', ({ request }) => {
+          requestHeaders.push(request.headers)
+          return new HttpResponse(null, { status: 304 })
+        }),
+      )
+
+      const result = await query.findReadme(repositoryFullName('facebook', 'react'))
+
+      expect(requestHeaders[0].get('if-none-match')).toBe('W/"readme-etag"')
+      expect(result).toBe('<h1>cached</h1>')
+    })
+
+    it('200 応答 → 新しい ETag と本文が保存される', async () => {
+      const { query, cache } = makeQueryWithCache()
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo/readme', () =>
+          HttpResponse.text('<h1>fresh</h1>', { headers: { etag: 'W/"fresh-etag"' } }),
+        ),
+      )
+
+      const result = await query.findReadme(repositoryFullName('facebook', 'react'))
+
+      expect(result).toBe('<h1>fresh</h1>')
+      const stored = await cache.get<{ etag: string; body: string }>(
+        readmeEtagCacheKey('facebook', 'react'),
+      )
+      expect(stored).toEqual({ etag: 'W/"fresh-etag"', body: '<h1>fresh</h1>' })
+    })
+
+    it('未認証（token が null）→ If-None-Match を送らない', async () => {
+      const cache = new InMemoryCache()
+      const { query } = makeQueryWithCache(async () => null, cache)
+      await cache.set(
+        readmeEtagCacheKey('facebook', 'react'),
+        { etag: 'W/"readme-etag"', body: '<h1>cached</h1>' },
+        ETAG_TTL_SECONDS,
+      )
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo/readme', ({ request }) => {
+          requestHeaders.push(request.headers)
+          return HttpResponse.text('<h1>fresh from upstream</h1>')
+        }),
+      )
+
+      await query.findReadme(repositoryFullName('facebook', 'react'))
+
+      expect(requestHeaders[0].has('if-none-match')).toBe(false)
+    })
+  })
+
+  describe('干渉検証（#725: 独立した対策同士のデータフロー干渉）', () => {
+    it('ETag 経路が入っても CachingRepositoryQuery の single-flight（同一キー並行リクエストは上流を 1 回しか叩かない）は壊れていない', async () => {
+      const sharedCache = new InMemoryCache()
+      const inner = new GithubRepositoryQuery({
+        token: async () => 'ghs_dummy',
+        cache: sharedCache,
+        etagTtlSeconds: ETAG_TTL_SECONDS,
+      })
+      const decorated = new CachingRepositoryQuery({
+        inner,
+        cache: sharedCache,
+        ttlSeconds: { search: 60, detail: 300 },
+      })
+
+      await Promise.all([
+        decorated.findDetail(repositoryFullName('facebook', 'react')),
+        decorated.findDetail(repositoryFullName('facebook', 'react')),
+      ])
+
+      expect(requests).toHaveLength(1)
+    })
+
+    it('ETag 保存領域（repository-etag 名前空間）と本文 TTL キャッシュ（repository 名前空間）は同じ CachePort を共有しても互いを上書きしない', async () => {
+      const sharedCache = new InMemoryCache()
+      const inner = new GithubRepositoryQuery({
+        token: async () => 'ghs_dummy',
+        cache: sharedCache,
+        etagTtlSeconds: ETAG_TTL_SECONDS,
+      })
+      const decorated = new CachingRepositoryQuery({
+        inner,
+        cache: sharedCache,
+        ttlSeconds: { search: 60, detail: 300 },
+      })
+      server.use(
+        http.get('https://api.github.com/repos/:owner/:repo', () =>
+          HttpResponse.json(detailFixture, { headers: { etag: 'W/"interference-etag"' } }),
+        ),
+      )
+
+      await decorated.findDetail(repositoryFullName('facebook', 'react'))
+
+      const bodyEntry = await sharedCache.get(repositoryCacheKey('facebook', 'react'))
+      const etagEntry = await sharedCache.get<{ etag: string; body: unknown }>(
+        repositoryEtagCacheKey('facebook', 'react'),
+      )
+      // 本文 TTL キャッシュはマッピング済みドメイン値（fullName を持つ）を保持する
+      expect((bodyEntry as { fullName?: string } | null)?.fullName).toBe('facebook/react')
+      // ETag キャッシュは生レスポンス（マッピング前・fullName を持たない GitHub 形式）を保持する
+      expect((etagEntry?.body as { full_name?: string } | undefined)?.full_name).toBe(
+        'facebook/react',
+      )
+      expect(etagEntry?.etag).toBeDefined()
+    })
   })
 })
 

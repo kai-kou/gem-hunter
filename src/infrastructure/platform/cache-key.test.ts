@@ -4,7 +4,9 @@ import { searchQuery } from '../../domain/model/search-query'
 import {
   CACHE_SCHEMA_VERSION,
   readmeCacheKey,
+  readmeEtagCacheKey,
   repositoryCacheKey,
+  repositoryEtagCacheKey,
   searchResultCacheKey,
 } from './cache-key'
 
@@ -119,6 +121,42 @@ describe('readmeCacheKey', () => {
     const readmeKey = readmeCacheKey('facebook', 'react')
     const repoKey = repositoryCacheKey('facebook', 'react')
     expect(readmeKey).not.toBe(repoKey)
+  })
+})
+
+describe('repositoryEtagCacheKey / readmeEtagCacheKey（Issue #170: ETag エントリの名前空間）', () => {
+  it('repositoryEtagCacheKey は repository-etag 名前空間になる', () => {
+    const key = repositoryEtagCacheKey('facebook', 'react')
+    expect(key.startsWith('repository-etag:')).toBe(true)
+  })
+
+  it('readmeEtagCacheKey は readme-etag 名前空間になる', () => {
+    const key = readmeEtagCacheKey('facebook', 'react')
+    expect(key.startsWith('readme-etag:')).toBe(true)
+  })
+
+  it('repositoryEtagCacheKey は本文キャッシュ（repositoryCacheKey）と衝突しない', () => {
+    const etagKey = repositoryEtagCacheKey('facebook', 'react')
+    const bodyKey = repositoryCacheKey('facebook', 'react')
+    expect(etagKey).not.toBe(bodyKey)
+  })
+
+  it('readmeEtagCacheKey は本文キャッシュ（readmeCacheKey）と衝突しない', () => {
+    const etagKey = readmeEtagCacheKey('facebook', 'react')
+    const bodyKey = readmeCacheKey('facebook', 'react')
+    expect(etagKey).not.toBe(bodyKey)
+  })
+
+  it('repositoryEtagCacheKey と readmeEtagCacheKey も衝突しない', () => {
+    const repoEtag = repositoryEtagCacheKey('facebook', 'react')
+    const readmeEtag = readmeEtagCacheKey('facebook', 'react')
+    expect(repoEtag).not.toBe(readmeEtag)
+  })
+
+  it('owner/name の正規化は本文キャッシュと同じ規則に従う', () => {
+    const a = repositoryEtagCacheKey('  Facebook  ', 'React')
+    const b = repositoryEtagCacheKey('facebook', 'react')
+    expect(a).toBe(b)
   })
 })
 
