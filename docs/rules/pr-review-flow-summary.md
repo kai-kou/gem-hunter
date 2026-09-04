@@ -75,6 +75,8 @@ python3 tools/check_pending_pr_reviews.py --actionable-only --json          # �
 
 `needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `awaiting_review` → 作成セッションが実行中（待機）。**自スコープ優先（#47）・他セッション対応中 PR への不介入（CP-4・L-109）** の判定ロジック全文は `pr-review-flow.md`「セッション復帰フロー」を参照。
 
+🔴 **② を使うのは対話セッションの復帰時**（人間の判断が伴う場面）。**無人ルーティン（`sprint-cycle-router` 決定木）では Step 2 が ① 相当（`--mine-or-automation`）だけを見る**（CP-4・L-109 の不介入）。② に出る他者の人手 PR は決定木では拾わず、Step 6 → `project-sync` Step 3.5 の Orphan PR（最終更新 24 時間超）が回収する（#898）。
+
 **公開反映（`publish-sync` レーン）は本リポジトリでは採用しない（#407）**: 本リポジトリ自体が公開リポジトリであり、別の公開リポジトリへ反映するレーンを持たない。したがって `tools/check_publish_drift.py` / `publish-sync` スキルは **実装予定ではなく不要** であり、セッション復帰時に `[publish-sync]` Issue を回収する責務も無い（ベース由来の `post-merge-publish-check.sh` は `tools/check_publish_drift.py` 不在時に publish-sync の指示を出さないだけで、`Sprint Goal:` を含む PR のマージでは Sprint Review + Retrospective の実施リマインド（Issue #69）を注入する。配線を削除しないこと）。
 
 - **bot 自動化 PR も回収対象（`D-43`）**: `automation/gem-pool-refresh`（`github-actions[bot]`）と Dependabot（`dependabot/...` プレフィックス・`dependabot[bot]`）の 2 系統は、`authorAssociation` が信頼集合に入らないが `check_pending_pr_reviews.py` の専用述語（`_is_automation_pr()` / `_is_dependabot_pr()`）が **fork 不可 + ブランチ条件 + 著者ログイン固定の 3 条件 AND** で通すため、`needs_prompt` として出力される。これらも自 PR と同じく Layer 1 セルフレビュー → マージまで進める（放置すると `open-pull-requests-limit` に達して自動化が黙って止まる）

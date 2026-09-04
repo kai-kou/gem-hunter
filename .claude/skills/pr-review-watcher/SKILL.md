@@ -89,6 +89,7 @@ PR 作成後、指示を待たずにセルフレビュー → マージまで進
 > **自セッションが作成した PR のみ** を最優先で責任継続する（Session-Id トレーラーによる積極的所有判定）。
 > 自 PR は時間ベースの `active_session` 除外を受けないため、10 分超アイドル・再起動・圧縮後でも確実に回収できる。
 > その後に `--mine` なしの共有スコープで孤児 PR を救済する。詳細は `docs/rules/session-concurrency-rules.md` レイヤー 6。
+> 🔴 **ただし ② の孤児 PR 救済は対話セッション復帰時の経路**（#898）。`sprint-cycle-router` 決定木 Step 2 から委譲された無人 firing では ① 相当（`--mine-or-automation`）だけを見て、他者の人手 PR は回収しない（回収は Step 6 → `project-sync` Step 3.5 の Orphan PR・最終更新 24 時間超が担う）。
 
 > 監視中はタスク依存ルールを `docs/rules/` から Read する: `docs/rules/self-review-checklist.md`（セルフレビュー観点）/
 > `docs/rules/lessons/pr-review.md`（PR レビュー・マージの過去ミスパターン）。
