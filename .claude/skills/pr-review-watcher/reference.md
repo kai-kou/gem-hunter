@@ -53,6 +53,9 @@ python3 tools/check_pending_pr_reviews.py --actionable-only --json
 > `ready_to_merge` は待機ゼロで即マージ。外部 AI レビュアーの応答待ちは存在しない。
 > 復帰対象は「自分が作成した PR の続き」または「活動が途絶えた孤児 PR の救済」のみ
 > （別セッション対応中への介入は CP-4 違反）。
+> 🔴 **後者（孤児 PR 救済）は対話セッション復帰時の経路**（#898）。`sprint-cycle-router` 決定木 Step 2 から
+> 委譲された無人 firing では `--mine-or-automation` 相当だけを見て、他者の人手 PR は回収しない
+> （回収は Step 6 → `project-sync` Step 3.5 の Orphan PR・最終更新 24 時間超）。
 
 ---
 
