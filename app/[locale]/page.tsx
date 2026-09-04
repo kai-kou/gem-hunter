@@ -286,6 +286,7 @@ async function SearchBody({
           gemBadge: messages.home.gemBadge.label,
           gemBadgeSrHint: messages.home.gemBadge.srHint,
           gemBadgeNote: messages.home.gemBadge.note,
+          linkPending: messages.common.linkPending,
         }}
         locale={locale}
         searchState={searchState}
@@ -426,6 +427,7 @@ export default async function LocaleHome({
                 starsLabel: messages.home.digest.starsLabel,
                 newBadge: messages.home.digest.newBadge,
                 firstVisitNote: messages.home.digest.firstVisitNote,
+                linkPending: messages.common.linkPending,
               }}
             />
             <AttributionNotice

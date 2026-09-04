@@ -1,8 +1,9 @@
 'use client'
 
 import { useLinkStatus } from 'next/link'
+import { useEffect } from 'react'
 
-import { cn } from '@/src/shared/cn'
+import { useLinkPendingReport } from './link-pending-announcer'
 
 /**
  * 一覧から詳細ページへ遷移している間だけ点灯する、リンク付随の視覚ヒント（`US-22` / `AC-8`）。
@@ -16,16 +17,25 @@ import { cn } from '@/src/shared/cn'
  * 表示** で「詳細の取得が進行中である」ことを伝える。Next.js 公式も `useLinkStatus` の
  * 用途として「遷移先が動的ルートで `loading.js` を持たない場合」を明示している。
  *
- * 🔴 `role="status"` / `aria-live` は **持たない**（`ui-ux-guidelines.md` §7.2）。
- * ライブリージョンは画面に唯一・常設という規約に対し、本コンポーネントは詳細リンクごとに
- * 1 個ずつ描画される（一覧 1 ページで数十個）。全部がライブリージョンになると規約が壊れる。
- * したがって支援技術には何も伝えない純粋な視覚ヒント（`aria-hidden="true"`）に留める
- * ——`LoadingIndicator` が担う「読み込み中」の読み上げとは役割が異なる。
- * この理由から可視ラベルの `label` props も持たない（`aria-hidden` の内側に置いた文言は
- * 支援技術に届かず、i18n 文言を 3 つの一覧コンポーネントへ通すコストに見合わない）。
+ * 🔴 **本要素自身は `role="status"` / `aria-live` を持たない**。詳細リンクごとに 1 個ずつ
+ * 描画される（一覧 1 ページで数十個）ため、ここにライブリージョンを持たせると同種の
+ * `role="status"` が大量に並ぶ。代わりに `useLinkStatus()` の `pending` を
+ * `LinkPendingAnnouncer`（祖先に 1 個だけ常設した sr-only のライブリージョン）へ報告し、
+ * 支援技術への通知はそちらが一手に担う（`AC-8`「いずれの状態変化も `aria-live` で支援技術に
+ * 伝えられる」/ `NFR-12`「視覚表現だけにしない」）。本要素は `aria-hidden="true"` の
+ * 純粋な視覚表現に留まるので、可視ラベルの `label` props も持たない。
+ * ⚠️ `ui-ux-guidelines.md` §7.2 が禁じているのは「要素ごとの動的挿入」と「ライブリージョンの
+ * 入れ子」であって、画面にライブリージョンが複数あること自体ではない（`app/[locale]/page.tsx`
+ * では `<section id="search-status">` と `RepositoryList` の `role="status"` が兄弟として共存する）。
  *
  * 🔴 **DOM には常設し、`pending` で可視性（opacity）だけを切り替える**。`display:none` で
  * 出し入れするとリンク行の幅が遷移のたびに変わり、クリック直後にレイアウトシフトが起きる。
+ * 寸法・意匠・回転はすべて **この 1 要素** に載せる（外側ラッパと内側スピナーに分けると、
+ * 寸法クラスが 2 か所に重複し片方だけ変更したときに予約幅が崩れる）。
+ *
+ * ⚠️ **`data-testid` を使う理由**: `aria-hidden="true"` の要素は Testing Library / Playwright の
+ * ロールクエリから常に除外されるため、ロールでは掴めない。`src/ui/` の本番コードで
+ * `data-testid` を使うのはこの制約が理由の例外であり、他要素へ広げない。
  *
  * ⚠️ **`<Link>` の子孫でしか機能しない**（`useLinkStatus` は直近の `<Link>` の遷移状態を読む）。
  * 文言そのものをアニメーションさせない方針は `loading-indicator.tsx` と同じだが、本実装は
@@ -33,25 +43,28 @@ import { cn } from '@/src/shared/cn'
  */
 export function LinkPendingHint() {
   const { pending } = useLinkStatus()
+  const report = useLinkPendingReport()
+
+  useEffect(() => {
+    // 遷移待ちの間だけ「1 件」として数えてもらい、解決・アンマウント時に取り下げる。
+    // `pending` が false の間は何も報告しない（他リンクの計数を巻き添えで減らさないため）。
+    if (!pending) return
+    report(true)
+    return () => {
+      report(false)
+    }
+  }, [pending, report])
 
   return (
     <span
       data-testid="link-pending-hint"
       data-pending={pending ? 'true' : 'false'}
       aria-hidden="true"
-      className={cn(
-        'ml-1 inline-block size-3 shrink-0 align-middle transition-opacity',
-        pending ? 'opacity-100' : 'opacity-0',
-      )}
-    >
-      <span
-        className={cn(
-          'block size-3 rounded-full border-2 border-current border-t-transparent',
-          // 非 pending 時は回さない（不可視の要素を回し続けても意味がない）。
-          // `motion-reduce` は「動きを減らす」設定の利用者への配慮（`NFR-13` 系）。
-          pending && 'motion-reduce:animate-none animate-spin',
-        )}
-      />
-    </span>
+      className={`ml-1 inline-block size-3 shrink-0 rounded-full border-2 border-current border-t-transparent align-middle transition-opacity ${
+        // 非 pending 時は回さない（不可視の要素を回し続けても意味がない）。
+        // `motion-reduce` は「動きを減らす」設定の利用者への配慮（`NFR-13` 系）。
+        pending ? 'motion-reduce:animate-none animate-spin opacity-100' : 'opacity-0'
+      }`}
+    />
   )
 }

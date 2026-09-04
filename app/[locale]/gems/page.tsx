@@ -367,6 +367,7 @@ export default async function GemListPage({
           registryLabel: messages.gems.registryLabel,
           attribution: messages.gems.attribution,
           opensInNewTab: messages.common.opensInNewTab,
+          linkPending: messages.common.linkPending,
         }}
       />
 
