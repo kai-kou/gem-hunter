@@ -259,3 +259,10 @@
 {"date": "2026-09-04 JST", "title": "既存 spec 全数に validate_spec() を通す回帰テストを CI へ組み込む", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "ai-reviewer-strategy.md の exit 2 記述を check-tool-design-rules.md §1 への参照に置き換える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "議論記録（content/discussions/）の schema 検証ツールを新設する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "check-tool-design-rules.md に「構造化文書はパーサで判定する」節を追加する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 590}
+{"date": "2026-09-04 JST", "title": "既存の check_*.py で構造化文書を正規表現判定している箇所を棚卸しし fail-open の有無を実測する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 590}
+{"date": "2026-09-04 JST", "title": "検査ツールの self-test に「負ケースの軸」チェックリストを追加する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 896}
+{"date": "2026-09-04 JST", "title": "消化レーンの母集団に対して priority ラベルが機能しているかを機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 854}
+{"date": "2026-09-04 JST", "title": "他セッションの needs_prompt PR を決定木の捕捉ルートに組み入れる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 898}
+{"date": "2026-09-04 JST", "title": "並行安全プリアンブルに読み取り（Read / Grep / Glob）の可否を 1 行明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "Issue 起票時・着手時に sp と実スコープの整合をチェックする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}

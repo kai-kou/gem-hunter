@@ -106,3 +106,29 @@ python3 tools/check_markdown_table_columns.py --changed --under docs/rules
 **対策**: 検査対象を絞ったら、**絞った理由を 1 行コメントで残す**（例: 「検索結果・README のコンテンツは本文が主要なので `p` / `td` の実効値で代表させる。見出し・リストは同じカスケードを共有するため個別検査は省く」）。理由を書けないなら、それは「絞ってよいか検討していない」ということなので、対象を広げるか検討そのものを Issue に切り出す。
 
 **関連**: PR #812（SC 1.4.12 Text Spacing の E2E）/ 本ファイル冒頭の desync 系エントリ
+
+---
+
+## L-157: 構造を持つ文書を正規表現の部分一致で判定する検査は、必ず fail-open へ倒れる（2026-09-04・PR #900）
+
+**症状**: HTML / TSX / JSON など **構造を持つ文書** に対して「この文字列が含まれるか」を正規表現で判定する検査を書くと、クリックできない・実行されない・別の意味を持つ位置に同じ文字列があるだけで **PASS してしまう**。検査は緑のまま、守っているつもりの不変条件が壊れる。
+
+**実測**（`tools/check_site.py` の `check_footer_readme_link` 初版・LP footer → README 本体の導線を守る検査）:
+
+| 入力 | 判定 | なぜ通ったか |
+|---|---|---|
+| `<footer>README は https://…/README.md にあります</footer>` | PASS | 地の文（リンクではない） |
+| `<footer><!-- <a href="…/README.md">…</a> --></footer>` | PASS | コメントアウト |
+| `<footer><a href="#top" title="…/README.md">top</a></footer>` | PASS | 別要素の属性値 |
+| `<footer><a href="…/README.md.bak">…</a></footer>` | PASS | 前方一致（右境界なし） |
+
+**判定基準**: 「判定対象は **標準ライブラリのパーサがある** 構造化文書か？」（HTML / XML / JSON / TSX の AST / Python の `ast`）→ YES なら正規表現の部分一致で判定しない。
+
+🔴 **Markdown と YAML は別扱い**（標準ライブラリにパーサが無く、外部依存を足す方が害が大きい）。本リポジトリの Markdown 検査（`tools/check_cjk_markdown.py` / `check_markdown_table_columns.py` / `check_rules_sync.sh` など）は行指向の正規表現走査が既定であり、**本エントリはそれらを違反として扱わない**。ただし Markdown を正規表現で走査するときは、**コードフェンス・HTML コメント・引用ブロックを先に除去してから判定する**（除去しない実装は本エントリと同じ fail-open になる。既存実装は `tools/md_fence.py` がフェンス判定を担う）。
+
+**対策**:
+
+- 標準ライブラリのパーサを使う（`html.parser.HTMLParser` / `json` / `ast` 等）。コメントは `handle_comment`、地の文は `handle_data` へ回るので、**実データだけを集める** 構造になる。参照実装は `tools/check_site.py` の `FooterLinkParser`（`<footer>` の入れ子深さを数えて `<a href>` だけを収集し、URL は完全一致——同一文書内アンカー `#…` のみ許容——で判定して `README.md.bak` のような派生パスを弾く）
+- self-test の負ケースに「構造上到達不能な位置」（コメント内・地の文・別要素の属性値）と「近似だが別カテゴリ」（`README.md.bak` / 同じディレクトリの別ファイル）を必ず置く。この 2 軸が無いと、判定を最弱まで潰す変異（`re.compile("README")` 相当）でも self-test が PASS する（実測）
+
+**関連**: #590（正規表現で走査する検査ツールの初版に毎回入る欠陥クラス・本エントリはその 5 種類目）/ #896（self-test の負ケースが構造異常に偏る）/ `docs/rules/check-tool-design-rules.md`
