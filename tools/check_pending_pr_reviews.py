@@ -79,17 +79,38 @@ gh 取得失敗時（クラウドの 403 等・Issue #130・#789）:
   除外を適用しない＝10 分超アイドルやセッション再起動・圧縮後でも自 PR を見失わず責任継続できる。
   これが「自セッション作成 PR のみマージまで進める」積極的所有判定（時間ベースのレイヤー 5 を補完）。
 
+bot 自動化 PR の回収（--mine-or-automation・#870）:
+  Dependabot / `automation/gem-pool-refresh` の PR は bot 作成のため PR 本文に自セッションの
+  `Session-Id:` を持たず、`--mine` では **構造的に決して拾われない**。一方 `D-43`
+  （`pr-review-flow-summary.md`）とスクリプト実装（`_is_automation_pr()` / `_is_dependabot_pr()`）は
+  これらを回収する前提で揃っており、`sprint-cycle-router` 決定木 Step 2 の判定条件だけが
+  `--mine` 限定で閉じていた。`--mine-or-automation` は `select_step2_targets()` を適用し、
+  **自 PR があればそれだけ / 無ければ bot 自動化 PR だけ / どちらも無ければ空** を返す
+  （他者の人手 PR は決して返さない＝CP-4・L-109 の不介入を実装にも残す）。
+  `--mine` と同時指定はできない（意味が衝突するため argparse がエラーにする）。
+
+終了コード:
+  0 = 正常終了（対象 0 件を含む。「レビュー待ち PR が無い」は日常的に起こるため
+      fail-closed にしない・check-tool-design-rules.md §2 の例外条件に該当）
+  1 = --verify-layer1 で Layer 1 未投稿を検出（ブロック）/ --self-test 失敗
+  2 = 判定不能（--verify-layer1 の LAYER1_UNKNOWN）・引数エラー（argparse 標準・--mine と
+      --mine-or-automation の同時指定、--mine 系でセッション ID 不明）
+  3 = gh も REST 直叩きも全滅して PR 一覧を取得できなかった（GH_UNAVAILABLE）
+
 Usage:
     python3 tools/check_pending_pr_reviews.py
     python3 tools/check_pending_pr_reviews.py --json
     python3 tools/check_pending_pr_reviews.py --actionable-only --include-active
     python3 tools/check_pending_pr_reviews.py --mine --json            # 自セッション所有 PR のみ
     python3 tools/check_pending_pr_reviews.py --mine --actionable-only # 自 PR で要対応のもの
+    python3 tools/check_pending_pr_reviews.py --mine-or-automation --actionable-only --json
+                                                                       # Step 2 の対象（自 PR 優先・空なら bot 自動化 PR）
     python3 tools/check_pending_pr_reviews.py --self-test              # Session-Id 解析テスト
     python3 tools/check_pending_pr_reviews.py --verify-layer1 <PR番号> # Layer 1 投稿済みか機械検証（base#462）
 """
 
 import argparse
+import io
 import json
 import os
 import re
@@ -888,6 +909,34 @@ def _label_based_early_exit_status(pr_labels: set[str]) -> dict | None:
 ACTIONABLE_EXCLUDED_STATUSES = {"no_action", "blocked_waiting_user", "blocked_circuit_breaker"}
 
 
+def select_step2_targets(results: list[dict]) -> list[dict]:
+    """`sprint-cycle-router` 決定木 Step 2 の対象 PR を選ぶ純粋関数（#870）。
+
+    背景: Step 2 の判定条件は長らく「`--mine --actionable-only` が非空」と `--mine` 限定で
+    書かれていた。しかし Dependabot / `automation/gem-pool-refresh` の PR は bot が作るため
+    PR 本文に自セッションの `Session-Id:` を持たず、`--mine` では **構造的に決して拾われない**。
+    一方 `D-43`（`pr-review-flow-summary.md`）と本スクリプトの `_is_automation_pr()` /
+    `_is_dependabot_pr()` は bot PR を回収する前提で揃っており、条文だけが閉じていた。
+
+    選択の意味論（自スコープ優先 #47 を崩さない）:
+      1. `is_mine` が真の要素が 1 件でもあれば、**それだけ** を返す（bot PR は返さない）
+      2. `is_mine` が 0 件なら、`is_automation_pr` または `is_dependabot_pr` が真の要素だけを返す
+      3. どちらも無ければ空リスト（＝**他者の人手 PR は決して返さない**）
+
+    3 が本関数の眼目である。孤児 PR の全件回収は Step 2 の責務ではなく、他セッションが対応中の
+    PR を奪わない不介入（CP-4・L-109）を条文だけでなく実装にも残す。
+
+    `is_automation_pr` / `is_dependabot_pr` は `analyze_pr()` の **両方の return 経路** が必ず
+    格納するため、ここでは `.get()` の既定値に頼らず添字参照する（キー欠落は握り潰さず
+    KeyError で表面化させる＝fail-closed）。
+    """
+    mine = [r for r in results if bool(r.get("is_mine"))]
+    if mine:
+        return mine
+    return [r for r in results if r["is_automation_pr"] or r["is_dependabot_pr"]]
+
+
+
 def analyze_pr(pr: dict) -> dict:
     """PRのレビュー状態を分析する。"""
     pr_number = pr["number"]
@@ -935,6 +984,10 @@ def analyze_pr(pr: dict) -> dict:
             "active_session": False,
             "owner_session_id": owner_session_id,
             "author_association": author_association,
+            # #870: bot 自動化 PR 判定を戻り値へ載せる（select_step2_targets() の入力）。
+            # 早期 return 経路でもキーを必ず持たせ、呼び出し側が .get() の既定値に頼らないようにする。
+            "is_automation_pr": is_automation_pr,
+            "is_dependabot_pr": is_dependabot_pr,
         }
 
     # レビューリクエスト（requested_reviewers）を確認
@@ -1121,6 +1174,9 @@ def analyze_pr(pr: dict) -> dict:
         "active_session": active_session,
         "owner_session_id": owner_session_id,
         "author_association": author_association,
+        # #870: bot 自動化 PR 判定を戻り値へ載せる（select_step2_targets() の入力）
+        "is_automation_pr": is_automation_pr,
+        "is_dependabot_pr": is_dependabot_pr,
     }
 
 
@@ -2004,6 +2060,325 @@ def _test_get_pr_head_sha_rest_fallback() -> list[str]:
     return failures
 
 
+SELF_SESSION_ID_FOR_TEST = "11111111-2222-4333-8444-555555555555"
+OTHER_SESSION_ID_FOR_TEST = "99999999-8888-4777-8666-555555555555"
+
+
+def _fake_pr_for_step2(
+    number: int,
+    branch: str,
+    author_login: str,
+    author_association: str,
+    session_id: str | None,
+    is_cross_repository: bool | None = False,
+) -> dict:
+    """Step 2 対象選択テスト用の PR スキーマ（gh --json 相当）を組み立てる（#870）。"""
+    body = f"Sprint Goal: x\nSession-Id: {session_id}\nsp:3" if session_id else "bot が作成した PR"
+    return {
+        "number": number,
+        "title": f"テスト PR #{number}",
+        "headRefName": branch,
+        # 十分に古い作成日時にして elapsed_min >= ACTIVE_WINDOW_MIN（needs_prompt）へ倒す
+        "createdAt": "2020-01-01T00:00:00Z",
+        "labels": [],
+        "body": body,
+        "authorAssociation": author_association,
+        "author": {"login": author_login},
+        "isCrossRepository": is_cross_repository,
+        "reviewRequests": [],
+    }
+
+
+def _test_select_step2_targets_pure() -> list[str]:
+    """`select_step2_targets()` を純粋関数として直接検証する（#870）。
+
+    境界の外側の負ケース（他者の人手 PR を拾わない・#750）を必ず含める。
+    """
+    failures: list[str] = []
+
+    def rec(number: int, mine: bool, automation: bool, dependabot: bool) -> dict:
+        return {
+            "pr_number": number,
+            "is_mine": mine,
+            "is_automation_pr": automation,
+            "is_dependabot_pr": dependabot,
+        }
+
+    mine_pr = rec(1, True, False, False)
+    dependabot_pr = rec(2, False, False, True)
+    automation_pr = rec(3, False, True, False)
+    other_human_pr = rec(4, False, False, False)
+
+    cases: list[tuple[str, list[dict], list[int]]] = [
+        # (a) 自 PR あり + Dependabot PR あり → 自 PR のみ（--mine 優先が効いている）
+        ("(a) mine + dependabot", [mine_pr, dependabot_pr], [1]),
+        # (b) 自 PR なし + Dependabot PR あり → Dependabot が返る
+        ("(b) dependabot only", [dependabot_pr], [2]),
+        # (c) 自 PR なし + automation/gem-pool-refresh PR あり → その PR が返る
+        ("(c) automation only", [automation_pr], [3]),
+        # (d) 境界の外側の負ケース（#750）: 他者の人手 PR のみ → 空
+        ("(d) other human only", [other_human_pr], []),
+        # (e) 他者の人手 PR + Dependabot → Dependabot のみ（人手 PR は混ざらない）
+        ("(e) other human + dependabot", [other_human_pr, dependabot_pr], [2]),
+        # (f) 入力そのものが空 → 空
+        ("(f) empty input", [], []),
+        # 自 PR が複数あれば全件返す / bot は混ざらない
+        (
+            "(g) multiple mine + bots",
+            [mine_pr, rec(5, True, False, False), dependabot_pr, automation_pr],
+            [1, 5],
+        ),
+    ]
+    for label, results, expected in cases:
+        got = [r["pr_number"] for r in select_step2_targets(results)]
+        if got != expected:
+            failures.append(
+                f"  select_step2_targets {label}: {got!r} (expected {expected!r})"
+            )
+    return failures
+
+
+def _test_main_mine_or_automation_e2e() -> list[str]:
+    """`main()` を経由して `--mine-or-automation` の選択・終了コード・stdout を貫通検証する（#870）。
+
+    #686: 内部関数の直呼びだけでは CLI 入口の配線（フラグ無視・引数解釈）の退行を見逃すため、
+    本番の主コードパス（argparse → get_open_prs → analyze_pr → select_step2_targets → stdout）を
+    そのまま通す。#710: `run_gh` の fake に argv を記録させ、意図したサブコマンドが `main()` から
+    実際に呼ばれていること（＝ analyze_pr へ到達していること）を assert する。
+    """
+    import contextlib
+
+    failures: list[str] = []
+    recorded_argv: list[list[str]] = []
+
+    def fake_run_gh_raw(args: list[str]) -> tuple[bool, str]:
+        recorded_argv.append(list(args))
+        return (False, "gh 到達不可（テスト用スタブ）")
+
+    orig_run_gh_raw = globals()["_run_gh_raw"]
+    orig_http_get = globals()["_http_get"]
+    orig_get_open_prs = globals()["get_open_prs"]
+    orig_argv = sys.argv
+    saved_env = {
+        k: os.environ.pop(k, None)
+        for k in ("GH_TOKEN", "GITHUB_TOKEN", "CLAUDE_CODE_SESSION_ID")
+    }
+    globals()["_run_gh_raw"] = fake_run_gh_raw
+    # 第 2 層（REST 直叩き）も到達不可にして、補助情報は欠落したまま status 判定へ進ませる
+    globals()["_http_get"] = lambda url, token: (False, "REST 到達不可（テスト用スタブ）")
+
+    mine = _fake_pr_for_step2(101, "feat/mine", "kai-kou", "OWNER", SELF_SESSION_ID_FOR_TEST)
+    dependabot = _fake_pr_for_step2(
+        102, "dependabot/npm_and_yarn/next-15.5.1", "dependabot[bot]", "NONE", None
+    )
+    automation = _fake_pr_for_step2(
+        103, "automation/gem-pool-refresh", "github-actions[bot]", "NONE", None
+    )
+    other_human = _fake_pr_for_step2(
+        104, "feat/other", "someone-else", "OWNER", OTHER_SESSION_ID_FOR_TEST
+    )
+    # 入力バリアント（#474）: いずれも bot 判定の 3 条件 AND を満たさないため選ばれてはいけない
+    dependabot_upper = _fake_pr_for_step2(
+        105, "Dependabot/npm_and_yarn/next-15.5.1", "dependabot[bot]", "NONE", None
+    )
+    dependabot_fork_unknown = _fake_pr_for_step2(
+        106,
+        "dependabot/npm_and_yarn/next-15.5.2",
+        "dependabot[bot]",
+        "NONE",
+        None,
+        is_cross_repository=None,
+    )
+    automation_prefix = _fake_pr_for_step2(
+        107, "automation/gem-pool-refresh-evil", "github-actions[bot]", "NONE", None
+    )
+
+    def run_main(argv: list[str], prs: list[dict]) -> tuple[int, str, str]:
+        globals()["get_open_prs"] = lambda: list(prs)
+        sys.argv = ["check_pending_pr_reviews.py"] + argv
+        out, err = io.StringIO(), io.StringIO()
+        code = 0
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                main()
+        except SystemExit as e:  # noqa: PERF203 - テスト用
+            code = e.code if isinstance(e.code, int) else 1
+        return code, out.getvalue(), err.getvalue()
+
+    common = ["--mine-or-automation", "--actionable-only", "--session-id", SELF_SESSION_ID_FOR_TEST]
+    e2e_cases: list[tuple[str, list[dict], list[int]]] = [
+        # (a) 自 PR あり + Dependabot → 自 PR のみ
+        ("(a) mine + dependabot", [mine, dependabot], [101]),
+        # (b) 自 PR なし + Dependabot → Dependabot
+        ("(b) dependabot only", [dependabot, other_human], [102]),
+        # (c) 自 PR なし + automation → automation
+        ("(c) automation only", [automation, other_human], [103]),
+        # (d) 負ケース（#750）: 他者の人手 PR のみ → 空
+        ("(d) other human only", [other_human], []),
+        # (e) 他者の人手 PR + Dependabot → Dependabot のみ
+        ("(e) other human + dependabot", [other_human, dependabot], [102]),
+        # 入力バリアント: 大文字ブランチ・isCrossRepository 欠落・前方一致の偽物はいずれも選ばれない
+        (
+            "(variants) 3条件ANDを満たさない bot 風 PR",
+            [dependabot_upper, dependabot_fork_unknown, automation_prefix, other_human],
+            [],
+        ),
+    ]
+    try:
+        for label, prs, expected in e2e_cases:
+            code, out, _err = run_main(common, prs)
+            if code != 0:
+                failures.append(f"  main --mine-or-automation {label}: exit={code} (expected 0)")
+            got = [int(m) for m in re.findall(r"^PENDING:(\d+):", out, flags=re.MULTILINE)]
+            if got != expected:
+                failures.append(
+                    f"  main --mine-or-automation {label}: PENDING={got!r} (expected {expected!r})\n"
+                    f"    stdout={out!r}"
+                )
+            if not expected and "NO_PENDING_PRS" not in out:
+                failures.append(
+                    f"  main --mine-or-automation {label}: 空選択なのに NO_PENDING_PRS が出ない (stdout={out!r})"
+                )
+
+        # (f) PR が 1 件も無い → NO_PENDING_PRS で正常終了（exit 0）。
+        # check-tool-design-rules.md §2 の「対象 0 件は原則 fail-closed」の **例外** に該当する:
+        # 本ツールは PR 前の品質ゲートではなくセッション復帰時の作業検出であり、
+        # 「レビュー待ち PR が無い」は日常的に起こる正常状態だから（0 件で非ゼロにすると
+        # 呼び出し元の決定木が毎 firing で異常扱いになる）。
+        code, out, _err = run_main(common, [])
+        if code != 0 or "NO_PENDING_PRS" not in out:
+            failures.append(
+                f"  main --mine-or-automation (f) PR 0 件: exit={code} stdout={out!r} "
+                "(expected exit=0 / NO_PENDING_PRS)"
+            )
+
+        # JSON 出力でも同じ選択になること（--json の書式を壊していないこと）
+        code, out, _err = run_main(common + ["--json"], [other_human, dependabot])
+        try:
+            parsed = json.loads(out)
+        except json.JSONDecodeError:
+            parsed = None
+            failures.append(f"  main --mine-or-automation --json: JSON として解析不能 (stdout={out!r})")
+        if parsed is not None:
+            got_numbers = [r["pr_number"] for r in parsed]
+            if got_numbers != [102]:
+                failures.append(
+                    f"  main --mine-or-automation --json: pr_number={got_numbers!r} (expected [102])"
+                )
+            elif not parsed[0].get("is_dependabot_pr"):
+                failures.append(
+                    "  main --mine-or-automation --json: is_dependabot_pr が JSON に載っていない "
+                    f"({parsed[0].get('is_dependabot_pr')!r})"
+                )
+
+        # --mine（従来経路）は bot PR を拾わない（既存の意味論を壊していないことの回帰固定）
+        code, out, _err = run_main(
+            ["--mine", "--actionable-only", "--session-id", SELF_SESSION_ID_FOR_TEST],
+            [dependabot, automation],
+        )
+        if "NO_PENDING_PRS" not in out:
+            failures.append(f"  main --mine: bot PR を拾ってしまった (stdout={out!r})")
+
+        # --mine と --mine-or-automation の同時指定は引数エラー（argparse 標準の exit 2）
+        code, out, err = run_main(
+            ["--mine", "--mine-or-automation", "--session-id", SELF_SESSION_ID_FOR_TEST],
+            [mine],
+        )
+        if code != 2:
+            failures.append(
+                f"  main --mine --mine-or-automation 同時指定: exit={code} (expected 2)"
+            )
+        if "not allowed with" not in err and "mine-or-automation" not in err:
+            failures.append(
+                f"  main --mine --mine-or-automation 同時指定: エラーメッセージが不十分 (stderr={err!r})"
+            )
+
+        # analyze_pr の **早期 return 経路**（ラベルベース early_exit）でも is_automation_pr /
+        # is_dependabot_pr が dict に載っていること（#870）。--actionable-only を付けないと
+        # blocked ステータスの PR が select_step2_targets() へ届くため、キー欠落なら KeyError で落ちる。
+        blocked_dependabot = _fake_pr_for_step2(
+            108, "dependabot/pip/pyyaml-6.0.2", "dependabot[bot]", "NONE", None
+        )
+        blocked_dependabot["labels"] = [{"name": "status:blocked"}]
+        blocked_automation = _fake_pr_for_step2(
+            109, "automation/gem-pool-refresh", "github-actions[bot]", "NONE", None
+        )
+        blocked_automation["labels"] = [{"name": "status:waiting-user"}]
+        code, out, err = run_main(
+            ["--mine-or-automation", "--json", "--session-id", SELF_SESSION_ID_FOR_TEST],
+            [blocked_dependabot, blocked_automation, other_human],
+        )
+        if code != 0:
+            failures.append(
+                f"  main --mine-or-automation（早期 return 経路）: exit={code} (expected 0) stderr={err[-200:]!r}"
+            )
+        else:
+            try:
+                parsed_blocked = json.loads(out)
+            except json.JSONDecodeError:
+                parsed_blocked = []
+                failures.append(f"  早期 return 経路: JSON 解析不能 (stdout={out!r})")
+            if [r["pr_number"] for r in parsed_blocked] != [108, 109]:
+                failures.append(
+                    f"  早期 return 経路: pr_number={[r.get('pr_number') for r in parsed_blocked]!r} (expected [108, 109])"
+                )
+            else:
+                if not parsed_blocked[0].get("is_dependabot_pr"):
+                    failures.append(
+                        "  早期 return 経路: is_dependabot_pr が dict に載っていない "
+                        f"({parsed_blocked[0].get('is_dependabot_pr')!r})"
+                    )
+                if not parsed_blocked[1].get("is_automation_pr"):
+                    failures.append(
+                        "  早期 return 経路: is_automation_pr が dict に載っていない "
+                        f"({parsed_blocked[1].get('is_automation_pr')!r})"
+                    )
+
+        # セッション ID 不明のまま --mine-or-automation を使わせない（#870）。
+        # is_mine が全件 False になり、自 PR があるのに bot PR を先に拾う優先順位の逆転が
+        # 黙って起きるため、--mine と同じく exit 2 でエラーにする。
+        code, out, err = run_main(["--mine-or-automation", "--actionable-only"], [mine, dependabot])
+        if code != 2:
+            failures.append(
+                f"  main --mine-or-automation (セッション ID 無し): exit={code} (expected 2)"
+            )
+        if "--mine-or-automation" not in err:
+            failures.append(
+                f"  main --mine-or-automation (セッション ID 無し): エラー文にフラグ名が無い (stderr={err!r})"
+            )
+
+        # fake runner の argv 検証（#710）: main() が analyze_pr まで到達し、PR 番号付きの
+        # gh サブコマンドを実際に発行していること（＝終了コードだけ差し替えた fake が
+        # 判定結果を固定値へ潰す変異を見逃さないようにする）。
+        if not recorded_argv:
+            failures.append("  fake run_gh に 1 度も argv が記録されていない（main() が analyze_pr へ到達していない）")
+        else:
+            joined = [" ".join(a) for a in recorded_argv]
+            if not any(a and a[0] == "api" for a in recorded_argv):
+                failures.append(f"  fake run_gh argv: `api` サブコマンドが呼ばれていない ({joined[:3]!r})")
+            # 選択された PR だけでなく、選択前に analyze_pr へ渡った PR も実際に解析されていること
+            # （= main() のループが素通りせず本番経路を通っていること）
+            for expected_fragment in ("pulls/101/reviews", "pulls/102/reviews", "pulls/104/reviews"):
+                if not any(expected_fragment in j for j in joined):
+                    failures.append(
+                        f"  fake run_gh argv: {expected_fragment} の呼び出しが無い（analyze_pr 未到達の疑い）"
+                    )
+            # PR 一覧取得はテストスタブ側（get_open_prs）で差し替えているので gh へは出ないこと
+            if any("pr list" in j for j in joined):
+                failures.append(f"  fake run_gh argv: 想定外の `pr list` 呼び出し ({joined[:3]!r})")
+    finally:
+        globals()["_run_gh_raw"] = orig_run_gh_raw
+        globals()["_http_get"] = orig_http_get
+        globals()["get_open_prs"] = orig_get_open_prs
+        sys.argv = orig_argv
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+    return failures
+
+
 def _run_self_test() -> None:
     """Session-Id 解析（純粋関数）の決定論テスト。CI / セルフレビューで実行する。"""
     uid = "ec373723-01dc-54c9-a204-9ebb221b2295"
@@ -2340,6 +2715,16 @@ def _run_self_test() -> None:
     failures.extend(head_sha_fallback_failures)
     HEAD_SHA_FALLBACK_CASE_COUNT = 1
 
+    # Step 2 対象選択（#870）: 純粋関数の直接検証
+    step2_pure_failures = _test_select_step2_targets_pure()
+    failures.extend(step2_pure_failures)
+    STEP2_PURE_CASE_COUNT = 7  # (a)〜(g)
+
+    # Step 2 対象選択（#870）: main() を経由した貫通検証（#686 本番の主コードパス）
+    step2_e2e_failures = _test_main_mine_or_automation_e2e()
+    failures.extend(step2_e2e_failures)
+    STEP2_E2E_CASE_COUNT = 18  # e2e 6 + 0件 + JSON + 早期return経路 3 + --mine 回帰 + 同時指定 + セッションID必須 2 + argv 3
+
     total_cases = (
         len(cases)
         + 1
@@ -2368,6 +2753,8 @@ def _run_self_test() -> None:
         + ANALYZE_PR_APPROX_CASE_COUNT
         + OPEN_PRS_FALLBACK_CASE_COUNT
         + HEAD_SHA_FALLBACK_CASE_COUNT
+        + STEP2_PURE_CASE_COUNT
+        + STEP2_E2E_CASE_COUNT
     )
     if failures:
         print("FAIL: check_pending_pr_reviews self-test", file=sys.stderr)
@@ -2395,13 +2782,25 @@ def main():
         action="store_true",
         help="作成セッション活動中（active_session=true）の PR も actionable に含める（デバッグ・強制救済用）",
     )
-    parser.add_argument(
+    # --mine と --mine-or-automation は選択の意味論が衝突するため同時指定できない
+    # （argparse が exit 2 でエラーにする）。
+    ownership_group = parser.add_mutually_exclusive_group()
+    ownership_group.add_argument(
         "--mine",
         action="store_true",
         help=(
             "自セッションが作成した PR のみ出力する（PR 本文の Session-Id トレーラーが "
             "$CLAUDE_CODE_SESSION_ID と一致するもの・#47）。自 PR は所有者が常に対応可能なため "
             "active_session 除外を適用しない（時間ベースの穴を埋める積極的所有判定）。"
+        ),
+    )
+    ownership_group.add_argument(
+        "--mine-or-automation",
+        action="store_true",
+        help=(
+            "sprint-cycle-router 決定木 Step 2 の対象を選ぶ（#870）。自 PR があればそれだけ、"
+            "無ければ bot 自動化 PR（Dependabot / automation/gem-pool-refresh）だけを出力する。"
+            "他者の人手 PR は決して出力しない（CP-4・L-109）。--mine とは同時指定できない。"
         ),
     )
     parser.add_argument(
@@ -2438,11 +2837,14 @@ def main():
     if args.verify_layer1 is not None:
         sys.exit(verify_layer1_review(args.verify_layer1))
 
-    # --mine 利用時はセッション ID が必須（誤って全 PR を自 PR 扱いしないため）
+    # --mine 利用時はセッション ID が必須（誤って全 PR を自 PR 扱いしないため）。
+    # --mine-or-automation も同様に必須にする（#870）。セッション ID が無いと is_mine が全件 False に
+    # なり、自 PR があるのに bot PR を先に拾う優先順位の逆転が黙って起きるため。
     session_id = current_session_id(args.session_id)
-    if args.mine and not session_id:
+    if (args.mine or args.mine_or_automation) and not session_id:
+        flag = "--mine" if args.mine else "--mine-or-automation"
         print(
-            "ERROR: --mine には $CLAUDE_CODE_SESSION_ID または --session-id が必要です "
+            f"ERROR: {flag} には $CLAUDE_CODE_SESSION_ID または --session-id が必要です "
             "（クラウドセッション外では --session-id <id> を明示してください）",
             file=sys.stderr,
         )
@@ -2489,6 +2891,12 @@ def main():
         ):
             continue
         results.append(result)
+
+    # Step 2 の対象選択（#870）。ループ内の active_session 除外は bot PR にも従来どおり適用済み
+    # （is_mine には適用しない）。ここでは「自 PR 優先 / 無ければ bot 自動化 PR / 他者の人手 PR は返さない」
+    # の選択だけを純粋関数へ委ねる。
+    if args.mine_or_automation:
+        results = select_step2_targets(results)
 
     if args.json:
         print(json.dumps(results, indent=2, ensure_ascii=False))
