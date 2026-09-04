@@ -12,6 +12,7 @@ Lighthouse ゲート）のどれにも掛からない。公開面が壊れても
   4. ページ内アンカー（#foo）の参照先が存在すること
   5. 自リポジトリ docs への GitHub リンク（blob/tree/main/<path>）が実在すること
   6. LP に書いた ADR 本数が docs/adr/ の実数と一致すること
+  7. footer から README 本体への直リンクが存在すること（LP → README の導線）
 
 使い方:
   python3 tools/check_site.py            # 検査（違反があれば exit 1）
@@ -23,6 +24,7 @@ from __future__ import annotations
 import re
 import struct
 import sys
+import tempfile
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -31,6 +33,10 @@ SITE_DIR = REPO_ROOT / "site"
 PAGES = ["index.html", "404.html"]
 REPO_LINK_RE = re.compile(
     r"https://github\.com/kai-kou/gem-hunter/(?:blob|tree)/main/([^\"'\s)#]+)"
+)
+FOOTER_RE = re.compile(r"<footer\b[^>]*>.*?</footer>", re.S)
+README_LINK_RE = re.compile(
+    r"https://github\.com/kai-kou/gem-hunter/blob/main/README\.md"
 )
 # 自己終了・空要素（閉じタグを持たない）
 VOID_TAGS = {
@@ -189,6 +195,24 @@ def check_adr_count(errors: list[str]) -> None:
         )
 
 
+def check_footer_readme_link(errors: list[str], html: str | None = None) -> None:
+    """LP footer から README 本体へ 1 クリックで到達できることを検査する（Issue #403）。
+
+    README → LP のリンクは成立しているのに LP → README が無い非対称を止める。
+    footer 自体が見つからない場合も fail-closed で違反として報告する
+    （footer の書き換えで検査が黙って素通りするのを防ぐ）。
+    """
+    text = html if html is not None else (SITE_DIR / "index.html").read_text(encoding="utf-8")
+    match = FOOTER_RE.search(text)
+    if match is None:
+        errors.append("index.html: <footer> が見つからず README 直リンクを検査できない")
+        return
+    if not README_LINK_RE.search(match.group(0)):
+        errors.append(
+            "index.html: footer に README 本体（blob/main/README.md）への直リンクが無い"
+        )
+
+
 def self_test() -> int:
     failures: list[str] = []
 
@@ -219,6 +243,49 @@ def self_test() -> int:
     if balanced.stack or balanced.unbalanced:
         failures.append("正常な HTML を誤検知した")
 
+    readme_href = "https://github.com/kai-kou/gem-hunter/blob/main/README.md"
+    footer_cases = [
+        # (説明, HTML, 期待する違反件数)
+        ("footer 内に README 直リンクがある", f'<footer><a href="{readme_href}">README</a></footer>', 0),
+        # 境界の外側: footer の外にだけあっても到達導線にならない（#750 の負ケース規律）
+        ("footer の外にだけ README リンクがある", f'<a href="{readme_href}">README</a><footer><a href="#top">top</a></footer>', 1),
+        # 近似だが別対象: docs ツリーへのリンクは README 本体ではない
+        ("footer 内が docs リンクのみ", '<footer><a href="https://github.com/kai-kou/gem-hunter/tree/main/docs">docs</a></footer>', 1),
+        ("footer 自体が無い", f'<div><a href="{readme_href}">README</a></div>', 1),
+    ]
+    for label, html, expected in footer_cases:
+        found: list[str] = []
+        check_footer_readme_link(found, html=html)
+        if len(found) != expected:
+            failures.append(
+                f"check_footer_readme_link（{label}）: 違反 {len(found)} 件（期待 {expected} 件）"
+            )
+
+    # 本番の入口（main()）を経由した配線検査（#686）。
+    # 検査関数を直接呼ぶだけでは main() から呼び出す 1 行が消えても緑のままになる。
+    global SITE_DIR, PAGES
+    original_site_dir, original_pages = SITE_DIR, PAGES
+    footer_only = '<html><body><footer><ul><li>{link}</li></ul></footer></body></html>'
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            SITE_DIR = Path(tmp)
+            PAGES = ["index.html"]
+            wiring_cases = [
+                ("README 直リンク無し", '<a href="#top">top</a>', 1),
+                ("README 直リンク有り", f'<a href="{readme_href}">README</a>', 0),
+            ]
+            for label, link, expected_exit in wiring_cases:
+                (SITE_DIR / "index.html").write_text(
+                    footer_only.format(link=link), encoding="utf-8"
+                )
+                actual = main([])  # 本判定の入口を通す（--self-test を渡さない）
+                if actual != expected_exit:
+                    failures.append(
+                        f"main() 経由の配線検査（{label}）: exit {actual}（期待 {expected_exit}）"
+                    )
+    finally:
+        SITE_DIR, PAGES = original_site_dir, original_pages
+
     for image in sorted((SITE_DIR / "assets/img").glob("*")):
         if image_size(image) is None:
             failures.append(f"実ファイルのサイズを解析できない: {image.name}")
@@ -231,8 +298,9 @@ def self_test() -> int:
     return 0
 
 
-def main() -> int:
-    if "--self-test" in sys.argv:
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if "--self-test" in args:
         return self_test()
 
     if not SITE_DIR.is_dir():
@@ -244,6 +312,7 @@ def main() -> int:
         check_page(page, errors)
     check_repo_links(errors)
     check_adr_count(errors)
+    check_footer_readme_link(errors)
 
     if errors:
         print("[check_site] FAIL:")
