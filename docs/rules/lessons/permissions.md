@@ -39,9 +39,15 @@
 
 補助（設定側）: 単一箇所にしか存在しない既知の秘密ファイルは deny をアンカー化してよい（`Read(.env)` → `Read(./.env)`）。ただし `**/*.pem` `**/id_rsa` `**/.aws/**` のように **複数階層に出現しうる汎用パターンは緩めない**。
 
-**本ベースでの機械強制（下流への配布経路つき）**
+**本リポジトリでの機械強制（受け取り側）**
 
-配布は `.claude/settings.json` と `.claude/hooks/` を運ぶ既存の一方向同期に乗る（開発リポジトリ → `publish-sync` → 公開リポジトリ → 下流での `apply-base` / `scripts/apply-to-repo.sh`）。**下流に届いたかを能動的に確認する経路は無い** ので、公開側への反映が漏れるとこの機械強制は下流に存在しないままになる。反映漏れは `python3 tools/check_publish_drift.py` が検知し、反映できないセッションは `[publish-sync]` Issue に記録して次のセッションが回収する（`pr-review-flow-summary.md`）。下流で承認プロンプトが減らないときは、まず下流の `.claude/hooks/lib/grep_exclude_normalize.py` の有無を見る（無ければ配布が届いていない）。
+> ⚠️ 本エントリはベース（`kai-kou/claude-code-repository-base`）由来で、原文は「配布する側」の視点で
+> 書かれていた。本リポジトリは **適用先**（`apply-base` でこの機械強制を受け取る側）であり、
+> `publish-sync` レーンは #407 で不要と決定済み（`tools/check_publish_drift.py` は存在しない）。
+> 承認プロンプトが減らないときに見るのは配布状況ではなく、**この 2 ファイルが手元にあるか** である:
+> `.claude/hooks/lib/grep_exclude_normalize.py` と `.claude/hooks/pre-tool-use-router.sh` の書き換えブロック。
+> 無ければベース適用（`apply-base`）が最新まで進んでいない。挙動の回帰は
+> `bash tools/test_grep_exclude_normalize.sh` で実測できる。
 
 **機械化されているのは対策 2 だけ** である。対策 1（絶対パスで直接実行する）は行動規範のままで、`cd` 複合コマンドを自動で書き換える機構は無い（意味が変わる書き換えになるため入れていない）。
 

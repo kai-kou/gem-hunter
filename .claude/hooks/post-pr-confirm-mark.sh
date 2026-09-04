@@ -222,11 +222,16 @@ run_self_test() {
       # skip 相当（head 不一致）ではマーカーが作られないことも確認
       e2e_out=$(CLAUDE_HOOK_PR_MARKER_DIR="$e2e_dir" bash "${BASH_SOURCE[0]}" <<< \
         "{\"session_id\":\"e2e-mismatch-sess\",\"tool_name\":\"mcp__github__create_pull_request\",\"tool_input\":{\"owner\":\"${real_owner}\",\"repo\":\"${real_repo}\",\"head\":\"definitely-not-current-branch\"},\"tool_response\":{\"number\":999}}")
-      if [[ ! -f "${e2e_dir}/claude-pr-confirmed-e2e-mismatch-sess-definitely-not-current-branch" ]]; then
+      # 🔴 期待パスは **実装と同じキー化**（hook_branch_key）で組む。リテラルのブランチ名を
+      #    そのまま繋いだパスは実装が決して生成しないため、どんな変異を入れても常に PASS する
+      #    空検証になっていた（Layer 1 の 3 観点が独立に指摘・実測）。head 不一致でも
+      #    「現在ブランチのキーで書いてしまう」変異を捕まえるため、**どの名前でも作られていない**
+      #    ことを確認する。
+      if [[ -z "$(find "$e2e_dir" -maxdepth 1 -name 'claude-pr-confirmed-e2e-mismatch-sess-*' -print -quit 2>/dev/null)" ]]; then
         pass=$((pass + 1))
       else
         fail=$((fail + 1))
-        echo "  ✗ e2e: head 不一致なのにマーカーが作られた"
+        echo "  ✗ e2e: head 不一致なのにマーカーが作られた（$(find "$e2e_dir" -maxdepth 1 -name 'claude-pr-confirmed-e2e-mismatch-sess-*' 2>/dev/null | tr '\n' ' ')）"
       fi
     else
       echo "  (e2e スキップ: origin リモート/現在ブランチを解決できない環境)"

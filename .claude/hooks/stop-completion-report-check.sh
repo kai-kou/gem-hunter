@@ -65,7 +65,12 @@ classify_text() {
 # 根拠にすると「PR #10 はマージ済み。次はご依頼のあった機能 B に移る」のような途中の一文で
 # マーカーが恒久化し、以後の不適格な最終報告が二度と nudge されない。§1 テンプレートの強い
 # シグナル（見出し `✅ 完了報告` / ラベル `**ご依頼**` / `**できるようになったこと**`）を必須にする。
-PROPER_TEMPLATE_RE='✅ 完了報告|\*\*ご依頼\*\*|\*\*できるようになったこと\*\*'
+# 🔴 **行頭アンカーを外さない**（Layer 1 判定ロジック観点が実測再現）。アンカー無しだと
+#    「`PROPER_TEMPLATE_RE` が `**ご依頼**` を見ている」のように **テンプレート語を文中で引用しただけ**
+#    のメッセージでマーカーが立ち、以後そのセッションの nudge が恒久的に無効化される（fail-open）。
+#    ルール文書・本フック自体を触るセッションでは日常的に起きる入力なので、見出し・ラベルが
+#    **行の先頭に現れる** ことを必須にする（grep は行単位なので `^` がそのまま行頭を指す）。
+PROPER_TEMPLATE_RE='^#{0,4} *✅ 完了報告|^\*\*ご依頼\*\*|^\*\*できるようになったこと\*\*'
 is_proper_report() {
   local text="$1"
   if printf '%s' "$text" | grep -qE "$MERGE_RE" \
@@ -152,6 +157,11 @@ run_self_test() {
   assert_proper "PR #3052 を squash でマージしました！レビューの指摘も解消済みにゃ" "no"
   # 途中経過の一文が OUTCOME_RE の語彙を偶然含んでもテンプレートの強いシグナルが無ければマークしない
   assert_proper "PR #10 はマージ済みです。次はご依頼のあった機能 B に移りますにゃ" "no"
+  # 🔴 テンプレート語を **文中で引用しただけ** のメッセージでマークしない（行頭アンカーの回帰テスト）
+  assert_proper 'レビュー結果: PROPER_TEMPLATE_RE が `**ご依頼**` を見ているにゃ。PR #883 はマージ済みで、次の作業に移るにゃ' "no"
+  # 🔴 見出しはあるがアウトカム語彙が無い報告はマークしない（OUTCOME_RE 連言の回帰テスト）
+  assert_proper "## ✅ 完了報告
+PR #12 を squash でマージしました。レビューの指摘も解消済みにゃ" "no"
   assert_proper "## ✅ 完了報告
 **ご依頼**: 〇〇の実装。
 **できるようになったこと**: △△ができるようになったにゃ。
@@ -201,6 +211,43 @@ run_self_test() {
     if [[ "$exit_code" -eq 2 ]]; then :; else echo "FAIL: e2e③: マーカー無しなのに exit ${exit_code}（出力: ${out}）"; fail=1; fi
     if printf '%s' "$out" | grep -q '\[report-format\]'; then :; else echo "FAIL: e2e③: stderr に [report-format] タグが無い（出力: ${out}）"; fail=1; fi
 
+    # --- Sprint Review / Retrospective 証跡ブロック（Issue #69）の e2e ---
+    # 🔴 内部関数の直呼び（assert_evidence）だけでは、transcript の解決・抽出・hook_block 呼び出しを
+    #    含む **本番の主コードパス** が 1 行もテストされない（ブロックを丸ごと削除しても self-test が
+    #    緑のままだった・Layer 1 テスト観点の実測）。本体をプロセス起動して終了コードで検証する。
+    local sprint_missing_tr sprint_ok_tr
+    sprint_missing_tr="$e2e_dir/transcript_missing.jsonl"
+    sprint_ok_tr="$e2e_dir/transcript_ok.jsonl"
+    jq -nc '{type:"assistant",message:{content:[{type:"text",text:"Sprint Goal: テスト\nマージしました"}]}}' > "$sprint_missing_tr"
+    jq -nc '{type:"assistant",message:{content:[{type:"text",text:"Sprint Goal: テスト\nマージしました\nSprint Review 判定\nretrospective スキル起動"}]}}' > "$sprint_ok_tr"
+
+    # ④ 証跡なし transcript + 中立な最終メッセージ → exit 2 かつ Sprint 差し戻し文言が出る
+    out=$(CLAUDE_HOOK_REPORT_MARKER_DIR="$e2e_dir" bash "${BASH_SOURCE[0]}" \
+      <<< "$(jq -n --arg t "$sprint_missing_tr" '{session_id:"sess-e2e-sprint",stop_hook_active:false,last_assistant_message:"ファイルを編集したにゃ",transcript_path:$t}')" 2>&1 >/dev/null)
+    exit_code=$?
+    if [[ "$exit_code" -eq 2 ]]; then :; else echo "FAIL: e2e④: Sprint 証跡なしなのに exit ${exit_code}（出力: ${out}）"; fail=1; fi
+    if printf '%s' "$out" | grep -q 'Sprint Goal:'; then :; else echo "FAIL: e2e④: Sprint 証跡不足の差し戻し文言が出ていない（出力: ${out}）"; fail=1; fi
+
+    # ⑤ 証跡あり transcript → exit 0（正常系。④が「常に 2 を返すだけ」でないことを固定する）
+    out=$(CLAUDE_HOOK_REPORT_MARKER_DIR="$e2e_dir" bash "${BASH_SOURCE[0]}" \
+      <<< "$(jq -n --arg t "$sprint_ok_tr" '{session_id:"sess-e2e-sprint",stop_hook_active:false,last_assistant_message:"ファイルを編集したにゃ",transcript_path:$t}')" 2>&1 >/dev/null)
+    exit_code=$?
+    if [[ "$exit_code" -eq 0 ]]; then :; else echo "FAIL: e2e⑤: Sprint 証跡ありなのに exit ${exit_code}（出力: ${out}）"; fail=1; fi
+
+    # ⑥ 「適正報告済み」マーカーがあるセッションでも Sprint 証跡チェックは働く
+    #    （nudge 抑止が exit 0 で後段まで止めていた fail-open の回帰テスト）
+    out=$(CLAUDE_HOOK_REPORT_MARKER_DIR="$e2e_dir" bash "${BASH_SOURCE[0]}" \
+      <<< "$(jq -n --arg m "$short_receipt_text" --arg t "$sprint_missing_tr" '{session_id:"sess-e2e-ok",stop_hook_active:false,last_assistant_message:$m,transcript_path:$t}')" 2>&1 >/dev/null)
+    exit_code=$?
+    if [[ "$exit_code" -eq 2 ]]; then :; else echo "FAIL: e2e⑥: マーカーありでも Sprint 証跡不足なら exit 2 を期待したが ${exit_code}（出力: ${out}）"; fail=1; fi
+    if printf '%s' "$out" | grep -q '\[report-format\]'; then echo "FAIL: e2e⑥: マーカーありなのに [report-format] nudge まで出ている（出力: ${out}）"; fail=1; fi
+
+    # ⑦ 最終メッセージが空でも Sprint 証跡チェックは働く（早期 exit 0 の回帰テスト）
+    out=$(CLAUDE_HOOK_REPORT_MARKER_DIR="$e2e_dir" bash "${BASH_SOURCE[0]}" \
+      <<< "$(jq -n --arg t "$sprint_missing_tr" '{session_id:"sess-e2e-empty",stop_hook_active:false,last_assistant_message:"",transcript_path:$t}')" 2>&1 >/dev/null)
+    exit_code=$?
+    if [[ "$exit_code" -eq 2 ]]; then :; else echo "FAIL: e2e⑦: 最終メッセージが空でも Sprint 証跡不足なら exit 2 を期待したが ${exit_code}（出力: ${out}）"; fail=1; fi
+
     rm -rf "$e2e_dir"
   else
     echo "  (e2e スキップ: 一時ディレクトリを作成できない環境)"
@@ -237,7 +284,7 @@ stop_hook_active=$(printf '%s' "$input" | jq -r '.stop_hook_active // "false"' 2
 if [[ "$stop_hook_active" == "true" ]]; then exit 0; fi
 
 # 最終アシスタントメッセージは公式スキーマの last_assistant_message を優先する
-# （hook-events-reference.md #4: transcript は非同期書き込みで現在ターンの最新メッセージを
+# （hook-events-reference.md §4.5: transcript は非同期書き込みで現在ターンの最新メッセージを
 # 含まないことがあると公式に明記されている。last_assistant_message は Stop 時点で
 # 確実に「このターンの最終テキスト」を持つ）。空のときだけ transcript 抽出へフォールバックする
 # （last_assistant_message 自体が未提供のハーネスバージョン・異常系への保険）。
@@ -256,28 +303,39 @@ if [[ -z "$last_text" ]]; then
   fi
 fi
 
-if [[ -z "$last_text" ]]; then exit 0; fi
+# 🔴 `last_text` が空でもここで終了しない。後段の Sprint Review 証跡チェック（Issue #69）は
+#    transcript 全体を見る別軸の判定で、最終メッセージの有無とは独立に動く必要がある
+#    （ツール実行だけで終わるターン・`last_assistant_message` 未提供の異常系でスプリントの
+#    締め忘れが無警告になっていた・Layer 1 正確性指摘）。完了報告の判定だけをスキップする。
+if [[ -n "$last_text" ]]; then
+  # session_id / マーカー保存先を解決する。どちらも解決できない場合はマーカーを一切扱わず
+  # （= 従来どおり classify_text の結果だけで判断する）フェイルセーフは nudge 側に倒す。
+  session_id=$(hook_extract_session_id "$input" || echo "")
+  report_marker_dir="${CLAUDE_HOOK_REPORT_MARKER_DIR:-$(git rev-parse --git-dir 2>/dev/null || echo "")}"
 
-# session_id / マーカー保存先を解決する。どちらも解決できない場合はマーカーを一切扱わず
-# （= 従来どおり classify_text の結果だけで判断する）フェイルセーフは nudge 側に倒す。
-session_id=$(hook_extract_session_id "$input" || echo "")
-report_marker_dir="${CLAUDE_HOOK_REPORT_MARKER_DIR:-$(git rev-parse --git-dir 2>/dev/null || echo "")}"
+  # 適正な完了報告を観測したら、以降の短い受領応答で誤って再報告させないようマーカーを立てる。
+  if [[ "$(is_proper_report "$last_text")" == "yes" ]] && [[ -n "$session_id" ]] && [[ -n "$report_marker_dir" ]]; then
+    mkdir -p "$report_marker_dir" 2>/dev/null || true
+    : > "$(report_ok_marker_path "$session_id" "$report_marker_dir")" 2>/dev/null || true
+  fi
 
-# 適正な完了報告を観測したら、以降の短い受領応答で誤って再報告させないようマーカーを立てる。
-if [[ "$(is_proper_report "$last_text")" == "yes" ]] && [[ -n "$session_id" ]] && [[ -n "$report_marker_dir" ]]; then
-  mkdir -p "$report_marker_dir" 2>/dev/null || true
-  : > "$(report_ok_marker_path "$session_id" "$report_marker_dir")" 2>/dev/null || true
-fi
-
-if [[ "$(classify_text "$last_text")" == "nudge" ]]; then
-  # このセッションで既に適正な完了報告を出したマーカーがあれば、今回が
-  # トリガー語だけの短い受領応答であっても再報告を求めず素通りする（base#543）。
-  if [[ -n "$session_id" ]] && [[ -n "$report_marker_dir" ]]; then
-    if [[ -f "$(report_ok_marker_path "$session_id" "$report_marker_dir")" ]]; then
-      exit 0
+  if [[ "$(classify_text "$last_text")" == "nudge" ]]; then
+    # このセッションで既に適正な完了報告を出したマーカーがあれば、今回が
+    # トリガー語だけの短い受領応答であっても再報告を求めず素通りする（base#543）。
+    # 🔴 ここで `exit 0` しない。抑止するのは **完了報告フォーマットの nudge だけ** であり、
+    #    後段の Sprint Review / Retrospective 証跡チェック（Issue #69）まで一緒に止めると、
+    #    「適正報告を 1 回出したセッションではスプリントの締め忘れが無警告になる」という
+    #    別種の fail-open が生まれる（Layer 1 正確性・テスト観点が独立に実測再現）。
+    _report_nudge_suppressed=0
+    if [[ -n "$session_id" ]] && [[ -n "$report_marker_dir" ]]; then
+      if [[ -f "$(report_ok_marker_path "$session_id" "$report_marker_dir")" ]]; then
+        _report_nudge_suppressed=1
+      fi
+    fi
+    if [[ "$_report_nudge_suppressed" -eq 0 ]]; then
+      hook_block "[report-format] 📋 完了報告フォーマット確認: 直前の報告が「PR マージの詳細」中心になっているにゃ。逐語で再送するのではなく、docs/rules/completion-report-rules.md §1 のテンプレートに沿って **簡潔に書き直して** にゃ（プロセス文言・マージ手順・レビュー往復は削り、先頭に「ご依頼（最初に頼まれたことの再掲）→ アウトカム（何ができるようになったか）」を置く。PR 番号は末尾の補足 1 行）。"
     fi
   fi
-  hook_block "[report-format] 📋 完了報告フォーマット確認: 直前の報告が「PR マージの詳細」中心になっているにゃ。逐語で再送するのではなく、docs/rules/completion-report-rules.md §1 のテンプレートに沿って **簡潔に書き直して** にゃ（プロセス文言・マージ手順・レビュー往復は削り、先頭に「ご依頼（最初に頼まれたことの再掲）→ アウトカム（何ができるようになったか）」を置く。PR 番号は末尾の補足 1 行）。"
 fi
 
 # ── Sprint Review / Retrospective 記録漏れ検知（Issue #69・本リポジトリ固有）──

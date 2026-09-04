@@ -96,8 +96,20 @@ def is_recursive_grep(tokens):
             if name in ("--recursive", "--dereference-recursive"):
                 return True
             continue
-        if "r" in token[1:] or "R" in token[1:]:
-            return True
+        # 短オプションのクラスタ（`-rn` 等）。🔴 値が密着した形（`-eSECRET` / `-f patterns.txt` の
+        # `-fpatterns.txt`）では、**値の文字まで走査すると値の中の r / R を再帰指定と誤読する**
+        # （Layer 1 正確性指摘の実測: `grep -eSECRET credentials_report.txt` が再帰と誤判定され、
+        # `--exclude='credentials*'` を付与された結果 0 件になり「該当なし」と誤結論する fail-open）。
+        # 値を取る短オプションが現れた時点で、それ以降の文字は値なので走査を打ち切る。
+        cluster = token[1:]
+        for idx, ch in enumerate(cluster):
+            if ch in ("r", "R"):
+                return True
+            if "-" + ch in _VALUE_OPTS:
+                # 残りが空なら次トークンが値（上の skip_next 経路と同じ扱い）
+                if idx == len(cluster) - 1:
+                    skip_next = True
+                break
     return False
 
 

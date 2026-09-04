@@ -1,6 +1,6 @@
 #!/bin/bash
 # 再帰 grep への deny 除外オプション自動付与（pre-tool-use-router.sh +
-# .claude/hooks/lib/grep_exclude_normalize.py・L-127）のデグレ検証。
+# .claude/hooks/lib/grep_exclude_normalize.py・L-154）のデグレ検証。
 #
 # 検証対象:
 #   - grep -r / -R / --recursive に --exclude 系が未指定なら updatedInput で除外を付与する
@@ -74,6 +74,12 @@ run_case "--exclude-dir 指定済み" 'grep -rn --exclude-dir=.git "foo" .' pass
 run_case "--include で対象が絞り込み済み" 'grep -rn --include=*.md "foo" .' passthrough
 run_case "git grep 単体" 'git grep -n foo' passthrough
 run_case "非再帰 grep" 'grep -n foo bar.txt' passthrough
+# 🔴 値が密着した短オプションの値に r / R が含まれても再帰と誤判定しない（Layer 1 正確性指摘）。
+# 誤判定すると `--exclude='credentials*'` 等が付与され、明示指定したファイルまでスキップされて
+# 「該当なし」と誤結論する（fail-open）。
+run_case "値密着の -e に r を含む非再帰 grep" 'grep -eSECRET credentials_report.txt' passthrough
+run_case "値密着の -f に r を含む非再帰 grep" 'grep -fpatterns_r.txt notes.txt' passthrough
+run_case "値密着オプションの後に本物の -r がある再帰 grep" 'grep -eSECRET -rn .' rewrite
 run_case "rg（除外構文が異なるため未対応）" 'rg -n foo' passthrough
 run_case "grep を含まないコマンド" 'ls -la docs/' passthrough
 run_case "ヒアドキュメント本文の grep（誤爆防止）" 'cat > /tmp/x.sh <<EOF
@@ -97,6 +103,41 @@ for pat in ".env" "*.pem" "id_rsa"; do
     FAIL=$((FAIL + 1))
   fi
 done
+
+echo "--- deny パターンのシェル注入耐性（--exclude='<値>' への連結） ---"
+# 🔴 deny の値はコマンド文字列へ `--exclude='<値>'` として連結される。`'` を含む値が通ると
+#    クォート境界を脱出して任意コマンドが走る（Layer 1 セキュリティ指摘）。`.claude/settings.json` は
+#    permission-request-auto-allow.sh で編集が自動許可される＝悪意ある PR / インジェクション経由で
+#    到達しうるため、glob として妥当な文字だけを通す allowlist で弾く。
+INJ_DIR=$(mktemp -d)
+mkdir -p "$INJ_DIR/.claude"
+cat > "$INJ_DIR/.claude/settings.json" <<'INJ_EOF'
+{
+  "permissions": {
+    "deny": [
+      "Read(**/x';PWNMARKER;'y)",
+      "Read(**/legit.env)"
+    ]
+  }
+}
+INJ_EOF
+INJ_OUT=$(printf '%s' 'grep -rn foo .' | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' \
+  | CLAUDE_PROJECT_DIR="$INJ_DIR" "$ROUTER" 2>/dev/null | jq -r '.hookSpecificOutput.updatedInput.command // ""')
+if printf '%s' "$INJ_OUT" | grep -q "PWNMARKER"; then
+  echo "  [FAIL] deny 由来の注入ペイロードが更新後コマンドへ混入した: $INJ_OUT"
+  FAIL=$((FAIL + 1))
+else
+  echo "  [PASS] 不正文字を含む deny パターンは除外に使われない"
+  PASS=$((PASS + 1))
+fi
+if printf '%s' "$INJ_OUT" | grep -qF -- "--exclude='legit.env'"; then
+  echo "  [PASS] 正当な deny パターンは従来どおり除外に使われる"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] 正当な deny パターンまで弾いている: $INJ_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$INJ_DIR"
 
 echo "--- 機密ファイルガードのデグレ検証 ---"
 run_case "機密ガード: .env の直接読み取り" 'cat .env' block
