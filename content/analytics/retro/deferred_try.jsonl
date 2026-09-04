@@ -253,3 +253,9 @@
 {"date": "2026-09-04 JST", "title": "base#N 置換の範囲を SYNC_PATHS の新規追加行に限定し検査ツール化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "CLAUDE.md の run_checks 件数記載を実測値へ更新する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "マージ不能な PR では pull_request 起動の CI が生成されない仕様を記録する", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-156"}
+{"date": "2026-09-04 JST", "title": "Layer 1 と Layer 2 の費用対効果を定量化（タイムトラッキング + verdict blocking 率）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 375}
+{"date": "2026-09-04 JST", "title": "Issue #892（trigger_workers_build.py が auto mode classifier にブロックされる）を解決する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 892}
+{"date": "2026-09-04 JST", "title": "姉妹ファイル（run_discussion_review.py / discussion_whiteboard.py）の match→fullmatch 統一", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 894}
+{"date": "2026-09-04 JST", "title": "既存 spec 全数に validate_spec() を通す回帰テストを CI へ組み込む", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "ai-reviewer-strategy.md の exit 2 記述を check-tool-design-rules.md §1 への参照に置き換える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-04 JST", "title": "議論記録（content/discussions/）の schema 検証ツールを新設する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
