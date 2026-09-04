@@ -12,16 +12,27 @@ GitHub Pages で配信する静的ランディングページの **ソース** �
 
 `D-32` は「auto mode classifier が `production` / `release` / **`gh-pages`** 等の名前のブランチへの push を
 独自に本番デプロイと判定しうる」ことを記録している。**これは Workers 本番デプロイの文脈** であり、
-静的 LP の配信は別レーンとして `D-35` で許容している。実測（2026-08-22）では下記の経路で
-ブロックされずに公開できた。
+静的 LP の配信は別レーンとして `D-35` で許容している。実測（2026-08-22）では当時の 1 コマンド形式で
+公開できたが、その後 `pre-git-push-check.sh` の強化により同じ形式はブロックされるようになった（#901）。
+現在は下記の 2 ステップで公開する。
+
+🔴 **2 ステップに分けて実行する**: `pre-git-push-check.sh` はブランチ名を変数展開・コマンド置換
+（`$VAR` / `` $(...) ``）で動的に組み立てる `git push` を静的解析できないため fail-closed でブロックする。
+1 コマンドにまとめず、コミットの作成と push を分離し、push コマンドには **SHA を直書き** する
+（実測: PR #900 マージ後、2 ステップ分解で `ef17d01..e49a01b` の push に成功・2026-09-04 JST）。
 
 ```bash
-# 作業ツリーを触らずに site/ のツリーだけを gh-pages へ載せる
+# ステップ1: リモートの gh-pages を取得し、site/ のツリーだけをコミットして SHA を出力する
+git fetch origin gh-pages
 TREE=$(git rev-parse HEAD:site)
-PARENT=$(git rev-parse refs/heads/gh-pages 2>/dev/null || true)
+PARENT=$(git rev-parse refs/remotes/origin/gh-pages 2>/dev/null || true)
 COMMIT=$(git commit-tree "$TREE" ${PARENT:+-p "$PARENT"} -m "publish: LP を反映する")
-git update-ref refs/heads/gh-pages "$COMMIT"
-git push origin gh-pages
+echo "$COMMIT"
+```
+
+```bash
+# ステップ2: 上記で出力された SHA を直書きして push する（変数展開・$() を使わない）
+git push origin <ステップ1で出力された SHA>:refs/heads/gh-pages
 ```
 
 ブロックされた場合は `mcp__github__push_files` で `gh-pages` を更新する。
