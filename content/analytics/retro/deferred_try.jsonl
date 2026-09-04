@@ -273,3 +273,13 @@
 {"date": "2026-09-04 JST", "title": "GitHub API 呼び出し（_run_gh_raw / _http_get）を共通モジュールへ統一する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 825}
 {"date": "2026-09-04 JST", "title": "SD-3 第 2 系統の条件 3 判定を「差し戻し対象 / 決定と独立 / テスト追加」へ自動分解する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-04 JST", "title": "決定木 Step 2 の判定条件セルに「拾わない理由」を 1 行足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "並行委譲中は Stop フックの WIP 自動保全を抑止する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-05 JST", "title": "PR 作成前に Layer 2 ゲート（E2E + Lighthouse）を機械検査として強制する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "PR 作成後の追加コミットで層 2 証跡の鮮度を再検査する（既に check_evidence_freshness.py で実装済み・陳腐化）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "E2E に animate-spin の実効（計算後 animation）検証を追加する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "check_agent_diff_claim.py にコミット済み差分を含める検証オプションを足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "check_app_thinness.py の allowlist を実測値ベースから設計上限ベースへ見直す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "ui-ux-guidelines の節間参照（§4.4 / §7.2 / §8.5）の関係を可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "ライブリージョン規約の例外ケース（modal / popover 内の一覧）の境界を §7.2 に明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "決定木 Step 5.5 の空振り（対象 retro-try が既に PR 待ち）を事前判定する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "Next.js の useLinkStatus 廃止・改名を検知する仕組みを用意する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
