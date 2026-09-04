@@ -2173,6 +2173,27 @@ def _test_select_step2_targets_pure() -> list[str]:
     return failures
 
 
+def _run_main_capturing(argv: list[str], prs: list[dict]) -> tuple[int, str, str]:
+    """CLI の入口（main()）を argv 差し替えで呼び、(exit code, stdout, stderr) を返す。
+
+    e2e self-test 専用のヘルパー。`get_open_prs` を差し替えるため、呼び出し元が
+    その復元（try/finally）に責任を持つ。#686 の「self-test は本番の入口を経由させる」
+    規律を複数のテスト関数で共有するために 1 箇所へ集約している。
+    """
+    import contextlib
+
+    globals()["get_open_prs"] = lambda: list(prs)
+    sys.argv = ["check_pending_pr_reviews.py"] + argv
+    out, err = io.StringIO(), io.StringIO()
+    code = 0
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            main()
+    except SystemExit as e:  # noqa: PERF203 - テスト用
+        code = e.code if isinstance(e.code, int) else 1
+    return code, out.getvalue(), err.getvalue()
+
+
 def _test_main_mine_or_automation_e2e() -> list[str]:
     """`main()` を経由して `--mine-or-automation` の選択・終了コード・stdout を貫通検証する（#870）。
 
@@ -2181,8 +2202,6 @@ def _test_main_mine_or_automation_e2e() -> list[str]:
     そのまま通す。#710: `run_gh` の fake に argv を記録させ、意図したサブコマンドが `main()` から
     実際に呼ばれていること（＝ analyze_pr へ到達していること）を assert する。
     """
-    import contextlib
-
     failures: list[str] = []
     recorded_argv: list[list[str]] = []
 
@@ -2242,17 +2261,7 @@ def _test_main_mine_or_automation_e2e() -> list[str]:
         112, "dependabot/npm_and_yarn/x-1.0", "evil-dependabot[bot]", "NONE", None
     )
 
-    def run_main(argv: list[str], prs: list[dict]) -> tuple[int, str, str]:
-        globals()["get_open_prs"] = lambda: list(prs)
-        sys.argv = ["check_pending_pr_reviews.py"] + argv
-        out, err = io.StringIO(), io.StringIO()
-        code = 0
-        try:
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                main()
-        except SystemExit as e:  # noqa: PERF203 - テスト用
-            code = e.code if isinstance(e.code, int) else 1
-        return code, out.getvalue(), err.getvalue()
+    run_main = _run_main_capturing
 
     common = ["--mine-or-automation", "--actionable-only", "--session-id", SELF_SESSION_ID_FOR_TEST]
     e2e_cases: list[tuple[str, list[dict], list[int]]] = [
@@ -2481,8 +2490,6 @@ def _test_main_actionable_only_exclusions_e2e() -> list[str]:
     各シナリオは **対照（control）付き** で書く: 除外要因だけを外した同一入力でその PR が
     出力へ現れることを併せて固定し、「たまたま別の理由で消えていた」（＝弁別力ゼロのテスト）を防ぐ。
     """
-    import contextlib
-
     failures: list[str] = []
     active_pr_numbers: set[int] = set()
     # 機械処理用 UTC（人間が読む日時ではない・datetime-rules.md §1）
@@ -2524,17 +2531,7 @@ def _test_main_actionable_only_exclusions_e2e() -> list[str]:
     )
     waiting_user["labels"] = [{"name": "status:waiting-user"}]  # → blocked_waiting_user
 
-    def run_main(argv: list[str], prs: list[dict]) -> tuple[int, str, str]:
-        globals()["get_open_prs"] = lambda: list(prs)
-        sys.argv = ["check_pending_pr_reviews.py"] + argv
-        out, err = io.StringIO(), io.StringIO()
-        code = 0
-        try:
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                main()
-        except SystemExit as e:  # noqa: PERF203 - テスト用
-            code = e.code if isinstance(e.code, int) else 1
-        return code, out.getvalue(), err.getvalue()
+    run_main = _run_main_capturing
 
     # (label, 追加フラグ, active_session へ倒す PR 番号, 入力 PR, 期待される PENDING 番号)
     scenarios: list[tuple[str, list[str], set[int], list[dict], list[int]]] = [
@@ -2557,6 +2554,13 @@ def _test_main_actionable_only_exclusions_e2e() -> list[str]:
             "(1-include-active) --include-active なら active でも残る（除外理由が active_session であることの証明）",
             ["--actionable-only", "--include-active"],
             {104},
+            [mine, other_human],
+            [101, 104],
+        ),
+        (
+            "(1-mine-active) 自 PR: active_session=True でも is_mine なら残る（所有者本人の除外免除・#47）",
+            ["--actionable-only"],
+            {101},
             [mine, other_human],
             [101, 104],
         ),
@@ -3014,7 +3018,7 @@ def _run_self_test() -> None:
     # --actionable-only の 2 系統の除外を main() 経由で行動固定する（#898・M5b / M6 の穴埋め）
     actionable_excl_failures = _test_main_actionable_only_exclusions_e2e()
     failures.extend(actionable_excl_failures)
-    ACTIONABLE_EXCL_CASE_COUNT = 11  # シナリオ 9 + 注入検証 2
+    ACTIONABLE_EXCL_CASE_COUNT = 12  # シナリオ 10 + 注入検証 2
 
     total_cases = (
         len(cases)
