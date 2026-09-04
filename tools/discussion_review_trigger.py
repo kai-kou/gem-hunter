@@ -42,8 +42,15 @@ mcp__github__pull_request_read で取得した値を引数として渡す:
 ## 終了コード（`docs/rules/check-tool-design-rules.md` §1）
 
   0 … 判定が成立した（Layer 2 不要、または起動プランを出力した / --legacy 実行が成功した）
-  1 … 判定に必要な入力を取得できない（PR 情報が引けない）、または --legacy 実行が失敗した
+  1 … 実行系の失敗（PR 情報を取得できない / --legacy 実行が失敗した）
   2 … 判定不能（spec が不在・壊れている・最小構造を満たさない）
+
+⚠️ **標準の 3 値からの逸脱と、その理由**: 本ツールは違反を数える検査器ではなく「Layer 2 を起動すべきか」
+を判定して実行プランを出す **判定器** なので、標準の 1（= 違反あり）に対応する状態を持たない。
+そこで 1 を「実行系の失敗」に割り当て、**判定そのものが成立しない状態はすべて 2 に寄せる**
+（呼び出し元は「2 なら Layer 2 を実施済みとみなさない」の 1 点だけを見ればよい）。入力不足
+（`--diff-lines` 等の渡し忘れ）を 1 に置くのは、それが判定材料の不在ではなく **呼び出し方の誤り**
+（クラウドでは明示引数が必須）であり、引数を足した再実行で解消するためである。
 
 🔴 **2 を 0 に丸めない**（Issue #881）。トリガー該当時に spec が使えないなら「起動せよ」と
 出力してはいけない。判定器が起動を指示し実行系が起動できない状態は fail-open であり、
@@ -54,7 +61,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -131,8 +137,11 @@ def should_trigger(diff_lines: int, labels: set[str]) -> tuple[bool, str]:
     return False, f"差分 {diff_lines} 行・対象ラベルなし（閾値未達）"
 
 
-# participant の name 規約（discussion-review SKILL.md Step 0）: 英数字と _- のみ・32 字以内
-_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+# participant の name 規約は **実行系と同一の定義を import して再利用する**（新しいコピーを作らない）。
+# 判定器だけが緩いと「判定器は起動せよと言うが実行系（run_discussion_review.py の _check_name /
+# discussion_whiteboard.py の _AUTHOR_RE）が拒否する」という #881 と同型の fail-open が別経路で
+# 再発する。run_discussion_review.py のトップレベルは定数定義だけで副作用が無いため import して安全。
+from run_discussion_review import _NAME_RE as _PARTICIPANT_NAME_RE  # noqa: E402
 
 
 def validate_spec(spec_path: Path) -> tuple[bool, str]:
@@ -166,10 +175,12 @@ def validate_spec(spec_path: Path) -> tuple[bool, str]:
         if not isinstance(p, dict):
             return False, f"participants[{i}] がオブジェクトではありません: {spec_path}"
         name = p.get("name")
-        if not isinstance(name, str) or not _NAME_RE.match(name):
+        # 🔴 match ではなく fullmatch を使う: Python の `$` は非 MULTILINE でも
+        # 「末尾の改行の直前」にマッチするため、match だと "a\n" が通ってしまう。
+        if not isinstance(name, str) or not _PARTICIPANT_NAME_RE.fullmatch(name):
             return False, (
-                f"participants[{i}].name が name 規約（英数字と _- ・32 字以内）に反します: "
-                f"{name!r}"
+                f"participants[{i}].name が name 規約（先頭は英数字・以降は英数字と _- ・"
+                f"32 字以内）に反します: {name!r}"
             )
         if not p.get("lens"):
             return False, f"participants[{i}]（{name}）に lens がありません: {spec_path}"
@@ -276,7 +287,8 @@ def main() -> None:
             "fallback_command": (
                 f"python3 tools/discussion_review_trigger.py --pr {args.pr} "
                 f"--diff-lines {diff_lines} --labels \"{','.join(sorted(labels))}\" "
-                f"--changed-files \"{','.join(changed_files)}\" --legacy"
+                f"--changed-files \"{','.join(changed_files)}\" "
+                f"--spec \"{spec_path}\" --legacy"
             ),
         }
         print(json.dumps(plan, ensure_ascii=False, indent=2))
@@ -299,12 +311,15 @@ def main() -> None:
     )
 
     if rc != 0:
+        # 🔴 rc をそのまま転送しない。run_discussion_review.py は spec と無関係の理由でも 2 を返すため、
+        # 転送すると本ツールの exit 2（= spec が使えない）と意味が混線し、呼び出し元が
+        # 「spec を修復せよ」という見当違いの復旧に走る。
         print(
-            f"⚠️ Layer 2 レビュー失敗（exit {rc}）。"
+            f"⚠️ Layer 2 レビュー失敗（run_discussion_review.py exit {rc}）。"
             "Layer 1 / Layer 3 レビューで継続します。",
             file=sys.stderr,
         )
-        sys.exit(rc)
+        sys.exit(1)
 
     print("✅ Layer 2 レビュー完了")
 
@@ -444,11 +459,16 @@ def _self_test() -> None:
 
     import tempfile
 
+    # 一時ファイルは 1 つのディレクトリにまとめ、self-test の最後に一括削除する
+    # （本 self-test は run_checks.sh から毎回走るため、残置すると /tmp に蓄積する）。
+    _tmpdir = tempfile.TemporaryDirectory(prefix="drt_selftest_")
+    _tmp_seq = [0]
+
     def _write_spec(obj) -> Path:
-        fd = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(obj, fd, ensure_ascii=False)
-        fd.close()
-        return Path(fd.name)
+        _tmp_seq[0] += 1
+        path = Path(_tmpdir.name) / f"spec_{_tmp_seq[0]}.json"
+        path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        return path
 
     valid_participants = [
         {"name": "a", "model": "sonnet", "lens": "x"},
@@ -461,10 +481,9 @@ def _self_test() -> None:
     }
 
     # 失敗経路2: JSON としてパースできない
-    bad = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
-    bad.write("{ not json")
-    bad.close()
-    ok, why = validate_spec(Path(bad.name))
+    bad_path = Path(_tmpdir.name) / "broken.json"
+    bad_path.write_text("{ not json", encoding="utf-8")
+    ok, why = validate_spec(bad_path)
     assert ok is False and "JSON" in why, f"壊れた JSON は ok=False のはず（実際: {ok} / {why}）"
 
     # 失敗経路3: participants が 2 名未満（discussion-review SKILL.md Step 0 の検証）
@@ -488,6 +507,26 @@ def _self_test() -> None:
     # 正常系: リポジトリ同梱の本物の spec が検証を通る（これ自体が #881 の回帰テスト）
     ok, why = validate_spec(SPEC_PATH)
     assert ok is True, f"同梱 spec が検証を通らない: {why}"
+
+    # 失敗経路6: name の「境界の外側」の負ケース（#750・Layer 1 指摘）
+    # 末尾改行: Python の `$` は非 MULTILINE でも末尾改行の直前にマッチするため、
+    # `match` + `$` だと "a\n" が通る。fullmatch でこの抜け道を塞いでいることを固定する。
+    ok, _ = validate_spec(_write_spec(
+        {**base, "participants": [{"name": "a\n", "model": "sonnet", "lens": "x"}, valid_participants[1]]}))
+    assert ok is False, "末尾に改行を含む name は ok=False のはず（$ ではなく fullmatch で弾く）"
+
+    # 先頭が英数字でない name: 実行系（run_discussion_review.py / discussion_whiteboard.py）が
+    # 拒否するため、判定器が通すと #881 と同型の「判定器は起動せよと言うが実行系が落ちる」になる。
+    for bad_name in ("-alice", "_bob"):
+        ok, _ = validate_spec(_write_spec(
+            {**base, "participants": [{"name": bad_name, "model": "sonnet", "lens": "x"},
+                                      valid_participants[1]]}))
+        assert ok is False, f"先頭が英数字でない name（{bad_name}）は ok=False のはず"
+
+    # 失敗経路7: participants の要素が dict でない（例外を漏らさず ok=False を返すこと）
+    for bad_participant in ("alice", None, 42, ["alice"]):
+        ok, _ = validate_spec(_write_spec({**base, "participants": [bad_participant, valid_participants[1]]}))
+        assert ok is False, f"participants に非オブジェクト（{bad_participant!r}）があれば ok=False のはず"
 
     # --- 5. 本番の入口（main()）から exit code までの到達確認（#686） ---
     # 判定ロジックだけを直接呼ぶテストでは、main() が validate_spec を呼び忘れても緑になる。
@@ -535,6 +574,24 @@ def _self_test() -> None:
         assert "run_native_discussion_review" in okrun.stdout, (
             f"正常系で起動プランが出ていない:\n{okrun.stdout}"
         )
+
+        # --spec で指定した spec が fallback_command にも引き継がれること。
+        # 引き継がれないと、検証・提示した spec とフォールバック実行で使う spec が食い違い、
+        # 別の観点セットで「実行済み」になる（fail-open・Layer 1 指摘）。
+        alt_spec = REPO_ROOT / "tools" / "discussion_specs" / "code_review.json"
+        okspec = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--pr", "999", "--diff-lines", "400", "--spec", str(alt_spec)],
+            capture_output=True, text=True, cwd=str(REPO_ROOT), env=env2, timeout=30,
+        )
+        assert okspec.returncode == 0, f"--spec 指定の正常系は exit 0 のはず（実際: {okspec.returncode}）"
+        plan = json.loads(okspec.stdout)
+        assert plan["spec"] == str(alt_spec), f"plan.spec が --spec を反映していない: {plan['spec']}"
+        assert f'--spec "{alt_spec}"' in plan["fallback_command"], (
+            f"fallback_command に --spec が引き継がれていない:\n{plan['fallback_command']}"
+        )
+
+    _tmpdir.cleanup()
 
     print("OK: discussion_review_trigger self-test passed")
 
