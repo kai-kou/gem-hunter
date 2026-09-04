@@ -236,6 +236,57 @@ if [ "$tool_name" = "mcp__github__create_pull_request" ] && [ -f "$_repo_root_46
 fi
 unset _repo_root_46
 
+# 4.7. run_checks 証跡 SHA の鮮度検査（Lv3・ブロッキング・Issue #751）
+# 4.5 節は「PR 本文に run_checks 結果表が貼られているか」だけを見ており、その表が
+# **いつの HEAD で取った結果か** は検証していない。昔 run_checks を 1 回実行した結果表を
+# 使い回し、その後に加えた変更は未検証のまま PR を出す逃げ道が残っていたため、判定を
+# tools/check_evidence_freshness.py に委譲する（正規表現の判定ロジックをこの hook 内で
+# 二重定義しない）。PR 本文の run_checks / npm run check 結果セクション内に
+# 「実行時点コミット: `<sha>`」行を要求し、現在の HEAD と突き合わせる。
+#   exit 0 = 一致 / exit 1 = 乖離または証跡行なし（ブロック） / exit 2 = 判定不能（非ブロック）
+# 🔴 exit code の取り違えに注意（docs/rules/check-tool-design-rules.md）: `timeout` 由来の 124 や
+# コマンド不在由来の 127 を「乖離あり（exit 1）」と誤読しない。ブロックするのは exit 1 のときだけで、
+# それ以外の非ゼロ終了・判定器自体の不在は 4.6 節と同じく非ブロッキング警告にとどめる（判定器が
+# 壊れているときに PR 作成そのものを止めない）。ただし黙って素通りさせず、
+# 「証跡鮮度の検知が実質未実行です」と明示した警告を必ず残す。
+evidence_freshness_warning=""
+if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
+  _repo_root_47=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+  _head_sha_47=$(git rev-parse HEAD 2>/dev/null || echo "")
+  if [ ! -f "$_repo_root_47/tools/check_evidence_freshness.py" ]; then
+    evidence_freshness_warning="[pre-pr-create-check] tools/check_evidence_freshness.py が見つかりません（証跡鮮度の検知が実質未実行です）。"
+  elif ! command -v python3 >/dev/null 2>&1; then
+    evidence_freshness_warning="[pre-pr-create-check] python3 が見つかりません（証跡鮮度の検知が実質未実行です）。"
+  elif [ -z "$_head_sha_47" ]; then
+    evidence_freshness_warning="[pre-pr-create-check] 現在の HEAD SHA を取得できません（証跡鮮度の検知が実質未実行です）。"
+  else
+    _cef_exit=0
+    if command -v timeout >/dev/null 2>&1; then
+      _cef_output=$(printf '%s' "$pr_body" | timeout 10 python3 "$_repo_root_47/tools/check_evidence_freshness.py" --head-sha "$_head_sha_47" 2>&1) || _cef_exit=$?
+    else
+      _cef_output=$(printf '%s' "$pr_body" | python3 "$_repo_root_47/tools/check_evidence_freshness.py" --head-sha "$_head_sha_47" 2>&1) || _cef_exit=$?
+    fi
+    if [ "$_cef_exit" -eq 1 ]; then
+      hook_block "[pre-pr-create-check] PR 作成をブロックしました。run_checks 証跡の鮮度が確認できません。
+
+${_cef_output}
+
+PR 本文の \`## run_checks 結果\`（または \`## npm run check 結果\`）セクション内に、現在の HEAD を指す証跡 SHA 行が必要です。
+1. \`bash tools/run_checks.sh\` を現在の HEAD で実行し直す
+2. 結果表の近くに次の行を追加する: 実行時点コミット: \`$(git rev-parse --short "$_head_sha_47" 2>/dev/null || echo "$_head_sha_47")\`
+3. PR 作成を再実行する"
+    elif [ "$_cef_exit" -ne 0 ]; then
+      # exit 2（判定不能）・timeout（124）・python3 内部異常等はブロックしない
+      # （判定器自体が壊れているときに PR 作成そのものを止めない・4.6 節と同じ扱い）。
+      evidence_freshness_warning="[pre-pr-create-check] check_evidence_freshness.py が exit ${_cef_exit} で終了しました（証跡鮮度の検知が実質未実行です）。原因を確認してください。
+${_cef_output}"
+    fi
+    unset _cef_exit _cef_output
+  fi
+  unset _head_sha_47
+fi
+unset _repo_root_47
+
 # 4.8. 自動保全コミットの件名ガード（base#483・Lv3・ブロッキング）
 #
 # squash マージのタイトルは、ブランチが単一コミットのとき **そのコミットの件名をそのまま継承する**。
@@ -386,6 +437,10 @@ fi
 if [ -n "$parallel_safety_warning" ]; then
   _ctx="${_ctx}
 [pre-pr-create-check] ${parallel_safety_warning}"
+fi
+if [ -n "$evidence_freshness_warning" ]; then
+  _ctx="${_ctx}
+${evidence_freshness_warning}"
 fi
 jq -n --arg ctx "$_ctx" '{
   "systemMessage": "[pre-pr-create-check] Layer 0 機械ゲート通過（Layer 1 リマインダーと Warning は Claude のコンテキストに注入済み）。",

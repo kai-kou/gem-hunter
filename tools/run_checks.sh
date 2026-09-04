@@ -159,6 +159,16 @@ else
   skip_check "散らばり指標 self-test (count_change_scatter.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 3.47.2. run_checks 証跡鮮度検査 self-test（#751）。本体は pre-pr-create-check.sh 4.7 節が
+# PR 作成時のみ叩く運用ツールだが、正規表現の判定ロジックは回帰しても静かに誤判定する
+# （証跡 SHA の乖離を見逃す＝古い run_checks 結果の使い回しを検出できなくなる）ため、
+# count_change_scatter.py --self-test と同じ理由で self-test だけは常時実行する。
+if [ -f "$REPO_ROOT/tools/check_evidence_freshness.py" ]; then
+  run_check "run_checks 証跡鮮度検査 self-test (check_evidence_freshness.py --self-test)" python3 tools/check_evidence_freshness.py --self-test
+else
+  skip_check "run_checks 証跡鮮度検査 self-test (check_evidence_freshness.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 3.46. 居残り E2E サーバークリーンアップの self-test（実行本体は 3.54 で E2E 直前に呼ぶ）。
 if [ -f "$REPO_ROOT/tools/clear_stale_e2e_ports.py" ]; then
   run_check "居残り E2E サーバークリーンアップ self-test (clear_stale_e2e_ports.py --self-test)" python3 tools/clear_stale_e2e_ports.py --self-test
