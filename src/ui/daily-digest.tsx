@@ -3,6 +3,8 @@ import type { Locale } from '../domain/model/locale'
 import type { DailyDigest } from '../domain/model/gem'
 import { ownerOf, repoOf, type RepositoryFullName } from '../domain/model/repository-full-name'
 import { toIntlLocaleTag } from './i18n/intl-locale-tag'
+import { LinkPendingAnnouncer } from './link-pending-announcer'
+import { LinkPendingHint } from './link-pending-hint'
 import { FirstVisitNote } from './seen-digest/first-visit-note'
 import { NewSinceLastVisitBadge } from './seen-digest/new-since-last-visit-badge'
 import { SeenDigestProvider } from './seen-digest/seen-digest-provider'
@@ -26,6 +28,11 @@ type DailyDigestLabels = {
   newBadge: string
   /** localStorage が空 / 消去 / 破損しているとき「初回として全件表示」を伝える注記（`US-32`）。 */
   firstVisitNote: string
+  /**
+   * 詳細ページへの遷移中であることを支援技術へ伝える 1 文（`sr-only` のライブリージョンに載る）。
+   * 理由の正本は `link-pending-hint.tsx` / `link-pending-announcer.tsx` の JSDoc（Issue #167）。
+   */
+  linkPending: string
 }
 
 /**
@@ -95,54 +102,62 @@ export function DailyDigest({
           // 🔴 `aria-describedby` で並び順の説明を一覧に紐づける（`ui-ux-guidelines.md` §7.1）。
           // 見出しジャンプでリストへ入る支援技術利用者は `lead` の <p> を読み飛ばすため、
           // これが無いと「なぜこの順序なのか」が伝わらない（Gem Index の生値を撤去した代替説明）。
-          <ol aria-describedby="daily-digest-lead" className="divide-border mt-3 divide-y">
-            {digest.items.map((gem, index) => {
-              // `owner/repo` の分割はドメインの関数へ寄せる（`split('/')[1] ?? ''` を UI に散らさない）。
-              // 形式検証はインフラ層（`static-gem-digest.ts`）が済ませており、満たさない候補は
-              // そもそもここへ届かない（届いていれば `owner/repo` である）。
-              const fullName = gem.repositoryFullName as RepositoryFullName
-              const owner = ownerOf(fullName)
-              const repo = repoOf(fullName)
+          // 遷移中の読み上げは一覧に 1 個だけ（`link-pending-announcer.tsx` の JSDoc・Issue #167）。
+          <LinkPendingAnnouncer label={labels.linkPending}>
+            <ol aria-describedby="daily-digest-lead" className="divide-border mt-3 divide-y">
+              {digest.items.map((gem, index) => {
+                // `owner/repo` の分割はドメインの関数へ寄せる（`split('/')[1] ?? ''` を UI に散らさない）。
+                // 形式検証はインフラ層（`static-gem-digest.ts`）が済ませており、満たさない候補は
+                // そもそもここへ届かない（届いていれば `owner/repo` である）。
+                const fullName = gem.repositoryFullName as RepositoryFullName
+                const owner = ownerOf(fullName)
+                const repo = repoOf(fullName)
 
-              return (
-                <li key={gem.packageName} className="relative flex gap-3 py-4">
-                  <span
-                    aria-hidden="true"
-                    className="text-muted-foreground w-6 shrink-0 text-right text-sm tabular-nums"
-                  >
-                    {index + 1}.
-                  </span>
-                  {/* 第三者由来テキスト（`packageName` / `repositoryFullName`）の折り返し。
-                      判定規則は `ui-ux-guidelines.md` §3（`repository-list.tsx` と同型）。 */}
-                  <div className="min-w-0 flex-1 break-words">
-                    {/*
-                      詳細ページへの遷移（AC-4・独立 URL・モーダルではない）。
-                      カード全体を tap 領域にするため ::after でクリック領域を拡張する
-                      （`repository-list.tsx` と同じ作法）。
-                    */}
-                    <Link
-                      href={`/${locale}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`}
-                      className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                return (
+                  <li key={gem.packageName} className="relative flex gap-3 py-4">
+                    <span
+                      aria-hidden="true"
+                      className="text-muted-foreground w-6 shrink-0 text-right text-sm tabular-nums"
                     >
-                      {gem.packageName}
-                    </Link>{' '}
-                    <NewSinceLastVisitBadge packageName={gem.packageName} label={labels.newBadge} />
-                    <p className="text-muted-foreground mt-1 text-xs">{gem.repositoryFullName}</p>
-                    <p className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                      <span>
-                        {labels.dependentLabel} {numberFormat.format(gem.dependentCount)}
-                      </span>
-                      <span>
-                        <span aria-hidden="true">★ </span>
-                        <span className="sr-only">{labels.starsLabel} </span>
-                        {numberFormat.format(gem.stars)}
-                      </span>
-                    </p>
-                  </div>
-                </li>
-              )
-            })}
-          </ol>
+                      {index + 1}.
+                    </span>
+                    {/* 第三者由来テキスト（`packageName` / `repositoryFullName`）の折り返し。
+                        判定規則は `ui-ux-guidelines.md` §3（`repository-list.tsx` と同型）。 */}
+                    <div className="min-w-0 flex-1 break-words">
+                      {/*
+                        詳細ページへの遷移（AC-4・独立 URL・モーダルではない）。
+                        カード全体を tap 領域にするため ::after でクリック領域を拡張する
+                        （`repository-list.tsx` と同じ作法）。
+                      */}
+                      <Link
+                        href={`/${locale}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`}
+                        className="text-primary rounded-sm font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                      >
+                        {gem.packageName}
+                        {/* 遷移中の視覚ヒント。理由の正本は `link-pending-hint.tsx` の JSDoc（Issue #167）。 */}
+                        <LinkPendingHint />
+                      </Link>{' '}
+                      <NewSinceLastVisitBadge
+                        packageName={gem.packageName}
+                        label={labels.newBadge}
+                      />
+                      <p className="text-muted-foreground mt-1 text-xs">{gem.repositoryFullName}</p>
+                      <p className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                        <span>
+                          {labels.dependentLabel} {numberFormat.format(gem.dependentCount)}
+                        </span>
+                        <span>
+                          <span aria-hidden="true">★ </span>
+                          <span className="sr-only">{labels.starsLabel} </span>
+                          {numberFormat.format(gem.stars)}
+                        </span>
+                      </p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          </LinkPendingAnnouncer>
         )}
       </SeenDigestProvider>
     </section>

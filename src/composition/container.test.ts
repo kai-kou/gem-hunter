@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { DEFAULT_REFILL_TTL_SECONDS } from '../infrastructure/platform/layered-cache'
 import { fakeCacheStorage } from '../infrastructure/platform/workers-cache.test-fake'
 import {
+  TTL_DETAIL_SECONDS,
   TTL_SEARCH_SECONDS,
   getRepositoryDetailUseCase,
   lookupGemIndexes,
@@ -113,6 +114,65 @@ describe('searchRepositoriesUseCase — TokenProvider 切替', () => {
     await searchRepositoriesUseCase()({ keyword: 'container-token-check-2' })
 
     expect(capturedAuth).toBeNull()
+  })
+})
+
+/**
+ * PR #926 Layer 1 セルフレビュー指摘 #9: `container.test.ts` に `etag` / `If-None-Match`
+ * の言及が 0 件で、composition root の ETag 配線（`container.ts` が `GithubRepositoryQuery`
+ * へ `etag: { cache: sharedCache, ttlSeconds: TTL_DETAIL_ETAG_SECONDS }` を渡す配線）を
+ * 消しても単体テストは全て緑のまま通ってしまう欠落があった。
+ *
+ * 公開エクスポート（`getRepositoryDetailUseCase`）経由で実際に `If-None-Match` が送られる
+ * ことを確認する。`CachingRepositoryQuery` の本文 TTL キャッシュ（`TTL_DETAIL_SECONDS` = 300 秒）
+ * が経路を塞ぐため、`Date` だけを偽装して本文 TTL を経過させ、外側キャッシュを MISS へ
+ * 戻す（ETag ストア側の TTL は 24 時間のため生存する・`cache-key.ts` の invalidate 契約と同型）。
+ * `setTimeout` 等は fake 化しない（`toFake: ['Date']`）ため msw 経由の fetch は通常どおり動く。
+ */
+describe('composition root: GithubRepositoryQuery への ETag 配線（PR #926 レビュー指摘 #9）', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('本文 TTL 経過後の再取得で If-None-Match ヘッダーが送られる（配線が生きていることの確認）', async () => {
+    vi.stubEnv('GITHUB_APP_CLIENT_ID', '')
+    vi.stubEnv('GITHUB_APP_INSTALLATION_ID', '')
+    vi.stubEnv('GITHUB_APP_PRIVATE_KEY_PKCS8', '')
+
+    const owner = 'octostub'
+    const repo = 'container-etag-wiring-check'
+    let etagSent = false
+    server.use(
+      http.get('https://api.github.com/repos/:owner/:repo', ({ request }) => {
+        if (request.headers.has('if-none-match')) {
+          etagSent = true
+          return new HttpResponse(null, { status: 304 })
+        }
+        return HttpResponse.json(
+          {
+            ...detailFixture,
+            full_name: `${owner}/${repo}`,
+            name: repo,
+            owner: { ...detailFixture.owner, login: owner },
+          },
+          { headers: { etag: 'W/"container-wiring-etag"' } },
+        )
+      }),
+    )
+
+    const first = await getRepositoryDetailUseCase('user-etag-wiring-token')({ owner, repo })
+    expect(first?.fullName).toBe(`${owner}/${repo}`)
+    expect(etagSent).toBe(false)
+
+    // 本文 TTL（300 秒）を経過させ、CachingRepositoryQuery の外側キャッシュを MISS に
+    // 戻す。ETag ストア（24 時間 TTL）は同じ sharedCache 上の別名前空間なので生存する。
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + (TTL_DETAIL_SECONDS + 1) * 1000)
+
+    const second = await getRepositoryDetailUseCase('user-etag-wiring-token')({ owner, repo })
+
+    expect(etagSent).toBe(true)
+    expect(second?.fullName).toBe(`${owner}/${repo}`)
   })
 })
 

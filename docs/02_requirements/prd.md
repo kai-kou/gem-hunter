@@ -327,7 +327,7 @@ GitHub の REST API では、`watchers_count` および `watchers` は **star �
 
 | ID | 要件 | 優先度 | 内容 |
 |---|---|---|---|
-| **NFR-7** | レート制限に耐える | `P1-MVP` | ① キャッシュ ② 同時同一クエリの request coalescing ③ GitHub API 呼び出しの直列化（公式が並行実行を非推奨としているため）④ 詳細取得での ETag / 条件付きリクエスト ⑤ `x-ratelimit-remaining` の監視による degraded 表示 |
+| **NFR-7** | レート制限に耐える | `P1-MVP` | ① キャッシュ ② 同時同一クエリの request coalescing ③ GitHub API 呼び出しの直列化（公式が並行実行を非推奨としているため）④ 詳細・README 取得での ETag / 条件付きリクエスト ⑤ `x-ratelimit-remaining` の監視による degraded 表示 |
 | **NFR-8** | API 呼び出しの失敗を握りつぶさない | `P1-MVP` | 利用者に伝えたうえでアプリケーションを継続利用可能に保つ。種別の判別は §7 |
 | **NFR-9** | 秘匿情報をクライアントへ露出させない | `P1-MVP` | GitHub トークン・OAuth クライアントシークレット・ユーザーのアクセストークンはすべてサーバー側でのみ扱う。🔵 **トークンが見せうる「データ」の範囲は `NFR-33`（§5.8）が扱う** |
 

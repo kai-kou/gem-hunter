@@ -23,6 +23,9 @@ Open Issue が必須ラベル（type:* / status:* / sp:*）を持っているか
 
 終了コード: 0=OK / 1=違反あり（未必須ラベル Issue 存在） / 2=ツール異常
 """
+
+# tool-wiring-ok: 本判定（--check）は GitHub API への実疎通が必要な手動実行専用
+# （run_checks.sh はオフライン完走を保つ・Issue #288 と同じ扱い。self-test のみ配線済み）。
 import argparse
 import json
 import subprocess

@@ -104,6 +104,9 @@
     python3 tools/check_roadmap_status.py --json
     python3 tools/check_roadmap_status.py --self-test
 """
+
+# tool-wiring-ok: 本判定は GitHub API への実疎通が必要なため run_checks.sh に載せない
+# （Issue #288 と同じ扱い。self-test のみ配線済みで、本判定はロードマップ更新時に手動実行する）。
 from __future__ import annotations
 
 import argparse

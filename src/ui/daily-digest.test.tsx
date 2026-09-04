@@ -14,6 +14,7 @@ const labels = {
   starsLabel: 'star',
   newBadge: '新着',
   firstVisitNote: '初回として全件を表示しています',
+  linkPending: '詳細ページを読み込んでいます',
 }
 
 function makeDigest(items: DailyDigestModel['items']): DailyDigestModel {
@@ -94,6 +95,47 @@ describe('DailyDigest', () => {
       'href',
       '/ja/repos/chalk/ansi-styles',
     )
+  })
+
+  it('遷移中の読み上げ用ライブリージョンを一覧の外（兄弟）に 1 個だけ常設する（§7.2 / Issue #167）', () => {
+    const digest = makeDigest([
+      {
+        packageName: 'chalk',
+        repositoryFullName: 'chalk/chalk',
+        dependentCount: 130085,
+        stars: 22000,
+        gemIndex: gemIndex(-63.9),
+      },
+    ])
+
+    const { container } = render(
+      <DailyDigest digest={digest} labels={labels} locale={locale('ja')} />,
+    )
+
+    const region = container.querySelector('span[role="status"][aria-live="polite"]')
+    expect(region).toBeInTheDocument()
+    // 🔴 一覧（`<ol>`）の **内側** に入れない（ライブリージョンの入れ子・§7.2）。
+    expect(container.querySelector('ol')?.contains(region ?? null)).toBe(false)
+  })
+
+  it('詳細リンクの内側に遷移ペンディング表示（LinkPendingHint）を 1 個持つ（US-22 / Issue #167）', () => {
+    const digest = makeDigest([
+      {
+        packageName: 'chalk',
+        repositoryFullName: 'chalk/chalk',
+        dependentCount: 130085,
+        stars: 22000,
+        gemIndex: gemIndex(-63.9),
+      },
+    ])
+
+    render(<DailyDigest digest={digest} labels={labels} locale={locale('ja')} />)
+
+    const link = screen.getByRole('link', { name: 'chalk' })
+    // 🔴 ページ全体ではなく **リンクの内側** をスコープにする: `useLinkStatus` は直近の
+    // `<Link>` の遷移状態しか読めないため、ヒントをリンクの外（`<li>` 直下など）へ移すと
+    // 機能しなくなる。ページ全体スコープの `getByTestId` はその変異を検知できない。
+    expect(within(link).getAllByTestId('link-pending-hint')).toHaveLength(1)
   })
 
   it('被依存数・star 数を数値付きで表示する（AR-9・Gem Index の生値表示は撤去済み）', () => {
@@ -190,6 +232,7 @@ describe('DailyDigest', () => {
           starsLabel: 'stars',
           newBadge: 'New',
           firstVisitNote: 'Showing all items as your first visit',
+          linkPending: 'Loading the detail page',
         }}
         locale={locale('en')}
       />,
