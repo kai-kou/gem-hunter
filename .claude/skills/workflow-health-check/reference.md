@@ -117,19 +117,27 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
 
 5-g: レーンの意味的生存性チェック（完全版のみ・#420）
   └─ `python3 tools/check_lane_reachability.py --liveness` を実行する
-     （既定の閾値は 48 時間。`--liveness-threshold-hours N` で変えられる）
+     （閾値は `--liveness-threshold-hours N` で変えられる。既定値と判定の扱いの正本は
+     `tools/check_lane_reachability.py` の module docstring「⚠️ `--liveness`」節）
   └─ 本体（構文的到達可能性）が保証するのは「決定木・他スキルのどこかに起動記述が実在するか」
      までで、**その記述が実運用の firing で評価に到達しているか** は射程外。`--liveness` は
      「そのレーンが担当する Issue が直近に閉じられたか」で意味的生存性を近似する
-  └─ ⚠️ WARNING（`stale`）を検出しても **終了コードは変わらない**。飢餓が「上位ブランチが
-     本当に忙しい健全な結果」であることもあり、FAIL / PASS の二値では構造的不足と一時的な
-     逸脱を区別できないため（#420 の対応方針）。判定は読み手が行う
+  └─ ⚠️ WARNING（`stale`）を検出しても **終了コードは変わらない**（判定は読み手が行う）。
+     理由の正本は上記 module docstring
   └─ `stale`（消化実績なし）を検出したら、決定木の **上位ブランチの占有** か **エージング閾値**
      を疑う（`sprint-cycle-router` SKILL.md §5 の飢餓防止条件）。`unknown`（API 障害）は
      飢餓ではないので同じ扱いにしない
-  └─ report-only（Issue の自動生成はしない）。5-a の消化率とは別条件: 5-a は
-     `type:retro-try` の closed/total 比率を見るため「在庫が積み上がったまま消化が止まった」
-     状態でも比率が動かず発火しにくい。5-g は **最後に閉じた時刻** を直接見る
+  └─ ❔ `unknown`（取得できなかった）は **PASS ではない**。トークン（`GH_TOKEN` / `GITHUB_TOKEN`）を
+     供給して再実行する。終了コードは 0 のままなので、終了コードだけを見て「liveness PASS」と
+     週次レポートに記録しない
+  └─ 測るのは **対象 Issue ラベルの対応があるレーンだけ**（現状 `retro-try-handler` /
+     `self-improvement-loop` の 2 レーン）。監査・衛生レーンと `retrospective` は Issue の
+     クローズ数で消化実績を測れないため対象外で、その事実は出力の「未計測」行に出る
+     （表に並んだ行数を「全レーン生存」と読まない）
+  └─ report-only（Issue の自動生成はしない）。5-a の消化率とは別条件: 5-a は closed/total の
+     **比率と open 件数** を見るため、**既に比率が高く open も少ない状態で消化だけが止まった**
+     （例: closed 90 / total 100・open 10・最後の close が 30 日前）ケースでは発火しない。
+     5-g は **最後に閉じた時刻** を直接見るのでこれを拾う
   └─ `tools/run_checks.sh` には配線しない（GitHub API に依存するため。`--self-test` が
      ネットワーク非依存であるという設計原則を壊さない）
 ```
