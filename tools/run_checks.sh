@@ -785,6 +785,17 @@ else
   skip_check "WIP 抑止ガード回帰テスト (test_wip_commit_guard.sh)" "スクリプトが見つかりません"
 fi
 
+# hooks 主要分岐の回帰テスト（Issue #194 / #941）。`bash -n` では検知できないシェルの機能退行
+# （stop-slack-notify の WIP 自動コミット条件・stop-git-check の stash 警告・pre-pr-create-check
+# 4.8 節の自動保全件名ブロック）を、隔離した一時 git リポジトリへ状態を注入して実測する。
+# リポジトリ本体の .git には触れないためネットワーク・実データ非依存。
+if [ -f "$REPO_ROOT/tools/test_hooks_regression.py" ]; then
+  run_check_timeout "hooks 回帰テスト (test_hooks_regression.py)" 180 \
+    python3 tools/test_hooks_regression.py
+else
+  skip_check "hooks 回帰テスト (test_hooks_regression.py)" "スクリプトが見つかりません"
+fi
+
 # ファイルツール経由の .env アクセスガード self-test（Issue #401 / PR #487）。
 # permissions.deny をひな形（.env.example）のために具体名の列挙へ狭めた分、列挙外の変種名
 # （.env.prod / .env.ci 等）を本フックが塞いでいることを判定関数の単位で実測する。

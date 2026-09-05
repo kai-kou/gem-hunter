@@ -484,8 +484,27 @@ def test_stop_git_check_warns_on_stash() -> None:
         )
 
 
-def test_pre_pr_create_check_warns_on_wip_commit() -> None:
-    """[wip] コミット残存は警告のみで PR 作成をブロックしない（Issue #94）。"""
+def _pr_body_with_evidence(work: Path) -> str:
+    """他のゲート（Sprint Goal / 層 2 証跡の表・鮮度）を通過する最小の PR 本文を作る。
+
+    4.8 節（自動保全コミットの件名ガード）だけを単独で検証したいので、それ以外の
+    ブロック要因を先に潰しておく。`実行時点コミット:` は現在の HEAD と一致させる（#751）。
+    """
+    head_sha = _git(work, "rev-parse", "HEAD").stdout.strip()
+    return (
+        "Sprint Goal: test\n\n"
+        "## run_checks 結果\n\n"
+        f"実行時点コミット: `{head_sha}`\n\n"
+        "| check | result |\n|---|---|\n| dummy | PASS |\n"
+    )
+
+
+def test_pre_pr_create_check_blocks_on_wip_commit() -> None:
+    """単一の [wip] 自動保全コミットのままの PR 作成はブロックする（base#483）。
+
+    squash マージのタイトルは単一コミットの件名をそのまま継承するため、意味を成さない
+    件名が main の永続履歴に残る。正本は `pr-review-flow-summary.md` 項目 0.7。
+    """
     with tempfile.TemporaryDirectory() as tmp:
         work = _setup_feature_branch(tmp)
         (work / "README.md").write_text("wip change\n", encoding="utf-8")
@@ -494,26 +513,148 @@ def test_pre_pr_create_check_warns_on_wip_commit() -> None:
         # ブランチを push 済みにしておく（未 push チェックで先にブロックされないように）
         _git(work, "push", "-u", "origin", "feature")
 
-        dummy_body = "Sprint Goal: test\n\n## run_checks 結果\n\n| check | result |\n|---|---|\n| dummy | PASS |\n"
         result = _run_hook(
             PRE_PR_CREATE_CHECK,
             work,
             {
                 "tool_name": "mcp__github__create_pull_request",
-                "tool_input": {"body": dummy_body},
+                "tool_input": {"body": _pr_body_with_evidence(work)},
             },
         )
 
         _check(
-            "pre-pr-create-check: [wip] コミット残存でも exit 0（ブロックしない）",
-            result.returncode == 0,
+            "pre-pr-create-check: 単一 [wip] コミットは PR 作成をブロックする（exit 2）",
+            result.returncode == 2,
             f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
         )
         combined = result.stdout + result.stderr
         _check(
-            "pre-pr-create-check: [wip] コミット警告を出力する",
+            "pre-pr-create-check: ブロック理由に件名と base#483 を示す",
+            "PR 作成をブロックしました" in combined and "base#483" in combined,
+            combined,
+        )
+
+
+def test_pre_pr_create_check_allows_wip_commit_when_branch_has_multiple_commits() -> None:
+    """[wip] が HEAD でもブランチが複数コミットならブロックしない（境界の外側・#750）。
+
+    squash マージは複数コミットの PR では PR タイトルを使い HEAD の件名を継承しないため、
+    4.8 節のブロック条件は「件名が自動保全定型 **かつ** ブランチ上のコミット数 <= 1」の AND。
+    この負ケースが無いと、AND を落として件名だけで判定する変異を検知できない。
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        work = _setup_feature_branch(tmp)
+        (work / "README.md").write_text("meaningful change\n", encoding="utf-8")
+        _git(work, "add", "README.md")
+        _git(work, "commit", "-m", "fix: 意味のある 1 つ目のコミット")
+        (work / "NOTES.md").write_text("wip change\n", encoding="utf-8")
+        _git(work, "add", "NOTES.md")
+        _git(work, "commit", "-m", "[wip] セッション終了前自動コミット（テスト）")
+        _git(work, "push", "-u", "origin", "feature")
+
+        result = _run_hook(
+            PRE_PR_CREATE_CHECK,
+            work,
+            {
+                "tool_name": "mcp__github__create_pull_request",
+                "tool_input": {"body": _pr_body_with_evidence(work)},
+            },
+        )
+
+        combined = result.stdout + result.stderr
+        _check(
+            "pre-pr-create-check: 複数コミットなら [wip] が HEAD でもブロックしない",
+            result.returncode != 2,
+            f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
+        )
+        _check(
+            "pre-pr-create-check: 複数コミットでも [wip] 残存の非ブロッキング警告は出す",
             "[wip]" in combined and "警告" in combined,
             combined,
+        )
+
+
+def _setup_feature_branch_without_base(tmp_dir: Path) -> Path:
+    """origin/main を解決できない feature ブランチを作る（未 fetch・ミラー構成違い相当）。
+
+    リモート追跡参照だけを消す（`git remote remove origin` にしないのは、ブランチ未 push の
+    判定が 4.8 節より先に発火してしまい、検証したい分岐へ到達できなくなるため）。
+    """
+    work = _setup_feature_branch(tmp_dir)
+    _git(work, "update-ref", "-d", "refs/remotes/origin/main")
+    return work
+
+
+def test_pre_pr_create_check_blocks_when_base_unresolved() -> None:
+    """origin/main を解決できないときは保守側（ブロック）へ倒す（fail-closed 分岐）。
+
+    4.8 節のブロック条件は 3 項の AND で、第 2 項は
+    `[ "$_base_resolved" = false ] || [ "$_branch_commits" -le 1 ]` の OR。
+    通常の隔離リポジトリでは `origin/main` が必ず解決できるため `_base_resolved` は常に true になり、
+    この OR の左辺（判定不能時のフォールバック）が一度も実行されない。ブランチを **複数コミット**
+    にしておくことで右辺（`-le 1`）を偽にし、左辺だけがブロックを成立させる状況を作る。
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        work = _setup_feature_branch_without_base(tmp)
+        (work / "README.md").write_text("meaningful change\n", encoding="utf-8")
+        _git(work, "add", "README.md")
+        _git(work, "commit", "-m", "fix: 意味のある 1 つ目のコミット")
+        (work / "NOTES.md").write_text("wip change\n", encoding="utf-8")
+        _git(work, "add", "NOTES.md")
+        _git(work, "commit", "-m", "[wip] セッション終了前自動コミット（テスト）")
+        _git(work, "push", "-u", "origin", "feature")
+        # push で origin/feature は作られるが origin/main は復活しない（判定不能のまま）
+        _git(work, "update-ref", "-d", "refs/remotes/origin/main")
+
+        result = _run_hook(
+            PRE_PR_CREATE_CHECK,
+            work,
+            {
+                "tool_name": "mcp__github__create_pull_request",
+                "tool_input": {"body": _pr_body_with_evidence(work)},
+            },
+        )
+
+        combined = result.stdout + result.stderr
+        _check(
+            "pre-pr-create-check: origin/main 未解決なら複数コミットでもブロックする（fail-closed）",
+            result.returncode == 2 and "base#483" in combined,
+            f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
+        )
+        _check(
+            "pre-pr-create-check: 判定不能時は origin/main の同期を促す",
+            "git fetch origin" in combined,
+            combined,
+        )
+
+
+def test_pre_pr_create_check_allows_meaningful_subject_mentioning_auto_commit() -> None:
+    """自動保全の定型文言を **含む** が先頭一致しない件名はブロックしない（境界の外側・#750）。
+
+    4.8 節の正規表現は `^(...)` で各代替に先頭アンカーを効かせている。括弧を落とすと
+    `^` が最初の代替にしか係らず、`fix: revert accidental auto-commit before compaction hack`
+    のような正当な件名まで部分一致で誤ブロックする。この負ケースがその変異を検知する。
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        work = _setup_feature_branch(tmp)
+        (work / "README.md").write_text("meaningful change\n", encoding="utf-8")
+        _git(work, "add", "README.md")
+        _git(work, "commit", "-m", "fix: revert accidental auto-commit before compaction hack")
+        _git(work, "push", "-u", "origin", "feature")
+
+        result = _run_hook(
+            PRE_PR_CREATE_CHECK,
+            work,
+            {
+                "tool_name": "mcp__github__create_pull_request",
+                "tool_input": {"body": _pr_body_with_evidence(work)},
+            },
+        )
+
+        _check(
+            "pre-pr-create-check: 定型文言を含むだけの正当な件名はブロックしない",
+            result.returncode != 2,
+            f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
         )
 
 
@@ -541,7 +682,10 @@ def main() -> int:
     if not PRE_PR_CREATE_CHECK.is_file():
         print(f"SKIP: {PRE_PR_CREATE_CHECK} が見つかりません")
     else:
-        test_pre_pr_create_check_warns_on_wip_commit()
+        test_pre_pr_create_check_blocks_on_wip_commit()
+        test_pre_pr_create_check_allows_wip_commit_when_branch_has_multiple_commits()
+        test_pre_pr_create_check_allows_meaningful_subject_mentioning_auto_commit()
+        test_pre_pr_create_check_blocks_when_base_unresolved()
 
     if _FAILURES:
         print(f"\n{len(_FAILURES)} 件失敗:")
