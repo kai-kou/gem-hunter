@@ -85,6 +85,8 @@ function backoffMs(attempt) {
  * 1 件のリポジトリの `stargazers_count` を取得する。
  *
  * - `404`（リポジトリの改名・削除・非公開化）はリトライしない（即座に失敗）。
+ * - `401`（トークン不正・失効）もリトライしない（`error.authError = true` を立てて即座に失敗・
+ *   恒久的な設定誤りでリトライしても結果は変わらないため。PR #949 セルフレビュー NIT 指摘）。
  * - primary rate limit 枯渇はリトライしない（`error.rateLimited = true` を立てて即座に失敗）。
  * - それ以外の失敗（5xx・secondary rate limit・network error）は `maxRetries` 回まで
  *   指数バックオフでリトライする（`retry-after` があれば優先）。
@@ -96,7 +98,7 @@ function backoffMs(attempt) {
  * @param {number} [args.maxRetries]
  * @param {(ms:number)=>Promise<void>} [args.sleepImpl]
  * @returns {Promise<{stars:number, attempts:number}>}
- * @throws {Error & {attempts:number, rateLimited?:boolean}}
+ * @throws {Error & {attempts:number, rateLimited?:boolean, authError?:boolean}}
  */
 export async function fetchRepoStars({
   repositoryFullName,
@@ -133,6 +135,7 @@ export async function fetchRepoStars({
     let waitMs = backoffMs(attempt)
     let rateLimited = false
     let notFound = false
+    let authError = false
     try {
       const res = await fetchImpl(url, { headers })
       if (res?.ok) {
@@ -145,6 +148,10 @@ export async function fetchRepoStars({
       } else if (res?.status === 404) {
         lastMessage = `リポジトリが見つかりません（${repositoryFullName}）`
         notFound = true
+      } else if (res?.status === 401) {
+        // トークン不正・失効は恒久的な設定誤りで、リトライしても結果は変わらない（404 と同様に即座に失敗）。
+        lastMessage = `GitHub API の認証に失敗しました（401・トークン不正の可能性・${repositoryFullName}）`
+        authError = true
       } else if (res?.status === 403 || res?.status === 429) {
         if (isRateLimitExhausted(res)) {
           lastMessage = `GitHub API のレート制限に達しました（${repositoryFullName}）`
@@ -160,10 +167,11 @@ export async function fetchRepoStars({
       lastMessage = err instanceof Error ? err.message : String(err)
     }
 
-    if (notFound || rateLimited) {
+    if (notFound || rateLimited || authError) {
       const error = new Error(lastMessage)
       error.attempts = attempts
       error.rateLimited = rateLimited
+      error.authError = authError
       throw error
     }
     // 最後の試行で失敗したときは待たずに抜ける
@@ -189,13 +197,14 @@ export async function fetchRepoStars({
  * @param {string|null} [args.token]
  * @param {number} [args.maxRetries]
  * @param {(ms:number)=>Promise<void>} [args.sleepImpl]
- * @param {(info:{repositoryFullName:string, ok:boolean, stars?:number, message?:string, rateLimited?:boolean})=>void} [args.onProgress]
+ * @param {(info:{repositoryFullName:string, ok:boolean, stars?:number, message?:string, rateLimited?:boolean, authError?:boolean})=>void} [args.onProgress]
  * @returns {Promise<{
  *   records: object[],
  *   requestCount: number,
  *   refreshedCount: number,
  *   failures: {repositoryFullName:string, message:string}[],
  *   rateLimited: boolean,
+ *   authError: boolean,
  * }>}
  */
 export async function refreshStars({
@@ -214,14 +223,20 @@ export async function refreshStars({
   const failures = []
   let requestCount = 0
   let rateLimited = false
+  // 🔴 401（トークン不正・失効）はレート制限と同じ「以降の候補も恒久的に失敗する」性質を持つため、
+  // rateLimited と同様にバッチを早期スキップへ倒す（残り候補分の無駄なリクエストと待機を避ける・
+  // PR #949 セルフレビュー NIT 指摘）。原因が別なので rateLimited とは別フラグで報告する。
+  let authError = false
   let refreshedCount = 0
 
   for (const candidate of candidates) {
-    if (rateLimited) {
+    if (rateLimited || authError) {
       records.push(candidate)
       failures.push({
         repositoryFullName: candidate?.repositoryFullName ?? '(unknown)',
-        message: 'GitHub API のレート制限に達したためスキップしました（既存値を保持）',
+        message: rateLimited
+          ? 'GitHub API のレート制限に達したためスキップしました（既存値を保持）'
+          : 'GitHub API の認証エラー（401）が続いているためスキップしました（既存値を保持）',
       })
       continue
     }
@@ -244,14 +259,16 @@ export async function refreshStars({
       failures.push({ repositoryFullName: candidate?.repositoryFullName ?? '(unknown)', message })
       records.push(candidate)
       if (err?.rateLimited) rateLimited = true
+      if (err?.authError) authError = true
       onProgress?.({
         repositoryFullName: candidate?.repositoryFullName,
         ok: false,
         message,
         rateLimited: !!err?.rateLimited,
+        authError: !!err?.authError,
       })
     }
   }
 
-  return { records, requestCount, refreshedCount, failures, rateLimited }
+  return { records, requestCount, refreshedCount, failures, rateLimited, authError }
 }

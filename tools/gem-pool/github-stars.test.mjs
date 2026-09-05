@@ -130,6 +130,78 @@ describe('fetchRepoStars', () => {
     expect(sleep.waited).toEqual([])
   })
 
+  it('primary rate limit 枯渇（429・x-ratelimit-remaining: 0）もリトライせず rateLimited フラグを立てる', async () => {
+    // 判定は `res.status === 403 || res.status === 429` の OR 条件（実装コメント: GitHub は
+    // 403/429 のどちらでも返しうる）。403 側だけテストがあり `|| res.status === 429` を削っても
+    // 全緑になっていた（PR #949 セルフレビュー WARNING 指摘）。
+    const { fetchImpl, calls } = makeFetchImpl([
+      errorResponse(429, { 'x-ratelimit-remaining': '0' }),
+    ])
+    const sleep = makeSleepImpl()
+    const err = await fetchRepoStars({
+      repositoryFullName: 'a/b',
+      fetchImpl,
+      sleepImpl: sleep.sleepImpl,
+    }).catch((e) => e)
+    expect(err.rateLimited).toBe(true)
+    expect(err.attempts).toBe(1)
+    expect(calls).toHaveLength(1)
+    expect(sleep.waited).toEqual([])
+  })
+
+  it('401（認証エラー）はリトライせず即座に失敗する（authError フラグを立てる）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([errorResponse(401)])
+    const sleep = makeSleepImpl()
+    const err = await fetchRepoStars({
+      repositoryFullName: 'a/b',
+      fetchImpl,
+      sleepImpl: sleep.sleepImpl,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.attempts).toBe(1)
+    expect(err.authError).toBe(true)
+    expect(err.rateLimited).toBeFalsy()
+    expect(calls).toHaveLength(1)
+    expect(sleep.waited).toEqual([])
+  })
+
+  it('ネットワーク例外（fetchImpl が Error を throw）は指数バックオフでリトライし、最終的に成功する', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      new Error('ECONNRESET'),
+      okResponse({ stargazers_count: 55 }),
+    ])
+    const sleep = makeSleepImpl()
+    const result = await fetchRepoStars({
+      repositoryFullName: 'a/b',
+      fetchImpl,
+      sleepImpl: sleep.sleepImpl,
+      maxRetries: 2,
+    })
+    expect(result).toEqual({ stars: 55, attempts: 2 })
+    expect(calls).toHaveLength(2)
+    expect(sleep.waited).toEqual([500])
+  })
+
+  it('ネットワーク例外（fetchImpl が Error を throw）がリトライ回数を使い切ったら失敗する', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      new Error('ECONNRESET'),
+      new Error('ETIMEDOUT'),
+      new Error('ECONNRESET'),
+    ])
+    const sleep = makeSleepImpl()
+    const err = await fetchRepoStars({
+      repositoryFullName: 'a/b',
+      fetchImpl,
+      sleepImpl: sleep.sleepImpl,
+      maxRetries: 2,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toMatch(/ECONNRESET/)
+    expect(err.attempts).toBe(3)
+    expect(calls).toHaveLength(3)
+    expect(sleep.waited).toEqual([500, 1000])
+  })
+
   it('secondary rate limit（403 だが remaining 0 でない）は retry-after を尊重してリトライする', async () => {
     const { fetchImpl, calls } = makeFetchImpl([
       errorResponse(403, { 'retry-after': '2' }),
@@ -230,6 +302,21 @@ describe('refreshStars（完了条件 2: 失敗してもバッチ全体を止め
     expect(result.records.map((r) => r.stars)).toEqual([100, 20, 30]) // 2, 3 件目は旧値のまま
     expect(calls).toHaveLength(2) // 3 件目はネットワークへ行っていない
     expect(result.rateLimited).toBe(true)
+    expect(result.failures.map((f) => f.repositoryFullName)).toEqual(['a/two', 'a/three'])
+    expect(result.failures[1].message).toMatch(/スキップ/)
+  })
+
+  it('401（認証エラー）を検知したら、以降の候補へネットワークリクエストを行わず旧値のままスキップする（トークン不正はバッチ全体で恒久的なため）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      okResponse({ stargazers_count: 100 }),
+      errorResponse(401),
+      // 3 件目のレスポンスは用意しない（呼ばれたら makeFetchImpl が例外を投げてテストが落ちる）
+    ])
+    const result = await refreshStars({ candidates, fetchImpl })
+    expect(result.records.map((r) => r.stars)).toEqual([100, 20, 30]) // 2, 3 件目は旧値のまま（完了条件 2）
+    expect(calls).toHaveLength(2) // 3 件目はネットワークへ行っていない
+    expect(result.authError).toBe(true)
+    expect(result.rateLimited).toBe(false) // 認証エラーとレート制限は別要因
     expect(result.failures.map((f) => f.repositoryFullName)).toEqual(['a/two', 'a/three'])
     expect(result.failures[1].message).toMatch(/スキップ/)
   })

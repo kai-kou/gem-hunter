@@ -282,6 +282,30 @@ export function decideOutputWrite({
 }
 
 /**
+ * star 再取得を実行すべきかを判定する（純粋関数・GitHub API を一切叩かない）。
+ *
+ * 🔴 `decision.write` が false（dry-run・部分実行の書き込み拒否）の実行では、配信データを
+ * 書かないと分かっているのに GitHub のレート枠だけを消費してしまうため再取得しない
+ * （PR #949 Layer 1 セルフレビュー CRITICAL 指摘: この分岐が薄い純関数に切り出されておらず、
+ * `main()` を通す E2E も無かったため、条件を壊しても全テストが緑のまま通っていた）。
+ * 候補が 0 件のときも同様に再取得しない（`refreshStars` を空配列で呼んでも無意味なため）。
+ *
+ * @param {Object} args
+ * @param {{write:boolean, reason:string|null}} args.decision `decideOutputWrite()` の戻り値
+ * @param {ReadonlyArray<unknown>} args.digestCandidates star 再取得の対象候補
+ * @returns {{shouldRefresh:boolean, skipReason:string|null}}
+ */
+export function decideStarRefresh({ decision, digestCandidates }) {
+  if (!Array.isArray(digestCandidates) || digestCandidates.length === 0) {
+    return { shouldRefresh: false, skipReason: '候補が 0 件のため' }
+  }
+  if (!decision?.write) {
+    return { shouldRefresh: false, skipReason: decision?.reason ?? 'dry-run' }
+  }
+  return { shouldRefresh: true, skipReason: null }
+}
+
+/**
  * 出力ディレクトリに残った **孤児シャード**（今回の索引に載らない `*.json`）を選ぶ。
  *
  * 索引とディスクの不一致を作らないための後始末。`index.json` 自身は常に残す。
@@ -470,7 +494,8 @@ export async function main() {
   // （二重にソートロジックを持たない・DRY）。
   const digestCandidates = records.slice(0, args.digestLimit)
   let starRefresh = { records: digestCandidates, requestCount: 0, refreshedCount: 0, failures: [] }
-  if (decision.write && digestCandidates.length > 0) {
+  const starRefreshDecision = decideStarRefresh({ decision, digestCandidates })
+  if (starRefreshDecision.shouldRefresh) {
     // #310: 「今日の Gem」の star 数を GitHub API で取り直す（鮮度のばらつき解消）。
     // 対象は digest 候補（既定 300 件）のみ。候補プール全体・レジストリ別シャードの star は
     // Ecosyste.ms 由来のまま据え置く（Gem Index の並び順への影響・シャード鮮度は対象外・Issue #310）。
@@ -487,11 +512,13 @@ export async function main() {
     })
     progress(
       `star 再取得完了: 成功 ${starRefresh.refreshedCount}/${digestCandidates.length}` +
-        ` (requests=${starRefresh.requestCount}${starRefresh.rateLimited ? ', レート制限で中断' : ''})`,
+        ` (requests=${starRefresh.requestCount}` +
+        `${starRefresh.rateLimited ? ', レート制限で中断' : ''}` +
+        `${starRefresh.authError ? ', 認証エラー（401）で中断' : ''})`,
     )
   } else if (digestCandidates.length > 0) {
     progress(
-      `star 再取得をスキップしました（書き込みなしの実行のため。理由: ${decision.reason ?? 'dry-run'}）`,
+      `star 再取得をスキップしました（書き込みなしの実行のため。理由: ${starRefreshDecision.skipReason ?? 'dry-run'}）`,
     )
   }
 
@@ -639,8 +666,13 @@ function buildSummary({
       requestCount: starRefresh?.requestCount ?? 0,
       failureCount: starRefresh?.failures?.length ?? 0,
       rateLimited: starRefresh?.rateLimited ?? false,
+      authError: starRefresh?.authError ?? false,
     },
-    top: records.slice(0, TOP_ROWS).map((r, i) => ({
+    // 🔴 star 再取得後の値で表示する（`records` は再取得前のまま・PR #949 セルフレビュー指摘）。
+    // `starRefresh.records` は digestCandidates（records の先頭 digestLimit 件）と同順・同数を
+    // 保つ契約（`refreshStars` の実装）なので、digestLimit < TOP_ROWS のときは自然に件数が減るだけで
+    // 安全（未取得の行を古い星数のまま紛れ込ませない）。
+    top: starRefresh.records.slice(0, TOP_ROWS).map((r, i) => ({
       rank: i + 1,
       repositoryFullName: r.repositoryFullName,
       packageName: r.packageName,
@@ -667,7 +699,8 @@ function renderSummary(s, args) {
   lines.push(
     `star 再取得（#310・今日の Gem のみ対象）: ${s.starRefresh.refreshedCount}/${s.starRefresh.candidateCount} 件成功` +
       ` (requests=${s.starRefresh.requestCount}, failures=${s.starRefresh.failureCount}` +
-      `${s.starRefresh.rateLimited ? ', レート制限で中断' : ''})`,
+      `${s.starRefresh.rateLimited ? ', レート制限で中断' : ''}` +
+      `${s.starRefresh.authError ? ', 認証エラー（401）で中断' : ''})`,
   )
 
   lines.push('')
