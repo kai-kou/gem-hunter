@@ -540,3 +540,27 @@ round 1 の自分の「3 箇所は一致している」という評価を conces
 
 **関連**: PR #906 / #751（対象 Issue）/ #770（`check_selftest_wiring.py` の第 2 軸）/ #909（自前フェンス
 判定の横断検査）/ #896（self-test の負ケースが構造異常に偏る）/ L-146（多層防御の 1 層だけ潰した結果の解釈）。
+
+---
+
+## L-160: `merge_pull_request` の `expectedHeadSha` に短縮 SHA を渡すと 409 で弾かれる（2026-09-05・PR #962）
+
+**症状**: `mcp__github__merge_pull_request(..., expectedHeadSha="273d277f583b1e9b...")` が
+`409 Head branch was modified. Review and try the merge again.` で失敗する。他のセッションが
+head を書き換えたわけではないのに、競合と同じエラー文が返るため原因を取り違えやすい。
+
+**原因**: 短縮 SHA（`git rev-parse --short HEAD` の出力）や、それを目視で桁数だけ伸ばした値を渡した。
+GitHub は 40 文字のフル SHA との完全一致でしか照合しないため、実際の head と一致せず「head が
+変更された」と判定される。**桁数を推測で埋めるのは捏造にあたる**（L-113）。
+
+**対策**: `expectedHeadSha` は必ず実測値を渡す。
+
+```bash
+git rev-parse HEAD                       # ローカル head（push 済みであることが前提）
+git fetch origin <branch> -q && git rev-parse FETCH_HEAD   # リモート head を実測する場合
+```
+
+409 を受けたら、まず本エントリを疑って SHA の桁数を確認する（実際の競合なら、リモート head が
+ローカルと異なる値になっているはずなので上記 2 コマンドで区別できる）。
+
+**判定基準**: 「その SHA は実測値か、それとも短縮形か／目視で伸ばした値か？」

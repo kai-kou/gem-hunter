@@ -96,6 +96,8 @@ console.log(displayScore); // "100" が出力（一貫性あり）
 
 ## L-156: マージ不能（`mergeable_state: dirty`）な PR では `pull_request` 起動の CI が生成されない（2026-09-04・PR #883）
 
+> **マージ判定へ戻る導線**: 本症状で check run が不在のままマージ可否を決めるときは、`docs/rules/pr-review-flow.md`「CI check run が不在のときの判定」の 3 手順に従う（#961）。
+
 **症状**: PR を作成したのに、`quality-checks.yml`（`on: pull_request`）の check run が **いつまでも現れない**。
 `mcp__github__pull_request_read(method="get_check_runs")` には CodeQL や GitGuardian など他系統だけが並び、
 `mcp__github__actions_list(method="list_workflow_runs", resource_id="quality-checks.yml", workflow_runs_filter={"branch": "<作業ブランチ>"})`

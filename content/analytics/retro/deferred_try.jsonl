@@ -331,3 +331,9 @@
 {"date": "2026-09-05 JST", "title": "24 時間未満でも「操作だけ残っている PR」は状態で回収判定する（時間閾値の隙間）", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 912}
 {"date": "2026-09-05 JST", "title": "完了条件の実測を PR 作成前に取るかマージ後の公開反映で取るかのタイミングを明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "ドキュメントの「以下 N 点」という項目数宣言が項目追加で古くなるのを防ぐ", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "run_checks.sh のフル実行が 1 セッションで 3 回走り、結果表も PR 本文に貼りきれない", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-05 JST", "title": "check run 不在時の切り分け（mergeable_state 確認・根拠の記録）をマージ前ゲートに機械強制する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 959}
+{"date": "2026-09-05 JST", "title": "check_hot_budget.py の再棚卸し合図が常態化し、本当に直すべき NG が読み飛ばされる", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 798}
+{"date": "2026-09-05 JST", "title": "--verify-layer1 の reviews/inline カウントが head 更新後に何を数えているか、実測と実装の突き合わせが無い", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "Markdown 検査 3 層（prettier / check_markdown_table_columns.py / check_cjk_markdown.py）の責務分担が未文書化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "merge_pull_request の expectedHeadSha にフル SHA が要る旨をどこにも書いていない", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-160"}
