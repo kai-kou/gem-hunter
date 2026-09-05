@@ -248,6 +248,7 @@ Monitor(pid={HEARTBEAT_PID}, description="PR #{pr_number} ハートビート（�
 | PR 作成直後（作成セッションが実行中） | `awaiting_review` | 自 PR は自分でセルフレビュー実行 → マージ |
 | アイドル化した自/孤児 PR・未解決スレッドなし | `needs_prompt` | **観点別フレッシュ文脈セルフレビューを実行** → 指摘解消 → 即マージ |
 | 未解決スレッドあり（CI 失敗・人手コメント等） | `needs_response` | 指摘対応（修正 or スキップ + 返信 + Resolve）→ マージ |
+| 未解決スレッド全件が返信済みで Resolve だけが残っている（または Resolve 済みか未検証） | `needs_resolve_check` | `pr-review-watcher` の「Resolve 確認セクション」へ復帰（返信はやり直さず Resolve のみ実行） |
 
 > 外部 AI レビュアー（Copilot/Gemini）への依頼・催促・再依頼は **廃止済み**（飼い主決定）。`check_pending_pr_reviews.py` は外部応答の 25 分タイムアウトを待たず、Layer 0（機械ゲート）+ Layer 1（観点別フレッシュ文脈セルフレビュー）通過で即マージする。催促・再依頼の手順は **存在しない**（過去の Gemini クォータ / Copilot エラー / 両者未応答フォールバック手順は廃止に伴い削除済み）。
 
@@ -309,6 +310,7 @@ python3 tools/check_pending_pr_reviews.py --actionable-only --json
 |--------|------|------|
 | `needs_prompt` | Layer 1 セルフレビュー要実施（アイドル化した自/孤児 PR・未解決なし） | **観点別フレッシュ文脈セルフレビューを実行** → 指摘解消 → 即マージ（外部催促はしない） |
 | `needs_response` | 未解決スレッドあり（CI 失敗・人手コメント等） | 指摘対応から再開（修正 or スキップ + 返信 + Resolve） |
+| `needs_resolve_check` | 未解決スレッド全件が返信済みで Resolve だけが残っている（または Resolve 済みか未検証） | `pr-review-watcher` の「Resolve 確認セクション」へ復帰（返信はやり直さず Resolve のみ実行） |
 | `awaiting_review` | PR 作成直後（作成セッションがセルフレビュー実行中） | 自 PR は自分で実行 → マージ。他 PR は待機 |
 | `no_action` | Claude 以外 / 手動 PR | スキップ |
 
@@ -339,6 +341,9 @@ awaiting_review（PR 作成直後・作成セッションが実行中）
 
 needs_response（未解決スレッドあり・CI 失敗 / 人手コメント等）
   └─ 指摘対応（Step 3 から）→ マージ
+
+needs_resolve_check（未解決スレッド全件が返信済みで Resolve だけが残っている・または未検証）
+  └─ `pr-review-watcher` の「Resolve 確認セクション」へ復帰（返信はやり直さず Resolve のみ実行）
 
 no_action
   └─ スキップ

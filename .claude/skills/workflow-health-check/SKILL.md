@@ -59,6 +59,7 @@ allowed-tools: Bash, Read, mcp__github__list_issues, mcp__github__issue_read, mc
 1-d: レビュー待ち PR 復帰
   └─ python3 tools/check_pending_pr_reviews.py --actionable-only を実行
   └─ needs_response → pr-review-watcher フローに復帰（指摘対応）
+  └─ needs_resolve_check → pr-review-watcher の「Resolve 確認セクション」へ復帰
   └─ awaiting_review → 経過時間チェック → 催促 or 問題なし判定 → pr-review-watcher への引き継ぎ（自動マージは行わない）
   └─ ⚠️ クラウドで gh 取得自体が失敗した場合、本スクリプトは `NO_PENDING_PRS`（exit 0）ではなく
      **exit code 3** で終了する（「0件」と誤解釈しない・Issue #130）。exit code 3 のときは

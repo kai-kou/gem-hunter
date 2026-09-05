@@ -73,7 +73,7 @@ python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json   # �
 python3 tools/check_pending_pr_reviews.py --actionable-only --json          # ② 他保護込みの全体ビュー（孤児 PR 救済）
 ```
 
-`needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `awaiting_review` → 作成セッションが実行中（待機）。**自スコープ優先（#47）・他セッション対応中 PR への不介入（CP-4・L-109）** の判定ロジック全文は `pr-review-flow.md`「セッション復帰フロー」を参照。
+`needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `needs_resolve_check` → 未解決スレッド全件が返信済みで Resolve だけが残っている状態（`pr-review-watcher` の「Resolve 確認セクション」へ復帰）/ `awaiting_review` → 作成セッションが実行中（待機）。**自スコープ優先（#47）・他セッション対応中 PR への不介入（CP-4・L-109）** の判定ロジック全文は `pr-review-flow.md`「セッション復帰フロー」を参照。
 
 🔴 **② を使うのは対話セッションの復帰時**（人間の判断が伴う場面）。**無人ルーティン（`sprint-cycle-router` 決定木）では Step 2 が ① 相当（`--mine-or-automation`）だけを見る**（CP-4・L-109 の不介入）。② に出る他者の人手 PR は決定木では拾わず、Step 6 → `project-sync` Step 3.5 の Orphan PR（最終更新 24 時間超）が回収する（#898）。
 

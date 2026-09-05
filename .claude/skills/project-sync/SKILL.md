@@ -73,7 +73,8 @@ Step 0: ワークフロー健全性チェック（軽量版）
 Step 0.5: レビュー待ちPR復帰の再確認（全実行時）
   └─ workflow-health-check Step 1-d と同一仕様（SSOT: workflow-health-check/SKILL.md）。
      `python3 tools/check_pending_pr_reviews.py --actionable-only` → `needs_response` は
-     pr-review-watcher フローに復帰、`awaiting_review` は経過時間に応じて催促 or 引き継ぎ（自動マージはしない）。
+     pr-review-watcher フローに復帰、`needs_resolve_check` は pr-review-watcher の「Resolve 確認セクション」へ復帰、
+     `awaiting_review` は経過時間に応じて催促 or 引き継ぎ（自動マージはしない）。
      Step 0 の `--light` 実行に含まれるため、本ステップは Step 0 未実行・失敗時の保険として機能する
 
 Step 1: エンティティ ID 採番（採番運用するプロジェクトのみ・未採用ならスキップ）
@@ -146,6 +147,7 @@ Step 3.5: Orphan PR 検出（全実行時）— CP-3 準拠
   │    本 Step 3.5 が唯一の回収経路になる・#898）
   ├─ check_pending_pr_reviews.py の結果と照合
   ├─ needs_response → pr-review-watcher フローに復帰して指摘対応
+  ├─ needs_resolve_check → pr-review-watcher の「Resolve 確認セクション」へ復帰
   ├─ awaiting_review（24h超）→ 催促 or 問題なし判定 → 自動マージ
   └─ 検出なし → 次の Step へ
 
