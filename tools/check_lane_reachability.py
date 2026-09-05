@@ -12,11 +12,17 @@ check_lane_reachability.py - レーン定義のスキルが実装から到達可
 ## この検査が保証するもの / しないもの
 
 - **保証する（構文的到達可能性）**: 実装側のどこかに「そのスキルを起動する」記述が実在するか
-- **保証しない（意味的生存性）**: その記述が実運用の firing でどれくらいの頻度で評価に到達するか
-  （上位ブランチの飢餓で実際には滅多に真にならない、という状態は検出できない）
+- **既定では保証しない（意味的生存性）**: その記述が実運用の firing でどれくらいの頻度で評価に
+  到達するか（上位ブランチの飢餓で実際には滅多に真にならない、という状態）
 
 コンパイラの到達不能コード検出が「一度も通らない行」は見つけられても「滅多に通らない行」は
 プロファイラの仕事であるのと同じ分離。飢餓は決定木側のエージング設計で防ぐ（#377 の Step 5.5）。
+
+⚠️ **`--liveness`（#420）を付けたときだけ、第 2 軸として意味的生存性を近似的に見る**：到達可能な
+レーンについて「そのレーンが担当する Issue が直近 N 時間（既定 48）に閉じられたか」を確認する。
+オプトイン（GitHub API に依存するため）であり、**WARNING のみで終了コードは変えない**。
+飢餓が「上位ブランチが本当に忙しい健全な結果」であることもあり、FAIL / PASS の二値では
+構造的不足と一時的な逸脱を区別できないため。
 
 ## 到達可能性の 3 経路
 
@@ -40,15 +46,30 @@ hooks からの起動は経路として持たない。現状 `.claude/hooks/` �
   python3 tools/check_lane_reachability.py              # 人間可読レポート
   python3 tools/check_lane_reachability.py --json       # 機械可読 JSON
   python3 tools/check_lane_reachability.py --self-test  # 純粋関数のセルフテスト
+  python3 tools/check_lane_reachability.py --liveness   # 第 2 軸（消化実績）も見る（要 GitHub API）
 
 終了コード: 0 = 全レーンが到達可能 / 1 = 到達不能なレーンあり
+（`--liveness` の結果は終了コードに影響しない。WARNING として出力するだけ）
+
+`--liveness` は `tools/run_checks.sh` には配線しない（GitHub API 依存。`--self-test` が
+ネットワーク非依存であるという設計原則を壊さないため）。呼び出し元は `workflow-health-check`
+スキルの週次監査（`reference.md` Step 5-g）。
 """
 
 import argparse
+import contextlib
+import io
 import json
+import os
 import re
 import sys
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from github_rest import exclude_pull_requests, http_get  # noqa: E402
+from repo_slug import resolve_repo_slug  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -333,6 +354,190 @@ def check(skills_dir=None, lane_map=None, router_skill=None):
     }
 
 
+# ──────────────────────────────────────────────
+# 第 2 軸: 意味的生存性（--liveness・Issue #420）
+# ──────────────────────────────────────────────
+# 本体の検査（構文的到達可能性）が保証しないのは「その経路が実運用の firing でどれくらいの
+# 頻度で評価に到達するか」。決定木に行はあるが上位ブランチがほぼ常に真で評価すらされない、
+# という状態は構文検査では緑のまま通る（#377 の Step 5.5 がまさにそれだった）。
+# ここでは「そのレーンが担当する Issue が直近に閉じられたか」で生存性を近似する。
+#
+# 🔴 WARNING に留め、**終了コードは変えない**。飢餓が「正しい優先順位設計の結果」
+# （上位ブランチが本当に忙しい健全な状態）でも赤くなってしまい、FAIL / PASS の二値では
+# 構造的不足と一時的な逸脱を区別できないため（#420 の対応方針）。
+
+# レーン → そのレーンが「消化した」ことを示す closed Issue のラベル。
+# 対応が無いレーンは liveness の対象外にする（監査・衛生レーンや `retrospective` は
+# Issue のクローズ数で消化実績を測れないため、無理に測ると常時 stale になり警告が腐る）。
+LIVENESS_LANE_LABELS = {
+    "retro-try-handler": "type:retro-try",
+    "self-improvement-loop": "type:improvement",
+}
+
+# 既定 48 時間。`sprint-cycle-router` の Step 5.5 エージング閾値（8 時間）の 6 倍で、
+# 「エージングが効いていれば必ず 1 回は通っているはず」と言える窓を取る。
+DEFAULT_LIVENESS_THRESHOLD_HOURS = 48
+
+# 表示・記録は JST（`docs/rules/datetime-rules.md`）。比較そのものは UTC のまま行う。
+JST = timezone(timedelta(hours=9))
+
+# GitHub の `/issues` は closed_at でソートできない（`sort` は created / updated / comments のみ）。
+# close 時には updated も必ず更新されるため、updated 降順の上位を数十件見て最大の closed_at を
+# 取れば「直近 closed」を取り違えない。1 クエリで収める（#420 の要件）。
+LIVENESS_PAGE_SIZE = 30
+
+
+def liveness_targets(report):
+    """liveness を評価するレーン名を返す。
+
+    条件は 2 つ: ① 構文的に到達可能である（断絶しているレーンの飢餓を二重に報告しない）
+    ② 対象 Issue ラベルの対応が `LIVENESS_LANE_LABELS` にある。
+    """
+    return sorted(
+        r["skill"] for r in report.get("lanes", [])
+        if r.get("reachable") and r.get("skill") in LIVENESS_LANE_LABELS
+    )
+
+
+def _parse_iso8601(value):
+    """GitHub の ISO 8601（`...Z`）を aware datetime にする。解釈できなければ None。"""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def latest_closed_at(issues):
+    """closed Issue 群から **最新の** `closed_at` を返す（無ければ None）。
+
+    応答は updated 降順なので **先頭が最新の closed とは限らない**（close 後にコメントが
+    付いた古い Issue が上に来る）。必ず最大値を取る。
+    """
+    stamps = [
+        dt for dt in (
+            _parse_iso8601(i.get("closed_at")) for i in issues if isinstance(i, dict)
+        ) if dt is not None
+    ]
+    return max(stamps) if stamps else None
+
+
+def evaluate_liveness(skill, label, issues, *, now=None,
+                      threshold_hours=DEFAULT_LIVENESS_THRESHOLD_HOURS):
+    """1 レーン分の生存性を判定する（純粋関数・ネットワーク非依存）。
+
+    `issues` が None は「取得できなかった」で、`unknown` を返す。**stale と混同しない**
+    （API 障害を飢餓として報告すると、警告の意味が薄れて読まれなくなる）。
+    """
+    now = now or datetime.now(timezone.utc)
+    result = {
+        "skill": skill,
+        "label": label,
+        "latest_closed_at": None,
+        "hours_since": None,
+        "threshold_hours": threshold_hours,
+        "status": "unknown",
+        "reason": "対象 Issue を取得できなかった（API 障害・未認証）",
+    }
+    if issues is None:
+        return result
+    newest = latest_closed_at(issues)
+    if newest is None:
+        result["status"] = "stale"
+        result["reason"] = f"`{label}` の closed Issue が 1 件も無い（一度も消化されていない）"
+        return result
+    result["latest_closed_at"] = newest.astimezone(JST).strftime("%Y-%m-%d %H:%M JST")
+    hours = (now - newest).total_seconds() / 3600.0
+    result["hours_since"] = round(hours, 1)
+    if hours > threshold_hours:
+        result["status"] = "stale"
+        result["reason"] = (
+            f"直近 {threshold_hours} 時間に `{label}` の closed 実績が無い"
+            f"（最後は {result['latest_closed_at']}）"
+        )
+    else:
+        result["status"] = "live"
+        result["reason"] = ""
+    return result
+
+
+def _liveness_fetch(repo, label, token=None):
+    """対象ラベルの closed Issue を 1 クエリ取得する。戻り値は `(ok, issues | 理由)`。
+
+    self-test は `globals()["_liveness_fetch"]` を差し替えてネットワークを断つ
+    （本ファイルの他の関数と同じ DI パターン）。
+    """
+    url = (
+        f"https://api.github.com/repos/{repo}/issues"
+        f"?state=closed&labels={urllib.parse.quote(label)}"
+        f"&sort=updated&direction=desc&per_page={LIVENESS_PAGE_SIZE}"
+    )
+    ok, body = http_get(url, token, user_agent="gem-hunter-lane-liveness")
+    if not ok:
+        return False, body
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "応答が JSON として解釈できない"
+    if not isinstance(data, list):
+        return False, "応答が配列ではない"
+    # `/issues` は PR も返す。PR のクローズはレーンの消化実績ではない。
+    return True, exclude_pull_requests(data)
+
+
+def check_liveness(report, *, repo=None, token=None, now=None,
+                   threshold_hours=DEFAULT_LIVENESS_THRESHOLD_HOURS):
+    """到達可能なレーンについて生存性を確認する（レーンごとに 1 クエリ）。"""
+    repo = repo or resolve_repo_slug()
+    if token is None:
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    entries = []
+    for skill in liveness_targets(report):
+        label = LIVENESS_LANE_LABELS[skill]
+        ok, payload = _liveness_fetch(repo, label, token)
+        entry = evaluate_liveness(
+            skill, label, payload if ok else None, now=now, threshold_hours=threshold_hours)
+        if not ok:
+            entry["reason"] = f"対象 Issue を取得できなかった: {payload}"
+        entries.append(entry)
+    return entries
+
+
+def render_liveness(entries):
+    lines = ["", "## 意味的生存性（`--liveness`・WARNING のみ / 終了コードは変えない）", ""]
+    if not entries:
+        lines.append("対象レーンなし（到達可能かつ対象 Issue ラベルの対応があるレーンが無い）。")
+        return "\n".join(lines)
+    icon = {"live": "✅", "stale": "⚠️", "unknown": "❔"}
+    lines.append("| レーンのスキル | 対象ラベル | 直近 closed | 経過 | 判定 |")
+    lines.append("|---|---|---|---|---|")
+    for e in entries:
+        elapsed = "—" if e["hours_since"] is None else f"{e['hours_since']} 時間"
+        lines.append(
+            f"| `{e['skill']}` | `{e['label']}` | {e['latest_closed_at'] or '—'} | "
+            f"{elapsed} | {icon.get(e['status'], '❔')} {e['status']} |"
+        )
+    stale = [e for e in entries if e["status"] == "stale"]
+    unknown = [e for e in entries if e["status"] == "unknown"]
+    if stale:
+        lines.append("")
+        lines.append(f"⚠️ WARNING: {len(stale)} レーンに消化実績がなく **飢餓** の疑いがある。")
+        for e in stale:
+            lines.append(f"- `{e['skill']}`: {e['reason']}")
+        lines.append("")
+        lines.append("到達可能なのに消化されていないので、原因は決定木の **上位ブランチの占有** か")
+        lines.append("**エージング閾値** にある。`sprint-cycle-router` SKILL.md §5 の飢餓防止条件を確認する。")
+        lines.append("")
+        lines.append("> 飢餓が「上位ブランチが本当に忙しい健全な結果」であることもあるため、")
+        lines.append("> この警告は FAIL にしない（判断は読み手に委ねる）。")
+    if unknown:
+        lines.append("")
+        for e in unknown:
+            lines.append(f"❔ `{e['skill']}`: {e['reason']}")
+    return "\n".join(lines)
+
+
 def render(report):
     lines = ["# レーン到達可能性の検査（check_lane_reachability）", ""]
     lines.append("| レーンのスキル | 到達 | 経路 A（決定木） | 経路 B（他スキル） |")
@@ -538,8 +743,72 @@ def _self_test():
         self_skill="self-improvement-loop", known_skills=known) is False,
         "R4: negation keyword 除外 is exercised")
 
+    # --- #420: --liveness（意味的生存性）の判定 ---
+    # 構文的到達可能性（この検査の本体）が保証しないもの＝「その経路が実運用で
+    # どれくらいの頻度で評価に到達しているか」を、対象 Issue の closed 実績で近似する。
+    NOW = datetime(2026, 9, 6, 0, 0, 0, tzinfo=timezone.utc)
+    # L1: 直近 closed が閾値内なら live
+    r = evaluate_liveness("retro-try-handler", "type:retro-try",
+                          [{"closed_at": "2026-09-05T12:00:00Z"}], now=NOW, threshold_hours=48)
+    check_(r["status"] == "live", f"L1: recent close is live ({r})")
+    # L2: 閾値を超えていたら stale
+    r = evaluate_liveness("retro-try-handler", "type:retro-try",
+                          [{"closed_at": "2026-09-01T00:00:00Z"}], now=NOW, threshold_hours=48)
+    check_(r["status"] == "stale", f"L2: old close is stale ({r})")
+    # L3: ちょうど閾値の時刻は live 側（「超えたら」警告する。境界で鳴らさない）
+    r = evaluate_liveness("x", "l", [{"closed_at": "2026-09-04T00:00:00Z"}],
+                          now=NOW, threshold_hours=48)
+    check_(r["status"] == "live", f"L3: exactly at threshold is live ({r})")
+    # L4: closed 実績ゼロは stale（一度も消化されていない＝最も飢餓している状態）
+    r = evaluate_liveness("x", "l", [], now=NOW, threshold_hours=48)
+    check_(r["status"] == "stale" and r["latest_closed_at"] is None,
+           f"L4: no closed issue is stale ({r})")
+    # L5: 取得失敗（None）は unknown。stale と混同しない（API 障害を飢餓として報告しない）
+    r = evaluate_liveness("x", "l", None, now=NOW, threshold_hours=48)
+    check_(r["status"] == "unknown", f"L5: fetch failure is unknown ({r})")
+    # L6: 応答は updated 降順なので先頭が最新の closed とは限らない。最大値を取ること
+    r = evaluate_liveness("x", "l",
+                          [{"closed_at": "2026-09-01T00:00:00Z"},
+                           {"closed_at": "2026-09-05T12:00:00Z"}],
+                          now=NOW, threshold_hours=48)
+    check_(r["status"] == "live", f"L6: picks the newest closed_at, not the first ({r})")
+    # L7: closed_at が null の要素（open の混入・API の欠損）は無視する
+    r = evaluate_liveness("x", "l",
+                          [{"closed_at": None}, {"closed_at": "2026-09-05T12:00:00Z"}],
+                          now=NOW, threshold_hours=48)
+    check_(r["status"] == "live", f"L7: null closed_at is ignored ({r})")
+    # L8: 到達不能なレーンは liveness の評価対象に含めない
+    #     （構文的に断絶しているレーンの飢餓を二重に報告しても情報が増えない）
+    rep = {"lanes": [{"skill": "retro-try-handler", "reachable": False},
+                     {"skill": "self-improvement-loop", "reachable": True}]}
+    check_(liveness_targets(rep) == ["self-improvement-loop"],
+           f"L8: unreachable lanes are excluded ({liveness_targets(rep)})")
+    # L9: 対象 Issue ラベルの対応が無いレーンは対象外
+    #     （衛生レーンは「Issue を閉じた回数」で生存性を測れない）
+    rep = {"lanes": [{"skill": "project-sync", "reachable": True}]}
+    check_(liveness_targets(rep) == [], "L9: lanes without an issue label are excluded")
+    # L10: 本番の入口（main）を通しても、stale を検出した firing で終了コードが変わらない
+    #      （#420 の完了条件「終了コードが変わらない」を入口経由で固定する）
+    orig_fetch = globals()["_liveness_fetch"]
+    globals()["_liveness_fetch"] = lambda repo, label, token=None: (True, [])
+    orig_argv = sys.argv
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            sys.argv = ["check_lane_reachability.py", "--liveness"]
+            rc_with = main()
+            sys.argv = ["check_lane_reachability.py"]
+            rc_without = main()
+    finally:
+        sys.argv = orig_argv
+        globals()["_liveness_fetch"] = orig_fetch
+    check_(rc_with == rc_without,
+           f"L10: --liveness does not change the exit code ({rc_with} vs {rc_without})")
+    check_("stale" in buf.getvalue() or "飢餓" in buf.getvalue(),
+           "L10': --liveness actually rendered a stale warning through main()")
+
     if fail == 0:
-        print("PASS: check_lane_reachability self-test (32 checks)")
+        print("PASS: check_lane_reachability self-test (44 checks)")
     return 1 if fail else 0
 
 
@@ -547,13 +816,30 @@ def main():
     ap = argparse.ArgumentParser(description="レーン定義のスキルが実装から到達可能かを検査する")
     ap.add_argument("--json", action="store_true", help="JSON を出力")
     ap.add_argument("--self-test", action="store_true", help="純粋関数のセルフテストを実行")
+    ap.add_argument(
+        "--liveness", action="store_true",
+        help="到達可能なレーンの意味的生存性（直近の消化実績）も確認する"
+             "（GitHub API を叩く。WARNING のみで終了コードは変えない）")
+    ap.add_argument(
+        "--liveness-threshold-hours", type=float, default=DEFAULT_LIVENESS_THRESHOLD_HOURS,
+        help=f"生存性の閾値（既定 {DEFAULT_LIVENESS_THRESHOLD_HOURS} 時間）")
     args = ap.parse_args()
 
     if args.self_test:
         return _self_test()
 
     report = check()
-    print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else render(report))
+    if args.liveness:
+        report["liveness"] = check_liveness(
+            report, threshold_hours=args.liveness_threshold_hours)
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        out = render(report)
+        if args.liveness:
+            out += "\n" + render_liveness(report["liveness"])
+        print(out)
+    # 🔴 liveness は終了コードに影響させない（#420 の完了条件）。
     return 1 if (report["unreachable"] or report.get("stale_references")) else 0
 
 
