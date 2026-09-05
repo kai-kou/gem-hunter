@@ -447,14 +447,14 @@ python3 tools/consume_hold_guard.py --validate-comment-file - <<< "$body"       
 
 ## 関連ファイル
 
-| ファイル                                    | 役割                                                                                                                                                                                                 |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/rules/improvement-lane-map.md`        | レーン境界の SSOT（振り返り・監査/衛生レーンとの分担）                                                                                                                                               |
-| `tools/triage_improvements.py`              | 整理モードの集計・分類・重複検出・Epic 候補抽出（副作用なし・`type:improvement` 限定 **かつ `type:retro-try` を取得層で除外**〔#418〕のため Step G-1.5 では使わない。`--label type:retro-try` の明示指定時は除外しない）                                                                                 |
-| `config/backlog_refinement_state.json`      | リファインメント週次ゲートの state（`last_refinement_at`）。定期ルーティン側が着手前に更新して先勝ち排他する。**配布対象外** で、無ければ初回実行時に自動生成される（#448） <!-- refcheck:ignore --> |
-| `.claude/skills/discussion-review/SKILL.md` | Step G-6 のグレーゾーン精査（専門チーム議論）の実行手段                                                                                                                                              |
-| `docs/rules/session-sprint-rules.md`        | SP 基準（§3）・PO=@owner（§4）                                                                                                                                                                       |
-| `.claude/agents/owner.md`                   | PO ロール定義（`priority:` / `sp:` ホワイトリスト）                                                                                                                                                  |
+| ファイル                                    | 役割                                                                                                                                                                                                                     |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docs/rules/improvement-lane-map.md`        | レーン境界の SSOT（振り返り・監査/衛生レーンとの分担）                                                                                                                                                                   |
+| `tools/triage_improvements.py`              | 整理モードの集計・分類・重複検出・Epic 候補抽出（副作用なし・`type:improvement` 限定 **かつ `type:retro-try` を取得層で除外**〔#418〕のため Step G-1.5 では使わない。`--label type:retro-try` の明示指定時は除外しない） |
+| `config/backlog_refinement_state.json`      | リファインメント週次ゲートの state（`last_refinement_at`）。定期ルーティン側が着手前に更新して先勝ち排他する。**配布対象外** で、無ければ初回実行時に自動生成される（#448） <!-- refcheck:ignore -->                     |
+| `.claude/skills/discussion-review/SKILL.md` | Step G-6 のグレーゾーン精査（専門チーム議論）の実行手段                                                                                                                                                                  |
+| `docs/rules/session-sprint-rules.md`        | SP 基準（§3）・PO=@owner（§4）                                                                                                                                                                                           |
+| `.claude/agents/owner.md`                   | PO ロール定義（`priority:` / `sp:` ホワイトリスト）                                                                                                                                                                      |
 
 ```
 
