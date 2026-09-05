@@ -337,3 +337,11 @@
 {"date": "2026-09-05 JST", "title": "--verify-layer1 の reviews/inline カウントが head 更新後に何を数えているか、実測と実装の突き合わせが無い", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "Markdown 検査 3 層（prettier / check_markdown_table_columns.py / check_cjk_markdown.py）の責務分担が未文書化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "merge_pull_request の expectedHeadSha にフル SHA が要る旨をどこにも書いていない", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-160"}
+{"date": "2026-09-05 JST", "title": "Issue 本文の明示指定（実測環境）を着手時に構造化抽出し完了前に照合する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 776}
+{"date": "2026-09-05 JST", "title": "run_checks.sh を変更対象別に絞って実行できるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 851}
+{"date": "2026-09-05 JST", "title": "実装直後に app/ 薄さ検査（ratchet）を検知する経路を作る", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "消化モードのプレビューデプロイ手順を SKILL.md へ明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 946}
+{"date": "2026-09-05 JST", "title": "実測値の記録に計測ツール・ブラウザのバージョンと日時をセットで残す規則", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "LCP 抽出ロジックを run_lighthouse.mjs から独立モジュールへ切り出す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "check_app_thinness.py の ratchet に明示的な絶対上限を設定する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "外部ツール（Lighthouse 等）のバージョン変更を検知して警告する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 965}
