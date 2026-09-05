@@ -363,7 +363,10 @@
 {"date": "2026-09-05 JST", "title": "Layer 1 セルフレビューの観点をタスク型に応じて重点化する（検査ツール PR ではテスト・検証観点を厚くする）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 934}
 {"date": "2026-09-05 JST", "title": "大型 PR 本文の更新パス（MCP の全文置換を避ける REST PATCH）の扱いを条文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 398}
 {"date": "2026-09-05 JST", "title": "pre-pr-create-check.sh 4.8 節の正規表現の代替パターン 4 種を個別にテストする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-06 JST", "title": "ISO 8601 パース関数を共通ヘルパーへ寄せる（同名で契約が非互換な実装が併存）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 909}
+{"date": "2026-09-06 JST", "title": "ISO 8601 パース関数を共通ヘルパーへ寄せる（同名で契約が非互換な実装が併存）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 909}
 {"date": "2026-09-06 JST", "title": "無人 firing の決定木 Step 判定結果（非該当理由）を記録して再現できるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "state_reason（not_planned / duplicate）を消化実績から除く境界条件を domain-model へ記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "GitHub API が /issues の sort=closed をサポートしたら liveness の updated 降順近似を撤去する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "検査ツール委譲の必須項目に「見逃し経路の列挙結果を返り値へ含めさせる」を足す", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 744}
+{"date": "2026-09-06 JST", "title": "run_checks.sh をパイプへ繋ぐと壊れる（--help 未対応でフル起動・head で証跡が切られる）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 651}
+{"date": "2026-09-06 JST", "title": "待ちループの条件式に pgrep -f を書くと自己マッチで無限待ちになる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 923}
