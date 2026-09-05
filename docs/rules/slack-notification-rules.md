@@ -264,7 +264,7 @@ python3 tools/slack_notify.py publish \
 | `message` | 任意テキスト通知 | `SLACK_CHANNEL_ID` | スキル内・デバッグ用 |
 | `progress` | 動画制作進捗レポート | `SLACK_CHANNEL_ID` | スキル内で明示呼び出し |
 | `approval` | **PR作成前の承認依頼**（ユーザーメンション付き） | **`SLACK_APPROVAL_CHANNEL_ID`** | スキル内で明示呼び出し（必須ステップ） |
-| `waiting` | **ユーザーアクション待ち**（メンション付き） | **`SLACK_APPROVAL_CHANNEL_ID`** | スキル内で明示呼び出し |
+| `waiting` | **ユーザーアクション待ち**（メンション付き）。🔴 **`--issues` 必須**（0 件・省略時は送信せず非ゼロ終了・fail-closed・#936） | **`SLACK_APPROVAL_CHANNEL_ID`** | スキル内で明示呼び出し |
 | `publish` | **公開・配信完了**（`config/publish_events.yaml` 駆動・メンション付き） | **`SLACK_PUBLISH_CHANNEL_ID`** | スキル内で明示呼び出し（`--event-type` 必須。値は同ファイルのキー） |
 | `routine-idle` | **ルーティンのアイドル通知**（消化対象ゼロ＝バックログ空。維持/停止の判断支援 FYI・@mention なし） | `SLACK_CHANNEL_ID` | ルーティンが完全 no-op 時に呼び出し（R-1 手順の該当ステップは下流プロジェクトの運用メモが定義）。JST スロット（既定 08:00〜10:00）で 1 日 1 回に自己抑制・`--force` でバイパス |
 
@@ -289,6 +289,11 @@ python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" pr \
   --branch "content/V007-xxx"
 
 # ユーザーアクション待ち
+# 🔴 --issues は必須（0 件・省略で送信せず非ゼロ終了・fail-closed・#936）。各項目は
+#   user-notification-triage.md §3 の 4 要件（具体的アクション/該当境界/結果/Claude側の状態）を満たす文にする。
+# 🔴 --branch を省略すると通知本文のブランチ欄が空になる（呼び出し側の現在ブランチを渡す）。
+# 🔴 --force-mention はトリアージゲート（A-1〜A-6 該当判定）を上書きしてでも鳴らす引数であり、
+#   --issues の必須検査までは外せない（--issues が空なら --force-mention を付けても送信されない）。
 python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" waiting \
   --issues "Deep Research実行依頼" "PR #123 のレビュー" \
   --branch "content/V007-xxx"

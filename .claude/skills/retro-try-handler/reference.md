@@ -124,7 +124,7 @@ mcp__github__list_issues(owner, repo, state="OPEN", labels=["{更新ラベル}"]
 ```bash
 python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" waiting \
   --issues "[Retro] ユーザー対応が必要な Try Issue があります: #{N1}, #{N2}" \
-  --branch "{current_branch}"
+  --branch "$(git branch --show-current)"
 ```
 
 **large 工数**: 実装計画をコメント投稿し `status:waiting-claude` のまま維持する。
