@@ -9,11 +9,14 @@
 // 手順:
 //   1. e2e/stub/server.mjs を起動（E2E とは別ポートを使い、E2E プロセスの残骸と衝突しない）
 //   2. next build && next start --port 3101（E2E の 3100 と分離）
-//   3. CHROME_PATH=/opt/pw-browsers/chromium を明示して Lighthouse を対象 2 画面に実行
+//   3. CHROME_PATH=/opt/pw-browsers/chromium を明示して Lighthouse を対象 3 画面に実行
+//      - 未検索（待ち受け）: /ja
 //      - 一覧（検索実行後の状態）: /ja?q=react
 //      - 詳細: /ja/repos/octostub/octo-widgets
+//      ⚠️ 画面を増減したら `tools/run_checks.sh` の Lighthouse ステップのコメント
+//         （所要時間の見積もりと既定タイムアウトの根拠）も併せて更新すること。
 //   4. categories.accessibility.score < 1.0 なら GATE_FAIL（非ゼロ exit）。
-//      categories.performance.score は判定に使わず記録出力のみ。
+//      categories.performance.score と LCP 要素（`extractLcpElement`）は判定に使わず記録出力のみ。
 //   5. JSON が生成されなかった／Chrome 起動に失敗した場合は INFRA_FAIL で区別する
 //      （「チェッカー自体が落ちた」と「本当に a11y が落ちた」を混同しない）。
 //

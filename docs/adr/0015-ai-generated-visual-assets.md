@@ -83,9 +83,11 @@ OG 画像（`app/[locale]/opengraph-image.tsx`）は、`og-background.png`（文
 
 ---
 
-## 5. この決定に付随した未確認事項（本 PR 内で解決済み）
+## 5. この決定に付随した未確認事項
 
-`content/discussions/ui_image_assets_20260821/entries/r04_*_lead_verdict.md` の `critical` として挙げられていた 2 点は、verdict 時点（実装着手前）では未検証だったが、**本 PR の実装作業の中で両方とも解決済み**。
+> 🔴 **本節のスコープ**: item 1・2 は **ADR 0015 を実装した PR 内で** 解決済み。item 3 は後から別 Issue・別 PR で解決したもので、解決した PR を各行に明記する（追記のたびに「本 PR」が誰を指すか揺れるのを避けるため、見出しからは PR 限定の文言を外してある）。
+
+`content/discussions/ui_image_assets_20260821/entries/r04_*_lead_verdict.md` の `critical` として挙げられていた 2 点は、verdict 時点（実装着手前）では未検証だったが、**ADR 0015 を実装した PR の作業の中で両方とも解決済み**。
 
 | # | 未確認事項だった内容 | 解決結果 |
 |---|---|---|
@@ -98,8 +100,10 @@ OG 画像（`app/[locale]/opengraph-image.tsx`）は、`og-background.png`（文
 
 | # | 未確認事項だった内容 | 解決結果（実測日 2026-09-05 JST） |
 |---|---|---|
-| 3 | `hero-idle.webp` が未検索画面の LCP 要素になるか（推測で書かず実測で断定する） | 🔴 **LCP 要素であることを実測で確認**。Lighthouse 13.4.1 を未検索画面（`/ja`）に対して実行し、`lcp-breakdown-insight` / `lcp-discovery-insight` の node が本 img（`body.min-h-full > main#main-content > img.mx-auto`）を指すことを確認した（LCP 2.5 s・Performance 98・Accessibility 100）。同レポートの `lcp-discovery-insight` は `priorityHinted: false`（"fetchpriority=high should be applied to the image preload request"）を指摘していたため **`fetchPriority="high"` を付与** し、属性の欠落を `e2e/sp-6-idle.spec.ts` で固定した |
+| 3 | `hero-idle.webp` が未検索画面の LCP 要素になるか（推測で書かず実測で断定する）<br>（Issue #355・PR #964 で解決） | 🔴 **LCP 要素であることを 2 環境で実測**。Lighthouse 13.4.1 を未検索画面（`/ja`）に対し ① ローカル実機（`next start`）② **Cloudflare Workers プレビュー実機**（`wrangler versions upload --preview-alias`）の両方で実行し、いずれも `lcp-breakdown-insight` / `lcp-discovery-insight` の node が本 img（`body.min-h-full > main#main-content > img.mx-auto`）を指した。付与前のレポートは `lcp-discovery-insight` が `priorityHinted: false`（"fetchpriority=high should be applied to the image preload request"）を指摘していたため **`fetchPriority="high"` を付与**。付与後のプレビュー再実測で `priorityHinted: true`・LCP 2.2 s・Performance 98・Accessibility 100 を確認し、属性の欠落は `e2e/sp-6-idle.spec.ts` で固定した |
 
-> **縮小（表示寸法へのリサイズ）は行わない**: 実測の LCP 内訳は `resourceLoadDuration` 17 ms（`timeToFirstByte` 23 ms / `resourceLoadDelay` 12 ms / `elementRenderDelay` 67 ms）で、**ダウンロード時間は LCP の支配項ではない**。表示は最大 320px だが DPR 2 の端末では 640px 相当を要するため、768px 生成は過大ではない（`ui-ux-guidelines.md` §8.6 の生成寸法を維持する）。
+> **縮小（表示寸法へのリサイズ）は行わない**: **プレビュー実機**（Cloudflare Workers）の LCP 内訳は `timeToFirstByte` 1301 ms / `resourceLoadDelay` 9 ms / `resourceLoadDuration` 230 ms / `elementRenderDelay` 112 ms で、**支配項は TTFB（LCP 2.2 s の約 59%）** であり画像のダウンロード（約 10%）ではない。表示は最大 320px だが DPR 2 の端末では 640px 相当を要するため、768px 生成は過大ではない（`ui-ux-guidelines.md` §8.6 の生成寸法を維持する）。
+>
+> 🔴 **計測環境を明記する理由**: ローカル `next start` はエッジ配信・CDN を経由しないため `resourceLoadDuration` を大きく過小評価する（同じ画像で **17 ms → 230 ms** の差が出た）。したがって「縮小不要」の判断は **プレビュー実機の値** を根拠とし、ローカル値は補助的な確認に留める。LCP 要素の同定そのものは 2 環境で一致した。
 >
 > ⚠️ **この実測は未検索画面を Lighthouse の計測対象に加えて初めて可能になった**。それまでの計測対象は一覧（`/ja?q=react`）と詳細の 2 画面のみで、`hero-idle` が描画される未検索画面は一度も計測されていなかった（`tools/run_lighthouse.mjs` の `TARGETS`）。LCP 要素は判定に使わず記録のみとする（Performance と同じ扱い・ゲートを増やさない）。
