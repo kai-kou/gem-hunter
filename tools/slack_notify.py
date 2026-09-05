@@ -407,7 +407,7 @@ def build_waiting_user_blocks(issues: list, branch: str, triage: dict = None) ->
     # （中身なしの `` `` `` バッククォートだけの表示を避ける・Issue #936）。
     _fields = []
     if branch and branch.strip():
-        _fields.append({"type": "mrkdwn", "text": f"*ブランチ:*\n`{branch}`"})
+        _fields.append({"type": "mrkdwn", "text": f"*ブランチ:*\n`{branch.strip()}`"})
     _fields.append({"type": "mrkdwn", "text": f"*時刻:*\n{_now()}"})
     blocks = [
         {
@@ -975,9 +975,73 @@ def run_self_test() -> int:
             and "`feat/x`" in next(f["text"] for f in fields_section["fields"] if "*ブランチ:*" in f["text"]),
         )
 
+    # ケース6: 空白のみの --branch（" "）→ *ブランチ:* フィールドを省略する（PR #938 指摘・回帰防止）。
+    #          `if branch and branch.strip():` を `if branch:` へ後退させる変異で検知できることを、
+    #          このケース自体を一時的に手動変異させて確認済み（下記コメント参照）。
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", a6_text, "--branch", " "]
+    )
+    check("空白のみの --branch でも送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        fields_section = _find_fields_section(calls[0]["blocks"])
+        check(
+            "空白のみの --branch は *ブランチ:* フィールドを含まない",
+            fields_section is not None
+            and not any("*ブランチ:*" in f.get("text", "") for f in fields_section["fields"]),
+            f"fields={fields_section['fields'] if fields_section else None}",
+        )
+
+    # ケース7: 前後空白付きの --branch（" feat/x "）→ 表示値は strip 済みであること（PR #938 指摘）。
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", a6_text, "--branch", " feat/x "]
+    )
+    check("前後空白付き --branch でも送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        fields_section = _find_fields_section(calls[0]["blocks"])
+        if fields_section:
+            branch_field = next(
+                (f["text"] for f in fields_section["fields"] if "*ブランチ:*" in f["text"]), ""
+            )
+            check(
+                "ブランチ表示値は前後空白が strip 済み",
+                "`feat/x`" in branch_field and "` feat/x `" not in branch_field,
+                f"branch_field={branch_field!r}",
+            )
+
+    # ケース8: --issues に有効項目と空文字が混在（一部だけ空）→ 有効項目だけで送信され、
+    #          空項目由来の空 bullet（`• ` だけの行）・空行が混入しない（PR #938 指摘・回帰防止）。
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", "", a6_text]
+    )
+    check("有効項目 + 空文字の混在でも送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        # issues_text は先頭の section ブロック（fields を持たない）に入る
+        text_section = next(
+            (b for b in calls[0]["blocks"] if b.get("type") == "section" and "fields" not in b),
+            None,
+        )
+        body_text = text_section["text"]["text"] if text_section else ""
+        lines = body_text.splitlines()
+        check(
+            "混在時に空 bullet（`• ` だけの行）が混入しない",
+            not any(line.strip() == "•" for line in lines),
+            f"body_text={body_text!r}",
+        )
+        check(
+            "混在時に空行が混入しない",
+            not any(line.strip() == "" for line in lines),
+            f"body_text={body_text!r}",
+        )
+        check(
+            "混在時に有効項目本文が含まれる",
+            a6_text in body_text,
+            f"body_text={body_text!r}",
+        )
+
     # 干渉検証（agent-team-summary.md #725）: fail-closed ガード（対策1） / 空白のみ除去（対策2） /
-    # 空ブランチ欄省略（対策3）が同じ waiting パスを通っても互いの効果を打ち消していないことを、
-    # ケース4・5 で「ガード通過後にブランチ欄の有無だけが変わる」ことを実測して確認済み。
+    # 空ブランチ欄省略（対策3）/ ブランチ表示値 strip（対策4）が同じ waiting パスを通っても互いの効果を
+    # 打ち消していないことを、ケース4・5・6・7・8 で「ガード通過後にブランチ欄の有無・表示値・本文の
+    # 整形結果だけが独立に変わる」ことを実測して確認済み。
 
     print(f"\nセルフテスト: {passed} passed, {failed} failed")
     return 0 if failed == 0 else 1
