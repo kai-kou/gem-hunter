@@ -20,7 +20,7 @@
   `splitlines()`（本モジュール内部）へ変わったことで、スペースを含むパスが複数トークンに
   誤分割されるバグが解消され、1 件のパスとして正しく扱われるようになった（#195 指摘4）。
 
-## 提供する 2 系統
+## 提供する 3 系統
 
 - `collect_changed_files()`: `git diff --name-only`（base range・worktree・cached）+
   `git ls-files --others --exclude-standard`（untracked）を収集ソースごとに ON/OFF できる。
@@ -34,6 +34,13 @@
   検証する。`check_agent_diff_claim.py --self-test` は「`run_git()` 経由で
   `git_diff_utils.run_git_or_raise()` へ正しい引数（`args` と `cwd` の順序）で配線されているか」
   （`get_real_diff_files()` 経由の呼び出し配線）を検証する — 例外の中身ではなく配線の正しさが担当。
+- パス正規化系（`normalize_leading_dots()` / `normalize_abbreviated_paths()` /
+  `resolve_abbreviated_path()`）: `check_agent_diff_claim.py` の claim 側（完了報告テキストからの
+  抽出）と実 diff 側（`git status` / `git diff --stat` の出力）の両方が **同じ正規化関数** を
+  通ることを保証する層。`normalize_leading_dots()` は先頭の `./` `../`（1 回以上）・3 文字目が
+  `/` でない 2 個以上の連続ドット（`...utils.py` 等）を正規化する（Issue #948 / #968）。
+  `normalize_abbreviated_paths()` / `resolve_abbreviated_path()` は `git diff --stat` が
+  `.../` で省略した長いパスを候補集合からサフィックス一致で解決する（Issue #850）。
 
 ## テスト容易性
 
@@ -47,6 +54,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -222,25 +230,54 @@ def run_git_or_raise(
 
 ABBREV_PREFIX = ".../"
 
+# Issue #968: `check_agent_diff_claim.py` の `_PATH_TOKEN_RE` 先頭文字クラスへ `.` を追加した
+# 副作用で、`../bin/tool.sh`（相対パス）や `...utils.py`（日本語文中の三点リーダー + ファイル名が
+# 融合したもの）のようなトークンが 1 個の候補としてそのまま抽出されるようになった。この 2 つは
+# 「先頭ドット付きの実在パス」（`.github/x.yml` 等・#948）とは別カテゴリであり、実 diff 側は
+# それぞれ `bin/tool.sh` / `utils.py`（先頭の相対参照・約物を含まない素のパス）を返すため、
+# 放置すると実 diff 側が `missing_from_report`（報告漏れ・より重い警告）に落ちる。
+#
+# `.../`（`ABBREV_PREFIX`。#850 の省略記法）は絶対に壊さない: `_PARENT_DIR_RE` は 3 文字目が
+# 厳密に `/` である "../" だけに一致するため "..." には一致せず、`_LEADING_DOTS_RE` は先読みで
+# 直後が英数字/アンダースコアであることを要求するため直後が `/` の "..." には一致しない。
+# いずれも `.../` の 3 文字目・4 文字目とは噛み合わないため、`.../` はどちらの正規化からも
+# 保護される（`_self_test_normalize_leading_dots` の該当ケースで固定する）。
+_PARENT_DIR_RE = re.compile(r"^(?:\.\./)+")
+_LEADING_DOTS_RE = re.compile(r"^\.{2,}(?=[A-Za-z0-9_])")
 
-def normalize_leading_dotslash(path: str) -> str:
-    """パス先頭の `./` プレフィックスだけを 1 回取り除く（Issue #948）。
 
-    `str.lstrip(chars)` は引数を「文字集合」として扱うため、`lstrip("./")` は
-    `.github/workflows/x.yml` のような **先頭ドット付きの実在パス** に対して先頭の `.` まで
-    連続的に食い荒らし `github/workflows/x.yml` を生む（`.` も `/` も引数の集合に含まれるため）。
-    本関数は `str.removeprefix("./")`（完全一致の 1 回限りの除去・Python 3.9+）を使い、
-    「`./` という 2 文字プレフィックスだけを剥がす」という本来の意図に一致させる。
+def normalize_leading_dots(path: str) -> str:
+    """パス先頭の相対参照ドット（`./` 1 回・`../` 1 回以上・3+ 連続ドット）を正規化する。
 
-    `.github/x.yml` は `./` で始まらない（`.g` であって `./` ではない）ため素通りする。
-    `./foo.py` は `foo.py` になる。既に prefix が無いパスは変化しない（冪等）。
+    3 段階を **この順序で** 適用する（順序を変えない。self-test が順序依存の結果を固定している）:
 
-    サブエージェントの完了報告（claim 側・`check_agent_diff_claim.py`）と実 diff 側の両方が
-    **この関数だけ** を通ることで、片側だけ正規化されて食い違う構造的欠陥を防ぐ
-    （`check_agent_diff_claim.py --self-test` の `_self_test_leading_dotslash_shared_normalizer`
-    が両経路の配線を検証する）。
+    1. `./` プレフィックスを 1 回だけ取り除く（`str.removeprefix("./")`・Issue #948）。
+       `str.lstrip(chars)` は引数を「文字集合」として扱うため、`lstrip("./")` は
+       `.github/workflows/x.yml` のような **先頭ドット付きの実在パス** に対して先頭の `.` まで
+       連続的に食い荒らし `github/workflows/x.yml` を生む（`.` も `/` も引数の集合に含まれるため）。
+       `removeprefix()`（完全一致の 1 回限りの除去・Python 3.9+）はこの巻き添えを起こさない。
+    2. 先頭の `../` を 1 回以上まとめて取り除く（Issue #968）。完了報告が cwd 相対の
+       `../bin/tool.sh` のように書いた場合、実 diff 側はリポジトリルート相対の `bin/tool.sh` を
+       返すため、放置すると一致しない。
+    3. 残った先頭の連続ドット（2 個以上）が **直後に英数字/アンダースコアへ続く場合だけ**
+       取り除く（Issue #968）。直後が `/`（`.../` = `ABBREV_PREFIX`）なら先読みが不成立になり
+       **絶対に触らない**（`.../` の省略解決は `resolve_abbreviated_path()` /
+       `normalize_abbreviated_paths()` の担当のまま）。
+
+    `.github/x.yml` はどの段にも該当しない（1: `./` で始まらない、2: `../` で始まらない、
+    3: 先頭ドットが 1 個のみで `\\.{2,}` に一致しない）ため無傷で通過する。`./foo.py` は
+    1 段目だけで `foo.py` になる。既に正規化済みのパスは変化しない（各段が冪等）。
+
+    サブエージェントの完了報告（claim 側・`check_agent_diff_claim.py` の `_tokens_from_text`）と
+    実 diff 側（同ファイルの `parse_status_short` / `parse_diff_stat`）の両方が **この関数だけ**
+    を通ることで、片側だけ正規化されて食い違う構造的欠陥を防ぐ（`check_agent_diff_claim.py
+    --self-test` の `run_self_test()` 内、`git_diff_utils.normalize_leading_dots` を差し替えて
+    呼び出し回数を記録するブロックが両経路の配線を検証する）。
     """
-    return path.removeprefix("./")
+    path = path.removeprefix("./")
+    path = _PARENT_DIR_RE.sub("", path)
+    path = _LEADING_DOTS_RE.sub("", path)
+    return path
 
 
 def resolve_abbreviated_path(path: str, candidates: set[str] | frozenset[str]) -> str | None:
@@ -804,8 +841,10 @@ def _self_test_normalize_abbreviated_paths() -> list[str]:
     return failures
 
 
-def _self_test_normalize_leading_dotslash() -> list[str]:
-    """Issue #948: `lstrip("./")` の文字集合ドリフトが再発しないことを固定する。"""
+def _self_test_normalize_leading_dots() -> list[str]:
+    """Issue #948 / #968: 先頭ドット系の正規化が意図どおりで、かつ `.../`（ABBREV_PREFIX）を
+    絶対に壊さないことを固定する。
+    """
     failures: list[str] = []
 
     cases = [
@@ -814,12 +853,27 @@ def _self_test_normalize_leading_dotslash() -> list[str]:
         (".claude/hooks/y.sh", ".claude/hooks/y.sh"),  # 同上（別ディレクトリ）
         ("foo.py", "foo.py"),  # プレフィックス無しは変化しない（冪等）
         ("././foo.py", "./foo.py"),  # 1 回だけ剥がす（`lstrip` のような連続除去はしない）
-        ("...hidden.py", "...hidden.py"),  # "." が 3 連続でも "./" 完全一致でなければ触らない
+        # #968: "..." + 直後が英数字は「三点リーダー + ファイル名」の融合とみなして剥がす
+        # （旧仕様は "...hidden.py" を無傷で通していたが、#968 の CRITICAL 修正でこのケース自体が
+        # 対策対象になったため意図的に挙動を変える。実ファイル名が真に "...hidden.py" である
+        # 可能性より、日本語文中の三点リーダー融合が起きる確率の方が既知の実害として高いため）。
+        ("...hidden.py", "hidden.py"),
+        ("...utils.py", "utils.py"),  # #968 CRITICAL 指摘そのものの再現ケース
+        ("..hidden.py", "hidden.py"),  # 2 連続ドットでも同様に剥がす（下限は 2 個）
+        # #968: 境界の外側（似ているが別カテゴリ・#750 の負ケース観点）
+        (".hidden.py", ".hidden.py"),  # 単一ドットは対象外（隠しファイルの通常表記）
+        (".../infrastructure/x.md", ".../infrastructure/x.md"),  # ABBREV_PREFIX は絶対に無傷
+        ("..../x.py", "..../x.py"),  # 4連続ドット + "/" も直後が "/" のため先読み不成立で無傷
+        # #968: "../"（相対パス上位参照）
+        ("../foo.py", "foo.py"),
+        ("../bin/tool.sh", "bin/tool.sh"),
+        ("../../foo.py", "foo.py"),  # 連続する "../" は 1 回の sub でまとめて剥がれる
+        ("../.../x.md", ".../x.md"),  # "../" を剥がした後に残る ABBREV_PREFIX は無傷のまま
     ]
     for given, expected in cases:
-        got = normalize_leading_dotslash(given)
+        got = normalize_leading_dots(given)
         if got != expected:
-            failures.append(f"normalize_leading_dotslash({given!r}): expected={expected!r} got={got!r}")
+            failures.append(f"normalize_leading_dots({given!r}): expected={expected!r} got={got!r}")
 
     return failures
 
@@ -851,7 +905,7 @@ def run_self_test() -> int:
         ("_run_git cwd/timeout 転送", _self_test_run_git_cwd_and_timeout_forwarded),
         ("run_git_or_raise", _self_test_run_git_or_raise),
         ("normalize_abbreviated_paths（#850）", _self_test_normalize_abbreviated_paths),
-        ("normalize_leading_dotslash（#948）", _self_test_normalize_leading_dotslash),
+        ("normalize_leading_dots（#948 / #968）", _self_test_normalize_leading_dots),
     ]
     total_fail = 0
     for label, fn in groups:

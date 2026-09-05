@@ -108,6 +108,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 一方、`][` で連結された 2 パス（`[a/x.py][b/y.py]`）は 1 トークンに融合すると
 # **両方のパスが `missing_from_report` 側へ落ちる**（見落とし方向）ため、
 # `extract_claimed_paths` が後処理で明示的に分割する。
+#
+# Issue #968（CRITICAL・上記と同型で発見が遅れた回帰）: 先頭文字クラスへ `.` を足した副作用で、
+# `../bin/tool.sh`（相対パス）や「対応完了...utils.pyを修正」中の `...utils.py`（三点リーダーと
+# ファイル名の融合）も 1 トークンとしてそのまま拾われる。これらは実 diff 側では `bin/tool.sh` /
+# `utils.py` として現れるため、正規化せず素通しすると `missing_from_report`（報告漏れ・見落とし
+# 方向のより重い警告）に落ちる。`git_diff_utils.normalize_leading_dots()`（claim 側・実 diff 側の
+# 両方が通る共通正規化関数）が「../」1 回以上・直後が英数字の 2+ 連続ドットを剥がして解決する
+# （`.../` = `ABBREV_PREFIX` は先読みで保護され絶対に触らない）。
 _PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_.\[][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+")
 _URL_RE = re.compile(r"https?://\S+")  # ドメイン名がパストークンとして誤抽出されるのを防ぐため事前に除去する
 
@@ -150,8 +158,10 @@ def _tokens_from_text(text: str) -> set[str]:
                 # Issue #948: `lstrip("./")` は文字集合として解釈されるため、`.github/workflows/x.yml`
                 # のような先頭ドット付きの実在パスまで `.` を食い荒らし `github/workflows/x.yml` に
                 # 化けていた（偽陽性の直接原因）。共通正規化関数（claim 側・実 diff 側の双方が通る
-                # 唯一の入口）に置き換える。
-                tok = git_diff_utils.normalize_leading_dotslash(tok)
+                # 唯一の入口）に置き換える。Issue #968: 同関数は「../」相対パス・三点リーダー融合
+                # （"...utils.py"）の正規化も担う（`_PATH_TOKEN_RE` 先頭文字クラスへ `.` を足した
+                # 副作用で生まれた新しい偽陽性・下記 `_PATH_TOKEN_RE` docstring 参照）。
+                tok = git_diff_utils.normalize_leading_dots(tok)
                 if not tok:
                     continue
                 ext = tok.rsplit(".", 1)[-1]
@@ -275,8 +285,8 @@ def run_git(args: list[str], cwd: Path) -> str:
 def parse_status_short(output: str) -> set[str]:
     """`git status --short` 出力からファイルパスを抽出する（リネームは新パスを採用）。
 
-    Issue #948: claim 側（`_tokens_from_text`）と同じ `git_diff_utils.normalize_leading_dotslash()`
-    を通す。`git status --short` は通常 `./` プレフィックス無しでパスを返すため実害は無いが、
+    Issue #948 / #968: claim 側（`_tokens_from_text`）と同じ `git_diff_utils.normalize_leading_dots()`
+    を通す。`git status --short` は通常 `./` `../` プレフィックス無しでパスを返すため実害は無いが、
     「claim 側と実 diff 側が同じ正規化関数を通る」構造を自己テストで固定するため実 diff 側にも
     明示的に適用する（片側だけ正規化される非対称性そのものが再発要因だったため・#948）。
     """
@@ -288,7 +298,7 @@ def parse_status_short(output: str) -> set[str]:
         if " -> " in rest:
             rest = rest.split(" -> ", 1)[1]
         rest = rest.strip().strip('"')
-        rest = git_diff_utils.normalize_leading_dotslash(rest)
+        rest = git_diff_utils.normalize_leading_dots(rest)
         if rest:
             files.add(rest)
     return files
@@ -297,14 +307,14 @@ def parse_status_short(output: str) -> set[str]:
 def parse_diff_stat(output: str) -> set[str]:
     """`git diff --stat` 出力からファイルパスを抽出する（末尾のサマリー行は "|" が無く自動除外）。
 
-    Issue #948: `parse_status_short()` と同様に `git_diff_utils.normalize_leading_dotslash()` を通す。
+    Issue #948 / #968: `parse_status_short()` と同様に `git_diff_utils.normalize_leading_dots()` を通す。
     """
     files: set[str] = set()
     for line in output.splitlines():
         if "|" not in line:
             continue
         path = line.split("|", 1)[0].strip()
-        path = git_diff_utils.normalize_leading_dotslash(path)
+        path = git_diff_utils.normalize_leading_dots(path)
         if path:
             files.add(path)
     return files
@@ -545,27 +555,45 @@ def run_self_test() -> int:
     )
 
     # 共通正規化関数への配線検証: claim 側（_tokens_from_text 経由）と実 diff 側
-    # （parse_status_short / parse_diff_stat 経由）が同一の `git_diff_utils.normalize_leading_dotslash`
+    # （parse_status_short / parse_diff_stat 経由）が同一の `git_diff_utils.normalize_leading_dots`
     # を通ることを、差し替えで呼び出し回数を記録して確認する（片側だけ直す再発を防ぐ・#948）。
     _dotslash_calls: list[str] = []
-    _orig_normalize_leading_dotslash = git_diff_utils.normalize_leading_dotslash
+    _orig_normalize_leading_dots = git_diff_utils.normalize_leading_dots
 
-    def _recording_normalize_leading_dotslash(path: str) -> str:
+    def _recording_normalize_leading_dots(path: str) -> str:
         _dotslash_calls.append(path)
-        return _orig_normalize_leading_dotslash(path)
+        return _orig_normalize_leading_dots(path)
 
-    git_diff_utils.normalize_leading_dotslash = _recording_normalize_leading_dotslash
+    git_diff_utils.normalize_leading_dots = _recording_normalize_leading_dots
     try:
         _tokens_from_text(".github/workflows/x.yml を変更した")
         parse_status_short(" M .github/workflows/x.yml\n")
         parse_diff_stat(" .github/workflows/x.yml | 1 +\n 1 file changed\n")
     finally:
-        git_diff_utils.normalize_leading_dotslash = _orig_normalize_leading_dotslash
+        git_diff_utils.normalize_leading_dots = _orig_normalize_leading_dots
     check(
         "claim 側（_tokens_from_text）と実 diff 側（parse_status_short/parse_diff_stat）が"
-        "共通正規化関数 git_diff_utils.normalize_leading_dotslash を通る（#948 共通化の完了条件）",
+        "共通正規化関数 git_diff_utils.normalize_leading_dots を通る（#948 共通化の完了条件）",
         len(_dotslash_calls) == 3,
         f"calls={_dotslash_calls}",
+    )
+
+    # ── #968 指摘2（#750 境界の外側の負ケース）: '../'（相対パス）・'...'（三点リーダー融合）を
+    # 正規化しつつ '.../'（ABBREV_PREFIX・省略記法）は絶対に無傷で残すこと。end-to-end（compare
+    # まで）で mismatch=False になることを見る（CRITICAL 指摘1 の再現ケースそのもの）。
+    neg_case_text = "CHANGED_FILES:\n../bin/tool.sh\n...utils.py\n.../tools/x.py\n"
+    got_neg_case, used_neg_case = extract_claimed_paths(neg_case_text)
+    check(
+        "#968 負ケース: '../bin/tool.sh'→'bin/tool.sh'・'...utils.py'→'utils.py' に正規化しつつ、"
+        "'.../tools/x.py'（ABBREV_PREFIX）は無傷で残す（#750 境界の外側）",
+        got_neg_case == {"bin/tool.sh", "utils.py", ".../tools/x.py"} and used_neg_case is True,
+        str((got_neg_case, used_neg_case)),
+    )
+    r_neg_case = compare(got_neg_case, {"bin/tool.sh", "utils.py", ".../tools/x.py"})
+    check(
+        "#968 負ケース end-to-end: 正規化後の claim が実 diff 側の表記と一致し mismatch=False",
+        r_neg_case["mismatch"] is False,
+        str(r_neg_case),
     )
 
     # compare: Issue #712 の再現ケースを end-to-end で検証する。
@@ -673,6 +701,23 @@ def run_self_test() -> int:
         f"性能: 200,001文字の病的入力が1秒未満で返る（実測 {_elapsed:.3f}s・#717 完了条件）",
         _elapsed < 1.0,
         f"{_elapsed:.3f}s / 抽出結果={_got_perf}",
+    )
+
+    # ── NIT（#968）: `_MAX_TOKEN_CHARS` の頭打ちが実際に効いていることを固定する ──
+    # 上の性能テストは「速いこと」しか見ておらず、`_MAX_TOKEN_CHARS` を将来緩める・削除する
+    # 変更が入っても（性能が別の要因で保たれていれば）気づかない。ここでは 500 文字を大きく
+    # 超える連続ドットトークンが 1 秒未満で処理されることに加え、頭打ちによって末尾の
+    # "x.py" が切り捨てられ抽出結果が空集合になること自体もあわせて固定する
+    # （結果まで固定することで、`_MAX_TOKEN_CHARS` を大幅に緩める・削除する変異を確実に検知する）。
+    _dot_heavy_token = "." * 5000 + "x.py"  # 空白区切りなし・"." が大量に連続する単一トークン
+    _t0 = _time.perf_counter()
+    _got_dot_perf, _ = extract_claimed_paths(f"CHANGED_FILES:\n{_dot_heavy_token}\n")
+    _elapsed_dot_perf = _time.perf_counter() - _t0
+    check(
+        f"NIT: 500文字超の連続ドットトークンが _MAX_TOKEN_CHARS 頭打ちで1秒未満・"
+        f"末尾 'x.py' が切り捨てられ結果が空集合になる（実測 {_elapsed_dot_perf:.3f}s・#968）",
+        _elapsed_dot_perf < 1.0 and _got_dot_perf == set(),
+        f"{_elapsed_dot_perf:.3f}s / 抽出結果={_got_dot_perf}",
     )
 
     # ── PR #723 指摘1: ヘッダーが切り詰め位置（MAX_STDIN_CHARS）より後ろにある報告でも
@@ -976,6 +1021,21 @@ def run_self_test() -> int:
         "main() 経由: 解決できない省略パスを 0 に丸めず exit 2（判定不能・fail-closed）",
         _code_unres == 2 and "✅" not in _out_unres,
         f"code={_code_unres} out={_out_unres!r}",
+    )
+
+    # ── #968 指摘3: 先頭ドット正規化を main()（CLI 入口）から経由させる ──
+    # #948 の先頭ドット系テストは全て `extract_claimed_paths()` / `compare()` の直接呼び出しで、
+    # `main()` → stdin → exit code の経路を 1 件も通っていなかった（内部関数だけが正しくても、
+    # `main()` 側の配線が壊れれば exit code に反映されない退行を見逃す・#686）。
+    _dotpath_main_report = "CHANGED_FILES:\n../bin/tool.sh\n...utils.py\n.../tools/x.py\n"
+    _code_dotpath_ok, _out_dotpath_ok = _run_main_with(
+        _dotpath_main_report,
+        {"files": {"bin/tool.sh", "utils.py", ".../tools/x.py"}, "unresolved": set()},
+    )
+    check(
+        "main() 経由: 先頭ドット正規化（'../' '...' 剥がし・'.../' 保護）が一致して exit 0（#968 指摘3）",
+        _code_dotpath_ok == 0 and "✅" in _out_dotpath_ok,
+        f"code={_code_dotpath_ok} out={_out_dotpath_ok!r}",
     )
 
     print(f"\nセルフテスト: {passed} passed, {failed} failed / {passed + failed} cases")
