@@ -28,8 +28,9 @@ test.describe('SP-14: キーワード非依存の発見面', () => {
   }) => {
     await page.goto('/ja?date=20260820')
     const names = await readDigestPackageNames(page)
-    // 🔴 候補プール（`public/data/daily-digest.json`）は 294 件あり、`DAILY_DIGEST_LIMIT = 5`
-    //    なので **必ず 5 件** 出る。「1 件以上 5 件以下」だと 1 件しか出ない回帰を検出できない。
+    // 🔴 候補プール（`public/data/daily-digest.json`）は `SP-14` 時点は 294 件・現在は 300 件
+    //    （Issue #335）。`DAILY_DIGEST_LIMIT = 5` なので件数によらず **必ず 5 件** 出る。
+    //    「1 件以上 5 件以下」だと 1 件しか出ない回帰を検出できない。
     expect(names).toHaveLength(5)
     // 同じ Gem が二重に描画されていない（重複表示の検出）。
     expect(new Set(names).size).toBe(names.length)
