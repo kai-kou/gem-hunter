@@ -61,7 +61,11 @@ const APP_PORT = process.env.LIGHTHOUSE_APP_PORT ?? '3101'
 const CHROME_PATH = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium'
 const BASE_URL = `http://127.0.0.1:${APP_PORT}`
 
+// 🔴 未検索（待ち受け）は 2026-09-05 に追加した（Issue #355）。ファーストビューの装飾イラスト
+//    `hero-idle.webp` はこの状態でしか描画されないため、それまでの 2 画面では LCP 要素も
+//    Accessibility も一度も計測されていなかった（コードから LCP 要素は断定できない・ADR 0015 §5）。
 const TARGETS = [
+  { page: '未検索（待ち受け）', url: `${BASE_URL}/ja` },
   { page: '一覧（検索実行後）', url: `${BASE_URL}/ja?q=react` },
   { page: '詳細', url: `${BASE_URL}/ja/repos/octostub/octo-widgets` },
 ]
@@ -82,6 +86,191 @@ export function evaluateAccessibilityGate(score) {
   }
   const rounded = Math.round(score * 100)
   return { status: rounded < 100 ? 'GATE_FAIL' : 'PASS', rounded }
+}
+
+/**
+ * Lighthouse レポートから LCP 要素（`largest-contentful-paint-element` audit）を取り出す純粋関数。
+ *
+ * Issue #355: 「どの要素が LCP になるか」はコードからは断定できず実測でしか分からない。
+ * Performance スコアと同じく **判定には使わず記録のみ**（ゲートを増やさない・ADR 0015 §5 の
+ * 未確認事項を数値で閉じるための観測点）。
+ *
+ * 🔴 audit の ID は Lighthouse のバージョンで変わる。**本リポジトリの実測（13.4.1・2026-09-05 JST）では
+ * `largest-contentful-paint-element` は存在せず**、insight 系（`lcp-breakdown-insight` /
+ * `lcp-discovery-insight`）の details に LCP 要素の node が入る。旧 ID も後方互換で見る。
+ * 見つからなければ握り潰さず null を返し、呼び出し側が「（audit なし）」と明示表示する。
+ *
+ * details.items の形も版で異なる（すべて受ける）:
+ *   - 13.x : items に `{ type: 'node', snippet, selector, ... }` が直接並ぶ（実測）
+ *   - 10+  : items[0] = { type: 'table', items: [{ node }] }
+ *   - 旧   : items[0] = { node }
+ * `--self-test` で実測構造と異常系を固定する（Chrome 起動不要）。
+ */
+export const LCP_ELEMENT_AUDIT_IDS = [
+  'lcp-breakdown-insight',
+  'lcp-discovery-insight',
+  'largest-contentful-paint-element',
+]
+
+export function extractLcpElement(report) {
+  for (const auditId of LCP_ELEMENT_AUDIT_IDS) {
+    const items = report?.audits?.[auditId]?.details?.items
+    if (!Array.isArray(items)) continue
+    for (const item of items) {
+      const nodes = []
+      if (item?.type === 'node') nodes.push(item)
+      if (item?.node) nodes.push(item.node)
+      if (Array.isArray(item?.items)) {
+        nodes.push(...item.items.map((inner) => inner?.node).filter(Boolean))
+      }
+      for (const node of nodes) {
+        if (node?.snippet || node?.selector || node?.nodeLabel) {
+          return {
+            auditId,
+            snippet: node.snippet ?? null,
+            selector: node.selector ?? null,
+            nodeLabel: node.nodeLabel ?? null,
+          }
+        }
+      }
+    }
+  }
+  return null
+}
+
+function selfTestLcpExtraction() {
+  // 🔴 実測（Lighthouse 13.4.1・/ja 未検索画面）の details をそのまま縮めたもの。
+  //    node は table でラップされず items に直接並ぶ。
+  const measuredNode = {
+    type: 'node',
+    lhId: 'page-0-IMG',
+    selector: 'body.min-h-full > main#main-content > img.mx-auto',
+    snippet:
+      '<img src="/images/hero-idle.webp" alt="" width="768" height="432" loading="eager" decoding="async" class="mx-auto mb-4 h-auto w-full max-w-xs">',
+    nodeLabel: 'body.min-h-full > main#main-content > img.mx-auto',
+  }
+  const measured13 = (auditId) => ({
+    audits: {
+      [auditId]: {
+        details: {
+          type: 'list',
+          items: [
+            { type: 'table', headings: [], items: [{ subpart: 'timeToFirstByte' }] },
+            measuredNode,
+          ],
+        },
+      },
+    },
+  })
+  const cases = [
+    {
+      label: '実測構造（13.x・lcp-breakdown-insight の items に node が直接並ぶ）から取り出す',
+      report: measured13('lcp-breakdown-insight'),
+      expect: (r) => r !== null && r.snippet.includes('hero-idle.webp'),
+    },
+    {
+      label: 'breakdown が無くても lcp-discovery-insight から取り出す',
+      report: measured13('lcp-discovery-insight'),
+      expect: (r) => r !== null && r.auditId === 'lcp-discovery-insight',
+    },
+    {
+      label: '旧 ID（largest-contentful-paint-element・table ラップ）でも取り出す',
+      report: {
+        audits: {
+          'largest-contentful-paint-element': {
+            details: { type: 'list', items: [{ type: 'table', items: [{ node: measuredNode }] }] },
+          },
+        },
+      },
+      expect: (r) => r !== null && r.auditId === 'largest-contentful-paint-element',
+    },
+    {
+      label: '旧々 ID の非ラップ構造（items[0].node）でも取り出す',
+      report: {
+        audits: {
+          'largest-contentful-paint-element': {
+            details: { type: 'table', items: [{ node: measuredNode }] },
+          },
+        },
+      },
+      expect: (r) => r !== null && r.selector.endsWith('img.mx-auto'),
+    },
+    {
+      label: 'LCP 要素が img でない（見出し）場合もそのまま返す',
+      report: {
+        audits: {
+          'lcp-breakdown-insight': {
+            details: {
+              type: 'list',
+              items: [{ type: 'node', selector: 'h1', snippet: '<h1>Gem Hunter</h1>' }],
+            },
+          },
+        },
+      },
+      expect: (r) => r !== null && r.snippet === '<h1>Gem Hunter</h1>',
+    },
+    {
+      label: 'audit 自体が無いレポートでは null',
+      report: { audits: {} },
+      expect: (r) => r === null,
+    },
+    {
+      label: 'node を含まない details（table だけ）では null（空を要素ありと誤認しない）',
+      report: {
+        audits: {
+          'lcp-breakdown-insight': {
+            details: { type: 'list', items: [{ type: 'table', headings: [], items: [] }] },
+          },
+        },
+      },
+      expect: (r) => r === null,
+    },
+    {
+      // 🔴 中身のない node を「要素あり」と誤認しないこと（node の空判定ガードの回帰ケース・#430）。
+      //    ガードを常に真へ変異させると、この 1 件だけが FAIL する。
+      label: 'snippet / selector / nodeLabel をすべて欠く node は要素とみなさず null',
+      report: {
+        audits: {
+          'lcp-breakdown-insight': {
+            details: { type: 'list', items: [{ type: 'node', lhId: 'page-0-IMG' }] },
+          },
+        },
+      },
+      expect: (r) => r === null,
+    },
+    {
+      label: '空 node の後ろに実 node があればそちらを返す（空で打ち切らない）',
+      report: {
+        audits: {
+          'lcp-breakdown-insight': {
+            details: { type: 'list', items: [{ type: 'node' }, measuredNode] },
+          },
+        },
+      },
+      expect: (r) => r !== null && r.snippet.includes('hero-idle.webp'),
+    },
+    {
+      label: 'report が undefined でも例外を投げず null',
+      report: undefined,
+      expect: (r) => r === null,
+    },
+  ]
+  let ok = true
+  for (const c of cases) {
+    let actual
+    try {
+      actual = extractLcpElement(c.report)
+    } catch (err) {
+      actual = null
+      console.log(`[run_lighthouse --self-test] 例外: ${err.message}`)
+    }
+    const pass = c.expect(actual)
+    if (!pass) ok = false
+    console.log(
+      `[run_lighthouse --self-test] ${pass ? 'PASS' : 'FAIL'}: ${c.label}（実際: ${JSON.stringify(actual)}）`,
+    )
+  }
+  return ok
 }
 
 function selfTest() {
@@ -305,6 +494,11 @@ async function main() {
       } else {
         summaryLines.push(`${target.page}: Accessibility ${gate.rounded}/100 (perf=${perf100})`)
       }
+      // LCP 要素は判定に使わず記録のみ（Performance と同じ扱い・Issue #355）。
+      const lcp = extractLcpElement(result.report)
+      summaryLines.push(
+        `${target.page}: LCP 要素 = ${lcp ? (lcp.snippet ?? lcp.selector ?? lcp.nodeLabel) : '（audit なし）'}`,
+      )
     }
 
     for (const line of summaryLines) {
@@ -339,7 +533,9 @@ async function main() {
 }
 
 if (process.argv.includes('--self-test')) {
-  process.exitCode = selfTest() ? 0 : 1
+  const gateOk = selfTest()
+  const lcpOk = selfTestLcpExtraction()
+  process.exitCode = gateOk && lcpOk ? 0 : 1
 } else {
   main()
 }

@@ -93,3 +93,13 @@ OG 画像（`app/[locale]/opengraph-image.tsx`）は、`og-background.png`（文
 | 2 | ロケール切替時に共有ヘッダー配下が remount されるか（`LocaleSwitchAnnouncer` の初回ガードに影響） | 🔴 **再現を確認**（remount によりアナウンスが抜けるケースが実機 E2E で見つかった）。`LocaleSwitchAnnouncer` 側の実装で対処し、テストで検証済み |
 
 ⚠️ item 2 は検出された別の細部の欠陥（同一ロケールへの遷移でも誤ってアナウンスしてしまうケース）についてなお改善作業が続いている。ADR は決定の記録であり実装の逐次状態を追わないため、本表は「解決済みであること」と大まかな解決の方向性のみを記録し、実装の細部は追跡しない（細部は実装側のコード・コメント・テストが正本）。
+
+🔵 **追記（Issue #355・2026-09-05 JST）**: 上表の 2 点とは別に、`hero-idle.webp`（ファーストビューの装飾イラスト・個別予算 30KB の 91% を占める）が **LCP 要素になるかどうか** が未確認のまま残っていた（本 ADR には受け皿の行が無く、Issue #355 が受け皿になった）。**本 ADR の決定（§2.1〜§2.3）は変更しない**。
+
+| # | 未確認事項だった内容 | 解決結果（実測日 2026-09-05 JST） |
+|---|---|---|
+| 3 | `hero-idle.webp` が未検索画面の LCP 要素になるか（推測で書かず実測で断定する） | 🔴 **LCP 要素であることを実測で確認**。Lighthouse 13.4.1 を未検索画面（`/ja`）に対して実行し、`lcp-breakdown-insight` / `lcp-discovery-insight` の node が本 img（`body.min-h-full > main#main-content > img.mx-auto`）を指すことを確認した（LCP 2.5 s・Performance 98・Accessibility 100）。同レポートの `lcp-discovery-insight` は `priorityHinted: false`（"fetchpriority=high should be applied to the image preload request"）を指摘していたため **`fetchPriority="high"` を付与** し、属性の欠落を `e2e/sp-6-idle.spec.ts` で固定した |
+
+> **縮小（表示寸法へのリサイズ）は行わない**: 実測の LCP 内訳は `resourceLoadDuration` 17 ms（`timeToFirstByte` 23 ms / `resourceLoadDelay` 12 ms / `elementRenderDelay` 67 ms）で、**ダウンロード時間は LCP の支配項ではない**。表示は最大 320px だが DPR 2 の端末では 640px 相当を要するため、768px 生成は過大ではない（`ui-ux-guidelines.md` §8.6 の生成寸法を維持する）。
+>
+> ⚠️ **この実測は未検索画面を Lighthouse の計測対象に加えて初めて可能になった**。それまでの計測対象は一覧（`/ja?q=react`）と詳細の 2 画面のみで、`hero-idle` が描画される未検索画面は一度も計測されていなかった（`tools/run_lighthouse.mjs` の `TARGETS`）。LCP 要素は判定に使わず記録のみとする（Performance と同じ扱い・ゲートを増やさない）。
