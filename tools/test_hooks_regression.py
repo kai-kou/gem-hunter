@@ -189,6 +189,279 @@ def test_stop_slack_notify_commits_tracked_only() -> None:
         )
 
 
+# ──────────────────────────────────────────────
+# Cloudflare コスト閾値チェックブロック（Issue #247・PR #937 Layer 1 指摘）
+#
+# 隔離リポジトリを cwd にすると、フック内の REPO_ROOT は隔離リポジトリを指す。
+# したがって `tools/check_cloudflare_cost.py` を装ったスタブをそこへ置けば、
+# 実 API へ触れずに終了コード別の分岐・通知経路の配線をそのまま実行できる。
+# スタブは受け取った argv を記録し、期待どおりのサブコマンドで呼ばれたかを検証する
+# （終了コードだけを差し替える fake は「呼び出し自体が消えた」変異を見逃すため・#710）。
+# ──────────────────────────────────────────────
+
+_COST_STUB = '''#!/usr/bin/env python3
+import json, os, sys
+
+log = os.environ.get("CF_STUB_CALL_LOG")
+if log:
+    with open(log, "a", encoding="utf-8") as f:
+        f.write(json.dumps(sys.argv[1:], ensure_ascii=False) + "\\n")
+
+# 期待どおりのオプションで呼ばれていなければ「想定外の終了コード」へ倒す
+# （`--gate-daily` のタイポ変異を検知するための門）。
+if sys.argv[1:] != ["--gate-daily"]:
+    sys.stderr.write("stub: unexpected argv %r\\n" % (sys.argv[1:],))
+    sys.exit(99)
+
+out = os.environ.get("CF_STUB_STDOUT", "")
+if out:
+    sys.stdout.write(out + "\\n")
+sys.exit(int(os.environ.get("CF_STUB_EXIT", "0")))
+'''
+
+_SLACK_STUB = '''#!/usr/bin/env python3
+import json, os, sys
+
+log = os.environ.get("SLACK_STUB_ARGV_LOG")
+if log:
+    with open(log, "a", encoding="utf-8") as f:
+        f.write(json.dumps(sys.argv[1:], ensure_ascii=False) + "\\n")
+sys.exit(0)
+'''
+
+_ALERT_LINE = (
+    "⚠️ Cloudflare の課金額が要対応水準です（2026-09）: 月内累計 $42.00 が撤退ライン $10.00 を超過。"
+    "Cloudflare ダッシュボードの課金設定で請求上限とプランを確認してください"
+    "（A-6: 課金設定はアカウント権限が物理的に必要）。未対応だと請求額が増え続けます。"
+)
+
+
+def _run_cost_block(
+    tmp: str,
+    *,
+    exit_code: int,
+    stdout: str = "",
+    stop_hook_active: bool = False,
+    dirty_tracked: bool = False,
+) -> tuple[subprocess.CompletedProcess, list, list]:
+    """コスト検査スタブを仕込んだ隔離リポジトリでフックを実行し、(結果, 検査 argv, 通知 argv) を返す。
+
+    作業ディレクトリは `Path(tmp) / "work"`（`_make_isolated_repo` の規約）なので、
+    呼び出し側は必要ならそこを直接検査できる。
+    """
+    work = _setup_feature_branch(tmp)
+    tools_dir = work / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    (tools_dir / "check_cloudflare_cost.py").write_text(_COST_STUB, encoding="utf-8")
+    (tools_dir / "slack_notify.py").write_text(_SLACK_STUB, encoding="utf-8")
+    if dirty_tracked:
+        (work / "README.md").write_text("tracked change\n", encoding="utf-8")
+
+    # ログはリポジトリ外に置く（隔離リポジトリの git status を汚さない）
+    cost_log = Path(tmp) / "cost_calls.log"
+    slack_log = Path(tmp) / "slack_calls.log"
+
+    result = _run_hook(
+        STOP_SLACK_NOTIFY,
+        work,
+        {"stop_hook_active": stop_hook_active, "session_id": "cost-test"},
+        {
+            "CLAUDE_CODE_REMOTE": "true",
+            "CF_STUB_EXIT": str(exit_code),
+            "CF_STUB_STDOUT": stdout,
+            "CF_STUB_CALL_LOG": str(cost_log),
+            "SLACK_STUB_ARGV_LOG": str(slack_log),
+        },
+    )
+
+    def _read(path: Path) -> list:
+        if not path.is_file():
+            return []
+        return [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    return result, _read(cost_log), _read(slack_log)
+
+
+def test_cost_check_exit0_is_silent() -> None:
+    """exit 0（閾値内）: 検査は呼ばれるが警告も通知も出さない。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, cost_calls, slack_calls = _run_cost_block(
+            tmp, exit_code=0, stdout="閾値内: 2026-09 の月内累計 $1.00"
+        )
+        _check(
+            "cost-check: exit 0 でも検査ツールは --gate-daily で呼ばれる",
+            cost_calls == [["--gate-daily"]],
+            f"cost_calls={cost_calls}",
+        )
+        _check(
+            "cost-check: exit 0 では Slack 通知を呼ばない",
+            slack_calls == [],
+            f"slack_calls={slack_calls}",
+        )
+        _check(
+            "cost-check: exit 0 では Cloudflare 警告を stderr に出さない",
+            "Cloudflare" not in result.stderr,
+            result.stderr,
+        )
+        _check(
+            "cost-check: exit 0 でもフック自身は exit 0",
+            result.returncode == 0,
+            f"exit={result.returncode}",
+        )
+
+
+def test_cost_check_exit1_notifies_with_tool_stdout() -> None:
+    """exit 1（超過）: 検査ツールの stdout が「加工されずに」通知経路へ渡る（#247 完了条件 4）。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, cost_calls, slack_calls = _run_cost_block(
+            tmp, exit_code=1, stdout=_ALERT_LINE
+        )
+        _check(
+            "cost-check: exit 1 で検査ツールが --gate-daily で呼ばれる",
+            cost_calls == [["--gate-daily"]],
+            f"cost_calls={cost_calls}",
+        )
+        _check(
+            "cost-check: exit 1 で Slack 通知（waiting）が 1 回呼ばれる",
+            len(slack_calls) == 1 and slack_calls and slack_calls[0][0] == "waiting",
+            f"slack_calls={slack_calls}",
+        )
+        argv = slack_calls[0] if slack_calls else []
+        _check(
+            "cost-check: exit 1 の通知に --issues でツールの stdout がそのまま渡る（A-6 判定の前提）",
+            "--issues" in argv and _ALERT_LINE in argv,
+            f"argv={argv}",
+        )
+        # `--branch` が無いと slack_notify.py 側の本文組み立てが崩れる（引数配線の固定）
+        _check(
+            "cost-check: exit 1 の通知に --branch が渡る",
+            "--branch" in argv,
+            f"argv={argv}",
+        )
+        _check(
+            "cost-check: exit 1 では判定 1 行を stderr にも残す",
+            "月内累計 $42.00" in result.stderr,
+            result.stderr,
+        )
+        _check(
+            "cost-check: exit 1 でもフック自身は exit 0（Stop をブロックしない）",
+            result.returncode == 0,
+            f"exit={result.returncode}",
+        )
+
+
+def test_cost_check_exit2_is_undecidable_without_notify() -> None:
+    """exit 2（判定不能・fail-closed）: 超過通知には倒さず、判定不能の警告だけを出す。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, cost_calls, slack_calls = _run_cost_block(tmp, exit_code=2)
+        _check(
+            "cost-check: exit 2 で検査ツールが呼ばれる",
+            cost_calls == [["--gate-daily"]],
+            f"cost_calls={cost_calls}",
+        )
+        _check(
+            "cost-check: exit 2 では Slack 通知を呼ばない（判定不能を超過に丸めない）",
+            slack_calls == [],
+            f"slack_calls={slack_calls}",
+        )
+        _check(
+            "cost-check: exit 2 は「判定できませんでした」と報告する",
+            "判定できませんでした" in result.stderr,
+            result.stderr,
+        )
+        _check(
+            "cost-check: exit 2 でもフック自身は exit 0",
+            result.returncode == 0,
+            f"exit={result.returncode}",
+        )
+
+
+def test_cost_check_exit124_reports_timeout() -> None:
+    """exit 124（timeout）: 判定不能扱いの専用メッセージを出し、通知はしない。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _cost_calls, slack_calls = _run_cost_block(tmp, exit_code=124)
+        _check(
+            "cost-check: exit 124 はタイムアウトとして報告する",
+            "タイムアウト" in result.stderr,
+            result.stderr,
+        )
+        _check(
+            "cost-check: exit 124 では Slack 通知を呼ばない",
+            slack_calls == [],
+            f"slack_calls={slack_calls}",
+        )
+        _check(
+            "cost-check: exit 124 でもフック自身は exit 0",
+            result.returncode == 0,
+            f"exit={result.returncode}",
+        )
+
+
+def test_cost_check_unexpected_exit_code_reported() -> None:
+    """想定外の終了コードは専用メッセージへ倒す（超過にも判定不能にも丸めない）。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _cost_calls, slack_calls = _run_cost_block(tmp, exit_code=3)
+        _check(
+            "cost-check: 想定外の終了コードを終了コード付きで報告する",
+            "想定外の終了コード 3" in result.stderr,
+            result.stderr,
+        )
+        _check(
+            "cost-check: 想定外の終了コードでは Slack 通知を呼ばない",
+            slack_calls == [],
+            f"slack_calls={slack_calls}",
+        )
+
+
+def test_cost_check_skipped_when_stop_hook_active() -> None:
+    """再帰防止: stop_hook_active=true では検査ブロック自体が起動しない。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, cost_calls, slack_calls = _run_cost_block(
+            tmp, exit_code=1, stdout=_ALERT_LINE, stop_hook_active=True
+        )
+        _check(
+            "cost-check: stop_hook_active=true では検査ツールを呼ばない",
+            cost_calls == [],
+            f"cost_calls={cost_calls}",
+        )
+        _check(
+            "cost-check: stop_hook_active=true では Slack 通知も呼ばない",
+            slack_calls == [],
+            f"slack_calls={slack_calls}",
+        )
+        _check(
+            "cost-check: stop_hook_active=true でもフック自身は exit 0",
+            result.returncode == 0,
+            f"exit={result.returncode}",
+        )
+
+
+def test_cost_check_does_not_abort_wip_autocommit() -> None:
+    """干渉検証（#725）: コスト検査の stdout 捕捉が後段の WIP 自動保全を止めないこと。
+
+    `set -euo pipefail` 下でコマンド置換の非ゼロ終了を `|| _cf_cost_rc=$?` で受けそこねると、
+    フックがその場で落ちて **下の WIP 自動コミットが一切走らなくなる**（L-100 の後退）。
+    「フック自身が exit 0」だけでは、途中で落ちても最後の `exit 0` に見えるケースと
+    区別できないため、後段の副作用（[wip] コミットの発生）まで検証する。
+    """
+    for exit_code in (1, 2, 124):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "work"
+            result, _cost_calls, _slack_calls = _run_cost_block(
+                tmp, exit_code=exit_code, stdout=_ALERT_LINE, dirty_tracked=True
+            )
+            log = _git(work, "log", "-1", "--pretty=%s").stdout.strip()
+            _check(
+                f"cost-check: 検査が exit {exit_code} でも後段の WIP 自動コミットは実行される",
+                log.startswith("[wip]") and result.returncode == 0,
+                f"exit={result.returncode} log={log} stderr={result.stderr}",
+            )
+
+
 def test_stop_git_check_warns_on_stash() -> None:
     """stash 残存は非ブロッキング警告（exit 0 のまま）。"""
     with tempfile.TemporaryDirectory() as tmp:
@@ -252,6 +525,13 @@ def main() -> int:
         test_stop_slack_notify_skips_during_merge()
         test_stop_slack_notify_skips_during_cherry_pick()
         test_stop_slack_notify_commits_tracked_only()
+        test_cost_check_exit0_is_silent()
+        test_cost_check_exit1_notifies_with_tool_stdout()
+        test_cost_check_exit2_is_undecidable_without_notify()
+        test_cost_check_exit124_reports_timeout()
+        test_cost_check_unexpected_exit_code_reported()
+        test_cost_check_skipped_when_stop_hook_active()
+        test_cost_check_does_not_abort_wip_autocommit()
 
     if not STOP_GIT_CHECK.is_file():
         print(f"SKIP: {STOP_GIT_CHECK} が見つかりません")
