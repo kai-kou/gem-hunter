@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
 import type { DateSeed } from '../domain/model/date-seed'
-import type { DigestMeta, Gem } from '../domain/model/gem'
+import type { DailyDigest, DigestMeta, Gem } from '../domain/model/gem'
 import { gemIndex, gemIndexValue } from '../domain/model/gem-index'
 import { GEM_INDEX_SHORTLIST_SIZE } from '../domain/model/gem-shortlist'
 import type { GemDigestPort } from '../domain/ports/gem-digest-port'
-import { makeGetDailyDigest } from './get-daily-digest'
+import {
+  makeGetDailyDigest,
+  type GetDailyDigest,
+  type GetDailyDigestInput,
+} from './get-daily-digest'
+
+/**
+ * `GetDailyDigest` は取得失敗時に `null` を返す契約（Issue #392）。以下の既存テストは
+ * 「取得できたとき」の振る舞いを検証するものなので、null でないことを確かめてから中身を見る
+ * （null を握り潰して緑にしないため、ここで明示的に失敗させる）。
+ */
+async function runDigest(run: GetDailyDigest, input: GetDailyDigestInput): Promise<DailyDigest> {
+  const result = await run(input)
+  if (result === null) {
+    throw new Error('ダイジェストが null（取得失敗の契約に落ちた）: ' + JSON.stringify(input))
+  }
+  return result
+}
 
 function gem(packageName: string, gi: number): Gem {
   return {
@@ -43,8 +60,8 @@ describe('getDailyDigest', () => {
     const seed = '20260820' as DateSeed
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
-    const a = await getDailyDigest({ seed, limit: 5 })
-    const b = await getDailyDigest({ seed, limit: 5 })
+    const a = await runDigest(getDailyDigest, { seed, limit: 5 })
+    const b = await runDigest(getDailyDigest, { seed, limit: 5 })
 
     expect(a.items.map((x) => x.packageName)).toEqual(b.items.map((x) => x.packageName))
   })
@@ -52,8 +69,8 @@ describe('getDailyDigest', () => {
   it('連続する 2 日（20260820 → 20260821）で顔ぶれが必ず変わる（US-31 の本質）', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
-    const a = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
-    const b = await getDailyDigest({ seed: '20260821' as DateSeed, limit: 5 })
+    const a = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 5 })
+    const b = await runDigest(getDailyDigest, { seed: '20260821' as DateSeed, limit: 5 })
 
     const namesA = a.items.map((x) => x.packageName)
     const namesB = b.items.map((x) => x.packageName)
@@ -69,7 +86,7 @@ describe('getDailyDigest', () => {
     const seeds = ['20260820', '20260821', '20260901'] as const
     const names = await Promise.all(
       seeds.map(async (seed) => {
-        const r = await getDailyDigest({ seed: seed as DateSeed, limit: 5 })
+        const r = await runDigest(getDailyDigest, { seed: seed as DateSeed, limit: 5 })
         return r.items.map((x) => x.packageName).join(',')
       }),
     )
@@ -81,7 +98,7 @@ describe('getDailyDigest', () => {
   it('limit で先頭 N 件に切り詰める', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
-    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 3 })
+    const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 3 })
 
     expect(result.items).toHaveLength(3)
   })
@@ -89,7 +106,7 @@ describe('getDailyDigest', () => {
   it('候補プールが空でも例外を投げず items:[] を返す（D-28 SPOF 方針）', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: fakePort([]) })
 
-    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+    const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 5 })
 
     expect(result.items).toEqual([])
     expect(result.date).toBe('20260820')
@@ -100,7 +117,7 @@ describe('getDailyDigest', () => {
     const small = candidates.slice(0, 3)
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(small) })
 
-    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+    const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 5 })
 
     expect(result.items).toHaveLength(3)
   })
@@ -112,8 +129,8 @@ describe('getDailyDigest', () => {
     const small = candidates.slice(0, 5)
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(small) })
 
-    const day1 = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
-    const day2 = await getDailyDigest({ seed: '20260821' as DateSeed, limit: 5 })
+    const day1 = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 5 })
+    const day2 = await runDigest(getDailyDigest, { seed: '20260821' as DateSeed, limit: 5 })
 
     const names1 = day1.items.map((x) => x.packageName)
     const names2 = day2.items.map((x) => x.packageName)
@@ -131,7 +148,7 @@ describe('getDailyDigest', () => {
     // 上のテストの対（候補 20 件 / limit 5）。縮退分岐に入らない側では再ソートが効く。
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
-    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+    const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 5 })
 
     expect(candidates.length).toBeGreaterThan(5)
     const values = result.items.map((x) => gemIndexValue(x.gemIndex))
@@ -141,7 +158,7 @@ describe('getDailyDigest', () => {
   it('選ばれたサブセット内は Gem Index asc（過小評価度が高い順）で並ぶ', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
-    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+    const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 5 })
 
     const values = result.items.map((x) => gemIndexValue(x.gemIndex))
     const sorted = [...values].sort((a, b) => a - b)
@@ -151,7 +168,7 @@ describe('getDailyDigest', () => {
   it('meta と date を素通しする', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
-    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+    const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 5 })
 
     expect(result.meta).toEqual(meta)
     expect(result.date).toBe('20260820')
@@ -160,7 +177,7 @@ describe('getDailyDigest', () => {
   it('limit <= 0 なら items:[]（Math.random 非依存の防御）', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
 
-    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 0 })
+    const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 0 })
 
     expect(result.items).toEqual([])
   })
@@ -180,7 +197,7 @@ describe('getDailyDigest', () => {
       const seeds = ['20260820', '20260821', '20260822', '20260901', '20261231'] as const
 
       for (const seed of seeds) {
-        const result = await getDailyDigest({ seed: seed as DateSeed, limit: 5 })
+        const result = await runDigest(getDailyDigest, { seed: seed as DateSeed, limit: 5 })
         for (const item of result.items) {
           expect(shortlistNames.has(item.packageName)).toBe(true)
         }
@@ -225,8 +242,8 @@ describe('getDailyDigest', () => {
       const digestB = makeGetDailyDigest({ port: fakePort(poolOrderB) })
       const seed = '20260820' as DateSeed
 
-      const resultA = await digestA({ seed, limit: GEM_INDEX_SHORTLIST_SIZE })
-      const resultB = await digestB({ seed, limit: GEM_INDEX_SHORTLIST_SIZE })
+      const resultA = await runDigest(digestA, { seed, limit: GEM_INDEX_SHORTLIST_SIZE })
+      const resultB = await runDigest(digestB, { seed, limit: GEM_INDEX_SHORTLIST_SIZE })
 
       const namesA = resultA.items.map((x) => x.packageName)
       const namesB = resultB.items.map((x) => x.packageName)
@@ -248,7 +265,7 @@ describe('getDailyDigest', () => {
       )
       const getDailyDigest = makeGetDailyDigest({ port: fakePort(pool) })
 
-      const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 100 })
+      const result = await runDigest(getDailyDigest, { seed: '20260820' as DateSeed, limit: 100 })
 
       expect(result.items).toHaveLength(80)
     })
@@ -266,7 +283,7 @@ describe('getDailyDigest', () => {
       const seeds = ['20260820', '20260821', '20260822'] as const
       const orderings = await Promise.all(
         seeds.map(async (seed) => {
-          const result = await getDailyDigest({
+          const result = await runDigest(getDailyDigest, {
             seed: seed as DateSeed,
             limit: GEM_INDEX_SHORTLIST_SIZE,
           })
@@ -279,5 +296,40 @@ describe('getDailyDigest', () => {
       // 誤判定され、Gem Index asc に固定化されている。
       expect(new Set(orderings).size).toBeGreaterThan(1)
     })
+  })
+})
+
+describe('GemDigestPort が例外を投げたとき（Issue #392）', () => {
+  function throwingPort(error: unknown): GemDigestPort {
+    return {
+      async listCandidates() {
+        throw error
+      },
+    }
+  }
+
+  it('例外を投げても reject せず null を返す（ダイジェスト部分だけを欠落させる・二重防御）', async () => {
+    const getDailyDigest = makeGetDailyDigest({ port: throwingPort(new Error('boom')) })
+
+    const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
+
+    // 🔴 items:[] ではなく null。出典メタデータ（`DigestMeta`）はポートからしか得られず、
+    //    捏造すると帰属表示（`D-29`）が虚偽になるため「セクションごと出さない」に倒す。
+    expect(result).toBeNull()
+  })
+
+  it('Promise が reject したときも null を返す（throw 以外の失敗形）', async () => {
+    const port: GemDigestPort = {
+      listCandidates: () => Promise.reject(new Error('rejected')),
+    }
+    const getDailyDigest = makeGetDailyDigest({ port })
+
+    await expect(getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })).resolves.toBeNull()
+  })
+
+  it('Error 以外（文字列 throw）でも null を返す', async () => {
+    const getDailyDigest = makeGetDailyDigest({ port: throwingPort('not an error') })
+
+    await expect(getDailyDigest({ seed: '20260820' as DateSeed, limit: 0 })).resolves.toBeNull()
   })
 })
