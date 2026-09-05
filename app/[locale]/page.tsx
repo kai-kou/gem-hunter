@@ -393,9 +393,7 @@ export default async function LocaleHome({
             width={768}
             height={432}
             loading="eager"
-            // Issue #355: 未検索画面の LCP 要素はこの画像であることを Lighthouse 13.4.1 で実測した。
-            // 同レポートの `lcp-discovery-insight` が `priorityHinted: false` を指摘していたため付与する
-            // （ADR 0015 §5・E2E `e2e/sp-6-idle.spec.ts` が属性の欠落を検知する）。
+            // Issue #355: 未検索画面の LCP 要素であることを実測済み（根拠・内訳は ADR 0015 §5）。
             fetchPriority="high"
             decoding="async"
             className="mx-auto mb-4 h-auto w-full max-w-xs"
