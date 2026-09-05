@@ -34,6 +34,7 @@ python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json
 - `ready_to_merge` → 即マージ
 - `needs_response` → 指摘対応再開
 - `needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → マージ
+- `needs_resolve_check` → `pr-review-watcher` の「Resolve 確認セクション」へ復帰（返信はやり直さず Resolve のみ実行）
 - `awaiting_review` → subscribe_pr_activity で待機継続
 - ⚠️ exit code 3 は「0 件」ではなく **取得失敗**（`NO_PENDING_PRS` と混同しない・Issue #130）。
   詳細: `docs/rules/github-mcp-fallback-patterns.md` §4
