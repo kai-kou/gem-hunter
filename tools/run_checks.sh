@@ -603,6 +603,23 @@ else
   skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Slack 通知 self-test（Issue #936）。waiting タイプの fail-closed ガード（--issues 実質空 →
+# --force-mention を付けても送信拒否）・空白のみ項目の除去・空ブランチ欄の省略を検証する。
+# post_message() をフェイクに差し替えて main() を通すためネットワーク非依存。
+if [ -f "$REPO_ROOT/tools/slack_notify.py" ]; then
+  run_check "Slack 通知 self-test (slack_notify.py --self-test)" python3 tools/slack_notify.py --self-test
+else
+  skip_check "Slack 通知 self-test (slack_notify.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# 通知トリアージ分類器 self-test（Issue #936 の関連配線。A/B/C/D 分類ロジックの回帰検知）。
+# ネットワーク・実データ非依存の純関数のみを検証する。
+if [ -f "$REPO_ROOT/tools/triage_notification.py" ]; then
+  run_check "通知トリアージ分類器 self-test (triage_notification.py --self-test)" python3 tools/triage_notification.py --self-test
+else
+  skip_check "通知トリアージ分類器 self-test (triage_notification.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 配信シャード（public/data/gem-index/）の静的検査（SP-17・PR #416 セルフレビュー指摘）。
 # 索引整合・列定義・行の型・gemIndex 昇順・サイズ予算（D-38 の cold start CPU 予算の保険）を見る。
 # ローカルの生成物しか読まないためネットワーク非依存（本判定も self-test も両方配線する）。
@@ -666,6 +683,18 @@ if [ -f "$REPO_ROOT/tools/check_prod_drift.py" ]; then
   run_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" python3 tools/check_prod_drift.py --self-test
 else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# Cloudflare コスト閾値チェック（Issue #247）も「--self-test だけ」を配線する。本判定
+# （`--gate-daily` / 引数なし実行）は Cloudflare REST API（`GET /accounts/{id}/billable-usage`・
+# 必要権限は `Account → Billing → Read`）への実疎通に依存するため、本番乖離検知 self-test と
+# 同じ理由（Issue #288）で配線しない（run_checks.sh はオフラインで完走できることを保つ）。
+# 本判定の呼び出し元は `.claude/hooks/stop-slack-notify.sh`（判定に成功した日は JST 当日 1 回に
+# 収束し、判定不能の日は stamp されないため毎 Stop で再試行される）。
+if [ -f "$REPO_ROOT/tools/check_cloudflare_cost.py" ]; then
+  run_check "Cloudflare コスト閾値検査 self-test (check_cloudflare_cost.py --self-test)" python3 tools/check_cloudflare_cost.py --self-test
+else
+  skip_check "Cloudflare コスト閾値検査 self-test (check_cloudflare_cost.py --self-test)" "スクリプトが見つかりません"
 fi
 
 # ロードマップ状態検査（roadmap.md §2/§3/§5.1 と GitHub Issue 実態の乖離検知・Issue #572）も
@@ -771,6 +800,17 @@ if [ -f "$REPO_ROOT/tools/test_wip_commit_guard.sh" ]; then
   run_check "WIP 抑止ガード回帰テスト (test_wip_commit_guard.sh)" bash tools/test_wip_commit_guard.sh
 else
   skip_check "WIP 抑止ガード回帰テスト (test_wip_commit_guard.sh)" "スクリプトが見つかりません"
+fi
+
+# hooks 主要分岐の回帰テスト（Issue #194 / #941）。`bash -n` では検知できないシェルの機能退行
+# （stop-slack-notify の WIP 自動コミット条件・stop-git-check の stash 警告・pre-pr-create-check
+# 4.8 節の自動保全件名ブロック）を、隔離した一時 git リポジトリへ状態を注入して実測する。
+# リポジトリ本体の .git には触れないためネットワーク・実データ非依存。
+if [ -f "$REPO_ROOT/tools/test_hooks_regression.py" ]; then
+  run_check_timeout "hooks 回帰テスト (test_hooks_regression.py)" 180 \
+    python3 tools/test_hooks_regression.py
+else
+  skip_check "hooks 回帰テスト (test_hooks_regression.py)" "スクリプトが見つかりません"
 fi
 
 # ファイルツール経由の .env アクセスガード self-test（Issue #401 / PR #487）。

@@ -69,7 +69,7 @@
       "empty": "今日は表示できる Gem がありません",
       "dependentLabel": "利用パッケージ数",
       "starsLabel": "star",
-      "attribution": "このデータについて: 利用パッケージ数と star 数は {source}（{license}）のオープンデータをもとにした、{generatedAt} 頃の参考値です。GitHub の最新値や詳細画面の表示とは差があります。並び順は日付をもとに毎日算出しています。",
+      "attribution": "このデータについて: 利用パッケージ数は {source}（{license}）のオープンデータをもとにした参考値です。star 数は {generatedAt} 頃に GitHub から取得した値です（取得できなかった銘柄は従来の参考値のままです）。取得タイミングが異なるため詳細画面の表示とは差が生じることがあります。並び順は日付をもとに毎日算出しています。",
       "newBadge": "新着",
       "firstVisitNote": "初回として全件を表示しています"
     }

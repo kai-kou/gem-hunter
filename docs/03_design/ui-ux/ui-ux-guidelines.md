@@ -581,6 +581,8 @@ Lighthouse の a11y カテゴリは axe-core の全ルールの約半分しか�
 - 説明文は `line-clamp` で行数を固定し、欄に `min-height` を与える
 - フォントは `display: 'optional'`
 
+> 🔵 **README のような可変長コンテンツでは「実データと同一寸法」を原理的に達成できない**（実サイズが数行〜数百行まで暴れるため）。この場合は妥協ラインとして **`min-height` を与えるに留め、完全一致は狙わない**。出典: `content/discussions/feedback334_detail_readme_20260821/entries/r02_1787298491_15322_d5360b_ui_nav_rebuttal.md`（round 2・`ui_nav` の申し送り）。同じ指摘がレビューで再発するのを防ぐための注記。
+
 ### 8.4. GitHub アバターの最適化
 
 ```

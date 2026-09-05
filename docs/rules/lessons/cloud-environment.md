@@ -458,3 +458,10 @@ triggers = fetch_build_triggers(account_id, token, tag)    # ← 0 件ならこ�
 
 **判定基準**: 同趣旨の差し戻しが `~/.claude/...` と `.claude/hooks/...` の両方から届いても異常ではない。
 どちらか 1 回分だけ対応し、報告は 1〜3 行に留める（`completion-report-rules.md` §1.2）。
+
+**再発（2026-09-05・PR #949）— 抑止マーカーは片側にしか効かない**: 並行委譲中の WIP 自動コミットを止めるため
+`bash tools/mutation_guard.sh begin` でマーカーを置いたが、抑止できたのは **プロジェクト側の `stop-router.sh` だけ** で、
+`~/.claude/stop-hook-git-check.sh` は同じターンで差し戻しを続けた。マーカーの検査は `.claude/hooks/lib/wip_guard.sh`
+（project 配下）にあり、グローバル側フックはそれを読まないため構造的に効かない。
+**回避策**: 完了した役の担当ファイルだけを `git add <path>` で **パス指定コミット** し、作業中の役のファイルは残す
+（作業ツリー全体の `git add -A` は他役の中間状態を巻き込む）。解決方針の検討は Issue #322 のコメントに記録済み。

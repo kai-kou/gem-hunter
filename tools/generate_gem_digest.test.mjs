@@ -21,10 +21,13 @@ import {
   DEFAULT_PER_PAGE,
   DEFAULT_QUOTA,
   decideOutputWrite,
+  decideStarRefresh,
   parseArgs,
   selectOrphanShards,
   toBuildPoolOptions,
 } from './generate_gem_digest.mjs'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 describe('既定値（出荷値の固定）', () => {
   it('引数なしのときの既定値が決定ログの採用値と一致する', () => {
@@ -175,6 +178,59 @@ describe('decideOutputWrite（部分実行で配信物を壊さない）', () =>
       write: false,
       blocked: false,
     })
+  })
+})
+
+describe('decideStarRefresh（dry-run で GitHub のレート枠を消費しない）', () => {
+  it('decision.write=false かつ候補ありなら再取得しない', () => {
+    const decision = { write: false, reason: 'dry-run のため書き込みません' }
+    expect(
+      decideStarRefresh({ decision, digestCandidates: [{ repositoryFullName: 'a/b' }] }),
+    ).toEqual({ shouldRefresh: false, skipReason: 'dry-run のため書き込みません' })
+  })
+
+  it('decision.write=true かつ候補ありなら再取得する', () => {
+    const decision = { write: true, reason: null }
+    expect(
+      decideStarRefresh({ decision, digestCandidates: [{ repositoryFullName: 'a/b' }] }),
+    ).toEqual({ shouldRefresh: true, skipReason: null })
+  })
+
+  it('候補が 0 件なら decision.write=true でも再取得しない', () => {
+    const decision = { write: true, reason: null }
+    expect(decideStarRefresh({ decision, digestCandidates: [] })).toEqual({
+      shouldRefresh: false,
+      skipReason: '候補が 0 件のため',
+    })
+  })
+
+  it('reason が無い decision.write=false のときは skipReason が dry-run にフォールバックする', () => {
+    expect(
+      decideStarRefresh({
+        decision: { write: false, reason: null },
+        digestCandidates: [{ repositoryFullName: 'a/b' }],
+      }),
+    ).toEqual({ shouldRefresh: false, skipReason: 'dry-run' })
+  })
+})
+
+// PR #949 CRITICAL 指摘: `main()` の分岐を `if (true && ...)` に書き換えても全緑のまま通っていた
+// （main() を実行しない設計のため）。上の decideStarRefresh 単体テストだけでは
+// 「本番の入口（main()）が実際にこの関数を呼んでいるか」までは担保できないので、
+// ソースを静的に検査して呼び出し配線を固定する（#686・本番の主コードパスを変異対象に含める）。
+describe('main() が decideStarRefresh を実際に呼んでいる（配線の固定）', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('./generate_gem_digest.mjs', import.meta.url)),
+    'utf8',
+  )
+
+  it('star 再取得の分岐が decideStarRefresh の判定結果を条件にしている', () => {
+    expect(source).toMatch(/const starRefreshDecision = decideStarRefresh\(/)
+    expect(source).toMatch(/if\s*\(\s*starRefreshDecision\.shouldRefresh\s*\)/)
+  })
+
+  it('decision.write を直接条件にした旧分岐（退行）が復活していない', () => {
+    expect(source).not.toMatch(/if\s*\(\s*decision\.write\s*&&\s*digestCandidates\.length/)
   })
 })
 

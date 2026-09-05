@@ -67,6 +67,14 @@ jobs:
 
       - name: Generate gem pool
         run: node tools/generate_gem_digest.mjs
+        env:
+          # 🔴 Issue #310: 「今日の Gem」の star 数を GitHub API で取り直すために使う
+          # （`tools/gem-pool/github-stars.mjs`）。既定の `secrets.GITHUB_TOKEN` で足りる
+          # （対象は public repo のみ・`GET /repos/{owner}/{repo}` に read 権限以上は不要）。
+          # 見積もり: 既定 `--digest-limit 300` なら最大 300 リクエスト（失敗時のリトライを含めても
+          # 高々 900）。GITHUB_TOKEN のレート枠は 1,000 req/時のためこの日次実行だけで枯渇しない。
+          # 未設定でも動く（未認証 60 req/時にフォールバックし、枯渇を検知した時点で残りをスキップする）。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # 反映するかどうかに関わらず **毎日** 実行する（パイプラインの健全性を毎日検証するのが
         # この日次実行の目的そのもの）。--allow-partial-write は絶対に付けない（孤児シャード
         # 削除が不可逆）。CLI は失敗時に非ゼロで終了し、部分書き込みは既定で拒否するため、

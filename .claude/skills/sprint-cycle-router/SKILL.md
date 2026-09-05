@@ -199,13 +199,38 @@ Step 1〜9 のどのブランチが選ばれても、その手前で必ず 1 回
           コメントに 1 行だけ「前回通知から状態不変のため再通知を抑制した」と書いて §2 へ進む
           （毎 firing 同じ内容を鳴らすと A 区分通知全体が無視されるようになる・
           `user-notification-triage.md` §4）。
-        - `escalate: true` → `python3 tools/slack_notify.py` で通知する。
-          `mention: true`（= `[prod-drift][経路未構成]` が閾値到達）のときだけ `@mention` する:
-          Cloudflare ダッシュボードで Workers Builds を接続し直す以外に復旧手段がなく、
-          飼い主のアカウント権限が物理的に必要なため **A-6** に該当する
+        - `escalate: true` → `python3 tools/slack_notify.py` で通知する。通知タイプは必ず `waiting`
+          （他タイプでは A 区分トリアージが効かない）。`mention: true`（= `[prod-drift][経路未構成]` が
+          閾値到達）のときだけ `@mention` する: Cloudflare ダッシュボードで Workers Builds を接続し直す
+          以外に復旧手段がなく、飼い主のアカウント権限が物理的に必要なため **A-6** に該当する
           （`user-notification-triage.md` §3 の必須要件 4 点を満たして書く: 具体的ユーザーアクション /
           該当境界 A-6 / 取らない場合の結果 = main への push が本番に反映され続けない /
           Claude 側の状態）。`mention: false` の判定不能は A 区分ではないので `@mention` しない。
+
+          🔴 **そのままコピーして実行できる形（`--issues` は §3 の 4 要件を満たした具体文を渡す。
+          空にしない）**:
+
+          ```bash
+          # trigger 0 件（経路未構成・A-6・@mention あり）の例
+          python3 tools/slack_notify.py waiting \
+            --issues "Cloudflare ダッシュボードで Workers Builds を接続し直してください（A-6・
+          あなたのアカウント権限が物理的に必要です）。未対応のままだと main への push が本番へ
+          自動反映されなくなります。Claude 側は npm run deploy フォールバックで暫定対応中です。" \
+            --branch "$(git branch --show-current)" \
+            --force-mention
+
+          # 判定不能（通常通知・@mention なし）の例: --force-mention を付けない
+          python3 tools/slack_notify.py waiting \
+            --issues "prod-drift の原因が {エラー内容} で判定不能でした。Claude が調査を継続します。" \
+            --branch "$(git branch --show-current)"
+          ```
+
+          `mention: true` のときだけ `--force-mention` を付ける（`mention: false` では付けない。
+          §3 の分岐が既にトリアージ結果を持っているため、`--force-mention` は「機械トリアージを
+          上書きしてでも鳴らす」ときの引数であり、A-6 判定そのものの代わりにはしない）。
+          🔴 **`--issues` を省略・空配列のまま実行すると `slack_notify.py` は送信せず非ゼロ終了する**
+          （fail-closed 化済み・#936。空通知の再発防止として送信ツール側で機械強制される）。
+
           🔴 **通知したら、その直後に通知記録コメントを 1 件追記する**（次 firing の抑制判定は
           このコメントだけを材料にする。書き忘れると同じ通知が繰り返される）。**症状コメントとは
           別のコメントで投稿する**（同居させると、そのコメントが症状 1 回として数えられつつ抑制も

@@ -51,6 +51,8 @@ python3 tools/triage_notification.py --self-test    # CI / セルフレビュー
 
 > **判定**: 「ユーザーが取るべき具体アクションを 1 文で書けない」なら、それは A 区分ではない（= `@mention` しない）。
 
+🔴 **この 4 要件のうち「項目が 1 件以上あること」は `tools/slack_notify.py` が機械強制する**（fail-closed 化済み・#936）: `waiting` タイプは `--issues` が空・省略のまま呼び出すと **送信せず非ゼロ終了** する。中身が §3 の 4 要件を満たしているかまでは検証しないが、「項目ゼロの空通知」（実測 13 件・Issue #936）はこれで機械的に再発しなくなった。呼び出し側（`sprint-cycle-router` 等）は §3 テンプレートに沿った具体文を `--issues` へ渡す義務が残る（機械強制は空文字化の防止であって、規範の代わりにはならない）。
+
 ---
 
 ## 4. 通知経路と日次レポート（要約）
@@ -82,6 +84,7 @@ python3 tools/triage_notification.py --self-test    # CI / セルフレビュー
 - [ ] `@mention` が A-1〜A-6 該当時のみ発火する
 - [ ] 障害起因の通知が `@mention` されない（L-077 で自律修正）
 - [ ] A 区分通知に「具体的ユーザーアクション + 結果」が含まれる
+- [ ] `waiting` 通知の `--issues` は必ず 1 件以上渡している（0 件は `tools/slack_notify.py` が送信せず非ゼロ終了・fail-closed・#936）
 - [ ] `triage_notification.py --self-test` が PASS
 - [ ] 真の要対応ゼロの日は `@mention` しない
 

@@ -39,8 +39,23 @@ import {
   serializeJson,
   writeJsonFile,
 } from './gem-pool/output.mjs'
+import {
+  DEFAULT_MAX_RETRIES as GITHUB_STARS_DEFAULT_MAX_RETRIES,
+  refreshStars,
+} from './gem-pool/github-stars.mjs'
 import { buildPool, projectPackage } from './gem-pool/pipeline.mjs'
 import { REGISTRIES } from './gem-pool/registries.mjs'
+
+/**
+ * GitHub API トークンを供給する環境変数名（Issue #310）。
+ *
+ * 🔴 `tools/gem-pool/github-stars.mjs` は primary rate limit 60 req/時（未認証）の下では
+ * `DEFAULT_DIGEST_LIMIT`（300 件）ぶんの再取得を安全に終えられない。GitHub Actions
+ * 実行では `secrets.GITHUB_TOKEN`（読み取り専用・自動発行）をこの環境変数へ渡す
+ * （`.github/workflows/gem-pool-refresh.yml` 側の配線）。ローカル実行では未設定でも
+ * 動く（未認証枠 60 req/時で `--digest-limit` を絞って検証する運用を想定）。
+ */
+const GITHUB_TOKEN_ENV_VAR = 'GITHUB_TOKEN'
 
 /** レジストリごとの取得枠（`D-37` (1) の固定枠。母数比例枠は採らない）。 */
 export const DEFAULT_QUOTA = 15000
@@ -267,6 +282,30 @@ export function decideOutputWrite({
 }
 
 /**
+ * star 再取得を実行すべきかを判定する（純粋関数・GitHub API を一切叩かない）。
+ *
+ * 🔴 `decision.write` が false（dry-run・部分実行の書き込み拒否）の実行では、配信データを
+ * 書かないと分かっているのに GitHub のレート枠だけを消費してしまうため再取得しない
+ * （PR #949 Layer 1 セルフレビュー CRITICAL 指摘: この分岐が薄い純関数に切り出されておらず、
+ * `main()` を通す E2E も無かったため、条件を壊しても全テストが緑のまま通っていた）。
+ * 候補が 0 件のときも同様に再取得しない（`refreshStars` を空配列で呼んでも無意味なため）。
+ *
+ * @param {Object} args
+ * @param {{write:boolean, reason:string|null}} args.decision `decideOutputWrite()` の戻り値
+ * @param {ReadonlyArray<unknown>} args.digestCandidates star 再取得の対象候補
+ * @returns {{shouldRefresh:boolean, skipReason:string|null}}
+ */
+export function decideStarRefresh({ decision, digestCandidates }) {
+  if (!Array.isArray(digestCandidates) || digestCandidates.length === 0) {
+    return { shouldRefresh: false, skipReason: '候補が 0 件のため' }
+  }
+  if (!decision?.write) {
+    return { shouldRefresh: false, skipReason: decision?.reason ?? 'dry-run' }
+  }
+  return { shouldRefresh: true, skipReason: null }
+}
+
+/**
  * 出力ディレクトリに残った **孤児シャード**（今回の索引に載らない `*.json`）を選ぶ。
  *
  * 索引とディスクの不一致を作らないための後始末。`index.json` 自身は常に残す。
@@ -290,6 +329,15 @@ function progress(message) {
 
 function warn(message) {
   process.stderr.write(`[gem-pool] warn: ${message}\n`)
+}
+
+/**
+ * GitHub API トークンをプロセス環境から読む（`GITHUB_TOKEN_ENV_VAR` 参照）。
+ * 未設定・空文字は `null` にする（`github-stars.mjs` 側は `null` を「未認証」として扱う）。
+ */
+function readGithubToken() {
+  const raw = process.env[GITHUB_TOKEN_ENV_VAR]
+  return typeof raw === 'string' && raw.length > 0 ? raw : null
 }
 
 /** 経過秒（小数 1 桁）。10 分級の実行なので「今どこまで来たか」を秒で出す。 */
@@ -423,12 +471,13 @@ export async function main() {
   const meta = buildMeta(now)
   const shards = buildRegistryShards(records, meta)
   const index = buildShardIndex(shards, meta, stats)
-  const digest = buildDailyDigestDoc(records, meta, { date: now, limit: args.digestLimit })
 
   const outDir = resolve(REPO_ROOT, args.outDir)
   const digestOut = resolve(REPO_ROOT, args.digestOut)
 
   // 部分収集の結果で配信物を壊さない（判定は純粋関数側・理由は必ず stderr に出す）。
+  // 🔴 star 再取得（下記）の要否判定にも使うため、digest の組み立てより前に決める
+  // （書き込まないと分かっている実行で GitHub のレート枠を無駄に消費しない）。
   const decision = decideOutputWrite({
     selectedRegistryCount: registries.length,
     totalRegistryCount: REGISTRIES.length,
@@ -438,6 +487,45 @@ export async function main() {
   })
   if (decision.blocked) warn(decision.reason)
   else if (decision.partial && decision.write) warn(decision.reason)
+
+  // `records` は buildPool() の契約により gemIndex 昇順（同値は repositoryFullName 昇順）で
+  // 返る（`pipeline.mjs` buildPool の docstring 手順⑧）。buildDailyDigestDoc() も同じ主キーで
+  // 内部的に再ソートしてから slice するため、先頭 digestLimit 件を候補集合として扱ってよい
+  // （二重にソートロジックを持たない・DRY）。
+  const digestCandidates = records.slice(0, args.digestLimit)
+  let starRefresh = { records: digestCandidates, requestCount: 0, refreshedCount: 0, failures: [] }
+  const starRefreshDecision = decideStarRefresh({ decision, digestCandidates })
+  if (starRefreshDecision.shouldRefresh) {
+    // #310: 「今日の Gem」の star 数を GitHub API で取り直す（鮮度のばらつき解消）。
+    // 対象は digest 候補（既定 300 件）のみ。候補プール全体・レジストリ別シャードの star は
+    // Ecosyste.ms 由来のまま据え置く（Gem Index の並び順への影響・シャード鮮度は対象外・Issue #310）。
+    progress(`star 再取得開始: ${digestCandidates.length} 件`)
+    starRefresh = await refreshStars({
+      candidates: digestCandidates,
+      fetchImpl: fetch,
+      token: readGithubToken(),
+      maxRetries: GITHUB_STARS_DEFAULT_MAX_RETRIES,
+      onProgress: (info) => {
+        if (!info.ok)
+          warn(`star 再取得に失敗しました（${info.repositoryFullName}）: ${info.message}`)
+      },
+    })
+    progress(
+      `star 再取得完了: 成功 ${starRefresh.refreshedCount}/${digestCandidates.length}` +
+        ` (requests=${starRefresh.requestCount}` +
+        `${starRefresh.rateLimited ? ', レート制限で中断' : ''}` +
+        `${starRefresh.authError ? ', 認証エラー（401）で中断' : ''})`,
+    )
+  } else if (digestCandidates.length > 0) {
+    progress(
+      `star 再取得をスキップしました（書き込みなしの実行のため。理由: ${starRefreshDecision.skipReason ?? 'dry-run'}）`,
+    )
+  }
+
+  const digest = buildDailyDigestDoc(starRefresh.records, meta, {
+    date: now,
+    limit: starRefresh.records.length,
+  })
 
   /** @type {{path:string, bytes:number}[]} */
   const outputs = []
@@ -465,6 +553,7 @@ export async function main() {
     meta,
     decision,
     removedFiles,
+    starRefresh,
   })
 
   if (args.report) {
@@ -525,6 +614,7 @@ function buildSummary({
   meta,
   decision,
   removedFiles,
+  starRefresh,
 }) {
   const byRegistry = new Map()
   for (const r of records) byRegistry.set(r.registry, (byRegistry.get(r.registry) ?? 0) + 1)
@@ -569,7 +659,20 @@ function buildSummary({
     // そのまま載せる。以前は `buildShardIndex([], meta, stats).stats` と空配列を渡して
     // 内部の JSON 変換だけを借りていたが、無関係な関数の実装変更で `--report` が壊れるため外した。
     stats: stats ?? {},
-    top: records.slice(0, TOP_ROWS).map((r, i) => ({
+    // #310: 「今日の Gem」の star 再取得の実測（レート枠の見積もり検証に使う）。
+    starRefresh: {
+      candidateCount: starRefresh?.records?.length ?? 0,
+      refreshedCount: starRefresh?.refreshedCount ?? 0,
+      requestCount: starRefresh?.requestCount ?? 0,
+      failureCount: starRefresh?.failures?.length ?? 0,
+      rateLimited: starRefresh?.rateLimited ?? false,
+      authError: starRefresh?.authError ?? false,
+    },
+    // 🔴 star 再取得後の値で表示する（`records` は再取得前のまま・PR #949 セルフレビュー指摘）。
+    // `starRefresh.records` は digestCandidates（records の先頭 digestLimit 件）と同順・同数を
+    // 保つ契約（`refreshStars` の実装）なので、digestLimit < TOP_ROWS のときは自然に件数が減るだけで
+    // 安全（未取得の行を古い星数のまま紛れ込ませない）。
+    top: starRefresh.records.slice(0, TOP_ROWS).map((r, i) => ({
       rank: i + 1,
       repositoryFullName: r.repositoryFullName,
       packageName: r.packageName,
@@ -593,6 +696,12 @@ function renderSummary(s, args) {
   if (s.failures.length > 0) {
     lines.push(`失敗レジストリ: ${s.failures.map((f) => f.registry).join(', ')}`)
   }
+  lines.push(
+    `star 再取得（#310・今日の Gem のみ対象）: ${s.starRefresh.refreshedCount}/${s.starRefresh.candidateCount} 件成功` +
+      ` (requests=${s.starRefresh.requestCount}, failures=${s.starRefresh.failureCount}` +
+      `${s.starRefresh.rateLimited ? ', レート制限で中断' : ''}` +
+      `${s.starRefresh.authError ? ', 認証エラー（401）で中断' : ''})`,
+  )
 
   lines.push('')
   lines.push(
