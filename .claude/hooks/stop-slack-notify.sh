@@ -55,6 +55,31 @@ if [[ "$stop_hook_active" != "true" ]] && [[ "${CLAUDE_CODE_REMOTE:-}" = "true" 
 fi
 unset _tele_script
 
+# ── Cloudflare コスト閾値チェック（#247）──────────────────────────────
+# Workers / KV 等の従量課金が閾値を超えていないか、Stop hook から JST 当日 1 回だけ確認する
+# （--gate-daily が日次収束を担うため、セッションごとの多重実行にはならない）。
+# 上の telemetry ブロックと同じ流儀（stop_hook_active 再帰防止・クラウド限定・存在チェック・
+# python3 有無・timeout・Stop を止めない）を踏襲する。
+_cf_cost_script="${REPO_ROOT}/tools/check_cloudflare_cost.py"
+if [[ "$stop_hook_active" != "true" ]] && [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]] && [[ -f "$_cf_cost_script" ]] && command -v python3 &>/dev/null; then
+  # 30s: Cloudflare Analytics API 1 往復（DNS + TLS + GraphQL クエリ）にリトライ 1 回分の
+  # 余裕を足した値。テレメトリの 120s（fetch/push 往復込み）ほどは要らず、Stop の体感遅延も抑える。
+  _cf_cost_rc=0
+  timeout 30s python3 "$_cf_cost_script" --gate-daily >/dev/null 2>&1 || _cf_cost_rc=$?
+  # 終了コードは握り潰さず stderr へ出す（既存フックの慣行に合わせた通知手段）。ただし Stop は
+  # ブロックしない（exit 2 を返さない・本フックは常に exit 0 で終わる）。
+  #   1 = 閾値超過 / 前日比急増、2 = 判定不能（fail-closed）、124 = timeout（＝判定不能扱い）
+  case "$_cf_cost_rc" in
+    0) ;;
+    1) echo "[Stop] ⚠️ Cloudflare コストが閾値を超過しています（check_cloudflare_cost.py exit 1）。詳細: python3 tools/check_cloudflare_cost.py" >&2 ;;
+    2) echo "[Stop] ⚠️ Cloudflare コストを判定できませんでした（check_cloudflare_cost.py exit 2・fail-closed）。認証情報・API 疎通を確認してください。" >&2 ;;
+    124) echo "[Stop] ⚠️ Cloudflare コスト検査が 30s でタイムアウトしました（判定不能扱い）。次回 Stop で再試行します。" >&2 ;;
+    *) echo "[Stop] ⚠️ Cloudflare コスト検査が想定外の終了コード ${_cf_cost_rc} で終了しました。" >&2 ;;
+  esac
+  unset _cf_cost_rc
+fi
+unset _cf_cost_script
+
 # ──────────────────────────────────────────
 # 未コミット変更の自動保存（セッション終了時のファイルリセット防止）
 # 問題: セッション終了後に新セッションが起動すると SessionStart フックが
