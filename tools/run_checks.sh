@@ -603,6 +603,23 @@ else
   skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Slack 通知 self-test（Issue #936）。waiting タイプの fail-closed ガード（--issues 実質空 →
+# --force-mention を付けても送信拒否）・空白のみ項目の除去・空ブランチ欄の省略を検証する。
+# post_message() をフェイクに差し替えて main() を通すためネットワーク非依存。
+if [ -f "$REPO_ROOT/tools/slack_notify.py" ]; then
+  run_check "Slack 通知 self-test (slack_notify.py --self-test)" python3 tools/slack_notify.py --self-test
+else
+  skip_check "Slack 通知 self-test (slack_notify.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# 通知トリアージ分類器 self-test（Issue #936 の関連配線。A/B/C/D 分類ロジックの回帰検知）。
+# ネットワーク・実データ非依存の純関数のみを検証する。
+if [ -f "$REPO_ROOT/tools/triage_notification.py" ]; then
+  run_check "通知トリアージ分類器 self-test (triage_notification.py --self-test)" python3 tools/triage_notification.py --self-test
+else
+  skip_check "通知トリアージ分類器 self-test (triage_notification.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 配信シャード（public/data/gem-index/）の静的検査（SP-17・PR #416 セルフレビュー指摘）。
 # 索引整合・列定義・行の型・gemIndex 昇順・サイズ予算（D-38 の cold start CPU 予算の保険）を見る。
 # ローカルの生成物しか読まないためネットワーク非依存（本判定も self-test も両方配線する）。
