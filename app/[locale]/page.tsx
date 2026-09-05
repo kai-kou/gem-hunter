@@ -393,6 +393,8 @@ export default async function LocaleHome({
             width={768}
             height={432}
             loading="eager"
+            // Issue #355: 未検索画面の LCP 要素であることを実測済み（根拠・内訳は ADR 0015 §5）。
+            fetchPriority="high"
             decoding="async"
             className="mx-auto mb-4 h-auto w-full max-w-xs"
           />
