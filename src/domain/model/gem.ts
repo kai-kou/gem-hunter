@@ -22,26 +22,27 @@ export type Gem = {
   readonly repositoryFullName: string
   /**
    * 被依存パッケージ数（Ecosyste.ms `dependent_packages_count`・実利用の量）。
-   * 🔴 GitHub API のライブ値ではなく **Ecosyste.ms が独自にクロールした値**（`stars` と同じ出所・
-   * 鮮度の注意点は `stars` の JSDoc を参照）。
+   * 🔴 GitHub API のライブ値ではなく **Ecosyste.ms が独自にクロールした値**。`stars` と異なり
+   * **`DailyDigest.items`（今日の Gem）であっても再取得の対象外**であり、常に Ecosyste.ms 由来の
+   * スナップショットのまま（Issue #310 のスコープ注記）。
    */
   readonly dependentCount: number
   /**
    * star 数（GitHub `stargazers_count`・注目度）。
    *
-   * 🔵 **出所と鮮度（Issue #310 で刷新・元は `SP-16` 初見ユーザーフィードバック議論で判明した課題）**:
-   * かつては Ecosyste.ms が独自にクロールした値をそのまま使っており、銘柄ごとにクロール時点が
-   * 大きくばらつく問題があった（サンプル調査 20 件中 6 件が 700 日超・最大 2.7 年前）。
-   * `tools/generate_gem_digest.mjs`（`tools/gem-pool/github-stars.mjs`）が **バッチ生成時点で
-   * GitHub API から取り直す**ため、この値は「その日のダイジェスト生成時点」の GitHub の値である。
-   * ただし詳細画面（`GithubRepositoryQuery.findDetail` 経由）はユーザーが開いた瞬間のライブ値を
-   * 返すため、生成後に star 数が変動していれば両者はなお一致しないことがある（取得タイミングの
-   * 違いによる差・出所は同じ GitHub API）。
+   * 🔵 **意味論は使われ方によって異なる（Issue #310 で刷新・元は `SP-16` 初見ユーザーフィードバック
+   * 議論で判明した課題）**:
+   * - **`DailyDigest.items`（今日の Gem）として使われる場合**: バッチ生成時点で GitHub API から
+   *   取り直した値（入口は `tools/generate_gem_digest.mjs`）。取得に失敗した銘柄（404・レート
+   *   制限等）は **旧値（Ecosyste.ms 由来）を保持したままスキップする**（バッチ全体は止めない・
+   *   `refreshStars` の完了条件 2）。
+   * - **`GemPoolEntry`（候補プール全体・`/gems` 一覧）として使われる場合**: 再取得の対象外で、
+   *   従来どおり Ecosyste.ms が独自にクロールした値のまま（銘柄ごとにクロール時点が大きくばらつく。
+   *   サンプル調査 20 件中 6 件が 700 日超・最大 2.7 年前）。
    *
-   * 🔴 個別リポジトリの再取得に失敗した場合（404・レート制限等）は **旧値（Ecosyste.ms 由来）を
-   * 保持したままスキップする**（バッチ全体は止めない・`refreshStars` の完了条件 2）。
-   *
-   * `dependentCount` は引き続き Ecosyste.ms 由来（再取得の対象外・Issue #310 のスコープ注記）。
+   * いずれの場合も、詳細画面（`GithubRepositoryQuery.findDetail` 経由）はユーザーが開いた瞬間の
+   * ライブ値を返すため、両者はなお一致しないことがある（「今日の Gem」であっても、生成後に star 数が
+   * 変動していれば取得タイミングの差が残る。出所は同じ GitHub API）。
    */
   readonly stars: number
   /**
