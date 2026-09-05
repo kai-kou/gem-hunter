@@ -605,6 +605,15 @@ else
   skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# shortlist 分布分析ツール self-test（Issue #335）。`GEM_INDEX_SHORTLIST_SIZE` の較正根拠を
+# 実データで測り直すためのツール。実データを読む本判定コマンド（引数なし実行）はここでは
+# 配線しない（較正用の分析であり pass/fail 判定を持たないため）。
+if [ -f "$REPO_ROOT/tools/analyze_shortlist_distribution.mjs" ]; then
+  run_check "shortlist 分布分析 self-test (analyze_shortlist_distribution.mjs --self-test)" node tools/analyze_shortlist_distribution.mjs --self-test
+else
+  skip_check "shortlist 分布分析 self-test (analyze_shortlist_distribution.mjs --self-test)" "スクリプトが見つかりません"
+fi
+
 # Slack 通知 self-test（Issue #936）。waiting タイプの fail-closed ガード（--issues 実質空 →
 # --force-mention を付けても送信拒否）・空白のみ項目の除去・空ブランチ欄の省略を検証する。
 # post_message() をフェイクに差し替えて main() を通すためネットワーク非依存。
