@@ -69,7 +69,7 @@
       "empty": "No gems to show today.",
       "dependentLabel": "Used by",
       "starsLabel": "stars",
-      "attribution": "About this data: \"Used by\" and star counts come from {source} ({license}) open data captured around {generatedAt}, so they can differ from the latest values on GitHub and from the detail page. The order is recomputed daily from the date.",
+      "attribution": "About this data: \"Used by\" is a reference value from {source} ({license}) open data. Star counts were fetched from GitHub around {generatedAt}; since the detail page fetches its own value at a different time, the two can still differ. The order is recomputed daily from the date.",
       "newBadge": "New",
       "firstVisitNote": "Showing all items as your first visit"
     }

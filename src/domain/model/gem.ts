@@ -29,12 +29,19 @@ export type Gem = {
   /**
    * star 数（GitHub `stargazers_count`・注目度）。
    *
-   * 🔴 **出所と鮮度（`SP-16` 初見ユーザーフィードバック議論で判明）**: この値は GitHub API の
-   * ライブ値ではなく **Ecosyste.ms が独自にクロールした値**。銘柄ごとにクロール時点が大きく
-   * ばらつき、サンプル調査（20 件）では 6 件が 700 日超・最大 2.7 年前のクロール結果だった。
-   * そのため詳細画面（`GithubRepositoryQuery.findDetail` 経由の GitHub API ライブ値）の star 数
-   * とは一致しないことがある。UI 側はこの値を **参考値** として表示する（`dependentCount` も
-   * 同じく Ecosyste.ms 由来で同じ注意点が当てはまる）。
+   * 🔵 **出所と鮮度（Issue #310 で刷新・元は `SP-16` 初見ユーザーフィードバック議論で判明した課題）**:
+   * かつては Ecosyste.ms が独自にクロールした値をそのまま使っており、銘柄ごとにクロール時点が
+   * 大きくばらつく問題があった（サンプル調査 20 件中 6 件が 700 日超・最大 2.7 年前）。
+   * `tools/generate_gem_digest.mjs`（`tools/gem-pool/github-stars.mjs`）が **バッチ生成時点で
+   * GitHub API から取り直す**ため、この値は「その日のダイジェスト生成時点」の GitHub の値である。
+   * ただし詳細画面（`GithubRepositoryQuery.findDetail` 経由）はユーザーが開いた瞬間のライブ値を
+   * 返すため、生成後に star 数が変動していれば両者はなお一致しないことがある（取得タイミングの
+   * 違いによる差・出所は同じ GitHub API）。
+   *
+   * 🔴 個別リポジトリの再取得に失敗した場合（404・レート制限等）は **旧値（Ecosyste.ms 由来）を
+   * 保持したままスキップする**（バッチ全体は止めない・`refreshStars` の完了条件 2）。
+   *
+   * `dependentCount` は引き続き Ecosyste.ms 由来（再取得の対象外・Issue #310 のスコープ注記）。
    */
   readonly stars: number
   /**
