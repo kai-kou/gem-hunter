@@ -370,3 +370,9 @@
 {"date": "2026-09-06 JST", "title": "検査ツール委譲の必須項目に「見逃し経路の列挙結果を返り値へ含めさせる」を足す", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 744}
 {"date": "2026-09-06 JST", "title": "run_checks.sh をパイプへ繋ぐと壊れる（--help 未対応でフル起動・head で証跡が切られる）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 651}
 {"date": "2026-09-06 JST", "title": "待ちループの条件式に pgrep -f を書くと自己マッチで無限待ちになる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 923}
+{"date": "2026-09-06 JST", "title": "クラウドでの GraphQL 直叩き 403 実測をフォールバック表へ反映する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 531}
+{"date": "2026-09-06 JST", "title": "契約に「分岐の到達可能性」を含める（到達不能な分岐を契約段階で潰す）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 427}
+{"date": "2026-09-06 JST", "title": "Closes でクローズされた Issue の status:in-progress ラベル残留を自動で外す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "Layer 1 の観点に fail-open 方向の欠陥を専任レンズとして常設する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 934}
+{"date": "2026-09-06 JST", "title": "インラインコメント投稿の 502 リトライで重複スレッドが生まれるのを検知する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "Resolve 判定の投稿者検証を author_association でも行えるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
