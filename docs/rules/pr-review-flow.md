@@ -265,6 +265,20 @@ Layer 0（機械ゲート）+ Layer 1（観点別フレッシュ文脈セルフ�
 
 詳細は `.claude/skills/pr-review-watcher/SKILL.md` を参照。
 
+### CI check run が **不在** のときの判定（赤・緑・不在の 3 状態・#961）
+
+`quality-checks.yml` の check run は「緑 / 赤」の 2 値ではなく、**run 自体が生成されない「不在」** という第 3 の状態を取る。上のチェックリストは緑・赤しか規定していないため、不在に遭遇したセッションが「止めて PR を放置する」か「規定なしの裁量でマージする」かの二択に落ちる（実測: PR #960・Issue #961）。不在は次の順に切り分ける。🔴 **「判断できないから」を理由に PR を放置しない**（放置は CP-3 違反であり、#958 / #912 が問題にしている「操作だけ残った PR」を自分で作ることになる）。
+
+| #   | 確認するもの                                                | 判定と次の一手                                                                                                                                                                                                                                                                                                        |
+| --- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `mcp__github__pull_request_read(method="get")` の `mergeable_state` | `dirty`（ベースとコンフリクト）= **CI の問題ではない**。`pull_request` イベントはマージコミット `refs/pull/<N>/merge` に対して走るため、コンフリクト中は run が作られない（[GitHub 公式](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows): *"Workflows will not run on `pull_request` activity if the pull request has a merge conflict."*）。`origin/main` をマージして解消すれば発火する（L-156・実測 PR #883 / PR #960）。`unknown` は mergeability の計算中なので数十秒待って取り直す |
+| 2   | PR の作成経路                                               | `gem-pool-refresh.yml` が `secrets.GITHUB_TOKEN` で作る `automation/gem-pool-refresh` PR は、GitHub 公式仕様（`GITHUB_TOKEN` 由来のイベントは新しい workflow run を作らない）により run が生成されない。**不在をもって赤とみなさない**（同ワークフロー自身の QA ステップが品質を担保する）                          |
+| 3   | 1・2 のいずれでもなく不在が続く                             | **前提: 手順 1 で `mergeable_state` が `dirty` でない**（マージコミットが作れている）ことを観測済みであること。そのうえで `mcp__github__actions_list(method="list_workflow_runs", resource_id="quality-checks.yml")` で **他ブランチの直近 run が成功しているか** を見て、単発の不発か **CI 基盤側の恒久障害**（Actions の無効化・課金/クォータ枯渇・`on:` 条件の消失・fork PR）かを切り分ける。恒久障害と判断したら **先に `type:bug` Issue を起票する**（毎回この手順で個別にマージして吸収すると、基盤が壊れたままであることが永久に発見されない）。そのうえで層 2（`bash tools/run_checks.sh`）を **現 head で実測** して FAIL 0 であることを根拠にマージしてよい。根拠（head SHA・層 2 の結果・1 と 2 の切り分け結果・恒久障害なら起票した Issue 番号）を **PR コメントに残す**。層 2 は CI が実行する 4 件（Prettier / ESLint / `tsc --noEmit` / Vitest）を包含するため、この条件は CI 緑より強い |
+
+🔴 **手順 3 は `mergeable_state` が `dirty` のままでは使えない**。層 2 実測はローカルの作業ツリーで走るため、コンフリクトを解消していなくても FAIL 0 になりうる（その状態でマージすると base で初めて壊れる）。1・2 を実際に観測せずに 3 へ飛ばず、観測していない `mergeable_state` を「たぶん `clean`」と書かない（L-113）。
+
+**実測ケース（PR #960）がどう扱われるべきだったか**: 作成時点で `content/analytics/retro/deferred_try.jsonl` が main と衝突して `mergeable_state: dirty` だったので、手順 1 で「CI の不具合ではなくコンフリクト」と判定し、`origin/main` をマージして run の発火を待つのが正しかった（実際、コンフリクトを解消したコミット `8f0966a` の直後に run 591 が `event: pull_request` で発火し success になっている）。手順 3 の層 2 実測を根拠にした暫定マージは不要だった。
+
 ## セッション復帰フロー（クラウド環境のタイムアウト対策）
 
 クラウド環境（Claude.ai Scheduled Tasks）ではセッションが頻繁にタイムアウトする。
