@@ -12,16 +12,31 @@ GitHub Pages で配信する静的ランディングページの **ソース** �
 
 `D-32` は「auto mode classifier が `production` / `release` / **`gh-pages`** 等の名前のブランチへの push を
 独自に本番デプロイと判定しうる」ことを記録している。**これは Workers 本番デプロイの文脈** であり、
-静的 LP の配信は別レーンとして `D-35` で許容している。実測（2026-08-22）では下記の経路で
-ブロックされずに公開できた。
+静的 LP の配信は別レーンとして `D-35` で許容している。実測（2026-08-22）では当時の 1 コマンド形式で
+公開できた。その後 #901 で同じ形式が `pre-git-push-check` にブロックされた観測があるが、
+🔴 **現行のフック実装に旧形式をそのまま投入すると `allow` が返り、ブロックは再現しない**
+（2026-09-04 JST 実測。当時の invoke 形式の違いが原因の可能性があり、真因は特定できていない）。
+原因が未特定である以上、フックの静的解析に依存しない下記の 2 ステップ形式を既定の手順とする。
+
+🔴 **2 ステップに分けて実行する**: `pre-git-push-check.sh` は `git push` セグメント **自身の中に**
+変数展開・コマンド置換（`$VAR` / `` $(...) ``）を含む形を静的解析できず fail-closed でブロックする
+（判定は `;` `&&` `||` 改行で分割した push セグメント単位で行われるため、前段の `COMMIT=$(...)` は判定対象外）。
+1 コマンドにまとめず、コミットの作成と push を分離し、push コマンドには **SHA を直書き** する。
+実測（2026-09-04 JST）: 下記ステップ 1 で親が `refs/remotes/origin/gh-pages` から取れることを確認し、
+ステップ 2 を `git push --dry-run` で実行して `e49a01b..3b3cc5c` として受理されることを確認した。
 
 ```bash
-# 作業ツリーを触らずに site/ のツリーだけを gh-pages へ載せる
+# ステップ1: リモートの gh-pages を取得し、site/ のツリーだけをコミットして SHA を出力する
+git fetch origin gh-pages
 TREE=$(git rev-parse HEAD:site)
-PARENT=$(git rev-parse refs/heads/gh-pages 2>/dev/null || true)
+PARENT=$(git rev-parse refs/remotes/origin/gh-pages 2>/dev/null || true)
 COMMIT=$(git commit-tree "$TREE" ${PARENT:+-p "$PARENT"} -m "publish: LP を反映する")
-git update-ref refs/heads/gh-pages "$COMMIT"
-git push origin gh-pages
+echo "$COMMIT"
+```
+
+```bash
+# ステップ2: 上記で出力された SHA を直書きして push する（変数展開・$() を使わない）
+git push origin <ステップ1で出力された SHA>:refs/heads/gh-pages
 ```
 
 ブロックされた場合は `mcp__github__push_files` で `gh-pages` を更新する。

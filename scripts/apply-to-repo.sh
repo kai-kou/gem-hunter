@@ -546,7 +546,15 @@ DRIFT_SYNC_PATHS_FILE="$TMP/drift_sync_paths.txt"
 DRIFT_SNAPSHOT_DIR="$TMP/drift_pre_sync_snapshot"
 DRIFT_ENABLED=false
 DRIFT_RESULT_RC=""  # § 6.7 のドリフト検査（bootstrap 完了後）でセットする
-if ! $DRY_RUN && command -v python3 >/dev/null 2>&1 && [ -f "$DRIFT_TOOL" ]; then
+DRIFT_SKIP_REASON=""  # Issue #889: スキップ理由を「この実行で実際に該当した 1 件」に絞って即座にログへ出す
+if $DRY_RUN; then
+  DRIFT_SKIP_REASON="--dry-run"
+elif ! command -v python3 >/dev/null 2>&1; then
+  DRIFT_SKIP_REASON="python3 が見つかりません"
+elif [ ! -f "$DRIFT_TOOL" ]; then
+  DRIFT_SKIP_REASON="初回適用（$DRIFT_TOOL が未反映。本コマンドの完了後に配置されるため今回は検査対象外）"
+fi
+if [ -z "$DRIFT_SKIP_REASON" ]; then
   # 🔴 .claude/settings.json は SYNC_PATHS に含まれず §4 で別ロジック・別タイミングで
   # 上書きされるため、明示的に検査対象へ追加する（Issue #60 完了条件・実測 #828 CRITICAL-1:
   # 追加を忘れると同ファイルの固有拡張の消失が一切検知されない）。
@@ -556,8 +564,11 @@ if ! $DRY_RUN && command -v python3 >/dev/null 2>&1 && [ -f "$DRIFT_TOOL" ]; the
       >/dev/null 2>&1; then
     DRIFT_ENABLED=true
   else
-    log "  ⚠ ドリフト検査用スナップショットの取得に失敗しました（検査はスキップします）"
+    DRIFT_SKIP_REASON="スナップショット取得に失敗しました"
   fi
+fi
+if [ -n "$DRIFT_SKIP_REASON" ]; then
+  log "── 本リポジトリ固有拡張のドリフト検査 ── SKIP: $DRIFT_SKIP_REASON"
 fi
 
 log "── ルール・スキル・ハーネスを同期 ──"
@@ -729,7 +740,7 @@ if $DRIFT_ENABLED; then
     *) echo "  - ドリフト検査 : ⚠ 予期しない終了コード（$DRIFT_RESULT_RC）" ;;
   esac
 else
-  echo "  - ドリフト検査 : スキップ（python3 不在 / --dry-run / スナップショット取得失敗 / 初回適用でツール自体が未反映のいずれか）"
+  echo "  - ドリフト検査 : SKIP（${DRIFT_SKIP_REASON:-不明な理由}）"
 fi
 echo ""
 echo "注意: 配布されたルール・スキル本文中の Issue/PR 番号（例: Issue #123）は"
