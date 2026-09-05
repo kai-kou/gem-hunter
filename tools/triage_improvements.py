@@ -752,6 +752,7 @@ def _self_test_retro_try_exclusion_end_to_end():
     """
     import contextlib
     import io
+    import re
     import subprocess
 
     failures = []
@@ -817,16 +818,37 @@ def _self_test_retro_try_exclusion_end_to_end():
         return calls
 
     def run_main(argv):
-        """`main()` を実行し、(stdout 文字列, 終了コード or None) を返す。"""
+        """`main()` を実行し、(stdout 文字列, 終了コード or None, stderr 文字列) を返す。
+
+        stderr を捨てないのは、除外件数の告知（`fetch_issues()` の INFO 行）が
+        運用者へ「集計対象が減った理由」を伝える唯一の出力であり、捨てると
+        その告知ブロックを削除する退行を self-test が検知できなくなるため。
+        """
         sys.argv = ["triage_improvements.py"] + argv
         buf = io.StringIO()
+        errbuf = io.StringIO()
         code = None
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(errbuf):
             try:
                 main()
             except SystemExit as e:
                 code = e.code
-        return buf.getvalue(), code
+        return buf.getvalue(), code, errbuf.getvalue()
+
+    def check_excluded_notice(tag, err, expected):
+        """除外件数の告知が stderr に出ているか（expected=0 なら出ていないこと）を検証する。"""
+        hit = re.search(r"type:retro-try の Issue (\d+) 件を除外しました", err or "")
+        if expected == 0:
+            if hit:
+                failures.append(f"{tag} 除外していないのに除外告知が出ている: {hit.group(0)}")
+            return
+        if not hit:
+            failures.append(
+                f"{tag} stderr に type:retro-try の除外件数が出ていない"
+                f"（除外理由が運用者へ伝わらない）: stderr={err[:160]!r}"
+            )
+        elif int(hit.group(1)) != expected:
+            failures.append(f"{tag} 除外件数が {expected} でなく {hit.group(1)}: {hit.group(0)}")
 
     def rows_of(out, tag):
         try:
@@ -843,13 +865,14 @@ def _self_test_retro_try_exclusion_end_to_end():
             _issue(102, "retro-try: 手順を直す", ["type:improvement", "type:retro-try"]),
             _issue(103, "improvement: 近似ラベル", ["type:improvement", "type:retro-try-x"]),
         ]))
-        out, code = run_main(["--json", "--label", "type:improvement"])
+        out, code, err = run_main(["--json", "--label", "type:improvement"])
         if code not in (None, 0):
             failures.append(f"① 正常系の終了コードが 0 でない: {code}")
         nums = rows_of(out, "①")
         if nums is not None and nums != [101, 103]:
             failures.append(f"① main() 経由で retro-try が除外されていない: rows={nums}")
         check_argv("①", "type:improvement")
+        check_excluded_notice("①", err, 1)
 
         # ①-b `--label type:retro-try` を明示指定したときは除外しない（構造的 0 件を作らない）
         captured.clear()
@@ -857,37 +880,40 @@ def _self_test_retro_try_exclusion_end_to_end():
             _issue(111, "retro-try: a", ["type:retro-try"]),
             _issue(112, "retro-try: b", ["type:improvement", "type:retro-try"]),
         ]))
-        out, code = run_main(["--json", "--label", "type:retro-try"])
+        out, code, err = run_main(["--json", "--label", "type:retro-try"])
         if code not in (None, 0):
             failures.append(f"①-b --label type:retro-try で exit 0 にならない: {code}")
         nums = rows_of(out, "①-b")
         if nums is not None and nums != [111, 112]:
             failures.append(f"①-b 明示指定した type:retro-try まで除外された: rows={nums}")
         check_argv("①-b", "type:retro-try")
+        check_excluded_notice("①-b", err, 0)
 
         # ①-c gh が配列以外の JSON（エラーオブジェクト）を返したら REST へフォールバックする
         captured.clear()
         subprocess.run = make_fake_gh(stdout='{"message":"Bad credentials"}')
         calls = install_rest([[_rest_issue(401, "improvement: a", ["type:improvement"])], []])
-        out, code = run_main(["--json"])
+        out, code, err = run_main(["--json"])
         if calls["n"] == 0:
             failures.append("①-c gh の非配列 JSON を取得成功とみなし REST へフォールバックしていない")
         nums = rows_of(out, "①-c")
         if nums is not None and nums != [401]:
             failures.append(f"①-c REST フォールバックの結果が返っていない: rows={nums}")
         check_argv("①-c", "type:improvement")
+        check_excluded_notice("①-c", err, 0)
 
         # ①-d gh が JSON でない文字列を返したときも REST へフォールバックする
         captured.clear()
         subprocess.run = make_fake_gh(stdout="not json")
         calls = install_rest([[_rest_issue(402, "improvement: b", ["type:improvement"])], []])
-        out, code = run_main(["--json"])
+        out, code, err = run_main(["--json"])
         if calls["n"] == 0:
             failures.append("①-d gh の非 JSON 出力で REST へフォールバックしていない")
         nums = rows_of(out, "①-d")
         if nums is not None and nums != [402]:
             failures.append(f"①-d REST フォールバックの結果が返っていない: rows={nums}")
         check_argv("①-d", "type:improvement")
+        check_excluded_notice("①-d", err, 0)
 
         github_api.http_get = orig_http_get
         github_api.resolve_token = orig_resolve
@@ -897,16 +923,17 @@ def _self_test_retro_try_exclusion_end_to_end():
         subprocess.run = make_fake_gh(stdout=json.dumps([
             _issue(201, "retro-try: a", ["type:improvement", "type:retro-try"]),
         ]))
-        _, code = run_main(["--json"])
+        _, code, err = run_main(["--json"])
         if code != 1:
             failures.append(f"② 全件除外で 0 件のとき exit 1 でない（fail-closed 違反）: {code}")
         check_argv("②", "type:improvement")
+        check_excluded_notice("②", err, 1)
 
         # ②-b gh も GH_TOKEN も使えない = 判定不能（exit 2・0 件と同じコードに畳まない）
         captured.clear()
         subprocess.run = make_fake_gh(exc=FileNotFoundError())
         github_api.resolve_token = lambda: ""
-        _, code = run_main(["--json"])
+        _, code, err = run_main(["--json"])
         if code != 2:
             failures.append(f"②-b 取得失敗が判定不能(exit 2)になっていない: {code}")
         check_argv("②-b", "type:improvement")
@@ -922,11 +949,12 @@ def _self_test_retro_try_exclusion_end_to_end():
             ],
             [],
         ])
-        out, code = run_main(["--json"])
+        out, code, err = run_main(["--json"])
         nums = rows_of(out, "③")
         if nums is not None and nums != [301]:
             failures.append(f"③ REST フォールバック経路で retro-try が除外されない: rows={nums}")
         check_argv("③", "type:improvement")
+        check_excluded_notice("③", err, 1)
     finally:
         subprocess.run = orig_run
         sys.argv = orig_argv
