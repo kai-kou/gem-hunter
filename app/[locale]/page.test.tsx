@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { RateLimitExceededError } from '@/src/domain/errors'
 import type { SearchResult } from '@/src/domain/model/repository'
+import { DailyDigest } from '@/src/ui/daily-digest'
 import { ErrorNotice } from '@/src/ui/error-notice'
+import { SearchForm } from '@/src/ui/search-form'
 import type { ErrorPresentation } from '@/src/ui/i18n/error-message'
 import LocaleHome from './page'
 
@@ -34,13 +36,15 @@ const isAuthConfiguredMock = vi.fn<() => boolean>()
 
 /**
  * 候補プールの読み込み（静的アセット）を避けるため composition root ごと差し替える
- * （`gems/page.test.tsx` と同じ方針）。エラー分岐では `lookupGemIndexes` /
- * `getDailyDigestUseCase` は呼ばれないため中身は空でよい。
+ * （`gems/page.test.tsx` と同じ方針）。`lookupGemIndexes` はエラー分岐で呼ばれないため空でよい。
+ * `getDailyDigestUseCase` は非キーワード経路（Issue #392 のテスト）で実際に呼ばれるため、
+ * `getDailyDigestMock` 経由で 1 テストごとに解決値／reject を差し替える。
  */
 const searchRepositoriesMock = vi.fn<() => Promise<SearchResult>>()
+const getDailyDigestMock = vi.fn<() => Promise<unknown>>()
 vi.mock('@/src/composition/container', () => ({
   DAILY_DIGEST_LIMIT: 5,
-  getDailyDigestUseCase: () => async () => null,
+  getDailyDigestUseCase: () => () => getDailyDigestMock(),
   lookupGemIndexes: async () => new Map(),
   searchRepositoriesUseCase:
     () =>
@@ -96,6 +100,8 @@ async function renderSearchBody(tree: ReactNode): Promise<ReactNode> {
 beforeEach(() => {
   isAuthConfiguredMock.mockReset()
   isAuthConfiguredMock.mockReturnValue(false)
+  getDailyDigestMock.mockReset()
+  getDailyDigestMock.mockResolvedValue(null)
   searchRepositoriesMock.mockReset()
   searchRepositoriesMock.mockRejectedValue(
     new RateLimitExceededError('rateLimitPrimary', {
@@ -139,5 +145,43 @@ describe('LocaleHome — showAuthLink の配線（Issue #365 / #549）', () => {
     expect(props.presentation.loginHint).toBeUndefined()
     expect(props.loginHref).toBeUndefined()
     expect(props.loginLabel).toBeUndefined()
+  })
+})
+
+/**
+ * 日次ダイジェスト経路の失敗が **トップページ全体を 500 にしない** ことを固定する（Issue #392）。
+ *
+ * 契約: `GemDigestPort` は例外を投げない設計だが、投げた場合は usecase が `null` に畳み、
+ * ページは **ダイジェスト部分だけを欠落させて** 描画を完了する（`app/` 配下に `error.tsx` は
+ * 無いため、ここで漏らすと既存の検索機能まで巻き添えで 500 になる）。
+ */
+describe('LocaleHome — 日次ダイジェストの失敗がトップページを 500 にしない（Issue #392）', () => {
+  it('ダイジェスト取得が reject してもページ描画は成功し、ダイジェストは描画されない', async () => {
+    getDailyDigestMock.mockRejectedValue(new Error('digest boom'))
+
+    // reject すればここで throw する（= 500 相当）。resolve すること自体が本テストの主張。
+    const tree = await renderPage({})
+
+    expect(findByType(tree, DailyDigest)).toBeUndefined()
+    // ページの他の部分（検索フォーム）は生きている（ダイジェストだけが欠落する）。
+    expect(findByType(tree, SearchForm)).toBeDefined()
+  })
+
+  it('ダイジェストが取得できたときは描画される（上のテストの対・欠落の意味を固定する）', async () => {
+    getDailyDigestMock.mockResolvedValue({
+      date: '20260820',
+      items: [],
+      meta: {
+        source: 'Ecosyste.ms',
+        sourceUrl: 'https://ecosyste.ms/',
+        license: 'CC BY-SA 4.0',
+        sourceLicenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        generatedAt: '2026-08-20T00:00:00Z',
+      },
+    })
+
+    const tree = await renderPage({})
+
+    expect(findByType(tree, DailyDigest)).toBeDefined()
   })
 })

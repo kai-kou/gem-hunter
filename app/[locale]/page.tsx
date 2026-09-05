@@ -362,10 +362,10 @@ export default async function LocaleHome({
     : rawSearchParams.date
   const dateSeed = tryDateSeed(rawDate, new Date())
   //
-  // 🔴 **二重防御**: 候補プールの読み込みは `StaticGemDigest` 側で例外を投げない設計だが、
-  //    ここでも `.catch(() => null)` を張って「ダイジェストの失敗がトップページ全体を
-  //    500 にする」経路を塞ぐ（`app/` 配下に `error.tsx` は無く、失敗すれば既存の検索機能まで
-  //    巻き添えになる）。`null` は下の既存分岐でそのまま非表示に倒れる。
+  // 🔴 **多層防御の 3 層目**（1: `StaticGemDigest` の fail-soft / 2: `makeGetDailyDigest` の
+  //    `null` / 3: ここ・Issue #392）。ここでも `.catch(() => null)` を張り、ダイジェストの
+  //    失敗がトップページ全体を 500 にする経路を塞ぐ（`app/` に `error.tsx` は無く、失敗すれば検索
+  //    機能まで巻き添えになる）。回帰テストは `page.test.tsx`（`null` は既存分岐で非表示に倒れる）。
   const dailyDigest = hasKeyword
     ? null
     : await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT }).catch(() => null)
@@ -393,6 +393,8 @@ export default async function LocaleHome({
             width={768}
             height={432}
             loading="eager"
+            // Issue #355: 未検索画面の LCP 要素であることを実測済み（根拠・内訳は ADR 0015 §5）。
+            fetchPriority="high"
             decoding="async"
             className="mx-auto mb-4 h-auto w-full max-w-xs"
           />

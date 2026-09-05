@@ -96,6 +96,8 @@ console.log(displayScore); // "100" が出力（一貫性あり）
 
 ## L-156: マージ不能（`mergeable_state: dirty`）な PR では `pull_request` 起動の CI が生成されない（2026-09-04・PR #883）
 
+> **マージ判定へ戻る導線**: 本症状で check run が不在のままマージ可否を決めるときは、`docs/rules/pr-review-flow.md`「CI check run が不在のときの判定」の 3 手順に従う（#961）。
+
 **症状**: PR を作成したのに、`quality-checks.yml`（`on: pull_request`）の check run が **いつまでも現れない**。
 `mcp__github__pull_request_read(method="get_check_runs")` には CodeQL や GitGuardian など他系統だけが並び、
 `mcp__github__actions_list(method="list_workflow_runs", resource_id="quality-checks.yml", workflow_runs_filter={"branch": "<作業ブランチ>"})`
@@ -117,6 +119,14 @@ console.log(displayScore); // "100" が出力（一貫性あり）
 | `dirty` | ベースブランチとコンフリクトしている | CI の問題ではない。`origin/main` をマージして解消する |
 | `unknown` | mergeability を非同期計算中（PR 作成直後に出やすい） | 数十秒待って `pull_request_read(method="get")` を取り直す |
 | `clean` / `unstable` / `blocked` / `behind` | マージコミットは作れている（`unstable` は他チェックが赤、`blocked` は保護ルール待ち、`behind` はベースより古い） | ここで初めてワークフロー側を疑う（`on:` 条件・`paths-ignore`・Actions の有効状態） |
+
+**再発（2026-09-05・PR #960 / Issue #961）**: 同じ症状の 2 回目。`content/analytics/retro/deferred_try.jsonl` が
+main と衝突して作成時から `dirty` → `quality-checks.yml` の run が約 30 分不在（`c55dbf1` / `c0cafbf` とも run なし）
+→ `origin/main` をマージしたコミット `8f0966a` の直後に run 591 が `event: pull_request` で発火し success。
+本エントリが既にあったのに到達しなかったのは、**マージ判定の条文（`pr-review-flow-summary.md`「マージ前」）が
+「赤ならマージしない」しか規定しておらず、不在時に本エントリを引く導線が無かった**ため（教訓の不在ではなく
+導線の不在）。#961 で条文に 3 状態（緑 / 赤 / 不在）の判定を明記し、不在の切り分けの第 1 段を `mergeable_state` の
+確認にした（判定表は `pr-review-flow.md`「CI check run が不在のときの判定」）。
 
 **なぜ Warm 層に置くか**: 症状（CI が走らない）と原因（コンフリクト）が結び付かず、
 ワークフロー定義の調査に時間を溶かしやすい。ただし観測したときにだけ必要な知識で、常駐は不要。

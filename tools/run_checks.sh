@@ -254,7 +254,9 @@ fi
 # 3.6. Lighthouse（Accessibility ゲート・SP-10 / Issue #181）
 # 🔴 Accessibility = 100 は blocking、Performance は記録のみ（run_checks.sh 内で判定に使わない）。
 #    E2E とは別ステップ・別タイムアウト（RUN_CHECKS_TIMEOUT を流用すると Lint/型/vitest と取り合いになる
-#    E2E と同じ理由）。実測 build 5 秒 + start 数秒 + 2 画面 12 秒/回 ≒ 40 秒台のため既定 180 秒で十分な余裕。
+#    E2E と同じ理由）。実測（2026-09-05・Issue #355 で未検索画面を追加し 3 画面になった時点）
+#    build 5 秒 + start 数秒 + 3 画面 ≒ 44 秒のため既定 180 秒で十分な余裕。
+#    ⚠️ `tools/run_lighthouse.mjs` の TARGETS を増やすときはこの見積もりも更新すること。
 LIGHTHOUSE_TIMEOUT_SEC="${RUN_CHECKS_LIGHTHOUSE_TIMEOUT:-180}"
 if [ "${SKIP_LIGHTHOUSE:-0}" = "1" ]; then
   skip_check "Lighthouse (Accessibility gate)" "SKIP_LIGHTHOUSE=1 が指定されたためスキップしました。黙って緑にしないための明示表示"
@@ -601,6 +603,23 @@ if [ -f "$REPO_ROOT/tools/check_digest_freshness.py" ]; then
   run_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" python3 tools/check_digest_freshness.py --self-test
 else
   skip_check "ダイジェスト鮮度 self-test (check_digest_freshness.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# Slack 通知 self-test（Issue #936）。waiting タイプの fail-closed ガード（--issues 実質空 →
+# --force-mention を付けても送信拒否）・空白のみ項目の除去・空ブランチ欄の省略を検証する。
+# post_message() をフェイクに差し替えて main() を通すためネットワーク非依存。
+if [ -f "$REPO_ROOT/tools/slack_notify.py" ]; then
+  run_check "Slack 通知 self-test (slack_notify.py --self-test)" python3 tools/slack_notify.py --self-test
+else
+  skip_check "Slack 通知 self-test (slack_notify.py --self-test)" "スクリプトが見つかりません"
+fi
+
+# 通知トリアージ分類器 self-test（Issue #936 の関連配線。A/B/C/D 分類ロジックの回帰検知）。
+# ネットワーク・実データ非依存の純関数のみを検証する。
+if [ -f "$REPO_ROOT/tools/triage_notification.py" ]; then
+  run_check "通知トリアージ分類器 self-test (triage_notification.py --self-test)" python3 tools/triage_notification.py --self-test
+else
+  skip_check "通知トリアージ分類器 self-test (triage_notification.py --self-test)" "スクリプトが見つかりません"
 fi
 
 # 配信シャード（public/data/gem-index/）の静的検査（SP-17・PR #416 セルフレビュー指摘）。

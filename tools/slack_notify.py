@@ -403,6 +403,12 @@ def build_waiting_user_blocks(issues: list, branch: str, triage: dict = None) ->
         issues_text = "\n".join(lines)
     else:
         issues_text = "\n".join(f"• {t}" for t in issues) if issues else "確認が必要なタスクがあります"
+    # 空ブランチ（未指定・空白のみ）のときは「*ブランチ:*」フィールド自体を出さない
+    # （中身なしの `` `` `` バッククォートだけの表示を避ける・Issue #936）。
+    _fields = []
+    if branch and branch.strip():
+        _fields.append({"type": "mrkdwn", "text": f"*ブランチ:*\n`{branch.strip()}`"})
+    _fields.append({"type": "mrkdwn", "text": f"*時刻:*\n{_now()}"})
     blocks = [
         {
             "type": "header",
@@ -418,10 +424,7 @@ def build_waiting_user_blocks(issues: list, branch: str, triage: dict = None) ->
         },
         {
             "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*ブランチ:*\n`{branch}`"},
-                {"type": "mrkdwn", "text": f"*時刻:*\n{_now()}"},
-            ],
+            "fields": _fields,
         },
         {
             "type": "context",
@@ -859,12 +862,199 @@ def build_routine_idle_blocks(routine_name: str = "", detail: str = "") -> list:
     return blocks
 
 
+# --- セルフテスト（Issue #936: waiting タイプの fail-closed ガード・ブランチ欄省略・回帰防止） ---
+#
+# ネットワーク・実データ非依存。post_message() をモジュールグローバルで差し替えることで
+# main() を実際のエントリポイント（sys.argv → sys.exit）経由で通し、Slack へは一切送信しない。
+
+def _run_main_capturing(argv: list):
+    """main() を argv 差し替え + post_message フェイクで実行し、(exit_code, post_calls) を返す。
+
+    post_calls は post_message に渡された {"channel", "text", "blocks"} の呼び出し記録（送信していれば
+    1 件以上、送信していなければ 0 件になる）。main() の内部関数を直呼びせず `bash "$0"` 相当の
+    エントリポイント（sys.argv → main() → sys.exit）を通すことで、終了コード経路の退行も検出する
+    （sprint-development-rules.md SD-2 #686・check-tool-design-rules.md §4）。
+    """
+    module = sys.modules[__name__]
+    orig_argv = sys.argv
+    orig_post_message = module.post_message
+    calls: list = []
+
+    def _fake_post_message(channel: str, text: str, blocks: list = None) -> dict:
+        calls.append({"channel": channel, "text": text, "blocks": blocks})
+        return {"ok": True, "ts": "1234567890.000001"}
+
+    module.post_message = _fake_post_message
+    sys.argv = ["slack_notify.py"] + argv
+    exit_code = 0
+    try:
+        main()
+    except SystemExit as e:
+        exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+    finally:
+        sys.argv = orig_argv
+        module.post_message = orig_post_message
+    return exit_code, calls
+
+
+def _find_fields_section(blocks: list):
+    """blocks から `fields` キーを持つ section ブロック（ブランチ/時刻の 2 カラム表示）を探す。"""
+    for b in blocks or []:
+        if b.get("type") == "section" and "fields" in b:
+            return b
+    return None
+
+
+def run_self_test() -> int:
+    passed = 0
+    failed = 0
+
+    def check(name: str, cond: bool, detail: str = "") -> None:
+        nonlocal passed, failed
+        if cond:
+            passed += 1
+        else:
+            failed += 1
+            print(f"FAIL: {name}" + (f"\n  detail: {detail}" if detail else ""))
+
+    # --- 干渉検証用の実データ（A-6 相当・triage_notification.py の _A6_PAT に一致する具体文） ---
+    a6_text = "YouTube OAuth リフレッシュトークンの再発行が必要です。アカウント設定から再認可してください。"
+
+    # ケース1: waiting 項目ゼロ（--issues 未指定） + --force-mention
+    #          → fail-closed ガードが --force-mention より前に効き、送信されず非ゼロ終了する。
+    code, calls = _run_main_capturing(["waiting", "--channel", "C_TEST", "--force-mention"])
+    check("項目ゼロ + --force-mention は非ゼロ終了する", code != 0, f"exit_code={code}")
+    check("項目ゼロ + --force-mention は送信しない", len(calls) == 0, f"calls={calls}")
+
+    # ケース2: waiting 項目ゼロ + --force-mention 無し → 送信されない（従来の抑制も維持）
+    code, calls = _run_main_capturing(["waiting", "--channel", "C_TEST"])
+    check("項目ゼロ（--force-mention 無し）は送信しない", len(calls) == 0, f"calls={calls}")
+    check("項目ゼロ（--force-mention 無し）も非ゼロ終了する（fail-closed）", code != 0, f"exit_code={code}")
+
+    # ケース3: 空白のみの --issues（" " ""）→ 0 件扱いで非ゼロ終了する
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", " ", ""]
+    )
+    check("空白のみの --issues は非ゼロ終了する", code != 0, f"exit_code={code}")
+    check("空白のみの --issues は送信しない", len(calls) == 0, f"calls={calls}")
+
+    # ケース4: A-6 相当の具体文 + --force-mention → 送信される（回帰防止・ブランチ未指定）
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", a6_text]
+    )
+    check("A-6 相当の項目 + --force-mention は送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        fields_section = _find_fields_section(calls[0]["blocks"])
+        check(
+            "ブランチ未指定時は section が存在する",
+            fields_section is not None,
+        )
+        if fields_section:
+            check(
+                "ブランチ未指定時は *ブランチ:* フィールドを含まない",
+                not any("*ブランチ:*" in f.get("text", "") for f in fields_section["fields"]),
+                f"fields={fields_section['fields']}",
+            )
+            check(
+                "ブランチ未指定でも *時刻:* フィールドは残る",
+                any("*時刻:*" in f.get("text", "") for f in fields_section["fields"]),
+                f"fields={fields_section['fields']}",
+            )
+
+    # ケース5: 同じ A-6 相当の項目 + --branch 指定 → *ブランチ:* フィールドを含む
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", a6_text, "--branch", "feat/x"]
+    )
+    check("ブランチ指定時も送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        fields_section = _find_fields_section(calls[0]["blocks"])
+        check(
+            "ブランチ指定時は *ブランチ:* フィールドを含む",
+            fields_section is not None
+            and any("*ブランチ:*" in f.get("text", "") for f in fields_section["fields"])
+            and "`feat/x`" in next(f["text"] for f in fields_section["fields"] if "*ブランチ:*" in f["text"]),
+        )
+
+    # ケース6: 空白のみの --branch（" "）→ *ブランチ:* フィールドを省略する（PR #938 指摘・回帰防止）。
+    #          `if branch and branch.strip():` を `if branch:` へ後退させる変異で検知できることを、
+    #          このケース自体を一時的に手動変異させて確認済み（下記コメント参照）。
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", a6_text, "--branch", " "]
+    )
+    check("空白のみの --branch でも送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        fields_section = _find_fields_section(calls[0]["blocks"])
+        check(
+            "空白のみの --branch は *ブランチ:* フィールドを含まない",
+            fields_section is not None
+            and not any("*ブランチ:*" in f.get("text", "") for f in fields_section["fields"]),
+            f"fields={fields_section['fields'] if fields_section else None}",
+        )
+
+    # ケース7: 前後空白付きの --branch（" feat/x "）→ 表示値は strip 済みであること（PR #938 指摘）。
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", a6_text, "--branch", " feat/x "]
+    )
+    check("前後空白付き --branch でも送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        fields_section = _find_fields_section(calls[0]["blocks"])
+        if fields_section:
+            branch_field = next(
+                (f["text"] for f in fields_section["fields"] if "*ブランチ:*" in f["text"]), ""
+            )
+            check(
+                "ブランチ表示値は前後空白が strip 済み",
+                "`feat/x`" in branch_field and "` feat/x `" not in branch_field,
+                f"branch_field={branch_field!r}",
+            )
+
+    # ケース8: --issues に有効項目と空文字が混在（一部だけ空）→ 有効項目だけで送信され、
+    #          空項目由来の空 bullet（`• ` だけの行）・空行が混入しない（PR #938 指摘・回帰防止）。
+    code, calls = _run_main_capturing(
+        ["waiting", "--channel", "C_TEST", "--force-mention", "--issues", "", a6_text]
+    )
+    check("有効項目 + 空文字の混在でも送信される", len(calls) == 1, f"calls={calls}")
+    if calls:
+        # issues_text は先頭の section ブロック（fields を持たない）に入る
+        text_section = next(
+            (b for b in calls[0]["blocks"] if b.get("type") == "section" and "fields" not in b),
+            None,
+        )
+        body_text = text_section["text"]["text"] if text_section else ""
+        lines = body_text.splitlines()
+        check(
+            "混在時に空 bullet（`• ` だけの行）が混入しない",
+            not any(line.strip() == "•" for line in lines),
+            f"body_text={body_text!r}",
+        )
+        check(
+            "混在時に空行が混入しない",
+            not any(line.strip() == "" for line in lines),
+            f"body_text={body_text!r}",
+        )
+        check(
+            "混在時に有効項目本文が含まれる",
+            a6_text in body_text,
+            f"body_text={body_text!r}",
+        )
+
+    # 干渉検証（agent-team-summary.md #725）: fail-closed ガード（対策1） / 空白のみ除去（対策2） /
+    # 空ブランチ欄省略（対策3）/ ブランチ表示値 strip（対策4）が同じ waiting パスを通っても互いの効果を
+    # 打ち消していないことを、ケース4・5・6・7・8 で「ガード通過後にブランチ欄の有無・表示値・本文の
+    # 整形結果だけが独立に変わる」ことを実測して確認済み。
+
+    print(f"\nセルフテスト: {passed} passed, {failed} failed")
+    return 0 if failed == 0 else 1
+
+
 # --- CLI ---
 
 def main():
     parser = argparse.ArgumentParser(description="Slack通知ユーティリティ")
     parser.add_argument(
         "type",
+        nargs="?",
+        default=None,
         choices=["session-start", "session-stop", "pr", "waiting", "pipeline", "message", "approval", "progress", "publish", "daily-progress", "half-day-summary", "comment-approval", "chart", "routine-idle"],
     )
     parser.add_argument("--channel", default="")
@@ -922,7 +1112,18 @@ def main():
     parser.add_argument("--idle-window-start", type=int, default=8, choices=range(24), help="routine-idle タイプ用: 送信を許可する JST 開始時（0〜23・既定 8 = 08:00）")
     parser.add_argument("--idle-window-end", type=int, default=10, choices=range(24), help="routine-idle タイプ用: 送信を許可する JST 終了時（0〜23・排他・既定 10 = 10:00 未満）")
     parser.add_argument("--force", action="store_true", help="routine-idle タイプ用: JST スロット判定を無視して強制送信する")
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="セルフテストを実行（Slack へは送信しない。tools/run_checks.sh から実行）",
+    )
     args = parser.parse_args()
+
+    if args.self_test:
+        sys.exit(run_self_test())
+
+    if args.type is None:
+        parser.error("the following arguments are required: type")
 
     # publish タイプでは --event-type を必須とする（値は config/publish_events.yaml のキー駆動）
     if args.type == "publish" and not args.event_type:
@@ -987,6 +1188,31 @@ def main():
         text = f"✅ マージ完了: {args.pr_title}" if is_complete else f"📋 PR作成: {args.pr_title}"
 
     elif args.type == "waiting":
+        # フェイルクローズガード（Issue #936）: --issues が実質的に空（未指定・空文字・空白のみ）
+        # なら、中身ゼロの「⏳ ユーザーのアクションが必要です」通知を送らず非ゼロ終了する。
+        # 🔴 このガードは --force-mention の判定より前に置く（--force-mention はこのガードを
+        # バイパスできない）。空白のみの項目（例: " " ""）も非空扱いにしない（1 件も無いのと同じ）。
+        _non_empty_issues = [t.strip() for t in args.issues if t.strip()]
+        if not _non_empty_issues:
+            print(
+                "エラー: waiting タイプの通知には --issues に最低 1 件の非空項目が必要です"
+                "（Issue #936・中身ゼロの通知は放置の原因になるため fail-closed で拒否します。"
+                "--force-mention を付けても本ガードはバイパスできません）。\n"
+                "docs/rules/user-notification-triage.md §3 の A 区分通知の必須要件を満たす"
+                "項目テキストを渡してください:\n"
+                "  1. 具体的ユーザーアクション（ユーザーだけができる操作を1文で）\n"
+                "  2. 該当境界（A-1〜A-6 のどれか）\n"
+                "  3. 取らない場合の結果（放置するとどうなるか）\n"
+                "  4. Claude 側の状態（自律でやれることは済ませたこと）\n"
+                "正しい実行例:\n"
+                "  python3 tools/slack_notify.py waiting --branch main --issues "
+                "\"X API クレジットが枯渇。おやつ代のチャージをお願いします（A-6・放置すると次回"
+                "スケジュール公開が止まります。代替手段で処理は継続中）。\"",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        args.issues = _non_empty_issues
+
         # トリアージゲート: A-1〜A-6（既約境界外）に該当する項目だけを @mention する。
         # 障害（バグ・エラー）起因や B/C/D 区分は自律処理対象のため @mention しない（CP-6・L-077）。
         triage_items, _ = _load_triage()

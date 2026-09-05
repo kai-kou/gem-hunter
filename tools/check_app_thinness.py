@@ -355,7 +355,9 @@ ALLOWLIST: dict[str, Metrics] = {
     # 2026-09-01: Issue #287（ライセンスリンクの sr-only 告知）で i18n ラベルを 1 個渡すため
     # `labels` が複数行に折れ 547 → 550 行。機能追加に伴う最小増分として実測値を更新した。
     # 2026-09-05: Issue #167 で `labels.linkPending`（読み上げ文言）を 2 一覧へ渡すため 550 → 552 行。
-    "app/[locale]/page.tsx": Metrics(lines=552, func_defs=3, domain_imports=7, array_chains=4),
+    # 2026-09-05: Issue #355 で hero-idle（未検索画面の LCP 要素・実測）へ `fetchPriority="high"` を
+    # 付与したため 552 → 554 行（属性 1 行 + 実測の根拠を指す注記 1 行の最小増分）。
+    "app/[locale]/page.tsx": Metrics(lines=554, func_defs=3, domain_imports=7, array_chains=4),
     # Gem 一覧ページ。ドメインの値オブジェクト（locale/page-number/per-page/sort-order/errors）を
     # 直接 5 つ import しており、表示用の整形が app/ 側に残っている疑いがあるが、行数以外は
     # 大きく逸脱していないため現状維持で allowlist する。

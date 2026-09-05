@@ -168,7 +168,7 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 |---|---|
 | `src/domain/errors.ts` | `DomainValidationError` / `SearchQueryRejectedError` / `NotFoundError` / `RateLimitExceededError` / `NetworkError` / `AuthError` / `UpstreamError` を **クラスとして定義** する。各クラスは利用者への提示単位を表す `ErrorKind`（7 値）を `kind` として持つ（判別条件の正本は [`prd.md`](../../02_requirements/prd.md) §7） |
 | `src/infrastructure/` | HTTP ステータス・例外を **上記ドメインエラーへ変換** する（変換表は下記） |
-| `src/usecases/` | ドメインエラーをそのまま送出する（握り潰さない・別型に包み直さない） |
+| `src/usecases/` | ドメインエラーをそのまま送出する（握り潰さない・別型に包み直さない）。fail-soft を明示した経路のみ §4.2 の例外条項に従う |
 | `app/` | ドメインエラーを **UI の状態へ写す**（Not Found 表示 / レート制限の案内 / 再試行導線）。`aria-live` での通知は `NFR-12` |
 
 🔴 **利用者向けの文言は `kind` から i18n で引く。** 各エラーの `message` は開発者向けのログ用であり、画面にも API 応答にもそのまま出さない（内部情報を漏らさない・`NFR-8`）。
@@ -193,6 +193,22 @@ GitHub API JSON → [zod で検証] → DTO → [mapper] → ドメインモデ�
 
 - 値オブジェクトの生成は **不正なら例外**（`DomainValidationError`）。URL パラメータのように「不正でも落とさず既定値へ倒す」箇所では `tryParse`（`null` を返す変種）を使う。
 - 🔴 **`catch` して `console.error` だけして握り潰さない。** 握り潰しは失敗を「0 件」に化けさせ、`AC-5`（Not Found 表示）と区別できなくなる。
+
+### 4.2. `src/usecases/` の fail-soft 例外条項
+
+🔵 **例外**: **表示単位が欠落しても他機能を巻き込まないと明示された経路** に限り、usecase が `catch` して失敗値へ畳んでよい（`app/` 配下に `error.tsx` が無く、漏らすとページ全体が 500 になるため・`D-28`）。現時点の該当経路は次の 2 本だけで、増やすときは本節へ追記する。
+
+| 経路 | 失敗値 | 巻き添えを防ぐ対象 |
+|---|---|---|
+| `src/usecases/search-gems.ts` | `{ status: 'failed' }` | Gem 一覧ページ全体 |
+| `src/usecases/get-daily-digest.ts` | `null` | トップページ全体（検索機能） |
+
+畳む場合は次の 2 つを必ず守る。
+
+1. **「0 件」と区別できる値にする**（`items: []` / 空結果へ畳まない）。区別できないと `AC-5`（Not Found 表示）と失敗が混ざり、上の 🔴 が禁じた状態に戻る。
+2. **失敗を必ずログに出す**（`console.warn` + 例外オブジェクト。キー・値・生ペイロードは出さない）。無音で畳むと機能が恒久的に欠落しても観測できない。
+
+🔴 **ドメインエラーは従来どおり送出する。** 本条項が許すのは「取得・生成そのものの失敗を表示単位ごと落とす」ことだけで、`ErrorKind` を持つドメインエラーを握り潰して UI から消してよいという意味ではない。
 
 ---
 

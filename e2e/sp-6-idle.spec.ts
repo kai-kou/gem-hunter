@@ -60,6 +60,12 @@ test.describe('SP-6: 未検索の初期状態で検索を促す表示が出る',
       expect(aspectRatio).toBeGreaterThan((16 / 9) * 0.95)
       expect(aspectRatio).toBeLessThan((16 / 9) * 1.05)
 
+      // Issue #355: この画像が未検索画面の LCP 要素であることを Lighthouse 13.4.1 で実測した
+      // （`lcp-breakdown-insight` / `lcp-discovery-insight` の node が本 img を指す）。同レポートの
+      // `lcp-discovery-insight` は `priorityHinted: false` を指摘していたため fetchpriority=high を付与した。
+      // 属性が外れると LCP の取得開始が後ろへずれるため、E2E で固定する（ADR 0015 §5）。
+      await expect(idleImage).toHaveAttribute('fetchpriority', 'high')
+
       await page.getByRole('searchbox', { name: ja.home.searchLabel }).fill('react')
       await page.getByRole('button', { name: ja.home.searchSubmit }).click()
       await expect(idleImage).toHaveCount(0)
