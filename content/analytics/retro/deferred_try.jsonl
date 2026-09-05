@@ -318,3 +318,10 @@
 {"date": "2026-09-05 JST", "title": "check_agent_diff_claim.py の lstrip('./') を removeprefix() へ置換し同型欠陥を横断確認する", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 948}
 {"date": "2026-09-05 JST", "title": "既知の待機中 A-6 案件（Cloudflare Billing Read）を毎 Stop 警告し続ける設計の是非を整理する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "mutation_guard のマーカーがユーザーグローバル側 Stop フックに効かない構造の解決方針を決める", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-05 JST", "title": "check_selftest_wiring.py の除外マーカー理由文言と実配線の矛盾検出（第2軸提案）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 770}
+{"date": "2026-09-05 JST", "title": "委譲成果物の「干渉検証」行を機械検査する（#725の必須1行の有無を親が読み飛ばす）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "検査ツール委譲プロンプトのテンプレート化（#474の5要件を埋め込む）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "MCP 403/400時のハーネス自動フォールバック", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 531}
+{"date": "2026-09-05 JST", "title": "Layer 1セルフレビューの観点別KPI追跡", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "_run_main_capturingパターンをcheck-tool-design-rules.mdへ標準化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "ドキュメント間の矛盾検出スキャナ", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 299}
