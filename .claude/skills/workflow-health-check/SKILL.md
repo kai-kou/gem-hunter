@@ -151,6 +151,11 @@ allowed-tools: Bash, Read, mcp__github__list_issues, mcp__github__issue_read, mc
 `reference.md` に定義する（軽量版では読み込まない）。完全版起動時は `reference.md` を Read してから
 Step 3 以降を実行する。週次レポートフォーマット・実行コマンド例も同ファイルを参照。
 
+🔵 **完全版では `python3 tools/check_lane_reachability.py --liveness` を実行する**（Step 5-g・#420）。
+レーンが構文的に到達可能でも、上位ブランチの占有で **実際には評価されていない** 状態
+（意味的な飢餓）を、対象 Issue の直近 closed 実績から検出する。WARNING のみで **終了コードは
+変えない**（判定条件と扱いの正本は `reference.md` Step 5-g）。
+
 ## 自動修正の安全範囲（全ステップ共通・軽量版の Step 1〜2 にも適用）
 
 | 操作                                       | 許可        | 理由                                                                                             |
