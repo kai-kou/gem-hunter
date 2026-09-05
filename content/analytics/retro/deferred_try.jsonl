@@ -351,6 +351,12 @@
 {"date": "2026-09-05 JST", "title": "Layer 1 の性能・セキュリティ指摘は実装固有ガードの実効性を実測してから重度を確定する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 934}
 {"date": "2026-09-05 JST", "title": "check_claude_code_updates.py の lstrip(\"-*•\") の意図を明確化し self-test を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "複数 Issue を同一 PR で消化するとき、ファイル非重複分割の内訳を Issue コメントに残す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "証跡鮮度の自動貼り直し（PR 作成後の追加コミットで run_checks 結果表を自動更新する）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 751}
+{"date": "2026-09-06 JST", "title": "層をまたぐ委譲では各層が契約違反を受け取ったときの畳み方も契約に含める", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 427}
+{"date": "2026-09-06 JST", "title": "Stop フック差し戻しの事前ブロック（PR 作成前に未コミット・未 push・PR 実在を明示チェックする）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "Layer 1 の CONFIRMED 指摘を役ごとに振り分けず 1 体へ全件委譲して再委譲の分断を減らす", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "fail-soft 実装（取得層 fail-soft / usecase の null 化 / app の catch / console.warn）のテンプレート化", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "application-architecture.md の fail-soft 許可条件をチェックリスト化して将来の拡張を客観判定できるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "run_checks.sh のバックグラウンド実行で完了通知が届いてもログが書き込み途中で、完走判定を誤る", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 227}
 {"date": "2026-09-05 JST", "title": "変異テストのバックアップ・復元を mutation_guard.sh に取り込み、手動 cp をなくす", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 410}
 {"date": "2026-09-05 JST", "title": "run_checks.sh に絞り込みオプション（差分に src/app/public が無ければ E2E・Lighthouse を skip）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
