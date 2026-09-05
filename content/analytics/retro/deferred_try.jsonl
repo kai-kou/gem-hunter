@@ -376,3 +376,10 @@
 {"date": "2026-09-06 JST", "title": "Layer 1 の観点に fail-open 方向の欠陥を専任レンズとして常設する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 934}
 {"date": "2026-09-06 JST", "title": "インラインコメント投稿の 502 リトライで重複スレッドが生まれるのを検知する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "Resolve 判定の投稿者検証を author_association でも行えるようにする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "check_selftest_wiring.py を .mjs / .mts に拡張する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 992}
+{"date": "2026-09-06 JST", "title": "Sprint Goal: 行で改善消化とスプリントを見分けられず Step 6 / Step 7 の分岐が人手判断になる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 833}
+{"date": "2026-09-06 JST", "title": "Layer 1 セルフレビューの観点粒度と費用対効果を見直す", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 375}
+{"date": "2026-09-06 JST", "title": ".rules.mjs 分離パターン（tools/*.mjs から src/domain のロジックを共有する解法）を docs に明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "実装 JSDoc と ADR の責務分担（再測定コマンドをどちらに置くか）を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "[consume-hold] 保留コメントに再評価の猶予期限を明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "fan-out 委譲時に役割ごとのレビュー観点の相補性を編成欄で事前設計する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
