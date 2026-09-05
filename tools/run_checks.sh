@@ -668,6 +668,18 @@ else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Cloudflare コスト閾値チェック（Issue #247）も「--self-test だけ」を配線する。本判定
+# （`--gate-daily` / 引数なし実行）は Cloudflare REST API（`GET /accounts/{id}/billable-usage`・
+# 必要権限は `Account → Billing → Read`）への実疎通に依存するため、本番乖離検知 self-test と
+# 同じ理由（Issue #288）で配線しない（run_checks.sh はオフラインで完走できることを保つ）。
+# 本判定の呼び出し元は `.claude/hooks/stop-slack-notify.sh`（判定に成功した日は JST 当日 1 回に
+# 収束し、判定不能の日は stamp されないため毎 Stop で再試行される）。
+if [ -f "$REPO_ROOT/tools/check_cloudflare_cost.py" ]; then
+  run_check "Cloudflare コスト閾値検査 self-test (check_cloudflare_cost.py --self-test)" python3 tools/check_cloudflare_cost.py --self-test
+else
+  skip_check "Cloudflare コスト閾値検査 self-test (check_cloudflare_cost.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # ロードマップ状態検査（roadmap.md §2/§3/§5.1 と GitHub Issue 実態の乖離検知・Issue #572）も
 # 「--self-test だけ」を配線する。本判定は GitHub API への実疎通に依存するため、本番乖離検知
 # self-test と同じ理由（Issue #288）で配線しない（判定不能＝終了コード 2 で CI を赤くしないための

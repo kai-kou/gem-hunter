@@ -55,6 +55,52 @@ if [[ "$stop_hook_active" != "true" ]] && [[ "${CLAUDE_CODE_REMOTE:-}" = "true" 
 fi
 unset _tele_script
 
+# ── Cloudflare コスト閾値チェック（#247）──────────────────────────────
+# Workers / KV 等の従量課金が閾値を超えていないか、Stop hook から確認する。
+# 収束の実態: --gate-daily は「判定に成功した日」だけマーカーを stamp するため、その日は
+# 1 回に収束する。判定不能（exit 2 / 124）の日は stamp しないので毎 Stop で再試行する
+# （必要権限が未付与の間は毎 Stop で最大 30s の遅延が乗る。付与手順は §5.5 を参照）。
+# 上の telemetry ブロックと同じ流儀（stop_hook_active 再帰防止・クラウド限定・存在チェック・
+# python3 有無・timeout・Stop を止めない）を踏襲する。
+_cf_cost_script="${REPO_ROOT}/tools/check_cloudflare_cost.py"
+if [[ "$stop_hook_active" != "true" ]] && [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]] && [[ -f "$_cf_cost_script" ]] && command -v python3 &>/dev/null; then
+  # 30s: Cloudflare REST API（GET /accounts/{id}/billable-usage・必要権限は
+  # Account → Billing → Read）1 往復（DNS + TLS + HTTPS リクエスト）にリトライ 1 回分の
+  # 余裕を足した値。テレメトリの 120s（fetch/push 往復込み）ほどは要らず、Stop の体感遅延も抑える。
+  #
+  # stdout（判定 1 行）は捨てずに捕捉する: 超過時の 1 行は alert_line() が
+  # triage_notification.py に A-6 と判定させるために組み立てた唯一の文面であり、
+  # これを通知経路へ渡さないと検知結果が誰にも届かない（#247 完了条件 4）。
+  _cf_cost_rc=0
+  _cf_cost_out=$(timeout 30s python3 "$_cf_cost_script" --gate-daily 2>/dev/null) || _cf_cost_rc=$?
+  # 終了コードの意味の正本は docs/03_design/infrastructure/cloudflare-infrastructure.md §5.5
+  # 本フックは判定結果を通知するだけで Stop はブロックしない（exit 2 を返さない・常に exit 0 で終わる）。
+  case "$_cf_cost_rc" in
+    0) ;;
+    1)
+      # 閾値超過 / 前日比急増 → 捕捉した 1 行をそのまま slack_notify.py waiting へ渡す。
+      # waiting は内蔵トリアージ（triage_notification.py）で A 区分のみ @mention を発火させるため、
+      # 文面を加工せず渡すことが A-6 判定の条件になる（--issues が waiting の項目引数・--text は非対応）。
+      # 通知の失敗で Stop をブロックしない（|| true）。
+      _cf_cost_notify="${REPO_ROOT}/tools/slack_notify.py"
+      if [[ -n "$_cf_cost_out" ]] && [[ -f "$_cf_cost_notify" ]]; then
+        _cf_cost_branch=$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo "unknown")
+        timeout 30s python3 "$_cf_cost_notify" waiting \
+          --issues "$_cf_cost_out" \
+          --branch "${_cf_cost_branch:-unknown}" >/dev/null 2>&1 || true
+        unset _cf_cost_branch
+      fi
+      unset _cf_cost_notify
+      echo "[Stop] ⚠️ ${_cf_cost_out:-Cloudflare コストが閾値を超過しています（check_cloudflare_cost.py exit 1）}" >&2
+      ;;
+    2) echo "[Stop] ⚠️ Cloudflare コストを判定できませんでした（check_cloudflare_cost.py exit 2・fail-closed）。認証情報・API 疎通を確認してください。" >&2 ;;
+    124) echo "[Stop] ⚠️ Cloudflare コスト検査が 30s でタイムアウトしました（判定不能扱い）。次回 Stop で再試行します。" >&2 ;;
+    *) echo "[Stop] ⚠️ Cloudflare コスト検査が想定外の終了コード ${_cf_cost_rc} で終了しました。" >&2 ;;
+  esac
+  unset _cf_cost_rc _cf_cost_out
+fi
+unset _cf_cost_script
+
 # ──────────────────────────────────────────
 # 未コミット変更の自動保存（セッション終了時のファイルリセット防止）
 # 問題: セッション終了後に新セッションが起動すると SessionStart フックが
