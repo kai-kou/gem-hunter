@@ -66,7 +66,17 @@ def check_git_tracked(repo_root: Path, path: str) -> bool:
     # gitignore のルートアンカー表記（先頭 "/"）はリポジトリルート基準を意味するだけで
     # パストラバーサルではないため、判定前に取り除く（誤って絶対パス扱いしない）。
     # パスの末尾スラッシュも削除（ディレクトリの場合）。
-    target = path.lstrip("/").rstrip("/")
+    # Issue #948: `str.lstrip(chars)` は引数を文字集合として扱うため、将来この呼び出しが
+    # `lstrip("./")` へ拡張された場合に `.github/x.yml` のような先頭ドット付きパスの `.` まで
+    # 食い荒らす欠陥が生える（`tools/check_agent_diff_claim.py` で実際に発生した偽陽性と同型）。
+    # 今の引数は単一文字 "/" のみで実害は無いが（文字集合に "/" しか無いため多文字プレフィックスの
+    # 誤消費は起きない）、`removeprefix()` の繰り返し適用へ揃えて挙動（連続する先頭 "/" を全て
+    # 除去する・`lstrip("/")` と同じ結果）を変えずに、対症療法として文字集合を狭めるのではなく
+    # 「プレフィックスの明示的な繰り返し除去」という意図に一致する形にしておく。
+    target = path
+    while target.startswith("/"):
+        target = target.removeprefix("/")
+    target = target.rstrip("/")
 
     # パストラバーサル対策: .gitignore 由来の未検証パスをそのまま git コマンドへ渡さない
     if not target or ".." in Path(target).parts:
@@ -176,6 +186,20 @@ node_modules/
     checks.append(("空文字列拒否", check_git_tracked(repo_root, "") is False))
     checks.append(("存在しないパスは False", check_git_tracked(repo_root, "__definitely_not_exists__/") is False))
     checks.append(("ルートアンカー表記 (/tools) を追跡対象と判定", check_git_tracked(repo_root, "/tools") is True))
+    # Issue #948: 先頭ドット付きの実在パス（.github/ .claude/ 配下）が誤って "." まで
+    # 剥がされないこと（`lstrip("/")` → `removeprefix("/")` 系への置換の回帰検知）
+    checks.append(
+        (
+            "先頭ドット付きパス (.claude/agents/owner.md) の '.' を消さずに追跡対象と判定（#948）",
+            check_git_tracked(repo_root, ".claude/agents/owner.md") is True,
+        )
+    )
+    checks.append(
+        (
+            "連続する先頭スラッシュ (//tools) も全て除去して追跡対象と判定（#948・lstrip 互換）",
+            check_git_tracked(repo_root, "//tools") is True,
+        )
+    )
 
     # read_gitignore() の異常系（存在しないディレクトリ → None）
     checks.append(("read_gitignore は不在時 None を返す", read_gitignore(Path("/__no_such_dir__")) is None))
