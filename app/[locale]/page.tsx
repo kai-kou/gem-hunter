@@ -362,12 +362,10 @@ export default async function LocaleHome({
     : rawSearchParams.date
   const dateSeed = tryDateSeed(rawDate, new Date())
   //
-  // 🔴 **三重防御**: 候補プールの読み込みは `StaticGemDigest` 側で例外を投げない設計であり、
-  //    usecase（`makeGetDailyDigest`）も例外を `null` に畳む（Issue #392）。ここでも
-  //    `.catch(() => null)` を張って「ダイジェストの失敗がトップページ全体を 500 にする」
-  //    経路を塞ぐ（`app/` 配下に `error.tsx` は無く、失敗すれば既存の検索機能まで巻き添えに
-  //    なる）。`null` は下の既存分岐でそのまま非表示に倒れる（回帰テストは `page.test.tsx`
-  //    の「日次ダイジェストの失敗がトップページを 500 にしない」）。
+  // 🔴 **三重防御**: `StaticGemDigest` は例外を投げない設計で、usecase（`makeGetDailyDigest`）も
+  //    例外を `null` に畳む（Issue #392）。ここでも `.catch(() => null)` を張り、ダイジェストの
+  //    失敗がトップページ全体を 500 にする経路を塞ぐ（`app/` に `error.tsx` は無く、失敗すれば検索
+  //    機能まで巻き添えになる）。回帰テストは `page.test.tsx`（`null` は既存分岐で非表示に倒れる）。
   const dailyDigest = hasKeyword
     ? null
     : await getDailyDigestUseCase()({ seed: dateSeed, limit: DAILY_DIGEST_LIMIT }).catch(() => null)
