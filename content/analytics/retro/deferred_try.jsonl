@@ -351,3 +351,9 @@
 {"date": "2026-09-05 JST", "title": "Layer 1 の性能・セキュリティ指摘は実装固有ガードの実効性を実測してから重度を確定する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 934}
 {"date": "2026-09-05 JST", "title": "check_claude_code_updates.py の lstrip(\"-*•\") の意図を明確化し self-test を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-05 JST", "title": "複数 Issue を同一 PR で消化するとき、ファイル非重複分割の内訳を Issue コメントに残す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-05 JST", "title": "run_checks.sh のバックグラウンド実行で完了通知が届いてもログが書き込み途中で、完走判定を誤る", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 227}
+{"date": "2026-09-05 JST", "title": "変異テストのバックアップ・復元を mutation_guard.sh に取り込み、手動 cp をなくす", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 410}
+{"date": "2026-09-05 JST", "title": "run_checks.sh に絞り込みオプション（差分に src/app/public が無ければ E2E・Lighthouse を skip）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-05 JST", "title": "Layer 1 セルフレビューの観点をタスク型に応じて重点化する（検査ツール PR ではテスト・検証観点を厚くする）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 934}
+{"date": "2026-09-05 JST", "title": "大型 PR 本文の更新パス（MCP の全文置換を避ける REST PATCH）の扱いを条文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 398}
+{"date": "2026-09-05 JST", "title": "pre-pr-create-check.sh 4.8 節の正規表現の代替パターン 4 種を個別にテストする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
