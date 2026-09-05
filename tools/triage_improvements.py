@@ -16,16 +16,23 @@ self-improvement-loop スキル（整理モード）の「重い処理」層。t
   python3 tools/triage_improvements.py --label type:improvement --state open
   python3 tools/triage_improvements.py --self-test      # 純粋関数のセルフテスト
 
-終了コード:
+終了コード（`docs/rules/check-tool-design-rules.md` §1 の標準に準拠）:
   0: 正常終了（レポートを出力した）
-  1: 対象 Issue 0 件（取得失敗・全件除外を含む。fail-closed。#418）
+  1: 取得は成功したが対象 Issue が 0 件（全件が `type:retro-try` で除外された場合を含む。
+     fail-closed で合格 0 に丸めない。stderr の先頭記号は `❌`）
+  2: 判定不能（gh も GH_TOKEN も使えない / REST API 取得に失敗した。stderr の先頭記号は `⚠️`）
   ※ self-test は 0 = 全 check PASS / 1 = FAIL あり
 
 設計方針:
   - 副作用なし（読み取り専用）。GitHub への書き込みは一切しない
-  - `type:retro-try` を持つ Issue は常に除外する（改善 Issue レーンは扱わない・#160 /
-    `docs/rules/improvement-lane-map.md` §2 ルール 2）。除外は取得層（fetch_issues）で行い、
-    gh 経路・REST API 経路のどちらを通っても同じ結果になるようにする（#418）
+  - `type:retro-try` を持つ Issue は **既定ラベル（`type:improvement`）等での取得時に** 除外する
+    （消化モード＝実装は振り返りレーンの専管・#160 / `docs/rules/improvement-lane-map.md` §2
+    ルール 2）。除外は取得層（fetch_issues）で行い、gh 経路・REST API 経路のどちらを通っても
+    同じ結果になるようにする（#418）。
+    🔴 射程限定: 除外されるのは本ツールが担う **Step G-1 の `type:improvement` 集計** だけである。
+    `--label type:retro-try` と明示指定されたときは除外しない（要求そのものを空振りさせないため）。
+    整理モードのリファインメント（Step G-1.5 / G-6）は本ツールを使わず別クエリで取得するため、
+    `type:retro-try` も従来どおり対象に含む（`improvement-lane-map.md` §2 ルール 5・#153）
   - gh CLI を主経路、不在時は GitHub API（urllib）にフォールバック
   - リポジトリは PROJECT_REPO / GITHUB_REPOSITORY env で解決（雛形プレースホルダにフォールバック）
   - カテゴリは「監査タグ（[監査PX/DOMAIN-NN]）」を最優先、なければキーワードクラスタ
@@ -122,6 +129,9 @@ def run_gh(args):
 def _fetch_via_api(label, state):
     """gh 不在時のフォールバック（GitHub REST API・GH_TOKEN 必要）。
 
+    取得できたら Issue のリスト、**取得自体が成立しなかったら `None`**（トークン不在・HTTP 失敗）
+    を返す。呼び出し側はこの `None` を「対象 0 件」ではなく判定不能（exit 2）として扱う。
+
     per-page の HTTP 呼び出しは `github_api.http_get()` に委譲する（Issue #238）。
     ページネーションの継続判定（`max_pages` 上限を持たず空バッチで打ち切り）はファイル固有の
     既存挙動としてそのまま踏襲する（`github_rest.paginate_json_array` へは寄せない設計判断は
@@ -129,8 +139,8 @@ def _fetch_via_api(label, state):
     """
     token = github_api.resolve_token()
     if not token:
-        print("ERROR: gh CLI も GH_TOKEN も利用できません", file=sys.stderr)
-        return []
+        print("⚠️ ERROR: gh CLI も GH_TOKEN も利用できません（判定不能）", file=sys.stderr)
+        return None
     issues = []
     page = 1
     state_q = "all" if state == "all" else state
@@ -141,8 +151,10 @@ def _fetch_via_api(label, state):
         )
         ok, out = github_api.http_get(url, token, user_agent="curl/8.5.0", timeout=60)
         if not ok:
-            print(f"ERROR: API fetch failed: {out}", file=sys.stderr)
-            break
+            # 取得できなかったページがある時点で「対象を全部見た」と言えないため、
+            # 部分結果を成功として返さず判定不能（None → exit 2）へ倒す（check-tool-design-rules.md §1）
+            print(f"⚠️ ERROR: API fetch failed: {out}", file=sys.stderr)
+            return None
         batch = json.loads(out)  # 元実装通り不正 JSON は無捕捉のまま例外伝播させる
         if not batch:
             break
@@ -165,8 +177,14 @@ def _fetch_via_api(label, state):
 def fetch_issues(label, state):
     """対象ラベルの Issue を取得する（gh 優先・API フォールバック）。
 
+    返り値は `(issues, fetched_ok)`。`fetched_ok=False` は「取得自体が成立しなかった」
+    （gh も GH_TOKEN も使えない / REST が失敗した）を表し、呼び出し側は判定不能（exit 2）へ
+    倒す。取得が成功したうえでの 0 件（`fetched_ok=True` かつ空）とは区別する。
+
     🔴 取得経路にかかわらず、最後に `type:retro-try` を除外する（#418）。除外をこの 1 か所に
     置くことで「gh 経路だけ除外され API 経路では素通し」という経路差を作らない。
+    ただし **`label` 自体が `type:retro-try` のときは除外しない**（明示的に要求されたラベルを
+    取得層で全滅させると、取得は成功しているのに「0 件」と区別できなくなるため）。
     """
     issues = None
     out = run_gh([
@@ -188,15 +206,23 @@ def fetch_issues(label, state):
                 print("WARNING: gh 出力が配列でない。API へフォールバック", file=sys.stderr)
     if issues is None:
         issues = _fetch_via_api(label, state)
+        if issues is None:
+            return [], False
+
+    if label.strip().casefold() == RETRO_TRY_LABEL:
+        # 明示的に retro-try を要求されたときは除外しない（構造的に必ず 0 件になるのを防ぐ）
+        return issues, True
 
     kept, excluded = exclude_retro_try(issues)
     if excluded:
         print(
             f"INFO: type:retro-try の Issue {excluded} 件を除外しました"
-            "（振り返りレーンの専管・improvement-lane-map.md §2 ルール 2）",
+            "（Step G-1 の type:improvement 集計に限った除外。実装は振り返りレーンの専管・"
+            "improvement-lane-map.md §2 ルール 2。棚卸し / リファインメントは"
+            "同 §2 ルール 5 のとおり別クエリで retro-try も対象に含む）",
             file=sys.stderr,
         )
-    return kept
+    return kept, True
 
 
 def label_names(issue):
@@ -205,9 +231,17 @@ def label_names(issue):
     gh の `--json labels` は `[{"name": ...}, ...]`、REST API 変換後も dict 形式だが、
     テスト・他ツールからは生文字列のリストが渡されうる。`labels` 欠落・None・
     `name` を持たない dict は「ラベル無し」として落とす（例外にしない）。
+
+    🔴 `labels` が **カンマ結合の生文字列 1 本**（`"type:improvement,type:retro-try"`）で
+    渡されることもある（`tools/gh_shim.py` の `gh issue list` 非 JSON テーブル出力がこの形）。
+    そのまま反復すると 1 文字ずつに分解され、ラベル判定が常に偽になる fail-open へ倒れるため、
+    明示的にカンマで分割する。
     """
+    raw = issue.get("labels") or []
+    if isinstance(raw, str):
+        raw = [s for s in raw.split(",") if s]
     names = []
-    for l in issue.get("labels") or []:
+    for l in raw:
         if isinstance(l, dict):
             name = l.get("name")
         else:
@@ -505,6 +539,15 @@ def _fmt(d):
     return " / ".join(f"{k}={v}" for k, v in sorted(d.items(), key=lambda x: (-x[1], x[0])))
 
 
+class _FakeCompleted:
+    """`subprocess.CompletedProcess` の最小スタブ（self-test 共有・重複定義しない）。"""
+
+    def __init__(self, returncode, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
 def _self_test_run_gh_delegates_with_stderr_asymmetry():
     """`run_gh()` が `github_api.run_gh()` 経由で実際に `subprocess.run` へ到達すること、
     かつ元実装から意図的に保持している非対称挙動（gh 起動不能では無警告 / 非0終了では
@@ -520,12 +563,6 @@ def _self_test_run_gh_delegates_with_stderr_asymmetry():
     failures = []
     orig_run = subprocess.run
     captured = []
-
-    class _FakeCompleted:
-        def __init__(self, returncode, stdout="", stderr=""):
-            self.returncode = returncode
-            self.stdout = stdout
-            self.stderr = stderr
 
     def fake_run_ok(cmd, **kwargs):
         captured.append({"cmd": cmd, "kwargs": kwargs})
@@ -654,6 +691,21 @@ def _self_test_retro_try_exclusion_variants():
     if got != []:
         failures.append(f"④ 前後空白付きが除外されない: kept={got}")
 
+    # ④-b `labels` がカンマ結合の生文字列 1 本（gh_shim.py のテーブル出力形式）
+    #      1 文字ずつ分解されると判定が常に偽になり fail-open へ倒れる
+    got = kept_nums([
+        {"number": 71, "labels": "type:improvement"},
+        {"number": 72, "labels": "type:improvement,type:retro-try"},
+        {"number": 73, "labels": "type:improvement, type:retro-try "},
+        {"number": 74, "labels": "type:retro-try-x"},
+    ])
+    if got != [71, 74]:
+        failures.append(f"④-b カンマ結合の生文字列 labels で除外が効いていない: kept={got}")
+    if label_names({"labels": "a,b,c"}) != ["a", "b", "c"]:
+        failures.append(
+            f"④-b 生文字列 labels が分割されていない: {label_names({'labels': 'a,b,c'})}"
+        )
+
     # ⑤ labels 欠落 / None / name なし dict → ラベル無し扱いで残る（例外を出さない）
     try:
         got = kept_nums([
@@ -694,8 +746,9 @@ def _self_test_retro_try_exclusion_end_to_end():
 
     内部関数の直呼びでは「フィルタは実装されたが本判定の経路から呼ばれていない」退行を
     見逃すため、`sys.argv` を差し替えて `main()` を実際に走らせる。gh は `subprocess.run` を
-    fake に差し替えて argv も検証する（#710）。REST フォールバック経路も同じ除外が効くことを
-    別ケースで確認する（経路差を作らないため）。
+    fake に差し替えて argv も検証する（#710）。fake は **想定外のコマンドを受けたら
+    `AssertionError`** を出す形にし、全ケースで argv 検証が効くようにする。
+    REST フォールバック経路・終了コード（0 / 1 / 2）も同じ経路で確認する。
     """
     import contextlib
     import io
@@ -705,13 +758,8 @@ def _self_test_retro_try_exclusion_end_to_end():
     orig_run = subprocess.run
     orig_argv = sys.argv
     orig_http_get = github_api.http_get
+    orig_resolve = github_api.resolve_token
     captured = []
-
-    class _FakeCompleted:
-        def __init__(self, returncode, stdout="", stderr=""):
-            self.returncode = returncode
-            self.stdout = stdout
-            self.stderr = stderr
 
     def _issue(num, title, labels):
         return {
@@ -721,79 +769,42 @@ def _self_test_retro_try_exclusion_end_to_end():
             "milestone": None, "comments": 0,
         }
 
-    def run_main_json(payload):
-        """gh が payload を返す状況で `main() --json` を実行し、パース結果を返す。"""
+    def _rest_issue(num, title, labels):
+        return {
+            "number": num, "title": title,
+            "labels": [{"name": n} for n in labels],
+            "created_at": "2026-09-01T00:00:00Z", "updated_at": "2026-09-01T00:00:00Z",
+            "milestone": None, "comments": 0,
+        }
+
+    def make_fake_gh(*, stdout=None, exc=None):
+        """gh 呼び出しを記録する fake。想定外のコマンドは AssertionError（#710 argv 検証）。"""
         def fake_run(cmd, **kwargs):
+            if not isinstance(cmd, list) or cmd[:2] != ["gh", "issue"] or "list" not in cmd:
+                raise AssertionError(f"想定外のコマンドが呼ばれた: {cmd!r}")
             captured.append(cmd)
-            return _FakeCompleted(0, stdout=json.dumps(payload))
-        subprocess.run = fake_run
-        sys.argv = ["triage_improvements.py", "--json", "--label", "type:improvement"]
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
-            main()
-        return json.loads(buf.getvalue())
+            if exc is not None:
+                raise exc
+            return _FakeCompleted(0, stdout=stdout)
+        return fake_run
 
-    try:
-        # ① gh 経路: retro-try 二重ラベルがレポートから消える
-        captured.clear()
-        rep = run_main_json([
-            _issue(101, "improvement: フックの統合", ["type:improvement"]),
-            _issue(102, "retro-try: 手順を直す", ["type:improvement", "type:retro-try"]),
-            _issue(103, "improvement: 近似ラベル", ["type:improvement", "type:retro-try-x"]),
-        ])
-        nums = [r["num"] for r in rep["rows"]]
-        if nums != [101, 103]:
-            failures.append(f"① main() 経由で retro-try が除外されていない: rows={nums}")
-        if rep["total"] != 2:
-            failures.append(f"① total が除外後の件数になっていない: {rep['total']}")
-
-        # fake runner の argv 検証（#710）: 意図したサブコマンドが main() の経路から呼ばれたか
+    def check_argv(tag, label):
+        """直近の gh 呼び出し argv を検証する（全ケースで実行する）。"""
         if not captured:
-            failures.append("① subprocess.run が main() の経路から呼ばれていない")
-        else:
-            cmd = captured[0]
-            if cmd[:2] != ["gh", "issue"] or "list" not in cmd:
-                failures.append(f"① 意図した gh サブコマンドでない: {cmd}")
-            for required in ("--label", "type:improvement", "--state", "-R", "--json"):
-                if required not in cmd:
-                    failures.append(f"① gh argv に {required} が無い: {cmd}")
-            if "labels" not in (cmd[cmd.index("--json") + 1] if "--json" in cmd else ""):
-                failures.append(f"① --json に labels フィールドが無い（除外判定に必要）: {cmd}")
+            failures.append(f"{tag} subprocess.run が main() の経路から呼ばれていない")
+            return
+        cmd = captured[-1]
+        for required in ("--label", label, "--state", "-R", "--json", "--limit"):
+            if required not in cmd:
+                failures.append(f"{tag} gh argv に {required} が無い: {cmd}")
+        idx = cmd.index("--json") if "--json" in cmd else -1
+        if idx < 0 or idx + 1 >= len(cmd):
+            failures.append(f"{tag} --json の直後にフィールド指定が無い: {cmd}")
+        elif "labels" not in cmd[idx + 1]:
+            failures.append(f"{tag} --json に labels フィールドが無い（除外判定に必要）: {cmd}")
 
-        # ② 全件が retro-try → 0 件は fail-closed（exit 1・0 に丸めない）
-        def fake_run_all_retro(cmd, **kwargs):
-            captured.append(cmd)
-            return _FakeCompleted(0, stdout=json.dumps([
-                _issue(201, "retro-try: a", ["type:improvement", "type:retro-try"]),
-            ]))
-        subprocess.run = fake_run_all_retro
-        sys.argv = ["triage_improvements.py", "--json"]
-        code = None
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            try:
-                main()
-            except SystemExit as e:
-                code = e.code
-        if code != 1:
-            failures.append(f"② 全件除外で 0 件のとき exit 1 でない（fail-closed 違反）: {code}")
-
-        # ③ REST API フォールバック経路でも除外される（経路差を作らない）
-        def fake_run_no_gh(cmd, **kwargs):
-            raise FileNotFoundError()
-        pages = [
-            [{
-                "number": 301, "title": "improvement: a",
-                "labels": [{"name": "type:improvement"}],
-                "created_at": "2026-09-01T00:00:00Z", "updated_at": "2026-09-01T00:00:00Z",
-                "milestone": None, "comments": 0,
-            }, {
-                "number": 302, "title": "retro-try: b",
-                "labels": [{"name": "type:improvement"}, {"name": "type:retro-try"}],
-                "created_at": "2026-09-01T00:00:00Z", "updated_at": "2026-09-01T00:00:00Z",
-                "milestone": None, "comments": 0,
-            }],
-            [],
-        ]
+    def install_rest(pages):
+        """REST フォールバック用の fake（呼び出し回数を数える）。"""
         calls = {"n": 0}
 
         def fake_http_get(url, token, **kwargs):
@@ -801,25 +812,126 @@ def _self_test_retro_try_exclusion_end_to_end():
             calls["n"] += 1
             return True, json.dumps(pages[i] if i < len(pages) else [])
 
-        subprocess.run = fake_run_no_gh
         github_api.http_get = fake_http_get
-        orig_resolve = github_api.resolve_token
         github_api.resolve_token = lambda: "dummy-token"
-        try:
-            sys.argv = ["triage_improvements.py", "--json"]
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+        return calls
+
+    def run_main(argv):
+        """`main()` を実行し、(stdout 文字列, 終了コード or None) を返す。"""
+        sys.argv = ["triage_improvements.py"] + argv
+        buf = io.StringIO()
+        code = None
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            try:
                 main()
-            rep = json.loads(buf.getvalue())
-        finally:
-            github_api.resolve_token = orig_resolve
-        nums = [r["num"] for r in rep["rows"]]
-        if nums != [301]:
+            except SystemExit as e:
+                code = e.code
+        return buf.getvalue(), code
+
+    def rows_of(out, tag):
+        try:
+            return [r["num"] for r in json.loads(out)["rows"]]
+        except Exception as e:  # noqa: BLE001
+            failures.append(f"{tag} JSON レポートを解析できない: {e!r} / out={out[:120]!r}")
+            return None
+
+    try:
+        # ① gh 経路: retro-try 二重ラベルがレポートから消える（exit 0）
+        captured.clear()
+        subprocess.run = make_fake_gh(stdout=json.dumps([
+            _issue(101, "improvement: フックの統合", ["type:improvement"]),
+            _issue(102, "retro-try: 手順を直す", ["type:improvement", "type:retro-try"]),
+            _issue(103, "improvement: 近似ラベル", ["type:improvement", "type:retro-try-x"]),
+        ]))
+        out, code = run_main(["--json", "--label", "type:improvement"])
+        if code not in (None, 0):
+            failures.append(f"① 正常系の終了コードが 0 でない: {code}")
+        nums = rows_of(out, "①")
+        if nums is not None and nums != [101, 103]:
+            failures.append(f"① main() 経由で retro-try が除外されていない: rows={nums}")
+        check_argv("①", "type:improvement")
+
+        # ①-b `--label type:retro-try` を明示指定したときは除外しない（構造的 0 件を作らない）
+        captured.clear()
+        subprocess.run = make_fake_gh(stdout=json.dumps([
+            _issue(111, "retro-try: a", ["type:retro-try"]),
+            _issue(112, "retro-try: b", ["type:improvement", "type:retro-try"]),
+        ]))
+        out, code = run_main(["--json", "--label", "type:retro-try"])
+        if code not in (None, 0):
+            failures.append(f"①-b --label type:retro-try で exit 0 にならない: {code}")
+        nums = rows_of(out, "①-b")
+        if nums is not None and nums != [111, 112]:
+            failures.append(f"①-b 明示指定した type:retro-try まで除外された: rows={nums}")
+        check_argv("①-b", "type:retro-try")
+
+        # ①-c gh が配列以外の JSON（エラーオブジェクト）を返したら REST へフォールバックする
+        captured.clear()
+        subprocess.run = make_fake_gh(stdout='{"message":"Bad credentials"}')
+        calls = install_rest([[_rest_issue(401, "improvement: a", ["type:improvement"])], []])
+        out, code = run_main(["--json"])
+        if calls["n"] == 0:
+            failures.append("①-c gh の非配列 JSON を取得成功とみなし REST へフォールバックしていない")
+        nums = rows_of(out, "①-c")
+        if nums is not None and nums != [401]:
+            failures.append(f"①-c REST フォールバックの結果が返っていない: rows={nums}")
+        check_argv("①-c", "type:improvement")
+
+        # ①-d gh が JSON でない文字列を返したときも REST へフォールバックする
+        captured.clear()
+        subprocess.run = make_fake_gh(stdout="not json")
+        calls = install_rest([[_rest_issue(402, "improvement: b", ["type:improvement"])], []])
+        out, code = run_main(["--json"])
+        if calls["n"] == 0:
+            failures.append("①-d gh の非 JSON 出力で REST へフォールバックしていない")
+        nums = rows_of(out, "①-d")
+        if nums is not None and nums != [402]:
+            failures.append(f"①-d REST フォールバックの結果が返っていない: rows={nums}")
+        check_argv("①-d", "type:improvement")
+
+        github_api.http_get = orig_http_get
+        github_api.resolve_token = orig_resolve
+
+        # ② 全件が retro-try → 取得は成功しているが 0 件（fail-closed・exit 1）
+        captured.clear()
+        subprocess.run = make_fake_gh(stdout=json.dumps([
+            _issue(201, "retro-try: a", ["type:improvement", "type:retro-try"]),
+        ]))
+        _, code = run_main(["--json"])
+        if code != 1:
+            failures.append(f"② 全件除外で 0 件のとき exit 1 でない（fail-closed 違反）: {code}")
+        check_argv("②", "type:improvement")
+
+        # ②-b gh も GH_TOKEN も使えない = 判定不能（exit 2・0 件と同じコードに畳まない）
+        captured.clear()
+        subprocess.run = make_fake_gh(exc=FileNotFoundError())
+        github_api.resolve_token = lambda: ""
+        _, code = run_main(["--json"])
+        if code != 2:
+            failures.append(f"②-b 取得失敗が判定不能(exit 2)になっていない: {code}")
+        check_argv("②-b", "type:improvement")
+        github_api.resolve_token = orig_resolve
+
+        # ③ REST API フォールバック経路でも除外される（経路差を作らない）
+        captured.clear()
+        subprocess.run = make_fake_gh(exc=FileNotFoundError())
+        calls = install_rest([
+            [
+                _rest_issue(301, "improvement: a", ["type:improvement"]),
+                _rest_issue(302, "retro-try: b", ["type:improvement", "type:retro-try"]),
+            ],
+            [],
+        ])
+        out, code = run_main(["--json"])
+        nums = rows_of(out, "③")
+        if nums is not None and nums != [301]:
             failures.append(f"③ REST フォールバック経路で retro-try が除外されない: rows={nums}")
+        check_argv("③", "type:improvement")
     finally:
         subprocess.run = orig_run
         sys.argv = orig_argv
         github_api.http_get = orig_http_get
+        github_api.resolve_token = orig_resolve
     return failures
 
 
@@ -908,7 +1020,12 @@ def _self_test():
         ("type:retro-try 除外の入力バリアント (#418)", _self_test_retro_try_exclusion_variants),
         ("type:retro-try 除外の main() 貫通 (#418)", _self_test_retro_try_exclusion_end_to_end),
     ):
-        for msg in fn():
+        # 個別テストが例外で落ちても未捕捉トレースバックにせず FAIL として報告する
+        try:
+            msgs = fn()
+        except Exception as e:  # noqa: BLE001
+            msgs = [f"テスト自体が例外で終了: {e!r}"]
+        for msg in msgs:
             check(False, f"[{name}] {msg}")
 
     if fail == 0:
@@ -918,7 +1035,12 @@ def _self_test():
 
 def main():
     ap = argparse.ArgumentParser(description="改善 Issue 棚卸し支援ツール（読み取り専用）")
-    ap.add_argument("--label", default="type:improvement", help="対象ラベル（既定: type:improvement）")
+    ap.add_argument(
+        "--label", default="type:improvement",
+        help=("対象ラベル（既定: type:improvement）。取得結果からは type:retro-try を除外する"
+              "（Step G-1 の集計に限った射程）。ただし --label type:retro-try と明示指定した"
+              "ときは除外しない"),
+    )
     ap.add_argument("--state", default="open", choices=["open", "closed", "all"], help="Issue 状態")
     ap.add_argument("--json", action="store_true", help="JSON を出力")
     ap.add_argument("--out", help="Markdown レポートの出力先パス")
@@ -930,13 +1052,23 @@ def main():
     if args.self_test:
         sys.exit(_self_test())
 
-    issues = fetch_issues(args.label, args.state)
-    if not issues:
-        # fail-closed: 0 件は「取得失敗」と「全件が type:retro-try で除外された」を
-        # 終了コードだけでは区別できないため、合格(0)へ丸めない（check-tool-design-rules.md §2）
+    issues, fetched_ok = fetch_issues(args.label, args.state)
+    if not fetched_ok:
+        # 判定不能: 取得経路そのものが成立していない（gh 不在 + トークン不在 / REST 失敗）。
+        # 「対象 0 件」と同じコードに畳むと、運用者が原因を切り分けられない（check-tool-design-rules.md §1）
         print(
-            f"対象 Issue が取得できませんでした（0 件 or 取得失敗 / label={args.label}）。"
-            "type:retro-try は常に除外されます（#418）",
+            f"⚠️ Issue を取得できませんでした（判定不能 / label={args.label}）。"
+            "gh CLI と GH_TOKEN の利用可否・ネットワークを確認してください",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if not issues:
+        # fail-closed: 取得は成功しているが対象 0 件（全件が type:retro-try で除外された場合を含む）。
+        # 合格(0)へ丸めない（check-tool-design-rules.md §2）
+        print(
+            f"❌ 対象 Issue が 0 件でした（取得は成功 / label={args.label}）。"
+            "ラベル指定が意図どおりか確認してください。"
+            "既定ラベルでの取得では type:retro-try が除外されます（#418）",
             file=sys.stderr,
         )
         sys.exit(1)

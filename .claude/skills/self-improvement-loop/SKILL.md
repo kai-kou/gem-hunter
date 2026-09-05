@@ -128,6 +128,8 @@ python3 tools/triage_improvements.py --out /tmp/groom_report.md   # Markdown
 python3 tools/triage_improvements.py --json > /tmp/groom.json     # 機械処理用
 ```
 
+⚠️ 本レポートは `type:retro-try` を **取得層で除外** する（#418・`improvement-lane-map.md` §2 ルール 2）。`type:improvement` との二重ラベル Issue は載らないため、棚卸し対象に含めたいときは `--label type:retro-try` を明示指定して別途取得する（明示指定時は除外されない）。リファインメント（Step G-1.5 / G-6）は本ツールを使わないので影響を受けない（ルール 5 のとおり `type:retro-try` も対象）。終了コードは `0`= 正常 / `1`= 取得成功だが対象 0 件 / `2`= 判定不能（gh・GH_TOKEN が使えない等）。
+
 レポートの内容: **集計**（priority / sp / 監査フェーズの分布）・**カテゴリ別件数**（監査タグ優先、なければキーワードクラスタ）・**Epic 統合候補**（同一カテゴリに `--epic-threshold`〔既定 6〕件以上集中）・**重複/酷似**（監査ドメインコード重複 / タイトルトークンの Jaccard 類似度 ≥ 0.6）・**ラベル欠損**（priority / sp 未設定。Epic は除外）。
 
 ### Step G-1.5: リファインメント対象の抽出（type 非依存・週次ゲートの入口）
@@ -448,7 +450,7 @@ python3 tools/consume_hold_guard.py --validate-comment-file - <<< "$body"       
 | ファイル                                    | 役割                                                                                                                                                                                                 |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `docs/rules/improvement-lane-map.md`        | レーン境界の SSOT（振り返り・監査/衛生レーンとの分担）                                                                                                                                               |
-| `tools/triage_improvements.py`              | 整理モードの集計・分類・重複検出・Epic 候補抽出（副作用なし・`type:improvement` 限定のため Step G-1.5 では使わない）                                                                                 |
+| `tools/triage_improvements.py`              | 整理モードの集計・分類・重複検出・Epic 候補抽出（副作用なし・`type:improvement` 限定 **かつ `type:retro-try` を取得層で除外**〔#418〕のため Step G-1.5 では使わない。`--label type:retro-try` の明示指定時は除外しない）                                                                                 |
 | `config/backlog_refinement_state.json`      | リファインメント週次ゲートの state（`last_refinement_at`）。定期ルーティン側が着手前に更新して先勝ち排他する。**配布対象外** で、無ければ初回実行時に自動生成される（#448） <!-- refcheck:ignore --> |
 | `.claude/skills/discussion-review/SKILL.md` | Step G-6 のグレーゾーン精査（専門チーム議論）の実行手段                                                                                                                                              |
 | `docs/rules/session-sprint-rules.md`        | SP 基準（§3）・PO=@owner（§4）                                                                                                                                                                       |

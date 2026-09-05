@@ -362,8 +362,8 @@ export default async function LocaleHome({
     : rawSearchParams.date
   const dateSeed = tryDateSeed(rawDate, new Date())
   //
-  // 🔴 **三重防御**: `StaticGemDigest` は例外を投げない設計で、usecase（`makeGetDailyDigest`）も
-  //    例外を `null` に畳む（Issue #392）。ここでも `.catch(() => null)` を張り、ダイジェストの
+  // 🔴 **多層防御の 3 層目**（1: `StaticGemDigest` の fail-soft / 2: `makeGetDailyDigest` の
+  //    `null` / 3: ここ・Issue #392）。ここでも `.catch(() => null)` を張り、ダイジェストの
   //    失敗がトップページ全体を 500 にする経路を塞ぐ（`app/` に `error.tsx` は無く、失敗すれば検索
   //    機能まで巻き添えになる）。回帰テストは `page.test.tsx`（`null` は既存分岐で非表示に倒れる）。
   const dailyDigest = hasKeyword

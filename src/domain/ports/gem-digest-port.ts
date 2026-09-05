@@ -25,10 +25,8 @@ export interface GemDigestPort {
    *
    * - **実装は throw / reject しない**（fail-soft）。読み込み失敗・壊れた JSON でも空配列 +
    *   既定 meta に倒す（実装例: `StaticGemDigest`）。
-   * - 🔵 **それでも投げた場合の呼び出し側の扱いは固定されている**: usecase
-   *   （`makeGetDailyDigest`）が受け止めて **`null`** を返し、トップページは
-   *   **ダイジェスト部分だけを欠落させて 200 のまま** 応答する（500 にしない・`app/` 配下に
-   *   `error.tsx` は無い）。`items: []` へは畳まない（出典メタデータを捏造しないため）。
+   * - それでも投げた場合の呼び出し側の扱いは
+   *   `src/usecases/get-daily-digest.ts` の JSDoc「例外時の振る舞い」を参照。
    */
   listCandidates(): Promise<{ candidates: readonly Gem[]; meta: DigestMeta }>
 }

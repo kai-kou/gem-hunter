@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DateSeed } from '../domain/model/date-seed'
 import type { DailyDigest, DigestMeta, Gem } from '../domain/model/gem'
@@ -300,6 +300,15 @@ describe('getDailyDigest', () => {
 })
 
 describe('GemDigestPort が例外を投げたとき（Issue #392）', () => {
+  // 失敗時は `console.warn` でログを残す設計なので、テスト出力を汚さないよう黙らせる
+  // （`static-gem-digest.test.ts` と同じ方針）。
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   function throwingPort(error: unknown): GemDigestPort {
     return {
       async listCandidates() {
@@ -308,7 +317,7 @@ describe('GemDigestPort が例外を投げたとき（Issue #392）', () => {
     }
   }
 
-  it('例外を投げても reject せず null を返す（ダイジェスト部分だけを欠落させる・二重防御）', async () => {
+  it('例外を投げても reject せず null を返す（ダイジェスト部分だけを欠落させる・多層防御の 2 層目）', async () => {
     const getDailyDigest = makeGetDailyDigest({ port: throwingPort(new Error('boom')) })
 
     const result = await getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })
@@ -331,5 +340,31 @@ describe('GemDigestPort が例外を投げたとき（Issue #392）', () => {
     const getDailyDigest = makeGetDailyDigest({ port: throwingPort('not an error') })
 
     await expect(getDailyDigest({ seed: '20260820' as DateSeed, limit: 0 })).resolves.toBeNull()
+  })
+
+  it('null に畳んだことを console.warn で残す（無音で握り潰さない）', async () => {
+    const getDailyDigest = makeGetDailyDigest({ port: throwingPort(new Error('boom')) })
+
+    await expect(getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })).resolves.toBeNull()
+
+    // 🔴 「null を返す」だけを検証すると、ログを消す変更が無警告で通る（ダイジェストが恒久的に
+    //    欠落しても観測できなくなる）。プレフィックスと例外オブジェクトの両方を固定する。
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('[getDailyDigest]'),
+      expect.any(Error),
+    )
+  })
+
+  it('候補取得後（ハッシュ計算段）で失敗しても null を返す + 警告を残す', async () => {
+    // 🔴 `try` の範囲が `port.listCandidates()` だけに狭まる退行の回帰テスト。
+    //    ポートは正常に返り、後段の `deterministicKey`（`crypto.subtle.digest`）だけが落ちる。
+    vi.spyOn(crypto.subtle, 'digest').mockRejectedValue(new Error('subtle unavailable'))
+    const getDailyDigest = makeGetDailyDigest({ port: fakePort(candidates) })
+
+    await expect(getDailyDigest({ seed: '20260820' as DateSeed, limit: 5 })).resolves.toBeNull()
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('[getDailyDigest]'),
+      expect.any(Error),
+    )
   })
 })

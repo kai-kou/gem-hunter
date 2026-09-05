@@ -45,13 +45,22 @@ export type GetDailyDigest = (input: GetDailyDigestInput) => Promise<DailyDigest
  * 日ごとに変わる」（2. の効果・`US-31`）と「その日の中の並び順は説明可能」（3. の効果・Gem Index
  * の意味を潰さない）を両立する。`Math.random()` は使わない（テスト決定性・L-113）。
  *
- * ### 例外時の振る舞い（`GemDigestPort` が throw / reject したとき・Issue #392）
+ * ### 例外時の振る舞い（Issue #392）
  *
- * 🔵 **二重防御**: `GemDigestPort` は契約上例外を投げない（`gem-digest-port.ts` の JSDoc）が、
- * 投げても **reject せず `null` を返す**（`search-gems.ts` の `status:'failed'` と同じ方針）。
+ * 🔵 **`GemDigestPort` の呼び出し、および候補選定処理（shortlist 選定・`crypto.subtle` による
+ * 決定論的ハッシュ・再ソート）で例外が出た場合は `null` に畳む**（reject しない）。ポートは
+ * 契約上例外を投げない（`gem-digest-port.ts` の JSDoc）が、投げても、また後段の純粋計算が
+ * 落ちても同じく `null` を返す（`search-gems.ts` の `status:'failed'` と同じ方針）。
  * 呼び出し元（`app/[locale]/page.tsx`）は `null` をダイジェスト非表示に倒すため、
  * **トップページ全体は 200 のまま・ダイジェスト部分だけが欠落する**（`app/` 配下に
  * `error.tsx` が無く、ここで漏らすと既存の検索機能まで巻き添えで 500 になる）。
+ *
+ * 🔵 **多層防御の 2 層目**（1: `StaticGemDigest` の fail-soft / 2: 本 usecase の `null` /
+ * 3: `app/[locale]/page.tsx` の `.catch(() => null)`）。
+ *
+ * 🔴 **畳むときは必ず `console.warn` を出す**。無音で握り潰すと、`crypto.subtle` の欠落や配信
+ * アセットの破損で「今日の Gem」が恒久的に消えても誰も気づけない（`static-gem-digest.ts` /
+ * `static-gem-index.ts` / `workers-cache.ts` と同じ書式。生ペイロードは出さない）。
  *
  * 🔴 **`items: []` ではなく `null` にする理由**: 出典メタデータ（`DigestMeta`・`D-29`）は
  * ポートからしか得られず、失敗時に捏造すると帰属表示が虚偽になる。「候補プールが空
@@ -61,8 +70,10 @@ export function makeGetDailyDigest(deps: { port: GemDigestPort }): GetDailyDiges
   return async ({ seed, limit }) => {
     try {
       return await buildDigest(deps.port, seed, limit)
-    } catch {
+    } catch (error) {
       // 例外時の契約は上の JSDoc「例外時の振る舞い」を参照（ダイジェストのみ欠落させる）。
+      // 🔴 無音で畳まない: ダイジェストが恒久的に消えても観測できなくなる。
+      console.warn('[getDailyDigest] ダイジェストの生成に失敗しました（null に畳みます）', error)
       return null
     }
   }

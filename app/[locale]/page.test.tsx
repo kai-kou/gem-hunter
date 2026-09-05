@@ -36,8 +36,9 @@ const isAuthConfiguredMock = vi.fn<() => boolean>()
 
 /**
  * 候補プールの読み込み（静的アセット）を避けるため composition root ごと差し替える
- * （`gems/page.test.tsx` と同じ方針）。エラー分岐では `lookupGemIndexes` /
- * `getDailyDigestUseCase` は呼ばれないため中身は空でよい。
+ * （`gems/page.test.tsx` と同じ方針）。`lookupGemIndexes` はエラー分岐で呼ばれないため空でよい。
+ * `getDailyDigestUseCase` は非キーワード経路（Issue #392 のテスト）で実際に呼ばれるため、
+ * `getDailyDigestMock` 経由で 1 テストごとに解決値／reject を差し替える。
  */
 const searchRepositoriesMock = vi.fn<() => Promise<SearchResult>>()
 const getDailyDigestMock = vi.fn<() => Promise<unknown>>()
