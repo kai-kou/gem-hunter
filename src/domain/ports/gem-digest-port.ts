@@ -20,6 +20,13 @@ export interface GemDigestPort {
    * （全量を見ていないため）。検索語との突き合わせはシャード側の経路で行う。
    *
    * 候補が 0 件でも例外にせず空配列を返す（配信は止めず鮮度のみ劣化させる・`D-28` SPOF 方針）。
+   *
+   * ### 異常時の振る舞い（契約・Issue #392）
+   *
+   * - **実装は throw / reject しない**（fail-soft）。読み込み失敗・壊れた JSON でも空配列 +
+   *   既定 meta に倒す（実装例: `StaticGemDigest`）。
+   * - それでも投げた場合の呼び出し側の扱いは
+   *   `src/usecases/get-daily-digest.ts` の JSDoc「例外時の振る舞い」を参照。
    */
   listCandidates(): Promise<{ candidates: readonly Gem[]; meta: DigestMeta }>
 }
