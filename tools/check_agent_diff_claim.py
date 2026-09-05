@@ -85,14 +85,22 @@ import git_diff_utils
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# パスらしきトークン: 英数字/アンダースコア/開き角括弧で始まり、スラッシュ・ドット・ハイフン・
-# 角括弧を含み、最後に "." + 拡張子で終わる文字列。
+# パスらしきトークン: 英数字/アンダースコア/開き角括弧/先頭ドットで始まり、スラッシュ・ドット・
+# ハイフン・角括弧を含み、最後に "." + 拡張子で終わる文字列。
 # 角括弧（`[` `]`）は Next.js App Router の動的セグメント（`app/[locale]/page.tsx` 等）で
 # 実際にこのリポジトリのパスに使われているため必須（Issue #712）。`git ls-files` で確認した限り
 # 本リポジトリのパスに現れる記号は `[` `]` `.` `-` `_` `/` のみで、`(` `)` `@` `+` `~` 等は
 # 使われていない（含めると日本語文中の記号を誤って拾うリスクが増すため見送る）。
 # 先頭にも `[` を許すのは、報告が先頭ディレクトリを省いて `[locale]/page.tsx` と書いた場合に
 # 開き括弧を落とした `locale]/page.tsx` を生まないため（PR #716 Layer 1 レビュー）。
+# 先頭に `.` も許すのは Issue #948 の対策（重要・見落としやすい）: 先頭文字クラスが `.` を
+# 除外していると、`.github/workflows/x.yml` のような **標準の先頭ドットパス** は
+# `re.findall` の「最も左で始まるマッチ」規則により、そもそも `.` の次の文字（`g`）から
+# マッチが始まってしまい `github/workflows/x.yml` になる。これは旧 `tok.lstrip("./")` の
+# 文字集合バグ（`.` `/` を集合として食い荒らす）とは **別の場所で起きる同じ症状の別原因**
+# であり、`lstrip` を `removeprefix` に直すだけでは直らない（`tok` に渡る時点で既に `.` が
+# 失われているため）。実測: 修正前は `_PATH_TOKEN_RE.findall(".github/workflows/x.yml")`
+# が `['github/workflows/x.yml']` を返す（`.` が消える）。
 #
 # 既知の限界（いずれも `missing_from_diff` = 余分な警告側にしか倒れない）:
 #   - `list[0].name` のような配列アクセス表記が 1 トークンとして拾われる
@@ -100,7 +108,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 一方、`][` で連結された 2 パス（`[a/x.py][b/y.py]`）は 1 トークンに融合すると
 # **両方のパスが `missing_from_report` 側へ落ちる**（見落とし方向）ため、
 # `extract_claimed_paths` が後処理で明示的に分割する。
-_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_\[][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+")
+_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_.\[][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+")
 _URL_RE = re.compile(r"https?://\S+")  # ドメイン名がパストークンとして誤抽出されるのを防ぐため事前に除去する
 
 # 課題2（#717）: `_PATH_TOKEN_RE` は「.」を含まない・区切りが無い巨大な非マッチ文字列に対して
@@ -139,7 +147,11 @@ def _tokens_from_text(text: str) -> set[str]:
             for tok in raw.split("]["):
                 tok = tok.strip("`'\"(),;:")
                 tok = _trim_unpaired_brackets(tok)
-                tok = tok.lstrip("./")
+                # Issue #948: `lstrip("./")` は文字集合として解釈されるため、`.github/workflows/x.yml`
+                # のような先頭ドット付きの実在パスまで `.` を食い荒らし `github/workflows/x.yml` に
+                # 化けていた（偽陽性の直接原因）。共通正規化関数（claim 側・実 diff 側の双方が通る
+                # 唯一の入口）に置き換える。
+                tok = git_diff_utils.normalize_leading_dotslash(tok)
                 if not tok:
                     continue
                 ext = tok.rsplit(".", 1)[-1]
@@ -261,7 +273,13 @@ def run_git(args: list[str], cwd: Path) -> str:
 
 
 def parse_status_short(output: str) -> set[str]:
-    """`git status --short` 出力からファイルパスを抽出する（リネームは新パスを採用）。"""
+    """`git status --short` 出力からファイルパスを抽出する（リネームは新パスを採用）。
+
+    Issue #948: claim 側（`_tokens_from_text`）と同じ `git_diff_utils.normalize_leading_dotslash()`
+    を通す。`git status --short` は通常 `./` プレフィックス無しでパスを返すため実害は無いが、
+    「claim 側と実 diff 側が同じ正規化関数を通る」構造を自己テストで固定するため実 diff 側にも
+    明示的に適用する（片側だけ正規化される非対称性そのものが再発要因だったため・#948）。
+    """
     files: set[str] = set()
     for line in output.splitlines():
         if not line.strip():
@@ -270,18 +288,23 @@ def parse_status_short(output: str) -> set[str]:
         if " -> " in rest:
             rest = rest.split(" -> ", 1)[1]
         rest = rest.strip().strip('"')
+        rest = git_diff_utils.normalize_leading_dotslash(rest)
         if rest:
             files.add(rest)
     return files
 
 
 def parse_diff_stat(output: str) -> set[str]:
-    """`git diff --stat` 出力からファイルパスを抽出する（末尾のサマリー行は "|" が無く自動除外）。"""
+    """`git diff --stat` 出力からファイルパスを抽出する（末尾のサマリー行は "|" が無く自動除外）。
+
+    Issue #948: `parse_status_short()` と同様に `git_diff_utils.normalize_leading_dotslash()` を通す。
+    """
     files: set[str] = set()
     for line in output.splitlines():
         if "|" not in line:
             continue
         path = line.split("|", 1)[0].strip()
+        path = git_diff_utils.normalize_leading_dotslash(path)
         if path:
             files.add(path)
     return files
@@ -461,6 +484,88 @@ def run_self_test() -> int:
         "extract_claimed_paths 先頭の動的セグメントの開き括弧を落とさない（#716）",
         got_leading == {"[locale]/page.tsx"},
         str(got_leading),
+    )
+
+    # ── Issue #948: `.github/workflows/x.yml` のような先頭ドット付きパスの偽陽性 ─────────
+    # 原因: `tok.lstrip("./")` が文字集合として "." "/" を解釈し、`.github/workflows/x.yml` の
+    # 先頭 "." まで食い荒らして `github/workflows/x.yml` に化けていた。claim 側・実 diff 側の
+    # 双方で正規化した結果が一致し mismatch=False になることを end-to-end（compare まで）で見る。
+
+    # バリアント1: 明示ブロック（CHANGED_FILES:）経路
+    dotpath_block_report = "CHANGED_FILES:\n.github/workflows/x.yml\n.claude/hooks/y.sh\n"
+    got_dotpath_block, used_dotpath_block = extract_claimed_paths(dotpath_block_report)
+    check(
+        "明示ブロック経路: 先頭ドット付きパスの '.' を消さずに抽出する（#948）",
+        got_dotpath_block == {".github/workflows/x.yml", ".claude/hooks/y.sh"} and used_dotpath_block is True,
+        str((got_dotpath_block, used_dotpath_block)),
+    )
+    r_dotpath_block = compare(
+        got_dotpath_block,
+        parse_status_short(" M .github/workflows/x.yml\n M .claude/hooks/y.sh\n"),
+    )
+    check(
+        "明示ブロック経路 end-to-end: 先頭ドット付きパスで mismatch=False（#948 完了条件）",
+        r_dotpath_block["mismatch"] is False,
+        str(r_dotpath_block),
+    )
+
+    # バリアント2: フォールバック（全文ヒューリスティックスキャン）経路。明示ブロックが無いことを
+    # 確認したうえで（`used3 is False` 相当）、同じ先頭ドット付きパスが同様に抽出できること。
+    dotpath_fallback_report = (
+        "変更ファイル: `.github/workflows/x.yml` と `.claude/hooks/y.sh` を更新しました。\n"
+    )
+    got_dotpath_fallback, used_dotpath_fallback = extract_claimed_paths(dotpath_fallback_report)
+    check(
+        "フォールバック経路: 先頭ドット付きパスの '.' を消さずに抽出する（#948）",
+        got_dotpath_fallback == {".github/workflows/x.yml", ".claude/hooks/y.sh"}
+        and used_dotpath_fallback is False,
+        str((got_dotpath_fallback, used_dotpath_fallback)),
+    )
+    r_dotpath_fallback = compare(
+        got_dotpath_fallback,
+        parse_diff_stat(
+            " .github/workflows/x.yml | 2 +-\n"
+            " .claude/hooks/y.sh      | 1 +\n"
+            " 2 files changed, 2 insertions(+), 1 deletion(-)\n"
+        ),
+    )
+    check(
+        "フォールバック経路 end-to-end: 先頭ドット付きパスで mismatch=False（#948 完了条件）",
+        r_dotpath_fallback["mismatch"] is False,
+        str(r_dotpath_fallback),
+    )
+
+    # バリアント3: 症状のバリアント展開（`./x.py`・先頭ドット+`./` 併用・通常 "./" プレフィックス）
+    variant_report = "CHANGED_FILES:\n./tools/x.py\n.github/x.yml\n././tools/z.py\n"
+    got_variant, _ = extract_claimed_paths(variant_report)
+    check(
+        "バリアント展開: './x.py'（剥がす）・'.github/x.yml'（無傷）・'././z.py'（1 回だけ剥がす）を同時に正しく扱う（#948）",
+        got_variant == {"tools/x.py", ".github/x.yml", "./tools/z.py"},
+        str(got_variant),
+    )
+
+    # 共通正規化関数への配線検証: claim 側（_tokens_from_text 経由）と実 diff 側
+    # （parse_status_short / parse_diff_stat 経由）が同一の `git_diff_utils.normalize_leading_dotslash`
+    # を通ることを、差し替えで呼び出し回数を記録して確認する（片側だけ直す再発を防ぐ・#948）。
+    _dotslash_calls: list[str] = []
+    _orig_normalize_leading_dotslash = git_diff_utils.normalize_leading_dotslash
+
+    def _recording_normalize_leading_dotslash(path: str) -> str:
+        _dotslash_calls.append(path)
+        return _orig_normalize_leading_dotslash(path)
+
+    git_diff_utils.normalize_leading_dotslash = _recording_normalize_leading_dotslash
+    try:
+        _tokens_from_text(".github/workflows/x.yml を変更した")
+        parse_status_short(" M .github/workflows/x.yml\n")
+        parse_diff_stat(" .github/workflows/x.yml | 1 +\n 1 file changed\n")
+    finally:
+        git_diff_utils.normalize_leading_dotslash = _orig_normalize_leading_dotslash
+    check(
+        "claim 側（_tokens_from_text）と実 diff 側（parse_status_short/parse_diff_stat）が"
+        "共通正規化関数 git_diff_utils.normalize_leading_dotslash を通る（#948 共通化の完了条件）",
+        len(_dotslash_calls) == 3,
+        f"calls={_dotslash_calls}",
     )
 
     # compare: Issue #712 の再現ケースを end-to-end で検証する。

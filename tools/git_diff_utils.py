@@ -223,6 +223,26 @@ def run_git_or_raise(
 ABBREV_PREFIX = ".../"
 
 
+def normalize_leading_dotslash(path: str) -> str:
+    """パス先頭の `./` プレフィックスだけを 1 回取り除く（Issue #948）。
+
+    `str.lstrip(chars)` は引数を「文字集合」として扱うため、`lstrip("./")` は
+    `.github/workflows/x.yml` のような **先頭ドット付きの実在パス** に対して先頭の `.` まで
+    連続的に食い荒らし `github/workflows/x.yml` を生む（`.` も `/` も引数の集合に含まれるため）。
+    本関数は `str.removeprefix("./")`（完全一致の 1 回限りの除去・Python 3.9+）を使い、
+    「`./` という 2 文字プレフィックスだけを剥がす」という本来の意図に一致させる。
+
+    `.github/x.yml` は `./` で始まらない（`.g` であって `./` ではない）ため素通りする。
+    `./foo.py` は `foo.py` になる。既に prefix が無いパスは変化しない（冪等）。
+
+    サブエージェントの完了報告（claim 側・`check_agent_diff_claim.py`）と実 diff 側の両方が
+    **この関数だけ** を通ることで、片側だけ正規化されて食い違う構造的欠陥を防ぐ
+    （`check_agent_diff_claim.py --self-test` の `_self_test_leading_dotslash_shared_normalizer`
+    が両経路の配線を検証する）。
+    """
+    return path.removeprefix("./")
+
+
 def resolve_abbreviated_path(path: str, candidates: set[str] | frozenset[str]) -> str | None:
     """`.../` で省略されたパスを候補集合からサフィックス一致で解決する（Issue #850）。
 
@@ -784,6 +804,26 @@ def _self_test_normalize_abbreviated_paths() -> list[str]:
     return failures
 
 
+def _self_test_normalize_leading_dotslash() -> list[str]:
+    """Issue #948: `lstrip("./")` の文字集合ドリフトが再発しないことを固定する。"""
+    failures: list[str] = []
+
+    cases = [
+        ("./foo.py", "foo.py"),  # 通常の "./" プレフィックスは 1 回だけ剥がす
+        (".github/workflows/x.yml", ".github/workflows/x.yml"),  # 先頭ドット付き実在パスは無傷
+        (".claude/hooks/y.sh", ".claude/hooks/y.sh"),  # 同上（別ディレクトリ）
+        ("foo.py", "foo.py"),  # プレフィックス無しは変化しない（冪等）
+        ("././foo.py", "./foo.py"),  # 1 回だけ剥がす（`lstrip` のような連続除去はしない）
+        ("...hidden.py", "...hidden.py"),  # "." が 3 連続でも "./" 完全一致でなければ触らない
+    ]
+    for given, expected in cases:
+        got = normalize_leading_dotslash(given)
+        if got != expected:
+            failures.append(f"normalize_leading_dotslash({given!r}): expected={expected!r} got={got!r}")
+
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("default_branch", _self_test_default_branch),
@@ -811,6 +851,7 @@ def run_self_test() -> int:
         ("_run_git cwd/timeout 転送", _self_test_run_git_cwd_and_timeout_forwarded),
         ("run_git_or_raise", _self_test_run_git_or_raise),
         ("normalize_abbreviated_paths（#850）", _self_test_normalize_abbreviated_paths),
+        ("normalize_leading_dotslash（#948）", _self_test_normalize_leading_dotslash),
     ]
     total_fail = 0
     for label, fn in groups:
