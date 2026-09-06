@@ -181,11 +181,14 @@ Issue #164 の完了条件（「5 本すべてに実行場所が記録されて�
 
 | 軸                | 検査ツール                       | 除外マーカー                     |
 | ----------------- | -------------------------------- | -------------------------------- |
-| `--self-test` の配線 | `tools/check_selftest_wiring.py` | `# selftest-wiring-ok: {理由}`   |
+| `--self-test` の配線 | `tools/check_selftest_wiring.py` | `# selftest-wiring-ok: {理由}`（`.py` / `.sh`）・`// selftest-wiring-ok: {理由}` または `/* selftest-wiring-ok: {理由} */`（`.mjs` / `.mts`） |
 | **本判定の配線**  | `tools/check_tool_wiring.py`     | `# tool-wiring-ok: {理由}`       |
 
 いずれも **理由が空のマーカーは無効**（除外してよいかを人が判断した形跡を残させるため）。
 2 つの検査は独立に走り、片方の除外がもう片方の除外を意味しない（§5.2）。
+🔴 `.mjs` / `.mts` に `#` でマーカーを書かない（JS のコメント記号ではないため `node` 実行が
+SyntaxError で壊れる）。`check_selftest_wiring.py` の走査対象拡張子は `.py` / `.mjs` / `.mts` / `.sh`
+（`SCAN_EXTENSIONS`・Issue #992）。
 
 `check_tool_wiring.py` が **実行場所として認める形** は次のとおり（ここに現れない呼び出しは「未配線」と判定される）。
 
@@ -265,4 +268,4 @@ Issue #164 の完了条件（「5 本すべてに実行場所が記録されて�
 | `docs/rules/lessons/` の各カテゴリ              | 個別の失敗事例（本ファイルは終了コード軸の総論）                 |
 | `tools/run_checks.sh`                           | 検査ツールの配線先（新設したら未配線のまま放置しない・#164）     |
 | `tools/check_tool_wiring.py`                    | 本判定の配線を機械保証（除外は `# tool-wiring-ok: 理由`・§5.4）  |
-| `tools/check_selftest_wiring.py`                | `--self-test` の配線を機械保証（除外は `# selftest-wiring-ok: 理由`） |
+| `tools/check_selftest_wiring.py`                | `--self-test` の配線を機械保証（除外は `.py`/`.sh` が `# selftest-wiring-ok: 理由`、`.mjs`/`.mts` が `// selftest-wiring-ok: 理由`・§5.4） |

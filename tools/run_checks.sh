@@ -638,6 +638,15 @@ else
   skip_check "shortlist 分布分析 self-test (analyze_shortlist_distribution.mjs --self-test)" "スクリプトが見つかりません"
 fi
 
+# Lighthouse ゲート self-test（Issue #992・check_selftest_wiring.py の射程拡大で検出された配線漏れ）。
+# ゲート判定ロジック（selfTest）と LCP 抽出（selfTestLcpExtraction）は固定 JSON を検証するだけで
+# Chrome 起動を必要としないため、本判定（上の 3.6・Chrome 実起動）とは別にここで PR ごとに実行する。
+if [ -f "$REPO_ROOT/tools/run_lighthouse.mjs" ]; then
+  run_check "Lighthouse ゲート判定 self-test (run_lighthouse.mjs --self-test)" node tools/run_lighthouse.mjs --self-test
+else
+  skip_check "Lighthouse ゲート判定 self-test (run_lighthouse.mjs --self-test)" "スクリプトが見つかりません"
+fi
+
 # Slack 通知 self-test（Issue #936）。waiting タイプの fail-closed ガード（--issues 実質空 →
 # --force-mention を付けても送信拒否）・空白のみ項目の除去・空ブランチ欄の省略を検証する。
 # post_message() をフェイクに差し替えて main() を通すためネットワーク非依存。
@@ -925,6 +934,25 @@ if [ -f "$REPO_ROOT/tools/test_wip_commit_deferral.sh" ]; then
     bash tools/test_wip_commit_deferral.sh
 else
   skip_check "WIP 自動保全の振る舞いテスト (test_wip_commit_deferral.sh)" "スクリプトが見つかりません"
+fi
+
+# 汎用進捗ハートビート self-test（Issue #992 フォローアップ・check_selftest_wiring.py の
+# .sh 走査拡大で検出された配線漏れ）。完了/エラー検出パターンのユニットテストで
+# ネットワーク・実データ非依存・数秒以内に完走することを確認済み。
+if [ -f "$REPO_ROOT/tools/progress_heartbeat.sh" ]; then
+  run_check_timeout "汎用進捗ハートビート self-test (progress_heartbeat.sh --self-test)" 30 \
+    bash tools/progress_heartbeat.sh --self-test
+else
+  skip_check "汎用進捗ハートビート self-test (progress_heartbeat.sh --self-test)" "スクリプトが見つかりません"
+fi
+
+# secrets-broker ドリフト同期 self-test（Issue #992 フォローアップ・同上）。self-test 分岐は
+# ネットワーク非依存（missing 抽出ロジックのみ検証）で数秒以内に完走することを確認済み。
+if [ -f "$REPO_ROOT/tools/sync_broker_drift.sh" ]; then
+  run_check_timeout "secrets-broker ドリフト同期 self-test (sync_broker_drift.sh --self-test)" 30 \
+    bash tools/sync_broker_drift.sh --self-test
+else
+  skip_check "secrets-broker ドリフト同期 self-test (sync_broker_drift.sh --self-test)" "スクリプトが見つかりません"
 fi
 
 # --- サマリー表 ---
