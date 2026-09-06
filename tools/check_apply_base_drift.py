@@ -423,7 +423,14 @@ def _self_test_apply_script_static_order(check) -> None:
     # したがって:
     #   - 順序判定には呼び出し行（`compute_drift_status "` / 旧構造では `"$DRIFT_TOOL" snapshot`）を使う
     #   - snapshot サブコマンドを実際に呼ぶコードが存在することは別途チェックする（両方必須）
-    snapshot_invoke_idx = text.find('compute_drift_status "')
+    # 🔴 検索パターンは **本番の実引数**（`$DRY_RUN` 等のグローバル変数）を含める。
+    # `compute_drift_status "` だけで探すと、同スクリプトの `self_test()` が関数定義の直後
+    # （＝ファイル前半・settings.json 導入ブロックより必ず前）で呼んでいるフィクスチャ
+    # （`compute_drift_status "true" "$tmp/nonexistent-tool.py" ...`）に先にマッチし、本番の
+    # 呼び出し位置を一度も見ない。その状態では本番呼び出しを settings.json 上書きの後ろへ
+    # 動かしても順序検査が常に PASS する（#828 CRITICAL-1 の再発を検知できない fail-open）。
+    # フィクスチャは常にリテラル（`"true"` / `"false"`）を渡すため `"$DRY_RUN"` では一致しない。
+    snapshot_invoke_idx = text.find('compute_drift_status "$DRY_RUN"')
     if snapshot_invoke_idx == -1:
         snapshot_invoke_idx = text.find('"$DRIFT_TOOL" snapshot')  # 旧・インライン構造への後方互換
     has_snapshot_subcommand = (
