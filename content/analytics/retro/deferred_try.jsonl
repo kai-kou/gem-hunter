@@ -383,3 +383,10 @@
 {"date": "2026-09-06 JST", "title": "実装 JSDoc と ADR の責務分担（再測定コマンドをどちらに置くか）を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "[consume-hold] 保留コメントに再評価の猶予期限を明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "fan-out 委譲時に役割ごとのレビュー観点の相補性を編成欄で事前設計する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "run_checks.sh を変更対象別に絞り、tools/*.py のみの変更で E2E / Lighthouse を再実行しない", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-06 JST", "title": "priority:high（非 retro-try）在庫が 0 件であることの健全性を判定する基準と計測を持つ", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 854}
+{"date": "2026-09-06 JST", "title": "check_site.py の inspect.getsource() 失敗時に例外ハンドリングを入れる", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1001}
+{"date": "2026-09-06 JST", "title": "check_site.py のメタ検証 2 で複数行にまたがる failures.append を end_lineno まで見て判定する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1001}
+{"date": "2026-09-06 JST", "title": "check_site.py の self-test FAIL メッセージに修正ガイダンス（assert_check へ書き直す）を添える", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1001}
+{"date": "2026-09-06 JST", "title": "check_site.py のメタ検証 2 が assert_check の複数定義を検出したときの扱いを決める", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1001}
+{"date": "2026-09-06 JST", "title": "python3 -O 実行時も check_site.py --self-test が PASS することを検証・記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1001}
