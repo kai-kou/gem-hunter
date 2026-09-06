@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 """check_selftest_wiring.py — tools/*.py の `--self-test` 配線漏れを検査する（Issue #612）。
 
+## 走査対象の拡張（Issue #992）
+
+当初は `.py` のみが対象だったが、`tools/*.mjs`（将来の `.mts` を含む）にも `--self-test` を
+実装したスクリプトが増えたため、対象拡張子を `SCAN_EXTENSIONS`（`py` / `mjs` / `mts`）へ広げた。
+実例: `tools/run_lighthouse.mjs` は `--self-test` を実装済みなのに `run_checks.sh` へ未配線だった
+（本判定だけが配線され、self-test 呼び出しが無い状態）。
+
+`*.test.mjs`（`e2e-chromium-executable.test.mjs` 等の Vitest テストファイル）も同じ `*.mjs` glob に
+乗るため走査対象に含めている。除外を追加しなかった理由: これらは `--self-test` フラグそのものを
+実装していない（Vitest の `it()`/`describe()` で完結する）ため `script_has_selftest_flag()` が
+`False` を返し、自然に `not_applicable` へ落ちる。将来 `.test.mjs` が誤って本検査の対象になる
+ケース（`--self-test` という文字列がテストコード中に偶然出現する等）が出たら、そのとき初めて
+拡張子ベースの除外を検討する（YAGNI・現時点では発生していない）。
+
 ## なぜ必要か
 
 `tools/` の検査スクリプトの多くは `--self-test`（ネットワーク・実データ非依存のユニットテスト）を
@@ -86,6 +100,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = REPO_ROOT / "tools"
 RUN_CHECKS_PATH = TOOLS_DIR / "run_checks.sh"
 
+# 走査対象の拡張子（Issue #992）。Python は tokenize ベース、mjs/mts は簡易 JS/TS レキサで
+# コメントを抽出する（言語ごとの抽出関数は _comment_texts_for_lang() が振り分ける）。
+SCAN_EXTENSIONS = ("py", "mjs", "mts")
+
 # 本検査自身（新規作成・Issue #612）。`run_checks.sh` への配線要否は親セッション側の判断事項で、
 # 本検査が自分自身を対象に含めるとブートストラップ問題（配線される前は必ず自分自身を違反として
 # 検出してしまう）が起きるため、コード側の特例ではなく通常のマーカー運用で自己除外する。
@@ -142,15 +160,131 @@ def _comment_texts(content: str) -> list[str] | None:
         return None
 
 
-def _scan_markers(content: str) -> _MarkerScan:
-    """`content` の実コメントから `selftest-wiring-ok` マーカーを走査する。"""
-    comments = _comment_texts(content)
+# `// selftest-wiring-ok: {理由}` マーカー（.mjs / .mts 用）。JS 抽出関数（`_js_comment_texts()`）は
+# 行コメントの `//` を除去した本文だけを返すため、こちらは `#` ではなく素の `selftest-wiring-ok:` を
+# 探せば足りる（本文には元々コメント区切り記号が含まれないため誤検出しない）。
+_JS_MARKER_RE = re.compile(r"selftest-wiring-ok:[ \t]*(.*)$", re.MULTILINE)
+
+
+def _js_comment_texts(content: str) -> list[str] | None:
+    """`content` を JS/TS として簡易レキシングし、`//` 行コメントと `/* ... */` ブロック
+    コメントの本文（区切り記号を除いた中身）だけを返す。
+
+    文字列リテラル（`'...'` / `"..."`）・テンプレートリテラル（`` `...` ``）の中身は
+    コメントとして拾わない（Python 版の docstring 誤判定と同型の穴を防ぐ・Issue #992）。
+    バックスラッシュエスケープを考慮し、文字列・テンプレートの終端が見つからないまま
+    EOF に達した場合、および `/* ...` が閉じられないまま EOF に達した場合は解析失敗として
+    `None` を返す（呼び出し側は tokenize 失敗時と同様「マーカーなし」の安全側へフォールバックする）。
+
+    テンプレートリテラル内の `${...}` 補間式は展開せず丸ごと文字列扱いする（内部に本物の
+    コメントが書かれる稀なケースは見逃すが、逆方向＝文字列内容を誤ってマーカーと認識する
+    危険を確実に防ぐ方を優先する。安全側に倒す設計は tokenize 失敗時のフォールバックと同じ思想）。
+    """
+    comments: list[str] = []
+    i, n = 0, len(content)
+    state: str | None = None  # None / "line" / "block" / "sq" / "dq" / "tpl"
+    buf: list[str] = []
+    while i < n:
+        ch = content[i]
+        if state is None:
+            if ch == "/" and i + 1 < n and content[i + 1] == "/":
+                state, buf, i = "line", [], i + 2
+                continue
+            if ch == "/" and i + 1 < n and content[i + 1] == "*":
+                state, buf, i = "block", [], i + 2
+                continue
+            if ch == "'":
+                state, i = "sq", i + 1
+                continue
+            if ch == '"':
+                state, i = "dq", i + 1
+                continue
+            if ch == "`":
+                state, i = "tpl", i + 1
+                continue
+            i += 1
+            continue
+        if state == "line":
+            if ch == "\n":
+                comments.append("".join(buf))
+                state, i = None, i + 1
+                continue
+            buf.append(ch)
+            i += 1
+            continue
+        if state == "block":
+            if ch == "*" and i + 1 < n and content[i + 1] == "/":
+                comments.append("".join(buf))
+                state, i = None, i + 2
+                continue
+            buf.append(ch)
+            i += 1
+            continue
+        if state in ("sq", "dq"):
+            quote = "'" if state == "sq" else '"'
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                state, i = None, i + 1
+                continue
+            if ch == "\n":
+                return None  # 単一行文字列が閉じられないまま改行 = 構文エラー相当
+            i += 1
+            continue
+        if state == "tpl":
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == "`":
+                state, i = None, i + 1
+                continue
+            i += 1
+            continue
+        i += 1  # pragma: no cover（到達しない防御的分岐）
+    if state == "line":
+        comments.append("".join(buf))
+    elif state in ("block", "sq", "dq", "tpl"):
+        return None  # 未終端のブロックコメント／文字列／テンプレートリテラル = 解析失敗
+    return comments
+
+
+_LANG_BY_SUFFIX = {".py": "py", ".mjs": "js", ".mts": "js"}
+
+
+def _lang_for_filename(filename: str) -> str:
+    """拡張子から `_comment_texts_for_lang()` に渡す言語キーを決める。未知の拡張子は
+    安全側として python 用の tokenize 抽出にフォールバックする（対象拡張子は
+    `SCAN_EXTENSIONS` で絞り込み済みのため実運用では到達しない）。"""
+    return _LANG_BY_SUFFIX.get(Path(filename).suffix, "py")
+
+
+def _comment_texts_for_lang(content: str, lang: str) -> list[str] | None:
+    """言語別にコメント本文だけを抽出する（`py` → tokenize / `js` → 簡易レキサ）。"""
+    if lang == "js":
+        return _js_comment_texts(content)
+    return _comment_texts(content)
+
+
+def _marker_re_for_lang(lang: str) -> re.Pattern[str]:
+    """言語別のマーカー正規表現。`js` は `#` ではなく素の `selftest-wiring-ok:` を探す
+    （JS 側のコメント抽出が `//`/`/* */` の区切り記号を含めずに本文だけを返すため）。"""
+    return _JS_MARKER_RE if lang == "js" else _MARKER_RE
+
+
+def _scan_markers(content: str, lang: str = "py") -> _MarkerScan:
+    """`content` の実コメントから `selftest-wiring-ok` マーカーを走査する。
+
+    `lang` は `"py"`（既定・tokenize ベース）または `"js"`（`.mjs`/`.mts` 用の簡易レキサ）。
+    """
+    comments = _comment_texts_for_lang(content, lang)
     if comments is None:
         return _MarkerScan(reasons=[], has_empty=False, tokenize_failed=True)
+    marker_re = _marker_re_for_lang(lang)
     reasons: list[str] = []
     has_empty = False
     for comment in comments:
-        m = _MARKER_RE.search(comment)
+        m = marker_re.search(comment)
         if not m:
             continue
         reason = m.group(1).strip()
@@ -161,20 +295,20 @@ def _scan_markers(content: str) -> _MarkerScan:
     return _MarkerScan(reasons=reasons, has_empty=has_empty, tokenize_failed=False)
 
 
-def marker_reason(content: str) -> str | None:
+def marker_reason(content: str, lang: str = "py") -> str | None:
     """有効な `selftest-wiring-ok` マーカー（実コメントとして書かれたもの）の理由文字列を返す。
 
-    マーカーが無い、全てのマーカーの理由が空（無効マーカー）、またはトークナイズ自体が
+    マーカーが無い、全てのマーカーの理由が空（無効マーカー）、またはコメント抽出自体が
     失敗した場合は None を返す（= 除外されない・安全側）。複数マーカーがあり、どれか 1 つでも
-    理由が非空なら、その理由を返す。
+    理由が非空なら、その理由を返す。`lang` は `"py"`（既定）または `"js"`。
     """
-    reasons = _scan_markers(content).reasons
+    reasons = _scan_markers(content, lang).reasons
     return reasons[0] if reasons else None
 
 
-def has_invalid_empty_marker(content: str) -> bool:
+def has_invalid_empty_marker(content: str, lang: str = "py") -> bool:
     """理由が空の `selftest-wiring-ok` マーカーが（有効な理由付きマーカーとは別に）存在するか。"""
-    return _scan_markers(content).has_empty
+    return _scan_markers(content, lang).has_empty
 
 
 def _strip_shell_line_comment(line: str) -> str:
@@ -249,11 +383,15 @@ class Verdict:
 
 
 def evaluate_script(filename: str, content: str, run_checks_content: str) -> Verdict:
-    """1 ファイルぶんの内容から配線状態を判定する（テスト容易性のための純関数）。"""
+    """1 ファイルぶんの内容から配線状態を判定する（テスト容易性のための純関数）。
+
+    `filename` の拡張子（`.py` / `.mjs` / `.mts`）からコメント抽出方式を自動判定する。
+    """
     if not script_has_selftest_flag(content):
         return Verdict(filename, "not_applicable")
 
-    marker_scan = _scan_markers(content)
+    lang = _lang_for_filename(filename)
+    marker_scan = _scan_markers(content, lang)
     if marker_scan.reasons:
         return Verdict(
             filename,
@@ -295,7 +433,10 @@ class Report:
 
 def scan(tools_dir: Path, run_checks_content: str) -> Report:
     report = Report()
-    for path in sorted(tools_dir.glob("*.py")):
+    paths: list[Path] = []
+    for ext in SCAN_EXTENSIONS:
+        paths.extend(tools_dir.glob(f"*.{ext}"))
+    for path in sorted(paths):
         if path.name == _SELF_FILENAME:
             continue
         try:
