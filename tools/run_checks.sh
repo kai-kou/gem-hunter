@@ -858,6 +858,16 @@ else
   skip_check "env ファイルツールガード self-test (pre-file-tool-env-guard.sh --self-test)" "スクリプトが見つかりません"
 fi
 
+# .env ガードの定義一貫性検査（Issue #493）。permissions.deny の具体名列挙と、
+# 2 フックが共有する lib/env_allowlist.sh の allowlist が矛盾していないか
+# （deny の名前が実際にブロックされるか／ひな形が deny にも紛れ込んでいないか）を検査する。
+if [ -f "$REPO_ROOT/tools/check_env_guard_consistency.py" ]; then
+  run_check "env ガード定義一貫性検査 (check_env_guard_consistency.py)" python3 tools/check_env_guard_consistency.py
+  run_check "env ガード定義一貫性検査 self-test (check_env_guard_consistency.py --self-test)" python3 tools/check_env_guard_consistency.py --self-test
+else
+  skip_check "env ガード定義一貫性検査 (check_env_guard_consistency.py)" "スクリプトが見つかりません"
+fi
+
 # Cloudflare Workers 破壊的操作ガード self-test（Issue #613 / #615・本番 Worker 誤削除の再発防止）。
 if [ -f "$REPO_ROOT/.claude/hooks/pre-cloudflare-destructive-check.sh" ]; then
   run_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" \

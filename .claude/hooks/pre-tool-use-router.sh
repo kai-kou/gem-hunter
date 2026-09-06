@@ -13,6 +13,8 @@ INPUT=$(cat)
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/hook_block.sh
 source "$HOOK_DIR/lib/hook_block.sh"
+# shellcheck source=lib/env_allowlist.sh
+source "$HOOK_DIR/lib/env_allowlist.sh"
 
 # ツール名を抽出（printf を使い、バックスラッシュを含む入力でも echo のエスケープ解釈に依存しない）
 TOOL_NAME=$(printf '%s\n' "$INPUT" | jq -r '.tool_name // ""')
@@ -196,15 +198,16 @@ _sfa_tokenize_block() {
 }
 
 # .env（本物のみ。.env.example 等のテンプレートは通す）
+# 判定の実体は lib/env_allowlist.sh の hook_env_guard_verdict（SSOT・Issue #493）。
+# pre-file-tool-env-guard.sh の _env_guard_verdict と同じ関数を source して使うことで、
+# ひな形の種類を増やすときの片方だけ更新される drift を構造的に無くす。
 _sfa_env_access() {
   _sfa_hit=1
   while IFS= read -r _sfa_tok; do
     [ -n "$_sfa_tok" ] || continue
-    _sfa_base="${_sfa_tok##*/}"
-    case "$_sfa_base" in
-      .env.example|.env.sample|.env.template|.env.dist|.env.example.*) continue ;;
-      .env|.env.*) _sfa_hit=0; break ;;
-    esac
+    if hook_env_guard_verdict "$_sfa_tok"; then
+      _sfa_hit=0; break
+    fi
   done <<EOF
 $(_sfa_candidate_tokens)
 EOF

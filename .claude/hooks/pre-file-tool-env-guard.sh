@@ -21,17 +21,15 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/hook_block.sh
 source "$HOOK_DIR/lib/hook_block.sh"
+# shellcheck source=lib/env_allowlist.sh
+source "$HOOK_DIR/lib/env_allowlist.sh"
 
 # ひな形・サンプル類（秘密情報を含まない前提のファイル）は許可する。
-# `pre-tool-use-router.sh` の `_sfa_env_access` と同じ allowlist を使う（片方だけ広げない）。
+# 判定の実体は lib/env_allowlist.sh の hook_env_guard_verdict（SSOT・Issue #493）。
+# `pre-tool-use-router.sh` の `_sfa_env_access` と同じ関数を source して使う（片方だけ広げない、
+# を case 文のコピーではなく共有関数で構造的に保証する）。
 _env_guard_verdict() {
-  # $1: 判定対象のパス。戻り値 0 = ブロック対象 / 1 = 対象外
-  _egv_base="${1##*/}"
-  case "$_egv_base" in
-    .env.example|.env.sample|.env.template|.env.dist|.env.example.*) return 1 ;;
-    .env|.env.*) return 0 ;;
-    *) return 1 ;;
-  esac
+  hook_env_guard_verdict "$1"
 }
 
 if [ "${1:-}" = "--self-test" ]; then
