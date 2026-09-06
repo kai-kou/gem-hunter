@@ -23,9 +23,9 @@ Layer 1 セルフレビュー（PR #1018）で「`tools/` に `.sh` の対象実
 だったと判明した。実測: `tools/progress_heartbeat.sh` / `tools/sync_broker_drift.sh` は
 `--self-test` を実装済みなのに `run_checks.sh` へ未配線だった（今回 `run_checks.sh` へ配線して
 決着済み）。よって `SCAN_EXTENSIONS` に `sh` を追加した。`.sh` のコメント抽出は Python と同じ
-`#` 系だが tokenize は使えない（bash は Python 構文ではない）ため、`_strip_shell_line_comment`
-（`run_checks.sh` 側のコメント除去で既に使っている行単位クォート追跡）を再利用した専用の
-`_shell_comment_texts()` で抽出する。
+`#` 系だが tokenize は使えない（bash は Python 構文ではない）ため、`wiring_marker.strip_shell_line_comment`
+（`run_checks.sh` 側のコメント除去でも使っている行単位クォート追跡・#933 で共通モジュールへ集約）
+を再利用した専用の `wiring_marker.shell_comment_texts()` で抽出する。
 
 また `tools_dir.glob()`（非再帰）だった走査を `tools_dir.rglob()`（再帰）へ変更し、
 `tools/gem-pool/*.mjs` 等のサブディレクトリのスクリプトも走査対象に含めた（変更前は
@@ -44,8 +44,9 @@ Layer 1 セルフレビュー（PR #1018）で「`tools/` に `.sh` の対象実
 配線漏れは「テストを書いたのに実行されない」状態で、**検査があるのに機能していない**という
 最も見つけにくい失敗モードである。本スクリプトはこの再発を止める。
 
-🔁 `check_tool_wiring.py`（本判定の配線漏れ＝死蔵の検査）と対になる検査である。
-**片方の判定ロジックを直したら、もう片方も同じ欠陥を持っていないか見ること。**
+🔁 `check_tool_wiring.py`（本判定の配線漏れ＝死蔵の検査）と対になる検査である。シェルコメント
+除去とマーカー走査の共通ロジックは `tools/wiring_marker.py`（Issue #933）へ集約済みで、
+両検査はそこから import して使う。
 
 ## 検出する 2 つの形
 
@@ -88,13 +89,13 @@ Layer 1 セルフレビュー（PR #1018）で「`tools/` に `.sh` の対象実
    `is_wired()` は生テキストの正規表現検索だったため、`# run_check "..." python3 tools/foo.py
    --self-test` のようにシェルコメントとして無効化された行も一致してしまい、実際には一度も
    実行されないスクリプトを「配線済み」と報告していた。対策として、`is_wired()` は検索前に
-   `_strip_shell_comments()`（クォート外の `#` 以降を除去する簡易 bash コメント除去。シングル
-   / ダブルクォートの状態を追跡し、クォート内の `#`（例: `echo "## run_checks 結果"`）は保持
-   する）を通す。ヒアドキュメント（`<<EOF`）は `run_checks.sh` に存在しないため未対応（将来
-   追加されたら本関数も見直しが必要）。
+   `wiring_marker.strip_shell_comments()`（クォート外の `#` 以降を除去する簡易 bash コメント
+   除去。シングル / ダブルクォートの状態を追跡し、クォート内の `#`（例: `echo "## run_checks
+   結果"`）は保持する）を通す。ヒアドキュメント（`<<EOF`）は `run_checks.sh` に存在しないため
+   未対応（将来追加されたら本関数も見直しが必要）。
 
 2. **対象スクリプト側の docstring 内でマーカー書式を「説明する地の文」を、本物のマーカーと
-   誤認して除外してしまう**: 旧実装は `_MARKER_RE` をファイル内容全体に対して素朴な正規表現
+   誤認して除外してしまう**: 旧実装はマーカー正規表現をファイル内容全体に対して素朴な正規表現
    検索していたため、docstring の中で「`# selftest-wiring-ok: 理由` と書く」と地の文で説明した
    だけの文字列（実コメントではない）にもマッチし、意図せず自己除外されてしまっていた（本検査自身の
    docstring がまさにこの形を取っているため、他スクリプトが利用例として書式に言及するだけで
@@ -134,17 +135,16 @@ Layer 1 セルフレビュー（PR #1018）で「`tools/` に `.sh` の対象実
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import re
 import sys
-import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ts_source  # noqa: E402 — 共通モジュール（#612 / #992）。JS/TS のコメント抽出はここへ委譲する
+import wiring_marker  # noqa: E402 — シェルコメント除去・マーカー走査の共通ロジック（#933）
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = REPO_ROOT / "tools"
@@ -178,9 +178,8 @@ _SELFTEST_FLAG_RE = re.compile(r'["\']--self-test["\']')
 # 誤検出し、`run_checks.sh` が自己参照で違反判定されてしまう（実測で確認済み）。
 _SH_CASE_ARM_SELFTEST_RE = re.compile(r'^[ \t]*["\']?--self-test["\']?\)', re.MULTILINE)
 
-# `# selftest-wiring-ok: {理由}` マーカー。理由は同じ行の行末までとする（`\s*` は改行にも
-# マッチするため `[ \t]*` を使う。`\s*` のままだと理由が空のとき次行を誤って呑み込む）。
-_MARKER_RE = re.compile(r"#[ \t]*selftest-wiring-ok:[ \t]*(.*)$", re.MULTILINE)
+# マーカー語（`wiring_marker.scan_markers` へ渡す token）。
+_TOKEN = "selftest-wiring-ok"
 
 
 def script_has_selftest_flag(content: str, lang: str = "py") -> bool:
@@ -199,119 +198,14 @@ def script_has_selftest_flag(content: str, lang: str = "py") -> bool:
     return False
 
 
-@dataclass
-class _MarkerScan:
-    """1 ファイルぶんのマーカー走査結果（`_scan_markers` の戻り値）。"""
-
-    reasons: list[str]  # 実コメントとして書かれた、理由が非空のマーカーの理由文字列（出現順）
-    has_empty: bool  # 理由が空の（無効な）マーカーが 1 つでもあったか
-    tokenize_failed: bool  # `tokenize` が失敗し、安全側で「マーカーなし」にフォールバックしたか
-
-
-def _comment_texts(content: str) -> list[str] | None:
-    """`content` を Python としてトークナイズし、実コメントトークンの文字列だけを返す。
-
-    docstring / 文字列リテラルの中身（マーカー書式を説明する地の文など）はコメントトークン
-    ではないため含まれない。構文エラー・NUL バイト混入等でトークナイズ自体が失敗した場合は
-    クラッシュせず `None` を返す（呼び出し側は「マーカーなし」として安全側に倒す）。
-    """
-    try:
-        return [
-            tok.string
-            for tok in tokenize.generate_tokens(io.StringIO(content).readline)
-            if tok.type == tokenize.COMMENT
-        ]
-    except Exception:
-        # tokenize は SyntaxError / IndentationError / tokenize.TokenError / ValueError など
-        # 様々な例外を送出しうる（壊れた入力の形によって変わる）。本検査は「配線漏れ検出」が
-        # 責務であり構文検証ではないため、どんな理由であれクラッシュしてはならない
-        # （datetime-rules.md の check_datetime_tz.py と同じ「解析不能はスキップする」方針）。
-        return None
-
-
-# `// selftest-wiring-ok: {理由}` マーカー（.mjs / .mts 用）。JS 抽出関数
-# （`ts_source.extract_comments()`）は行コメントの `//` を除去した本文だけを返すため、
-# こちらは `#` ではなく素の `selftest-wiring-ok:` を探せば足りる。
-#
-# 🔴 **コメント本文の先頭にアンカーする**（F2・Issue #992 フォローアップ・PR #1018 Layer 1
-# セルフレビューで発見）: 旧実装は非アンカーだったため、`// See docs/... for the
-# selftest-wiring-ok: marker format used elsewhere.` のように **地の文で書式に言及しただけの
-# 通常コメント** まで有効なマーカーと誤認し、ファイルを黙って除外してしまっていた（fail-open）。
-# `^` は行頭にマッチし（`re.MULTILINE`）、ブロックコメントの `*` 継続行（` * selftest-wiring-ok:
-# ...`）だけを許容する（`\*?` は最大 1 個。`// selftest-wiring-ok:` のように `//` を除去した
-# 本文が空白から始まる／始まらない両方のバリアントに対応するため `[ \t]*` を前後に許容する）。
-_JS_MARKER_RE = re.compile(r"^[ \t]*\*?[ \t]*selftest-wiring-ok:[ \t]*(.*)$", re.MULTILINE)
-
-
-def _shell_comment_texts(content: str) -> list[str]:
-    """`content`（bash スクリプト全体）から `#` コメント本文（`#` 自身を含み行末までの
-    1 行）を抽出する（`.sh` 用・Issue #992 フォローアップ）。
-
-    クォート追跡は `run_checks.sh` の解析に使っている `_strip_shell_line_comment`
-    （行単位・クォート内の `#` を保護する簡易 bash コメント除去）をそのまま再利用する
-    （二重実装しない）。bash のコメントは `#` から行末までの 1 行で完結し、Python の
-    ブロックコメントのような複数行にまたがる構文が存在しないため、`tokenize` のような
-    構文解析の失敗は起こらない（`None` を返すケースは無い）。
-    """
-    comments: list[str] = []
-    for raw_line in content.splitlines():
-        stripped = _strip_shell_line_comment(raw_line)
-        if len(stripped) < len(raw_line):
-            # `#` 以降が切り取られた = この行にクォート外のコメントがあった。
-            # 切り取られた開始位置から行末までが、`#` を含むコメント本文そのもの。
-            comments.append(raw_line[len(stripped) :])
-    return comments
-
-
 _LANG_BY_SUFFIX = {".py": "py", ".mjs": "js", ".mts": "js", ".sh": "sh"}
 
 
 def _lang_for_filename(filename: str) -> str:
-    """拡張子から `_comment_texts_for_lang()` に渡す言語キーを決める。未知の拡張子は
-    安全側として python 用の tokenize 抽出にフォールバックする（対象拡張子は
+    """拡張子から `wiring_marker.comment_texts_for_lang()` に渡す言語キーを決める。未知の
+    拡張子は安全側として python 用の tokenize 抽出にフォールバックする（対象拡張子は
     `SCAN_EXTENSIONS` で絞り込み済みのため実運用では到達しない）。"""
     return _LANG_BY_SUFFIX.get(Path(filename).suffix, "py")
-
-
-def _comment_texts_for_lang(content: str, lang: str) -> list[str] | None:
-    """言語別にコメント本文だけを抽出する（`py` → tokenize / `js` → `ts_source.extract_comments`
-    / `sh` → `_shell_comment_texts`）。"""
-    if lang == "js":
-        return ts_source.extract_comments(content)
-    if lang == "sh":
-        return _shell_comment_texts(content)
-    return _comment_texts(content)
-
-
-def _marker_re_for_lang(lang: str) -> re.Pattern[str]:
-    """言語別のマーカー正規表現。`js` は `#` ではなく素の `selftest-wiring-ok:` を探す
-    （JS 側のコメント抽出が `//`/`/* */` の区切り記号を含めずに本文だけを返すため）。
-    `sh` は Python と同じ `#` プレフィックス形式（`_MARKER_RE`）を使う
-    （`_shell_comment_texts` が返すコメント本文は `#` 自身を含むため）。"""
-    return _JS_MARKER_RE if lang == "js" else _MARKER_RE
-
-
-def _scan_markers(content: str, lang: str = "py") -> _MarkerScan:
-    """`content` の実コメントから `selftest-wiring-ok` マーカーを走査する。
-
-    `lang` は `"py"`（既定・tokenize ベース）または `"js"`（`.mjs`/`.mts` 用の簡易レキサ）。
-    """
-    comments = _comment_texts_for_lang(content, lang)
-    if comments is None:
-        return _MarkerScan(reasons=[], has_empty=False, tokenize_failed=True)
-    marker_re = _marker_re_for_lang(lang)
-    reasons: list[str] = []
-    has_empty = False
-    for comment in comments:
-        m = marker_re.search(comment)
-        if not m:
-            continue
-        reason = m.group(1).strip()
-        if reason:
-            reasons.append(reason)
-        else:
-            has_empty = True
-    return _MarkerScan(reasons=reasons, has_empty=has_empty, tokenize_failed=False)
 
 
 def marker_reason(content: str, lang: str = "py") -> str | None:
@@ -319,67 +213,14 @@ def marker_reason(content: str, lang: str = "py") -> str | None:
 
     マーカーが無い、全てのマーカーの理由が空（無効マーカー）、またはコメント抽出自体が
     失敗した場合は None を返す（= 除外されない・安全側）。複数マーカーがあり、どれか 1 つでも
-    理由が非空なら、その理由を返す。`lang` は `"py"`（既定）または `"js"`。
+    理由が非空なら、その理由を返す。`lang` は `"py"`（既定）/ `"js"` / `"sh"`。
     """
-    reasons = _scan_markers(content, lang).reasons
-    return reasons[0] if reasons else None
+    return wiring_marker.marker_reason(content, _TOKEN, lang)
 
 
 def has_invalid_empty_marker(content: str, lang: str = "py") -> bool:
     """理由が空の `selftest-wiring-ok` マーカーが（有効な理由付きマーカーとは別に）存在するか。"""
-    return _scan_markers(content, lang).has_empty
-
-
-def _strip_shell_line_comment(line: str) -> str:
-    """bash の 1 行から、クォート外の `#` 以降（シェルコメント）を取り除く。
-
-    シングルクォート `'...'` とダブルクォート `"..."` の中身は保持する（例:
-    `echo "## run_checks 結果"` の `#` はコメントとして解釈しない）。`#` は「行頭、または
-    直前が空白」のときだけコメント開始とみなす（`foo#bar` のような識別子中の `#` は無視する
-    簡易ヒューリスティックだが、`run_checks.sh` の実際の書き方には十分）。
-    """
-    quote: str | None = None
-    prev: str | None = None
-    out: list[str] = []
-    i, n = 0, len(line)
-    while i < n:
-        ch = line[i]
-        if quote:
-            out.append(ch)
-            if quote == '"' and ch == "\\" and i + 1 < n:
-                out.append(line[i + 1])
-                prev = line[i + 1]
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            prev = ch
-            i += 1
-            continue
-        if ch in "'\"":
-            quote = ch
-            out.append(ch)
-            prev = ch
-            i += 1
-            continue
-        if ch == "#" and (prev is None or prev in " \t"):
-            break
-        out.append(ch)
-        prev = ch
-        i += 1
-    return "".join(out)
-
-
-def _strip_shell_comments(content: str) -> str:
-    """bash スクリプト全体からシェルコメントを取り除く（行単位。ヒアドキュメント非対応）。"""
-    out: list[str] = []
-    for raw_line in content.splitlines(keepends=True):
-        if raw_line.endswith("\n"):
-            body, eol = raw_line[:-1], "\n"
-        else:
-            body, eol = raw_line, ""
-        out.append(_strip_shell_line_comment(body) + eol)
-    return "".join(out)
+    return wiring_marker.has_invalid_empty_marker(content, _TOKEN, lang)
 
 
 def is_wired(filename: str, run_checks_content: str) -> bool:
@@ -392,7 +233,7 @@ def is_wired(filename: str, run_checks_content: str) -> bool:
     直後に空白を必須とする）はこの形を配線済みと認識できず、正しく配線されているスクリプトを
     配線漏れと誤検出していた（実測: `False` を返していた）。
     """
-    stripped = _strip_shell_comments(run_checks_content)
+    stripped = wiring_marker.strip_shell_comments(run_checks_content)
     pattern = re.compile(re.escape(filename) + r"[\"']?\s+--self-test\b")
     return bool(pattern.search(stripped))
 
@@ -417,7 +258,7 @@ def evaluate_script(filename: str, content: str, run_checks_content: str) -> Ver
     if not script_has_selftest_flag(content, lang):
         return Verdict(filename, "not_applicable")
 
-    marker_scan = _scan_markers(content, lang)
+    marker_scan = wiring_marker.scan_markers(content, _TOKEN, lang)
     if marker_scan.reasons:
         return Verdict(
             filename,
@@ -1043,6 +884,13 @@ def _self_test() -> int:
             tmp_tools = tmp_root / "tools"
             tmp_tools.mkdir()
             shutil.copy(this_file, tmp_tools / this_file.name)
+            # 本ファイルは wiring_marker（#933）を import するため、実プロセス実行には
+            # 実物を同梱する必要がある（ts_source.py はフェイクで代替するが、
+            # wiring_marker.py 自体の判定ロジックは変異検出対象にしたいので実物を使う）。
+            shutil.copy(
+                Path(__file__).resolve().parent / "wiring_marker.py",
+                tmp_tools / "wiring_marker.py",
+            )
             (tmp_tools / "ts_source.py").write_text(_fake_ts_source_src, encoding="utf-8")
             (tmp_tools / "run_checks.sh").write_text(run_checks_content, encoding="utf-8")
             for name, content in tools_files.items():
@@ -1066,7 +914,10 @@ def _self_test() -> int:
 
     rc_main_clean = _run_main_subprocess(
         {"gate.mjs": "if (process.argv.includes('--self-test')) { selfTest() }\n"},
-        'run_check "gate" node tools/gate.mjs --self-test\n',
+        # 実物の wiring_marker.py（`--self-test` 実装済み）も同梱するため、こちらも配線して
+        # おかないと「wiring_marker.py 自身の配線漏れ」で汚染され exit 1 になってしまう。
+        'run_check "gate" node tools/gate.mjs --self-test\n'
+        'run_check "wiring_marker" python3 tools/wiring_marker.py --self-test\n',
     )
     check("CC: main() 実プロセス実行（違反なし）は exit 0（#686 本番経路の実測）", rc_main_clean == 0)
 

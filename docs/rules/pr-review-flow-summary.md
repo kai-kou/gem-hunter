@@ -69,9 +69,11 @@
 ## セッション復帰（PR 放置検出）
 
 ```bash
-python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json   # ① 自 PR を最優先で回収
-python3 tools/check_pending_pr_reviews.py --actionable-only --json          # ② 他保護込みの全体ビュー（孤児 PR 救済）
+python3 tools/check_pending_pr_reviews.py --mine --actionable-only --json --record-approx-sample   # ① 自 PR を最優先で回収
+python3 tools/check_pending_pr_reviews.py --actionable-only --json --record-approx-sample          # ② 他保護込みの全体ビュー（孤児 PR 救済）
 ```
+
+🔴 **`--record-approx-sample` は必ず付ける**（Issue #806）: 無人実行では REST 近似判定が常用パスになるため、この firing で `analyze_pr()` が到達した PR ごとに近似使用実績を `content/analytics/pr-review/approx_samples.jsonl` へ追記し、偽陰性候補（`unresolved_threads == 0` かつ近似）の実績データを溜める。**この記録先は git 追跡対象なので、次のコミット（PR 作成時の add）に含める**。蓄積後は `python3 tools/check_pending_pr_reviews.py --summarize-approx-samples` で集計できる（gh 非依存）。
 
 `needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `needs_resolve_check` → 未解決スレッド全件が返信済みで Resolve だけが残っている状態（`pr-review-watcher` の「Resolve 確認セクション」へ復帰）/ `awaiting_review` → 作成セッションが実行中（待機）。**自スコープ優先（#47）・他セッション対応中 PR への不介入（CP-4・L-109）** の判定ロジック全文は `pr-review-flow.md`「セッション復帰フロー」を参照。
 

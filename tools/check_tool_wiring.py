@@ -14,7 +14,8 @@
 本スクリプトはこの再発を止める。
 
 🔁 `check_selftest_wiring.py` と対になる検査である（あちらは `--self-test` の配線、こちらは
-本判定の配線）。**片方の判定ロジックを直したら、もう片方も同じ欠陥を持っていないか見ること。**
+本判定の配線）。シェルコメント除去とマーカー走査の共通ロジックは `tools/wiring_marker.py`
+（Issue #933）へ集約済みで、両検査はそこから import して使う。
 
 ## 走査対象
 
@@ -112,16 +113,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from md_fence import fence_flags  # noqa: E402  （tools/ 直下の共有ヘルパー）
+import wiring_marker  # noqa: E402 — シェルコメント除去・マーカー走査の共通ロジック（#933）
 
 # `check_*.py` グロブに載らないが死蔵を機械保証したいスクリプトの明示リスト。
 # `tools/*.py` 全体へ広げるとライブラリモジュール（`md_fence.py` 等）が「実行場所なし」と
 # 誤検出されるため、個別列挙にしている（Issue #164 の追記コメントで指定された分）。
 _EXTRA_TARGETS: tuple[str, ...] = ("lessons_guard.py",)
 
-# 除外マーカー（書式は docstring 参照）。COMMENT トークン単位（＝常に単一行）で照合するため
-# `$` は行末＝コメント末尾を指す。理由が空のマーカーは無効。
+# 除外マーカー語（`wiring_marker.scan_markers` へ渡す token）。理由が空のマーカーは無効。
 # ⚠️ 本ファイルの実コメントにマーカー書式を literal で書くと自分自身が除外されるので書かない。
-_MARKER_RE = re.compile(r"#[ \t]*tool-wiring-ok:[ \t]*(.*)$")
+_TOKEN = "tool-wiring-ok"
 
 # 「この論理行は実行である」と認める指標。ファイル名の単なる言及と区別するために要求する。
 # 見つからない書き方は未配線（fail-closed）へ倒れるので、指標を増やすときは
@@ -161,61 +162,14 @@ _SELFTEST_SCOPE_CHARS = 80
 # ─────────────────────────────────────────────────────────────
 
 
-@dataclass
-class _MarkerScan:
-    """1 ファイルぶんのマーカー走査結果。"""
-
-    reasons: list[str]  # 理由が非空の有効マーカー（出現順）
-    has_empty: bool  # 理由が空の無効マーカーが 1 つでもあったか
-    tokenize_failed: bool  # tokenize 失敗でマーカーを読めなかったか（＝判定不能）
-
-
-def _comment_texts(content: str) -> list[str] | None:
-    """Python としてトークナイズし、実コメントトークンの文字列だけを返す。
-
-    docstring / 文字列リテラルの中身（マーカー書式を説明する地の文など）は含まれない。
-    構文エラー・NUL バイト混入等でトークナイズ自体が失敗した場合は `None` を返す
-    （呼び出し側は「死蔵」ではなく **判定不能** として分離する）。
-    """
-    try:
-        return [
-            tok.string
-            for tok in tokenize.generate_tokens(io.StringIO(content).readline)
-            if tok.type == tokenize.COMMENT
-        ]
-    except Exception:
-        # tokenize は SyntaxError / TokenError / ValueError 等を送出しうる。本検査は
-        # 死蔵検出が責務であり構文検証ではないため、どんな理由であれクラッシュしない。
-        return None
-
-
-def _scan_markers(content: str) -> _MarkerScan:
-    comments = _comment_texts(content)
-    if comments is None:
-        return _MarkerScan(reasons=[], has_empty=False, tokenize_failed=True)
-    reasons: list[str] = []
-    has_empty = False
-    for comment in comments:
-        m = _MARKER_RE.search(comment)
-        if not m:
-            continue
-        reason = m.group(1).strip()
-        if reason:
-            reasons.append(reason)
-        else:
-            has_empty = True
-    return _MarkerScan(reasons=reasons, has_empty=has_empty, tokenize_failed=False)
-
-
 def marker_reason(content: str) -> str | None:
     """有効な `tool-wiring-ok` マーカーの理由を返す（無ければ None＝除外しない）。"""
-    reasons = _scan_markers(content).reasons
-    return reasons[0] if reasons else None
+    return wiring_marker.marker_reason(content, _TOKEN, "py")
 
 
 def has_invalid_empty_marker(content: str) -> bool:
     """理由が空の（無効な）`tool-wiring-ok` マーカーが存在するか。"""
-    return _scan_markers(content).has_empty
+    return wiring_marker.has_invalid_empty_marker(content, _TOKEN, "py")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -241,43 +195,11 @@ def _as_statement(statement: Statement | str) -> Statement:
     return statement if isinstance(statement, Statement) else Statement(statement, statement, "sh")
 
 
-def _strip_shell_line_comment(line: str) -> str:
-    """bash の 1 行から、クォート外の `#` 以降を取り除く（クォート内の `#` は保持）。
-
-    bash はメタ文字（`; | & ( )`）の直後の `#` もコメント開始として扱うため、空白の直後
-    だけでなくそれらも許容 prev に含める。`${VAR#pattern}` / `$#` の `#`（prev が英数字・
-    `$`・`{`）はコメントではないので落とさない。
-    """
-    quote: str | None = None
-    prev: str | None = None
-    out: list[str] = []
-    i, n = 0, len(line)
-    while i < n:
-        ch = line[i]
-        if quote:
-            out.append(ch)
-            if quote == '"' and ch == "\\" and i + 1 < n:
-                out.append(line[i + 1])
-                prev = line[i + 1]
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            prev = ch
-            i += 1
-            continue
-        if ch in "'\"":
-            quote = ch
-            out.append(ch)
-            prev = ch
-            i += 1
-            continue
-        if ch == "#" and (prev is None or prev in " \t;|&()"):
-            break
-        out.append(ch)
-        prev = ch
-        i += 1
-    return "".join(out)
+# bash はメタ文字（`; | & ( )`）の直後の `#` もコメント開始として扱う。`wiring_marker` の
+# 既定（空白の直後のみ）に加えてこれらも許容する（`${VAR#pattern}` / `$#` の `#` は
+# メタ文字の直後ではないため誤って落とさない）。この拡張は本検査（コマンド位置の実行呼び出し
+# 検出）専用で、`check_selftest_wiring.py` 側は既定（空白のみ）のまま使う（#933・意味論維持）。
+_SHELL_COMMENT_META_CHARS = ";|&()"
 
 
 def _join_continuations(lines: list[str]) -> list[str]:
@@ -331,7 +253,12 @@ def _expand_shell_vars(statement: str, assigns: dict[str, str]) -> str:
 
 def shell_statements(content: str) -> list[Statement]:
     """シェルスクリプトの論理行（コメント除去 + 継続行連結 + リテラル代入の展開）。"""
-    raw = _join_continuations([_strip_shell_line_comment(line) for line in content.splitlines()])
+    raw = _join_continuations(
+        [
+            wiring_marker.strip_shell_line_comment(line, _SHELL_COMMENT_META_CHARS)
+            for line in content.splitlines()
+        ]
+    )
     assigns = _shell_literal_assignments(raw)
     return [Statement(_expand_shell_vars(st, assigns), _expand_shell_vars(st, assigns), "sh") for st in raw]
 
@@ -519,7 +446,7 @@ class Verdict:
 
 def evaluate_script(filename: str, content: str, sources: list[Source]) -> Verdict:
     """1 ファイルぶんの内容から死蔵判定する（テスト容易性のための純関数）。"""
-    marker_scan = _scan_markers(content)
+    marker_scan = wiring_marker.scan_markers(content, _TOKEN, "py")
     locations = find_invocations(filename, sources)
     if locations:
         return Verdict(filename, "wired", locations=locations)
