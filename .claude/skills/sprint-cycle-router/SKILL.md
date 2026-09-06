@@ -465,6 +465,7 @@ Step 2 が毎回埋まり続けると Step 4 に永久に到達しない構造�
      - `SD-2`（TDD 主体）: Red → Green → Refactor。操作レビュー手順を E2E に写す。
        **道具・層分担・フレームワーク由来の制約の正本は `docs/04_development/testing-strategy.md`**
        （本スキルには複製しない）
+     - 🔴 **規約・ガイドライン（`ui-ux-guidelines.md` / `architecture-rules.md` 等）への準拠を指示して実装を委譲するときは、`docs/rules/agent-team-summary.md`「規約・ガイドラインに従う実装タスクの委譲プロンプト必須項目」の 3 点を委譲プロンプトへ含める**（#767。3 点の中身は同ファイルが正本なので、ここには複製しない）
      - **新しいドメイン語を導入したら `docs/03_design/data-model/domain-model.md` を同じ PR で更新する**
        （ユビキタス言語はコードと同時に更新されて初めて機能する）
      - **縦切りの判定境界（3 層・強制力の 4 段）**: 正本は
