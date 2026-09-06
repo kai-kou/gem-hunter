@@ -169,6 +169,16 @@ else
   skip_check "run_checks 証跡鮮度検査 self-test (check_evidence_freshness.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 3.45b. run_checks 証跡表の中身検査（Issue #463）の self-test。
+# pre-pr-create-check.sh 4.5 節が PR 作成時に呼ぶ判定器。鮮度検査（3.45）と同じ理由で
+# self-test だけは常時実行する（判定ロジックが緩む方向へ回帰すると、ダミー表・打ち切り表が
+# 静かに素通りするようになり、層 2 の証跡が自己申告に戻る）。
+if [ -f "$REPO_ROOT/tools/check_run_checks_evidence.py" ]; then
+  run_check "run_checks 証跡表検査 self-test (check_run_checks_evidence.py --self-test)" python3 tools/check_run_checks_evidence.py --self-test
+else
+  skip_check "run_checks 証跡表検査 self-test (check_run_checks_evidence.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 3.46. 居残り E2E サーバークリーンアップの self-test（実行本体は 3.54 で E2E 直前に呼ぶ）。
 if [ -f "$REPO_ROOT/tools/clear_stale_e2e_ports.py" ]; then
   run_check "居残り E2E サーバークリーンアップ self-test (clear_stale_e2e_ports.py --self-test)" python3 tools/clear_stale_e2e_ports.py --self-test
