@@ -429,3 +429,11 @@
 {"date": "2026-09-07 JST", "title": "Step 7 の発火条件（Sprint Goal: 行の有無）とスコープ（SP-n 限定）の衝突を解消する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#833"}
 {"date": "2026-09-07 JST", "title": "独立した複数の改善を 1 PR に束ねるときの事前 Impact Analysis を挿入する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "priority:high（非 retro-try）が恒常的に 0 件で選定コストが積算する構造を解消する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#854"}
+{"date": "2026-09-07 JST", "title": "静的走査で「定義位置」と「実行位置」を区別しない fail-open を検査観点に足す", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "590"}
+{"date": "2026-09-07 JST", "title": "検査ツールの説明コメントが自身の検出パターンに一致して誤検出する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "590"}
+{"date": "2026-09-07 JST", "title": "委譲プロンプトで列挙された複数経路の各々にテストケースを 1:1 で要求する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "1029"}
+{"date": "2026-09-07 JST", "title": "run_checks.sh に差分キャッシュ・incremental 実行戦略を導入する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "851"}
+{"date": "2026-09-07 JST", "title": "自分の変更による既存検査のレグレッションを pre-commit で事前検知する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "Layer 1 の観点別 cost-benefit（検出数・重複率・実行時間）を可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "mutation_guard マーカーの適用範囲を実装スプリント全体へ拡張する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "PR 本文の bare dotfile 説明を「bare dotfile 用 alternation のみ小文字限定」に正確化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
