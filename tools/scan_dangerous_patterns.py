@@ -249,6 +249,10 @@ def _changed_python_files() -> list[str]:
     （`-z` + `core.quotePath=false`）で分割するため、スペース・改行・非 ASCII 入りパスも
     1 件として正しく扱われる（既存バグの修正・分割方式は #748 で `splitlines()` から変更）。
     """
+    # 【#880 時点で読み直し済み】git_diff_utils に run_git_paths_or_raise() を追加したが、
+    # collect_changed_files() は従来どおり `-z` + `core.quotePath=false` で分割する
+    # （新関数は同じ _run_git_paths() を共有する別入口で、既存経路の分割方式は不変）。
+    # したがって上の説明は現在の実装と一致している。
     try:
         files = git_diff_utils.collect_changed_files(include_untracked=False)
     except Exception:

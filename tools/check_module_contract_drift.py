@@ -152,6 +152,10 @@ CONTRACT_INDEX: tuple[ContractEntry, ...] = (
             # 本ツール自身の docstring「なぜ必要か」節が PR #761 の変更内容（splitlines → NUL 区切り・
             # core.quotePath）を、`_run_git()` の docstring が base range 解決（symbolic-ref）を
             # 名指しで説明している。検知しようとしている欠陥を検知ツール自身が抱えないための自己登録
+            # 【#880 時点で読み直し済み】冒頭の「なぜ必要か」節が説明しているのは PR #761 の
+            # 変更（splitlines → NUL 区切り + core.quotePath=false）であり、#880 はその分割方式を
+            # 変えていない（新関数 run_git_paths_or_raise() は同じ _run_git_paths() を共有する
+            # 別入口）ため、同節の説明は今も正しい。
             ConsumerEntry(
                 path="tools/check_module_contract_drift.py",
                 triggers=("splitlines", "core.quotePath", "NUL 区切り", "symbolic-ref"),

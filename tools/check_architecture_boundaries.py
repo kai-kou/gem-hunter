@@ -282,6 +282,9 @@ def changed_files() -> list[str]:
     意図的に統一した（#195 指摘4/6/7）。
     cached / untracked は元実装どおり見ない（アーキ境界検査は追跡差分のみで十分なため）。
     """
+    # 【#880 時点で読み直し済み】default_branch() は `git symbolic-ref refs/remotes/origin/HEAD`
+    # を解決し失敗時に "main" を返す挙動のままである（#880 が追加したのは diff パス取得側の
+    # `-z` + `core.quotePath=false` 経路のみ）。したがって上の説明は現在の実装と一致している。
     return git_diff_utils.collect_changed_files(
         include_cached=False,
         include_untracked=False,
