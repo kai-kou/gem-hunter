@@ -562,6 +562,15 @@ def parse_wrangler_jsonc(source: str) -> tuple[dict | None, str | None]:
 
     パースに失敗したら `(None, エラー文)` を返す（**fail-closed**）。「宣言が読めないので
     合格」にすると、`wrangler.jsonc` が壊れて binding 宣言ごと消えた事故を見逃す。
+
+    🔴 【既知の制限（フォールスポジティブになりうる・自己文書化・指摘 3）】
+    本関数はコメント除去後に素の `json.loads` を使うため、JSONC が一般に許容する
+    **末尾カンマ**（trailing comma）を受け付けない（例: `{ "a": 1, }` は `JSONDecodeError`）。
+    `wrangler.jsonc` 自体は Wrangler CLI 側の JSONC パーサ（末尾カンマ許容）で読まれるため、
+    **Wrangler では正常に動く設定ファイルでも、末尾カンマがあると本検査だけが FAIL しうる**。
+    倒れる向きは fail-closed（検査が赤くなるだけでガードは緩まない）なので実害は限定的で、
+    現行の `wrangler.jsonc` に末尾カンマは無い。パーサの許容範囲拡張は別 Issue で扱う（本関数の
+    実装はそのままにする）。
     """
     stripped = strip_comments(source)
     try:
@@ -941,12 +950,21 @@ export async function rateLimiterBinding(): Promise<RateLimiterBinding | undefin
 
 def self_test() -> int:
     failures: list[str] = []
+    # 🔴 表示件数は実測から出す（手書きの内訳は数え直すたびにズレる・Issue #999 と同型の再発防止）。
+    # `expect_ok` / `expect_fail` の呼び出し回数そのものをカウンタで積み上げ、末尾の PASS 出力は
+    # このカウンタだけを見て組み立てる（手書きの合計・内訳を一切残さない）。
+    ok_count = 0
+    fail_count = 0
 
     def expect_ok(label: str, errors: list[str]) -> None:
+        nonlocal ok_count
+        ok_count += 1
         if errors:
             failures.append(f"{label}: 違反ゼロを期待したが {errors}")
 
     def expect_fail(label: str, errors: list[str], keyword: str) -> None:
+        nonlocal fail_count
+        fail_count += 1
         if not errors:
             failures.append(f"{label}: 違反を検出できていない（検査が素通りしている）")
         elif not any(keyword in e for e in errors):
@@ -1366,11 +1384,24 @@ def self_test() -> int:
         "フィールドが無い",
     )
 
-    # 32) 名前が別値（リネーム・環境別 override による欠落を再現）
+    # 32) 名前が別値（リネーム・環境別 override による欠落を再現）。
+    #     宣言側 `RATE_LIMITER_V2` / 実装参照 `RATE_LIMITER`（Issue #750 型の反例・前半）。
     wrangler_renamed = _WRANGLER_OK.replace('"name": "RATE_LIMITER"', '"name": "RATE_LIMITER_V2"')
     expect_fail(
         "binding 宣言: 実装が参照する名前が含まれていない",
         check_wrangler_binding_wiring(wrangler_renamed, _BINDINGS_OK),
+        "含まれていない",
+    )
+
+    # 32-b) 🔴 32) の逆方向（Issue #750 型の反例・後半・指摘 2）: 宣言側は変えず `RATE_LIMITER`
+    #       のまま、実装参照だけが拡張された別名 `RATE_LIMITER_V2` を指す。
+    #       突合を `declared.startswith(referenced)` へ緩めると 32) は拾えるが本ケースは拾えず、
+    #       逆に `referenced.startswith(declared)` へ緩めると本ケースは拾えるが 32) は拾えない
+    #       ——前方一致への退行は向きによって片方の反例だけでは検知できないため、両方向を固定する。
+    bindings_v2_ref = _BINDINGS_OK.replace("env?.RATE_LIMITER", "env?.RATE_LIMITER_V2")
+    expect_fail(
+        "binding 宣言: 実装参照が拡張された別名（前方一致への退行検知・32 の逆方向）",
+        check_wrangler_binding_wiring(_WRANGLER_OK, bindings_v2_ref),
         "含まれていない",
     )
 
@@ -1441,11 +1472,8 @@ def self_test() -> int:
         print(f"[rate-limit-wiring] self-test NG（{len(failures)} 件）", file=sys.stderr)
         return EXIT_VIOLATION
     print(
-        "[rate-limit-wiring] self-test OK（50 ケース: 正常 10 / 反例 33 / 補助関数・列挙集合 4・"
-        "間接呼び出し（Issue #604）6 件・ラッパー本文の誤帰属反例（修正項目 1）1 件・"
-        "extract_exported_enforcers の誤帰属反例（本 PR）1 件・分割代入パラメータの反例"
-        "（本 PR・extract_exported_enforcers / extract_composition_wrappers 各 1 件）2 件・"
-        "binding 宣言の検証（Issue #480）10 件 + 補助関数単体検証 4 件を含む）"
+        f"[rate-limit-wiring] self-test OK（{ok_count + fail_count} ケース: "
+        f"正常 {ok_count} / 反例 {fail_count}。ほかに補助関数・列挙集合の単体検証あり）"
     )
     return EXIT_OK
 
