@@ -410,3 +410,7 @@
 {"date": "2026-09-06 JST", "title": "Layer 1 の観点数をタスク規模に応じて調整する（重複の指標は観点数でなく入力の重複）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "375"}
 {"date": "2026-09-06 JST", "title": "委譲プロンプトに書いた親の仮定に、その仮定を確かめたコマンドと出力を併記する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "942"}
 {"date": "2026-09-06 JST", "title": "ts_source.extract_comments() の契約（区切り記号を除去した本文を返す）を利用側の正規表現定義前に明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "定義済み CLI フラグ（--record-approx-sample 等）が実運用の SKILL.md・ルール文書から実際に呼ばれているかを機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 954}
+{"date": "2026-09-06 JST", "title": "正規表現走査のアンカー欠落が共通ヘルパーへの集約時にそのまま移設される（別言語版が修正済みでも片割れが残る）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 590}
+{"date": "2026-09-06 JST", "title": "1 firing で複数 Issue を同時消化する粒度の判定基準を明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "content/analytics/ 配下の JSONL 命名規約を統一する（pr_review_trends.jsonl と pr-review/approx_samples.jsonl の不統一）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
