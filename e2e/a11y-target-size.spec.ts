@@ -184,6 +184,9 @@ test.describe('SC 2.5.8 Target Size (Minimum): 主要な操作要素が 24×24 C
 
     const logoutButton = page.getByRole('button', { name: ja.common.auth.logout })
     await expect(logoutButton).toBeVisible()
-    await expectTargetSizeAtLeast(logoutButton, 'ヘッダーのログイン導線（ログイン済み＝ログアウト）')
+    await expectTargetSizeAtLeast(
+      logoutButton,
+      'ヘッダーのログイン導線（ログイン済み＝ログアウト）',
+    )
   })
 })
