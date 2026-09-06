@@ -936,6 +936,25 @@ else
   skip_check "WIP 自動保全の振る舞いテスト (test_wip_commit_deferral.sh)" "スクリプトが見つかりません"
 fi
 
+# 汎用進捗ハートビート self-test（Issue #992 フォローアップ・check_selftest_wiring.py の
+# .sh 走査拡大で検出された配線漏れ）。完了/エラー検出パターンのユニットテストで
+# ネットワーク・実データ非依存・数秒以内に完走することを確認済み。
+if [ -f "$REPO_ROOT/tools/progress_heartbeat.sh" ]; then
+  run_check_timeout "汎用進捗ハートビート self-test (progress_heartbeat.sh --self-test)" 30 \
+    bash tools/progress_heartbeat.sh --self-test
+else
+  skip_check "汎用進捗ハートビート self-test (progress_heartbeat.sh --self-test)" "スクリプトが見つかりません"
+fi
+
+# secrets-broker ドリフト同期 self-test（Issue #992 フォローアップ・同上）。self-test 分岐は
+# ネットワーク非依存（missing 抽出ロジックのみ検証）で数秒以内に完走することを確認済み。
+if [ -f "$REPO_ROOT/tools/sync_broker_drift.sh" ]; then
+  run_check_timeout "secrets-broker ドリフト同期 self-test (sync_broker_drift.sh --self-test)" 30 \
+    bash tools/sync_broker_drift.sh --self-test
+else
+  skip_check "secrets-broker ドリフト同期 self-test (sync_broker_drift.sh --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="

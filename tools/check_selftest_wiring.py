@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""check_selftest_wiring.py — tools/*.py の `--self-test` 配線漏れを検査する（Issue #612）。
+"""check_selftest_wiring.py — tools/ 配下スクリプトの `--self-test` 配線漏れを検査する
+（Issue #612）。対象は `.py` / `.mjs` / `.mts` / `.sh`（`SCAN_EXTENSIONS`）で、`tools/` 配下を
+再帰的に走査する（Issue #992 フォローアップ・下記「走査対象の拡張」参照）。
 
 ## 走査対象の拡張（Issue #992）
 
@@ -14,6 +16,23 @@
 `False` を返し、自然に `not_applicable` へ落ちる。将来 `.test.mjs` が誤って本検査の対象になる
 ケース（`--self-test` という文字列がテストコード中に偶然出現する等）が出たら、そのとき初めて
 拡張子ベースの除外を検討する（YAGNI・現時点では発生していない）。
+
+## 走査対象のさらなる拡張（`.sh` / 再帰走査・Issue #992 フォローアップ）
+
+Layer 1 セルフレビュー（PR #1018）で「`tools/` に `.sh` の対象実体が無い」という前提が事実誤認
+だったと判明した。実測: `tools/progress_heartbeat.sh` / `tools/sync_broker_drift.sh` は
+`--self-test` を実装済みなのに `run_checks.sh` へ未配線だった（今回 `run_checks.sh` へ配線して
+決着済み）。よって `SCAN_EXTENSIONS` に `sh` を追加した。`.sh` のコメント抽出は Python と同じ
+`#` 系だが tokenize は使えない（bash は Python 構文ではない）ため、`_strip_shell_line_comment`
+（`run_checks.sh` 側のコメント除去で既に使っている行単位クォート追跡）を再利用した専用の
+`_shell_comment_texts()` で抽出する。
+
+また `tools_dir.glob()`（非再帰）だった走査を `tools_dir.rglob()`（再帰）へ変更し、
+`tools/gem-pool/*.mjs` 等のサブディレクトリのスクリプトも走査対象に含めた（変更前は
+`not_applicable` にすらならず完全に不可視だった）。実測時点でサブディレクトリのスクリプトは
+いずれも `--self-test` を実装していないため、この変更による新規違反は 0 件（将来サブディレクトリに
+`--self-test` を実装したスクリプトが追加された場合の見落としを防ぐ回帰防止策）。
+`node_modules` 等の除外は現時点で `tools/` 配下に存在しないため未実装（YAGNI）。
 
 ## なぜ必要か
 
@@ -47,9 +66,18 @@
 
     # selftest-wiring-ok: {なぜ配線しないかの理由}
 
-理由が空（`# selftest-wiring-ok:` だけ）のマーカーは無効として扱い、除外しない
-（「除外してよいか」を人が判断した形跡を残させることが目的であり、マーカーの存在だけでは
-通さない。`check_duplicate_source_patterns.py` の `dup-ok` マーカーと同じ思想）。
+🔴 **`.mjs` / `.mts` では `#` が JS のコメントとして認識されない**（独立行に `#` で書くと
+`node` 実行が SyntaxError で壊れる）ため、代わりに `//` または `/* ... */` を使う:
+
+    // selftest-wiring-ok: {なぜ配線しないかの理由}
+    /* selftest-wiring-ok: {なぜ配線しないかの理由} */
+
+`.sh` は Python と同じ `#` を使う（bash のコメント記号も `#` のため）。
+
+理由が空（`# selftest-wiring-ok:` だけ、または `// selftest-wiring-ok:` だけ）のマーカーは
+無効として扱い、除外しない（「除外してよいか」を人が判断した形跡を残させることが目的であり、
+マーカーの存在だけでは通さない。`check_duplicate_source_patterns.py` の `dup-ok` マーカーと
+同じ思想）。
 
 ## 誤判定の防止（2026-08-24 の敵対的レビューで発見された 2 つの穴）
 
@@ -77,6 +105,24 @@
    誤って違反扱いされる方が安全 — 除外は人が明示的にマーカーを書かない限り成立しないため）。
    この場合は `scan()` が stderr に警告を出す（`Verdict.tokenize_failed`）。
 
+## 誤判定の防止（PR #1018 の Layer 1 セルフレビューで発見された 2 つの穴）
+
+3. **`.mjs`/`.mts` の自前レキサが正規表現リテラルを認識せず、文字クラス内の `/*` を
+   ブロックコメント開始と誤認していた**（fail-closed の誤検出）: 旧 `_js_comment_texts()` は
+   `const SEP_RE = /[/*]/;` のような正規表現リテラルに遭遇すると、内部の `/*` を本物の
+   ブロックコメント開始と誤解し、それ以降（本物のマーカーを含む）を「まだ閉じていない
+   ブロックコメントの続き」として飲み込んでしまっていた。対策として、JS/TS のコメント抽出は
+   `tools/ts_source.py` の `extract_comments()`（正規表現リテラルを不透明な単位として読み飛ばす）
+   へ委譲した。逆方向の反例（文字列・テンプレートリテラル内の偽マーカーを拾わない・fail-open）
+   も同じ関数の設計で防いでいる。
+
+4. **JS 側のマーカー正規表現がコメント本文中のどこでも一致してしまう**（fail-open）:
+   `_JS_MARKER_RE` が非アンカーだったため、`// See docs/... for the selftest-wiring-ok: marker
+   format.` のような **地の文で書式に言及しただけの通常コメント** まで有効なマーカーと誤認し、
+   ファイルを黙って除外してしまっていた（Python 側の `_MARKER_RE` は `#` 直後にしか一致しないため
+   この問題を元々持たない）。対策として、`_JS_MARKER_RE` をコメント本文の先頭（ブロックコメントの
+   `*` 継続行は許容）にアンカーした。
+
 使い方:
     python3 tools/check_selftest_wiring.py              # 配線漏れ検査（人間可読レポート）
     python3 tools/check_selftest_wiring.py --json        # 機械可読 JSON
@@ -96,13 +142,18 @@ import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import ts_source  # noqa: E402 — 共通モジュール（#612 / #992）。JS/TS のコメント抽出はここへ委譲する
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = REPO_ROOT / "tools"
 RUN_CHECKS_PATH = TOOLS_DIR / "run_checks.sh"
 
-# 走査対象の拡張子（Issue #992）。Python は tokenize ベース、mjs/mts は簡易 JS/TS レキサで
+# 走査対象の拡張子（Issue #992）。Python は tokenize ベース、mjs/mts は `ts_source.extract_comments`
+# （正規表現リテラルを認識する専用レキサ）、sh は `_shell_comment_texts`（行単位クォート追跡）で
 # コメントを抽出する（言語ごとの抽出関数は _comment_texts_for_lang() が振り分ける）。
-SCAN_EXTENSIONS = ("py", "mjs", "mts")
+SCAN_EXTENSIONS = ("py", "mjs", "mts", "sh")
 
 # 本検査自身（新規作成・Issue #612）。`run_checks.sh` への配線要否は親セッション側の判断事項で、
 # 本検査が自分自身を対象に含めるとブートストラップ問題（配線される前は必ず自分自身を違反として
@@ -116,18 +167,36 @@ _SELF_FILENAME = "check_selftest_wiring.py"
 # ここでは拾わない（クォートで囲まれているかどうかで「フラグの実装」と「使用例の言及」を区別する）。
 _SELFTEST_FLAG_RE = re.compile(r'["\']--self-test["\']')
 
+# `.sh` 用（Issue #992 フォローアップ）: bash の典型的な実装は `case "$1" in --self-test) ... ;;`
+# のような **case アーム**で、`--self-test` はクォートで囲まれない（`)` が直後に続くだけ）。
+# 上記 `_SELFTEST_FLAG_RE`（クォート必須）はこの形を検出できない（実例: `progress_heartbeat.sh`）。
+# クォートされた比較形（`[ "$1" = "--self-test" ]`。実例: `sync_broker_drift.sh`）はそのまま
+# `_SELFTEST_FLAG_RE` で拾えるので、ここでは case アーム形だけを追加で見る。
+# 🔴 case アーム形は行頭（インデント許容）にアンカーする（`^[ \t]*` + `re.MULTILINE`）。
+# 非アンカーだと `run_checks.sh` 自身が持つ大量のドキュメントラベル文字列
+# `"... (foo.py --self-test)" ...` （`--self-test)` を含む）を誤って「case アーム」と
+# 誤検出し、`run_checks.sh` が自己参照で違反判定されてしまう（実測で確認済み）。
+_SH_CASE_ARM_SELFTEST_RE = re.compile(r'^[ \t]*["\']?--self-test["\']?\)', re.MULTILINE)
+
 # `# selftest-wiring-ok: {理由}` マーカー。理由は同じ行の行末までとする（`\s*` は改行にも
 # マッチするため `[ \t]*` を使う。`\s*` のままだと理由が空のとき次行を誤って呑み込む）。
 _MARKER_RE = re.compile(r"#[ \t]*selftest-wiring-ok:[ \t]*(.*)$", re.MULTILINE)
 
 
-def script_has_selftest_flag(content: str) -> bool:
-    """スクリプトが `--self-test` オプションを実装しているか（クォート付きリテラルの有無）。
+def script_has_selftest_flag(content: str, lang: str = "py") -> bool:
+    """スクリプトが `--self-test` オプションを実装しているか。
 
-    `--shim-self-test` のような別名フラグ（例: `gh_shim.py`）は「--self-test」という
-    文字列そのものと一致しないため誤検出しない。
+    `py` / `js` は「クォート付き文字列リテラルとしての `--self-test`」の有無で判定する
+    （`--shim-self-test` のような別名フラグ（例: `gh_shim.py`）は「--self-test」という
+    文字列そのものと一致しないため誤検出しない。docstring の地の文（クォート無し）も
+    拾わない）。`sh` はそれに加えて bash の case アーム形（`--self-test)`）も見る
+    （`_SH_CASE_ARM_SELFTEST_RE` 参照）。
     """
-    return bool(_SELFTEST_FLAG_RE.search(content))
+    if _SELFTEST_FLAG_RE.search(content):
+        return True
+    if lang == "sh":
+        return bool(_SH_CASE_ARM_SELFTEST_RE.search(content))
+    return False
 
 
 @dataclass
@@ -160,96 +229,41 @@ def _comment_texts(content: str) -> list[str] | None:
         return None
 
 
-# `// selftest-wiring-ok: {理由}` マーカー（.mjs / .mts 用）。JS 抽出関数（`_js_comment_texts()`）は
-# 行コメントの `//` を除去した本文だけを返すため、こちらは `#` ではなく素の `selftest-wiring-ok:` を
-# 探せば足りる（本文には元々コメント区切り記号が含まれないため誤検出しない）。
-_JS_MARKER_RE = re.compile(r"selftest-wiring-ok:[ \t]*(.*)$", re.MULTILINE)
+# `// selftest-wiring-ok: {理由}` マーカー（.mjs / .mts 用）。JS 抽出関数
+# （`ts_source.extract_comments()`）は行コメントの `//` を除去した本文だけを返すため、
+# こちらは `#` ではなく素の `selftest-wiring-ok:` を探せば足りる。
+#
+# 🔴 **コメント本文の先頭にアンカーする**（F2・Issue #992 フォローアップ・PR #1018 Layer 1
+# セルフレビューで発見）: 旧実装は非アンカーだったため、`// See docs/... for the
+# selftest-wiring-ok: marker format used elsewhere.` のように **地の文で書式に言及しただけの
+# 通常コメント** まで有効なマーカーと誤認し、ファイルを黙って除外してしまっていた（fail-open）。
+# `^` は行頭にマッチし（`re.MULTILINE`）、ブロックコメントの `*` 継続行（` * selftest-wiring-ok:
+# ...`）だけを許容する（`\*?` は最大 1 個。`// selftest-wiring-ok:` のように `//` を除去した
+# 本文が空白から始まる／始まらない両方のバリアントに対応するため `[ \t]*` を前後に許容する）。
+_JS_MARKER_RE = re.compile(r"^[ \t]*\*?[ \t]*selftest-wiring-ok:[ \t]*(.*)$", re.MULTILINE)
 
 
-def _js_comment_texts(content: str) -> list[str] | None:
-    """`content` を JS/TS として簡易レキシングし、`//` 行コメントと `/* ... */` ブロック
-    コメントの本文（区切り記号を除いた中身）だけを返す。
+def _shell_comment_texts(content: str) -> list[str]:
+    """`content`（bash スクリプト全体）から `#` コメント本文（`#` 自身を含み行末までの
+    1 行）を抽出する（`.sh` 用・Issue #992 フォローアップ）。
 
-    文字列リテラル（`'...'` / `"..."`）・テンプレートリテラル（`` `...` ``）の中身は
-    コメントとして拾わない（Python 版の docstring 誤判定と同型の穴を防ぐ・Issue #992）。
-    バックスラッシュエスケープを考慮し、文字列・テンプレートの終端が見つからないまま
-    EOF に達した場合、および `/* ...` が閉じられないまま EOF に達した場合は解析失敗として
-    `None` を返す（呼び出し側は tokenize 失敗時と同様「マーカーなし」の安全側へフォールバックする）。
-
-    テンプレートリテラル内の `${...}` 補間式は展開せず丸ごと文字列扱いする（内部に本物の
-    コメントが書かれる稀なケースは見逃すが、逆方向＝文字列内容を誤ってマーカーと認識する
-    危険を確実に防ぐ方を優先する。安全側に倒す設計は tokenize 失敗時のフォールバックと同じ思想）。
+    クォート追跡は `run_checks.sh` の解析に使っている `_strip_shell_line_comment`
+    （行単位・クォート内の `#` を保護する簡易 bash コメント除去）をそのまま再利用する
+    （二重実装しない）。bash のコメントは `#` から行末までの 1 行で完結し、Python の
+    ブロックコメントのような複数行にまたがる構文が存在しないため、`tokenize` のような
+    構文解析の失敗は起こらない（`None` を返すケースは無い）。
     """
     comments: list[str] = []
-    i, n = 0, len(content)
-    state: str | None = None  # None / "line" / "block" / "sq" / "dq" / "tpl"
-    buf: list[str] = []
-    while i < n:
-        ch = content[i]
-        if state is None:
-            if ch == "/" and i + 1 < n and content[i + 1] == "/":
-                state, buf, i = "line", [], i + 2
-                continue
-            if ch == "/" and i + 1 < n and content[i + 1] == "*":
-                state, buf, i = "block", [], i + 2
-                continue
-            if ch == "'":
-                state, i = "sq", i + 1
-                continue
-            if ch == '"':
-                state, i = "dq", i + 1
-                continue
-            if ch == "`":
-                state, i = "tpl", i + 1
-                continue
-            i += 1
-            continue
-        if state == "line":
-            if ch == "\n":
-                comments.append("".join(buf))
-                state, i = None, i + 1
-                continue
-            buf.append(ch)
-            i += 1
-            continue
-        if state == "block":
-            if ch == "*" and i + 1 < n and content[i + 1] == "/":
-                comments.append("".join(buf))
-                state, i = None, i + 2
-                continue
-            buf.append(ch)
-            i += 1
-            continue
-        if state in ("sq", "dq"):
-            quote = "'" if state == "sq" else '"'
-            if ch == "\\" and i + 1 < n:
-                i += 2
-                continue
-            if ch == quote:
-                state, i = None, i + 1
-                continue
-            if ch == "\n":
-                return None  # 単一行文字列が閉じられないまま改行 = 構文エラー相当
-            i += 1
-            continue
-        if state == "tpl":
-            if ch == "\\" and i + 1 < n:
-                i += 2
-                continue
-            if ch == "`":
-                state, i = None, i + 1
-                continue
-            i += 1
-            continue
-        i += 1  # pragma: no cover（到達しない防御的分岐）
-    if state == "line":
-        comments.append("".join(buf))
-    elif state in ("block", "sq", "dq", "tpl"):
-        return None  # 未終端のブロックコメント／文字列／テンプレートリテラル = 解析失敗
+    for raw_line in content.splitlines():
+        stripped = _strip_shell_line_comment(raw_line)
+        if len(stripped) < len(raw_line):
+            # `#` 以降が切り取られた = この行にクォート外のコメントがあった。
+            # 切り取られた開始位置から行末までが、`#` を含むコメント本文そのもの。
+            comments.append(raw_line[len(stripped) :])
     return comments
 
 
-_LANG_BY_SUFFIX = {".py": "py", ".mjs": "js", ".mts": "js"}
+_LANG_BY_SUFFIX = {".py": "py", ".mjs": "js", ".mts": "js", ".sh": "sh"}
 
 
 def _lang_for_filename(filename: str) -> str:
@@ -260,15 +274,20 @@ def _lang_for_filename(filename: str) -> str:
 
 
 def _comment_texts_for_lang(content: str, lang: str) -> list[str] | None:
-    """言語別にコメント本文だけを抽出する（`py` → tokenize / `js` → 簡易レキサ）。"""
+    """言語別にコメント本文だけを抽出する（`py` → tokenize / `js` → `ts_source.extract_comments`
+    / `sh` → `_shell_comment_texts`）。"""
     if lang == "js":
-        return _js_comment_texts(content)
+        return ts_source.extract_comments(content)
+    if lang == "sh":
+        return _shell_comment_texts(content)
     return _comment_texts(content)
 
 
 def _marker_re_for_lang(lang: str) -> re.Pattern[str]:
     """言語別のマーカー正規表現。`js` は `#` ではなく素の `selftest-wiring-ok:` を探す
-    （JS 側のコメント抽出が `//`/`/* */` の区切り記号を含めずに本文だけを返すため）。"""
+    （JS 側のコメント抽出が `//`/`/* */` の区切り記号を含めずに本文だけを返すため）。
+    `sh` は Python と同じ `#` プレフィックス形式（`_MARKER_RE`）を使う
+    （`_shell_comment_texts` が返すコメント本文は `#` 自身を含むため）。"""
     return _JS_MARKER_RE if lang == "js" else _MARKER_RE
 
 
@@ -365,9 +384,16 @@ def _strip_shell_comments(content: str) -> str:
 
 def is_wired(filename: str, run_checks_content: str) -> bool:
     """`run_checks.sh` の中に `<filename> ... --self-test` という **有効な**（コメントアウト
-    されていない）呼び出しがあるか。"""
+    されていない）呼び出しがあるか。
+
+    🔴 **ファイル名の直後の閉じクォートを許容する**（F6・Issue #992 フォローアップ）:
+    `node "$REPO_ROOT/tools/foo.mjs" --self-test` のようにパス全体が引用符で囲まれている場合、
+    `foo.mjs` の直後には空白ではなく閉じクォート（`"` / `'`）が来る。旧実装（ファイル名の
+    直後に空白を必須とする）はこの形を配線済みと認識できず、正しく配線されているスクリプトを
+    配線漏れと誤検出していた（実測: `False` を返していた）。
+    """
     stripped = _strip_shell_comments(run_checks_content)
-    pattern = re.compile(re.escape(filename) + r"\s+--self-test\b")
+    pattern = re.compile(re.escape(filename) + r"[\"']?\s+--self-test\b")
     return bool(pattern.search(stripped))
 
 
@@ -385,12 +411,12 @@ class Verdict:
 def evaluate_script(filename: str, content: str, run_checks_content: str) -> Verdict:
     """1 ファイルぶんの内容から配線状態を判定する（テスト容易性のための純関数）。
 
-    `filename` の拡張子（`.py` / `.mjs` / `.mts`）からコメント抽出方式を自動判定する。
+    `filename` の拡張子（`.py` / `.mjs` / `.mts` / `.sh`）からコメント抽出方式を自動判定する。
     """
-    if not script_has_selftest_flag(content):
+    lang = _lang_for_filename(filename)
+    if not script_has_selftest_flag(content, lang):
         return Verdict(filename, "not_applicable")
 
-    lang = _lang_for_filename(filename)
     marker_scan = _scan_markers(content, lang)
     if marker_scan.reasons:
         return Verdict(
@@ -432,22 +458,37 @@ class Report:
 
 
 def scan(tools_dir: Path, run_checks_content: str) -> Report:
+    """`tools_dir` 配下を **再帰的に** 走査する（F4・Issue #992 フォローアップ）。
+
+    旧実装は非再帰 `glob()` だったため `tools/gem-pool/*.mjs` 等のサブディレクトリの
+    スクリプトが `not_applicable` にすらならず完全に不可視だった。`rglob()` へ変更し、
+    サブディレクトリのスクリプトも走査対象に含める（実測時点でサブディレクトリの
+    スクリプトはいずれも `--self-test` を実装していないため新規違反は 0 件。将来
+    サブディレクトリに実装が追加された場合の見落としを防ぐ回帰防止策）。
+    """
     report = Report()
     paths: list[Path] = []
     for ext in SCAN_EXTENSIONS:
-        paths.extend(tools_dir.glob(f"*.{ext}"))
+        paths.extend(tools_dir.rglob(f"*.{ext}"))
     for path in sorted(paths):
         if path.name == _SELF_FILENAME:
             continue
+        # `tools_dir` からの相対パス（POSIX 区切り）を識別子にする（rglob 化に伴う変更）。
+        # ルート直下のファイルは相対パス＝ファイル名のまま（表示は変わらない）。サブ
+        # ディレクトリのファイルは `gem-pool/collect.mjs` のような相対パスになり、同名
+        # ファイルが異なるディレクトリにあっても衝突しない。`is_wired()` の部分文字列検索は
+        # `run_checks.sh` の実際の呼び出し（`node tools/gem-pool/collect.mjs --self-test`）が
+        # この相対パスをそのまま含むため、`tools/` プレフィックスの有無に関わらず一致する。
+        rel_name = path.relative_to(tools_dir).as_posix()
         try:
             content = path.read_text(encoding="utf-8")
         except OSError as e:
-            print(f"⚠️  読み込み失敗のためスキップ: {path.name}（{e}）", file=sys.stderr)
+            print(f"⚠️  読み込み失敗のためスキップ: {rel_name}（{e}）", file=sys.stderr)
             continue
-        verdict = evaluate_script(path.name, content, run_checks_content)
+        verdict = evaluate_script(rel_name, content, run_checks_content)
         if verdict.tokenize_failed:
             print(
-                f"⚠️  tokenize 失敗のためマーカーなし扱い（安全側）: {path.name}"
+                f"⚠️  tokenize 失敗のためマーカーなし扱い（安全側）: {rel_name}"
                 "（構文エラー等でコメント解析ができなかった）",
                 file=sys.stderr,
             )
@@ -804,7 +845,7 @@ def _self_test() -> int:
     )
     check(
         "T: 未終端ブロックコメントは解析失敗で None",
-        _js_comment_texts(src_t_unterminated_block) is None,
+        ts_source.extract_comments(src_t_unterminated_block) is None,
     )
     v_t = evaluate_script("broken.mjs", src_t_unterminated_block, "")
     check("T: 未終端ブロックコメントは violation（安全側）", v_t.status == "violation")
@@ -844,6 +885,226 @@ def _self_test() -> int:
     check("V: 配線漏れ 0 件は exit 0", exit_code_for(report_clean) == 0)
     report_violation = Report(wired=["a.py"], violations=["b.mjs"])
     check("V: 配線漏れ 1 件以上は exit 1", exit_code_for(report_violation) == 1)
+
+    # ══════════════════════════════════════════════════════════════════
+    # 以下 PR #1018 Layer 1 セルフレビュー（CONFIRMED 9 件）のフォローアップ（F1〜F8）
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── ケース W（F2・境界の外側の負ケース #750）: コメント本文中に「書式を説明する地の文」が
+    #    あるだけでは有効なマーカーと誤認しない（アンカー導入前は fail-open していた） ──
+    src_w = (
+        "// See docs/... for background on the selftest-wiring-ok: marker format used elsewhere.\n"
+        "foo('--self-test')\n"
+    )
+    check("W: 地の文の言及はマーカーとして拾わない（アンカー導入・fail-open 再発防止）", marker_reason(src_w, "js") is None)
+    v_w = evaluate_script("mention_only.mjs", src_w, "")
+    check("W: 誤って excluded されず violation のまま", v_w.status == "violation")
+    # 回帰防止: マーカーがコメント本文の先頭にあれば従来どおり有効（「近似だが別カテゴリ」の対）
+    src_w2 = "// selftest-wiring-ok: 正しい先頭マーカー\nfoo('--self-test')\n"
+    check(
+        "W: 先頭マーカーは従来どおり有効（回帰防止・#750 の負ケースとの対）",
+        marker_reason(src_w2, "js") == "正しい先頭マーカー",
+    )
+
+    # ── ケース X（F1・PR #1018 CRITICAL の核心）: 正規表現リテラル内部の `/*` を
+    #    ブロックコメント開始と誤認せず、その直後の正当なマーカーを検出できる ──
+    src_x = (
+        "const SEP_RE = /[/*]/;\n"
+        "// selftest-wiring-ok: 正規表現リテラルの後ろの正当なマーカー\n"
+        "foo('--self-test')\n"
+    )
+    v_x = evaluate_script("regex_then_marker.mjs", src_x, "")
+    check("X: 正規表現リテラル直後の正当なマーカーが excluded になる", v_x.status == "excluded")
+    check(
+        "X: マーカー理由が正しく取得できる",
+        marker_reason(src_x, "js") == "正規表現リテラルの後ろの正当なマーカー",
+    )
+    # 同型の反例: クォート文字クラスを含む正規表現リテラルでも同様
+    src_x2 = (
+        "const QUOTE_RE = /['\"]/g;\n"
+        "// selftest-wiring-ok: 別の正規表現リテラルの後ろの正当なマーカー\n"
+        "foo('--self-test')\n"
+    )
+    v_x2 = evaluate_script("quote_class_then_marker.mjs", src_x2, "")
+    check("X: クォート文字クラスの正規表現リテラル後も excluded になる", v_x2.status == "excluded")
+
+    # ── ケース Y（F1・fail-open の反例）: 文字列リテラル内の偽マーカーは拾わない ──
+    src_y = (
+        'const RE = /^(?:https?):\\/\\//i; const msg = "selftest-wiring-ok: これはコード";\n'
+        "foo('--self-test')\n"
+    )
+    v_y = evaluate_script("string_fake_marker.mjs", src_y, "")
+    check("Y: 文字列内の偽マーカーは excluded にならない（fail-open 再発防止）", v_y.status == "violation")
+    # ネストしたテンプレートリテラル（URL の `//` を含む）が破綻しないこと
+    src_y2 = "const s = `outer ${`http://example.com`} end`\n// selftest-wiring-ok: ネスト後の正当なマーカー\nfoo('--self-test')\n"
+    v_y2 = evaluate_script("nested_template.mjs", src_y2, "")
+    check("Y: ネストしたテンプレートリテラル後も正しく excluded になる（破綻しない）", v_y2.status == "excluded")
+
+    # ── ケース Z（F3・.sh 拡張子。case アーム形の --self-test 実装を検出する） ──
+    check("Z: .sh は sh 判定", _lang_for_filename("foo.sh") == "sh")
+    src_sh_case_arm = (
+        "#!/usr/bin/env bash\n"
+        'case "$1" in\n'
+        "  --self-test) echo self-test; exit 0 ;;\n"
+        "esac\n"
+    )
+    check(
+        "Z: case アーム形の --self-test を sh 判定で検出する（クォート無し・progress_heartbeat.sh 型）",
+        script_has_selftest_flag(src_sh_case_arm, "sh"),
+    )
+    check(
+        "Z: py/js 判定では case アーム形を検出しない（言語別ディスパッチ）",
+        not script_has_selftest_flag(src_sh_case_arm, "py"),
+    )
+    v_sh_unwired = evaluate_script("case_arm.sh", src_sh_case_arm, "")
+    check("Z: 未配線の .sh は violation", v_sh_unwired.status == "violation")
+    rc_sh_wired = 'run_check "case arm" bash tools/case_arm.sh --self-test\n'
+    v_sh_wired = evaluate_script("case_arm.sh", src_sh_case_arm, rc_sh_wired)
+    check("Z: 配線済みの .sh は wired", v_sh_wired.status == "wired")
+
+    # クォート比較形（sync_broker_drift.sh の実際の形）も検出する
+    src_sh_quoted = 'if [ "${1:-}" = "--self-test" ]; then\n  echo ok\nfi\n'
+    check("Z: クォート比較形も sh 判定で検出する（sync_broker_drift.sh 型）", script_has_selftest_flag(src_sh_quoted, "sh"))
+
+    # .sh の `#` マーカー（Python と同じ書式）
+    src_sh_marker = (
+        "#!/usr/bin/env bash\n"
+        "# selftest-wiring-ok: 週次スロットでのみ起動する運用ツール\n"
+        'if [ "${1:-}" = "--self-test" ]; then exit 0; fi\n'
+    )
+    check(
+        "Z: .sh の # マーカーの理由を取得できる",
+        marker_reason(src_sh_marker, "sh") == "週次スロットでのみ起動する運用ツール",
+    )
+    v_sh_marker = evaluate_script("weekly.sh", src_sh_marker, "")
+    check("Z: .sh マーカーは excluded", v_sh_marker.status == "excluded")
+
+    # 自己参照の反例（run_checks.sh 自身の誤検出防止・#992 フォローアップの主眼）: 行頭に
+    # アンカーされていない `--self-test)`（ドキュメントラベル文字列の一部）は検出しない
+    src_sh_label_only = 'run_check "foo self-test (foo.py --self-test)" python3 tools/foo.py --self-test\n'
+    check(
+        "Z: 行頭でない --self-test) はラベル文字列として誤検出しない（run_checks.sh 自己参照防止）",
+        not script_has_selftest_flag(src_sh_label_only, "sh"),
+    )
+    # 実際の run_checks.sh 自身で実測する（「.sh の対象実体が無い」という事実誤認の反省を
+    # 踏まえ、合成ケースだけでなく実ファイルでも自己参照が起きないことを確認する）
+    if RUN_CHECKS_PATH.exists():
+        real_run_checks_content = RUN_CHECKS_PATH.read_text(encoding="utf-8")
+        check(
+            "Z: 実際の run_checks.sh 自身は has_selftest_flag=False（自己参照回避を実測）",
+            not script_has_selftest_flag(real_run_checks_content, "sh"),
+        )
+
+    # ── ケース AA（F4・サブディレクトリの再帰走査。#992 フォローアップ） ──
+    with tempfile.TemporaryDirectory() as tmpdir2:
+        tmp_tools2 = Path(tmpdir2)
+        subdir = tmp_tools2 / "gem-pool"
+        subdir.mkdir()
+        (subdir / "nested_unwired.mjs").write_text(
+            "if (process.argv.includes('--self-test')) { selfTest() }\n", encoding="utf-8"
+        )
+        (subdir / "nested_wired.mjs").write_text(
+            "if (process.argv.includes('--self-test')) { selfTest() }\n", encoding="utf-8"
+        )
+        rc_nested = 'run_check "nested wired" node tools/gem-pool/nested_wired.mjs --self-test\n'
+        report_nested = scan(tmp_tools2, rc_nested)
+        check(
+            "AA: サブディレクトリの未配線 .mjs を検出する（rglob 化前は不可視だった）",
+            "gem-pool/nested_unwired.mjs" in report_nested.violations,
+        )
+        check(
+            "AA: サブディレクトリの配線済み .mjs を wired と判定する",
+            "gem-pool/nested_wired.mjs" in report_nested.wired,
+        )
+
+    # ── ケース BB（F6・引用符付きパスの配線検出） ──
+    rc_quoted_path = 'run_check "quoted" node "$REPO_ROOT/tools/quux.mjs" --self-test\n'
+    check("BB: 引用符付きパス（node \"$REPO_ROOT/tools/foo.mjs\"）でも is_wired=True", is_wired("quux.mjs", rc_quoted_path))
+    # 回帰防止: 従来のクォート無しの形も引き続き検出する
+    rc_unquoted_path = 'run_check "unquoted" node tools/quux.mjs --self-test\n'
+    check("BB: クォート無しパスも引き続き is_wired=True（回帰防止）", is_wired("quux.mjs", rc_unquoted_path))
+
+    # ── ケース CC（F5・#686: main() の本番経路（sys.exit(main()) まで）を実プロセスとして
+    #    実測する。判定関数だけを直接呼ぶテスト（A〜BB）では `main()` 内部の配線ミス
+    #    （例: `return exit_code_for(report)` を `return 0` に変異する）を見逃す） ──
+    import shutil
+    import subprocess
+
+    _fake_ts_source_src = (
+        "# CC 用の最小フェイク（実 ts_source.py の --self-test 実装を巻き込まないための代替）\n"
+        "def extract_comments(source):\n"
+        "    return []\n"
+    )
+
+    def _run_main_subprocess(tools_files: dict[str, str], run_checks_content: str) -> int:
+        this_file = Path(__file__).resolve()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            tmp_tools = tmp_root / "tools"
+            tmp_tools.mkdir()
+            shutil.copy(this_file, tmp_tools / this_file.name)
+            (tmp_tools / "ts_source.py").write_text(_fake_ts_source_src, encoding="utf-8")
+            (tmp_tools / "run_checks.sh").write_text(run_checks_content, encoding="utf-8")
+            for name, content in tools_files.items():
+                target = tmp_tools / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(tmp_tools / this_file.name)],
+                cwd=str(tmp_tools),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return result.returncode
+
+    rc_main_violation = _run_main_subprocess(
+        {"gate.mjs": "if (process.argv.includes('--self-test')) { selfTest() }\n"},
+        "",
+    )
+    check("CC: main() 実プロセス実行（違反あり）は exit 1（#686 本番経路の実測）", rc_main_violation == 1)
+
+    rc_main_clean = _run_main_subprocess(
+        {"gate.mjs": "if (process.argv.includes('--self-test')) { selfTest() }\n"},
+        'run_check "gate" node tools/gate.mjs --self-test\n',
+    )
+    check("CC: main() 実プロセス実行（違反なし）は exit 0（#686 本番経路の実測）", rc_main_clean == 0)
+
+    # ── ケース DD（干渉検証・独立した複数修正が同一走査で互いの前提を壊さないことの確認） ──
+    with tempfile.TemporaryDirectory() as tmpdir3:
+        tmp_tools3 = Path(tmpdir3)
+        (tmp_tools3 / "gate.mjs").write_text(
+            "const SEP_RE = /[/*]/;\n"
+            "// selftest-wiring-ok: 干渉検証用の js マーカー\n"
+            "foo('--self-test')\n",
+            encoding="utf-8",
+        )
+        (tmp_tools3 / "gate.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            'case "$1" in\n'
+            "  --self-test) exit 0 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        sub3 = tmp_tools3 / "nested"
+        sub3.mkdir()
+        (sub3 / "gate2.mjs").write_text(
+            "if (process.argv.includes('--self-test')) { selfTest() }\n", encoding="utf-8"
+        )
+        rc3 = 'run_check "nested" node tools/nested/gate2.mjs --self-test\n'
+        report3 = scan(tmp_tools3, rc3)
+        check(
+            "DD: 干渉検証 - F1/F2（js の正規表現リテラル + アンカー済みマーカー）は excluded のまま",
+            ("gate.mjs", "干渉検証用の js マーカー") in report3.excluded,
+        )
+        check(
+            "DD: 干渉検証 - F3（.sh の case アーム形）は F1/F2 の js 判定を巻き込まず violation として検出される",
+            "gate.sh" in report3.violations,
+        )
+        check(
+            "DD: 干渉検証 - F4（サブディレクトリ再帰）が F6 の相対パス識別子と両立して wired と判定される",
+            "nested/gate2.mjs" in report3.wired,
+        )
 
     if failures:
         print("❌ check_selftest_wiring --self-test FAILED:")

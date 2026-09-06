@@ -277,6 +277,196 @@ def find_matching_brace(text: str, open_idx: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# extract_comments（新設・Issue #992 フォローアップ）
+# ---------------------------------------------------------------------------
+
+# `extract_comments` の正規表現リテラル判定に使う「直前の意味のあるトークンが値か」の
+# ヒューリスティック。`check_duplicate_source_patterns.py` の `_KEYWORDS_EXPR_START` と
+# 同じ判断基準（このキーワード群の直後の `/` は除算ではありえない）。用途が異なる別モジュール
+# 内の判定のため、結合度を上げないためにあえて再定義している（同じ実測結果に基づく定数）。
+_REGEX_CONTEXT_KEYWORDS = {
+    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw",
+    "case", "do", "else", "yield", "await", "if", "while", "for", "switch", "extends",
+    "default", "export", "const", "let", "var", "function", "class", "import", "from",
+    "async", "static", "get", "set", "catch", "finally", "try", "break", "continue",
+}
+
+
+def _skip_backtick_literal(source: str, start: int) -> int | None:
+    """`source[start] == '`'` として、対応する終端バッククォートの **直後** のインデックスを
+    返す。`${...}` 補間の中括弧対応は `find_matching_brace`（正本を再利用・二重実装しない）に
+    委譲する。終端が見つからない、または補間式が閉じない場合は `None`（解析失敗）を返す。
+    """
+    n = len(source)
+    i = start + 1
+    while i < n:
+        ch = source[i]
+        if ch == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if ch == "`":
+            return i + 1
+        if ch == "$" and i + 1 < n and source[i + 1] == "{":
+            close = find_matching_brace(source, i + 1)
+            if close >= n:
+                return None  # 補間式 ${...} が閉じない = 解析失敗
+            i = close + 1
+            continue
+        i += 1
+    return None  # 終端のバッククォートが見つからない = 解析失敗
+
+
+def extract_comments(source: str) -> list[str] | None:
+    """JS/TS ソース全体から `//` 行コメント・`/* ... */` ブロックコメントの本文
+    （区切り記号を除いた中身）だけを抽出する（`tools/check_selftest_wiring.py` の
+    `selftest-wiring-ok` マーカー検出用・Issue #992 フォローアップ）。
+
+    🔴 **なぜ `strip_comments` を直接は再利用しないか**: `strip_comments` は「除去」だけが
+    目的で、コメント本文そのものを保持しない（`/* ... */` を空白 1 文字に潰す）ため、本関数の
+    目的（コメント本文からマーカーを探す）には使えない。加えて `strip_comments` の行単位
+    スキャナは **正規表現リテラルを認識しない**（`/` を常に「除算 or コメント境界」としてしか
+    見ない）ため、`const SEP_RE = /[/*]/;` のような正規表現リテラルの内部に現れる `/*` を
+    ブロックコメント開始と誤認し、以降の行（本物のコメント・マーカーを含む）を巻き込んで
+    誤って「まだ閉じていないブロックコメントの続き」として飲み込んでしまう
+    （`strip_comments` 自身も潜在的にこの欠陥を持つが、既存 178 ファイルの実測では
+    一度も顕在化していないため本 Issue のスコープでは手を入れない。将来別ファイルで
+    顕在化したら `strip_comments` 側の改修を別 Issue で検討する）。
+
+    本関数は `check_duplicate_source_patterns.py` の `iter_ts_regex_literals` と同じ
+    「直前の意味のあるトークンが値かどうか」ヒューリスティックで正規表現リテラルを
+    不透明な単位として読み飛ばし、この誤認を避ける。文字列・テンプレートリテラルの中身も
+    同様にコメントとして扱わない（`marker_reason()` が文字列内の偽マーカーを拾わないための
+    前提）。
+
+    構文的に閉じられない文字列・テンプレートリテラル・ブロックコメント・正規表現の補間式に
+    遭遇した場合はクラッシュせず `None` を返す（安全側フォールバック。呼び出し側は
+    `tokenize` 失敗時と同じく「マーカーなし」として扱う）。単一行文字列 `'...'` / `"..."`
+    が改行までに閉じない場合も解析失敗として `None` を返す（正当な JS/TS 構文では単一行
+    文字列は改行を跨げないため、これは入力破損のシグナルであり `strip_comments` の
+    「対にならないクォート」安全側判定と同じ思想）。
+    """
+    comments: list[str] = []
+    i, n = 0, len(source)
+    last_value = False  # 直前の意味のあるトークンが「値」（除算文脈）かどうか
+    while i < n:
+        ch = source[i]
+        if ch in " \t\r\n":
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            j = i + 1
+            closed = False
+            while j < n:
+                c = source[j]
+                if c == "\\" and j + 1 < n:
+                    j += 2
+                    continue
+                if c == "\n":
+                    break
+                if c == quote:
+                    j += 1
+                    closed = True
+                    break
+                j += 1
+            if not closed:
+                return None  # 単一行文字列が閉じられないまま改行/EOF = 解析失敗
+            i = j
+            last_value = True
+            continue
+        if ch == "`":
+            end = _skip_backtick_literal(source, i)
+            if end is None:
+                return None
+            i = end
+            last_value = True
+            continue
+        if ch.isdigit():
+            j = i
+            while j < n and (source[j].isalnum() or source[j] in "._"):
+                j += 1
+            i = j
+            last_value = True
+            continue
+        m = JS_IDENTIFIER_RE.match(source, i)
+        if m:
+            word = m.group(0)
+            i = m.end()
+            last_value = word not in _REGEX_CONTEXT_KEYWORDS
+            continue
+        if ch == "/":
+            nxt = source[i + 1] if i + 1 < n else ""
+            # `//` `/*` は「直前が値かどうか」に関わらず常にコメント境界である
+            # （空の正規表現リテラル `//` も `/*` から始まる正規表現も JS 構文上存在しない）。
+            # この判定を regex-vs-division の分岐より先に行うことで、`/[/*]/` のような
+            # 正規表現リテラルの中身を安全に読み飛ばした後、その直後にある `//`/`/*` は
+            # 従来どおり正しくコメントとして認識できる。
+            if nxt == "/":
+                nl = source.find("\n", i + 2)
+                if nl == -1:
+                    comments.append(source[i + 2 :])
+                    i = n
+                else:
+                    comments.append(source[i + 2 : nl])
+                    i = nl
+                last_value = False
+                continue
+            if nxt == "*":
+                close = source.find("*/", i + 2)
+                if close == -1:
+                    return None  # 未終端のブロックコメント = 解析失敗
+                comments.append(source[i + 2 : close])
+                i = close + 2
+                last_value = False
+                continue
+            if last_value:
+                # 除算演算子（例: `a / b`）
+                i += 1
+                last_value = False
+                continue
+            # 正規表現リテラルとしてパースを試みる（iter_ts_regex_literals と同じロジック。
+            # ここで本体を丸ごと読み飛ばすことで、本体内部の `/*` 等をコメント境界と
+            # 誤認しない）。
+            j = i + 1
+            in_class = False
+            ok = False
+            while j < n:
+                c = source[j]
+                if c == "\\":
+                    j += 2
+                    continue
+                if c == "\n":
+                    break  # 改行を跨ぐ正規表現リテラルは存在しない → 不正な入力として諦める
+                if c == "[":
+                    in_class = True
+                elif c == "]":
+                    in_class = False
+                elif c == "/" and not in_class:
+                    ok = True
+                    j += 1
+                    break
+                j += 1
+            if ok:
+                k = j
+                while k < n and source[k].isalpha():
+                    k += 1
+                i = k
+                last_value = True
+                continue
+            # 対応する終端 `/` が見つからない → 正規表現ではなく除算とみなして 1 文字進める
+            i += 1
+            last_value = False
+            continue
+        if ch in ")]":
+            i += 1
+            last_value = True
+            continue
+        i += 1
+        last_value = False
+    return comments
+
+
+# ---------------------------------------------------------------------------
 # find_tag_end（正本: check_prefetchable_side_effects.py。ロジック変更なしの移植）
 # ---------------------------------------------------------------------------
 
@@ -776,11 +966,94 @@ def _run_self_test() -> int:
         "find_function_body_end/destructure_h_object_return_type", body_of(src_h).strip(), src_h.strip()
     )
 
+    # ---------------- extract_comments（新設・Issue #992 フォローアップ） ----------------
+
+    # 正常系: `//` 行コメント本文をそのまま返す（区切り記号は含まない）
+    check(
+        "extract_comments/line_comment_basic",
+        extract_comments("const a = 1 // hello\n"),
+        [" hello"],
+    )
+    # 正常系: `/* */` ブロックコメント本文をそのまま返す（複数行もひとかたまり）
+    check(
+        "extract_comments/block_comment_basic",
+        extract_comments("const a = /* c */ 1\n"),
+        [" c "],
+    )
+    check(
+        "extract_comments/block_comment_multiline",
+        extract_comments("/*\n * marker: x\n */\nconst a = 1\n"),
+        ["\n * marker: x\n "],
+    )
+    # 複数コメントを出現順に全て返す
+    check(
+        "extract_comments/multiple_comments_in_order",
+        extract_comments("// first\nconst a = 1 /* second */\n// third\n"),
+        [" first", " second ", " third"],
+    )
+
+    # 偽陽性の反例（F1 反例 1）: 文字列リテラル内の `selftest-wiring-ok:` 風の文字列を
+    # コメントとして拾わない（fail-open の再発防止）
+    comments_str = extract_comments(
+        'const RE = /^(?:https?):\\/\\//i; const msg = "selftest-wiring-ok: これはコード";\n'
+    )
+    check("extract_comments/string_literal_not_captured_as_comment", comments_str, [])
+
+    # 偽陰性の反例（F1 反例 2・本 Issue の核心）: 正規表現リテラル内部に `/*` が現れても
+    # ブロックコメント開始と誤認せず、その後ろの本物の行コメントを正しく抽出できる
+    comments_regex_then_comment = extract_comments(
+        "const SEP_RE = /[/*]/;\n// selftest-wiring-ok: 理由\n"
+    )
+    check(
+        "extract_comments/regex_literal_with_slash_star_does_not_swallow_later_comment",
+        comments_regex_then_comment,
+        [" selftest-wiring-ok: 理由"],
+    )
+
+    # 同型の反例（別の正規表現リテラル）: `/['"]/g` のようなクォート文字クラスでも同様
+    comments_quote_class_then_comment = extract_comments(
+        "const QUOTE_RE = /['\"]/g;\n// selftest-wiring-ok: 別の理由\n"
+    )
+    check(
+        "extract_comments/regex_literal_with_quote_class_does_not_swallow_later_comment",
+        comments_quote_class_then_comment,
+        [" selftest-wiring-ok: 別の理由"],
+    )
+
+    # ネストしたテンプレートリテラル（URL の `//` を含む）が破綻しないこと（F1 要件）。
+    # 内側のバッククォート・URL はコメントとして誤抽出されず、後続の本物のコメントだけを返す。
+    nested_template_src = "const s = `outer ${`http://example.com`} end`\n// after\n"
+    comments_nested_template = extract_comments(nested_template_src)
+    check(
+        "extract_comments/nested_template_literal_does_not_break",
+        comments_nested_template,
+        [" after"],
+    )
+
+    # 未終端のブロックコメント → 解析失敗として None
+    check(
+        "extract_comments/unterminated_block_comment_returns_none",
+        extract_comments("/* not closed\nfoo()\n"),
+        None,
+    )
+    # 未終端の単一行文字列（改行までに閉じない）→ 解析失敗として None
+    check(
+        "extract_comments/unterminated_single_line_string_returns_none",
+        extract_comments('const s = "not closed\nfoo()\n'),
+        None,
+    )
+    # 未終端のテンプレートリテラル → 解析失敗として None
+    check(
+        "extract_comments/unterminated_template_literal_returns_none",
+        extract_comments("const s = `not closed\nfoo()\n"),
+        None,
+    )
+
     if failures:
         print("❌ ts_source --self-test FAILED")
         print("\n".join(failures))
         return 1
-    print("✅ ts_source --self-test PASSED（40 ケース）")
+    print("✅ ts_source --self-test PASSED（extract_comments 追加分を含む）")
     return 0
 
 
