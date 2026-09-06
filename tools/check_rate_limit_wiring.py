@@ -47,6 +47,13 @@ Cloudflare Rate Limiting binding（`wrangler.jsonc` の `ratelimits`）は **宣
      表のどの ✅ 行からも使われていないものがあれば FAIL する
   5. キー接頭辞の一致検証: 表が宣言した接頭辞（`search:` / `gems:`）が実装に文字列として存在し、
      かつ ✅ 行が呼んでいる関数の実装接頭辞と食い違っていない
+  6. 🔴 binding 宣言の検証（Issue #480）: `wrangler.jsonc` の `ratelimits[]` に binding 名の宣言が
+     少なくとも 1 件あり、その名前が `src/infrastructure/platform/cloudflare-bindings.ts` の
+     `rateLimiterBinding()` が参照する `env.RATE_LIMITER` の名前と一致する。上記 1〜5 は
+     「アプリコードが binding を正しく呼んでいるか」を見るだけで、**binding 宣言自体が
+     削除・リネーム・環境別 override で欠けても検出できない**（フェイルオープン設計のため
+     `rateLimiterBinding()` は `undefined` を返すだけで例外にならず、全経路が黙って
+     素通りする）。この検査はその抜けを塞ぐ
 
 使い方:
     python3 tools/check_rate_limit_wiring.py              # 本判定（0=PASS / 1=FAIL）
@@ -68,6 +75,7 @@ Cloudflare Rate Limiting binding（`wrangler.jsonc` の `ratelimits`）は **宣
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -83,6 +91,9 @@ COMPOSITION_PATH = REPO_ROOT / "src" / "composition" / "rate-limit.ts"
 # 🔴 ラッパー走査対象（Issue #604）。`prepareSearchKeyword` のような間接呼び出しを認識するため、
 # `src/composition/` 配下全体（テストファイルと `rate-limit.ts` 自身を除く）を走査する。
 COMPOSITION_DIR = REPO_ROOT / "src" / "composition"
+# 🔴 binding 宣言の検証対象（Issue #480）。
+WRANGLER_PATH = REPO_ROOT / "wrangler.jsonc"
+BINDINGS_PATH = REPO_ROOT / "src" / "infrastructure" / "platform" / "cloudflare-bindings.ts"
 
 BEGIN_MARKER = "<!-- rate-limit-wiring:begin -->"
 END_MARKER = "<!-- rate-limit-wiring:end -->"
@@ -148,6 +159,12 @@ USECASE_CALL_RE = re.compile(r"\b(\w+UseCase)\s*\(")
 EXPORT_RE = re.compile(r"^export\s+(?:async\s+)?(?:function|const)\s+(enforce\w*RateLimit)\b", re.MULTILINE)
 # `'search:'` のようなコロン終わりの文字列リテラル
 PREFIX_LITERAL_RE = re.compile(r"""['"]([A-Za-z0-9_.\-]+:)['"]""")
+
+# 🔴 binding 宣言の検証用（Issue #480）。`cloudflare-bindings.ts` の `env?.RATE_LIMITER` のように
+# `env` から optional chaining で読み出している識別子名を拾う。`rateLimiterBinding()` が実際に
+# 参照している binding 名の唯一の一次情報源（型定義の `EnvWithRateLimiter` はコメントアウトで
+# 別名を書かれても実行時の挙動には影響しないため、実際に読み出している式を見る）。
+ENV_BINDING_ACCESS_RE = re.compile(r"\benv\?\.(\w+)\b")
 
 # 🔴 ラッパー検出用（Issue #604）。`EXPORT_RE` は名前を `enforce\w*RateLimit` に絞っているため
 # `prepareSearchKeyword` のような **任意の名前のラッパー export** を拾えない。ここでは名前を
@@ -533,6 +550,129 @@ def check_wiring(
 
 
 # ---------------------------------------------------------------------------
+# 6. binding 宣言の検証（Issue #480・純粋関数。self-test はここへ文字列を直接渡す）
+# ---------------------------------------------------------------------------
+
+def parse_wrangler_jsonc(source: str) -> tuple[dict | None, str | None]:
+    """`wrangler.jsonc`（JSONC）をパースして dict を返す。
+
+    JSONC は `//` 行コメント・`/* */` ブロックコメントを許すが素の `json.loads` は
+    パースできないため、既存の `strip_comments`（TS/TSX 用だが `//` `/* */` の除去は
+    JSON にもそのまま使える）でコメントを取り除いてから `json.loads` する。
+
+    パースに失敗したら `(None, エラー文)` を返す（**fail-closed**）。「宣言が読めないので
+    合格」にすると、`wrangler.jsonc` が壊れて binding 宣言ごと消えた事故を見逃す。
+    """
+    stripped = strip_comments(source)
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        return None, (
+            f"{WRANGLER_PATH.name}: JSONC のパースに失敗した（コメント除去後: {exc}）"
+            " → コメント除去後も有効な JSON になっているか確認する（末尾カンマ等）"
+        )
+    if not isinstance(data, dict):
+        return None, f"{WRANGLER_PATH.name}: トップレベルが JSON オブジェクトでない"
+    return data, None
+
+
+def extract_ratelimit_names(wrangler_json: dict) -> tuple[list[str], list[str]]:
+    """`wrangler.jsonc` の `ratelimits[]` から `name` の一覧を返す。(names, errors)。
+
+    🔴 対象 0 件は fail-closed（`check-tool-design-rules.md` §2）: `ratelimits` キー自体が
+    無い・空配列・`name` を持つエントリが 1 件も無い、のいずれも違反として報告する
+    （「宣言が 1 件も見つからない」を黙って PASS にすると、宣言まるごとの削除を見逃す）。
+    """
+    errors: list[str] = []
+    ratelimits = wrangler_json.get("ratelimits")
+    if not isinstance(ratelimits, list) or not ratelimits:
+        errors.append(
+            f"{WRANGLER_PATH.name}: `ratelimits` に binding 宣言が 1 件も無い"
+            "（キー自体が無い、または空配列）"
+            " → `{ \"name\": \"RATE_LIMITER\", ... }` を宣言する（フェイルオープン設計のため、"
+            "宣言が欠けると全経路が例外にならず黙って通ってしまう）"
+        )
+        return [], errors
+
+    names: list[str] = []
+    for i, entry in enumerate(ratelimits):
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not name:
+            errors.append(
+                f"{WRANGLER_PATH.name}: `ratelimits[{i}]` に `name` フィールドが無い / 空"
+                " → binding 名（例 `RATE_LIMITER`）を宣言する"
+            )
+            continue
+        names.append(name)
+
+    if not names:
+        errors.append(
+            f"{WRANGLER_PATH.name}: `ratelimits` はあるが `name` を持つエントリが 1 件も無い"
+        )
+        return [], errors
+
+    # 6. 複数要素間の関係性の負ケース（各要素は妥当だが name が重複＝どちらを見ればよいか
+    #    決まらない）。構造としては壊れていないため上のチェックだけでは通ってしまう。
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        errors.append(
+            f"{WRANGLER_PATH.name}: `ratelimits[]` の `name` に重複がある（{duplicates}）"
+            " → binding 名は一意にする（重複があると、どの宣言が有効な binding かが環境依存になる）"
+        )
+
+    return names, errors
+
+
+def extract_binding_env_key(bindings_source: str) -> str | None:
+    """`cloudflare-bindings.ts` が `env?.NAME` で読み出している binding 名を返す（無ければ None）。
+
+    複数マッチする場合は最初の 1 件を使う（本ファイルはレート制限の binding 1 つだけを
+    公開する設計。将来複数種の binding を持つ場合はこの関数の呼び出し側で明示的に絞り込む）。
+    """
+    match = ENV_BINDING_ACCESS_RE.search(strip_comments(bindings_source))
+    return match.group(1) if match else None
+
+
+def check_wrangler_binding_wiring(wrangler_source: str, bindings_source: str) -> list[str]:
+    """`wrangler.jsonc` の binding 宣言と `cloudflare-bindings.ts` の参照名を突き合わせる（Issue #480）。
+
+    引数はすべて文字列（＝ファイル I/O から独立）なので self-test はここを直接叩ける。
+    """
+    errors: list[str] = []
+
+    wrangler_json, parse_error = parse_wrangler_jsonc(wrangler_source)
+    if parse_error:
+        return [parse_error]
+    assert wrangler_json is not None  # parse_error が None ならここで必ず dict
+
+    names, name_errors = extract_ratelimit_names(wrangler_json)
+    errors.extend(name_errors)
+    if not names:
+        return errors
+
+    referenced = extract_binding_env_key(bindings_source)
+    if referenced is None:
+        errors.append(
+            f"{BINDINGS_PATH.name}: `rateLimiterBinding()` が `env?.NAME` の形で binding を"
+            "参照している箇所が見つからない → 実装を確認する（本検査は実装から binding 名を"
+            "読み取れないと宣言との一致を検証できない）"
+        )
+        return errors
+
+    if referenced not in names:
+        errors.append(
+            f"{WRANGLER_PATH.name} の `ratelimits[].name`（{names}）に "
+            f"{BINDINGS_PATH.name} が参照する `env.{referenced}` が含まれていない"
+            "（binding 宣言の削除・リネーム・環境別 override による欠落。"
+            "フェイルオープン設計のため `rateLimiterBinding()` は例外にならず黙って `undefined` "
+            "を返し、レート制限が全経路で無効化される）"
+            " → `wrangler.jsonc` の `ratelimits[].name` を実装の参照名と一致させる"
+        )
+
+    return errors
+
+
+# ---------------------------------------------------------------------------
 # 実リポジトリの読み取り
 # ---------------------------------------------------------------------------
 
@@ -585,9 +725,30 @@ def run_checks(
     app_dir: Path = APP_DIR,
     composition_path: Path = COMPOSITION_PATH,
     composition_dir: Path = COMPOSITION_DIR,
+    wrangler_path: Path = WRANGLER_PATH,
+    bindings_path: Path = BINDINGS_PATH,
 ) -> list[str]:
     """実ファイルを読んで検査する。読めないファイルは違反として報告する（黙って PASS にしない）。"""
     errors: list[str] = []
+
+    try:
+        wrangler_source = wrangler_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(
+            f"{wrangler_path}: wrangler.jsonc を読めない（{exc}） → ファイルの存在とパスを確認する"
+        )
+        wrangler_source = None
+
+    try:
+        bindings_source = bindings_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(
+            f"{bindings_path}: cloudflare-bindings.ts を読めない（{exc}） → ファイルの存在とパスを確認する"
+        )
+        bindings_source = None
+
+    if wrangler_source is not None and bindings_source is not None:
+        errors.extend(check_wrangler_binding_wiring(wrangler_source, bindings_source))
 
     try:
         doc_markdown = doc_path.read_text(encoding="utf-8")
@@ -745,6 +906,37 @@ _WRAPPER_DESTRUCTURED_PARAM = {
         "}\n"
     ),
 }
+
+
+# --- Issue #480: binding 宣言検証用フィクスチャ -----------------------------
+
+_WRANGLER_OK = """
+{
+  // 行末コメント
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gem-hunter",
+  /* ブロックコメント
+     複数行 */
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
+  ]
+}
+"""
+
+_BINDINGS_OK = """
+type EnvWithRateLimiter = {
+  RATE_LIMITER?: RateLimiterBinding
+}
+
+export async function rateLimiterBinding(): Promise<RateLimiterBinding | undefined> {
+  try {
+    const env = context?.env as EnvWithRateLimiter | undefined
+    return env?.RATE_LIMITER
+  } catch {
+    return undefined
+  }
+}
+"""
 
 
 def self_test() -> int:
@@ -1131,16 +1323,129 @@ def self_test() -> int:
             f"（raw_matched={raw_matched!r} / raw_awaited={raw_awaited!r} / resolved={resolved!r}）"
         )
 
+    # --- Issue #480: binding 宣言の検証（6 番目の検査）----------------------------
+
+    # 28) 正常構成: コメント入り JSONC も素通りする
+    expect_ok(
+        "binding 宣言: 正常構成",
+        check_wrangler_binding_wiring(_WRANGLER_OK, _BINDINGS_OK),
+    )
+
+    # 29) 🔴 `ratelimits` キー自体が無い（宣言ブロックごと削除）→ fail-closed
+    wrangler_no_key = _WRANGLER_OK.replace(
+        '"ratelimits": [\n    { "name": "RATE_LIMITER", "namespace_id": "1001",'
+        ' "simple": { "limit": 60, "period": 60 } }\n  ]',
+        '"dummy": true',
+    )
+    expect_fail(
+        "binding 宣言: ratelimits キーが無い",
+        check_wrangler_binding_wiring(wrangler_no_key, _BINDINGS_OK),
+        "1 件も無い",
+    )
+
+    # 30) 🔴 `ratelimits` が空配列 → 対象 0 件は fail-closed
+    wrangler_empty = _WRANGLER_OK.replace(
+        '[\n    { "name": "RATE_LIMITER", "namespace_id": "1001",'
+        ' "simple": { "limit": 60, "period": 60 } }\n  ]',
+        "[]",
+    )
+    expect_fail(
+        "binding 宣言: ratelimits が空配列",
+        check_wrangler_binding_wiring(wrangler_empty, _BINDINGS_OK),
+        "1 件も無い",
+    )
+
+    # 31) 🔴 `name` キーが欠落したエントリだけ → 「宣言はあるが読み取れる名前が無い」も fail-closed
+    wrangler_no_name = _WRANGLER_OK.replace(
+        '{ "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }',
+        '{ "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }',
+    )
+    expect_fail(
+        "binding 宣言: name フィールド欠落",
+        check_wrangler_binding_wiring(wrangler_no_name, _BINDINGS_OK),
+        "フィールドが無い",
+    )
+
+    # 32) 名前が別値（リネーム・環境別 override による欠落を再現）
+    wrangler_renamed = _WRANGLER_OK.replace('"name": "RATE_LIMITER"', '"name": "RATE_LIMITER_V2"')
+    expect_fail(
+        "binding 宣言: 実装が参照する名前が含まれていない",
+        check_wrangler_binding_wiring(wrangler_renamed, _BINDINGS_OK),
+        "含まれていない",
+    )
+
+    # 33) 🔴 複数要素間の関係性の負ケース（#896）: 各エントリ単体は妥当（name あり）だが、
+    #     同じ名前が重複している（構造は壊れていないため 29〜31 のチェックだけでは通ってしまう）。
+    wrangler_dup = _WRANGLER_OK.replace(
+        '{ "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }',
+        '{ "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },\n'
+        '    { "name": "RATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }',
+    )
+    expect_fail(
+        "binding 宣言: name の重複",
+        check_wrangler_binding_wiring(wrangler_dup, _BINDINGS_OK),
+        "重複",
+    )
+
+    # 34) 実装側に `env?.NAME` の参照が見つからない（読み取り不能・fail-closed）
+    bindings_no_ref = _BINDINGS_OK.replace("return env?.RATE_LIMITER", "return undefined")
+    expect_fail(
+        "binding 宣言: 実装側の参照が見つからない",
+        check_wrangler_binding_wiring(_WRANGLER_OK, bindings_no_ref),
+        "見つからない",
+    )
+
+    # 35) 🔴 JSONC のパースに失敗する（末尾カンマ等の壊れた JSON）→ fail-closed（黙って PASS にしない）
+    wrangler_broken = _WRANGLER_OK.replace('"name": "gem-hunter",', '"name": "gem-hunter",,')
+    expect_fail(
+        "binding 宣言: JSONC パース失敗",
+        check_wrangler_binding_wiring(wrangler_broken, _BINDINGS_OK),
+        "パースに失敗",
+    )
+
+    # 36) コメントが行末・ブロック・複数バリアントに散らばっていても正しくパースできる
+    #     （入力バリアントの展開）。文字列値の中に "//" を含むケースも壊さないこと。
+    wrangler_comment_variants = """
+{
+  "name": "gem-hunter", // 行末コメント
+  "homepage": "https://example.com/path//with//slashes", // URL 文字列を巻き込まない
+  /* 複数行の
+     ブロックコメント */
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }
+  ]
+}
+"""
+    expect_ok(
+        "binding 宣言: コメントバリアント（行末・ブロック・URL 文字列内の //）",
+        check_wrangler_binding_wiring(wrangler_comment_variants, _BINDINGS_OK),
+    )
+
+    # 37) 補助関数の単体検証: parse_wrangler_jsonc / extract_ratelimit_names / extract_binding_env_key
+    parsed, parse_err = parse_wrangler_jsonc(_WRANGLER_OK)
+    if parse_err or parsed is None or parsed.get("name") != "gem-hunter":
+        failures.append(f"parse_wrangler_jsonc: 正常な JSONC をパースできていない（{parse_err!r}）")
+    names_ok, name_errors_ok = extract_ratelimit_names(parsed or {})
+    if names_ok != ["RATE_LIMITER"] or name_errors_ok:
+        failures.append(
+            f"extract_ratelimit_names: 正常構成から名前を取り出せていない（{names_ok!r} / {name_errors_ok!r}）"
+        )
+    if extract_binding_env_key(_BINDINGS_OK) != "RATE_LIMITER":
+        failures.append("extract_binding_env_key: env?.RATE_LIMITER を抽出できていない")
+    if extract_binding_env_key("return undefined") is not None:
+        failures.append("extract_binding_env_key: 参照が無いのに何かを返している")
+
     if failures:
         for label in failures:
             print(f"[rate-limit-wiring] SELF-TEST FAIL: {label}", file=sys.stderr)
         print(f"[rate-limit-wiring] self-test NG（{len(failures)} 件）", file=sys.stderr)
         return EXIT_VIOLATION
     print(
-        "[rate-limit-wiring] self-test OK（40 ケース: 正常 9 / 反例 25 / 補助関数・列挙集合 4・"
+        "[rate-limit-wiring] self-test OK（50 ケース: 正常 10 / 反例 33 / 補助関数・列挙集合 4・"
         "間接呼び出し（Issue #604）6 件・ラッパー本文の誤帰属反例（修正項目 1）1 件・"
         "extract_exported_enforcers の誤帰属反例（本 PR）1 件・分割代入パラメータの反例"
-        "（本 PR・extract_exported_enforcers / extract_composition_wrappers 各 1 件）2 件を含む）"
+        "（本 PR・extract_exported_enforcers / extract_composition_wrappers 各 1 件）2 件・"
+        "binding 宣言の検証（Issue #480）10 件 + 補助関数単体検証 4 件を含む）"
     )
     return EXIT_OK
 
