@@ -21,4 +21,14 @@ describe('getSiteUrl', () => {
     process.env.SITE_URL = 'https://example.test'
     expect(getSiteUrl()).toBe('https://example.test')
   })
+
+  it('SITE_URL が空文字のときは本番 URL へフォールバックする（Issue #489）', () => {
+    process.env.SITE_URL = ''
+    expect(getSiteUrl()).toBe('https://gem-hunter.kinamocchi-tech.workers.dev')
+  })
+
+  it('SITE_URL が空白のみのときは本番 URL へフォールバックする（Issue #489）', () => {
+    process.env.SITE_URL = '   '
+    expect(getSiteUrl()).toBe('https://gem-hunter.kinamocchi-tech.workers.dev')
+  })
 })
