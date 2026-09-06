@@ -68,6 +68,12 @@ def strip_shell_line_comment(line: str, extra_comment_start_after: str = "") -> 
     （`; | & (` 等）の直後の `#` もコメント開始として扱う。呼び出し側がコマンド位置の
     実行呼び出しまで検出したい場合は `";|&()"` を渡す（`${VAR#pattern}` / `$#` の `#`
     はメタ文字の直後ではないため、渡しても誤って落とさない）。
+
+    既知の限界（ヒアドキュメントに加えて）: ANSI-C クォーティング `$'...'` 内でエスケープ
+    された `\\'`（例: `$'it\\'s a test'`）は非対応。シングルクォートの開始/終了を単純な
+    ペアとして追跡するため `\\'` を終端クォートと誤認し、実際にはクォート内部にある `#`
+    以降を誤ってコメント扱いする場合がある（#933 移設前からの既存挙動・対象スクリプトに
+    実例なし）。
     """
     quote: str | None = None
     prev: str | None = None
@@ -116,7 +122,14 @@ def shell_comment_texts(content: str) -> list[str]:
 
 
 def strip_shell_comments(content: str, extra_comment_start_after: str = "") -> str:
-    """bash スクリプト全体からシェルコメントを取り除く（行単位。ヒアドキュメント非対応）。"""
+    """bash スクリプト全体からシェルコメントを取り除く（行単位。ヒアドキュメント非対応）。
+
+    既知の限界: ANSI-C クォーティング `$'...'` 内のバックスラッシュエスケープ（`\\'` 等）は
+    非対応。クォート追跡はシングルクォート `'...'` を単純な開始/終了ペアとして扱うため、
+    `$'it\\'s a test # not a comment'` のような文字列があると `\\'` を終端クォートと誤認し、
+    本来クォート内部にある `#` 以降を実コメントとして切り落としてしまう（本 PR 時点で対象
+    スクリプトに実例なし・非顕在。#933 移設前からの既存挙動で新規回帰ではない）。
+    """
     out: list[str] = []
     for raw_line in content.splitlines(keepends=True):
         if raw_line.endswith("\n"):
@@ -180,8 +193,13 @@ class MarkerScan:
     tokenize_failed: bool  # コメント抽出が失敗し、安全側で「マーカーなし」にフォールバックしたか
 
 
-# `# {token}: {理由}` 形式（py / sh）。理由は同じ行の行末までとする。
-_HASH_MARKER_TEMPLATE = r"#[ \t]*{token}:[ \t]*(.*)$"
+# `# {token}: {理由}` 形式（py / sh）。理由は同じ行の行末までとする。コメント本文の先頭
+# （行頭の空白のみ許容）にアンカーする。非アンカーだと「コメント内でマーカー書式を地の文で
+# 説明しただけの実コメント」（例: `# 除外するにはこう書く: # selftest-wiring-ok: <理由>`）まで
+# `re.search` が途中の `#` を拾って有効なマーカーと誤認する（fail-open）。直下の
+# `_JS_MARKER_TEMPLATE` は当初からアンカー済みで、本テンプレートだけ移設時に無アンカーの
+# まま残っていた。
+_HASH_MARKER_TEMPLATE = r"^[ \t]*#[ \t]*{token}:[ \t]*(.*)$"
 
 # `{token}: {理由}` 形式・コメント本文の先頭にアンカー（js）。ブロックコメントの `*` 継続行
 # （` * {token}: ...`）だけを許容する（`\*?` は最大 1 個）。非アンカーだと地の文での言及
@@ -324,6 +342,18 @@ def _self_test() -> int:
         "C4: 構文エラーは tokenize_failed=True（クラッシュしない）",
         scan_markers("def f(:\n", "selftest-wiring-ok", "py").tokenize_failed,
     )
+    check(
+        "C5: py の地の文（実コメントだがマーカー書式を説明しているだけ）はマーカーと"
+        "みなさない（境界の外側の負ケース・#750 流儀・アンカー漏れの反例）",
+        marker_reason(
+            "#!/usr/bin/env python3\n"
+            "# 除外するにはこう書く: # selftest-wiring-ok: <理由>\n"
+            "print(1)\n",
+            "selftest-wiring-ok",
+            "py",
+        )
+        is None,
+    )
 
     # ── sh ──
     src_sh = "#!/usr/bin/env bash\n# tool-wiring-ok: 手動運用ツール\necho hi\n"
@@ -334,6 +364,18 @@ def _self_test() -> int:
     check(
         "D2: sh の空理由マーカーは has_invalid_empty_marker=True",
         has_invalid_empty_marker("# tool-wiring-ok:\necho hi\n", "tool-wiring-ok", "sh"),
+    )
+    check(
+        "D3: sh の地の文（実コメントだがマーカー書式を説明しているだけ）はマーカーと"
+        "みなさない（境界の外側の負ケース・アンカー漏れの反例）",
+        marker_reason(
+            "#!/usr/bin/env bash\n"
+            "# NOTE: to skip add: # tool-wiring-ok: <reason>\n"
+            "echo hi\n",
+            "tool-wiring-ok",
+            "sh",
+        )
+        is None,
     )
 
     # ── js（アンカー・正規表現リテラルの反例は ts_source.py 側の self-test が担保するため
