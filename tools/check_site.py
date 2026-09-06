@@ -21,12 +21,15 @@ Lighthouse ゲート）のどれにも掛からない。公開面が壊れても
 
 from __future__ import annotations
 
+import ast
 import contextlib
+import inspect
 import io
 import re
 import struct
 import sys
 import tempfile
+import textwrap
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -260,6 +263,15 @@ def self_test() -> int:
         if not ok:
             failures.append(message)
 
+    # メタ検証 1: assert_check がケース数を実際に加算していることを検証する
+    # （将来 `case_count += 1` が消えても、他の assert_check 呼び出しは緑のまま通り続けてしまう）。
+    _before = case_count
+    assert_check(True, "メタ検証用のダミー（常に真）")
+    assert_check(
+        case_count == _before + 1,
+        f"assert_check がケース数を加算していない: {_before} → {case_count}",
+    )
+
     png = (
         b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR"
         + struct.pack(">II", 1200, 630) + b"\x08\x06\x00\x00\x00"
@@ -359,6 +371,44 @@ def self_test() -> int:
             image_size(image) is not None,
             f"実ファイルのサイズを解析できない: {image.name}",
         )
+
+    # メタ検証 2: self_test() 自身のソースを静的解析し、`assert_check` の定義の外で
+    # 生の `failures.append(...)` が呼ばれていないことを検証する（#474: assert_check を
+    # 経由しない直接 append は case_count に反映されず、機械検知できないまま緑になる）。
+    source = textwrap.dedent(inspect.getsource(self_test))
+    tree = ast.parse(source)
+    func_def = tree.body[0]
+    assert isinstance(func_def, ast.FunctionDef)
+
+    def _is_failures_append(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "append"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "failures"
+        )
+
+    assert_check_append_lines: set[int] = set()
+    for node in ast.walk(func_def):
+        if isinstance(node, ast.FunctionDef) and node.name == "assert_check":
+            assert_check_append_lines = {
+                inner.lineno for inner in ast.walk(node) if _is_failures_append(inner)
+            }
+            break
+
+    stray_append_lines = sorted(
+        {
+            node.lineno
+            for node in ast.walk(func_def)
+            if _is_failures_append(node) and node.lineno not in assert_check_append_lines
+        }
+    )
+    assert_check(
+        not stray_append_lines,
+        "self_test() に assert_check を経由しない failures.append(...) がある"
+        f"（行: {stray_append_lines}）",
+    )
 
     if failures:
         for line in failures:
