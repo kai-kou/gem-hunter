@@ -414,3 +414,10 @@
 {"date": "2026-09-06 JST", "title": "正規表現走査のアンカー欠落が共通ヘルパーへの集約時にそのまま移設される（別言語版が修正済みでも片割れが残る）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 590}
 {"date": "2026-09-06 JST", "title": "1 firing で複数 Issue を同時消化する粒度の判定基準を明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "content/analytics/ 配下の JSONL 命名規約を統一する（pr_review_trends.jsonl と pr-review/approx_samples.jsonl の不統一）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "ルールが名指しする観点名・固有名詞の実在を機械検査する（射程を tools/ パスから概念名へ広げる）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "397"}
+{"date": "2026-09-07 JST", "title": "Hot 層再棚卸しの優先度を上げる（基準比 +11.4% で合図 ② が新規成立）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "798"}
+{"date": "2026-09-07 JST", "title": "PR 本文の run_checks 証跡表の貼り直しを自動化する（現状は手動 3 ステップ）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "959"}
+{"date": "2026-09-07 JST", "title": "ドキュメントのみの PR では Layer 1 の検査観点を 3 系統へ削減する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "PR 本文に「初版の課題」を before/after で明示し、修正内訳を追跡可能にする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "retro-try を 1 PR にバンドルしてよい条件を決定木へ明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "参照側ファイル（SKILL.md 等）の並行修正を commit message で明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
