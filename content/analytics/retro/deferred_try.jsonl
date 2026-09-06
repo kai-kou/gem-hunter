@@ -400,3 +400,6 @@
 {"date": "2026-09-06 JST", "title": "argparse のパースエラーと本体ガードの exit 2 を、スペース区切り／等号連結の両形式で区別してテストする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "git diff の -z / --no-renames などオプション指定を検査ツール間で統一し、日本語ファイル名を CI で検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1009}
 {"date": "2026-09-06 JST", "title": "反例作成レンズの委譲指示文に、過去に有効だった反例パターンの reference example を 1〜2 件添える", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1004}
+{"date": "2026-09-06 JST", "title": "Layer 1 ファインダーが実在しない出典座標（ファイル:行番号）を根拠に指摘を出す", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 847}
+{"date": "2026-09-06 JST", "title": "並列委譲中の Stop フック WIP 自動保全が中間状態をコミットし、force-with-lease での書き換えを強いる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-06 JST", "title": "改善レーンの priority:high 在庫が 0 件で、消化順序が実質タイブレーク（作成日時）だけで決まる", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 854}
