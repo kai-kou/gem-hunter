@@ -152,6 +152,10 @@ CONTRACT_INDEX: tuple[ContractEntry, ...] = (
             # 本ツール自身の docstring「なぜ必要か」節が PR #761 の変更内容（splitlines → NUL 区切り・
             # core.quotePath）を、`_run_git()` の docstring が base range 解決（symbolic-ref）を
             # 名指しで説明している。検知しようとしている欠陥を検知ツール自身が抱えないための自己登録
+            # 【#880 時点で読み直し済み】冒頭の「なぜ必要か」節が説明しているのは PR #761 の
+            # 変更（splitlines → NUL 区切り + core.quotePath=false）であり、#880 はその分割方式を
+            # 変えていない（新関数 run_git_paths_or_raise() は同じ _run_git_paths() を共有する
+            # 別入口）ため、同節の説明は今も正しい。
             ConsumerEntry(
                 path="tools/check_module_contract_drift.py",
                 triggers=("splitlines", "core.quotePath", "NUL 区切り", "symbolic-ref"),
@@ -1341,6 +1345,15 @@ def run_self_test() -> int:  # noqa: C901
         )
 
     # ------------------------------------------------------------------ 4. #762 回帰ケース
+    # 🔴 下のケースは `CONTRACT_INDEX` に載る **実ファイル** を対象にしており、利用側 3 本が
+    # すべて未承認で drift として出ることをハードコードで期待している。したがってこの 3 本
+    # （scan_dangerous_patterns.py / check_architecture_boundaries.py / 本ファイル）には、
+    # 本モジュール docstring が案内する承認マーカー（`contract-drift-ok` 形式のコメント）を
+    # **付けられない**
+    # （付けると承認済みになり drift が消えて本ケースが FAIL する）。この 3 本で drift 警告を
+    # 受けたときは、マーカーではなく **説明文コメント自体を現在の実装に合わせて書き換える**
+    # （追記でもよい。差分に含まれれば「利用側も同じ差分にある」として合格する）。
+    # 実例: PR #1036（#880 / #905 の消化）。この制約自体の解消は別 Issue で扱う。
     print("4. Issue #762 の実例（git_diff_utils → 利用側 3 本）")
     root = repo_root()
     code, _, err = _run_main(root, ["tools/git_diff_utils.py"], index=CONTRACT_INDEX)

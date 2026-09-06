@@ -414,21 +414,45 @@ def _self_test_apply_script_static_order(check) -> None:
     text = script_path.read_text(encoding="utf-8")
 
     settings_block_idx = text.find(".claude/settings.json（ハーネス本体）の導入")
-    snapshot_call_idx = text.find('"$DRIFT_TOOL" snapshot')
     check_call_idx = text.find('"$DRIFT_TOOL" check')
+
+    # 🔴 snapshot の「実行位置」は、インライン実装（旧）と関数抽出（新・#905）で別の行になる。
+    # 順序（settings.json 上書きより前に snapshot を取れているか）を判定したいのは **実行位置** で
+    # あって関数定義の位置ではない。関数定義内の `"$drift_tool" snapshot` を順序判定に使うと、
+    # 定義がファイル前半にある限り常に PASS する自明な検査へ退行する（fail-open）。
+    # したがって:
+    #   - 順序判定には呼び出し行（`compute_drift_status "` / 旧構造では `"$DRIFT_TOOL" snapshot`）を使う
+    #   - snapshot サブコマンドを実際に呼ぶコードが存在することは別途チェックする（両方必須）
+    # 🔴 検索パターンは **本番の実引数**（`$DRY_RUN` 等のグローバル変数）を含める。
+    # `compute_drift_status "` だけで探すと、同スクリプトの `self_test()` が関数定義の直後
+    # （＝ファイル前半・settings.json 導入ブロックより必ず前）で呼んでいるフィクスチャ
+    # （`compute_drift_status "true" "$tmp/nonexistent-tool.py" ...`）に先にマッチし、本番の
+    # 呼び出し位置を一度も見ない。その状態では本番呼び出しを settings.json 上書きの後ろへ
+    # 動かしても順序検査が常に PASS する（#828 CRITICAL-1 の再発を検知できない fail-open）。
+    # フィクスチャは常にリテラル（`"true"` / `"false"`）を渡すため `"$DRY_RUN"` では一致しない。
+    snapshot_invoke_idx = text.find('compute_drift_status "$DRY_RUN"')
+    if snapshot_invoke_idx == -1:
+        snapshot_invoke_idx = text.find('"$DRIFT_TOOL" snapshot')  # 旧・インライン構造への後方互換
+    has_snapshot_subcommand = (
+        '"$drift_tool" snapshot' in text or '"$DRIFT_TOOL" snapshot' in text
+    )
 
     check("apply-script order: has settings block", settings_block_idx != -1,
           "settings.json 導入ブロックの見出しが見つかりません")
-    check("apply-script order: has snapshot call", snapshot_call_idx != -1,
-          "ドリフト検査 snapshot 呼び出しが見つかりません")
+    check("apply-script order: has snapshot call", snapshot_invoke_idx != -1,
+          "ドリフト検査 snapshot の実行位置（compute_drift_status 呼び出し"
+          "または旧インラインの snapshot 呼び出し）が見つかりません")
+    check("apply-script order: snapshot subcommand exists", has_snapshot_subcommand,
+          "snapshot サブコマンドを実際に呼ぶコードが見つかりません"
+          "（呼び出し位置だけが残り実行が消えた状態を fail-open にしないための検査）")
     check("apply-script order: has check call", check_call_idx != -1,
           "ドリフト検査 check 呼び出しが見つかりません")
 
-    if -1 not in (settings_block_idx, snapshot_call_idx, check_call_idx):
+    if -1 not in (settings_block_idx, snapshot_invoke_idx, check_call_idx):
         check(
             "apply-script order: snapshot before settings.json overwrite",
-            snapshot_call_idx < settings_block_idx,
-            f"snapshot_call_idx={snapshot_call_idx} settings_block_idx={settings_block_idx}",
+            snapshot_invoke_idx < settings_block_idx,
+            f"snapshot_invoke_idx={snapshot_invoke_idx} settings_block_idx={settings_block_idx}",
         )
         check(
             "apply-script order: check after settings.json overwrite",
@@ -443,8 +467,13 @@ def _self_test_apply_script_static_order(check) -> None:
     code_only = "\n".join(
         line for line in text.splitlines() if not line.strip().startswith("#")
     )
+    # 関数抽出（#905）でローカル変数名 `$paths_file` に変わったため両方を許容する。
+    # どちらも見つからなければ FAIL（fail-closed）。
     marker = '> "$DRIFT_SYNC_PATHS_FILE"'
     write_idx = code_only.find(marker)
+    if write_idx == -1:
+        marker = '> "$paths_file"'
+        write_idx = code_only.find(marker)
     if write_idx == -1:
         check("apply-script order: settings.json in drift paths", False,
               "DRIFT_SYNC_PATHS_FILE の書き出し箇所（コメント除去後）が見つかりません")

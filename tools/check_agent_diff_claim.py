@@ -116,7 +116,28 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 方向のより重い警告）に落ちる。`git_diff_utils.normalize_leading_dots()`（claim 側・実 diff 側の
 # 両方が通る共通正規化関数）が「../」1 回以上・直後が英数字の 2+ 連続ドットを剥がして解決する
 # （`.../` = `ABBREV_PREFIX` は先読みで保護され絶対に触らない）。
-_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_.\[][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+")
+# Issue #880: 上記の拡張子必須パターンは `.gitignore` のような「拡張子を持たない先頭ドット
+# ファイル」（ドットが 1 個しかない）を一切抽出できない（`re.findall(".gitignore")` は空リスト。
+# パターンが「本体 + リテラル "." + 拡張子」の 2 ドット構造を要求するため）。CHANGED_FILES:
+# ブロックに `.gitignore` とだけ書かれた報告は claim に一切現れず、実 diff 側にだけ存在する
+# ことになり `missing_from_report`（報告漏れ・より重い警告）の偽陽性を生む。
+# 第 2 選択肢として「先頭ドット + 英数字/アンダースコア/ハイフンのみで、直後に更なる `.` や
+# 単語文字が続かない（＝拡張子パターン側に既に食われていない）」bare dotfile を追加する。
+# `(?<![.\w])` で直前が `.` や単語文字でないことを要求し、二重ドット（`...utils.py` 等・#968 が
+# 別関数で処理する）や「拡張子パターンの内部から始まる部分マッチ」を避ける。`(?![.\w-])` で
+# 直後に別の `.` や単語文字・ハイフンが続かないことを要求する。
+# 🔴 **本体は小文字・数字・`_`・`-` に限定する**（Layer 1 セルフレビュー指摘）。`[A-Za-z...]` に
+# すると `.NET` のような大文字始まりの技術名が自由記述から拾われて claim に混入し、
+# `missing_from_diff` 経由で **exit 1（FAIL）** になる（`compare()` の `mismatch` は
+# `missing_from_diff or missing_from_report` なので「軽い警告側」ではない・実測済み）。
+# 実在の bare dotfile（`.gitignore` / `.eslintrc` / `.npmrc` / `.editorconfig` …）は慣行として
+# すべて小文字なので、限定しても取りこぼしは実質的に生じない。仮に大文字の bare dotfile を
+# 報告して拾えなかった場合は `missing_from_report` 側（fail-closed）に出るだけで、
+# 「報告漏れを見逃す」方向へは倒れない。
+_PATH_TOKEN_RE = re.compile(
+    r"[A-Za-z0-9_.\[][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+"
+    r"|(?<![.\w])\.[a-z0-9_-]+(?![.\w-])"
+)
 _URL_RE = re.compile(r"https?://\S+")  # ドメイン名がパストークンとして誤抽出されるのを防ぐため事前に除去する
 
 # 課題2（#717）: `_PATH_TOKEN_RE` は「.」を含まない・区切りが無い巨大な非マッチ文字列に対して
@@ -304,57 +325,57 @@ def parse_status_short(output: str) -> set[str]:
     return files
 
 
-def parse_diff_stat(output: str) -> set[str]:
-    """`git diff --stat` 出力からファイルパスを抽出する（末尾のサマリー行は "|" が無く自動除外）。
-
-    Issue #948 / #968: `parse_status_short()` と同様に `git_diff_utils.normalize_leading_dots()` を通す。
-    """
-    files: set[str] = set()
-    for line in output.splitlines():
-        if "|" not in line:
-            continue
-        path = line.split("|", 1)[0].strip()
-        path = git_diff_utils.normalize_leading_dots(path)
-        if path:
-            files.add(path)
-    return files
-
-
-# `git diff --stat` の省略を抑止するための幅指定（Issue #850 の一次対策）。
-# `--stat=<width>,<name-width>` を明示すると端末幅・`git config` に依存せずパスが省略されなくなる。
-# 二次対策（`.../` を後段で解決する `normalize_abbreviated_paths()`）は、この指定が効かない
-# git 実装・過去に生成済みの出力を食わせた場合の受け皿として残す（多層防御）。
-STAT_WIDTH = 4096
-STAT_NAME_WIDTH = 4000
-
-
-def _stat_arg() -> str:
-    return f"--stat={STAT_WIDTH},{STAT_NAME_WIDTH}"
-
-
 def get_real_diff_files(root: Path, *, runner=subprocess.run) -> dict:  # noqa: ANN001
     """作業ツリーの実差分ファイル一覧を集める。
 
-    `runner` は `normalize_abbreviated_paths()` が `.../` 解決のために呼ぶ `git ls-files` へ
-    転送される（self-test で実 git に依存せず検証するための差し替え口）。
+    Issue #880: 従来は `git diff --stat` / `git diff --cached --stat`（`run_git()` →
+    `git_diff_utils.run_git_or_raise()` 経由）を `parse_diff_stat()` でパース（`"|"` の左だけ
+    使い、変更行数・記号列は一切使っていなかった）していたが、この経路には 2 つの偽陽性源が
+    あった: ① 幅指定（`--stat=<width>,<name-width>`）をしても `.../` 省略が起こりうる（#850）
+    ② `run_git_or_raise()` は `-c core.quotePath=false` を注入しないため、日本語ファイル名が
+    `"docs/\\346\\227\\245..."` の形にエスケープされたまま返り、報告側の生パスと一致しなくなる。
+    `parse_diff_stat()` が使っていたのはパス文字列だけだったため、`git diff --name-only -z`
+    （`git_diff_utils.run_git_paths_or_raise()`。内部で `-c core.quotePath=false` を注入し
+    `-z` で NUL 区切りに分割する）へ置き換えることで両方の経路を発生源で解消した
+    （`parse_diff_stat()` / `_stat_arg()` / `STAT_WIDTH` は本置き換えにより不要になったため削除）。
+
+    `git status --short` は untracked ファイルの検出に必要なため `run_git()`
+    （= `git_diff_utils.run_git_or_raise()`。quotePath は注入されない残存差だが、本 Issue の
+    対象範囲は `git diff --stat` 由来の 3 経路であり `git status --short` は対象外）経由のまま残す。
+
+    diff / cached 側の各パスにも `git_diff_utils.normalize_leading_dots()` を適用する
+    （claim 側の `_tokens_from_text` と実 diff 側の `parse_status_short` が既に通っているのと
+    同じ正規化関数。`--name-only` は通常 `./` `../` プレフィックスを付けないため実害は薄いが、
+    「実 diff 側の全ソースが同じ正規化関数を通る」構造を崩さないため明示的に適用する・#948）。
+
+    `normalize_abbreviated_paths()`（#850 の二次対策）はそれでも呼び続ける。`--name-only` は
+    理論上 `.../` 省略を起こさないが、この指定が効かない git 実装・想定外の入力への保険として
+    多層防御を維持する（実際には省略パスが集合に入らないため、通常は無処理で完了する）。
+
+    `runner` は `git_diff_utils.run_git_paths_or_raise()`（diff / cached の取得）と
+    `normalize_abbreviated_paths()`（`.../` 解決のために呼ぶ `git ls-files`）の双方へ転送される
+    （self-test で実 git に依存せず検証するための差し替え口）。`run_git()`（`git status --short`）
+    には効かない。そちらを差し替えるには `git_diff_utils.run_git_or_raise` そのものを置換する。
     """
     status_out = run_git(["status", "--short"], root)
-    diff_out = run_git(["diff", _stat_arg()], root)
-    cached_out = run_git(["diff", "--cached", _stat_arg()], root)
+    diff_paths = git_diff_utils.run_git_paths_or_raise(["diff", "--name-only", "-z"], root, runner=runner)
+    cached_paths = git_diff_utils.run_git_paths_or_raise(
+        ["diff", "--cached", "--name-only", "-z"], root, runner=runner
+    )
     files: set[str] = set()
     files |= parse_status_short(status_out)
-    files |= parse_diff_stat(diff_out)
-    files |= parse_diff_stat(cached_out)
-    # Issue #850: `git diff --stat` は長いパスを `.../` で省略しうる。省略パスと完全パスが
-    # 同じ集合に混ざると同一ファイルが 2 件に数えられ、片方が `missing_from_report`
-    # （報告漏れ＝より重い警告）へ落ちて偽陽性になる。集合比較の前段でここを解決する。
+    files |= {git_diff_utils.normalize_leading_dots(p) for p in diff_paths if p}
+    files |= {git_diff_utils.normalize_leading_dots(p) for p in cached_paths if p}
+    # Issue #850: `.../` 省略パスと完全パスが同じ集合に混ざると同一ファイルが 2 件に数えられ、
+    # 片方が `missing_from_report`（報告漏れ＝より重い警告）へ落ちて偽陽性になる。`--name-only`
+    # は原則これを起こさないが、多層防御として集合比較の前段で解決する（上記 docstring 参照）。
     files, unresolved = git_diff_utils.normalize_abbreviated_paths(
         files, repo_root=root, runner=runner
     )
     return {
         "files": files,
         "unresolved": unresolved,
-        "raw": {"status": status_out, "diff_stat": diff_out, "diff_cached_stat": cached_out},
+        "raw": {"status": status_out, "diff_name_only": diff_paths, "diff_cached_name_only": cached_paths},
     }
 
 
@@ -430,15 +451,6 @@ def run_self_test() -> int:
         got == {"tools/foo.py", "tools/new_file.py", "tools/renamed.py"},
         str(got),
     )
-
-    # parse_diff_stat: サマリー行（"|" 無し）を含めない
-    stat_sample = (
-        " tools/foo.py      | 10 +++++-----\n"
-        " path/to/bar.py    | 3 +--\n"
-        " 2 files changed, 8 insertions(+), 5 deletions(-)\n"
-    )
-    got2 = parse_diff_stat(stat_sample)
-    check("parse_diff_stat サマリー行除外", got2 == {"tools/foo.py", "path/to/bar.py"}, str(got2))
 
     # extract_claimed_paths: 完了報告の自由文からパスを抽出（明示ブロック無し→フォールバック）
     report_text = (
@@ -533,11 +545,7 @@ def run_self_test() -> int:
     )
     r_dotpath_fallback = compare(
         got_dotpath_fallback,
-        parse_diff_stat(
-            " .github/workflows/x.yml | 2 +-\n"
-            " .claude/hooks/y.sh      | 1 +\n"
-            " 2 files changed, 2 insertions(+), 1 deletion(-)\n"
-        ),
+        {".github/workflows/x.yml", ".claude/hooks/y.sh"},
     )
     check(
         "フォールバック経路 end-to-end: 先頭ドット付きパスで mismatch=False（#948 完了条件）",
@@ -554,9 +562,83 @@ def run_self_test() -> int:
         str(got_variant),
     )
 
+    # ── Issue #880 4本目の経路: 拡張子を持たない「bare dotfile」（`.gitignore` 等）は
+    # 拡張子必須の旧 `_PATH_TOKEN_RE` では一度も抽出されなかった（`re.findall(".gitignore")` が
+    # 空リストを返す。パターンが「本体 + リテラル "." + 拡張子」の 2 ドット構造を要求するため、
+    # ドットが 1 個しかない `.gitignore` はそもそもマッチしない）。`.github/workflows/y.yml` の
+    # ような「先頭ドット + 拡張子あり」パスは #948 で既に対応済みだが、これは別の未対応経路。
+    # 正ケース（bare dotfile を含め先頭ドットを保つ）と負ケース（`./` 前置詞は従来どおり剥がす）を
+    # 対で置く。bare dotfile 対応の alternation を外す変異で正ケースが FAIL することを実測する
+    # （`docs/rules/sprint-development-rules.md` SD-2 の変異テスト）。
+    bare_dotfile_report = "CHANGED_FILES:\n.claude/skills/x.md\n.github/workflows/y.yml\n.gitignore\n./tools/x.py\n"
+    got_bare_dotfile, used_bare_dotfile = extract_claimed_paths(bare_dotfile_report)
+    check(
+        "正ケース: 拡張子を持たない bare dotfile（.gitignore）も含め先頭ドットを保ったまま抽出する"
+        "（#880）／負ケース: './tools/x.py' は従来どおり './' 前置詞を剥がす（対で検証）",
+        got_bare_dotfile == {".claude/skills/x.md", ".github/workflows/y.yml", ".gitignore", "tools/x.py"}
+        and used_bare_dotfile is True,
+        str((got_bare_dotfile, used_bare_dotfile)),
+    )
+    r_bare_dotfile = compare(
+        got_bare_dotfile,
+        {".claude/skills/x.md", ".github/workflows/y.yml", ".gitignore", "tools/x.py"},
+    )
+    check(
+        "上記 end-to-end: 実 diff 側と一致し mismatch=False（#880）",
+        r_bare_dotfile["mismatch"] is False,
+        str(r_bare_dotfile),
+    )
+
+    # 境界の外側の負ケース（#750 / Layer 1 セルフレビュー指摘）: bare dotfile の alternation を
+    # 広げすぎると、自由記述に出てくる `.NET` のような **ファイルではない先頭ドット語** まで
+    # claim へ混入し、`missing_from_diff` 経由で exit 1（偽陽性 FAIL）になる。正ケース（実在の
+    # dotfile を拾う）と対で置き、alternation を `[A-Za-z0-9_-]` へ戻す変異で FAIL させる。
+    got_tech_name = _tokens_from_text(".NET Core で実装した。.gitignore も更新した。")
+    check(
+        "負ケース: '.NET' のような非ファイルの先頭ドット語を claim に含めない"
+        "／正ケース: 同じ文の '.gitignore' は拾う（対で検証・#880）",
+        ".NET" not in got_tech_name and ".gitignore" in got_tech_name,
+        str(got_tech_name),
+    )
+
+    # ── Issue #880 経路 1: **報告側（claimed）** に `.../` 省略パスが来るケース。
+    # 実 diff の収集を `--name-only -z` へ寄せても、サブエージェントが自分で `git diff --stat` を
+    # 叩いて出力をコピーすれば報告テキスト側に省略が入る（収集方法の変更では消えない別経路）。
+    # `main()` が claimed 側にも `normalize_abbreviated_paths()` を適用することで解決する。
+    # 正ケース（実 diff の完全パスで一意に解決 → mismatch=False）と負ケース（候補が 2 件あり
+    # 一意に定まらない → mismatch には混ぜず unresolved へ）を対で置く。
+    claimed_abbrev = {".../infrastructure/cloudflare-infrastructure.md"}
+    real_for_abbrev = {"docs/03_design/infrastructure/cloudflare-infrastructure.md"}
+    resolved_claimed, claimed_unresolved = git_diff_utils.normalize_abbreviated_paths(
+        claimed_abbrev, extra_candidates=real_for_abbrev
+    )
+    r_abbrev = compare(resolved_claimed, real_for_abbrev, claimed_unresolved)
+    check(
+        "正ケース: 報告側の '.../' 省略パスを実 diff の完全パスで解決し mismatch=False（#880 経路1）",
+        r_abbrev["mismatch"] is False and not r_abbrev["unresolved"],
+        str(r_abbrev),
+    )
+    ambiguous_real = {"a/infrastructure/x.md", "b/infrastructure/x.md"}
+    resolved_amb, amb_unresolved = git_diff_utils.normalize_abbreviated_paths(
+        {".../infrastructure/x.md"}, extra_candidates=ambiguous_real
+    )
+    r_amb = compare(resolved_amb, ambiguous_real, amb_unresolved)
+    check(
+        "負ケース: 候補が 2 件で一意に定まらない省略パスは missing_from_diff（虚偽報告の疑い）に"
+        "落とさず unresolved に積む（#880 経路1・fail-closed の誤検知を作らない）",
+        r_amb["unresolved"] == [".../infrastructure/x.md"]
+        and ".../infrastructure/x.md" not in r_amb["missing_from_diff"],
+        str(r_amb),
+    )
+
     # 共通正規化関数への配線検証: claim 側（_tokens_from_text 経由）と実 diff 側
-    # （parse_status_short / parse_diff_stat 経由）が同一の `git_diff_utils.normalize_leading_dots`
-    # を通ることを、差し替えで呼び出し回数を記録して確認する（片側だけ直す再発を防ぐ・#948）。
+    # （parse_status_short・get_real_diff_files() の diff / diff --cached 経由）が同一の
+    # `git_diff_utils.normalize_leading_dots` を通ることを、差し替えで呼び出し回数を記録して
+    # 確認する（片側だけ直す再発を防ぐ・#948）。Issue #880: 実 diff 側は `parse_diff_stat()`
+    # 廃止に伴い `get_real_diff_files()` 経由（`--name-only` の戻り値へ直接適用）へ経路が変わった
+    # ため、`get_real_diff_files()` 自体をエンドツーエンドで呼んで検証する
+    # （干渉検証: get_real_diff_files() が --name-only 経路へ切り替わった後も、共通正規化関数への
+    # 配線が claim 側・status 側・diff/cached 側すべてで維持されていることを見る）。
     _dotslash_calls: list[str] = []
     _orig_normalize_leading_dots = git_diff_utils.normalize_leading_dots
 
@@ -564,18 +646,41 @@ def run_self_test() -> int:
         _dotslash_calls.append(path)
         return _orig_normalize_leading_dots(path)
 
+    def _fake_status_for_normalize_wiring(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["status", "--short"]:
+            return " M .github/workflows/x.yml\n"
+        return ""
+
+    def _fake_diff_paths_for_normalize_wiring(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["diff", "--name-only", "-z"]:
+            return ["./tools/normalize_wiring_diff.py"]
+        if args == ["diff", "--cached", "--name-only", "-z"]:
+            return ["./tools/normalize_wiring_cached.py"]
+        return []
+
+    _orig_run_git_or_raise_nw = git_diff_utils.run_git_or_raise
+    _orig_run_git_paths_or_raise_nw = git_diff_utils.run_git_paths_or_raise
     git_diff_utils.normalize_leading_dots = _recording_normalize_leading_dots
+    git_diff_utils.run_git_or_raise = _fake_status_for_normalize_wiring
+    git_diff_utils.run_git_paths_or_raise = _fake_diff_paths_for_normalize_wiring
     try:
         _tokens_from_text(".github/workflows/x.yml を変更した")
-        parse_status_short(" M .github/workflows/x.yml\n")
-        parse_diff_stat(" .github/workflows/x.yml | 1 +\n 1 file changed\n")
+        normalize_wiring_result = get_real_diff_files(Path("/fake/normalize-wiring/root"))
     finally:
         git_diff_utils.normalize_leading_dots = _orig_normalize_leading_dots
+        git_diff_utils.run_git_or_raise = _orig_run_git_or_raise_nw
+        git_diff_utils.run_git_paths_or_raise = _orig_run_git_paths_or_raise_nw
     check(
-        "claim 側（_tokens_from_text）と実 diff 側（parse_status_short/parse_diff_stat）が"
-        "共通正規化関数 git_diff_utils.normalize_leading_dots を通る（#948 共通化の完了条件）",
-        len(_dotslash_calls) == 3,
-        f"calls={_dotslash_calls}",
+        "claim 側（_tokens_from_text）と実 diff 側（get_real_diff_files() の status/diff/diff --cached "
+        "全ソース）が共通正規化関数 git_diff_utils.normalize_leading_dots を通る（#948 / #880）",
+        len(_dotslash_calls) == 4
+        and normalize_wiring_result["files"]
+        == {
+            ".github/workflows/x.yml",
+            "tools/normalize_wiring_diff.py",
+            "tools/normalize_wiring_cached.py",
+        },
+        f"calls={_dotslash_calls} files={normalize_wiring_result['files']}",
     )
 
     # ── #968 指摘2（#750 境界の外側の負ケース）: '../'（相対パス）・'...'（三点リーダー融合）を
@@ -868,73 +973,77 @@ def run_self_test() -> int:
         str(r_mismatch),
     )
 
-    # ── #195 指摘3: get_real_diff_files() → run_git() → git_diff_utils.run_git_or_raise()
-    # への配線が壊れていないことを確認する（引数順の入れ替え等の回帰を検知する）──
+    # ── #195 指摘3 / #880: get_real_diff_files() → run_git()/run_git_paths_or_raise()
+    # への配線が壊れていないことを確認する（引数順の入れ替え・--stat への先祖返り等の回帰を検知）──
     # `run_self_test()` は `run_git()`/`get_real_diff_files()` を一度も呼ばないため、
     # 配線ミス（引数順の入れ替え等）を検知できない、という指摘への対応。
-    _wiring_calls: list[tuple[list[str], object]] = []
+    _wiring_status_calls: list[tuple[list[str], object]] = []
+    _wiring_paths_calls: list[tuple[list[str], object]] = []
 
     def _fake_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
         # git_diff_utils.run_git_or_raise の呼び出しシグネチャ（args, cwd）をそのまま模す。
-        # 呼び出し側で args/cwd が入れ替わっていれば、ここで受け取る args は
-        # list[str] ではなく Path になり、下の分岐が一致せず assertion で検出できる。
-        _wiring_calls.append((args, cwd))
+        _wiring_status_calls.append((args, cwd))
         if args == ["status", "--short"]:
-            return " M tools/wiring_marker.py\n"
-        if args == ["diff", _stat_arg()]:
-            return ""
-        if args == ["diff", "--cached", _stat_arg()]:
-            return ""
+            return " M tools/wiring_marker_status.py\n"
         return ""
 
+    def _fake_run_git_paths_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        # git_diff_utils.run_git_paths_or_raise の呼び出しシグネチャ（args, cwd）をそのまま模す。
+        # 呼び出し側で args/cwd が入れ替わっていれば、ここで受け取る args は
+        # list[str] ではなく Path になり、下の分岐が一致せず assertion で検出できる。
+        _wiring_paths_calls.append((args, cwd))
+        if args == ["diff", "--name-only", "-z"]:
+            return ["tools/wiring_marker_diff.py"]
+        if args == ["diff", "--cached", "--name-only", "-z"]:
+            return ["tools/wiring_marker_cached.py"]
+        return []
+
     _orig_run_git_or_raise = git_diff_utils.run_git_or_raise
+    _orig_run_git_paths_or_raise = git_diff_utils.run_git_paths_or_raise
     git_diff_utils.run_git_or_raise = _fake_run_git_or_raise
+    git_diff_utils.run_git_paths_or_raise = _fake_run_git_paths_or_raise
     try:
         fake_root = Path("/fake/wiring/root")
         wiring_result = get_real_diff_files(fake_root)
     finally:
         git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+        git_diff_utils.run_git_paths_or_raise = _orig_run_git_paths_or_raise
 
     check(
-        "get_real_diff_files() 配線: run_git() 経由で run_git_or_raise(args, cwd) を正しい順で呼ぶ（#195 指摘3）",
-        wiring_result["files"] == {"tools/wiring_marker.py"}
-        and _wiring_calls
+        "get_real_diff_files() 配線: status は run_git_or_raise・diff/cached は "
+        "run_git_paths_or_raise(['diff','--name-only','-z'] 系) を正しい引数・順で呼ぶ（#195 指摘3 / #880）",
+        wiring_result["files"]
+        == {"tools/wiring_marker_status.py", "tools/wiring_marker_diff.py", "tools/wiring_marker_cached.py"}
+        and _wiring_status_calls == [(["status", "--short"], fake_root)]
+        and _wiring_paths_calls
         == [
-            (["status", "--short"], fake_root),
-            (["diff", _stat_arg()], fake_root),
-            (["diff", "--cached", _stat_arg()], fake_root),
+            (["diff", "--name-only", "-z"], fake_root),
+            (["diff", "--cached", "--name-only", "-z"], fake_root),
         ],
-        f"result={wiring_result} calls={_wiring_calls}",
+        f"result={wiring_result} status_calls={_wiring_status_calls} paths_calls={_wiring_paths_calls}",
     )
 
-    # #850 一次対策: `--stat` を素のまま渡すと端末幅・git config 次第でパスが `.../` 省略される。
-    # 幅指定を落とす変異（`_stat_arg()` → `"--stat"`）を検知するため、書式そのものを固定する。
-    _diff_args = [a for a, _ in _wiring_calls if a and a[0] == "diff"]
+    # #880: `--stat` へ先祖返りする変異（`--name-only` を落とす・`-z` を落とす等）を検知するため、
+    # get_real_diff_files() が実際に呼ぶ引数の書式そのものを固定する（#850 一次対策の後継）。
     check(
-        "get_real_diff_files() が --stat=<width>,<name-width> で省略を抑止している（#850 一次対策）",
-        bool(_diff_args)
-        and all(any(x.startswith("--stat=") for x in a) for a in _diff_args)
-        and _stat_arg() == f"--stat={STAT_WIDTH},{STAT_NAME_WIDTH}"
-        and STAT_NAME_WIDTH >= 1000,
-        f"diff_args={_diff_args}",
+        "get_real_diff_files() が --name-only -z で diff/diff --cached を取得している"
+        "（.../ 省略・quotePath 未注入の発生源を絶つ・#850 / #880）",
+        all("--stat" not in a for a, _ in _wiring_paths_calls)
+        and all("--name-only" in a and "-z" in a for a, _ in _wiring_paths_calls),
+        f"paths_calls={_wiring_paths_calls}",
     )
 
-    # ── #850: `.../` 省略パスと完全パスの混在が同一ファイル 2 件に増えないこと（end-to-end）──
+    # ── #850 二次対策（多層防御）: `--name-only` は原理的に `.../` 省略を起こさないが、
+    # この指定が効かない git 実装・想定外の入力を食わせた場合の受け皿として
+    # `normalize_abbreviated_paths()` を経由し続けていることを end-to-end で確認する
+    # （get_real_diff_files() の docstring 参照）。実際の git は --name-only で省略しないが、
+    # 受け取り側の多層防御が機能し続けていることをテストダブルで模す。──
     _full = "docs/03_design/infrastructure/cloudflare-infrastructure.md"
 
-    def _fake_abbrev_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
-        if args == ["status", "--short"]:
-            return ""
-        if args == ["diff", _stat_arg()]:
-            # 実測（#850）どおり `git diff --stat` 側だけが省略表記を返す状況を再現する
-            return (
-                f" .../infrastructure/cloudflare-infrastructure.md | 4 ++--\n"
-                f" {_full} | 4 ++--\n"
-                " 1 file changed, 2 insertions(+), 2 deletions(-)\n"
-            )
-        if args == ["diff", "--cached", _stat_arg()]:
-            return ""
-        return ""
+    def _fake_abbrev_run_git_paths_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["diff", "--name-only", "-z"]:
+            return [".../infrastructure/cloudflare-infrastructure.md", _full]
+        return []
 
     def _no_ls_files_runner(args, **kwargs):  # noqa: ANN001, ANN003
         # `git ls-files` は空を返す（解決は集合内の完全パスだけで足りることを示す）
@@ -944,32 +1053,41 @@ def run_self_test() -> int:
 
         return _R()
 
-    git_diff_utils.run_git_or_raise = _fake_abbrev_run_git_or_raise
+    git_diff_utils.run_git_or_raise = _fake_run_git_or_raise
+    git_diff_utils.run_git_paths_or_raise = _fake_abbrev_run_git_paths_or_raise
     try:
         abbrev_real = get_real_diff_files(Path("/fake/abbrev/root"), runner=_no_ls_files_runner)
     finally:
         git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+        git_diff_utils.run_git_paths_or_raise = _orig_run_git_paths_or_raise
 
-    r_abbrev = compare({_full}, abbrev_real["files"], abbrev_real.get("unresolved"))
+    r_abbrev = compare(
+        {_full, "tools/wiring_marker_status.py"}, abbrev_real["files"], abbrev_real.get("unresolved")
+    )
     check(
-        "#850: 省略パスと完全パスの混在が 1 件に畳まれ mismatch を立てない",
-        abbrev_real["files"] == {_full}
+        "#850 二次対策: 省略パスと完全パスの混在が 1 件に畳まれ mismatch を立てない（--name-only 経由後も）",
+        abbrev_real["files"] == {_full, "tools/wiring_marker_status.py"}
         and r_abbrev["missing_from_report"] == []
         and r_abbrev["mismatch"] is False,
         f"files={sorted(abbrev_real['files'])} result={r_abbrev}",
     )
 
     # ── #850: 一意に解決できない省略パスは unresolved として報告され mismatch を立てない ──
-    def _fake_unresolvable_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
-        if args == ["diff", _stat_arg()]:
-            return " .../ghost/never-existed.md | 1 +\n"
+    def _fake_unresolvable_run_git_paths_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
+        if args == ["diff", "--name-only", "-z"]:
+            return [".../ghost/never-existed.md"]
+        return []
+
+    def _fake_empty_status_run_git_or_raise(args, cwd, *, runner=None):  # noqa: ANN001, ARG001
         return ""
 
-    git_diff_utils.run_git_or_raise = _fake_unresolvable_run_git_or_raise
+    git_diff_utils.run_git_or_raise = _fake_empty_status_run_git_or_raise
+    git_diff_utils.run_git_paths_or_raise = _fake_unresolvable_run_git_paths_or_raise
     try:
         unresolvable_real = get_real_diff_files(Path("/fake/abbrev/root"), runner=_no_ls_files_runner)
     finally:
         git_diff_utils.run_git_or_raise = _orig_run_git_or_raise
+        git_diff_utils.run_git_paths_or_raise = _orig_run_git_paths_or_raise
 
     r_unres = compare(set(), unresolvable_real["files"], unresolvable_real.get("unresolved"))
     check(
@@ -1084,7 +1202,16 @@ def main() -> int:
         print(f"❌ {e}", file=sys.stderr)
         return 2
 
-    result = compare(claimed, real["files"], real.get("unresolved"))
+    # 🔴 Issue #880 経路 1: **報告側（claimed）** に `.../` 省略パスが来るケース。実 diff の収集を
+    # `--name-only -z` へ寄せても、サブエージェントが自分で `git diff --stat` を叩いて出力を
+    # コピーすれば報告テキスト側に省略が入りうる（収集方法の変更では消えない別経路）。
+    # 実 diff の完全パスを候補に与えて解決し、一意に定まらないものは `unresolved` へ積む
+    # （黙って `missing_from_diff`＝虚偽報告の疑い に落とさない・fail-closed の誤検知を防ぐ）。
+    claimed, claimed_unresolved = git_diff_utils.normalize_abbreviated_paths(
+        claimed, extra_candidates=real["files"], repo_root=REPO_ROOT
+    )
+    unresolved = set(real.get("unresolved") or set()) | claimed_unresolved
+    result = compare(claimed, real["files"], unresolved)
     result["fallback_used"] = not used_block
 
     if args.json:

@@ -379,6 +379,17 @@ else
   skip_check "apply-base ドリフト検査 self-test (check_apply_base_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 4.8.5.6. apply-to-repo.sh の DRIFT_SKIP_REASON 分岐（--dry-run / python3 不在 /
+# DRIFT_TOOL 不在 / スナップショット失敗）の self-test（Issue #905）。
+# 本判定（実際の適用実行）はネットワーク・対象リポジトリを要するため PR ゲートには乗せない。
+# ここでは compute_drift_status() の分岐ロジックだけを、実際のエントリポイント
+# （bash apply-to-repo.sh --self-test）経由で機械的に守る。
+if [ -f "$REPO_ROOT/scripts/apply-to-repo.sh" ]; then
+  run_check "apply-to-repo.sh ドリフト分岐 self-test (apply-to-repo.sh --self-test)" bash scripts/apply-to-repo.sh --self-test
+else
+  skip_check "apply-to-repo.sh ドリフト分岐 self-test (apply-to-repo.sh --self-test)" "スクリプトが見つかりません"
+fi
+
 # 4.8.6. Hot 層予算チェックの self-test（増減ログのテーブル書式が変わったときの沈黙失敗を検知する）。
 #        本体（引数なし実行）は tools/self_review_check.py が Hot 層変更時に Warning として回すため、
 #        ここでは self-test だけを配線する（PR ごとに増減ログの記録漏れでブロックしない）。

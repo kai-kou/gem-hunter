@@ -27,6 +27,8 @@
 #   --no-merge              祖先を使った 3 方向マージを行わず、全ファイルを無条件上書きする
 #                           （旧来の挙動。マージ機構に問題が出たときの退避経路）
 #   --dry-run               実際にはコピーせず、適用対象を表示するだけ
+#   --self-test             本スクリプト自身の分岐ロジック（compute_drift_status）を検証して終了
+#                           （ドリフト検査のスキップ理由 4 分岐 + 正常経路・#905）
 #   -h | --help             ヘルプ表示
 #
 # 設計方針:
@@ -64,8 +66,190 @@ die() { echo "[apply][ERROR] $*" >&2; exit 1; }
 # 値を取る引数で値が省略された場合（set -u 下で $2 未定義クラッシュ）を防ぐ
 need_arg() { [ "$1" -ge 2 ] || die "$2 には引数が必要です"; }
 
+# --- ドリフト検査要否の判定（Issue #905: self-test 対象にするため関数化）---
+# §3.4 で使う本番ロジックそのもの。グローバル DRIFT_ENABLED / DRIFT_SKIP_REASON を設定する。
+#   $1 = dry_run（"true"/"false"）
+#   $2 = drift tool のパス（$DRIFT_TOOL）
+#   $3 = 対象リポジトリのルート（$TARGET）
+#   $4 = 同期対象パス一覧の出力先（$DRIFT_SYNC_PATHS_FILE）
+#   $5 = スナップショット出力先ディレクトリ（$DRIFT_SNAPSHOT_DIR）
+#   $6 = python バイナリ名/パス（既定 python3。self-test が「python3 不在」「snapshot 失敗/成功」を
+#        注入するために差し替える。本番呼び出しは常に省略＝既定値のまま）
+# 呼び出し元は SYNC_PATHS 配列（グローバル）が定義済みであることを前提にする。
+compute_drift_status() {
+  local dry_run="$1" drift_tool="$2" target_dir="$3" paths_file="$4" snapshot_dir="$5"
+  local python_bin="${6:-python3}"
+  DRIFT_ENABLED=false
+  DRIFT_SKIP_REASON=""
+  if [ "$dry_run" = "true" ]; then
+    DRIFT_SKIP_REASON="--dry-run"
+  elif ! command -v "$python_bin" >/dev/null 2>&1; then
+    DRIFT_SKIP_REASON="python3 が見つかりません"
+  elif [ ! -f "$drift_tool" ]; then
+    DRIFT_SKIP_REASON="初回適用（$drift_tool が未反映。本コマンドの完了後に配置されるため今回は検査対象外）"
+  fi
+  if [ -z "$DRIFT_SKIP_REASON" ]; then
+    # 🔴 .claude/settings.json は SYNC_PATHS に含まれず §4 で別ロジック・別タイミングで
+    # 上書きされるため、明示的に検査対象へ追加する（Issue #60 完了条件・実測 #828 CRITICAL-1:
+    # 追加を忘れると同ファイルの固有拡張の消失が一切検知されない）。
+    { printf '%s\n' "${SYNC_PATHS[@]}"; printf '%s\n' ".claude/settings.json"; } > "$paths_file"
+    if "$python_bin" "$drift_tool" snapshot \
+        --repo-root "$target_dir" --paths-file "$paths_file" --out "$snapshot_dir" \
+        >/dev/null 2>&1; then
+      DRIFT_ENABLED=true
+    else
+      DRIFT_SKIP_REASON="スナップショット取得に失敗しました"
+    fi
+  fi
+}
+
+# fake python3 ランナー（self-test 専用）: 受け取った argv をログへ記録してから
+# 指定した終了コードで終わる。本判定が実際にどのサブコマンド・オプションで
+# 呼ばれたかを assert するため（#710・fake runner の argv 検証）。
+make_fake_python() {  # $1=終了コード $2=argv ログ出力先 $3=生成するスクリプトのパス
+  local rc="$1" logf="$2" out="$3"
+  cat > "$out" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$logf"
+exit $rc
+EOF
+  chmod +x "$out"
+}
+
+# apply-to-repo.sh 自身の --self-test。compute_drift_status（DRIFT_SKIP_REASON の 4 分岐）を
+# 実際のエントリポイント（bash "$0" --self-test）経由で検証する（Issue #905）。
+self_test() {
+  local failures=0 tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  # self-test 専用の SYNC_PATHS（本物の配列定義より前で --self-test が発火するため、
+  # ここでローカルに用意する。本番の値・件数には依存しない）
+  local SYNC_PATHS=("dummy/path")
+
+  touch "$tmp/real-tool.py"
+
+  # 分岐 1: --dry-run が最優先で採用される
+  compute_drift_status "true" "$tmp/nonexistent-tool.py" "$tmp/target" "$tmp/paths1.txt" "$tmp/snap1"
+  if [ "$DRIFT_SKIP_REASON" = "--dry-run" ] && [ "$DRIFT_ENABLED" = "false" ]; then
+    echo "[PASS] --dry-run: DRIFT_SKIP_REASON='--dry-run' / DRIFT_ENABLED=false"
+  else
+    echo "[FAIL] --dry-run 分岐: SKIP_REASON='$DRIFT_SKIP_REASON' ENABLED=$DRIFT_ENABLED" >&2
+    failures=$((failures + 1))
+  fi
+
+  # 分岐 2: python3 が見つからない
+  compute_drift_status "false" "$tmp/real-tool.py" "$tmp/target" "$tmp/paths2.txt" "$tmp/snap2" \
+    "python3-does-not-exist-for-self-test"
+  if [ "$DRIFT_SKIP_REASON" = "python3 が見つかりません" ] && [ "$DRIFT_ENABLED" = "false" ]; then
+    echo "[PASS] python3 不在: DRIFT_SKIP_REASON='python3 が見つかりません'"
+  else
+    echo "[FAIL] python3 不在分岐: SKIP_REASON='$DRIFT_SKIP_REASON' ENABLED=$DRIFT_ENABLED" >&2
+    failures=$((failures + 1))
+  fi
+
+  # 分岐 3: DRIFT_TOOL が未反映（初回適用）
+  compute_drift_status "false" "$tmp/missing-tool.py" "$tmp/target" "$tmp/paths3.txt" "$tmp/snap3"
+  case "$DRIFT_SKIP_REASON" in
+    初回適用*) echo "[PASS] DRIFT_TOOL 不在: DRIFT_SKIP_REASON が「初回適用」で始まる" ;;
+    *) echo "[FAIL] DRIFT_TOOL 不在分岐: SKIP_REASON='$DRIFT_SKIP_REASON'" >&2; failures=$((failures + 1));;
+  esac
+  if [ "$DRIFT_ENABLED" != "false" ]; then
+    echo "[FAIL] DRIFT_TOOL 不在分岐で DRIFT_ENABLED が true になった" >&2
+    failures=$((failures + 1))
+  fi
+
+  # 分岐 3-b（境界の外側の負ケース）: パスがディレクトリの場合も「不在」と同じ扱いになる
+  # （[ -f ] はディレクトリを偽と判定する。前方一致的な緩みで「存在する」と誤判定しないことを確認）
+  mkdir -p "$tmp/tool-is-a-dir"
+  compute_drift_status "false" "$tmp/tool-is-a-dir" "$tmp/target" "$tmp/paths3b.txt" "$tmp/snap3b"
+  case "$DRIFT_SKIP_REASON" in
+    初回適用*) echo "[PASS] DRIFT_TOOL がディレクトリ: ファイルとして存在する扱いにしなかった" ;;
+    *) echo "[FAIL] DRIFT_TOOL がディレクトリのケース: SKIP_REASON='$DRIFT_SKIP_REASON'" >&2; failures=$((failures + 1));;
+  esac
+
+  # 分岐 4: スナップショット取得に失敗（fake python3 + argv 検証）
+  local log4="$tmp/argv4.log" fake4="$tmp/fake_python_fail.sh"
+  make_fake_python 1 "$log4" "$fake4"
+  compute_drift_status "false" "$tmp/real-tool.py" "$tmp/target" "$tmp/paths4.txt" "$tmp/snap4" "$fake4"
+  if [ "$DRIFT_SKIP_REASON" = "スナップショット取得に失敗しました" ] && [ "$DRIFT_ENABLED" = "false" ]; then
+    echo "[PASS] スナップショット失敗: DRIFT_SKIP_REASON='スナップショット取得に失敗しました'"
+  else
+    echo "[FAIL] スナップショット失敗分岐: SKIP_REASON='$DRIFT_SKIP_REASON' ENABLED=$DRIFT_ENABLED" >&2
+    failures=$((failures + 1))
+  fi
+  if [ -f "$log4" ] && grep -q "snapshot" "$log4" && grep -q -- "--repo-root" "$log4" \
+      && grep -q -- "--paths-file" "$log4" && grep -q -- "--out" "$log4"; then
+    echo "[PASS] fake python3 の argv に想定サブコマンド・オプションが含まれていた（分岐4）"
+  else
+    echo "[FAIL] fake python3 の argv 検証（分岐4）に失敗: $(cat "$log4" 2>/dev/null)" >&2
+    failures=$((failures + 1))
+  fi
+
+  # 分岐 5: 正常経路（DRIFT_ENABLED=true・本番の主コードパス）
+  local log5="$tmp/argv5.log" fake5="$tmp/fake_python_ok.sh"
+  make_fake_python 0 "$log5" "$fake5"
+  compute_drift_status "false" "$tmp/real-tool.py" "$tmp/target" "$tmp/paths5.txt" "$tmp/snap5" "$fake5"
+  if [ -z "$DRIFT_SKIP_REASON" ] && [ "$DRIFT_ENABLED" = "true" ]; then
+    echo "[PASS] 正常経路: DRIFT_ENABLED=true / DRIFT_SKIP_REASON 空"
+  else
+    echo "[FAIL] 正常経路分岐: SKIP_REASON='$DRIFT_SKIP_REASON' ENABLED=$DRIFT_ENABLED" >&2
+    failures=$((failures + 1))
+  fi
+  if [ -f "$tmp/paths5.txt" ] && grep -qx ".claude/settings.json" "$tmp/paths5.txt"; then
+    echo "[PASS] paths_file に .claude/settings.json が追加された"
+  else
+    echo "[FAIL] paths_file の内容検証に失敗" >&2
+    failures=$((failures + 1))
+  fi
+  if [ -f "$log5" ] && grep -q "snapshot" "$log5" && grep -q -- "--repo-root" "$log5" \
+      && grep -q -- "--paths-file" "$log5" && grep -q -- "--out" "$log5"; then
+    echo "[PASS] fake python3 の argv に想定サブコマンド・オプションが含まれていた（分岐5）"
+  else
+    echo "[FAIL] fake python3 の argv 検証（分岐5）に失敗: $(cat "$log5" 2>/dev/null)" >&2
+    failures=$((failures + 1))
+  fi
+
+  # 分岐 6（要素間の関係性の負ケース）: 複数のスキップ要因が同時に成立するとき、
+  # 優先順位どおり最初の理由（--dry-run）だけが採用され、他の理由と混同しない
+  compute_drift_status "true" "$tmp/missing-tool.py" "$tmp/target" "$tmp/paths6.txt" "$tmp/snap6" \
+    "python3-does-not-exist-for-self-test"
+  if [ "$DRIFT_SKIP_REASON" = "--dry-run" ]; then
+    echo "[PASS] 複数要因同時成立: --dry-run が最優先で採用された"
+  else
+    echo "[FAIL] 複数要因同時成立分岐: SKIP_REASON='$DRIFT_SKIP_REASON'（--dry-run が優先されるべき）" >&2
+    failures=$((failures + 1))
+  fi
+
+  # 分岐 7（判定順序の負ケース・Layer 1 セルフレビュー指摘）: python3 不在 と DRIFT_TOOL 不在 が
+  # **同時に成立** するとき、どちらの理由が採用されるか。分岐 2 は drift_tool を実在させた状態、
+  # 分岐 3 は python_bin を実在させた状態でしか呼んでおらず、この組み合わせが無いと
+  # `elif ! command -v` と `elif [ ! -f ]` を入れ替える変異を self-test が一切検知しない（実測済み）。
+  # python3 が無ければ drift_tool の有無に関わらず検査は走らせられないため python3 不在が先。
+  compute_drift_status "false" "$tmp/missing-tool.py" "$tmp/target" "$tmp/paths7.txt" "$tmp/snap7" \
+    "python3-does-not-exist-for-self-test"
+  if [ "$DRIFT_SKIP_REASON" = "python3 が見つかりません" ]; then
+    echo "[PASS] python3 不在と DRIFT_TOOL 不在の同時成立: python3 不在が優先された"
+  else
+    echo "[FAIL] 判定順序分岐: SKIP_REASON='$DRIFT_SKIP_REASON'（python3 不在が優先されるべき）" >&2
+    failures=$((failures + 1))
+  fi
+  if [ "$DRIFT_ENABLED" = "true" ]; then
+    echo "[FAIL] 判定順序分岐で DRIFT_ENABLED が true になった" >&2
+    failures=$((failures + 1))
+  fi
+
+  if [ "$failures" -gt 0 ]; then
+    echo "❌ apply-to-repo.sh self-test: ${failures} 件失敗" >&2
+    return 1
+  fi
+  echo "✅ apply-to-repo.sh self-test: 全ケース PASS"
+  return 0
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
+    --self-test) self_test; exit $? ;;
     --base) need_arg "$#" "--base"; BASE_REPO="$2"; shift 2;;
     --ref)  need_arg "$#" "--ref";  REF="$2"; shift 2;;
     --repo) need_arg "$#" "--repo"; TARGET_SLUG="$2"; shift 2;;
@@ -547,26 +731,8 @@ DRIFT_SNAPSHOT_DIR="$TMP/drift_pre_sync_snapshot"
 DRIFT_ENABLED=false
 DRIFT_RESULT_RC=""  # § 6.7 のドリフト検査（bootstrap 完了後）でセットする
 DRIFT_SKIP_REASON=""  # Issue #889: スキップ理由を「この実行で実際に該当した 1 件」に絞って即座にログへ出す
-if $DRY_RUN; then
-  DRIFT_SKIP_REASON="--dry-run"
-elif ! command -v python3 >/dev/null 2>&1; then
-  DRIFT_SKIP_REASON="python3 が見つかりません"
-elif [ ! -f "$DRIFT_TOOL" ]; then
-  DRIFT_SKIP_REASON="初回適用（$DRIFT_TOOL が未反映。本コマンドの完了後に配置されるため今回は検査対象外）"
-fi
-if [ -z "$DRIFT_SKIP_REASON" ]; then
-  # 🔴 .claude/settings.json は SYNC_PATHS に含まれず §4 で別ロジック・別タイミングで
-  # 上書きされるため、明示的に検査対象へ追加する（Issue #60 完了条件・実測 #828 CRITICAL-1:
-  # 追加を忘れると同ファイルの固有拡張の消失が一切検知されない）。
-  { printf '%s\n' "${SYNC_PATHS[@]}"; printf '%s\n' ".claude/settings.json"; } > "$DRIFT_SYNC_PATHS_FILE"
-  if python3 "$DRIFT_TOOL" snapshot \
-      --repo-root "$TARGET" --paths-file "$DRIFT_SYNC_PATHS_FILE" --out "$DRIFT_SNAPSHOT_DIR" \
-      >/dev/null 2>&1; then
-    DRIFT_ENABLED=true
-  else
-    DRIFT_SKIP_REASON="スナップショット取得に失敗しました"
-  fi
-fi
+# 判定ロジック本体は compute_drift_status()（Issue #905 で関数化・--self-test 対象）に切り出し済み。
+compute_drift_status "$DRY_RUN" "$DRIFT_TOOL" "$TARGET" "$DRIFT_SYNC_PATHS_FILE" "$DRIFT_SNAPSHOT_DIR"
 if [ -n "$DRIFT_SKIP_REASON" ]; then
   log "── 本リポジトリ固有拡張のドリフト検査 ── SKIP: $DRIFT_SKIP_REASON"
 fi
