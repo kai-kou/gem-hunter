@@ -565,3 +565,43 @@ git fetch origin <branch> -q && git rev-parse FETCH_HEAD   # リモート head �
 ローカルと異なる値になっているはずなので上記 2 コマンドで区別できる）。
 
 **判定基準**: 「その SHA は実測値か、それとも短縮形か／目視で伸ばした値か？」
+
+---
+
+## L-164: 検査ツールの「適用対象外」を「不合格」と読み、自動化 PR を永久に止めかける（2026-09-07・PR #1040）
+
+**症状**: bot 自動化 PR（`automation/gem-pool-refresh`）のマージ前ゲートで
+`python3 tools/check_evidence_freshness.py --body-file <PR 本文> --head-sha <head>` が exit 1 を返す。
+`pr-review-flow-summary.md` は「exit 1（乖離・SHA 行なし）なら **マージせず**、`bash tools/run_checks.sh` を
+現在の HEAD で再実行して結果表を貼り直す」と定めているため、条文どおり読むと **この PR は永久にマージできない**。
+
+**原因**: 同ツールが返した JSON は `{"fresh": false, "evidence_sha": null, "has_section": false,
+"reason": "no_section", "exit_code": 1}` で、**`reason` は `stale`（証跡が古い）ではなく `no_section`
+（証跡セクションが存在しない）**。bot PR は `gem-pool-refresh.yml` が REST 経由で作るため
+`pre-pr-create-check.sh` を通らず（#1015）、`## run_checks 結果` セクションを **構造的に持たない**。
+つまり exit 1 は「証跡が古い」ではなく「本ツールの適用対象外」を意味していた。
+同じ exit code に 2 つの意味が畳み込まれており、条文は前者だけを想定していた。
+
+**なぜ危険か**: 「不合格だからマージしない」を選ぶと、週次で生成される bot PR が滞留し
+`open-pull-requests-limit` に達して **自動化が黙って止まる**（`D-43` が防ごうとしている事態そのもの）。
+一方で「exit 1 を無視してマージする」は証跡の穴を握り潰す。**どちらも間違い** である。
+
+**対策**:
+
+- 検査ツールが非ゼロで終わったら、**exit code だけでなく `reason` / `--json` の内訳を読む**。
+  「不合格」と「適用対象外」を区別できる情報が出ているのに、終了コードだけで判断しない
+- 適用対象外と判定したら **握り潰さず代替証拠を実測して記録する**。PR #1040 では head SHA を
+  チェックアウトせずに取り出し、`python3 tools/check_gem_shards.py --dir <その shard 群>` を
+  親セッション自身が実行して `OK`（exit 0）を得た結果を PR コメントに残した
+- 代替で充当した場合は ✅ ではなく **🟡 代替証拠で充当** と区別し、本命が取れなかった理由を併記する
+  （`sprint-development-rules.md` `SD-1`「完了条件の書き方」と同じ作法）
+- **構造的な穴そのものは別 Issue へ切り出す**（本件は #1042 の欠陥 2）。その場の判断で通したことを、
+  恒久の運用ルールに昇格させない
+
+**判定基準**: 「この非ゼロ終了は『検査に落ちた』のか『検査の対象ではなかった』のか？」
+後者なら条文の「マージしない」は発火しない。ただし **代替証拠の実測と記録は省略できない**
+（記録が無ければ後から前者と区別できず、次のセッションが同じ判断をやり直す）。
+
+**関連**: PR #1040 / #1042（bot PR に証跡鮮度の機械強制が届かない）/ #1015（REST 直叩きで
+`pre-pr-create-check.sh` が発火しない）/ `docs/rules/check-tool-design-rules.md`（終了コードの標準）/
+`D-43`（bot 自動化 PR の回収）。
