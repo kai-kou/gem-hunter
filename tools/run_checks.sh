@@ -638,6 +638,15 @@ else
   skip_check "shortlist 分布分析 self-test (analyze_shortlist_distribution.mjs --self-test)" "スクリプトが見つかりません"
 fi
 
+# Lighthouse ゲート self-test（Issue #992・check_selftest_wiring.py の射程拡大で検出された配線漏れ）。
+# ゲート判定ロジック（selfTest）と LCP 抽出（selfTestLcpExtraction）は固定 JSON を検証するだけで
+# Chrome 起動を必要としないため、本判定（上の 3.6・Chrome 実起動）とは別にここで PR ごとに実行する。
+if [ -f "$REPO_ROOT/tools/run_lighthouse.mjs" ]; then
+  run_check "Lighthouse ゲート判定 self-test (run_lighthouse.mjs --self-test)" node tools/run_lighthouse.mjs --self-test
+else
+  skip_check "Lighthouse ゲート判定 self-test (run_lighthouse.mjs --self-test)" "スクリプトが見つかりません"
+fi
+
 # Slack 通知 self-test（Issue #936）。waiting タイプの fail-closed ガード（--issues 実質空 →
 # --force-mention を付けても送信拒否）・空白のみ項目の除去・空ブランチ欄の省略を検証する。
 # post_message() をフェイクに差し替えて main() を通すためネットワーク非依存。

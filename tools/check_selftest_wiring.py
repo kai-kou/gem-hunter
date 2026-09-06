@@ -487,6 +487,16 @@ def render_human(report: Report) -> str:
     return "\n".join(lines)
 
 
+def exit_code_for(report: Report) -> int:
+    """`main()` が返す終了コード（`check-tool-design-rules.md` §1 の標準）。
+
+    `main()` 本体から切り出して独立した純関数にしているのは、`sys.exit()` まで到達する
+    経路を self-test で直接検証するため（同ルール §4:「終了コードを返す経路を変異対象に
+    必ず 1 つ含める」・「判定は正しいが終了コードへ反映されていない」退行を見逃さない）。
+    """
+    return 1 if report.violations else 0
+
+
 def render_json(report: Report) -> str:
     return json.dumps(
         {
@@ -677,6 +687,164 @@ def _self_test() -> int:
     check("L: 構文エラー時は violation（マーカーなし扱い・クラッシュしない）", v_l.status == "violation")
     check("L: tokenize_failed フラグが立つ", v_l.tokenize_failed)
 
+    # ══════════════════════════════════════════════════════════════════
+    # 以下 .mjs/.mts（Issue #992・射程拡大）
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── 拡張子 → 言語判定 ──
+    check("mjs は js 判定", _lang_for_filename("foo.mjs") == "js")
+    check("mts も js 判定", _lang_for_filename("foo.mts") == "js")
+    check("py は py 判定", _lang_for_filename("foo.py") == "py")
+
+    # ── ケース M: .mjs で --self-test を実装しているのに run_checks.sh 未配線
+    #    （run_lighthouse.mjs の実際の穴と同型） → 検出する ──
+    src_m = (
+        "#!/usr/bin/env node\n"
+        "// 本体の判定ロジック\n"
+        "if (process.argv.includes('--self-test')) {\n"
+        "  selfTest()\n"
+        "}\n"
+    )
+    check("M: mjs でも has_selftest_flag 検出", script_has_selftest_flag(src_m))
+    rc_m_unwired = 'run_check_timeout "Lighthouse" "$T" node tools/run_lighthouse.mjs\n'
+    v_m = evaluate_script("run_lighthouse.mjs", src_m, rc_m_unwired)
+    check("M: mjs 本体のみ配線では violation", v_m.status == "violation")
+
+    # ── ケース N: .mjs の `// selftest-wiring-ok: 理由` マーカー → excluded ──
+    src_n = (
+        "#!/usr/bin/env node\n"
+        "// selftest-wiring-ok: 週次スロットでのみ起動するため PR ゲートには配線しない\n"
+        "if (process.argv.includes('--self-test')) { selfTest() }\n"
+    )
+    check(
+        "N: mjs マーカーの理由を取得できる",
+        marker_reason(src_n, "js") == "週次スロットでのみ起動するため PR ゲートには配線しない",
+    )
+    v_n = evaluate_script("weekly.mjs", src_n, "")
+    check("N: mjs マーカーありは excluded", v_n.status == "excluded")
+
+    # ── ケース O: .mjs の理由が空のマーカー → 無効として violation ──
+    src_o = (
+        "// selftest-wiring-ok:\n"
+        "if (process.argv.includes('--self-test')) { selfTest() }\n"
+    )
+    check("O: mjs 空理由マーカーは marker_reason=None", marker_reason(src_o, "js") is None)
+    v_o = evaluate_script("empty_marker.mjs", src_o, "")
+    check("O: mjs 空理由マーカーは violation", v_o.status == "violation")
+    check("O: invalid_marker フラグが立つ", v_o.invalid_marker)
+
+    # ── ケース P（境界の外側・#992 完了条件の必須負ケース）: 文字列リテラル /
+    #    テンプレートリテラルの中に書かれた偽マーカーを除外扱いしない ──
+    src_p1 = (
+        "const msg = \"// selftest-wiring-ok: 文字列の中の偽マーカー\"\n"
+        "if (process.argv.includes('--self-test')) { selfTest() }\n"
+    )
+    check(
+        "P1: ダブルクォート文字列内の偽マーカーは拾わない",
+        marker_reason(src_p1, "js") is None,
+    )
+    v_p1 = evaluate_script("fake_marker_string.mjs", src_p1, "")
+    check("P1: violation のまま（誤って excluded されない）", v_p1.status == "violation")
+
+    src_p2 = (
+        "const msg = `// selftest-wiring-ok: テンプレートリテラルの中の偽マーカー`\n"
+        "if (process.argv.includes('--self-test')) { selfTest() }\n"
+    )
+    check(
+        "P2: テンプレートリテラル内の偽マーカーは拾わない",
+        marker_reason(src_p2, "js") is None,
+    )
+    v_p2 = evaluate_script("fake_marker_template.mjs", src_p2, "")
+    check("P2: violation のまま（誤って excluded されない）", v_p2.status == "violation")
+
+    src_p3 = (
+        "const msg = '// selftest-wiring-ok: シングルクォート文字列の中の偽マーカー'\n"
+        "if (process.argv.includes('--self-test')) { selfTest() }\n"
+    )
+    check(
+        "P3: シングルクォート文字列内の偽マーカーは拾わない",
+        marker_reason(src_p3, "js") is None,
+    )
+
+    # ── ケース Q: ブロックコメント（`/* ... */`）内のマーカーも実コメントとして有効に効く ──
+    src_q = (
+        "/*\n"
+        " * selftest-wiring-ok: ブロックコメント内の正当なマーカー\n"
+        " */\n"
+        "if (process.argv.includes('--self-test')) { selfTest() }\n"
+    )
+    check(
+        "Q: ブロックコメント内のマーカーを拾える",
+        marker_reason(src_q, "js") == "ブロックコメント内の正当なマーカー",
+    )
+    v_q = evaluate_script("block_marker.mjs", src_q, "")
+    check("Q: ブロックコメントマーカーは excluded", v_q.status == "excluded")
+
+    # ── ケース R: .mjs が正しく配線済み → wired ──
+    src_r = "if (process.argv.includes('--self-test')) { selfTest() }\n"
+    rc_r = (
+        "run_check \"quux mjs\" node tools/quux.mjs\n"
+        "run_check \"quux mjs self-test\" node tools/quux.mjs --self-test\n"
+    )
+    check("R: mjs 配線済みは is_wired=True", is_wired("quux.mjs", rc_r))
+    v_r = evaluate_script("quux.mjs", src_r, rc_r)
+    check("R: mjs 判定は wired", v_r.status == "wired")
+
+    # ── ケース S: `//` の前後空白バリアント（入力バリアント展開・#992 要件 7） ──
+    src_s1 = "//selftest-wiring-ok:前後空白なし\nfoo('--self-test')\n"
+    check("S1: 前後空白なしのマーカーも拾える", marker_reason(src_s1, "js") == "前後空白なし")
+    src_s2 = "//   selftest-wiring-ok:    余白多め   \nfoo('--self-test')\n"
+    check("S2: 余白が多いマーカーも拾える", marker_reason(src_s2, "js") == "余白多め")
+
+    # ── ケース T: 未終端の文字列・ブロックコメントは解析失敗として安全側（マーカーなし）に
+    #    フォールバックする（Python の tokenize 失敗と同じ扱い） ──
+    src_t_unterminated_block = (
+        "/* 閉じられていないブロックコメント\n"
+        "foo('--self-test')\n"
+    )
+    check(
+        "T: 未終端ブロックコメントは解析失敗で None",
+        _js_comment_texts(src_t_unterminated_block) is None,
+    )
+    v_t = evaluate_script("broken.mjs", src_t_unterminated_block, "")
+    check("T: 未終端ブロックコメントは violation（安全側）", v_t.status == "violation")
+    check("T: tokenize_failed フラグが立つ（mjs でも）", v_t.tokenize_failed)
+
+    # ── ケース U（`main()` からの実到達確認・#992 完了条件の必須負ケース #710 流儀）:
+    #    `SCAN_EXTENSIONS` に "mjs" が入っており、`scan()` が一時ディレクトリの `.mjs` を
+    #    実際に走査対象へ含めることを確認する。`evaluate_script()` を直接呼ぶテスト（M〜T）
+    #    だけでは `SCAN_EXTENSIONS` から "mjs" を削る変異を見逃す（実測: 削っても上記の
+    #    ケースは全て PASS したまま）ため、`scan()` を経由する end-to-end ケースを別立てする。
+    check("U: SCAN_EXTENSIONS に mjs が含まれる", "mjs" in SCAN_EXTENSIONS)
+    check("U: SCAN_EXTENSIONS に mts が含まれる", "mts" in SCAN_EXTENSIONS)
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_tools = Path(tmpdir)
+        (tmp_tools / "unwired_gate.mjs").write_text(
+            "if (process.argv.includes('--self-test')) { selfTest() }\n", encoding="utf-8"
+        )
+        (tmp_tools / "wired_gate.mjs").write_text(
+            "if (process.argv.includes('--self-test')) { selfTest() }\n", encoding="utf-8"
+        )
+        rc_content = 'run_check "wired" node tools/wired_gate.mjs --self-test\n'
+        report_e2e = scan(tmp_tools, rc_content)
+        check(
+            "U: scan() が .mjs の配線漏れを検出する（run_lighthouse.mjs 型の再発防止）",
+            "unwired_gate.mjs" in report_e2e.violations,
+        )
+        check(
+            "U: scan() が .mjs の配線済みを wired と判定する",
+            "wired_gate.mjs" in report_e2e.wired,
+        )
+
+    # ── ケース V（`check-tool-design-rules.md` §4）: `main()` が返す終了コード経路
+    #    （`exit_code_for()`）が violations の有無を正しく反映する ──
+    report_clean = Report(wired=["a.py"])
+    check("V: 配線漏れ 0 件は exit 0", exit_code_for(report_clean) == 0)
+    report_violation = Report(wired=["a.py"], violations=["b.mjs"])
+    check("V: 配線漏れ 1 件以上は exit 1", exit_code_for(report_violation) == 1)
+
     if failures:
         print("❌ check_selftest_wiring --self-test FAILED:")
         for f in failures:
@@ -709,7 +877,7 @@ def main() -> int:
     else:
         print(render_human(report))
 
-    return 1 if report.violations else 0
+    return exit_code_for(report)
 
 
 if __name__ == "__main__":
