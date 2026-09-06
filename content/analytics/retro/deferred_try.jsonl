@@ -390,3 +390,7 @@
 {"date": "2026-09-06 JST", "title": "check_site.py の self-test FAIL メッセージに修正ガイダンス（assert_check へ書き直す）を添える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 1001}
 {"date": "2026-09-06 JST", "title": "check_site.py のメタ検証 2 が assert_check の複数定義を検出したときの扱いを決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 1001}
 {"date": "2026-09-06 JST", "title": "python3 -O 実行時も check_site.py --self-test が PASS することを検証・記録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": 1001}
+{"date": "2026-09-06 JST", "title": "run_checks フル実行が 1 PR で 3 回必要になり 15〜18 分を浪費する（変更対象別の絞り込みと再実行の削減）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-06 JST", "title": "Layer 1 セルフレビューの観点別効果（どの観点が何件の CONFIRMED を出したか）を計測していない", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 375}
+{"date": "2026-09-06 JST", "title": "check_run_checks_evidence.py の閾値（既知名一致率 0.9 / 絶対数 10 / 重複率 0.9 / 末尾 3 件）を実 PR 履歴の分布で定期再較正する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "プレースホルダ判定を文字含有（$ / { / }）から正規表現ベースへ強化し、check_$version のような正規名の誤除外を防ぐ", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-161"}
