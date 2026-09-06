@@ -221,6 +221,24 @@ self_test() {
     failures=$((failures + 1))
   fi
 
+  # 分岐 7（判定順序の負ケース・Layer 1 セルフレビュー指摘）: python3 不在 と DRIFT_TOOL 不在 が
+  # **同時に成立** するとき、どちらの理由が採用されるか。分岐 2 は drift_tool を実在させた状態、
+  # 分岐 3 は python_bin を実在させた状態でしか呼んでおらず、この組み合わせが無いと
+  # `elif ! command -v` と `elif [ ! -f ]` を入れ替える変異を self-test が一切検知しない（実測済み）。
+  # python3 が無ければ drift_tool の有無に関わらず検査は走らせられないため python3 不在が先。
+  compute_drift_status "false" "$tmp/missing-tool.py" "$tmp/target" "$tmp/paths7.txt" "$tmp/snap7" \
+    "python3-does-not-exist-for-self-test"
+  if [ "$DRIFT_SKIP_REASON" = "python3 が見つかりません" ]; then
+    echo "[PASS] python3 不在と DRIFT_TOOL 不在の同時成立: python3 不在が優先された"
+  else
+    echo "[FAIL] 判定順序分岐: SKIP_REASON='$DRIFT_SKIP_REASON'（python3 不在が優先されるべき）" >&2
+    failures=$((failures + 1))
+  fi
+  if [ "$DRIFT_ENABLED" = "true" ]; then
+    echo "[FAIL] 判定順序分岐で DRIFT_ENABLED が true になった" >&2
+    failures=$((failures + 1))
+  fi
+
   if [ "$failures" -gt 0 ]; then
     echo "❌ apply-to-repo.sh self-test: ${failures} 件失敗" >&2
     return 1

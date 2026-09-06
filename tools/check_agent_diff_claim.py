@@ -125,11 +125,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 単語文字が続かない（＝拡張子パターン側に既に食われていない）」bare dotfile を追加する。
 # `(?<![.\w])` で直前が `.` や単語文字でないことを要求し、二重ドット（`...utils.py` 等・#968 が
 # 別関数で処理する）や「拡張子パターンの内部から始まる部分マッチ」を避ける。`(?![.\w-])` で
-# 直後に別の `.` や単語文字・ハイフンが続かないことを要求し、`.NET Core` のような技術名の
-# 誤検出リスクは許容する（既存の限界と同じく missing_from_diff ＝軽い警告側にしか倒れない）。
+# 直後に別の `.` や単語文字・ハイフンが続かないことを要求する。
+# 🔴 **本体は小文字・数字・`_`・`-` に限定する**（Layer 1 セルフレビュー指摘）。`[A-Za-z...]` に
+# すると `.NET` のような大文字始まりの技術名が自由記述から拾われて claim に混入し、
+# `missing_from_diff` 経由で **exit 1（FAIL）** になる（`compare()` の `mismatch` は
+# `missing_from_diff or missing_from_report` なので「軽い警告側」ではない・実測済み）。
+# 実在の bare dotfile（`.gitignore` / `.eslintrc` / `.npmrc` / `.editorconfig` …）は慣行として
+# すべて小文字なので、限定しても取りこぼしは実質的に生じない。仮に大文字の bare dotfile を
+# 報告して拾えなかった場合は `missing_from_report` 側（fail-closed）に出るだけで、
+# 「報告漏れを見逃す」方向へは倒れない。
 _PATH_TOKEN_RE = re.compile(
     r"[A-Za-z0-9_.\[][A-Za-z0-9_./\[\]-]*\.[A-Za-z0-9_]+"
-    r"|(?<![.\w])\.[A-Za-z0-9_-]+(?![.\w-])"
+    r"|(?<![.\w])\.[a-z0-9_-]+(?![.\w-])"
 )
 _URL_RE = re.compile(r"https?://\S+")  # ドメイン名がパストークンとして誤抽出されるのを防ぐため事前に除去する
 
@@ -580,6 +587,48 @@ def run_self_test() -> int:
         "上記 end-to-end: 実 diff 側と一致し mismatch=False（#880）",
         r_bare_dotfile["mismatch"] is False,
         str(r_bare_dotfile),
+    )
+
+    # 境界の外側の負ケース（#750 / Layer 1 セルフレビュー指摘）: bare dotfile の alternation を
+    # 広げすぎると、自由記述に出てくる `.NET` のような **ファイルではない先頭ドット語** まで
+    # claim へ混入し、`missing_from_diff` 経由で exit 1（偽陽性 FAIL）になる。正ケース（実在の
+    # dotfile を拾う）と対で置き、alternation を `[A-Za-z0-9_-]` へ戻す変異で FAIL させる。
+    got_tech_name = _tokens_from_text(".NET Core で実装した。.gitignore も更新した。")
+    check(
+        "負ケース: '.NET' のような非ファイルの先頭ドット語を claim に含めない"
+        "／正ケース: 同じ文の '.gitignore' は拾う（対で検証・#880）",
+        ".NET" not in got_tech_name and ".gitignore" in got_tech_name,
+        str(got_tech_name),
+    )
+
+    # ── Issue #880 経路 1: **報告側（claimed）** に `.../` 省略パスが来るケース。
+    # 実 diff の収集を `--name-only -z` へ寄せても、サブエージェントが自分で `git diff --stat` を
+    # 叩いて出力をコピーすれば報告テキスト側に省略が入る（収集方法の変更では消えない別経路）。
+    # `main()` が claimed 側にも `normalize_abbreviated_paths()` を適用することで解決する。
+    # 正ケース（実 diff の完全パスで一意に解決 → mismatch=False）と負ケース（候補が 2 件あり
+    # 一意に定まらない → mismatch には混ぜず unresolved へ）を対で置く。
+    claimed_abbrev = {".../infrastructure/cloudflare-infrastructure.md"}
+    real_for_abbrev = {"docs/03_design/infrastructure/cloudflare-infrastructure.md"}
+    resolved_claimed, claimed_unresolved = git_diff_utils.normalize_abbreviated_paths(
+        claimed_abbrev, extra_candidates=real_for_abbrev
+    )
+    r_abbrev = compare(resolved_claimed, real_for_abbrev, claimed_unresolved)
+    check(
+        "正ケース: 報告側の '.../' 省略パスを実 diff の完全パスで解決し mismatch=False（#880 経路1）",
+        r_abbrev["mismatch"] is False and not r_abbrev["unresolved"],
+        str(r_abbrev),
+    )
+    ambiguous_real = {"a/infrastructure/x.md", "b/infrastructure/x.md"}
+    resolved_amb, amb_unresolved = git_diff_utils.normalize_abbreviated_paths(
+        {".../infrastructure/x.md"}, extra_candidates=ambiguous_real
+    )
+    r_amb = compare(resolved_amb, ambiguous_real, amb_unresolved)
+    check(
+        "負ケース: 候補が 2 件で一意に定まらない省略パスは missing_from_diff（虚偽報告の疑い）に"
+        "落とさず unresolved に積む（#880 経路1・fail-closed の誤検知を作らない）",
+        r_amb["unresolved"] == [".../infrastructure/x.md"]
+        and ".../infrastructure/x.md" not in r_amb["missing_from_diff"],
+        str(r_amb),
     )
 
     # 共通正規化関数への配線検証: claim 側（_tokens_from_text 経由）と実 diff 側
@@ -1153,7 +1202,16 @@ def main() -> int:
         print(f"❌ {e}", file=sys.stderr)
         return 2
 
-    result = compare(claimed, real["files"], real.get("unresolved"))
+    # 🔴 Issue #880 経路 1: **報告側（claimed）** に `.../` 省略パスが来るケース。実 diff の収集を
+    # `--name-only -z` へ寄せても、サブエージェントが自分で `git diff --stat` を叩いて出力を
+    # コピーすれば報告テキスト側に省略が入りうる（収集方法の変更では消えない別経路）。
+    # 実 diff の完全パスを候補に与えて解決し、一意に定まらないものは `unresolved` へ積む
+    # （黙って `missing_from_diff`＝虚偽報告の疑い に落とさない・fail-closed の誤検知を防ぐ）。
+    claimed, claimed_unresolved = git_diff_utils.normalize_abbreviated_paths(
+        claimed, extra_candidates=real["files"], repo_root=REPO_ROOT
+    )
+    unresolved = set(real.get("unresolved") or set()) | claimed_unresolved
+    result = compare(claimed, real["files"], unresolved)
     result["fallback_used"] = not used_block
 
     if args.json:
