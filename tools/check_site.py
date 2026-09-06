@@ -250,33 +250,40 @@ def check_footer_readme_link(
 
 def self_test() -> int:
     failures: list[str] = []
+    # 実際に検証したケース数。手書き定数にはしない — 各検証点を必ずこのヘルパー経由で
+    # 通すことで、ケースを足し引きすれば件数が構造的に追従する（数え漏れが起きない）。
+    case_count = 0
+
+    def assert_check(ok: bool, message: str) -> None:
+        nonlocal case_count
+        case_count += 1
+        if not ok:
+            failures.append(message)
 
     png = (
         b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR"
         + struct.pack(">II", 1200, 630) + b"\x08\x06\x00\x00\x00"
     )
-    if png_size(png) != (1200, 630):
-        failures.append(f"png_size が誤り: {png_size(png)}")
+    assert_check(png_size(png) == (1200, 630), f"png_size が誤り: {png_size(png)}")
 
     vp8x = (
         b"RIFF" + b"\x00" * 4 + b"WEBP" + b"VP8X" + b"\x00" * 8
         + (1599).to_bytes(3, "little") + (1024).to_bytes(3, "little")
     )
-    if webp_size(vp8x) != (1600, 1025):
-        failures.append(f"webp_size(VP8X) が誤り: {webp_size(vp8x)}")
+    assert_check(
+        webp_size(vp8x) == (1600, 1025), f"webp_size(VP8X) が誤り: {webp_size(vp8x)}"
+    )
 
     parser = PageParser()
     parser.feed('<div id="a"><span id="a"></span>')
-    if not parser.stack:
-        failures.append("閉じ漏れを検出できていない")
-    if len(parser.ids) != 2:
-        failures.append("id を収集できていない")
+    assert_check(bool(parser.stack), "閉じ漏れを検出できていない")
+    assert_check(len(parser.ids) == 2, "id を収集できていない")
 
-    errors: list[str] = []
     balanced = PageParser()
     balanced.feed("<p>ok</p><br>")
-    if balanced.stack or balanced.unbalanced:
-        failures.append("正常な HTML を誤検知した")
+    assert_check(
+        not (balanced.stack or balanced.unbalanced), "正常な HTML を誤検知した"
+    )
 
     readme_href = README_URL
     footer_cases = [
@@ -303,10 +310,10 @@ def self_test() -> int:
     for label, html, expected in footer_cases:
         found: list[str] = []
         check_footer_readme_link(found, html=html)
-        if len(found) != expected:
-            failures.append(
-                f"check_footer_readme_link（{label}）: 違反 {len(found)} 件（期待 {expected} 件）"
-            )
+        assert_check(
+            len(found) == expected,
+            f"check_footer_readme_link（{label}）: 違反 {len(found)} 件（期待 {expected} 件）",
+        )
 
     # 本番の入口（main()）を経由した配線検査（#686）。
     # 検査関数を直接呼ぶだけでは main() から呼び出す 1 行が消えても緑のままになる。
@@ -335,27 +342,29 @@ def self_test() -> int:
                     actual = main([])  # 本判定の入口を通す（--self-test を渡さない）
                 output = buffer.getvalue()
                 hits = output.count(marker)
-                if actual != expected_exit:
-                    failures.append(
-                        f"main() 経由の配線検査（{label}）: exit {actual}（期待 {expected_exit}）"
-                    )
-                if hits != expected_hits:
-                    failures.append(
-                        f"main() 経由の配線検査（{label}）: footer 検査由来の違反 {hits} 件"
-                        f"（期待 {expected_hits} 件）"
-                    )
+                assert_check(
+                    actual == expected_exit,
+                    f"main() 経由の配線検査（{label}）: exit {actual}（期待 {expected_exit}）",
+                )
+                assert_check(
+                    hits == expected_hits,
+                    f"main() 経由の配線検査（{label}）: footer 検査由来の違反 {hits} 件"
+                    f"（期待 {expected_hits} 件）",
+                )
     finally:
         SITE_DIR, PAGES = original_site_dir, original_pages
 
     for image in sorted((SITE_DIR / "assets/img").glob("*")):
-        if image_size(image) is None:
-            failures.append(f"実ファイルのサイズを解析できない: {image.name}")
+        assert_check(
+            image_size(image) is not None,
+            f"実ファイルのサイズを解析できない: {image.name}",
+        )
 
     if failures:
         for line in failures:
             print(f"[check_site] SELF-TEST FAIL: {line}")
         return 1
-    print(f"[check_site] SELF-TEST PASS（{len(errors)} 件の想定エラー）")
+    print(f"[check_site] SELF-TEST PASS（{case_count} 件の検証ケース）")
     return 0
 
 
