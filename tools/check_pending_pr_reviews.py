@@ -147,6 +147,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -171,6 +172,38 @@ class GhUnavailableError(RuntimeError):
 # （content/analytics/retro/deferred_try.jsonl と同じパターン。.gitignore に再包含行が要る）。
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_APPROX_SAMPLE_PATH = REPO_ROOT / "content" / "analytics" / "pr-review" / "approx_samples.jsonl"
+
+# `--approx-sample-path` の封じ込め許容範囲（PR #1021 Layer 1 指摘）。
+# ① 本番の記録先（`content/analytics/` 配下）② self-test が `tempfile.TemporaryDirectory()` を
+# 使うための一時ディレクトリ配下、の 2 つのみを許可する。ユーザー指定文字列をそのまま
+# `Path()` に渡して `mkdir(parents=True)` + 追記に使うと、`../../` や絶対パスでリポジトリ外への
+# 任意ディレクトリ作成・ファイル追記が通ってしまうため（現状は無人パイプラインからの固定値渡し
+# のみで実害は無いが、将来この引数を外部入力から組み立てる変更が入っても壊れないようにする）。
+_APPROX_SAMPLE_ALLOWED_ROOTS = (
+    (REPO_ROOT / "content" / "analytics").resolve(),
+    Path(tempfile.gettempdir()).resolve(),
+)
+
+
+def _resolve_approx_sample_path(raw: str | None) -> Path:
+    """`--approx-sample-path` を解決し、許容範囲外なら `main()` から fail-closed で終了させる。
+
+    `raw` が None（未指定）なら `DEFAULT_APPROX_SAMPLE_PATH` をそのまま返す（検証不要・信頼済み定数）。
+    指定されていれば `resolve()` した上で `_APPROX_SAMPLE_ALLOWED_ROOTS` のいずれかの配下であることを
+    確認する。外れていれば `check-tool-design-rules.md` の終了コード標準に倣い `sys.exit(2)`
+    （判定不能・実行前チェックの失敗）で止める（`0`/`1` に丸めない）。
+    """
+    if raw is None:
+        return DEFAULT_APPROX_SAMPLE_PATH
+    resolved = Path(raw).resolve()
+    if not any(resolved.is_relative_to(root) for root in _APPROX_SAMPLE_ALLOWED_ROOTS):
+        print(
+            "ERROR: --approx-sample-path はリポジトリの content/analytics/ 配下、または "
+            f"一時ディレクトリ（{_APPROX_SAMPLE_ALLOWED_ROOTS[1]}）配下のみ許可されます: {resolved}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return resolved
 
 
 # owner/repo 解決ロジックの正本は tools/repo_slug.py（#215）。
@@ -895,6 +928,22 @@ def _jst_now_str() -> str:
 # が意味を持たない固定値（早期 return 部の実装参照）なので、近似使用実績のサンプルからは除外する。
 _APPROX_SAMPLE_SKIP_STATUSES = {"blocked_waiting_user", "blocked_circuit_breaker"}
 
+# `build_approx_sample_from_result()` が実際に返しうる status 値の全集合
+# （analyze_pr() の分岐を全数確認: no_action / needs_resolve_check / needs_response /
+# needs_prompt / awaiting_review。blocked_* は _APPROX_SAMPLE_SKIP_STATUSES で早期 return
+# されるためここには現れない）。`"unknown"` は機械観測ではなく、Issue #806 コメントに
+# 人手転記された移植レコードのうち `analyze_pr()` が実際にその値を返した事実を確認できない
+# ものに使う特別値（PR #1021 Layer 1 指摘・`content/analytics/pr-review/approx_samples.jsonl`
+# の PR #1011 行）。
+APPROX_SAMPLE_VALID_STATUSES = {
+    "no_action",
+    "needs_resolve_check",
+    "needs_response",
+    "needs_prompt",
+    "awaiting_review",
+    "unknown",
+}
+
 # 近似サンプル 1 レコードが必ず持つフィールド集合（Issue #806）。
 # `_validate_approx_sample()` と `build_approx_sample_from_result()` の両方から参照する唯一の定義。
 APPROX_SAMPLE_REQUIRED_FIELDS = (
@@ -988,6 +1037,10 @@ def _validate_approx_sample(record: object) -> str | None:
         発生しない」に反する。片方ずつは正しい bool でも組み合わせが不正）
       - `false_negative_candidate` が定義（`approx and unresolved_threads == 0`）と食い違う
         （記録側の計算ロジックが壊れた場合に検知する）
+
+    `status` は `APPROX_SAMPLE_VALID_STATUSES`（`build_approx_sample_from_result()` が実際に
+    返しうる値の全集合 + 移植レコード専用の `"unknown"`）に含まれない値を違反とする（PR #1021
+    Layer 1 指摘: 移植レコードに実測されていない外挿値が紛れることを防ぐ）。
     """
     if not isinstance(record, dict):
         return "トップレベルが JSON オブジェクトでない"
@@ -1006,6 +1059,8 @@ def _validate_approx_sample(record: object) -> str | None:
     status = record["status"]
     if not isinstance(status, str) or not status:
         return "status が空文字または文字列でない"
+    if status not in APPROX_SAMPLE_VALID_STATUSES:
+        return f"status が既知の値でない: {status!r}（許容: {sorted(APPROX_SAMPLE_VALID_STATUSES)}）"
     observed_at = record["observed_at"]
     if not isinstance(observed_at, str) or not re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2} JST$", observed_at):
         return "observed_at が 'YYYY-MM-DD HH:MM JST' 形式でない"
@@ -3978,6 +4033,16 @@ def _test_validate_approx_sample() -> list[str]:
     if _validate_approx_sample(fn_mismatch) is None:
         failures.append("  _validate_approx_sample(false_negative_candidate 矛盾) が違反なしと判定した")
 
+    # status 値域（PR #1021 Layer 1 指摘）: 既知集合に無い値は違反、"unknown"（移植レコード専用）は許容
+    unknown_status_value = {**valid, "status": "totally_made_up_status"}
+    if _validate_approx_sample(unknown_status_value) is None:
+        failures.append("  _validate_approx_sample(status=未知の値) が違反なしと判定した")
+    unknown_marker = {**valid, "status": "unknown"}
+    if _validate_approx_sample(unknown_marker) is not None:
+        failures.append(
+            f"  _validate_approx_sample(status='unknown') が違反ありと判定した: {_validate_approx_sample(unknown_marker)!r}"
+        )
+
     return failures
 
 
@@ -4062,6 +4127,14 @@ def _test_summarize_approx_samples() -> list[str]:
         if got["total_samples"] != 0 or got["malformed"] != 1:
             failures.append(f"  summarize_approx_samples(矛盾行) = {got!r} (expected total_samples=0, malformed=1)")
 
+        # (d) 読み取り自体の失敗（不正な UTF-8 バイト列）→ malformed=-1 で判定不能を可視化する
+        # （PR #1021 Layer 1 指摘: この状態を main() 側が exit 0 のまま握り潰さないことの前提）
+        bad_bytes_path = Path(tmpdir) / "bad_bytes.jsonl"
+        bad_bytes_path.write_bytes(b"\xff\xfe\x00\x01invalid-utf8-\xc0\xc1")
+        got = summarize_approx_samples(bad_bytes_path)
+        if got.get("malformed") != -1:
+            failures.append(f"  summarize_approx_samples(不正バイト列) = {got!r} (expected malformed=-1)")
+
     return failures
 
 
@@ -4087,6 +4160,61 @@ def _test_append_approx_sample() -> list[str]:
                 parsed = [json.loads(l) for l in lines]
                 if parsed != [record1, record2]:
                     failures.append(f"  append_approx_sample: 追記内容が不一致 {parsed!r}")
+    return failures
+
+
+def _test_resolve_approx_sample_path() -> list[str]:
+    """`_resolve_approx_sample_path()` の封じ込め検証を固定する（PR #1021 Layer 1 指摘）。
+
+    正ケース: ① 未指定（None）→ `DEFAULT_APPROX_SAMPLE_PATH` をそのまま返す
+              ② `content/analytics/` 配下（本番相当）はそのまま解決される
+              ③ `tempfile.gettempdir()` 配下（self-test が `TemporaryDirectory()` を使うため）
+    負ケース: リポジトリ内でも `content/analytics/` の外（例: `tools/` 配下）、および
+              リポジトリ完全に外の絶対パスはどちらも `sys.exit(2)`（判定不能・fail-closed）で
+              止まり、`0`/`1` に丸めない。
+    """
+    import contextlib
+
+    failures: list[str] = []
+
+    # (a) None → DEFAULT_APPROX_SAMPLE_PATH をそのまま返す
+    got = _resolve_approx_sample_path(None)
+    if got != DEFAULT_APPROX_SAMPLE_PATH:
+        failures.append(f"  _resolve_approx_sample_path(None) = {got!r} (expected {DEFAULT_APPROX_SAMPLE_PATH!r})")
+
+    # (b) 正ケース: content/analytics 配下（本番相当。実ファイル未作成のパスでも resolve() は成立する）
+    repo_relative = str(REPO_ROOT / "content" / "analytics" / "pr-review" / "other_selftest.jsonl")
+    got = _resolve_approx_sample_path(repo_relative)
+    if got != Path(repo_relative).resolve():
+        failures.append(f"  _resolve_approx_sample_path(content/analytics配下) = {got!r} (期待通り解決されなかった)")
+
+    # (c) 正ケース: 一時ディレクトリ配下（self-test の TemporaryDirectory() 相当）
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_target = str(Path(tmpdir) / "samples.jsonl")
+        got = _resolve_approx_sample_path(tmp_target)
+        if got != Path(tmp_target).resolve():
+            failures.append(f"  _resolve_approx_sample_path(一時ディレクトリ配下) = {got!r} (期待通り解決されなかった)")
+
+    # (d) 負ケース: リポジトリ内だが content/analytics の外（スコープが「リポジトリ全体」ではなく
+    # 「content/analytics 配下」に絞られていることを固定する）
+    inside_repo_outside_scope = str(REPO_ROOT / "tools" / "escape_selftest.jsonl")
+    # (e) 負ケース: リポジトリ完全に外の絶対パス
+    outside_repo = "/etc/passwd_evil_dir/samples.jsonl"
+    for candidate in (inside_repo_outside_scope, outside_repo):
+        out, err = io.StringIO(), io.StringIO()
+        exited = False
+        exit_code = None
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                _resolve_approx_sample_path(candidate)
+        except SystemExit as e:
+            exited = True
+            exit_code = e.code
+        if not exited:
+            failures.append(f"  _resolve_approx_sample_path({candidate!r}) が SystemExit しなかった（封じ込め漏れ）")
+        elif exit_code != 2:
+            failures.append(f"  _resolve_approx_sample_path({candidate!r}) の exit code = {exit_code!r} (expected 2)")
+
     return failures
 
 
@@ -4116,7 +4244,46 @@ def _test_main_approx_sample_cli_e2e() -> list[str]:
     globals()["_http_get"] = lambda url, token: (True, json.dumps([]))
 
     try:
+        # 負ケース（PR #1021 Layer 1 指摘・封じ込め検証）: content/analytics 配下でも
+        # tempfile 配下でもないパス（リポジトリ内だが対象ディレクトリの外）は main() 経由でも
+        # `_resolve_approx_sample_path()` が sys.exit(2) で止め、ファイルを作成しないこと。
+        escape_path = str(REPO_ROOT / "tools" / "check_pending_pr_reviews_escape_selftest.jsonl")
+        code, _out, err = _run_main_capturing(
+            ["--summarize-approx-samples", "--approx-sample-path", escape_path],
+            [],
+        )
+        if code != 2:
+            failures.append(f"  main --summarize-approx-samples(封じ込め対象外パス): exit={code} (expected 2)")
+        if "ERROR" not in err:
+            failures.append(
+                f"  main --summarize-approx-samples(封じ込め対象外パス): stderr にエラーメッセージが無い: {err!r}"
+            )
+        if Path(escape_path).exists():
+            Path(escape_path).unlink()
+            failures.append(
+                "  main --summarize-approx-samples(封じ込め対象外パス): 拒否されたのにファイルが作成されていた"
+            )
+
         with tempfile.TemporaryDirectory() as tmpdir:
+            # 読み取り自体の失敗（不正な UTF-8 バイト列）を main() 経由でも exit 2 にする
+            # （PR #1021 Layer 1 指摘: summarize_approx_samples() の malformed=-1 を main() が
+            # exit 0 のまま JSON へ出力するだけで握り潰していた欠陥）。
+            unreadable_path = Path(tmpdir) / "unreadable.jsonl"
+            unreadable_path.write_bytes(b"\xff\xfe\x00\x01invalid-utf8-\xc0\xc1")
+            code, out, _err = _run_main_capturing(
+                ["--summarize-approx-samples", "--approx-sample-path", str(unreadable_path)],
+                [],
+            )
+            if code != 2:
+                failures.append(f"  main --summarize-approx-samples(読み取り失敗): exit={code} (expected 2)")
+            try:
+                summary = json.loads(out)
+            except json.JSONDecodeError:
+                summary = None
+                failures.append(f"  main --summarize-approx-samples(読み取り失敗): JSON 解析不能 stdout={out!r}")
+            if summary is not None and summary.get("malformed") != -1:
+                failures.append(f"  main --summarize-approx-samples(読み取り失敗): {summary!r} (expected malformed=-1)")
+
             sample_path = Path(tmpdir) / "samples.jsonl"
 
             # --summarize-approx-samples は PR 取得（get_open_prs）に一切到達しない
@@ -4615,23 +4782,27 @@ def _run_self_test() -> None:
     # 近似使用実績の記録・集計（Issue #806・倒し方の選定ではなく計数の仕組みのみ）
     approx_sample_build_failures = _test_build_approx_sample_from_result()
     failures.extend(approx_sample_build_failures)
-    APPROX_SAMPLE_BUILD_CASE_COUNT = 7  # exact/偽陰性候補/近似非ゼロ/両層失敗/early-exit2種/no_action境界/observed_at省略
+    APPROX_SAMPLE_BUILD_CASE_COUNT = 8  # exact/偽陰性候補/近似非ゼロ/両層失敗/early-exit2種/no_action境界/observed_at省略
 
     approx_sample_validate_failures = _test_validate_approx_sample()
     failures.extend(approx_sample_validate_failures)
-    APPROX_SAMPLE_VALIDATE_CASE_COUNT = 8  # valid/非dict/必須欠落/bool型防御/負数/JST欠落/要素間矛盾2種
+    APPROX_SAMPLE_VALIDATE_CASE_COUNT = 10  # valid/非dict/必須欠落/bool型防御/負数/JST欠落/要素間矛盾2種/status値域2種
 
     approx_sample_summarize_failures = _test_summarize_approx_samples()
     failures.extend(approx_sample_summarize_failures)
-    APPROX_SAMPLE_SUMMARIZE_CASE_COUNT = 4  # ファイル不在/空ファイル/正常系(内訳込み)/要素間矛盾行の除外
+    APPROX_SAMPLE_SUMMARIZE_CASE_COUNT = 5  # ファイル不在/空ファイル/正常系(内訳込み)/要素間矛盾行の除外/読み取り失敗
 
     approx_sample_append_failures = _test_append_approx_sample()
     failures.extend(approx_sample_append_failures)
     APPROX_SAMPLE_APPEND_CASE_COUNT = 1
 
+    approx_sample_path_failures = _test_resolve_approx_sample_path()
+    failures.extend(approx_sample_path_failures)
+    APPROX_SAMPLE_PATH_CASE_COUNT = 5  # None透過 + 正ケース2種(content/analytics・tempdir) + 負ケース2種(リポジトリ内スコープ外・リポジトリ外)
+
     approx_sample_cli_e2e_failures = _test_main_approx_sample_cli_e2e()
     failures.extend(approx_sample_cli_e2e_failures)
-    APPROX_SAMPLE_CLI_E2E_CASE_COUNT = 6  # summarize(空)2 + record(早期exit除外)2 + record(2回目追記) + summarize(実データ)
+    APPROX_SAMPLE_CLI_E2E_CASE_COUNT = 12  # 封じ込め拒否3 + 読み取り失敗exit2の3 + summarize(空)2 + record(早期exit除外)2 + record(2回目追記) + summarize(実データ)
 
     total_cases = (
         len(cases)
@@ -4676,6 +4847,7 @@ def _run_self_test() -> None:
         + APPROX_SAMPLE_VALIDATE_CASE_COUNT
         + APPROX_SAMPLE_SUMMARIZE_CASE_COUNT
         + APPROX_SAMPLE_APPEND_CASE_COUNT
+        + APPROX_SAMPLE_PATH_CASE_COUNT
         + APPROX_SAMPLE_CLI_E2E_CASE_COUNT
     )
     if failures:
@@ -4747,9 +4919,15 @@ def main():
             "終了コード: 0=LAYER1_VERIFIED / 1=LAYER1_MISSING(ブロック) / 2=LAYER1_UNKNOWN(判定不能)"
         ),
     )
-    # tool-wiring-ok: --record-approx-sample は本番 firing（セッション復帰系スキルからの
-    # check_pending_pr_reviews.py 呼び出し）に相乗りするオプションで、単独の品質ゲートには
-    # 配線しない（Issue #806・データ蓄積フェーズ）。--self-test は下記のとおり配線済み。
+    # NOTE(#1021 Layer 1 指摘): この付近に「本判定を配線除外する」意味のマーカー風コメントを
+    # 書いても check_tool_wiring.py の判定には効かない（本スクリプトは find_invocations() が
+    # 既に 6 箇所の呼び出しを検出しており evaluate_script() はその時点で wired 確定と判定するため、
+    # マーカー評価の分岐へ一度も到達しない）。--record-approx-sample の実際の配線先は
+    # docs/rules/pr-review-flow-summary.md のセッション復帰コマンド（`--mine` / `--actionable-only`
+    # 系の呼び出しに付与）・.claude/skills/sprint-cycle-router/SKILL.md 決定木 Step 2・
+    # .claude/skills/pr-review-watcher/SKILL.md（マージ直前の再チェック）の 3 箇所であり、
+    # これらのドキュメントに書かれた呼び出しコマンド文字列そのものが実行場所である
+    # （Issue #806・データ蓄積フェーズ）。--self-test は下記のとおり配線済み。
     parser.add_argument(
         "--record-approx-sample",
         action="store_true",
@@ -4781,8 +4959,14 @@ def main():
         return
 
     if args.summarize_approx_samples:
-        approx_path = Path(args.approx_sample_path) if args.approx_sample_path else DEFAULT_APPROX_SAMPLE_PATH
-        print(json.dumps(summarize_approx_samples(approx_path), indent=2, ensure_ascii=False))
+        approx_path = _resolve_approx_sample_path(args.approx_sample_path)
+        summary = summarize_approx_samples(approx_path)
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        # 読み取り自体の失敗（OSError/UnicodeDecodeError）は malformed=-1 で可視化されるが、
+        # 集計値を JSON へ出したまま exit 0 で終わると「判定不能」が「合格」に化ける
+        # （check-tool-design-rules.md §1）。集計値は残したまま終了コードだけ 2 にする。
+        if summary.get("malformed") == -1:
+            sys.exit(2)
         return
 
     # API を実際に使うパスに入るためここで REPO 形式を検証する（--self-test / --summarize-approx-samples は
@@ -4824,7 +5008,7 @@ def main():
             print("NO_PENDING_PRS")
         return
 
-    approx_sample_path = Path(args.approx_sample_path) if args.approx_sample_path else DEFAULT_APPROX_SAMPLE_PATH
+    approx_sample_path = _resolve_approx_sample_path(args.approx_sample_path)
 
     results = []
     for pr in prs:
