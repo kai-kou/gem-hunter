@@ -403,3 +403,10 @@
 {"date": "2026-09-06 JST", "title": "Layer 1 ファインダーが実在しない出典座標（ファイル:行番号）を根拠に指摘を出す", "q1": "NO", "q2": "YES", "defer_reason": "high_commented", "related_issue": 847}
 {"date": "2026-09-06 JST", "title": "並列委譲中の Stop フック WIP 自動保全が中間状態をコミットし、force-with-lease での書き換えを強いる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
 {"date": "2026-09-06 JST", "title": "改善レーンの priority:high 在庫が 0 件で、消化順序が実質タイブレーク（作成日時）だけで決まる", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 854}
+{"date": "2026-09-06 JST", "title": "委譲先の変異テスト報告を網羅性の観点で機械検証する（自己選定の 4 件が全 kill でも CRITICAL 4 件が残存）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "1008"}
+{"date": "2026-09-06 JST", "title": "レビュー役サブエージェントが実在しない出典座標を根拠に KPT を返す（肯定形の主張・tool_uses=0）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "847"}
+{"date": "2026-09-06 JST", "title": "正規表現で走査する検査ツールの欠陥種別に「対象言語の字句要素の取りこぼし」を追加する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "590"}
+{"date": "2026-09-06 JST", "title": "check_selftest_wiring.py の言語別操作を 1 箇所の辞書構造へ集約する（拡張子追加時の同期漏れ防止）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "933"}
+{"date": "2026-09-06 JST", "title": "Layer 1 の観点数をタスク規模に応じて調整する（重複の指標は観点数でなく入力の重複）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "375"}
+{"date": "2026-09-06 JST", "title": "委譲プロンプトに書いた親の仮定に、その仮定を確かめたコマンドと出力を併記する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "942"}
+{"date": "2026-09-06 JST", "title": "ts_source.extract_comments() の契約（区切り記号を除去した本文を返す）を利用側の正規表現定義前に明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
