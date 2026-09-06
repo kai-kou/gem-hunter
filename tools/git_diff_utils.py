@@ -212,6 +212,15 @@ def run_git_or_raise(
     `check_agent_diff_claim.py` は作業ツリーの実差分だけを見る性質が違うツールで、git 失敗を
     握りつぶさず `RuntimeError` として上位へ伝える（`--self-test` が例外送出そのものを検証する
     ため、メッセージ書式・例外型は変えない）。
+
+    🔴 Issue #880: 本関数は `-c core.quotePath=false` を注入しない（`check=True` の単純な
+    stdout 取得のみが目的で、パス一覧の分割は行わないため）。日本語ファイル名を含む
+    パス一覧が要る呼び出しは本関数ではなく `run_git_paths_or_raise()` を使うこと
+    （`check_agent_diff_claim.py` の `git status --short` 呼び出しは untracked 検出のためだけに
+    本関数を使い続けるが、パスの中身は `parse_status_short()` 側で
+    `normalize_leading_dots()` により正規化される。`git status --short` は既定でクォート
+    パスを日本語ファイル名に対して返しうる点は既知の残存差である — 本 Issue の対象範囲は
+    `git diff --stat` 由来の 3 経路であり、`git status --short` の quotePath 対応は含まない）。
     """
     try:
         proc = runner(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
@@ -221,6 +230,35 @@ def run_git_or_raise(
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
         raise RuntimeError(f"git {' '.join(args)} が失敗: {stderr}") from e
+
+
+def run_git_paths_or_raise(
+    args: list[str],
+    cwd: Path | str,
+    *,
+    runner: Runner = subprocess.run,
+) -> list[str]:
+    """パス一覧を返す git サブコマンドを実行し、失敗時は `RuntimeError` を送出する（Issue #880）。
+
+    `_run_git_paths()`（`-c core.quotePath=false` 注入 + `-z` NUL 区切り分割）を使うため、
+    `run_git_or_raise()` と違って **日本語ファイル名がエスケープされず**、**改行やダブルクォート
+    入りパスも 1 レコードのまま** 返る。`check_agent_diff_claim.py` の `get_real_diff_files()` は
+    従来 `git diff --stat` / `git diff --cached --stat`（`run_git_or_raise()` 経由）を使っていたが、
+    `--stat` は ① 幅指定をしても `.../` 省略が起こりうる（#850）② `run_git_or_raise()` は
+    quotePath を注入しないため日本語パスが `"docs/\\346\\227\\245..."` 形にエスケープされたまま
+    返る、という 2 つの偽陽性経路を持っていた。`parse_diff_stat()` は元々 `"|"` の左のパスしか
+    使わず変更行数・記号列は一切使っていなかったため、`--name-only -z` へ置き換えることで
+    両方の経路を発生源で解消する（`check_agent_diff_claim.py` の `get_real_diff_files()` docstring
+    参照）。
+
+    `args` には呼び出し側が `-z` を含めること（`_run_git_paths()` の規約を踏襲する）。
+    git 実行そのものが失敗した場合（returncode != 0。git 未検出等の `OSError` 系も
+    `_run_git()` 内で returncode=1 に丸められ、ここで拾われる）は `RuntimeError` を送出する。
+    """
+    paths, rc = _run_git_paths(args, cwd=cwd, runner=runner)
+    if rc != 0:
+        raise RuntimeError(f"git {' '.join(args)} が失敗")
+    return paths
 
 
 # --------------------------------------------------------------------------- パス正規化
@@ -777,6 +815,64 @@ def _self_test_run_git_or_raise() -> list[str]:
     return failures
 
 
+def _self_test_run_git_paths_or_raise() -> list[str]:
+    """Issue #880: `run_git_paths_or_raise()` の argv・成功時のパス返却・失敗時の RuntimeError を検証する。
+
+    fake runner に argv を記録させ、① `-c core.quotePath=false` が注入されている
+    ② `-z` を含むサブコマンドがそのまま渡っている ③ NUL 区切りが正しく分割される、を assert する
+    （`docs/rules/check-tool-design-rules.md` §3 の fake runner argv 検証要件）。
+    """
+    failures: list[str] = []
+    calls: list[list[str]] = []
+
+    def recording_runner(args, **kwargs):  # noqa: ANN001, ANN003
+        calls.append(list(args))
+        return _FakeResult(stdout="tools/a.py\0docs/b.md\0", returncode=0)
+
+    got = run_git_paths_or_raise(["diff", "--name-only", "-z"], cwd=".", runner=recording_runner)
+    if got != ["tools/a.py", "docs/b.md"]:
+        failures.append(f"成功時にパス一覧を返す: got={got!r}")
+    if len(calls) != 1 or "-c" not in calls[0] or "core.quotePath=false" not in calls[0]:
+        failures.append(f"-c core.quotePath=false が注入されていない: got={calls!r}")
+    if calls and ("--name-only" not in calls[0] or "-z" not in calls[0]):
+        failures.append(f"呼び出し側が指定したサブコマンド引数がそのまま渡っていない: got={calls!r}")
+    if calls and calls[0][0] != "git":
+        failures.append(f"先頭は 'git' であるべき: got={calls[0]!r}")
+
+    fail_runner = _make_fake_runner(
+        {}, fail_cmds=frozenset({("git", "-c", "core.quotePath=false", "diff", "--name-only", "-z")})
+    )
+    try:
+        run_git_paths_or_raise(["diff", "--name-only", "-z"], cwd=".", runner=fail_runner)
+        failures.append("run_git_paths_or_raise は git 失敗時に RuntimeError を送出すべき")
+    except RuntimeError:
+        pass
+
+    return failures
+
+
+def _self_test_resolve_abbreviated_path_boundary() -> list[str]:
+    """Issue #880: `resolve_abbreviated_path()` の候補 **0 件**（完全な空集合）分岐を直接検証する。
+
+    既存の `_self_test_normalize_abbreviated_paths` ケース2は `normalize_abbreviated_paths()`
+    経由で「候補は非空だが一致 0 件」（`{"tools/other.py"}` に対して不一致）しか通っておらず、
+    `resolve_abbreviated_path()` 自身に **文字どおり空の candidates**（`frozenset()`）を渡す
+    経路が一度もテストされていなかった（#750 の「境界の外側の負ケース」の穴）。
+    """
+    failures: list[str] = []
+
+    got_empty = resolve_abbreviated_path(".../infrastructure/x.md", frozenset())
+    if got_empty is not None:
+        failures.append(f"候補 0 件（完全な空集合）は None を返すべき: got={got_empty!r}")
+
+    # 対で置く負ケース: 省略パスでない入力は candidates が空でもそのまま返す（早期リターン経路）
+    got_not_abbrev = resolve_abbreviated_path("tools/x.py", frozenset())
+    if got_not_abbrev != "tools/x.py":
+        failures.append(f"省略パスでない入力は candidates に依らずそのまま返す: got={got_not_abbrev!r}")
+
+    return failures
+
+
 def _k_ls_files() -> tuple[str, ...]:
     return ("git", "-c", "core.quotePath=false", "ls-files", "-z")
 
@@ -904,6 +1000,8 @@ def run_self_test() -> int:
         ),
         ("_run_git cwd/timeout 転送", _self_test_run_git_cwd_and_timeout_forwarded),
         ("run_git_or_raise", _self_test_run_git_or_raise),
+        ("run_git_paths_or_raise（#880）", _self_test_run_git_paths_or_raise),
+        ("resolve_abbreviated_path 候補0件境界（#880 / #750）", _self_test_resolve_abbreviated_path_boundary),
         ("normalize_abbreviated_paths（#850）", _self_test_normalize_abbreviated_paths),
         ("normalize_leading_dots（#948 / #968）", _self_test_normalize_leading_dots),
     ]
