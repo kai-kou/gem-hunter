@@ -421,3 +421,7 @@
 {"date": "2026-09-07 JST", "title": "PR 本文に「初版の課題」を before/after で明示し、修正内訳を追跡可能にする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "retro-try を 1 PR にバンドルしてよい条件を決定木へ明文化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "参照側ファイル（SKILL.md 等）の並行修正を commit message で明示する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "編集直後に prettier をかける契機が無く、フルスイートで初めて Format FAIL が出る（e2e/ でも再現）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "#1026"}
+{"date": "2026-09-07 JST", "title": "重い検査コマンドの終了コードを複合コマンド（後置 echo）で取り違える（pipefail 以外のバリアント）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#651"}
+{"date": "2026-09-07 JST", "title": "approx_samples.jsonl が無検査で追記され続け、#806 の判断材料が歪みうる", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#1022"}
+{"date": "2026-09-07 JST", "title": "消化モード Step 5 の候補選定に段階的フィルタが無く、waiting-claude 在庫から 1 件を選ぶのに Issue 本文を複数件読む必要がある", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
