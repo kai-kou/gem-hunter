@@ -25,5 +25,5 @@ const DEFAULT_SITE_URL = 'https://gem-hunter.kinamocchi-tech.workers.dev'
  * 実用上の要件ではないため許容する（lead 裁定）。
  */
 export function getSiteUrl(): string {
-  return process.env.SITE_URL ?? DEFAULT_SITE_URL
+  return process.env.SITE_URL?.trim() || DEFAULT_SITE_URL
 }
