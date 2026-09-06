@@ -425,3 +425,7 @@
 {"date": "2026-09-07 JST", "title": "重い検査コマンドの終了コードを複合コマンド（後置 echo）で取り違える（pipefail 以外のバリアント）", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#651"}
 {"date": "2026-09-07 JST", "title": "approx_samples.jsonl が無検査で追記され続け、#806 の判断材料が歪みうる", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#1022"}
 {"date": "2026-09-07 JST", "title": "消化モード Step 5 の候補選定に段階的フィルタが無く、waiting-claude 在庫から 1 件を選ぶのに Issue 本文を複数件読む必要がある", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "実装の判定式を変えたとき、正本ドキュメントの散文が旧実装のまま残る drift を機械検査する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#299"}
+{"date": "2026-09-07 JST", "title": "Step 7 の発火条件（Sprint Goal: 行の有無）とスコープ（SP-n 限定）の衝突を解消する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": "#833"}
+{"date": "2026-09-07 JST", "title": "独立した複数の改善を 1 PR に束ねるときの事前 Impact Analysis を挿入する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "priority:high（非 retro-try）が恒常的に 0 件で選定コストが積算する構造を解消する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#854"}
