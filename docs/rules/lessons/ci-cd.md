@@ -130,3 +130,38 @@ main と衝突して作成時から `dirty` → `quality-checks.yml` の run が
 
 **なぜ Warm 層に置くか**: 症状（CI が走らない）と原因（コンフリクト）が結び付かず、
 ワークフロー定義の調査に時間を溶かしやすい。ただし観測したときにだけ必要な知識で、常駐は不要。
+
+---
+
+## L-162: git の出力を解釈する検査ツールが「色付き diff」「shallow clone」で黙って合格する（2026-09-06）
+
+**パターン**: `git diff` の出力を行頭アンカー（`+` / `-` / `@@` / `diff --git `）で解釈する検査ツールが、
+実行環境の git 設定やクローン形態によって **1 行も抽出できないまま exit 0（合格）** を返す。テストは
+fake runner で無着色の文字列を返すため、この破壊は **self-test では原理的に検出できない**。
+
+**症状 1（色付き diff）**: `color.ui=always` が設定された環境では全行が ANSI エスケープ（`^[[1mdiff --git ...`）で
+始まり、`startswith("@@")` も `startswith("-")` も成立しない。同型の破壊は `diff.external` 設定でも起きる。
+
+- 🔴 **`git --no-color` はトップレベルオプションではない**（`unknown option` になる）。`-c color.ui=false` を
+  トップレベル `-c` で渡し、あわせてサブコマンド側に `--no-color --no-ext-diff` を付ける
+- 🔴 **`-c diff.external=` で外部 diff を無効化しようとすると git 自身が `error: cannot run :` / rc=128 で死ぬ**
+  （実測）。空文字を渡すのではなく `--no-ext-diff` を使う
+
+**症状 2（shallow clone）**: `git rev-parse --verify origin/main^{commit}` が rc=0 を返しても、
+`git diff --name-only origin/main...HEAD` は **merge base 不在で rc=128**（`actions/checkout` 既定の
+`fetch-depth: 1`）。ref の存在確認だけを preflight にしていると、変更集合が空のまま「対象 0 件 → 合格」に倒れる。
+`.git/index.lock` 競合・タイムアウトでも同じ経路に落ちる。
+
+**対策**:
+
+- ref の存在確認では足りない。**実際に使う収集コマンドを 1 回叩いて rc を見る** preflight を置く
+- 複数ソース（base range / worktree / cached）を見る設計で「**全滅したときだけ** 判定不能へ倒す」のは不十分。
+  1 ソースでも非ゼロなら判定不能（exit 2）へ倒す（`git` の非ゼロは「差分が無い」を意味しないため）
+- ANSI エスケープが混入していないかを出力側でも検査し、混入したら fail-closed にする
+- 実 git（一時リポジトリ）で `color.ui=always` と shallow clone を再現する回帰テストを持つ
+
+**参照実装**: `tools/check_module_contract_drift.py`（`_run_git()` の固定オプション・
+`ensure_changed_collectable()`・`ensure_no_ansi()`）。横断検査は #1009。
+
+**なぜ Warm 層に置くか**: git の出力を解釈するツールを新設・改修するときにだけ必要な知識で、常駐は不要。
+ただし fail-open（PASS しながら何も守らない）に倒れるため、該当ツールを触るときは必ず参照する。
