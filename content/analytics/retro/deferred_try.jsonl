@@ -398,5 +398,5 @@
 {"date": "2026-09-06 JST", "title": "run_checks.sh の重複フル実行（1 PR で 2 回・約 11 分）を変更対象別の絞り込みで減らす", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
 {"date": "2026-09-06 JST", "title": "Stop フック群を段階関数化し、複数フックの差し戻しを 1 ターン 1 件に集約する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "argparse のパースエラーと本体ガードの exit 2 を、スペース区切り／等号連結の両形式で区別してテストする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-06 JST", "title": "git diff の -z / --no-renames などオプション指定を検査ツール間で統一し、日本語ファイル名を CI で検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
-{"date": "2026-09-06 JST", "title": "反例作成レンズの委譲指示文に、過去に有効だった反例パターンの reference example を 1〜2 件添える", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "git diff の -z / --no-renames などオプション指定を検査ツール間で統一し、日本語ファイル名を CI で検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1009}
+{"date": "2026-09-06 JST", "title": "反例作成レンズの委譲指示文に、過去に有効だった反例パターンの reference example を 1〜2 件添える", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1004}

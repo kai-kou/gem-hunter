@@ -136,8 +136,11 @@ main と衝突して作成時から `dirty` → `quality-checks.yml` の run が
 ## L-162: git の出力を解釈する検査ツールが「色付き diff」「shallow clone」で黙って合格する（2026-09-06）
 
 **パターン**: `git diff` の出力を行頭アンカー（`+` / `-` / `@@` / `diff --git `）で解釈する検査ツールが、
-実行環境の git 設定やクローン形態によって **1 行も抽出できないまま exit 0（合格）** を返す。テストは
-fake runner で無着色の文字列を返すため、この破壊は **self-test では原理的に検出できない**。
+実行環境の git 設定やクローン形態によって **1 行も抽出できないまま exit 0（合格）** を返す。
+**実 git の挙動そのもの**（`color.ui=always` の実出力・shallow clone の merge base 不在）は fake runner では
+再現できないが、fake runner に ANSI 入り出力を返させる負ケースと、固定オプションが argv に乗っているかの
+検証（#710）は書ける。**既存ツールの self-test は無着色の文字列しか返さないため、そのままではこの破壊を
+検出できない**（原理的に不可能なのではなく、負ケースが無いだけ）。
 
 **症状 1（色付き diff）**: `color.ui=always` が設定された環境では全行が ANSI エスケープ（`^[[1mdiff --git ...`）で
 始まり、`startswith("@@")` も `startswith("-")` も成立しない。同型の破壊は `diff.external` 設定でも起きる。
@@ -158,10 +161,15 @@ fake runner で無着色の文字列を返すため、この破壊は **self-tes
 - 複数ソース（base range / worktree / cached）を見る設計で「**全滅したときだけ** 判定不能へ倒す」のは不十分。
   1 ソースでも非ゼロなら判定不能（exit 2）へ倒す（`git` の非ゼロは「差分が無い」を意味しないため）
 - ANSI エスケープが混入していないかを出力側でも検査し、混入したら fail-closed にする
-- 実 git（一時リポジトリ）で `color.ui=always` と shallow clone を再現する回帰テストを持つ
+- **fake runner に ANSI 入り出力を返させる負ケース** と、`-c color.ui=false` / `--no-color` / `--no-ext-diff` /
+  pathspec の `--` が argv に乗っているかの **argv 検証**（#710）を self-test に置く（実 git を用意せずに書ける
+  安価な防御。後日のリファクタで固定オプションが落ちたことをここで検知する）
+- そのうえで、実 git（一時リポジトリ）で `color.ui=always` と shallow clone を再現する回帰テストを持つ
+  （fake runner では再現できない層を埋める）
 
 **参照実装**: `tools/check_module_contract_drift.py`（`_run_git()` の固定オプション・
-`ensure_changed_collectable()`・`ensure_no_ansi()`）。横断検査は #1009。
+`ensure_changed_collectable()`・`ensure_no_ansi()`、および fake runner の ANSI 負ケースと argv 検証）。
+横断検査は #1009。
 
 **なぜ Warm 層に置くか**: git の出力を解釈するツールを新設・改修するときにだけ必要な知識で、常駐は不要。
 ただし fail-open（PASS しながら何も守らない）に倒れるため、該当ツールを触るときは必ず参照する。
