@@ -394,3 +394,9 @@
 {"date": "2026-09-06 JST", "title": "Layer 1 セルフレビューの観点別効果（どの観点が何件の CONFIRMED を出したか）を計測していない", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 375}
 {"date": "2026-09-06 JST", "title": "check_run_checks_evidence.py の閾値（既知名一致率 0.9 / 絶対数 10 / 重複率 0.9 / 末尾 3 件）を実 PR 履歴の分布で定期再較正する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-06 JST", "title": "プレースホルダ判定を文字含有（$ / { / }）から正規表現ベースへ強化し、check_$version のような正規名の誤除外を防ぐ", "q1": "NO", "q2": "NO", "defer_reason": "low_single_file", "related_issue": "L-161"}
+{"date": "2026-09-06 JST", "title": "mutation_guard.sh の射程を並行委譲中の Stop フック抑止まで拡張する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 322}
+{"date": "2026-09-06 JST", "title": "run_checks.sh の重複フル実行（1 PR で 2 回・約 11 分）を変更対象別の絞り込みで減らす", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-06 JST", "title": "Stop フック群を段階関数化し、複数フックの差し戻しを 1 ターン 1 件に集約する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "argparse のパースエラーと本体ガードの exit 2 を、スペース区切り／等号連結の両形式で区別してテストする", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-06 JST", "title": "git diff の -z / --no-renames などオプション指定を検査ツール間で統一し、日本語ファイル名を CI で検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1009}
+{"date": "2026-09-06 JST", "title": "反例作成レンズの委譲指示文に、過去に有効だった反例パターンの reference example を 1〜2 件添える", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1004}
