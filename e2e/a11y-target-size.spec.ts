@@ -16,6 +16,17 @@ import { searchFor, uniqueKeyword } from './helpers'
  * - **検索ボタン**（主要な操作要素・`--size-control-xl` = 44px）
  * - **ページ送りボタン**（前へ/次へ・`--size-control-md` = 32px）
  * - **カード内のリンク**（一覧の各行から詳細へ遷移する主リンク）
+ * - **ヘッダーの言語切替リンク**（`LocaleSwitcher`・`--size-control-md` = 32px・Issue #844）
+ * - **ヘッダーのログイン導線**（`LoginLink`・`--size-control-sm` = 28px・Issue #844）
+ *
+ * ### ヘッダー 2 種を「間隔例外」ではなく対象へ追加する理由（Issue #844）
+ * `back-link.tsx` の除外理由（「周囲に他の操作要素が無く直径 24px の円が誰とも重ならない」）は
+ * ヘッダーには **流用できない**: `site-header.tsx` の右側グループは `gap-2`（8px）で
+ * `LocaleSwitcher` の各リンクと `LoginLink` が隣接しており、Spacing 例外（WCAG 2.2 SC 2.5.8
+ * Exception 2: 24px 未満でも隣接ターゲットとの間に 24px 径の円が収まる間隔があれば可）が
+ * 自然には成立しない。したがって除外側を選ぶには「間隔で救う」以外の根拠が要るが、実際には
+ * 両者とも cva の size variant（`sm` = 28px / `default` = 32px）で 24px フロアを直接満たして
+ * 描画されているため、除外ではなく §7.5 の検証対象へ加える（宣言 tier だけでなく実描画で担保する）。
  *
  * ## 対象から除外したもの（理由を明示する）
  * - **「一覧へ戻る」リンク**（`back-link.tsx`）: 独立した装飾のないテキストリンクで、周囲に
@@ -125,5 +136,29 @@ test.describe('SC 2.5.8 Target Size (Minimum): 主要な操作要素が 24×24 C
     const detailLink = page.getByRole('link', { name: 'octostub/octo-widgets' })
     await expect(detailLink).toBeVisible()
     await expectExpandedCardTargetSize(detailLink, 'カード内のリンク（octo-widgets）')
+  })
+
+  test('ヘッダーの言語切替リンクが 24×24 以上（実測は --size-control-md = 32px 相当）', async ({
+    page,
+  }) => {
+    await page.goto('/ja')
+    const nav = page.getByRole('navigation', { name: '言語切替' })
+    const jaLink = nav.getByRole('link', { name: '日本語' })
+    const enLink = nav.getByRole('link', { name: 'English' })
+    await expect(jaLink).toBeVisible()
+    await expect(enLink).toBeVisible()
+    await expectTargetSizeAtLeast(jaLink, 'ヘッダー言語切替（日本語）')
+    await expectTargetSizeAtLeast(enLink, 'ヘッダー言語切替（English）')
+  })
+
+  test('ヘッダーのログイン導線が 24×24 以上（実測は --size-control-sm = 28px 相当）', async ({
+    page,
+  }) => {
+    await page.goto('/ja')
+    // `LoginLink` は未ログイン時は `<a href="/api/auth/login">`（`isAuthConfigured()` が真の
+    // E2E 環境ではダミー OAuth 4 変数が揃うため、`showAuthLink` は常に true・`e2e/stub/e2e-env.mjs`）。
+    const loginLink = page.getByRole('link', { name: 'GitHubでログイン' })
+    await expect(loginLink).toBeVisible()
+    await expectTargetSizeAtLeast(loginLink, 'ヘッダーのログイン導線')
   })
 })
