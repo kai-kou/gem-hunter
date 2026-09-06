@@ -157,6 +157,7 @@ ${errors}先にすべての変更をコミット＆pushしてから PR 作成（
 手順: git add <ファイル> → git commit → git push -u origin <ブランチ名>"
 fi
 
+evidence_table_warning=""
 # 4.5. run_checks サマリーの貼付検査（Lv3・品質チェック二層構成の層 2・#72 / #543・D-42）
 # CI（.github/workflows/quality-checks.yml）は Prettier / ESLint / tsc --noEmit / Vitest の 4 種だけを見る。
 # E2E・Lighthouse・依存規則・CJK Markdown・各 self-test を含む `tools/run_checks.sh` の実行結果を
@@ -173,10 +174,16 @@ if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   #   - ## run_checks 結果         ── `## `run_checks` 結果`
   #   - ## npm run check 結果  ── `## `npm run check` 結果`
   #
-  # 判定は awk で単一パスで行い、以下 3 点のすり抜けを塞ぐ（PR #456 敵対的検証で実測）:
-  # ⚠️ 下の awk 正規表現・フェンス判定は tools/check_evidence_freshness.py の `_HEADING_RE` /
-  #    `find_evidence_shas()` と同義の独立実装（相互参照コメントを双方に付与済み・#906 WARNING 5）。
-  #    一本化（--check-section-only モードの追加と本 awk の廃止）は #906 のスコープ外（やらない）。
+  # 🔴 Issue #463: 通常経路の判定本体は tools/check_run_checks_evidence.py（Python）であり、
+  #    本文の中身（表の実在・列不整合・打ち切り等）まで検証する。この節のコメントで説明する
+  #    awk 実装は python3 / スクリプト自体が使えないときにだけ動く**フォールバック専用**で、
+  #    「セクション内に `|` で始まる行が 1 つでもあればよい」という貼付有無だけの縮退判定
+  #    （表の中身は見ない）。本流とフォールバックの役割分担はここでのみ説明し、以降の節
+  #    （4.5-fallback 実装部）では重複させない。
+  #    フォールバック awk の判定仕様（実測ですり抜けが塞がれている点・PR #456 敵対的検証）:
+  #    ⚠️ 下の awk 正規表現・フェンス判定は tools/check_evidence_freshness.py の `_HEADING_RE` /
+  #       `find_evidence_shas()` と同義の独立実装（相互参照コメントを双方に付与済み・#906 WARNING 5）。
+  #       一本化（--check-section-only モードの追加と本 awk の廃止）は #906 のスコープ外（やらない）。
   #   1. 見出しが複数回出現する場合、最初の 1 個だけでなく全見出しを走査し、
   #      いずれか 1 つのセクションに表があれば合格にする（1 個目だけ見ると
   #      「後から正しく貼り直した」PR が誤ブロックされていた）
@@ -185,6 +192,79 @@ if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   #   3. 全角スペース（U+3000）を半角に正規化してから判定する（IME 由来の全角スペース
   #      1 つで見出しが認識できず、理由不明のままブロックされていた）
   # awk の POSIX 文字クラス依存を避けるため半角スペース/タブのみを空白として扱う。
+  #
+  #    フォールバック awk は次のダミー本文でも素通りしてしまう既知の限界がある（実機確認済み）:
+  #      ## run_checks 結果 / （実行していません、これはダミーです）/ | ダミー |
+  #    また、``` と ~~~ を同一カウンタでトグルする素朴な実装のため、ネストしたフェンス
+  #    （```text の内側に ~~~ がある本文）を「フェンス外」と誤判定し、コードフェンス内の
+  #    例示表で通過することがある（本 Issue で実測。check_evidence_freshness.py が #906 で
+  #    修正済みの欠陥と同型で、Python 側 md_fence.fence_flags とは判定が食い違う）。
+  #    これらの限界は通常経路（Python 判定器が動く限り）では顕在化しない
+  #    （黙って劣化させないため、フォールバックが発動したことは警告として可視化する）。
+  _repo_root_45=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+  _evidence_tool_45="$_repo_root_45/tools/check_run_checks_evidence.py"
+  _use_awk_fallback_45=1
+  if [ -f "$_evidence_tool_45" ] && command -v python3 >/dev/null 2>&1; then
+    _ev_exit_45=0
+    if command -v timeout >/dev/null 2>&1; then
+      _ev_out_45=$(printf '%s' "$pr_body" | timeout 20 python3 "$_evidence_tool_45" --body-file - 2>&1) || _ev_exit_45=$?
+    else
+      _ev_out_45=$(printf '%s' "$pr_body" | python3 "$_evidence_tool_45" --body-file - 2>&1) || _ev_exit_45=$?
+    fi
+    case "$_ev_exit_45" in
+      0)
+        # 合格。awk による二重判定はしない（判定器を 1 つに保つ）
+        _use_awk_fallback_45=0
+        ;;
+      1)
+        # 1 = 証跡表が不正（貼り忘れ・ダミー・打ち切り・列不整合）＝ PR 本文側の問題
+        _use_awk_fallback_45=0
+        hook_block "[pre-pr-create-check] PR 作成をブロックしました。run_checks の結果表が層 2 の証跡として妥当ではありません。
+
+${_ev_out_45}
+
+CI（quality-checks.yml）は Prettier / ESLint / 型 / ユニットの高速チェックのみを実行します。E2E・Lighthouse を含む \`npm run check\`（= tools/run_checks.sh）の結果が層 2 の証跡です（D-42・CI 緑でも省略できません）。
+1. \`npm run check\` を **最後まで** 実行する（途中で打ち切った結果は証跡になりません）
+2. 出力末尾の Markdown サマリー表を、装飾を加えず **そのまま** \`## run_checks 結果\` または \`## npm run check 結果\` という見出しを付けて PR 本文に貼る（run_checks / npm run check の部分はバッククォートで囲んでも囲まなくても可。表記ゆれ・意訳は不可）
+3. 見出しから次の見出し（##）までの間に表を置く（無関係な別セクションの表・コードフェンス内の例示は不可）
+4. PR 作成を再実行する
+
+判定の詳細は \`python3 tools/check_run_checks_evidence.py --body-file <本文> --json\` で確認できます。
+手順の正本: docs/rules/pr-review-flow-summary.md「PR 作成時の必須事項」項目 0"
+        ;;
+      2)
+        # 2 = 判定不能（fail-closed・check-tool-design-rules.md の標準）＝ ツール側の問題である
+        # 可能性がある。PR 本文が悪いと決めつけたメッセージを出すと原因究明を誤誘導するため、
+        # exit 1（本文が不正）とは別のメッセージにする（PR #1003 Layer 1 レビュー CONFIRMED 指摘）。
+        # ブロックする点自体は変えない（fail-closed を維持）。
+        _use_awk_fallback_45=0
+        hook_block "[pre-pr-create-check] PR 作成をブロックしました。run_checks 証跡チェッカーが判定不能（exit 2）を返しました。
+
+${_ev_out_45}
+
+exit 2 は「PR 本文が不正」（exit 1）とは異なり、**check_run_checks_evidence.py 自体が判定を完了できなかった**ことを示します（依存モジュールの読み込み失敗・実行環境の破損等）。PR 本文の書き方を直しても解消しない可能性があります。
+1. まず \`python3 tools/check_run_checks_evidence.py --self-test\` を実行し、判定器自体が正常に動くか確認する
+2. self-test が失敗する場合は判定器・依存モジュールの破損を疑い、原因を修正する（type:bug Issue 化を検討）
+3. self-test が成功するのに exit 2 が再現する場合は、実際の PR 本文を \`python3 tools/check_run_checks_evidence.py --body-file <本文> --json\` に通して詳細を確認する
+4. 原因を解消してから PR 作成を再実行する
+
+fail-closed の方針は維持します（判定不能を PASS 扱いにはしません・docs/rules/check-tool-design-rules.md）。"
+        ;;
+      *)
+        # timeout（124）・実行不能（126/127）等。判定器が動かせなかったので縮退する
+        evidence_table_warning="[pre-pr-create-check] check_run_checks_evidence.py が exit ${_ev_exit_45} で実行できませんでした。旧 awk による貼付有無のみの縮退判定にフォールバックします（表の中身は検証されていません）。"
+        ;;
+    esac
+    unset _ev_exit_45 _ev_out_45
+  else
+    evidence_table_warning="[pre-pr-create-check] tools/check_run_checks_evidence.py または python3 が見つかりません。旧 awk による貼付有無のみの縮退判定にフォールバックします（表の中身は検証されていません）。"
+  fi
+  unset _repo_root_45 _evidence_tool_45
+fi
+
+# 4.5-fallback. python3 / 判定器が使えないときだけ動く縮退判定（Issue #463）
+# awk の POSIX 文字クラス依存を避けるため半角スペース/タブのみを空白として扱う。
+if [ "$tool_name" = "mcp__github__create_pull_request" ] && [ "${_use_awk_fallback_45:-0}" -eq 1 ]; then
   pr_body_norm=$(printf '%s\n' "$pr_body" | sed 's/　/ /g')
   has_run_checks_result=$(printf '%s\n' "$pr_body_norm" | awk '
     {
@@ -240,8 +320,9 @@ fi
 unset _repo_root_46
 
 # 4.7. run_checks 証跡 SHA の鮮度検査（Lv3・ブロッキング・Issue #751）
-# 4.5 節は「PR 本文に run_checks 結果表が貼られているか」だけを見ており、その表が
-# **いつの HEAD で取った結果か** は検証していない。昔 run_checks を 1 回実行した結果表を
+# 4.5 節は awk フォールバック時に限り「PR 本文に run_checks 結果表が貼られているか」だけを
+# 見る縮退判定（通常経路は tools/check_run_checks_evidence.py が中身まで検証する）。いずれの
+# 経路でも、その表が **いつの HEAD で取った結果か** は検証していない。昔 run_checks を 1 回実行した結果表を
 # 使い回し、その後に加えた変更は未検証のまま PR を出す逃げ道が残っていたため、判定を
 # tools/check_evidence_freshness.py に委譲する（正規表現の判定ロジックをこの hook 内で
 # 二重定義しない）。PR 本文の run_checks / npm run check 結果セクション内に
@@ -444,6 +525,10 @@ fi
 if [ -n "$evidence_freshness_warning" ]; then
   _ctx="${_ctx}
 ${evidence_freshness_warning}"
+fi
+if [ -n "$evidence_table_warning" ]; then
+  _ctx="${_ctx}
+${evidence_table_warning}"
 fi
 jq -n --arg ctx "$_ctx" '{
   "systemMessage": "[pre-pr-create-check] Layer 0 機械ゲート通過（Layer 1 リマインダーと Warning は Claude のコンテキストに注入済み）。",
