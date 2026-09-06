@@ -59,6 +59,9 @@
 
 ## 失敗経路の列挙（#474 必須項目 1）
 
+0. 依存モジュール（`check_evidence_freshness` / `md_fence`）の import が rename・削除・破損等で
+   失敗する → `dependency_import_failed`（判定不能・exit 2。#1003 指摘A: モジュールレベルの import
+   を未捕捉のままにすると exit 1 に化け、フック側が「PR 本文が悪い」と誤解釈するため正規化する）
 1. `run_checks.sh` が読めない（存在しない・権限無し・不正 UTF-8） → `run_checks_unreadable`（判定不能・exit 2）
 2. `run_checks.sh` から既知チェック名が 1 件も抽出できない → `no_known_names`（判定不能・exit 2）
 3. `--body-file` が読めない（存在しない・権限無し・不正 UTF-8） → `body_unreadable`（判定不能・exit 2）
@@ -88,7 +91,7 @@
 |---|---|---|
 | `0` | 表が妥当（いずれかのセクションが既知名照合・列構造・完走性のすべてを満たす） | 検査が走り、違反が無かった |
 | `1` | 表が不正（セクション不在・テーブル行不在・列不整合・既知名との不一致・異常な重複・完走した形跡が無い） | 検査が走り、違反を検出した |
-| `2` | 判定不能（`run_checks.sh` が読めない・既知名が 1 件も抽出できない・`--body-file` が読めない・想定外の内部エラー） | 検査自体が成立しなかった |
+| `2` | 判定不能（依存モジュールの import 失敗・`run_checks.sh` が読めない・既知名が 1 件も抽出できない・`--body-file` が読めない・想定外の内部エラー） | 検査自体が成立しなかった |
 
 `2`（判定不能）を `0` に丸めない。対象 0 件（セクション不在・データ行不在）を `0` に丸めない
 （fail-closed・`docs/rules/check-tool-design-rules.md` §1 / §2）。
@@ -118,8 +121,21 @@ from pathlib import Path
 # 独立実装を増やさない（タスク要件・#906 WARNING 5 と同じ思想）。
 # `md_fence.fence_flags` はフェンス判定そのものの共有ヘルパー。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_evidence_freshness import _HEADING_GENERIC_RE, _HEADING_RE  # noqa: E402
-from md_fence import fence_flags  # noqa: E402
+# 🔴 指摘A（PR #1003 Layer 1・CRITICAL）: この import はモジュールレベルにあるため、依存先の
+# rename・削除・破損が起きると **未捕捉例外で exit 1** になり、フック側は「証跡表が不正（PR 本文が
+# 悪い）」と誤解釈する（原因はツール側の破損なのに「表を貼り直せ」という誤った是正へ誘導される）。
+# try/except で囲み、失敗時は `_IMPORT_ERROR` に退避して `main()` から exit 2（判定不能）へ正規化する
+# （既存の `run_checks_unreadable` / `body_unreadable` / `internal_error` と同じ書式・同じ経路）。
+try:
+    from check_evidence_freshness import _HEADING_GENERIC_RE, _HEADING_RE  # noqa: E402
+    from md_fence import fence_flags  # noqa: E402
+
+    _IMPORT_ERROR: Exception | None = None
+except Exception as e:  # noqa: BLE001 - 判定不能への最終防波堤（本ツールの外側の破損を exit 1 に化けさせない）
+    _HEADING_GENERIC_RE = None  # type: ignore[assignment]
+    _HEADING_RE = None  # type: ignore[assignment]
+    fence_flags = None  # type: ignore[assignment]
+    _IMPORT_ERROR = e
 
 # ──────────────────────────────────────────────
 # 正規表現（既知チェック名の抽出・表セルの検証）
@@ -132,9 +148,26 @@ _RE_RUN_CHECK = re.compile(r'^\s*run_check(?:_timeout)?\s+"([^"]+)"', re.MULTILI
 # `skip_check "名前" "理由"`
 _RE_SKIP_CHECK = re.compile(r'^\s*skip_check\s+"([^"]+)"', re.MULTILINE)
 # `RESULTS+=("名前|STATUS|秒数")` のような直接追加
-_RE_RESULTS_DIRECT = re.compile(r'RESULTS\+=\("([^"|]+)\|', re.MULTILINE)
+# 🔴 指摘C（PR #1003 Layer 1・WARNING）: 他の 2 パターンと前提を揃えるため行頭アンカーを付ける
+# （揃えていなかったのは既存の逸脱であり、`_KNOWN_NAME_PATTERNS` 全体が「行頭の呼び出し」だけを
+# 対象にするという前提を暗黙に破っていた）。
+_RE_RESULTS_DIRECT = re.compile(r'^\s*RESULTS\+=\("([^"|]+)\|', re.MULTILINE)
 
 _KNOWN_NAME_PATTERNS = (_RE_RUN_CHECK, _RE_SKIP_CHECK, _RE_RESULTS_DIRECT)
+
+
+def _is_placeholder_name(name: str) -> bool:
+    """`${name}` / `$name` のような変数展開そのものは実際のチェック名ではない。
+
+    指摘C（PR #1003 Layer 1・WARNING）: 3 パターンとも `run_check()` / `run_check_timeout()` /
+    `skip_check()` の **関数定義の内部実装**（`RESULTS+=("${name}|...")` や
+    `run_check_timeout "$name" "$TIMEOUT_SEC" "$@"`）にもマッチしてしまい、関数の実引数名
+    （変数展開）がそのまま既知チェック名として混入する。既知名は照合の whitelist なので、
+    偽装表に `$name` の行を並べると一致率・絶対数のカウンタを無関係な語で押し上げられる
+    （fail-open）。実測: 実際の `tools/run_checks.sh` に `extract_known_names_ordered()` を
+    適用すると `${name}` / `$name` の 2 件が混入していた（総数 114 件中）。
+    """
+    return any(ch in name for ch in ("$", "{", "}"))
 
 # 表の結果セルが取りうる既知ステータス語彙（`tools/run_checks.sh` の `RESULTS+=` 実装が正）
 _STATUS_VOCAB_RE = re.compile(r"^(PASS|FAIL|FAIL\(timeout\)|SKIP)$")
@@ -213,7 +246,11 @@ def extract_known_names_ordered(run_checks_text: str) -> list[str]:
     matches: list[tuple[int, str]] = []
     for pattern in _KNOWN_NAME_PATTERNS:
         for m in pattern.finditer(run_checks_text):
-            matches.append((m.start(), m.group(1)))
+            name = m.group(1)
+            if _is_placeholder_name(name):
+                # 指摘C: 関数定義内部の変数展開（`${name}` / `$name`）は実チェック名ではない
+                continue
+            matches.append((m.start(), name))
     matches.sort(key=lambda t: t[0])
 
     seen: set[str] = set()
@@ -610,6 +647,23 @@ def main() -> int:
     parser.add_argument("--self-test", action="store_true", help="ネットワーク非依存のセルフテストを実行")
     args = parser.parse_args()
 
+    # 指摘A: 依存モジュール（check_evidence_freshness / md_fence）の import が失敗している場合、
+    # --self-test であっても実際の判定処理（extract_table_sections 等）は依存先を使うため実行せず、
+    # ここで exit 2（判定不能）へ正規化する。
+    if _IMPORT_ERROR is not None:
+        print(
+            f"❌ 判定不能: 依存モジュールの読み込みに失敗しました（{type(_IMPORT_ERROR).__name__}: {_IMPORT_ERROR}）",
+            file=sys.stderr,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    {"valid": False, "reason": "dependency_import_failed", "error": str(_IMPORT_ERROR)},
+                    ensure_ascii=False,
+                )
+            )
+        return 2
+
     if args.self_test:
         return run_self_test()
 
@@ -623,6 +677,32 @@ def main() -> int:
 # 自己完結のフィクスチャ用サンプル run_checks.sh 断片（実ファイルに依存しない・将来 run_checks.sh
 # が変わっても self-test の合否がぶれないようにするため独立に持つ）。
 _SAMPLE_RUN_CHECKS_SH = """
+run_check_timeout() {
+  local name="$1"
+  local timeout_sec="$2"
+  shift 2
+  if [ "$exit_code" -eq 124 ]; then
+    RESULTS+=("${name}|FAIL(timeout)|${elapsed}")
+  elif [ "$exit_code" -ne 0 ]; then
+    RESULTS+=("${name}|FAIL|${elapsed}")
+  else
+    RESULTS+=("${name}|PASS|${elapsed}")
+  fi
+}
+
+run_check() {
+  local name="$1"
+  shift
+  run_check_timeout "$name" "$TIMEOUT_SEC" "$@"
+}
+
+skip_check() {
+  local name="$1"
+  local reason="$2"
+  echo "[run_checks] SKIP: ${name}（${reason}）"
+  RESULTS+=("${name}|SKIP|0")
+}
+
 run_check "Lint (eslint)" npx eslint
 run_check "Format (prettier --check)" npx prettier --check .
 run_check "型チェック (tsc --noEmit)" npx tsc --noEmit
@@ -698,6 +778,38 @@ def run_self_test() -> int:
         f"known_names={known_names!r} expected={set(sample_names)!r}",
     )
 
+    # ── 指摘C（#906/#1003 WARNING）: run_check() / run_check_timeout() / skip_check() の
+    #    関数定義内部にある変数展開（${name} / $name）が既知名として混入していないこと。
+    #    サンプルにはこれらの関数定義を含めてあるため、フィルタが機能していなければ
+    #    known_names に "${name}" / "$name" が混入し、上の「前提」チェックも壊れて連鎖検知される。
+    check(
+        "指摘C: 関数定義内部の変数展開（${name} / $name）が既知名に混入していない",
+        all(not _is_placeholder_name(n) for n in known_names),
+        f"known_names={known_names!r}",
+    )
+
+    # ── 干渉検証（指摘A〜C は同じファイルの別関数を触るが、C の抽出変更が B の重複検知
+    #    フィクスチャや既存の完走性判定に影響しないかを確認する）:
+    #    フィクスチャの先頭に追加した関数定義ブロック（run_check_timeout() / run_check() /
+    #    skip_check()）は RESULTS+=("${name}|...") や run_check_timeout "$name" ... という、
+    #    定義順で最も早い位置に出現する `_RE_RESULTS_DIRECT` / `_RE_RUN_CHECK` マッチを含む。
+    #    プレースホルダ除外が効いていなければ、これらが「初出位置が最も早い既知名」として
+    #    `extract_known_names_ordered()` の先頭に紛れ込み、末尾 `_TAIL_CHECK_COUNT` 件
+    #    （完走性判定・指摘Bの重複検知フィクスチャが依存する `tail_names`）の計算対象には
+    #    直接影響しないが、`extract_known_names()`（= `known_names` 集合）にゴミが混入し、
+    #    B の重複検知フィクスチャ・既存の完走性判定が前提とする「既知名 = 15 件ちょうど」
+    #    という前提を静かに壊す（実際の失敗は上の「前提」「指摘C」チェックとして検知済み）。
+    #    ここでは正常系（C の修正が効いている状態）で、B・完走性判定が使う
+    #    `extract_known_names_ordered()` の末尾がプレースホルダ混入前と同じ並びのままであり、
+    #    C の変更が B の判定ロジックに悪影響を与えていないことを直接確認する。
+    known_names_ordered_now = extract_known_names_ordered(_SAMPLE_RUN_CHECKS_SH)
+    check(
+        "干渉検証: C のプレースホルダ除外後も、B の完走性判定が使う末尾 "
+        "_TAIL_CHECK_COUNT 件の並びは関数定義ブロック追加前と変わらない",
+        known_names_ordered_now[-_TAIL_CHECK_COUNT:] == sample_names[-_TAIL_CHECK_COUNT:],
+        f"known_names_ordered_now={known_names_ordered_now!r}",
+    )
+
     good_body = _build_good_table_body(sample_names)
 
     # ── 正常系: 本物の出力形式に一致する表は valid・exit 0 ──
@@ -763,18 +875,29 @@ def run_self_test() -> int:
     )
 
     # ── 要素間の関係が不正な負ケース（#896）: 同一チェック名を大量にコピペした表 ──
-    body_duplicated = _build_good_table_body([sample_names[0]] * 40)
+    # 🔴 指摘B（PR #1003 Layer 1・CRITICAL）: 旧フィクスチャは `[sample_names[0]] * 40`（先頭名の
+    # コピペのみ）で、末尾チェック名を含まないため `incomplete_run`（完走性未達）の別経路で
+    # 偶然 invalid になっていただけだった（`unique_ratio` ガードそのものは一度も検証されて
+    # いなかった。実測: `_evaluate_section()` の `unique_ratio` 条件を `and True` に置換しても
+    # 32 passed, 0 failed で検知できなかった）。末尾チェック名を含む完全な既知名リストを
+    # 「1 回ずつ」追加し、そこに大量コピペを重ねることで、tail_ok=True（完走はしている）
+    # かつ unique_ratio が閾値未満、という unique_ratio ガード単体の失敗経路を作る。
+    body_duplicated = _build_good_table_body([sample_names[0]] * 40 + sample_names)
     r_duplicated = judge_evidence(body_duplicated, _SAMPLE_RUN_CHECKS_SH)
     check(
         "#896: 同一既知チェック名を 40 行コピペした表は invalid（重複率が閾値未満）",
-        r_duplicated["valid"] is False,
+        r_duplicated["valid"] is False and r_duplicated["reason"] == "invalid",
         str(r_duplicated),
     )
     if r_duplicated["sections"]:
         dup_metrics = r_duplicated["sections"][0]["metrics"]
         check(
-            "#896: 重複表は既知名一致率だけなら 100% になる（割合ベース単独では見逃す設計であることの確認）",
-            dup_metrics is not None and dup_metrics["known_ratio"] == 1.0 and dup_metrics["unique_ratio"] < _THRESH_UNIQUE_RATIO,
+            "#896: 重複表は既知名一致率 100%・末尾チェック名も含む（tail_ok=True）にもかかわらず、"
+            "unique_ratio 単体が閾値未満で invalid になる（他の判定軸に依存しないことの確認）",
+            dup_metrics is not None
+            and dup_metrics["known_ratio"] == 1.0
+            and dup_metrics["tail_ok"] is True
+            and dup_metrics["unique_ratio"] < _THRESH_UNIQUE_RATIO,
             str(dup_metrics),
         )
 
@@ -1038,6 +1161,83 @@ def run_self_test() -> int:
             "judge_evidence の差し替えは確実に元へ戻る",
             _module.judge_evidence is _orig_judge_evidence,
             "",
+        )
+
+    # ── 指摘A（PR #1003 Layer 1・CRITICAL）: 依存モジュール（check_evidence_freshness / md_fence）の
+    # import が破損しても、未捕捉例外で exit 1 に化けず exit 2（判定不能）へ正規化されること。
+    # このスクリプト自身のソースを一時コピーし、import 対象のモジュール名を存在しないものへ
+    # 書き換えた「壊れた実体」を作って CLI 入口 main() 経由の subprocess 実行で終了コードを
+    # 検証する（判定関数を直接壊すのではなく、実際に import 文が失敗する状況を再現するため）。
+    with tempfile.TemporaryDirectory() as tmp3:
+        original_source = Path(__file__).read_text(encoding="utf-8")
+        broken_source = original_source.replace(
+            "from check_evidence_freshness import _HEADING_GENERIC_RE, _HEADING_RE  # noqa: E402",
+            "from check_evidence_freshness_NONEXISTENT_MODULE import _HEADING_GENERIC_RE, _HEADING_RE  # noqa: E402",
+        )
+        check(
+            "前提: 依存モジュール名の書き換えがソースに適用された（文字列置換が有効に働いている）",
+            broken_source != original_source,
+            "置換対象の import 文が見つからず、ソース文字列が変化していない",
+        )
+
+        broken_script_path = Path(tmp3) / "broken_check_run_checks_evidence.py"
+        broken_script_path.write_text(broken_source, encoding="utf-8")
+
+        run_checks_path3 = Path(tmp3) / "sample_run_checks.sh"
+        run_checks_path3.write_text(_SAMPLE_RUN_CHECKS_SH, encoding="utf-8")
+        body_path3 = Path(tmp3) / "body.md"
+        body_path3.write_text(good_body, encoding="utf-8")
+
+        # tmp3 には check_evidence_freshness.py / md_fence.py を置かない（= 破損した
+        # broken_script_path の `sys.path.insert(0, dirname(__file__))` では依存先が見つからず、
+        # 本物の import 失敗と同じ状況になる）。
+        cli_broken = subprocess.run(
+            [
+                sys.executable,
+                str(broken_script_path),
+                "--body-file",
+                str(body_path3),
+                "--run-checks-path",
+                str(run_checks_path3),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        check(
+            "指摘A: 依存モジュール破損時は未捕捉例外にならず exit 2（判定不能）へ正規化される",
+            cli_broken.returncode == 2,
+            f"returncode={cli_broken.returncode!r} stdout={cli_broken.stdout!r} stderr={cli_broken.stderr!r}",
+        )
+        check(
+            "指摘A: 依存モジュール破損時のトレースバックが生のまま漏れていない",
+            "Traceback" not in cli_broken.stderr,
+            f"stderr={cli_broken.stderr!r}",
+        )
+
+        cli_broken_json = subprocess.run(
+            [
+                sys.executable,
+                str(broken_script_path),
+                "--body-file",
+                str(body_path3),
+                "--run-checks-path",
+                str(run_checks_path3),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        try:
+            broken_payload = json.loads(cli_broken_json.stdout)
+            broken_reason_ok = broken_payload.get("reason") == "dependency_import_failed"
+        except json.JSONDecodeError:
+            broken_reason_ok = False
+        check(
+            "指摘A: --json 経路でも reason=dependency_import_failed・exit 2 の一貫した形で返る",
+            cli_broken_json.returncode == 2 and broken_reason_ok,
+            f"stdout={cli_broken_json.stdout!r} stderr={cli_broken_json.stderr!r}",
         )
 
     print(f"\n{passed} passed, {failed} failed")
