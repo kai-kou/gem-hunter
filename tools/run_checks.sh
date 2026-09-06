@@ -955,6 +955,15 @@ else
   skip_check "secrets-broker ドリフト同期 self-test (sync_broker_drift.sh --self-test)" "スクリプトが見つかりません"
 fi
 
+# 配線漏れ検査の共有ヘルパー self-test（Issue #933）。check_selftest_wiring.py /
+# check_tool_wiring.py が共有するシェルコメント除去・マーカー走査ロジックの共通モジュール。
+# ネットワーク・実データ非依存で数秒以内に完走する（ts_source.py / md_fence.py と同型の配線）。
+if [ -f "$REPO_ROOT/tools/wiring_marker.py" ]; then
+  run_check "配線検査共通ヘルパー self-test (wiring_marker.py --self-test)" python3 tools/wiring_marker.py --self-test
+else
+  skip_check "配線検査共通ヘルパー self-test (wiring_marker.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="
