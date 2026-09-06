@@ -1345,6 +1345,15 @@ def run_self_test() -> int:  # noqa: C901
         )
 
     # ------------------------------------------------------------------ 4. #762 回帰ケース
+    # 🔴 下のケースは `CONTRACT_INDEX` に載る **実ファイル** を対象にしており、利用側 3 本が
+    # すべて未承認で drift として出ることをハードコードで期待している。したがってこの 3 本
+    # （scan_dangerous_patterns.py / check_architecture_boundaries.py / 本ファイル）には、
+    # 本モジュール docstring が案内する承認マーカー（`contract-drift-ok` 形式のコメント）を
+    # **付けられない**
+    # （付けると承認済みになり drift が消えて本ケースが FAIL する）。この 3 本で drift 警告を
+    # 受けたときは、マーカーではなく **説明文コメント自体を現在の実装に合わせて書き換える**
+    # （追記でもよい。差分に含まれれば「利用側も同じ差分にある」として合格する）。
+    # 実例: PR #1036（#880 / #905 の消化）。この制約自体の解消は別 Issue で扱う。
     print("4. Issue #762 の実例（git_diff_utils → 利用側 3 本）")
     root = repo_root()
     code, _, err = _run_main(root, ["tools/git_diff_utils.py"], index=CONTRACT_INDEX)
