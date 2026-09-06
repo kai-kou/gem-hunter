@@ -505,7 +505,9 @@ fi
 #        共有モジュール（tools/git_diff_utils.py 等）の内部実装を変えたのに、その実装を docstring /
 #        コメントで説明している利用側ファイルが同じ差分に無いときに警告する。説明文の腐りは公開 API が
 #        変わらない限りテストでは落ちないため、差分の形から機械検知する。ローカルの git 差分しか
-#        見ないためネットワーク非依存（本判定も self-test も両方配線する）。
+#        見ないためネットワーク非依存（本判定も self-test も両方配線する）。ただし --changed は
+#        origin/<default branch> が fetch 済みであることが前提で、未解決なら fail-closed で exit 2
+#        （FAIL）になる。誤検知は理由必須の承認マーカー `# contract-drift-ok: {理由}` で承認する。
 if [ -f "$REPO_ROOT/tools/check_module_contract_drift.py" ]; then
   run_check "共有モジュール説明文 drift 検査 (check_module_contract_drift.py --changed)" python3 tools/check_module_contract_drift.py --changed
   run_check "共有モジュール説明文 drift 検査 self-test (check_module_contract_drift.py --self-test)" python3 tools/check_module_contract_drift.py --self-test
