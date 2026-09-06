@@ -49,15 +49,18 @@ drift は「説明文が壊れた」ことの証明ではなく、「説明文�
 終了コード（`docs/rules/check-tool-design-rules.md` §1 の標準どおり）:
   0 = 合格（索引の共有モジュールに該当する差分が無い、または利用側も同じ差分に含まれている）
   1 = drift 検出（Warning。上記「判定契約」に従って説明文を読み直すこと）
-  2 = 判定不能（索引が壊れている・索引のファイルが読めない・git が到達不能・索引が陳腐化している）
+  2 = 判定不能（索引が壊れている・索引のファイルが読めない/解析できない・git が到達不能・
+      base range の基準 ref を解決できない・索引が陳腐化している）
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import subprocess
 import sys
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -157,13 +160,49 @@ def read_text(path: Path) -> str:
         raise UndecidableError(f"{path}: 読み取りに失敗しました（{exc}）") from exc
 
 
-def normalize_path(path: str) -> str:
-    """入力パスの表記揺れ（`./foo.py` 等）を索引の表記へそろえる。
+def normalize_path(path: str, *, root: Path | None = None) -> str:
+    """入力パスの表記揺れ（`./foo.py` / 絶対パス等）を索引の表記へそろえる。
 
-    正規化そのものは共有モジュール `git_diff_utils.normalize_leading_dots()` に委ねる
-    （先頭ドット系の扱いをここで再実装しない）。末尾の余白だけ本関数で落とす。
+    先頭ドット系の正規化は共有モジュール `git_diff_utils.normalize_leading_dots()` に委ねる
+    （ここで再実装しない）。本関数が足すのは末尾の余白落としと、**リポジトリルート配下の
+    絶対パスをルート相対へ畳む** 処理（シェル補完で絶対パスを渡すと索引と一致せず黙って
+    合格していた・#762 の反例レビュー）。ルート外の絶対パスは索引と一致しようがないため
+    そのまま返す。
     """
-    return git_diff_utils.normalize_leading_dots(path.strip())
+    text = path.strip()
+    if root is not None:
+        candidate = Path(text)
+        if candidate.is_absolute():
+            try:
+                text = str(candidate.resolve().relative_to(root.resolve()))
+            except (ValueError, OSError):
+                pass
+    return git_diff_utils.normalize_leading_dots(text)
+
+
+def explanatory_text(path: Path, text: str) -> str:
+    """「利用側に残る説明文」だけを取り出す（コメント + 文字列リテラル）。
+
+    索引の鮮度検査（`check_index_freshness()`）でファイル全文を対象にすると、**説明文が消えた
+    あとも無関係な実装コード中の同語がエントリを生かし続ける**（実測: `check_architecture_boundaries.py`
+    は `symbolic-ref` の説明を消しても、本文の `text.splitlines()` によって索引が生き残る）。
+    死んだエントリを検知するという鮮度検査の目的が達成できないため、ここではコメントと
+    文字列リテラルだけを見る。
+
+    `.py` 以外（Markdown 等）は全文が説明文なのでそのまま返す。`.py` がトークナイズできない
+    ときは合格へ丸めず `UndecidableError`（exit 2）へ倒す。
+    """
+    if path.suffix != ".py":
+        return text
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError, IndentationError, ValueError) as exc:
+        raise UndecidableError(
+            f"{path}: Python として解析できないため説明文を取り出せません（{exc}）"
+        ) from exc
+    return "\n".join(
+        tok.string for tok in tokens if tok.type in (tokenize.COMMENT, tokenize.STRING)
+    )
 
 
 def trigger_hits(text: str, triggers: Iterable[str]) -> list[str]:
@@ -207,11 +246,24 @@ def _run_git(
 
 
 def _diff_body_lines(stdout: str) -> list[str]:
-    """unified diff の本文（追加行・削除行）だけを取り出す。`+++` / `---` のヘッダは除く。"""
+    """unified diff の本文（追加行・削除行）だけを取り出す。`+++` / `---` のファイルヘッダは除く。
+
+    ヘッダ判定は **位置** で行う（先頭 3 文字だけで判定しない）。`---` / `+++` はファイルブロックの
+    先頭（最初の `@@` より前）にしか現れないため、そこだけをヘッダとみなす。行頭の 3 文字だけで
+    落とすと、**本文が `--` / `++` で始まる行**（削除行 `--- …` / 追加行 `+++ …` に化ける）まで
+    捨ててしまい、トリガー語を含む差分を見落とす（#762 の反例レビューで実測）。
+    """
     lines: list[str] = []
+    in_hunk = False
     for line in stdout.split("\n"):
-        if line.startswith("+++") or line.startswith("---"):
+        if line.startswith("diff --git "):
+            in_hunk = False
             continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk and (line.startswith("---") or line.startswith("+++")):
+            continue  # ファイルヘッダ（本文行は必ず hunk の中にある）
         if line.startswith("+") or line.startswith("-"):
             lines.append(line)
     return lines
@@ -254,6 +306,26 @@ def module_diff_touches_trigger(
     return bool(hits), hits
 
 
+def ensure_base_reachable(base: str, *, root: Path, runner: Runner) -> None:
+    """base range の基準 ref が解決できることを確かめる（解決できなければ判定不能へ倒す）。
+
+    `git diff {base}...HEAD` は ref が無いと非ゼロで終わるが、`collect_changed_files()` も
+    `module_diff_touches_trigger()` も **失敗したソースを黙って読み飛ばす**。その結果
+    `origin/main` が無い環境（浅い clone・fetch 前）では **コミット済みの変更を 1 行も見ないまま
+    ✅ を返す**（PASS しながら何も守らない最悪の失敗モード・`check-tool-design-rules.md` §0/§2）。
+    ここで先に ref の解決可否を確かめ、解決できないときは 0 にも 1 にも丸めず 2 を返す。
+    """
+    _, rc = _run_git(
+        ["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"], cwd=root, runner=runner
+    )
+    if rc != 0:
+        raise UndecidableError(
+            f"base range の基準 ref を解決できません: {base}"
+            "（コミット済みの変更を見ないまま合格にしないため判定不能にします。"
+            "`git fetch origin` 後に再実行するか --base で到達可能な ref を指定してください）"
+        )
+
+
 def collect_changed(*, root: Path, runner: Runner, base: str | None) -> list[str]:
     """変更ファイル集合を git から取る（収集ロジックは共有モジュールへ委ねる）。
 
@@ -288,9 +360,11 @@ def check_index_freshness(index: Sequence[ContractEntry], root: Path) -> None:
                 raise UndecidableError(
                     f"索引の利用側ファイルが存在しません: {consumer}（索引を更新してください）"
                 )
-            if not trigger_hits(read_text(consumer_path), entry.triggers):
+            explanation = explanatory_text(consumer_path, read_text(consumer_path))
+            if not trigger_hits(explanation, entry.triggers):
                 raise UndecidableError(
-                    f"{consumer}: 索引のトリガー語（{', '.join(entry.triggers)}）が 1 つも見つかりません。"
+                    f"{consumer}: 索引のトリガー語（{', '.join(entry.triggers)}）が"
+                    "**説明文（コメント・docstring・文字列リテラル）の中に** 1 つも見つかりません。"
                     "説明文が既に消えているなら索引から外し、消えていないなら索引のトリガー語を直してください"
                 )
 
@@ -305,7 +379,7 @@ def analyze(
     runner: Runner,
 ) -> list[dict]:
     """drift を判定して findings を返す（空リストなら合格）。"""
-    changed_set = {normalize_path(p) for p in changed if p.strip()}
+    changed_set = {normalize_path(p, root=root) for p in changed if p.strip()}
     findings: list[dict] = []
 
     for entry in index:
@@ -501,11 +575,30 @@ def run_self_test() -> int:  # noqa: C901
         code, _, err = _run_main(root, ["./" + _FIXTURE_MODULE])
         check("`./` 付きの表記でも索引モジュールとして判定する", code == 1, err)
 
+        # 絶対パス表記（#2 バリアント）: 索引と一致しないまま黙って合格しないこと
+        code, _, err = _run_main(root, [str(root / _FIXTURE_MODULE)])
+        check("絶対パスで指定しても索引モジュールとして判定する", code == 1, f"code={code} err={err}")
+
         # 索引の陳腐化（利用側から説明文が消えている）
         _write(root, _FIXTURE_B, "X = 1\n")
         code, _, err = _run_main(root, [_FIXTURE_MODULE])
         check("利用側にトリガー語が 1 つも無い → 判定不能(2)", code == 2, f"code={code} err={err}")
+
+        # 陳腐化検知が「無関係なコード中の同語」で生き延びないこと（反例レビュー #762）
+        # 説明文は消えているのに実装コードに `splitlines()` が残っているだけ、という形。
+        # ファイル全文を対象にすると死んだ索引エントリが永久に生き残る（fail-open）。
+        _write(root, _FIXTURE_B, "raw_lines = text.splitlines()\nX = 1\n")
+        code, _, err = _run_main(root, [_FIXTURE_MODULE])
+        check(
+            "説明文が消え実装コードにだけトリガー語が残る利用側 → 判定不能(2)",
+            code == 2,
+            f"code={code} err={err}",
+        )
+
+        # 逆側（誤検知の抑制）: 説明が文字列リテラル・コメントにあるなら生きている
         _write(root, _FIXTURE_B, "# 利用側 B: collect() は SPLITLINES を使う\nX = 1\n")
+        code, _, err = _run_main(root, [_FIXTURE_MODULE, _FIXTURE_A, _FIXTURE_B])
+        check("説明がコメントにある利用側は健全（exit 0）", code == 0, f"code={code} err={err}")
 
         # 索引のファイルが消えた
         (root / _FIXTURE_A).unlink()
@@ -565,6 +658,46 @@ def run_self_test() -> int:  # noqa: C901
         )
         code, out, err = _run_main(root, ["--changed"], runner=runner2)
         check("トリガー語に当たらない差分 → exit 0（誤検知の抑制）", code == 0, f"code={code} err={err}")
+
+        # 本文が `--` / `++` で始まる差分行を diff ヘッダとして捨てないこと（反例レビュー #762）
+        header_style_body = (
+            "diff --git a/x b/x\nindex 111..222 100644\n"
+            f"--- a/{_FIXTURE_MODULE}\n+++ b/{_FIXTURE_MODULE}\n"
+            "@@ -1 +1 @@\n"
+            "--- NUL 区切り --- （本文が `--` で始まる削除行）\n"
+            "+++ splitlines へ戻した行（本文が `++` で始まる追加行）\n"
+        )
+        check(
+            "diff のファイルヘッダ（`--- a/` / `+++ b/`）は本文に含めない",
+            not any(l.startswith(("--- a/", "+++ b/")) for l in _diff_body_lines(header_style_body)),
+            f"body={_diff_body_lines(header_style_body)}",
+        )
+        runner_hdr = _make_recording_runner(
+            {
+                **changed_resp,
+                _k("diff", "--unified=0", "origin/main...HEAD", "--", _FIXTURE_MODULE): header_style_body,
+                _k("diff", "--unified=0", "--", _FIXTURE_MODULE): "",
+                _k("diff", "--cached", "--unified=0", "--", _FIXTURE_MODULE): "",
+            }
+        )
+        code, _, err = _run_main(root, ["--changed"], runner=runner_hdr)
+        check(
+            "本文が `--`/`++` で始まる差分行のトリガー語も検出する → exit 1",
+            code == 1,
+            f"code={code} err={err}",
+        )
+
+        # base range の基準 ref が解決できない → 判定不能（コミット済み変更を見ないまま合格にしない）
+        runner_nobase = _make_recording_runner(
+            {**changed_resp, **diff_resp},
+            fail_cmds=frozenset({_k("rev-parse", "--verify", "--quiet", "origin/main^{commit}")}),
+        )
+        code, _, err = _run_main(root, ["--changed"], runner=runner_nobase)
+        check(
+            "base range の基準 ref が解決できない → 判定不能(2)",
+            code == 2,
+            f"code={code} err={err}",
+        )
 
         # git diff が 3 ソースとも失敗 → 判定不能（0 にも 1 にも丸めない）
         runner3 = _make_recording_runner(
@@ -718,11 +851,13 @@ def main(
 
     try:
         check_index_freshness(index, root)
+        base = args.base or f"origin/{git_diff_utils.default_branch(cwd=root, runner=runner)}"
         if args.changed:
-            changed = collect_changed(root=root, runner=runner, base=args.base)
+            # 収集と判定で同じ base を使う（別々に解決すると片方だけ空振りしても気づけない）
+            ensure_base_reachable(base, root=root, runner=runner)
+            changed = collect_changed(root=root, runner=runner, base=base)
         else:
             changed = list(args.paths)
-        base = args.base or f"origin/{git_diff_utils.default_branch(cwd=root, runner=runner)}"
         findings = analyze(
             index, changed, root=root, use_git=args.changed, base=base, runner=runner
         )
