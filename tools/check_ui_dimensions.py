@@ -1605,7 +1605,9 @@ def _direct_css_var_line_assertions() -> list[str]:
         "*/\n"
         "--size-control-xs: 16px;\n"
     )
-    expected_line = css.count("\n", 0, css.index("--size-control-xs: 16px;")) + 1
+    # 行番号の算出は本番と同じ lineno_at を通す（同じ式を自前で持つと、将来 lineno_at 側の
+    # 数え方を変えたときにテストだけ旧仕様のまま緑になり、壊れた新仕様を正解として固定する）
+    expected_line = lineno_at(css, css.index("--size-control-xs: 16px;"))
     stripped = _strip_css_comments(css, preserve_lines=True)
     m = re.search(r"--size-control-xs\s*:\s*([^;]+);", stripped)
     if m is None:

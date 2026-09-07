@@ -147,6 +147,14 @@ run allow 'cat .env.example'
 run allow "git commit -m 'update .env handling docs'"
 run allow 'echo "テンプレートは .env.example を参照"'
 run allow 'cat docs/rules/env-vars.md'
+# 🔴 開きクォートを消さないことの回帰ケース（Layer 1 セルフレビューが実測した誤発火）:
+# 正規化でクォートを無条件に除去すると、引用テキスト中のコマンド名が
+# `_sfa_candidate_tokens` の「コマンド位置」パターンに一致し、実行されない言及まで遮断される。
+# 下の 2 件は origin/main でも ALLOW であり、正規化の導入で退行させてはならない。
+run allow 'git commit -m "cat .env to check contents"'
+# ⚠️ 一方 `git commit -m "note: cp .env.example to .env locally"` は origin/main でも BLOCK される
+# （`cp` が多引数コマンドとして呼び出しブロック全体を候補にするため）。本 PR の退行ではない既存の
+# 誤発火なので、ここでは ALLOW として固定しない（別 Issue で追跡する）。
 run allow 'cat config/credentials/README.md'
 run allow 'cat notes/service-accountability.md'
 run allow 'cat foo/credentialsBackup.txt'

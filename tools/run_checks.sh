@@ -973,6 +973,18 @@ else
   skip_check "env allowlist 判定 self-test (lib/env_allowlist.sh --self-test)" "共有ライブラリが見つかりません"
 fi
 
+# Bash 経路の機密ファイルガード回帰テスト（#1083 の Layer 1 セルフレビュー指摘）。
+# 上の 3 件は「ファイルツール経路」と「allowlist 定義」を見るのに対し、こちらは
+# pre-tool-use-router.sh の Bash コマンド解析（トークン化・クォート正規化・コマンド置換）を
+# BLOCK / ALLOW の両方向で固定する。長らく手動実行の想定でゲート未配線だったため、
+# 回帰ケースを増やしても品質ゲートに乗らない状態だった（本 PR で配線する）。
+if [ -f "$REPO_ROOT/tools/test_sensitive_file_guard.sh" ]; then
+  run_check_timeout "機密ファイルガード回帰テスト (test_sensitive_file_guard.sh)" 300 \
+    bash tools/test_sensitive_file_guard.sh
+else
+  skip_check "機密ファイルガード回帰テスト (test_sensitive_file_guard.sh)" "スクリプトが見つかりません"
+fi
+
 # Cloudflare Workers 破壊的操作ガード self-test（Issue #613 / #615・本番 Worker 誤削除の再発防止）。
 if [ -f "$REPO_ROOT/.claude/hooks/pre-cloudflare-destructive-check.sh" ]; then
   run_check "Cloudflare 破壊的操作ガード self-test (pre-cloudflare-destructive-check.sh --self-test)" \
