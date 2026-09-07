@@ -19,8 +19,9 @@ import { searchFor, uniqueKeyword } from './helpers'
  * - **カード内のリンク**（一覧の各行から詳細へ遷移する主リンク）
  * - **ヘッダーの言語切替リンク**（`LocaleSwitcher`・`--size-control-md` = 32px・Issue #844）
  * - **ヘッダーのログイン導線**（`LoginLink`・**ログイン / ログアウト両状態**を検証・
- *   `--size-control-sm` = 28px・Issue #844）。両状態は `className` こそ同じ
- *   `buttonVariants({ variant: 'ghost', size: 'sm' })` だが、要素種別（`<a>` / `<button>`）・
+ *   `--size-control-md` = 32px・Issue #844。tier は Issue #842 で sm から md へ引き上げた）。
+ *   両状態は `className` こそ同じ
+ *   `buttonVariants({ variant: 'ghost', size: 'default' })` だが、要素種別（`<a>` / `<button>`）・
  *   ラベル文字列が異なり実描画サイズは別物になりうるため、片方の検証で他方を代表させない。
  *
  * ### ヘッダー 2 種を「間隔例外」ではなく対象へ追加する理由（Issue #844）
@@ -30,7 +31,8 @@ import { searchFor, uniqueKeyword } from './helpers'
  * 「English」リンク同士）は `gap-1`（4px）でそれぞれ隣接しており、いずれの間隔でも Spacing 例外
  * （WCAG 2.2 SC 2.5.8 Exception 2: 24px 未満でも隣接ターゲットとの間に 24px 径の円が収まる間隔が
  * あれば可）が自然には成立しない。したがって除外側を選ぶには「間隔で救う」以外の根拠が要るが、
- * 実際には両者とも cva の size variant（`sm` = 28px / `default` = 32px）で 24px フロアを直接
+ * 実際には両者とも cva の size variant（いずれも `default` = 32px。`LoginLink` は Issue #842 で
+ * `sm` = 28px から引き上げ済み）で 24px フロアを直接
  * 満たして描画されているため、除外ではなく §7.5 の検証対象へ加える（宣言 tier だけでなく実描画で
  * 担保する）。
  *
@@ -157,7 +159,7 @@ test.describe('SC 2.5.8 Target Size (Minimum): 主要な操作要素が 24×24 C
     await expectTargetSizeAtLeast(enLink, 'ヘッダー言語切替（English）')
   })
 
-  test('ヘッダーのログイン導線（未ログイン）が 24×24 以上（実測は --size-control-sm = 28px 相当）', async ({
+  test('ヘッダーのログイン導線（未ログイン）が 24×24 以上（実測は --size-control-md = 32px 相当）', async ({
     page,
   }) => {
     await page.goto('/ja')
@@ -168,7 +170,7 @@ test.describe('SC 2.5.8 Target Size (Minimum): 主要な操作要素が 24×24 C
     await expectTargetSizeAtLeast(loginLink, 'ヘッダーのログイン導線（未ログイン）')
   })
 
-  test('ヘッダーのログイン導線（ログイン済み＝ログアウトボタン）が 24×24 以上（実測は --size-control-sm = 28px 相当）', async ({
+  test('ヘッダーのログイン導線（ログイン済み＝ログアウトボタン）が 24×24 以上（実測は --size-control-md = 32px 相当）', async ({
     page,
   }) => {
     // ログイン済み状態は `<form method="post" action="/api/auth/logout"><button type="submit">`

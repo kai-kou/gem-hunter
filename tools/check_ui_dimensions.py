@@ -84,12 +84,10 @@ CALL_SITE_REQUIREMENTS: dict[str, dict[str, str]] = {
     "src/ui/per-page-picker.tsx": {"Button": "md"},
     "src/ui/locale-switcher.tsx": {"Button": "md"},
     "src/ui/gem-list-link.tsx": {"Button": "md"},
-    # 二次導線だが `--size-control-sm` の tier を要件として追認する（Issue #829・追認の根拠はここが正本）。
-    # §2.4 の「二次的なコントロールは md 以上」は 🔵 推奨であって 🔴 必須ではない。
-    # ヘッダーで隣接する `locale-switcher.tsx` は tier md（`--size-control-md`）なので、
-    # 揃えるなら引き上げが筋ではあるが、無人実行では見た目の変更可否を確認できないため
-    # 現状を要件化して安全側に倒した。引き上げの是非は Issue #842 で判断する。
-    "src/ui/login-link.tsx": {"Button": "sm"},
+    # 二次的なナビゲーション導線（ui-ux-guidelines.md §2.4 🔵 推奨「二次的なコントロールは md 以上」）。
+    # Issue #829 が追認した sm tier は Issue #842 で md へ引き上げた（隣接する
+    # `locale-switcher.tsx` と同一 tier に揃える。理由は login-link.tsx のコード注記を参照）。
+    "src/ui/login-link.tsx": {"Button": "md"},
 }
 
 # コンポーネント名 → JSX を使わず cva variants 関数を直接呼び出す呼び出しサイトで使う関数名。
