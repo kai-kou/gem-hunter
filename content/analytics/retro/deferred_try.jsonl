@@ -472,3 +472,6 @@
 {"date": "2026-09-07 JST", "title": "デプロイゲートが待機中であることを Step 5 着手前に可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "fan-out 委譲先の報告に、親が直前に下した優先度・対象判定との矛盾を 1 行で明記させる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "1 firing 内の「決定 → 実測 → 矛盾検知 → 決定の巻き戻し」ループを健全性指標として監視する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "_split_top_level / _net_delta（クォート追跡付き）の ts_source.py 昇格基準を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "check_port_contracts.py の self-test 比率（53.6%）を別モジュールへ分離する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 736}
+{"date": "2026-09-07 JST", "title": "http-client-consolidation-rules.md の参照経路を強制する（圧縮後の参照断絶を防ぐ）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
