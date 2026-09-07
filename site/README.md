@@ -117,7 +117,18 @@ ls docs/adr/[0-9]*.md | wc -l   # → 15（index.html の「ADR 15 本」と一�
 
 ### アクセシビリティの実測（LP を対象に axe を流す）
 
-`npm run check` の Lighthouse ゲートは **アプリ本体だけ** が対象で LP を見ない。LP は下記で実測する。
+`npm run check` の Lighthouse ゲートは **アプリ本体だけ** が対象で LP を見ない。
+
+🔵 **本節の手順はスクリプト化済み**（`tools/check_site_a11y.mjs`・Issue #997）。`npm run check`
+（= `bash tools/run_checks.sh`）に本判定と `--self-test` が配線済みで、PR ごとに自動実行される
+（違反があれば非ゼロ終了する）。単発で走らせたいだけなら次のコマンドで足りる。
+
+```bash
+node tools/check_site_a11y.mjs             # 4 構成（light/1280・dark/1280・light/390・light/320）を実測
+node tools/check_site_a11y.mjs --self-test # 検査ロジック自体の自己テスト
+```
+
+下記は同スクリプトが機械化した元の人手手順（デバッグ時に個別の構成だけ確認したい場合の参考）。
 
 ```bash
 python3 -m http.server 8098 --directory site &   # 別プロセスで配信
@@ -140,8 +151,7 @@ await browser.close()
 EOF
 ```
 
-**全構成で `violations = 0` であること**（`site/` は `npm run check` の a11y ゲートに載っていないため、
-このコマンドが唯一の検証手段）。
+**全構成で `violations = 0` であること**。
 
 ## スクリーンショットの更新
 

@@ -332,6 +332,27 @@ else
   skip_check "LP 静的検査 (check_site.py)" "スクリプトが見つかりません"
 fi
 
+# 4.66. ランディングページ（site/）の axe-core a11y 検査（Issue #997）
+#       check_site.py は静的検査のみで axe を流さない。アプリ本体の Lighthouse ゲート（3.6）も
+#       LP を対象にしないため、LP の a11y 劣化はこの検査だけが検知する（site/README.md
+#       「アクセシビリティの実測」の人手手順のスクリプト化。4 構成 = light/dark × 1280/390/320px
+#       のうち README が列挙する組み合わせに一致させる：light/1280・dark/1280・light/390・light/320）。
+#       実測（2026-09-07・ローカル）: 本判定 約6秒（静的サーバー起動 + Chromium 4 起動）・
+#       self-test 約4秒（Chromium 5 起動: PASS 1 + GATE_FAIL 3 バリアント + INFRA_FAIL 1）。
+#       E2E（既定 600 秒）・Lighthouse（既定 180 秒）より大幅に軽いが、CI 環境差・Chromium 起動の
+#       揺らぎを見込み Lighthouse の既定値の 1/3（60 秒）を既定にする（実測の約10倍の余裕）。
+SITE_A11Y_TIMEOUT_SEC="${RUN_CHECKS_SITE_A11Y_TIMEOUT:-60}"
+if [ -f "$REPO_ROOT/tools/check_site_a11y.mjs" ]; then
+  if [ "$HAS_NODE_PROJECT" -eq 0 ]; then
+    skip_check "LP a11y 検査 (check_site_a11y.mjs)" "package.json が無い（アプリコード導入前）"
+  else
+    run_check_timeout "LP a11y 検査 (check_site_a11y.mjs)" "$SITE_A11Y_TIMEOUT_SEC" node tools/check_site_a11y.mjs
+    run_check_timeout "LP a11y 検査 self-test (check_site_a11y.mjs --self-test)" "$SITE_A11Y_TIMEOUT_SEC" node tools/check_site_a11y.mjs --self-test
+  fi
+else
+  skip_check "LP a11y 検査 (check_site_a11y.mjs)" "スクリプトが見つかりません"
+fi
+
 # 4.7. ADR 記録と README 必須記載のゲート（E-18 / E-19 / NFR-29〜NFR-32 / AC-11）
 if [ -f "$REPO_ROOT/tools/check_adr_coverage.py" ]; then
   run_check "ADR / README 記載検査 (check_adr_coverage.py)" python3 tools/check_adr_coverage.py

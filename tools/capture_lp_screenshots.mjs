@@ -14,6 +14,19 @@
  * 出力後に site/index.html の該当 <img> の width / height と実寸を突き合わせ、
  * 食い違っていれば非ゼロ終了する（撮り直し後の属性更新漏れ = CLS の原因を機械で止める）。
  *
+ * srcset 派生（Issue #998）: `SHOTS` の各エントリに `srcsetWidths` を持たせると、その幅の
+ * `${name}-${width}w.webp` も追加生成する（例: shot-search.webp に加えて shot-search-800w.webp）。
+ * 撮影実寸から縮小するので、site/index.html 側の <img srcset> に書く幅記述子とここで生成する
+ * ファイル名の対応は 1:1 になる。
+ *
+ *   node tools/capture_lp_screenshots.mjs --derivatives-only
+ *
+ * ↑ アプリを起動できない環境向けの補助モード。既に site/assets/img/ にある基準サイズの
+ * webp（撮影済みの最新版）を読み込み、そこから `srcsetWidths` の派生だけを再生成する
+ * （アプリへのナビゲーション・ネットワークアクセスを一切行わない）。通常の撮り直し
+ * （アプリ起動あり）を行うときは本フラグを付けない — その場合は撮影のたびに全幅を
+ * 撮影実寸から作り直すので、本フラグでの再生成は不要になる。
+ *
  * 注意:
  * - アバターは avatars.githubusercontent.com から取得する。**取得できない環境では撮影を中断する**
  *   （壊れた画像のまま LP に載せないため）。取得は `curl` 経由なので HTTPS プロキシ配下でも動く。
@@ -34,6 +47,16 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { resolveChromiumExecutablePath } from './e2e-chromium-executable.mjs'
+
+// クラウドコンテナのプリインストール Chromium とパッケージが要求するビルド番号が食い違う
+// ことがある（`e2e-chromium-executable.mjs` 冒頭コメント・Issue #629 参照）。playwright.config.ts
+// と同じフォールバック解決を使う（ここだけ未対応のままだと E2E は動くのに撮影スクリプトだけ
+// `Executable doesn't exist` で落ちる）。
+const CHROMIUM_LAUNCH_OPTIONS = {
+  args: ['--ssl-version-max=tls1.2'],
+  executablePath: resolveChromiumExecutablePath(),
+}
 
 const BASE = process.env.LP_SHOT_BASE ?? 'http://localhost:3100'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -57,6 +80,9 @@ const SHOTS = [
     path: '/ja?q=react',
     viewport: { width: 1280, height: 820 },
     width: 1600,
+    // 390px ビューポートにも 1600px 版がそのまま届いていた（Issue #998）。800w 版を追加し
+    // site/index.html 側で srcset + sizes を使って出し分ける。
+    srcsetWidths: [800],
   },
   {
     // 「今日の Gem」の見出し〜2 位までを拡大トリミングする（俯瞰だと文字が実効 6〜7px で読めない）
@@ -221,10 +247,68 @@ function curlFetch(url) {
   }
 }
 
+// PNG / WebP どちらのバッファも受け取れる（Chromium の <img> は両方をネイティブ decode できる）。
+// 撮影直後の PNG から複数幅を作るときも、`--derivatives-only` で既存 webp から作るときも
+// この 1 関数を経由させることで、リサイズ・エンコードのロジックを 2 か所に分岐させない。
+async function resizeToWebp(browser, sourceBuffer, mimeType, targetWidth, quality = 0.86) {
+  const page = await browser.newPage()
+  await page.setContent('<canvas id="c"></canvas>')
+  const result = await page.evaluate(
+    async ({ base64, mime, width, quality }) => {
+      const image = new Image()
+      image.src = `data:${mime};base64,${base64}`
+      await image.decode()
+      const scale = width / image.naturalWidth
+      const canvas = document.getElementById('c')
+      canvas.width = Math.round(image.naturalWidth * scale)
+      canvas.height = Math.round(image.naturalHeight * scale)
+      const context2d = canvas.getContext('2d')
+      context2d.imageSmoothingQuality = 'high'
+      context2d.drawImage(image, 0, 0, canvas.width, canvas.height)
+      return {
+        dataUrl: canvas.toDataURL('image/webp', quality),
+        width: canvas.width,
+        height: canvas.height,
+      }
+    },
+    { base64: sourceBuffer.toString('base64'), mime: mimeType, width: targetWidth, quality },
+  )
+  await page.close()
+  return {
+    buffer: Buffer.from(result.dataUrl.split(',')[1], 'base64'),
+    width: result.width,
+    height: result.height,
+  }
+}
+
+if (process.argv.includes('--derivatives-only')) {
+  const browser = await chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
+  try {
+    for (const shot of SHOTS) {
+      if (!shot.srcsetWidths?.length) continue
+      const basePath = join(IMG_DIR, `${shot.name}.webp`)
+      const baseBuffer = readFileSync(basePath)
+      for (const width of shot.srcsetWidths) {
+        const derivative = await resizeToWebp(browser, baseBuffer, 'image/webp', width)
+        const outPath = join(IMG_DIR, `${shot.name}-${width}w.webp`)
+        writeFileSync(outPath, derivative.buffer)
+        console.log(
+          `[derivatives-only] ${shot.name}-${width}w.webp を生成した` +
+            `（${derivative.width}×${derivative.height} / ${derivative.buffer.length} bytes,` +
+            ` 元 ${baseBuffer.length} bytes）`,
+        )
+      }
+    }
+  } finally {
+    await browser.close()
+  }
+  process.exit(0)
+}
+
 const tempDir = mkdtempSync(join(tmpdir(), 'lp-shot-'))
 // `--ssl-version-max=tls1.2`: このサンドボックスの Chromium は既定の TLS 設定だと外部 HTTPS への
 // 接続が ERR_CONNECTION_RESET になるための回避策（L-126・`playwright.config.ts` と同じ理由）。
-const browser = await chromium.launch({ args: ['--ssl-version-max=tls1.2'] })
+const browser = await chromium.launch(CHROMIUM_LAUNCH_OPTIONS)
 const written = []
 
 try {
@@ -292,36 +376,24 @@ try {
     await context.close()
 
     // WebP へ変換（sharp / cwebp が無い環境でも動くよう Chromium の canvas を使う）
-    const converter = await browser.newPage()
-    await converter.setContent('<canvas id="c"></canvas>')
-    const converted = await converter.evaluate(
-      async ({ base64, width }) => {
-        const image = new Image()
-        image.src = `data:image/png;base64,${base64}`
-        await image.decode()
-        const scale = width / image.naturalWidth
-        const canvas = document.getElementById('c')
-        canvas.width = Math.round(image.naturalWidth * scale)
-        canvas.height = Math.round(image.naturalHeight * scale)
-        const context2d = canvas.getContext('2d')
-        context2d.imageSmoothingQuality = 'high'
-        context2d.drawImage(image, 0, 0, canvas.width, canvas.height)
-        return {
-          dataUrl: canvas.toDataURL('image/webp', 0.86),
-          width: canvas.width,
-          height: canvas.height,
-        }
-      },
-      { base64: readFileSync(pngPath).toString('base64'), width: shot.width },
-    )
-    const webp = Buffer.from(converted.dataUrl.split(',')[1], 'base64')
-    writeFileSync(join(IMG_DIR, `${shot.name}.webp`), webp)
-    await converter.close()
+    const pngBuffer = readFileSync(pngPath)
+    const converted = await resizeToWebp(browser, pngBuffer, 'image/png', shot.width)
+    writeFileSync(join(IMG_DIR, `${shot.name}.webp`), converted.buffer)
 
     written.push({ name: shot.name, width: converted.width, height: converted.height })
     console.log(
-      `${shot.name}.webp を更新した（${converted.width}×${converted.height} / ${webp.length} bytes）`,
+      `${shot.name}.webp を更新した（${converted.width}×${converted.height} / ${converted.buffer.length} bytes）`,
     )
+
+    // srcset 派生（Issue #998）: 同じ撮影実寸から追加幅を作る（別 API 呼び出し・別撮影は不要）
+    for (const width of shot.srcsetWidths ?? []) {
+      const derivative = await resizeToWebp(browser, pngBuffer, 'image/png', width)
+      const outName = `${shot.name}-${width}w.webp`
+      writeFileSync(join(IMG_DIR, outName), derivative.buffer)
+      console.log(
+        `${outName} を更新した（${derivative.width}×${derivative.height} / ${derivative.buffer.length} bytes）`,
+      )
+    }
   }
 } finally {
   await browser.close()
