@@ -43,6 +43,8 @@ import re
 import sys
 from pathlib import Path
 
+from css_source import strip_css_comments as _strip_css_comments
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CSS_PATH = REPO_ROOT / "app" / "globals.css"
 
@@ -143,19 +145,20 @@ def contrast_ratio(srgb1: tuple[float, float, float], srgb2: tuple[float, float,
 
 # --------------------------------------------------------------------------- CSS パース
 
-_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-
-
 def strip_css_comments(text: str) -> str:
-    """CSS コメント（`/* ... */`）を除去する。
+    """CSS コメント（`/* ... */`）を除去する（実体は `css_source.strip_css_comments`）。
 
     セレクタ探索・宣言抽出はいずれも正規表現で行うため、コメント内に書かれた
     「書き方の例」「旧値の記録」（例: `/* 旧値は --sidebar-ring: oklch(0.708 0 0) だった */`）が
     実宣言として読み取られる。宣言は後勝ちで dict へ入るので、実宣言の後ろに置かれた
     コメント内の旧値が実値を静かに上書きし、検査が実データを見ないまま PASS / FAIL する
     （どちらの向きにも倒れる）。パースの入口で必ず除去する。
+
+    本ツールは行番号つきの報告をしないため、除去部分の改行は残さない（`preserve_lines=False`）。
+    パターン自体は `tools/css_source.py` が唯一の正本（同じ正規表現を 2 箇所に置くと
+    `check_duplicate_source_patterns.py --strict` が弾き、片方だけ直したときに静かにずれる）。
     """
-    return _COMMENT_RE.sub("", text)
+    return _strip_css_comments(text, preserve_lines=False)
 
 
 def extract_block(css_text: str, selector: str) -> str:

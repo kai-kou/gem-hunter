@@ -1080,6 +1080,15 @@ else
   skip_check "Python 字句解析ヘルパー self-test (py_source.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# CSS コメント除去の共通ヘルパー self-test（Issue #1012 の PR 内で新設）。
+# check_contrast.py（改行を落とす）と check_css_variable_cycles.py（行番号を保つ）が共有する
+# `/* ... */` 除去の唯一の実装（ts_source.py / py_source.py / md_fence.py と同型の配線）。
+if [ -f "$REPO_ROOT/tools/css_source.py" ]; then
+  run_check "CSS 字句解析ヘルパー self-test (css_source.py --self-test)" python3 tools/css_source.py --self-test
+else
+  skip_check "CSS 字句解析ヘルパー self-test (css_source.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="

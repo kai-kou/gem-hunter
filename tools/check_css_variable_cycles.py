@@ -43,6 +43,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from css_source import strip_css_comments as _strip_css_comments
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 EXCLUDED_DIRS = {
@@ -63,10 +65,6 @@ EXCLUDED_DIRS = {
 
 # --------------------------------------------------------------------------- CSS パース
 
-# コメント除去は check_contrast.py にも同名関数があるが、そちらは改行ごと落とすため
-# 行番号つきで違反を報告できない（役割が違うので流用せず、行を保つ実装をここに置く）。
-_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-
 # 宣言: `--name : value` で、値の終端は `;` / `}` / 入力末尾。
 # `[^;{}]*` は改行を含むため、改行を跨いだ宣言も 1 件として拾える。
 _DECL_RE = re.compile(r"(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]*?)\s*(?=[;}]|\Z)")
@@ -77,8 +75,12 @@ _VAR_REF_RE = re.compile(r"var\(\s*(--[A-Za-z0-9_-]+)", re.IGNORECASE)
 
 
 def strip_css_comments(text: str) -> str:
-    """`/* ... */` を除去する。除去部分の改行は残し、行番号をずらさない。"""
-    return _COMMENT_RE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    """`/* ... */` を除去する。除去部分の改行は残し、行番号をずらさない。
+
+    実体は `tools/css_source.py`（パターンの唯一の正本）。本ツールは違反を
+    `ファイル:行番号` で報告するため、改行を保つモード（`preserve_lines=True`）を使う。
+    """
+    return _strip_css_comments(text, preserve_lines=True)
 
 
 def parse_declarations(text: str) -> list[tuple[str, str, int]]:
