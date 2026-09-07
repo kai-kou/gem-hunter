@@ -34,6 +34,25 @@ function warnedLines(): string[] {
   return warnSpy.mock.calls.map((call) => String(call[0]))
 }
 
+/**
+ * 🔴 **外部契約（運用手順が依存するリテラル）を固定する。**
+ * これらの値は `docs/03_design/infrastructure/cloudflare-infrastructure.md` §3.3
+ * 「無効化を外から確認する」の手順（`wrangler tail` で grep する文字列・観測窓の長さ）と
+ * 結ばれている。シンボル参照だけで検証すると、値を変えても全テストが緑のまま通り、
+ * 運用手順だけが黙って壊れる（#187 の再発）。
+ *
+ * 🔴 **変更するときは同じ PR で `cloudflare-infrastructure.md` §3.3 の手順も直すこと。**
+ */
+describe('外部契約のリテラル（運用手順と結ばれている値）', () => {
+  it('マーカー文字列は wrangler tail の grep 条件と同じ', () => {
+    expect(RATE_LIMIT_DISABLED_MARKER).toBe('[rate-limit] disabled')
+  })
+
+  it('間引き間隔は §3.3 が「10 分」と書いている値と同じ', () => {
+    expect(RATE_LIMIT_WARN_INTERVAL_MS).toBe(600_000)
+  })
+})
+
 describe('createRateLimitDisabledReporter', () => {
   it('初回はマーカーと理由コードを含む 1 行を出す（Issue #192 完了条件 1）', () => {
     const report = createRateLimitDisabledReporter(new FakeClock())
@@ -141,11 +160,26 @@ describe('createRateLimitDisabledReporter', () => {
     expect(lines[1]).toContain('reason=no-salt')
   })
 
-  it('既定のレポーター（アプリが実際に使う export）も同じ 1 行を出す', () => {
-    // 実時刻の既定インスタンス。間引き状態は isolate 内で共有されるため、ここでは
-    // 「初回の 1 行が期待どおりの形か」だけを見る（間引きの詳細は上のケース群が担う）。
+  /**
+   * ⚪ 既定 export（モジュールレベル singleton）は **間引き状態を跨いで共有する** ため、
+   * 「1 行出ること」を直接 assert すると同一プロセスで 2 回実行された場合（`--repeat` /
+   * `--retry`）に 2 周目が間引かれ、実装は正しいのにテストだけが落ちる。
+   * ここでは「既定 export が `createRateLimitDisabledReporter` と **同じ形の行** を出す」
+   * ことだけを見たいので、フェイク時計で作った比較用レポーターの出力と突き合わせる。
+   */
+  it('既定のレポーター（アプリが実際に使う export）も同じ形の 1 行を出す', () => {
+    const reference = createRateLimitDisabledReporter(new FakeClock())
+    reference('no-binding')
+    const [expectedLine] = warnedLines()
+    warnSpy.mockClear()
+
     reportRateLimitDisabled('no-binding')
 
-    expect(warnedLines()[0]).toContain(`${RATE_LIMIT_DISABLED_MARKER} reason=no-binding`)
+    // 間引かれた場合は 0 行になりうる（singleton の状態に依存する）。出たときは
+    // 必ず比較用レポーターと同一の行であること = 形が乖離していないこと、を固定する。
+    for (const line of warnedLines()) {
+      expect(line).toBe(expectedLine)
+    }
+    expect(expectedLine).toContain(`${RATE_LIMIT_DISABLED_MARKER} reason=no-binding`)
   })
 })

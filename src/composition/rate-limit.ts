@@ -1,5 +1,5 @@
 import { RateLimitExceededError } from '../domain/errors'
-import { reportRateLimitDisabled } from './rate-limit-diagnostics'
+import { reportRateLimitDisabled, type RateLimitDisabledReason } from './rate-limit-diagnostics'
 import { rateLimiterBinding } from '../infrastructure/platform/cloudflare-bindings'
 import { clientIpOf, hashRateLimitKey } from '../infrastructure/platform/rate-limit-key'
 import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from '../infrastructure/platform/rate-limit'
@@ -11,6 +11,26 @@ import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from '../infrastructure/p
  * 検索・詳細取得の組み立て（`container.ts`）や認証（`auth.ts`）と同じく、composition root を
  * 関心ごとにファイルへ分けている（`src/composition/` 配下全体が composition root・architecture §2.1）。
  */
+
+/**
+ * 間引き処理の依存（テストから差し替えられる口）。
+ *
+ * 🔴 **`vi.mock` で `./rate-limit-diagnostics` を差し替えないための依存性注入**
+ * （`testing-strategy.md` §4:「`vi.mock` で自作モジュールを差し替えたくなったら、
+ * それは依存性注入ができていないサイン」）。本番の呼び出し側（`search-guard.ts` /
+ * `detail-guard.ts` / 各 page）は **省略する**（既定値がそのまま使われる）。
+ */
+export interface RateLimitDeps {
+  /**
+   * フェイルオープンした理由の記録先。既定は `reportRateLimitDisabled`
+   * （isolate ごとの singleton = 間引き状態も isolate ごと）。
+   *
+   * 🔴 **理由コード以外を渡さない**（salt 値・接続元 IP を診断ログへ流出させない）。
+   * 引数を広げたくなったら、まず `rate-limit-diagnostics.ts` の「秘密情報は載せない」
+   * 規約と `rate-limit.test.ts` の引数固定 assert を読むこと。
+   */
+  report?: (reason: RateLimitDisabledReason) => void
+}
 
 /**
  * 経路をまたいで共通の間引き処理。呼び出し側は Cloudflare Rate Limiting のキー接頭辞だけを渡す。
@@ -32,13 +52,20 @@ import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from '../infrastructure/p
  *
  * @param keyPrefix Cloudflare Rate Limiting のキー接頭辞（`search:` / `gems:`）。
  *   接頭辞が違えばカウンタも別枠になるため、経路ごとに独立した枠を割り当てる手段になる。
+ * @param deps 差し替え可能な依存（`RateLimitDeps`）。本番は省略する。
  */
-async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<void> {
+async function enforceRateLimit(
+  headers: Headers,
+  keyPrefix: string,
+  deps: RateLimitDeps = {},
+): Promise<void> {
+  const report = deps.report ?? reportRateLimitDisabled
+
   // 1. 接続元 IP を識別できない（Workers 実行環境の外・ヘッダ欠落等）場合は、
   //    そもそも誰を制限すべきか判定できないため間引かない。
   const ip = clientIpOf(headers)
   if (ip === null) {
-    reportRateLimitDisabled('no-client-ip')
+    report('no-client-ip')
     return
   }
 
@@ -52,7 +79,7 @@ async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<vo
   //    無くす価値のほうが大きい。
   const binding = await rateLimiterBinding()
   if (!binding) {
-    reportRateLimitDisabled('no-binding')
+    report('no-binding')
     return
   }
 
@@ -65,7 +92,7 @@ async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<vo
   //    理由コード `no-salt` を記録して切り分けられるようにする（Issue #192）。
   const salt = process.env.RATE_LIMIT_SALT
   if (!salt) {
-    reportRateLimitDisabled('no-salt')
+    report('no-salt')
     return
   }
 
@@ -90,8 +117,11 @@ async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<vo
  *
  * 守っているコストは **上流 GitHub API の枠**。フェイルオープン条件は `enforceRateLimit` を参照。
  */
-export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
-  await enforceRateLimit(headers, 'search:')
+export async function enforceSearchRateLimit(
+  headers: Headers,
+  deps: RateLimitDeps = {},
+): Promise<void> {
+  await enforceRateLimit(headers, 'search:', deps)
 }
 
 /**
@@ -108,8 +138,11 @@ export async function enforceSearchRateLimit(headers: Headers): Promise<void> {
  * 正常な利用者どうしが枠を食い合うため、キー接頭辞を `gems:` に分けて独立した枠にする
  * （ユーザー裁定・Issue #442）。
  */
-export async function enforceGemListRateLimit(headers: Headers): Promise<void> {
-  await enforceRateLimit(headers, 'gems:')
+export async function enforceGemListRateLimit(
+  headers: Headers,
+  deps: RateLimitDeps = {},
+): Promise<void> {
+  await enforceRateLimit(headers, 'gems:', deps)
 }
 
 /**
@@ -124,6 +157,9 @@ export async function enforceGemListRateLimit(headers: Headers): Promise<void> {
  * （Issue #190 本文の懸念）。`enforceGemListRateLimit` が `gems:` を独立させたのと同じ判断
  * （経路ごとに独立した枠を割り当てる）を踏襲する。
  */
-export async function enforceDetailRateLimit(headers: Headers): Promise<void> {
-  await enforceRateLimit(headers, 'detail:')
+export async function enforceDetailRateLimit(
+  headers: Headers,
+  deps: RateLimitDeps = {},
+): Promise<void> {
+  await enforceRateLimit(headers, 'detail:', deps)
 }
