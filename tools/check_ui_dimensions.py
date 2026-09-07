@@ -54,6 +54,7 @@ from ts_source import (  # noqa: E402
     find_tag_end,
     strip_comments,
 )
+from css_source import strip_css_comments as _strip_css_comments  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -157,8 +158,17 @@ def lineno_at(text: str, offset: int) -> int:
 
 
 def css_var_raw(css_text: str, var_name: str) -> str | None:
-    """`--var-name: <値>;` の `<値>` 部分（前後空白除去済み）を返す。未宣言なら None。"""
-    m = re.search(rf"--{re.escape(var_name)}\s*:\s*([^;]+);", css_text)
+    """`--var-name: <値>;` の `<値>` 部分（前後空白除去済み）を返す。未宣言なら None。
+
+    走査前に CSS コメントを除去する（`preserve_lines=True` で行番号を保つ・Issue #1084）。
+    コメント除去なしだと `re.search` は最初にマッチした箇所を採るため、
+    `/* 旧値: --size-control-xs: 24px; */ --size-control-xs: 16px;` のような入力で
+    コメント内の旧値を実値として読んでしまい、WCAG フロア違反（16px）が素通りする
+    （fail-open）。`css_source.strip_css_comments` は文字列リテラルの中の `/*` も保護するため、
+    ここで一度通せば以降の呼び出し（`css_var_px` 経由）にも自動で反映される。
+    """
+    stripped = _strip_css_comments(css_text, preserve_lines=True)
+    m = re.search(rf"--{re.escape(var_name)}\s*:\s*([^;]+);", stripped)
     return m.group(1).strip() if m else None
 
 
@@ -989,6 +999,90 @@ _case(
     0, 1,
 )
 
+# --- Issue #1084: css_var_raw が CSS コメント除去（css_source.strip_css_comments）を通す
+#     ようになったことの回帰固定。「宣言の前 / 後 / 複数行にまたがる」バリアントと、
+#     「コメントと実宣言が同じ変数名を持つ」要素間の関係性ケース（#896）を含む。
+
+_case(
+    "検査3（Issue #1084 fail-open再現）: 宣言直前のコメント内の旧値ではなく実宣言(16px)で "
+    "WCAG フロア判定する（コメント除去前は re.search の先勝ちでコメント内 24px を実値として "
+    "読み、フロア違反が素通りしていた）",
+    lambda f: f.__setitem__(
+        "app/globals.css",
+        f["app/globals.css"].replace(
+            "--size-control-xs: 24px;",
+            "/* 旧値: --size-control-xs: 24px; */\n  --size-control-xs: 16px;",
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査3（コメント除去の回帰・宣言の後）: 宣言の後ろに同じ変数名を書いたコメントがあっても "
+    "実宣言(24px)で判定してPASSする（先に出現する実宣言を正しく採用する）",
+    lambda f: f.__setitem__(
+        "app/globals.css",
+        f["app/globals.css"].replace(
+            "--size-control-xs: 24px;",
+            "--size-control-xs: 24px; /* 旧仕様: --size-control-xs: 12px; だった */",
+        ),
+    ),
+    0, 0,
+)
+
+_case(
+    "検査3（コメント除去の回帰・複数行コメント）: 宣言直前の複数行コメント内の旧値を読まず、"
+    "実宣言(0.6rem=9.6px)で iOS フロア違反を検出する",
+    lambda f: f.__setitem__(
+        "app/globals.css",
+        f["app/globals.css"].replace(
+            "--text-control-min: 1rem;",
+            "/* 旧仕様:\n"
+            "     --text-control-min: 1rem;\n"
+            "     だったが変更\n"
+            "  */\n"
+            "  --text-control-min: 0.6rem;",
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査2（要素間の関係性・#896）: --text-control-min のコメント内旧値(0.75rem=12px)ではなく "
+    "実宣言(1rem=16px)を判定基準にする（input.tsx の text-sm=14px は実宣言値未満なので違反、"
+    "コメント値のままなら見逃していた）",
+    lambda f: (
+        f.__setitem__(
+            "app/globals.css",
+            f["app/globals.css"].replace(
+                "--text-control-min: 1rem;",
+                "/* 旧値: --text-control-min: 0.75rem; */\n  --text-control-min: 1rem;",
+            ),
+        ),
+        f.__setitem__(
+            "src/ui/components/input.tsx",
+            f["src/ui/components/input.tsx"].replace(
+                "'h-(--size-control-md) w-full text-base px-2.5 py-1',",
+                "'h-(--size-control-md) w-full text-sm px-2.5 py-1',",
+            ),
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査3（コメント除去の回帰・同一行末尾コメント）: 宣言と同じ行の末尾コメントがあっても "
+    "実宣言(24px)を正しく読み PASS する",
+    lambda f: f.__setitem__(
+        "app/globals.css",
+        f["app/globals.css"].replace(
+            "--size-control-xs: 24px;",
+            "--size-control-xs: 24px; /* WCAG 2.5.8 フロア */",
+        ),
+    ),
+    0, 0,
+)
+
 _case(
     "検査4: search-form.tsx のリテラル className に h-10",
     lambda f: f.__setitem__(
@@ -1494,9 +1588,51 @@ def _direct_span_assertions() -> list[str]:
     return failures
 
 
+def _direct_css_var_line_assertions() -> list[str]:
+    """`css_var_raw` がコメント除去（`preserve_lines=True`）後も行番号を保つことを直接検証する
+    （Issue #1084 本タスク固有の要求）。
+
+    `check_globals_floor` は現状メッセージに行番号を含めないが、`preserve_lines=True` を
+    選んだ理由（将来 CSS 側にも行番号つき報告を足す余地を潰さないこと）は、除去後のテキストが
+    元ファイルと同じ行番号を保っていて初めて成立する。コメントを跨いだ実宣言の行番号が
+    ずれていないことをここで固定する（`CASES` の件数ベース比較では行番号の正誤は判別できない）。
+    """
+    failures: list[str] = []
+    css = (
+        "/* 旧値の記録:\n"
+        "   --size-control-xs: 20px; だった\n"
+        "   経緯は Issue #1084 参照\n"
+        "*/\n"
+        "--size-control-xs: 16px;\n"
+    )
+    # 行番号の算出は本番と同じ lineno_at を通す（同じ式を自前で持つと、将来 lineno_at 側の
+    # 数え方を変えたときにテストだけ旧仕様のまま緑になり、壊れた新仕様を正解として固定する）
+    expected_line = lineno_at(css, css.index("--size-control-xs: 16px;"))
+    stripped = _strip_css_comments(css, preserve_lines=True)
+    m = re.search(r"--size-control-xs\s*:\s*([^;]+);", stripped)
+    if m is None:
+        failures.append(
+            "css_var_raw/line-preserve: コメント除去後に実宣言が見つからない"
+        )
+    else:
+        got_line = lineno_at(stripped, m.start())
+        if got_line != expected_line:
+            failures.append(
+                "css_var_raw/line-preserve: コメントを跨いだ宣言の行番号がずれている "
+                f"(期待={expected_line}, 実際={got_line})"
+            )
+    raw = css_var_raw(css, "size-control-xs")
+    if raw != "16px":
+        failures.append(
+            f"css_var_raw: コメント内の旧値(20px)を実値として読んでいる（got={raw!r} want='16px'）"
+        )
+    return failures
+
+
 def run_self_test() -> int:
     failures: list[str] = []
     failures.extend(_direct_span_assertions())
+    failures.extend(_direct_css_var_line_assertions())
     for label, files, want_e, want_w in CASES:
         errs, warns = run_checks(files)
         if len(errs) != want_e or len(warns) != want_w:

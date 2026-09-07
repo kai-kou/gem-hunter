@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-# PreToolUse ガード: ファイル系ツール（Read / Write / Edit / NotebookEdit）から
+# PreToolUse ガード: ファイル系ツール（Read / Write / Edit / NotebookEdit / Grep / Glob）から
 # `.env` 系ファイルへ触れるのをブロックする（Issue #401 / PR #487 のセルフレビュー指摘）。
 #
 # 🔴 なぜ必要か（射程の穴）:
@@ -33,34 +33,101 @@ _env_guard_verdict() {
 }
 
 if [ "${1:-}" = "--self-test" ]; then
+  # 🔴 判定関数の直呼びだけでなく、**本番入口**（stdin JSON → jq 抽出 → hook_block → exit code）を
+  # 経由して検証する（Issue #1083 経路 3）。判定関数だけを直呼びする self-test は、jq のフィールド名
+  # 変異（`file_path` → `filePath`）で TARGETS が空になり while ループが 1 度も走らない退行を
+  # 検出できない（判定関数自体は変異の影響を受けないため緑のまま）。
   _egv_fail=0
-  _egv_block=0
-  _egv_allow=0
-  # ブロックされるべきパス
-  # `.env.example.ja` / `.env.example.ci` は **ブロック側**（レビュー指摘 1）。旧実装の
-  # `.env.example.[a-z][a-z]` は「2 文字の言語コード」のつもりで任意の小文字 2 文字 676 通りを
-  # 通していたため削除した。`.ENV.EXAMPLE` もブロック側（ひな形は元表記の完全一致のみ・指摘 2）。
-  for p in .env .env.local .env.production .env.prod .env.ci .env.qa \
-           /home/user/gem-hunter/.env.staging config/.env.docker ~/.env.secret \
-           .env.example.ja .env.example.ci .ENV.EXAMPLE; do
-    _egv_block=$((_egv_block + 1))
-    if ! _env_guard_verdict "$p"; then
-      echo "[env-guard][self-test] FAIL: ブロックされるべきパスが通過した: $p" >&2
+  _egv_total=0
+
+  # _egv_run <JSON> <期待する終了コード> <説明>
+  # 本番入口（このスクリプト自身）へ stdin 経由で JSON を渡し、実際の終了コードを assert する。
+  _egv_run() {
+    _egv_json="$1" _egv_want="$2" _egv_desc="$3"
+    _egv_total=$((_egv_total + 1))
+    # `set -e` 環境下でパイプラインの非ゼロ終了がスクリプトごと止まらないよう、
+    # 判定は if の条件位置で行う（pipefail により printf 側ではなく本番入口の終了コードが伝播する）。
+    if printf '%s' "$_egv_json" | bash "$HOOK_DIR/pre-file-tool-env-guard.sh" >/dev/null 2>/dev/null; then
+      _egv_got=0
+    else
+      _egv_got=$?
+    fi
+    if [ "$_egv_got" -ne "$_egv_want" ]; then
+      echo "[env-guard][self-test] FAIL: ${_egv_desc}（期待 exit ${_egv_want} / 実際 exit ${_egv_got} / JSON: ${_egv_json}）" >&2
       _egv_fail=1
     fi
+  }
+
+  # --- file_path フィールド（Read/Write/Edit 経路） ---
+  _egv_run '{"tool_name":"Read","tool_input":{"file_path":".env.production"}}' 2 "file_path=.env.production はブロック"
+  _egv_run '{"tool_name":"Read","tool_input":{"file_path":".env.example"}}' 0 "file_path=.env.example（ひな形）は通過"
+
+  # --- notebook_path フィールド（NotebookEdit 経路） ---
+  _egv_run '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":".env"}}' 2 "notebook_path=.env はブロック"
+  _egv_run '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"analysis.ipynb"}}' 0 "notebook_path=analysis.ipynb は通過"
+
+  # --- path フィールド（Grep/Glob 経路・Issue #1083 経路 2 本体） ---
+  _egv_run '{"tool_name":"Grep","tool_input":{"pattern":".","path":".env","output_mode":"content"}}' 2 "Grep(pattern=., path=.env) はブロック"
+  _egv_run '{"tool_name":"Glob","tool_input":{"pattern":"**/*","path":".env.local"}}' 2 "Glob(path=.env.local) はブロック"
+  _egv_run '{"tool_name":"Grep","tool_input":{"pattern":"TODO","path":"src"}}' 0 "Grep(path=src) は通過"
+  _egv_run '{"tool_name":"Grep","tool_input":{"pattern":"secret"}}' 0 "Grep(path 省略) は通過（path 未指定は対象外）"
+
+  # --- 複数フィールド同時（要素間の関係性の負ケース・#896: 個々は妥当でも 1 つでも違反なら全体ブロック） ---
+  _egv_run '{"tool_name":"Read","tool_input":{"file_path":"README.md","path":".env"}}' 2 "file_path は無害だが path が .env → ブロック"
+  _egv_run '{"tool_name":"Read","tool_input":{"file_path":"README.md","notebook_path":"a.ipynb","path":"src"}}' 0 "全フィールド無害 → 通過"
+
+  # --- 入力 JSON が壊れているときの fail-closed（設計基準 §3・jq 不在とは別の分岐） ---
+  # jq は PATH にあるが JSON として解析できない入力（`jq` が非ゼロ終了する経路）。この分岐が
+  # 旧実装（`... || true` で握り潰す）へ差し戻されると fail-open に退行するが、整形済み JSON だけを
+  # 送る上のケース群では検出できないため、専用の回帰ケースとして固定する。
+  _egv_run 'not valid json {{{' 2 "解析不能な入力は fail-closed（exit 2）"
+  _egv_run '' 2 "空入力は fail-closed（exit 2）"
+
+  # --- jq 不在時の fail-closed（設計基準 §3: 判定不能を合格に丸めない） ---
+  # 素の env -i PATH=空 だと dirname/cat 等スクリプトが依存する他コマンドまで消えて
+  # 「jq 不在」以外の理由で落ちてしまう（誤検出）。/usr/bin と /bin の全コマンドを
+  # jq だけ除いてシンボリックリンクした専用 PATH を作り、「jq だけが無い」状態を再現する。
+  # 🔴 `bash` は `/usr/bin` / `/bin` 以外にしか無い環境（minimal コンテナ・Nix 等）があるため、
+  #    走査結果に依存せず `command -v bash` の実体を明示的にリンクする（リンクできない環境では
+  #    このケースだけをスキップし、jq 不在以外の理由による偽陽性・ハングを避ける）。
+  _egv_no_jq_dir="$(mktemp -d)"
+  for _egv_src_dir in /usr/bin /bin; do
+    [ -d "$_egv_src_dir" ] || continue
+    for _egv_bin in "$_egv_src_dir"/*; do
+      _egv_bin_name="${_egv_bin##*/}"
+      [ "$_egv_bin_name" = "jq" ] && continue
+      [ -e "$_egv_no_jq_dir/$_egv_bin_name" ] && continue
+      ln -s "$_egv_bin" "$_egv_no_jq_dir/$_egv_bin_name" 2>/dev/null || true
+    done
   done
-  # 通過すべきパス
-  for p in .env.example .env.sample .env.template .env.dist \
-           README.md src/infrastructure/github/oauth.ts docs/rules/env-vars.md \
-           environment.ts .environment; do
-    _egv_allow=$((_egv_allow + 1))
-    if _env_guard_verdict "$p"; then
-      echo "[env-guard][self-test] FAIL: 通過すべきパスがブロックされた: $p" >&2
+  # 走査で拾えていなければ実体パスから明示的にリンクする（上記 🔴 の環境差対策）
+  _egv_bash_path="$(command -v bash 2>/dev/null || true)"
+  if [ ! -e "$_egv_no_jq_dir/bash" ] && [ -n "$_egv_bash_path" ]; then
+    ln -s "$_egv_bash_path" "$_egv_no_jq_dir/bash" 2>/dev/null || true
+  fi
+  if [ ! -x "$_egv_no_jq_dir/bash" ]; then
+    echo "[env-guard][self-test] SKIP: jq 不在ケース（この環境では bash を隔離 PATH へ用意できませんでした）" >&2
+  else
+    _egv_total=$((_egv_total + 1))
+    if printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".env.example"}}' \
+      | env -i "PATH=$_egv_no_jq_dir" "$_egv_no_jq_dir/bash" "$HOOK_DIR/pre-file-tool-env-guard.sh" >/dev/null 2>/dev/null; then
+      _egv_got=0
+    else
+      _egv_got=$?
+    fi
+    if [ "$_egv_got" -ne 2 ]; then
+      echo "[env-guard][self-test] FAIL: jq 不在時は fail-closed（exit 2）のはずが exit ${_egv_got}" >&2
       _egv_fail=1
     fi
-  done
+  fi
+  rm -rf "$_egv_no_jq_dir" 2>/dev/null || true
+
+  # --- 判定関数（hook_env_guard_verdict）自体の直呼び回帰も引き続き保持 ---
+  # （env_allowlist.sh 側の hook_env_guard_self_test が本体を持つため、ここでは二重にしない。
+  #   本フック固有の懸念＝本番入口の終了コード経路は上の _egv_run 群が担う）
+
   if [ "$_egv_fail" -eq 0 ]; then
-    echo "[env-guard][self-test] OK（ブロック ${_egv_block} 件 / 通過 ${_egv_allow} 件）"
+    echo "[env-guard][self-test] OK（本番入口経由 ${_egv_total} 件）"
     exit 0
   fi
   exit 1
@@ -68,11 +135,34 @@ fi
 
 INPUT=$(cat)
 
-# Read / Write / Edit は file_path、NotebookEdit は notebook_path を持つ。
-# 将来のツールで別名が増えても取りこぼさないよう、両方＋汎用の path を候補にする。
-TARGETS=$(printf '%s\n' "$INPUT" \
+# 空入力も「判定不能」として fail-closed に倒す（Layer 1 セルフレビュー指摘）。`jq` は空入力を
+# エラーにせず空出力・exit 0 を返すため、下の解析失敗分岐では捕まらず素通りしていた。
+# PreToolUse は常に JSON を渡す仕様なので、空で届くのは配線・上流の異常を意味する。
+if [ -z "${INPUT//[[:space:]]/}" ]; then
+  hook_block "BLOCK: PreToolUse 入力が空でした（fail-closed）。
+理由: 判定不能を通過扱いにすると .env 保護そのものが迂回されるため、ブロック側に倒しています。
+デグレ検証: bash .claude/hooks/pre-file-tool-env-guard.sh --self-test"
+fi
+
+# 🔴 fail-closed（設計基準 docs/rules/check-tool-design-rules.md §3）: jq が使えない／
+# JSON 解析に失敗する状態を「対象なし（通過）」に丸めない。判定不能を合格にすると、
+# 本フックの存在意義（.env 系ファイルの秘密情報保護）そのものが迂回される。
+if ! command -v jq >/dev/null 2>&1; then
+  hook_block "BLOCK: jq コマンドが見つからないため .env 判定ができません（fail-closed）。
+理由: 判定不能を通過扱いにすると .env 保護そのものが迂回されるため、ブロック側に倒しています。
+jq を PATH に用意してから再試行してください。
+デグレ検証: bash .claude/hooks/pre-file-tool-env-guard.sh --self-test"
+fi
+
+# Read / Write / Edit は file_path、NotebookEdit は notebook_path、Grep / Glob は path を持つ。
+# 将来のツールで別名が増えても取りこぼさないよう、3 つとも候補にする。
+if ! TARGETS=$(printf '%s\n' "$INPUT" \
   | jq -r '[.tool_input.file_path?, .tool_input.notebook_path?, .tool_input.path?]
-           | map(select(. != null and . != "")) | .[]' 2>/dev/null || true)
+           | map(select(. != null and . != "")) | .[]' 2>/dev/null); then
+  hook_block "BLOCK: PreToolUse 入力の JSON 解析に失敗しました（fail-closed）。
+理由: 判定不能を通過扱いにすると .env 保護そのものが迂回されるため、ブロック側に倒しています。
+デグレ検証: bash .claude/hooks/pre-file-tool-env-guard.sh --self-test"
+fi
 
 while IFS= read -r _egv_path; do
   [ -n "$_egv_path" ] || continue

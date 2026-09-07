@@ -86,6 +86,22 @@ run block '. .env'
 run block 'cd /tmp && . .env'
 run block '. ~/.aws/credentials'
 
+# Issue #1083 経路 1: クォート・バックスラッシュ・コマンド置換で分断された `.env`。
+# 素朴なトークナイザは `.en"v"` を 1 トークンとして見るため `.env` に一致せず素通りしていた
+# （実測 rc=0）。`_sfa_dequote_command`（引用符・バックスラッシュ除去）と
+# `_sfa_substitution_env_tokens`（`$(...)` / バッククォートの中身だけを対象にした第 2 判定）が
+# それぞれ担当する。どちらか一方を外すと下のケースのいずれかが ALLOW へ退行する（変異テストで実測）。
+echo "== BLOCK 期待（引用符・バックスラッシュ・コマンド置換で分断された .env・#1083） =="
+run block 'cat .en"v"'
+run block 'cat .e"n"v'
+run block "cat .e'n'v"
+run block 'cat ".e""nv"'
+run block 'cat \.env'
+run block 'cat $(echo .env)'
+run block 'echo `cat .env`'
+# 🔴 `ln -s` は本 Issue の経路 1（クォート正規化）とは独立に未カバー: クォートの有無に関わらず
+# `ln -s <対象> notes.txt` が素通りする（`cat` / `cp` / `mv` は BLOCK される）。#1089 で追跡する。
+
 echo "== BLOCK 期待（秘密ディレクトリそのもの・大文字表記） =="
 run block 'cp -r ~/.ssh /tmp'
 run block 'cat ~/.SSH/config'
@@ -126,6 +142,19 @@ run allow 'cat package.json'
 run allow 'cat docs/rules/monkey-patch-keys.md'
 run allow 'git status'
 run allow 'cat .env.example'
+# Issue #1083 経路 1 の誤発火防止（#495 の再発防止）: コマンド置換の「中身」だけを第 2 判定の
+# 対象にしているため、コミットメッセージ・ドキュメント文中の `.env` 言及はブロックしない
+run allow "git commit -m 'update .env handling docs'"
+run allow 'echo "テンプレートは .env.example を参照"'
+run allow 'cat docs/rules/env-vars.md'
+# 🔴 開きクォートを消さないことの回帰ケース（Layer 1 セルフレビューが実測した誤発火）:
+# 正規化でクォートを無条件に除去すると、引用テキスト中のコマンド名が
+# `_sfa_candidate_tokens` の「コマンド位置」パターンに一致し、実行されない言及まで遮断される。
+# 下の 2 件は origin/main でも ALLOW であり、正規化の導入で退行させてはならない。
+run allow 'git commit -m "cat .env to check contents"'
+# ⚠️ 一方 `git commit -m "note: cp .env.example to .env locally"` は origin/main でも BLOCK される
+# （`cp` が多引数コマンドとして呼び出しブロック全体を候補にするため）。本 PR の退行ではない既存の
+# 誤発火なので、ここでは ALLOW として固定しない（別 Issue で追跡する）。
 run allow 'cat config/credentials/README.md'
 run allow 'cat notes/service-accountability.md'
 run allow 'cat foo/credentialsBackup.txt'

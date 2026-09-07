@@ -242,7 +242,7 @@
         ]
       },
       {
-        "matcher": "Read|Write|Edit|NotebookEdit",
+        "matcher": "Read|Write|Edit|NotebookEdit|Grep|Glob",
         "hooks": [
           {
             "type": "command",

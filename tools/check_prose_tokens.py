@@ -31,6 +31,8 @@ import re
 import sys
 from pathlib import Path
 
+from css_source import strip_css_comments as _strip_css_comments
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CSS_PATH = REPO_ROOT / "app" / "globals.css"
 
@@ -116,14 +118,22 @@ def is_allowed_value(raw_value: str) -> bool:
 def find_violations(css_text: str) -> list[tuple[int, str, str]]:
     """`css_text` 中の `--tw-prose-*` 宣言のうち、許可されない値を持つものを列挙する。
 
+    走査前に CSS コメントを除去する（`preserve_lines=False`・Issue #1084）。除去しないと
+    `PROSE_DECL_RE.finditer`（`re.finditer` は全マッチを順に返す）がコメント内の例示
+    （例: `/* 例: --tw-prose-body: #333; */`）まで宣言として拾い、実宣言の直後にコメントで
+    リテラル色の例を書いただけで誤検知 FAIL になる。行番号は本ツールでは目安表示のみで
+    厳密一致を要求しないため（`check_contrast.py` と同じ `preserve_lines=False` を踏襲）、
+    除去後のテキストを基準に数える。
+
     戻り値: (行番号, プロパティ名, 値) のリスト。
     """
+    stripped = _strip_css_comments(css_text, preserve_lines=False)
     violations: list[tuple[int, str, str]] = []
-    for match in PROSE_DECL_RE.finditer(css_text):
+    for match in PROSE_DECL_RE.finditer(stripped):
         name, value = match.group(1), match.group(2).strip()
         if is_allowed_value(value):
             continue
-        line_no = css_text.count("\n", 0, match.start()) + 1
+        line_no = stripped.count("\n", 0, match.start()) + 1
         violations.append((line_no, name, value))
     return violations
 
@@ -134,7 +144,8 @@ def run_check() -> int:
         return 1
 
     css_text = CSS_PATH.read_text(encoding="utf-8")
-    declared = PROSE_DECL_RE.findall(css_text)
+    stripped_css_text = _strip_css_comments(css_text, preserve_lines=False)
+    declared = PROSE_DECL_RE.findall(stripped_css_text)
 
     if not declared:
         # 🔴 typography プラグイン導入前（`--tw-prose-*` が 1 つも無い）は異常ではなく
@@ -279,6 +290,88 @@ def self_test() -> int:
     check(
         "--tw-prose- 以外の宣言は検査対象外",
         find_violations(unrelated_css) == [],
+    )
+
+    # --- Issue #1084: PROSE_DECL_RE が CSS コメント除去（css_source.strip_css_comments）を
+    #     通すようになったことの回帰固定。バリアント（宣言の前 / 後 / 同一行 / 複数行）と、
+    #     要素間の関係性ケース（#896: コメントと実宣言が同じプロパティ名で、片方だけが違反）を含む。
+
+    # 11. コメントが宣言の後にある場合（Issue #1084 表 row 2 の実例）。
+    comment_after_css = (
+        ".prose {\n"
+        "  --tw-prose-body: var(--color-foreground);\n"
+        "  /* 例: --tw-prose-body: #333; */\n"
+        "}\n"
+    )
+    check(
+        "コメント内の例示(#333)を実値として読まない（宣言の後）",
+        find_violations(comment_after_css) == [],
+    )
+
+    # 12. コメントが宣言の前にある場合。
+    comment_before_css = (
+        ".prose {\n"
+        "  /* 例: --tw-prose-links: #ff0000; */\n"
+        "  --tw-prose-links: var(--color-accent);\n"
+        "}\n"
+    )
+    check(
+        "コメント内の例示(#ff0000)を実値として読まない（宣言の前）",
+        find_violations(comment_before_css) == [],
+    )
+
+    # 13. 同一行末尾コメント。
+    same_line_css = ".prose {\n  --tw-prose-code: var(--color-accent); /* 例: #000 */\n}\n"
+    check(
+        "同一行末尾コメントの例示を実値として読まない",
+        find_violations(same_line_css) == [],
+    )
+
+    # 14. 複数行にまたがるコメント。
+    multiline_comment_css = (
+        ".prose {\n"
+        "  /* 例:\n"
+        "     --tw-prose-hr: #cccccc;\n"
+        "     のような直書きは禁止\n"
+        "  */\n"
+        "  --tw-prose-hr: transparent;\n"
+        "}\n"
+    )
+    check(
+        "複数行コメント内の例示を実値として読まない",
+        find_violations(multiline_comment_css) == [],
+    )
+
+    # 15. 要素間の関係性（#896）: コメントと実宣言が同じプロパティ名を持ち、片方だけが違反する。
+    relation_css_real_violates = (
+        ".prose {\n"
+        "  /* 例: --tw-prose-quotes: var(--color-fg); のような参照にすること */\n"
+        "  --tw-prose-quotes: #123456;\n"
+        "}\n"
+    )
+    rel_violations = find_violations(relation_css_real_violates)
+    check(
+        "コメント内は許可値でも実宣言がリテラル色なら違反として検出する（見逃し方向のガード）",
+        len(rel_violations) == 1 and rel_violations[0][1] == "--tw-prose-quotes",
+    )
+
+    relation_css_comment_violates = (
+        ".prose {\n"
+        "  /* 例: --tw-prose-quotes: #123456; のような直書きは禁止 */\n"
+        "  --tw-prose-quotes: var(--color-fg);\n"
+        "}\n"
+    )
+    check(
+        "コメント内がリテラル色でも実宣言が許可値なら誤検知しない（fail-closed 側のガード）",
+        find_violations(relation_css_comment_violates) == [],
+    )
+
+    # 16. declared のカウント（run_check が使う PROSE_DECL_RE.findall）もコメント除去後の
+    #     テキストに対して数える（コメント内の宣言もどきを実件数へ混入させない）。
+    stripped_for_count = _strip_css_comments(comment_after_css, preserve_lines=False)
+    check(
+        "declared カウントはコメント内の宣言もどきを含まない",
+        len(PROSE_DECL_RE.findall(stripped_for_count)) == 1,
     )
 
     if failures:
