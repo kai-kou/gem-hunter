@@ -31,7 +31,21 @@ function uniqueOverflowGuardKeyword(): string {
   return uniqueKeyword('overflow-guard')
 }
 
-/** SC 1.4.12 の 4 値をすべて強制する CSS をページに注入する。 */
+/**
+ * SC 1.4.12 の 4 値をすべて強制する CSS をページに注入する。
+ *
+ * 🔴 注入後に `document.fonts.ready` と、CSS トランジションの収束を待つ（Issue #831 の真因）。
+ *
+ * 実測で判明した非決定性の正体: `src/ui/components/button.tsx` の `buttonVariants` 基底クラスに
+ * `transition-all` が含まれており、これは `letter-spacing` / `line-height` / `word-spacing` も
+ * トランジション対象にする。本関数が注入する CSS はこれらのプロパティを `normal` から
+ * 一気に強制値へ変えるため、**ボタン系要素では即座に最終値へならず、既定 150ms のトランジション
+ * 中は値が補間される**。測定タイミングがこのトランジション途中に重なると、同一要素・同一条件でも
+ * 実測 `letter-spacing` が毎回異なり（実測: 0.72px 〜 1.68px の間でばらつき）、それに伴って
+ * `scrollWidth` の超過量も 2px 〜 8.7px の間で揺れる（フルスイート実行時の CPU 競合で
+ * このタイミングがずれやすいため「フルスイート実行時のみ非決定的に失敗」して見えていた）。
+ * トランジションが収束した後の実効値（14px 要素なら 0.12 × 14 = 1.68px）で測れば決定的になる。
+ */
 async function injectTextSpacingOverride(page: Page): Promise<void> {
   await page.addStyleTag({
     content: `
@@ -39,12 +53,28 @@ async function injectTextSpacingOverride(page: Page): Promise<void> {
   line-height: 1.5 !important;
   letter-spacing: 0.12em !important;
   word-spacing: 0.16em !important;
+  /*
+   * 🔴 Issue #831 の真因対策: \`src/ui/components/button.tsx\` の \`buttonVariants\` 基底クラスに
+   * 含まれる \`transition-all\` は letter-spacing / line-height / word-spacing もトランジション
+   * 対象にする。上記 3 値を \`normal\` から一気に強制値へ変えると、ボタン系要素だけ既定 150ms の
+   * トランジション中は値が補間され、測定タイミング次第で実効 letter-spacing が
+   * 0.72px 〜 1.68px の間でばらついた（scrollWidth の超過量も 2px 〜 8.7px の間で揺れ、
+   * フルスイート実行時の CPU 競合でタイミングがずれやすいぶん「フルスイート実行時のみ
+   * 非決定的に失敗」して見えていた）。本検査は達成基準の 4 値が **実効値として即座に**
+   * 効いているかを見るためのものであり、そのトランジション自体を検証対象にしていないため、
+   * ここで無効化して即時適用させる。
+   */
+  transition: none !important;
 }
 p {
   margin-bottom: 2em !important;
 }
 `,
   })
+  // Web フォント（Geist）のスワップ（FOUT/FOIT）が完了する前に測ると、フォールバック
+  // フォントとスワップ後のフォントとで文字幅が異なり実測値が揺れるため、フォント読み込み
+  // 完了も待つ（上記トランジション無効化と合わせて、実効値の測定を完全に決定的にする）。
+  await page.evaluate(() => document.fonts.ready)
 }
 
 /**
@@ -156,6 +186,44 @@ test.describe('WCAG 2.2 SC 1.4.12 Text Spacing', () => {
     await expect(descriptionCard).toBeVisible()
     await expect(topicCard).toBeVisible()
     await expect(longNameCard).toBeVisible()
+  })
+
+  /**
+   * Issue #831 の再現専用テスト。
+   *
+   * フルスイート実行時にのみ、上の「検索結果一覧」テストが `scrollWidth` の 2〜6px 超過で
+   * 非決定的に落ちていた。採取した `culprit`（PR 起点コメント）は、カード上部の
+   * 「この検索語の Gem 候補を一覧で見る」導線（`GemListLink`）で、`whitespace-nowrap` を
+   * 持つボタン風リンクが Text Spacing 上書き後の `letter-spacing` 実効値ぶん伸び、
+   * 320px 幅の viewport からはみ出していた。
+   *
+   * `document.scrollingElement` 全体を見る `expectNoHorizontalScroll` は非決定的な再現に
+   * 頼っていたため、ここでは **当該要素そのもの**の `getBoundingClientRect().right` を直接測る。
+   * これにより、フルスイート実行という間接的な条件を経由せず、単体実行でも決定的に検証できる。
+   */
+  test('「この検索語の Gem 候補を一覧で見る」導線は Text Spacing 上書き後も画面幅からはみ出さない', async ({
+    page,
+  }) => {
+    await page.goto('/ja')
+    await searchFor(page, uniqueOverflowGuardKeyword())
+
+    const gemListLink = page.getByRole('link', { name: 'この検索語の Gem 候補を一覧で見る' })
+    await expect(gemListLink).toBeVisible()
+
+    await injectTextSpacingOverride(page)
+
+    const box = await gemListLink.evaluate((el) => ({
+      right: el.getBoundingClientRect().right,
+      viewportWidth: window.innerWidth,
+      letterSpacing: getComputedStyle(el).letterSpacing,
+    }))
+    // +1px はサブピクセル丸め対策（`expectNoHorizontalScroll` と同じ許容）。
+    expect(
+      box.right,
+      `この検索語の Gem 候補を一覧で見る: right=${box.right} viewportWidth=${box.viewportWidth} letterSpacing=${box.letterSpacing}`,
+    ).toBeLessThanOrEqual(box.viewportWidth + 1)
+
+    await expectNoHorizontalScroll(page, '検索結果一覧（導線のみ再検証・Text Spacing 上書き後）')
   })
 
   test('README（表・コードブロックを含む長文コンテンツ）に Text Spacing 上書きを適用しても横スクロールが発生せず、見出し・本文が見え続ける', async ({

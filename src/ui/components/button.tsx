@@ -27,12 +27,19 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
+        // 🔴 `h-*`（固定高さ）ではなく `min-h-*`（最小高さ）にする（Issue #831）: 通常の
+        // 1 行ラベルでは自然な内容高さがトークン値を下回るため見た目は従来と同一になるが、
+        // 呼び出し側が `whitespace-normal` でラベルの折り返しを許容した場合（例:
+        // `gem-list-link.tsx`）に、折り返した 2 行目が固定高さで垂直方向にクリップされず
+        // ボックスが自然に伸びる。`h-*` のままだと `size` variant を経由しない限り高さを
+        // 変えられない（`ui-ux-guidelines.md` の呼び出し側 `h-*` 直書き禁止）ため、
+        // 折り返しを許容するコントロールの受け皿がここにしかない。
         default:
-          'h-(--size-control-md) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
-        xs: "h-(--size-control-xs) gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-(--size-control-sm) gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: 'h-(--size-control-lg) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
-        xl: 'h-(--size-control-xl) gap-2 px-4 text-base has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3',
+          'min-h-(--size-control-md) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
+        xs: "min-h-(--size-control-xs) gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
+        sm: "min-h-(--size-control-sm) gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: 'min-h-(--size-control-lg) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
+        xl: 'min-h-(--size-control-xl) gap-2 px-4 text-base has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3',
         icon: 'size-(--size-control-md)',
         'icon-xs':
           "size-(--size-control-xs) rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
