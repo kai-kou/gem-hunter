@@ -105,7 +105,16 @@ const inMemoryCache: CachePort = new InMemoryCache(new SystemClock())
  */
 let resolvedCache: CachePort | undefined
 
-/** フォールバックの警告を isolate ごと 1 回に抑える（再判定のたびには出さない）。 */
+/**
+ * フォールバックの警告を isolate ごと 1 回に抑える（再判定のたびには出さない）。
+ *
+ * ⚠️ **これは時間ベースの間引きではない**（`rate-limit-diagnostics.ts` の
+ * `RATE_LIMIT_WARN_INTERVAL_MS` による「理由ごとに 10 分に 1 回」とはポリシーが違う）。
+ * `cloudflare-infrastructure.md` §3.3 の観測窓ルール（間引き間隔以上待てば必ず 1 行出る）は
+ * **`[cache]` の warn には適用されない** — 暖まった isolate では、フォールバックが継続していても
+ * 二度と出ない。`[cache]` の有無で Cache API の健全性を判定しないこと。
+ * 2 つのポリシーの統合は別 Issue で扱う（PR #1044 セルフレビュー指摘）。
+ */
 let warnedCacheFallback = false
 
 function resolveCache(): CachePort {

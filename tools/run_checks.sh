@@ -340,6 +340,17 @@ else
   skip_check "決定 ID 参照検査 (check_decision_ids.py)" "スクリプトが見つかりません"
 fi
 
+# 4.72. ID 採番衝突検査の self-test（Issue #256）。
+#       本判定（origin/main との突き合わせ）は `git fetch` によるネットワーク疎通が要るため
+#       ここには配線しない（§5.1 の区分 (b)・外部要因で全 PR が赤くなるのを避ける）。実行場所は
+#       `.claude/hooks/pre-pr-create-check.sh` 4.9 節（PR 作成前・衝突でブロック）と、
+#       サブエージェントへ ID 採番表を配る前のオーケストレーターの手動実行。
+if [ -f "$REPO_ROOT/tools/check_reserved_ids.py" ]; then
+  run_check "ID 採番衝突検査 self-test (check_reserved_ids.py --self-test)" python3 tools/check_reserved_ids.py --self-test
+else
+  skip_check "ID 採番衝突検査 self-test (check_reserved_ids.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 4.75. レート制限の配線検査（Issue #442 の再発防止）。
 #       Cloudflare Rate Limiting は binding 宣言だけでは何も起きず、しかもフェイルオープン設計のため
 #       「配線し忘れ」と「正常」が実行時に区別できない。cloudflare-infrastructure.md の適用経路表

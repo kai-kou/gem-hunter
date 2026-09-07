@@ -658,6 +658,178 @@ def test_pre_pr_create_check_allows_meaningful_subject_mentioning_auto_commit() 
         )
 
 
+# ──────────────────────────────────────────────
+# pre-pr-create-check.sh 4.9 節（ID 採番衝突の検査・Issue #256 / PR #1044）
+# ──────────────────────────────────────────────
+
+_RESERVED_IDS_STUB = '''#!/usr/bin/env python3
+import json, os, sys
+
+log = os.environ.get("CRI_STUB_CALL_LOG")
+if log:
+    with open(log, "a", encoding="utf-8") as f:
+        f.write(json.dumps(sys.argv[1:], ensure_ascii=False) + "\\n")
+
+out = os.environ.get("CRI_STUB_STDOUT", "")
+if out:
+    sys.stdout.write(out + "\\n")
+sys.exit(int(os.environ.get("CRI_STUB_EXIT", "0")))
+'''
+
+
+def _run_reserved_ids_block(
+    tmp: str,
+    *,
+    exit_code: int = 0,
+    stdout: str = "",
+    install_stub: bool = True,
+) -> tuple[subprocess.CompletedProcess, list]:
+    """4.9 節の判定器を指定 exit code のスタブに差し替えてフックを実行する。
+
+    4.9 節 **以外** のブロック要因（未 push・[wip] 件名・証跡表・鮮度）は先に潰しておく。
+    戻り値は (フック実行結果, スタブが受け取った argv の一覧)。
+    """
+    work = _setup_feature_branch(tmp)
+    (work / "README.md").write_text("meaningful change\n", encoding="utf-8")
+    if install_stub:
+        tools_dir = work / "tools"
+        tools_dir.mkdir(parents=True, exist_ok=True)
+        (tools_dir / "check_reserved_ids.py").write_text(_RESERVED_IDS_STUB, encoding="utf-8")
+    # 3 節（未追跡ファイル）・4 節（未 push）で先にブロックされないよう、スタブごとコミットする
+    _git(work, "add", "-A")
+    _git(work, "commit", "-m", "feat: 意味のあるコミット")
+    _git(work, "push", "-u", "origin", "feature")
+
+    # 呼び出しログは隔離リポジトリの外に置く（git status を汚さない）
+    call_log = Path(tmp) / "reserved_ids_calls.log"
+    result = _run_hook(
+        PRE_PR_CREATE_CHECK,
+        work,
+        {
+            "tool_name": "mcp__github__create_pull_request",
+            "tool_input": {"body": _pr_body_with_evidence(work)},
+        },
+        {
+            "CRI_STUB_EXIT": str(exit_code),
+            "CRI_STUB_STDOUT": stdout,
+            "CRI_STUB_CALL_LOG": str(call_log),
+        },
+    )
+    calls = []
+    if call_log.is_file():
+        calls = [
+            json.loads(line)
+            for line in call_log.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    return result, calls
+
+
+def _additional_context(result: subprocess.CompletedProcess) -> str:
+    """非ブロック時に stdout へ出る JSON から additionalContext を取り出す。"""
+    try:
+        payload = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return ""
+    return payload.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+def test_pre_pr_create_check_reserved_ids_blocks_on_exit1() -> None:
+    """exit 1（ID 衝突あり）だけが PR 作成をブロックする。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, calls = _run_reserved_ids_block(
+            tmp, exit_code=1, stdout="❌ ID 衝突: D-26 は origin/main 側でも新規に確保されている"
+        )
+        _check(
+            "reserved-ids: exit 1 は PR 作成をブロックする（フック exit 2）",
+            result.returncode == 2,
+            f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
+        )
+        combined = result.stdout + result.stderr
+        _check(
+            "reserved-ids: ブロック理由に判定器の出力と Issue #256 を含める",
+            "D-26" in combined and "#256" in combined,
+            combined,
+        )
+        _check(
+            "reserved-ids: 2 つの原因（衝突 / 重複定義・再利用）の復旧手順を書き分ける",
+            "ID 衝突" in combined and "ID 重複定義" in combined and "ID 再利用" in combined,
+            combined,
+        )
+        _check(
+            "reserved-ids: 判定器は引数なしで 1 回だけ呼ばれる",
+            calls == [[]],
+            f"calls={calls}",
+        )
+
+
+def test_pre_pr_create_check_reserved_ids_warns_on_exit2() -> None:
+    """exit 2（判定不能）はブロックせず、非ブロッキング警告として additionalContext へ届く。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, calls = _run_reserved_ids_block(
+            tmp, exit_code=2, stdout="⚠️ 判定不能: git fetch origin main が失敗"
+        )
+        _check(
+            "reserved-ids: exit 2 では PR 作成をブロックしない",
+            result.returncode == 0,
+            f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
+        )
+        ctx = _additional_context(result)
+        _check(
+            "reserved-ids: exit 2 は「実質未実行」と終了コード付きで警告する",
+            "exit 2" in ctx and "ID 採番衝突の検知が実質未実行です" in ctx,
+            ctx,
+        )
+        _check("reserved-ids: exit 2 でも判定器は呼ばれている", calls == [[]], f"calls={calls}")
+
+
+def test_pre_pr_create_check_reserved_ids_warns_on_timeout124() -> None:
+    """exit 124（timeout）を「衝突あり」と誤読せず、警告のみに留める。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _calls = _run_reserved_ids_block(tmp, exit_code=124)
+        _check(
+            "reserved-ids: exit 124 では PR 作成をブロックしない",
+            result.returncode == 0,
+            f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
+        )
+        ctx = _additional_context(result)
+        _check(
+            "reserved-ids: exit 124 を終了コード付きで警告する",
+            "exit 124" in ctx,
+            ctx,
+        )
+
+
+def test_pre_pr_create_check_reserved_ids_warns_when_tool_missing() -> None:
+    """判定器スクリプトが無い場合は、黙って素通りせず「実質未実行」と警告する。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, calls = _run_reserved_ids_block(tmp, install_stub=False)
+        _check(
+            "reserved-ids: 判定器不在では PR 作成をブロックしない",
+            result.returncode == 0,
+            f"exit={result.returncode} stdout={result.stdout} stderr={result.stderr}",
+        )
+        ctx = _additional_context(result)
+        _check(
+            "reserved-ids: 判定器不在を additionalContext へ届ける（無音のフォールバックにしない）",
+            "tools/check_reserved_ids.py が見つかりません" in ctx,
+            ctx,
+        )
+        _check("reserved-ids: 判定器不在なら呼び出しも記録されない", calls == [], f"calls={calls}")
+
+
+def test_pre_pr_create_check_reserved_ids_exit0_is_silent() -> None:
+    """exit 0（衝突なし）: 判定器は呼ばれるが警告は出さない（境界の外側）。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, calls = _run_reserved_ids_block(tmp, exit_code=0, stdout="✅ ID 衝突なし")
+        _check(
+            "reserved-ids: exit 0 ではブロックも警告もしない",
+            result.returncode == 0 and "ID 採番衝突の検知が実質未実行です" not in _additional_context(result),
+            f"exit={result.returncode} ctx={_additional_context(result)}",
+        )
+        _check("reserved-ids: exit 0 でも判定器は呼ばれる", calls == [[]], f"calls={calls}")
+
+
 def main() -> int:
     # フックが 1 本欠けても他 2 本の検証は続行する（欠けた本数分だけ SKIP を記録）。
     if not STOP_SLACK_NOTIFY.is_file():
@@ -686,6 +858,11 @@ def main() -> int:
         test_pre_pr_create_check_allows_wip_commit_when_branch_has_multiple_commits()
         test_pre_pr_create_check_allows_meaningful_subject_mentioning_auto_commit()
         test_pre_pr_create_check_blocks_when_base_unresolved()
+        test_pre_pr_create_check_reserved_ids_blocks_on_exit1()
+        test_pre_pr_create_check_reserved_ids_warns_on_exit2()
+        test_pre_pr_create_check_reserved_ids_warns_on_timeout124()
+        test_pre_pr_create_check_reserved_ids_warns_when_tool_missing()
+        test_pre_pr_create_check_reserved_ids_exit0_is_silent()
 
     if _FAILURES:
         print(f"\n{len(_FAILURES)} 件失敗:")

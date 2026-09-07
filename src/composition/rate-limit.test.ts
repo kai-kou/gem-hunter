@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RateLimitExceededError } from '../domain/errors'
+import {
+  RATE_LIMIT_DISABLED_MARKER,
+  createRateLimitDisabledReporter,
+  type RateLimitDisabledReason,
+} from './rate-limit-diagnostics'
 
 const clientIpOf = vi.fn()
 const hashRateLimitKey = vi.fn()
@@ -32,8 +37,31 @@ const IP = '203.0.113.1'
 const SALT = 'test-salt'
 const BINDING = { limit: vi.fn() }
 
-// 警告の有無そのものが検証対象（Issue #442 のセルフレビュー指摘）なので、
-// 素通し系のテストが「実は無音でなかった」ことを見逃さないよう常に spy を挟む。
+/**
+ * 🔴 診断レポーターは **`vi.mock` で差し替えない**（`testing-strategy.md` §4:
+ * 「`vi.mock` で自作モジュールを差し替えたくなったら依存性注入ができていないサイン」）。
+ * `enforceRateLimit` の第 2 引数 `deps.report` へ手書きフェイクを注入する。
+ *
+ * 引数を **rest で丸ごと記録** するのが要点。理由コード 1 個だけを記録すると、将来
+ * `report('no-salt', ip)` のように引数を広げて秘密情報を渡す変更が入っても記録に残らず、
+ * 「秘密情報を渡していない」という assert が恒真化する（PR #1044 セルフレビュー指摘）。
+ */
+function createReportFake(): {
+  calls: unknown[][]
+  report: (reason: RateLimitDisabledReason) => void
+} {
+  const calls: unknown[][] = []
+  // `satisfies` で本番のレポーター型に適合させる（契約が変わればここが型エラーになる）。
+  const report = ((...args: unknown[]): void => {
+    calls.push(args)
+  }) satisfies (reason: RateLimitDisabledReason) => void
+  return { calls, report }
+}
+
+// 🔴 フェイルオープンした事実が **必ず記録される**（Issue #192）ことと、有効な環境では
+// 1 件も記録されないことの両方が検証対象なので、素通し系・正常系ともに毎回検証する。
+// 間引き（同一理由の抑制）の責務は `rate-limit-diagnostics.ts` 側にあり、本ファイルは
+// 「どの分岐がどの理由コードを報告するか」という配線だけを固定する。
 const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
 afterEach(() => {
@@ -50,7 +78,10 @@ afterEach(() => {
  */
 type EnforceCase = [
   name: string,
-  enforce: (headers: Headers) => Promise<void>,
+  enforce: (
+    headers: Headers,
+    deps?: { report?: (reason: RateLimitDisabledReason) => void },
+  ) => Promise<void>,
   expectedPrefix: string,
 ]
 
@@ -61,26 +92,28 @@ const ENFORCE_CASES: EnforceCase[] = [
 ]
 
 describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
-  it('IP が取れないなら素通り（binding も取りに行かない・無音）', async () => {
+  it('IP が取れないなら素通りし、理由 no-client-ip を記録する（binding も取りに行かない）', async () => {
+    const { calls, report } = createReportFake()
     clientIpOf.mockReturnValue(null)
     vi.stubEnv('RATE_LIMIT_SALT', SALT)
 
-    await expect(enforce(HEADERS)).resolves.toBeUndefined()
+    await expect(enforce(HEADERS, { report })).resolves.toBeUndefined()
 
     expect(rateLimiterBinding).not.toHaveBeenCalled()
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(calls).toEqual([['no-client-ip']])
   })
 
-  it('binding 未提供なら素通り（無音）', async () => {
+  it('binding 未提供なら素通りし、理由 no-binding を記録する（Issue #192）', async () => {
+    const { calls, report } = createReportFake()
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', SALT)
     rateLimiterBinding.mockResolvedValue(undefined)
 
-    await expect(enforce(HEADERS)).resolves.toBeUndefined()
+    await expect(enforce(HEADERS, { report })).resolves.toBeUndefined()
 
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(calls).toEqual([['no-binding']])
   })
 
   // 旧テスト「RATE_LIMIT_SALT 未設定なら素通り（binding も取りに行かない）」の後継。
@@ -88,43 +121,75 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
   // 固定していたが、その順序では **Workers 上で salt だけ落ちた設定不備** が
   // 「binding 未提供のローカル実行」と区別できず、両経路が無音で全面無効化される。
   // 判定順を binding → salt に入れ替えたため、本ケースが固定する意図も
-  // 「取得コストを払わないこと」から「binding 無しの環境は依然として完全に無音であること」へ変わった。
-  it('binding 未提供なら RATE_LIMIT_SALT 未設定でも完全に無音（ローカル実行を汚さない）', async () => {
+  // 「取得コストを払わないこと」から「binding 無しの環境は no-binding として切り分けられること」
+  // へ変わった（Issue #192: salt の設定不備と実行環境の違いを取り違えない）。
+  it('binding 未提供のときは salt 未設定でも理由は no-binding 1 件だけ（実行環境と設定不備を混同しない）', async () => {
+    const { calls, report } = createReportFake()
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', '')
     rateLimiterBinding.mockResolvedValue(undefined)
 
-    await expect(enforce(HEADERS)).resolves.toBeUndefined()
+    await expect(enforce(HEADERS, { report })).resolves.toBeUndefined()
 
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(calls).toEqual([['no-binding']])
   })
 
-  it('binding があるのに RATE_LIMIT_SALT 未設定なら素通りしつつ警告を出す', async () => {
+  it('binding があるのに RATE_LIMIT_SALT 未設定なら素通りし、理由 no-salt を記録する', async () => {
+    const { calls, report } = createReportFake()
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', '')
     rateLimiterBinding.mockResolvedValue(BINDING)
 
-    await expect(enforce(HEADERS)).resolves.toBeUndefined()
+    await expect(enforce(HEADERS, { report })).resolves.toBeUndefined()
 
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).toHaveBeenCalledTimes(1)
-    const [warned] = warnSpy.mock.calls[0] as [string]
-    expect(warned).toContain('RATE_LIMIT_SALT')
-    // 秘密情報（salt 本体・接続元 IP）を警告に載せない。
-    expect(warned).not.toContain(SALT)
-    expect(warned).not.toContain(IP)
+    // 🔴 診断へ渡すのは理由コード **1 個だけ**。`toEqual` で引数列そのものを固定するので、
+    //    `report('no-salt', ip)` のように引数を広げた瞬間にここが落ちる（恒真化しない）。
+    expect(calls).toEqual([['no-salt']])
   })
 
-  it('allowed: true なら素通り', async () => {
+  /**
+   * 🔴 秘密情報の非漏洩は **実レポーターが `console.warn` した行** に対して検査する（PR #1044 指摘）。
+   * 手書きフェイクの引数だけを見ると、`enforceRateLimit` 内で `console.warn` を直に呼んで
+   * salt / IP を埋め込む変更を検知できない。ここでは salt（env）と IP（変数）が
+   * 実際にスコープへ存在する 2 経路（`no-binding` / `no-salt`）を通したうえで出力行を見る。
+   * レポーターはテストごとに新規生成する（間引き状態が空 = 必ず 1 行出る）。
+   */
+  it('診断の出力行に秘密情報（salt 値・接続元 IP）が現れない', async () => {
+    const report = createRateLimitDisabledReporter()
+    clientIpOf.mockReturnValue(IP)
+
+    // 経路 1: IP 取得済み・env に salt あり・binding 無し（salt / IP ともスコープに存在）。
+    vi.stubEnv('RATE_LIMIT_SALT', SALT)
+    rateLimiterBinding.mockResolvedValue(undefined)
+    await enforce(HEADERS, { report })
+
+    // 経路 2: IP 取得済み・binding あり・salt 未設定（IP がスコープに存在）。
+    vi.stubEnv('RATE_LIMIT_SALT', '')
+    rateLimiterBinding.mockResolvedValue(BINDING)
+    await enforce(HEADERS, { report })
+
+    const lines = warnSpy.mock.calls.map((call) => String(call[0]))
+    expect(lines).toHaveLength(2)
+    for (const line of lines) {
+      expect(line).toContain(RATE_LIMIT_DISABLED_MARKER)
+      expect(line).not.toContain(SALT)
+      expect(line).not.toMatch(/\d+\.\d+\.\d+\.\d+/)
+    }
+  })
+
+  it('allowed: true なら素通りし、診断も警告も一切出さない（完了条件 3）', async () => {
+    const { calls, report } = createReportFake()
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', SALT)
     rateLimiterBinding.mockResolvedValue(BINDING)
     hashRateLimitKey.mockResolvedValue('hashed-key')
     consume.mockResolvedValue({ allowed: true })
 
-    await expect(enforce(HEADERS)).resolves.toBeUndefined()
+    await expect(enforce(HEADERS, { report })).resolves.toBeUndefined()
 
+    expect(calls).toEqual([])
     expect(warnSpy).not.toHaveBeenCalled()
   })
 
@@ -185,5 +250,27 @@ describe('検索・Gem 一覧・詳細取得の枠は独立している（Issue 
     // 同一ハッシュでも接頭辞が違えば Cloudflare 側のカウンタは別枠になる。
     // ここが同じキーに退行すると「検索 → 詳細を開く」等の導線で枠を食い合う。
     expect(new Set([searchKey, gemListKey, detailKey]).size).toBe(3)
+  })
+})
+
+/**
+ * 既定の `deps`（引数を 1 つだけ渡す本番と同じ呼び方）で診断が実際に出ることを固定する。
+ * 上のケース群は注入済みフェイクを見ているため、既定値が未配線（`deps.report` 未指定なら
+ * 何もしない）へ退行しても全て緑のまま通ってしまう。ここだけが本番経路を守る。
+ *
+ * 🔵 `vi.resetModules()` + 動的 import で **既定レポーターの singleton を作り直す**
+ * （間引き状態を空にする）。`--repeat` / `--retry` で 2 周目に間引かれて落ちるのを避ける。
+ */
+describe('既定の診断レポーターの配線（deps 省略時）', () => {
+  it('deps を渡さない呼び出しでも [rate-limit] disabled が 1 行出る', async () => {
+    vi.resetModules()
+    const { enforceSearchRateLimit: freshEnforce } = await import('./rate-limit')
+    clientIpOf.mockReturnValue(null)
+
+    await expect(freshEnforce(HEADERS)).resolves.toBeUndefined()
+
+    const lines = warnSpy.mock.calls.map((call) => String(call[0]))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain(`${RATE_LIMIT_DISABLED_MARKER} reason=no-client-ip`)
   })
 })

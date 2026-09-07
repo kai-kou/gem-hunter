@@ -226,6 +226,41 @@ flowchart TB
 2. `RATE_LIMIT_SALT` が未設定（§7.2.1 / `env-vars.md`）
 3. binding が未提供（ローカル `npm test` / `next dev` 等の Workers 実行環境の外）
 
+#### 無効化を外から確認する（Issue #192）
+
+🔴 **フェイルオープンは正しい設計だが、そのままだと「実は効いていない」状態を無音にする。** 実際 PR #184 のプレビューがこの状態で、URL は 200 を返し E2E も緑のまま、実機へ 90 リクエスト投げて「1 件も 429 が出ない」と分かるまで誰も気づかなかった（#187）。そこで **無効化した事実を必ずログへ残す**。
+
+| 項目 | 内容 |
+|---|---|
+| 実装 | `src/composition/rate-limit-diagnostics.ts`（`RATE_LIMIT_DISABLED_MARKER` が固定マーカーの正本） |
+| 出力形 | `[rate-limit] disabled reason=<code> — <説明>`（`code` は `no-client-ip` / `no-binding` / `no-salt`） |
+| 間引き | **理由ごとに 10 分に 1 回まで**（`rate-limit-diagnostics.ts` の定数 `RATE_LIMIT_WARN_INTERVAL_MS`。🔴 **環境変数・secret では変更できない** — 観測窓を短縮したいならコードを変えて再デプロイする）。ログ量がリクエスト数に比例しない |
+| 有効な環境 | 1 行も出ない（余計なログを増やさない） |
+| 秘密情報 | salt 本体・接続元 IP は **載せない**（理由コードだけ） |
+
+🔵 **レスポンスヘッダで状態を常時公開する案は採らない**: binding の有無・secret の設定状態が誰にでも読めてしまう。内部状態は **運用者だけが読める Workers Logs** に置き、`wrangler tail` で取りに行く（`prd.md` §7 が認証・権限の失敗を「内部情報を出さず汎用エラー」として扱うのと同じ方針。§7 の表自体はこの是非を扱っていないので、判断の根拠は本節に置く）。
+
+**確認手順**:
+
+```bash
+npx wrangler tail --format=pretty            # 本番（対象 Worker のログを流したままにする）
+# 別ターミナル: 間引き間隔（10 分）より長く、プローブを継続的に送り続ける
+for i in $(seq 1 13); do
+  curl -sS -o /dev/null "https://<対象>/ja?q=rate-limit-probe-$i"
+  sleep 60
+done
+```
+
+🔴 **単発のリクエスト + 待機では判定できない**（プローブは観測窓より長く継続させる）。間引きは「理由ごとに 10 分に 1 回」なので、暖まった isolate が数分前に同じ理由を出力済みだと、1 リクエストだけ投げてもその isolate では抑制されて何も出ない。以後リクエストが無ければ 10 分待っても 1 行も出ず、**無効なのに「有効」と誤判定** する（#187 と同じ状態を手順自身が再生産する）。上のように 1 分間隔で 13 回（= 間引き間隔 10 分 + 予備）送り続ける。
+
+- `[rate-limit] disabled reason=...` が出る → **その環境ではレート制限が効いていない**（`reason=no-salt` なら §7.2.1 の `wrangler versions secret put RATE_LIMIT_SALT`、`reason=no-binding` なら `wrangler.jsonc` の `ratelimits` 宣言を確認する）
+- **間引き間隔以上にわたり継続的にリクエストを送っても** 1 行も出ない → 有効
+- ⚠️ **プレビュー版（`--preview-alias pr-<N>`）で tail が取れるかは未確認**（2026-09-07 JST 時点。本リポジトリでは実測できていない）。プレビューで 1 行も出なかった場合、それは「有効」ではなく **判定不能** として扱い、同一ビルドを本番へ出してから本手順で確認する（PR #184 は「プレビューで異常が見えない」を根拠にマージされ、実機で 90 リクエスト投げるまで無効に気づけなかった・#187）
+
+🔴 **本節の観測窓ルールは `[rate-limit]` の warn にだけ適用される**: 同じ composition 層でも `container.ts`（`warnedCacheFallback`）が出す `[cache]` の warn は **isolate 生存中 1 回きり** の抑制で、時間ベースではない。暖まった isolate では Cache API フォールバックが継続していても二度と出ないため、「10 分待って `[cache]` が出ない ⇒ Cache API は健全」と読んではいけない（間引きポリシーが 2 種類併存している。統合は別 Issue で扱う）。
+
+⚠️ **静的な配線し忘れ**（表と実コードの乖離・binding 宣言の欠落）は `python3 tools/check_rate_limit_wiring.py` が別途 CI で止める。本節の手順は **その環境の実行時に本当に効いているか** を見るもので、両者は補完関係にある。
+
 ---
 
 ## 4. キャッシュ（`D-18` / `D-24`）
