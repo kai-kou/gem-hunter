@@ -15,12 +15,21 @@
 （verb 違い・`**/` prefix 付き等）と、共有ライブラリのひな形一覧が独立の承認済みリスト
 （`APPROVED_TEMPLATE_NAMES`）の外に出ていないかも検査する（#493 レビュー指摘 2 / 4）。
 
+**第3の軸（Issue #1090 レビュー指摘）**: `.claude/settings.json` の `hooks.PreToolUse` が
+`pre-file-tool-env-guard.sh` を実行する matcher に、同フックが判定対象にするツール
+（`.tool_input.file_path` / `.notebook_path` / `.path` を持つ Read / Write / Edit /
+NotebookEdit / Grep / Glob）を **すべて配線しているか** を検査する。PR #1090 で matcher へ
+`|Grep|Glob` を足したが、この配線が将来削られても上記 1・2 の検査（bash 呼び出しベース）は
+settings.json を一切読まないため気づけないことが変異テストで実測された。本軸はその穴を塞ぐ。
+
 終了コード:
-  0 = 合格（矛盾なし）
-  1 = 矛盾あり（deny の名前が第2層でブロックされない／ひな形が deny にも列挙されている／
-      deny に未対応形式の `.env` エントリがある／ひな形一覧が承認済みリストの外にある 等）
+  0 = 合格（矛盾なし・matcher の配線も欠けなし）
+  1 = 違反あり（deny の名前が第2層でブロックされない／ひな形が deny にも列挙されている／
+      deny に未対応形式の `.env` エントリがある／ひな形一覧が承認済みリストの外にある／
+      matcher が空 or 必要ツールが欠けている／該当エントリが存在しない 等）
   2 = 判定不能（settings.json / env_allowlist.sh が読めない・パース失敗・bash 呼び出し失敗・
-      .env 系の deny エントリが 1 件も無い〔対象 0 件〕。いずれも fail-closed で非ゼロにする）
+      hooks.PreToolUse の構造が想定外・.env 系の deny エントリが 1 件も無い〔対象 0 件〕。
+      いずれも fail-closed で非ゼロにする）
 """
 
 from __future__ import annotations
@@ -50,6 +59,19 @@ APPROVED_TEMPLATE_NAMES = [".env.example", ".env.sample", ".env.template", ".env
 # ENV_MENTION_PATTERN で別途検出して違反として報告する（#493 レビュー指摘 2）。
 DENY_ENV_PATTERN = re.compile(r"^(?:Read|Write|Edit)\((?:\*\*/)?(\.env[^)]*)\)$")
 ENV_MENTION_PATTERN = re.compile(r"\.env")
+
+# --- 第3の軸: PreToolUse matcher の配線検査（Issue #1090） -----------------------------
+#
+# `pre-file-tool-env-guard.sh` は stdin JSON の `.tool_input.file_path` /
+# `.notebook_path` / `.path` を判定対象にする（同スクリプト本体のコメント参照）。
+# これらのフィールドを持つツールは以下の 6 つで、matcher に **リテラルに列挙**
+# されていなければ、そのツール経由の呼び出しではフック自体が起動しない
+# （settings.json の matcher は正規表現の一部と解釈されるが、本検査は「今後
+# このハードコードした必要集合から外れたら FAIL にする」というリテラル一致の
+# 監査であり、`.*` のような包括的パターンで代替されているケースまでは救わない
+# — それ自体を検出できるようにするのが本軸の目的であり、意図的な設計判断）。
+REQUIRED_ENV_GUARD_MATCHER_TOOLS = ["Read", "Write", "Edit", "NotebookEdit", "Grep", "Glob"]
+ENV_GUARD_HOOK_SCRIPT = "pre-file-tool-env-guard.sh"
 
 
 # `hook_env_guard_verdict` の期待値表（Issue #1031）。
@@ -183,6 +205,107 @@ def load_deny_names(settings_path: Path) -> tuple[list[str], list[str]] | None:
     return names, unrecognized
 
 
+def find_env_guard_pretooluse_matchers(settings_path: Path) -> list[str] | None:
+    """settings.json の `hooks.PreToolUse` から、`ENV_GUARD_HOOK_SCRIPT` を実行する
+    エントリの `matcher` 文字列を全て抽出する（既存の `load_deny_names()` と同じ
+    読み込み・エラー処理の作法を踏襲する）。
+
+    戻り値:
+      - list[str]: 見つかった matcher の一覧（0 件の可能性あり。空文字列の matcher も
+        そのまま含める — 呼び出し側が「空 matcher」を違反として報告するため）
+      - None: settings.json が読めない・パースできない、または `hooks` /
+        `hooks.PreToolUse` / 各エントリの `hooks` 配列の構造が想定外（判定不能）。
+        見逃し経路（miss）の列挙: ファイル不在・非 UTF-8・JSON 破損・トップレベルが
+        dict でない・`hooks` が dict でない・`PreToolUse` が list でない、をすべて
+        個別に判定し、想定外の型はどれも `None` へ倒す（`0`/`1` に丸めない）。
+    """
+    if not settings_path.is_file():
+        return None
+    try:
+        raw = settings_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict):
+        return None
+    pre_entries = hooks.get("PreToolUse", [])
+    if not isinstance(pre_entries, list):
+        return None
+
+    matchers: list[str] = []
+    for entry in pre_entries:
+        if not isinstance(entry, dict):
+            continue
+        entry_hooks = entry.get("hooks", [])
+        if not isinstance(entry_hooks, list):
+            continue
+        references_guard = False
+        for h in entry_hooks:
+            if not isinstance(h, dict):
+                continue
+            command = h.get("command", "")
+            if isinstance(command, str) and ENV_GUARD_HOOK_SCRIPT in command:
+                references_guard = True
+                break
+        if references_guard:
+            matcher = entry.get("matcher", "")
+            matchers.append(matcher if isinstance(matcher, str) else "")
+    return matchers
+
+
+def check_env_guard_matcher_wiring(settings_path: Path) -> tuple[int, list[str]]:
+    """PreToolUse の matcher が `pre-file-tool-env-guard.sh` を必要ツール全てに
+    配線しているかを検査する（Issue #1090 レビュー指摘: matcher からツールが
+    削られても bash 呼び出しベースの検査〔`hook_verdict` 等〕は settings.json を
+    一切読まないため気づけない、という穴を塞ぐ）。
+
+    本関数は `subprocess` を使わない（settings.json の静的な構造解析のみ）。
+
+    判定:
+      - matcher 抽出そのものが判定不能（`find_env_guard_pretooluse_matchers` が
+        None）→ 2
+      - `ENV_GUARD_HOOK_SCRIPT` を実行するエントリが 1 件も無い → 1（違反。
+        「対象 0 件」だが、これは §2 の「対象選択の壊れ」ではなく「配線そのものが
+        存在しない」という確定した違反であるため、判定不能〔2〕ではなく違反〔1〕
+        として明確に報告する）
+      - matcher が空文字列のエントリがある → 1
+      - 複数エントリに分かれていてもよい（`|` で union を取る）。union が
+        `REQUIRED_ENV_GUARD_MATCHER_TOOLS` を満たさなければ → 1
+      - 全て満たす → 0
+    """
+    matchers = find_env_guard_pretooluse_matchers(settings_path)
+    if matchers is None:
+        return 2, [
+            f"settings.json の hooks.PreToolUse を読み取れない・パースできない（判定不能）: {settings_path}"
+        ]
+    if not matchers:
+        return 1, [
+            f"{ENV_GUARD_HOOK_SCRIPT} を実行する PreToolUse エントリが settings.json に見つからない"
+        ]
+
+    violations: list[str] = []
+    covered: set[str] = set()
+    for matcher in matchers:
+        if not matcher.strip():
+            violations.append(f"{ENV_GUARD_HOOK_SCRIPT} を実行するエントリの matcher が空文字列")
+            continue
+        covered.update(t.strip() for t in matcher.split("|") if t.strip())
+
+    missing = [t for t in REQUIRED_ENV_GUARD_MATCHER_TOOLS if t not in covered]
+    if missing:
+        violations.append(
+            f"{ENV_GUARD_HOOK_SCRIPT} の matcher に必要ツールが欠けている: {missing}"
+            f"（見つかった matcher: {matchers}）"
+        )
+
+    if violations:
+        return 1, violations
+    return 0, []
+
+
 def instantiate(pattern: str) -> str:
     """glob を含む deny パターン（例: `.env.*.local`）を検証用の具体パスへ変換する。
     ひな形の固定名（`.env.example` 等）と衝突しない値（`x`）に置換する。
@@ -283,6 +406,13 @@ def run_checks(
         ]
         if code == 0:
             code = 1
+
+    # 第3の軸: PreToolUse matcher の配線検査（#1090）。上記の deny × allowlist 検査とは
+    # 独立の判定なので、結果はマージ（違反は連結・終了コードは深刻度が高い方を採用）する。
+    # 2（判定不能） > 1（違反） > 0（合格）の順で深刻度が高いため max() で正しく合成できる。
+    wiring_code, wiring_violations = check_env_guard_matcher_wiring(settings_path)
+    violations = violations + wiring_violations
+    code = max(code, wiring_code)
 
     return code, violations
 
@@ -725,6 +855,287 @@ def self_test() -> int:
             failures.append(f"引用が必要なパスの共有ライブラリを source できなかった: verdict={v17}")
         if t17 != APPROVED_TEMPLATE_NAMES:
             failures.append(f"引用が必要なパスからひな形一覧を取得できなかった: {t17}")
+
+    # --- 18〜32) 第3の軸: PreToolUse matcher の配線検査（#1090） ------------------------
+    #     見逃し経路の列挙（本節が個別に検証するもの）:
+    #       - settings.json 不在／JSON パース失敗／トップレベルが dict でない
+    #       - hooks が dict でない／PreToolUse が list でない
+    #       - ENV_GUARD_HOOK_SCRIPT を実行するエントリが 1 件も無い（部分一致で誤検出しないか）
+    #       - matcher が空文字列
+    #       - 必要ツールの一部だけが欠けている（複数バリアント）
+    #       - matcher が複数エントリに分散していても union で判定できるか
+    #       - 要素間の関係が不正（#896 相当）: 「全ツールを列挙した matcher」を持つが
+    #         別スクリプトを実行するエントリに惑わされないか
+    #       - matcher のツール順序・空白の揺れ
+    #       - 変異テスト: 実際の matcher から `|Grep|Glob` を削る（#1090 の実際の退行を再現）
+    #       - 変異テスト: run_checks() から本軸の呼び出しを外す（本番の主コードパス）
+
+    real_settings_data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+
+    def _settings_with_pretooluse(pre_entries: list) -> dict:
+        """実際の settings.json の `permissions` 等はそのままに、`hooks.PreToolUse` だけを
+        差し替えた辞書を返す（deny × allowlist 側の判定結果を固定したまま、matcher 配線
+        検査だけを独立に動かすため）。"""
+        data = json.loads(json.dumps(real_settings_data))  # deep copy
+        data.setdefault("hooks", {})["PreToolUse"] = pre_entries
+        return data
+
+    GUARD_ENTRY_FULL = {
+        "matcher": "Read|Write|Edit|NotebookEdit|Grep|Glob",
+        "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-file-tool-env-guard.sh"}],
+    }
+
+    # --- 18) 正常系: 実際の settings.json は matcher 配線に不足が無いはず ---
+    code18, viol18 = check_env_guard_matcher_wiring(SETTINGS_PATH)
+    if code18 != 0:
+        failures.append(f"実際の settings.json の matcher 配線が不足なしのはずが code={code18} violations={viol18}")
+
+    with tempfile.TemporaryDirectory() as td_wire:
+        # --- 19) 失敗経路: settings.json 不在 ---
+        missing19 = Path(td_wire) / "missing19.json"
+        code19, _ = check_env_guard_matcher_wiring(missing19)
+        if code19 != 2:
+            failures.append(f"settings.json 不在で matcher 配線検査が判定不能(2)にならなかった: code={code19}")
+
+        # --- 20) 失敗経路: JSON パース失敗 ---
+        broken20 = Path(td_wire) / "broken20.json"
+        broken20.write_text("{not valid json", encoding="utf-8")
+        code20, _ = check_env_guard_matcher_wiring(broken20)
+        if code20 != 2:
+            failures.append(f"JSON パース失敗で matcher 配線検査が判定不能(2)にならなかった: code={code20}")
+
+        # --- 21) 失敗経路: hooks が dict でない ---
+        bad_hooks21 = Path(td_wire) / "bad_hooks21.json"
+        bad_hooks21.write_text(json.dumps({"hooks": "not-a-dict"}), encoding="utf-8")
+        code21, _ = check_env_guard_matcher_wiring(bad_hooks21)
+        if code21 != 2:
+            failures.append(f"hooks が dict でない場合に判定不能(2)にならなかった: code={code21}")
+
+        # --- 22) 失敗経路: PreToolUse が list でない ---
+        bad_pre22 = Path(td_wire) / "bad_pre22.json"
+        bad_pre22.write_text(json.dumps({"hooks": {"PreToolUse": "not-a-list"}}), encoding="utf-8")
+        code22, _ = check_env_guard_matcher_wiring(bad_pre22)
+        if code22 != 2:
+            failures.append(f"PreToolUse が list でない場合に判定不能(2)にならなかった: code={code22}")
+
+        # --- 23) エントリ0件: ENV_GUARD_HOOK_SCRIPT を参照するエントリが無い ---
+        no_entry23 = Path(td_wire) / "no_entry23.json"
+        no_entry23.write_text(
+            json.dumps(_settings_with_pretooluse(
+                [{"matcher": "Bash", "hooks": [{"type": "command", "command": "some-other-hook.sh"}]}]
+            )),
+            encoding="utf-8",
+        )
+        code23, viol23 = check_env_guard_matcher_wiring(no_entry23)
+        if code23 != 1:
+            failures.append(f"エントリ不在が違反(1)として検出されなかった: code={code23}")
+        elif not any("見つからない" in v for v in viol23):
+            failures.append(f"エントリ不在の理由が violations に反映されていない: {viol23}")
+
+        # --- 24) matcher が空文字列 ---
+        empty_matcher24 = Path(td_wire) / "empty_matcher24.json"
+        empty_matcher24.write_text(
+            json.dumps(_settings_with_pretooluse([{**GUARD_ENTRY_FULL, "matcher": ""}])),
+            encoding="utf-8",
+        )
+        code24, viol24 = check_env_guard_matcher_wiring(empty_matcher24)
+        if code24 != 1:
+            failures.append(f"matcher 空文字列が違反(1)として検出されなかった: code={code24}")
+        elif not any("空文字列" in v for v in viol24):
+            failures.append(f"matcher 空文字列の理由が violations に反映されていない: {viol24}")
+
+        # --- 25) 必要ツールの一部欠落（バリアント3種） ---
+        for missing_matcher, expect_missing in [
+            ("Read|Write|Edit|NotebookEdit|Glob", ["Grep"]),
+            ("Read|Write|Edit|NotebookEdit|Grep", ["Glob"]),
+            ("Read|Write|Edit", ["NotebookEdit", "Grep", "Glob"]),
+        ]:
+            p25 = Path(td_wire) / f"partial25_{'_'.join(expect_missing)}.json"
+            p25.write_text(
+                json.dumps(_settings_with_pretooluse([{**GUARD_ENTRY_FULL, "matcher": missing_matcher}])),
+                encoding="utf-8",
+            )
+            code25, viol25 = check_env_guard_matcher_wiring(p25)
+            if code25 != 1:
+                failures.append(
+                    f"matcher '{missing_matcher}' の欠落ツールが違反(1)として検出されなかった: code={code25}"
+                )
+            elif not any(all(m in v for m in expect_missing) for v in viol25):
+                failures.append(
+                    f"matcher '{missing_matcher}' の欠落ツール {expect_missing} が violations に反映されていない: {viol25}"
+                )
+
+        # --- 26) 複数エントリに分散していても union で判定できる ---
+        split26 = Path(td_wire) / "split26.json"
+        split26.write_text(
+            json.dumps(_settings_with_pretooluse([
+                {"matcher": "Read|Write|Edit", "hooks": [GUARD_ENTRY_FULL["hooks"][0]]},
+                {"matcher": "NotebookEdit|Grep|Glob", "hooks": [GUARD_ENTRY_FULL["hooks"][0]]},
+            ])),
+            encoding="utf-8",
+        )
+        code26, viol26 = check_env_guard_matcher_wiring(split26)
+        if code26 != 0:
+            failures.append(f"matcher が複数エントリに分散した union が合格(0)にならなかった: code={code26} violations={viol26}")
+
+        # --- 27) 負ケース（#896 相当）: 全ツールを列挙した matcher を持つが別スクリプトの
+        #     エントリに惑わされず、guard 参照エントリ側の不足を検出できるか ---
+        confuse27 = Path(td_wire) / "confuse27.json"
+        confuse27.write_text(
+            json.dumps(_settings_with_pretooluse([
+                {
+                    "matcher": "Read|Write|Edit|NotebookEdit|Grep|Glob",
+                    "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/some-other-hook.sh"}],
+                },
+                {
+                    "matcher": "Read|Write",
+                    "hooks": [GUARD_ENTRY_FULL["hooks"][0]],
+                },
+            ])),
+            encoding="utf-8",
+        )
+        code27, viol27 = check_env_guard_matcher_wiring(confuse27)
+        if code27 != 1:
+            failures.append(
+                f"別スクリプトの完全な matcher に惑わされて guard 側の不足を見逃した: code={code27} violations={viol27}"
+            )
+        elif not any("Grep" in v and "Glob" in v for v in viol27):
+            failures.append(f"負ケース27の欠落ツールが violations に正しく反映されていない: {viol27}")
+
+        # --- 28) matcher のツール順序・空白の揺れは判定に影響しない ---
+        loose28 = Path(td_wire) / "loose28.json"
+        loose28.write_text(
+            json.dumps(_settings_with_pretooluse([
+                {"matcher": " Glob | Grep|NotebookEdit|Edit|Write | Read ", "hooks": [GUARD_ENTRY_FULL["hooks"][0]]},
+            ])),
+            encoding="utf-8",
+        )
+        code28, viol28 = check_env_guard_matcher_wiring(loose28)
+        if code28 != 0:
+            failures.append(f"matcher の順序・空白の揺れで誤って違反判定になった: code={code28} violations={viol28}")
+
+        # --- 29) main() 経由（CLI 全体）で wiring 違反時に exit 1 になることを実測 ---
+        cli29_settings = Path(td_wire) / "cli29.json"
+        cli29_settings.write_text(
+            json.dumps(_settings_with_pretooluse(
+                [{**GUARD_ENTRY_FULL, "matcher": "Read|Write|Edit|NotebookEdit"}]
+            )),
+            encoding="utf-8",
+        )
+        proc29 = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--settings-path", str(cli29_settings), "--lib-path", str(LIB_PATH)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc29.returncode != 1:
+            failures.append(
+                f"main() 経由で matcher 欠落を渡しても exit code が 1 にならなかった: "
+                f"code={proc29.returncode} stdout={proc29.stdout!r} stderr={proc29.stderr!r}"
+            )
+        elif "Grep" not in proc29.stderr or "Glob" not in proc29.stderr:
+            failures.append(f"main() 経由の出力に欠落ツール(Grep/Glob)が含まれていない: stderr={proc29.stderr!r}")
+
+    # --- 30) 変異テスト（#1090 の実際の退行を再現）: 実際の settings.json のテキストから
+    #     `|Grep|Glob` を削ると、matcher 配線検査が missing=['Grep','Glob'] を検出するか ---
+    real_settings_text = SETTINGS_PATH.read_text(encoding="utf-8")
+    target30 = '"matcher": "Read|Write|Edit|NotebookEdit|Grep|Glob"'
+    if target30 not in real_settings_text:
+        failures.append("変異テスト30の事前条件不成立: 実際の settings.json に元の matcher 文字列が見つからない")
+    else:
+        mutated30 = real_settings_text.replace(target30, '"matcher": "Read|Write|Edit|NotebookEdit"')
+        if mutated30 == real_settings_text:
+            failures.append("変異テスト30の事後条件不成立: 置換しても内容が変わらなかった")
+        else:
+            with tempfile.TemporaryDirectory() as td30:
+                mutated_settings30 = Path(td30) / "mutated30.json"
+                mutated_settings30.write_text(mutated30, encoding="utf-8")
+                code30, viol30 = check_env_guard_matcher_wiring(mutated_settings30)
+                if code30 != 1:
+                    failures.append(
+                        f"変異テスト30（実際の matcher から |Grep|Glob を削る）が検出されなかった: code={code30}"
+                    )
+                elif not any("Grep" in v and "Glob" in v for v in viol30):
+                    failures.append(f"変異テスト30の欠落ツールが violations に正しく反映されていない: {viol30}")
+
+    # --- 31) 変異テスト（本番の主コードパス）: run_checks() から本軸の呼び出しを外すと
+    #     main() 経由の判定が wiring 違反を見逃すようになることを実測する
+    #     （check-tool-design-rules.md §4: 終了コードを返す経路〔main()〜sys.exit()〕を
+    #     変異対象に必ず 1 つ含める）。本ファイル自身のソースを一時コピーへ変異させ、
+    #     元ファイルには一切書き込まない。 ---
+    self_src31 = Path(__file__).read_text(encoding="utf-8")
+    target31 = (
+        "    wiring_code, wiring_violations = check_env_guard_matcher_wiring(settings_path)\n"
+        "    violations = violations + wiring_violations\n"
+        "    code = max(code, wiring_code)\n"
+    )
+    if target31 not in self_src31:
+        failures.append("変異テスト31の事前条件不成立: run_checks() の wiring 統合コードが源文に見つからない")
+    else:
+        mutated31 = self_src31.replace(target31, "")
+        if mutated31 == self_src31:
+            failures.append("変異テスト31の事後条件不成立: 置換しても内容が変わらなかった")
+        else:
+            with tempfile.TemporaryDirectory() as td31:
+                mutated_script31 = Path(td31) / "check_env_guard_consistency_mutated.py"
+                mutated_script31.write_text(mutated31, encoding="utf-8")
+                broken_wiring_settings31 = Path(td31) / "broken_wiring31.json"
+                broken_wiring_settings31.write_text(
+                    json.dumps(_settings_with_pretooluse(
+                        [{**GUARD_ENTRY_FULL, "matcher": "Read|Write|Edit|NotebookEdit"}]
+                    )),
+                    encoding="utf-8",
+                )
+                proc31 = subprocess.run(
+                    [
+                        sys.executable, str(mutated_script31),
+                        "--settings-path", str(broken_wiring_settings31),
+                        "--lib-path", str(LIB_PATH),
+                    ],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if proc31.returncode != 0:
+                    failures.append(
+                        "変異テスト31の前提不成立: run_checks() の統合を外した変異版が、"
+                        f"それでも wiring 違反を検出してしまった（期待は誤って PASS すること）: "
+                        f"code={proc31.returncode} stdout={proc31.stdout!r} stderr={proc31.stderr!r}"
+                    )
+                # 対比: 変異していない本物のスクリプトなら同じ入力で exit 1 になるはず
+                proc31_orig = subprocess.run(
+                    [
+                        sys.executable, str(Path(__file__).resolve()),
+                        "--settings-path", str(broken_wiring_settings31),
+                        "--lib-path", str(LIB_PATH),
+                    ],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if proc31_orig.returncode != 1:
+                    failures.append(
+                        "変異テスト31の対比不成立: 変異していない本物のスクリプトが同じ壊れた wiring "
+                        f"入力に対して exit 1 を返さなかった: code={proc31_orig.returncode}"
+                    )
+
+    # --- 32) 要素間の関係性の負ケース（#896・§6 とは別分岐）: matcher に必要ツールは
+    #     全て入っているが、そのエントリが実行するのは別のフックスクリプトである負ケース。
+    #     27) はここに「別スクリプト側は正しい・guard 側は不足」という組み合わせだったが、
+    #     本節は「guard を参照するエントリが 1 つも無く、matcher だけは完璧なエントリが
+    #     別スクリプト用に存在する」という、より紛らわしい構成を単独で検証する。 ---
+    with tempfile.TemporaryDirectory() as td32:
+        only_other_settings32 = Path(td32) / "only_other32.json"
+        only_other_settings32.write_text(
+            json.dumps(_settings_with_pretooluse([
+                {
+                    "matcher": "Read|Write|Edit|NotebookEdit|Grep|Glob",
+                    "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-router.sh"}],
+                },
+            ])),
+            encoding="utf-8",
+        )
+        code32, viol32 = check_env_guard_matcher_wiring(only_other_settings32)
+        if code32 != 1:
+            failures.append(
+                f"guard を参照しないエントリの完璧な matcher に惑わされてエントリ不在を見逃した: code={code32}"
+            )
+        elif not any("見つからない" in v for v in viol32):
+            failures.append(f"負ケース32の理由が violations に反映されていない: {viol32}")
 
     # 指摘1の最終確認: ここまでの全シナリオを通じて本番の共有フック実体が
     # 一切変更されていないことを実測する（一時ファイル化が漏れなく効いていることの保証）。
