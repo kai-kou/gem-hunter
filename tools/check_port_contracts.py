@@ -13,8 +13,13 @@ JSDoc に書く」と定めるが、これを検査する機械的な手段が�
   2. **JSDoc が存在すれば常に**、メソッドが値域を持ちうる素の primitive 型引数
      （`string` / `number` / `boolean` / `bigint` の完全一致。配列・ジェネリック・値オブジェクト・
      `interface`/`type` は対象外＝それ自身の型定義側で値域を表現する設計のため）を取る場合、
-     JSDoc に値域の記述がある（`@param` 行、または「値域」「正の有限数」「空でない」「有効な」
-     「範囲」のいずれかを含む本文行）。
+     JSDoc に値域の記述がある（「値域」「正の有限数」「空でない」「有効な」「範囲」のいずれかを
+     含む本文行。`@param <name>` の説明部分に書かれていてもよい）。
+     🔴 **Issue #1071 是正**: 旧実装は `@param` タグの **存在だけ** を許容条件に含んでおり、
+     `@param value 値。` のように値域を一切説明しない空疎な `@param` でも item2 を満たした
+     ことになる fail-open が実測された（primitive 引数を取るメソッドは何らかの `@param` を
+     書くのが自然なため、この一致条件があるだけで item2 は事実上ほぼ常に PASS していた）。
+     `@param` 単体は不採用にし、値域を表す具体キーワードの有無で判定する。
   3. **JSDoc が存在すれば常に**、JSDoc に異常時の振る舞いの記述がある（`@throws`、
      「フォールバック」「例外」「fail-open」のいずれかを含む本文行、「例外を投げ」
      「例外を送出」「エラーを投げ」「エラーを送出」のいずれかのフレーズ、または
@@ -72,8 +77,13 @@ PORTS_GLOB = "src/domain/ports/*.ts"
 
 CONTRACT_OK_MARKER = "contract-ok"
 
-# item 2（値域）: @param 行、または以下のキーワードを含む本文行。
-ITEM2_KEYWORDS = ("@param", "値域", "正の有限数", "空でない", "有効な", "範囲")
+# item 2（値域）: 以下のキーワードを含む本文行（`@param` 行の説明部分に書かれていてもよい）。
+# 🔴 **Issue #1071 是正**: 旧実装は `@param` タグの **存在だけ** を許容条件に含んでおり、
+# `@param value 値。` のように値域を一切説明しない空疎な `@param` でも item2 を満たしたことに
+# なる fail-open が実測された（primitive 引数を取るメソッドは何らかの `@param` を書くのが
+# 自然なため、この一致条件があるだけで item2 は事実上ほぼ常に PASS していた）。`@param` 単体を
+# 外し、値域を表す具体キーワードが本文（`@param` の説明部分を含む）に現れることを要求する。
+ITEM2_KEYWORDS = ("値域", "正の有限数", "空でない", "有効な", "範囲")
 
 # item 3（異常時の振る舞い）: @throws、または以下のキーワード（ASCII は大文字小文字を無視）。
 # 🔴 **PR #1070 是正**: 「投げ」「送出」を裸の部分一致キーワードとして採用しない（「質問を
@@ -412,7 +422,8 @@ def check_methods(methods: list[MethodInfo]) -> list[str]:
         if meth.has_primitive_param and not _contains_item2_keyword(meth.jsdoc_text):
             violations.append(
                 f"{meth.line}: {label}: primitive 型引数を取るが値域の記述が JSDoc に無い"
-                "（item 2・@param 行または『値域』『正の有限数』等のキーワードが必要）"
+                "（item 2・『値域』『正の有限数』『空でない』等のキーワードが本文に必要。"
+                "『@param』タグの存在だけでは満たさない）"
             )
         if not _contains_item3_keyword(meth.jsdoc_text):
             violations.append(
@@ -879,13 +890,14 @@ export interface SamplePort {
   /**
    * Remove temp files; do not throw away user data during cleanup.
    *
-   * @param dir Directory to clean (non-empty absolute path).
+   * @param dir Directory to clean（空でない絶対パス）。
    */
   cleanup(dir: string): Promise<void>
 }
 """
     check_violations(
-        "21. CRITICAL2: 『throw away』はthrowの部分一致で拾わない(cleanup)→item3違反1",
+        "21. CRITICAL2: 『throw away』はthrowの部分一致で拾わない(cleanup)→item3違反1"
+        "（#1071是正後もitem2は@paramの日本語キーワードで満たす）",
         src_cleanup_en_false_positive,
         1,
     )
@@ -1046,6 +1058,95 @@ export interface SamplePort {
         "→合計2(askは抑止/doThingはitem2+item3)",
         src_interference_check,
         2,
+    )
+
+    # --- 31〜35. Issue #1071 是正: `@param` タグ単体は item2 を満たさない ---
+
+    # 31. Issue #1071 本文の EchoPort.echo 実例そのもの（空疎な @param）。
+    #     `// throw する` は JSDoc の外側（行コメント）なので item3 にも寄与しない。
+    src_echo_bare_param = """
+export interface EchoPort {
+  /**
+   * @param value 値。
+   */
+  echo(value: string): Promise<string>  // throw する
+}
+"""
+    check_violations(
+        "31. #1071: EchoPort.echo実例(空疎な@param)→item2+item3の2件を検知",
+        src_echo_bare_param,
+        2,
+    )
+
+    # 32. バリアント: 型注釈つき @param（`{string}`）でも語彙が無ければ item2 違反のまま
+    #     （型注釈の有無で判定が変わらないことの確認）。
+    src_param_typed_no_keyword = """
+export interface EchoPort {
+  /**
+   * @param {string} value この値を使う。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  echo(value: string): Promise<string>
+}
+"""
+    check_violations(
+        "32. #1071バリアント: 型注釈つき@paramでも語彙が無ければitem2違反",
+        src_param_typed_no_keyword,
+        1,
+    )
+
+    # 33. バリアント: @param の説明が複数行にまたがり、値域キーワードが継続行にある場合
+    #     でも検出できる（本文全体を走査する設計を維持していることの確認）。
+    src_param_multiline_keyword = """
+export interface EchoPort {
+  /**
+   * @param value 判定単位の識別子として使う
+   *   空でない文字列。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  echo(value: string): Promise<string>
+}
+"""
+    check_violations(
+        "33. #1071バリアント: @param説明が複数行でも継続行のキーワードを検出→違反0",
+        src_param_multiline_keyword,
+        0,
+    )
+
+    # 34. 陽性対照: @param の説明部分に値域キーワードがあれば item2 は満たす
+    #     （厳格化のしすぎで正当な記述まで弾いていないことの確認）。
+    src_param_with_keyword = """
+export interface EchoPort {
+  /**
+   * @param value 空でない文字列。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  echo(value: string): Promise<string>
+}
+"""
+    check_violations(
+        "34. #1071陽性対照: @param説明部分に値域キーワードがあれば違反0", src_param_with_keyword, 0
+    )
+
+    # 35. `@param` タグそのものが無くても、本文の他の行に値域キーワードがあれば item2 は
+    #     満たす（旧来の「本文行キーワード」判定との統合を維持していることの確認）。
+    src_no_param_tag_but_keyword = """
+export interface EchoPort {
+  /**
+   * echo する。引数は空でない文字列を渡すこと。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  echo(value: string): Promise<string>
+}
+"""
+    check_violations(
+        "35. #1071: @paramタグ無しでも本文キーワードがあれば違反0（統合維持）",
+        src_no_param_tag_but_keyword,
+        0,
     )
 
     if failures:
