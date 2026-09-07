@@ -450,3 +450,8 @@
 {"date": "2026-09-07 JST", "title": "ADR 0005 の ETag 実測結果に「絶対的証明ではなく複数サンプルでの傾向確認」という信頼度レベルを明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "e2e/header-control-tier.spec.ts に隣接コントロール同士の bounding box 距離アサーションを足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "GitHub REST の応答ヘッダ観測ユースケース（ETag / x-ratelimit-*）への対応方針を ADR 化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "委譲先が自己選定した変異対象では制御構造（try/catch の範囲）が漏れる", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 1008}
+{"date": "2026-09-07 JST", "title": "並列委譲中に Stop フックの WIP 自動コミットが中間状態をコミットする（mutation_guard の位置づけ拡張）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-07 JST", "title": "新規共有モジュール（daily_gate.py / http-retry.mjs）を check_module_contract_drift.py の CONTRACT_INDEX へ登録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "Python / Node.js の HTTP リトライ・待機単位・例外型の設計非対称を統一ドキュメント化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "共通ヘルパー（cloudflare_api / daily_gate）から CLI への逆参照が無いことを機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
