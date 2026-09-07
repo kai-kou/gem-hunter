@@ -322,6 +322,99 @@ describe('LayeredCache', () => {
     })
   })
 
+  describe('onLayerHit（段の内訳の観測・Issue #875）', () => {
+    it('primary HIT のとき "primary" で 1 回だけ呼ばれる', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      primary.seed('k', 'from-primary')
+      const hits: Array<'primary' | 'secondary' | 'miss'> = []
+      const cache = new LayeredCache(primary.port, secondary.port, {
+        onLayerHit: (layer) => hits.push(layer),
+      })
+
+      await cache.get(testKey('k'))
+
+      expect(hits).toEqual(['primary'])
+    })
+
+    it('primary MISS + secondary HIT のとき "secondary" で 1 回だけ呼ばれる', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      secondary.seed('k', 'from-secondary')
+      const hits: Array<'primary' | 'secondary' | 'miss'> = []
+      const cache = new LayeredCache(primary.port, secondary.port, {
+        onLayerHit: (layer) => hits.push(layer),
+      })
+
+      await cache.get(testKey('k'))
+
+      expect(hits).toEqual(['secondary'])
+    })
+
+    it('両方 MISS のとき "miss" で 1 回だけ呼ばれる', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      const hits: Array<'primary' | 'secondary' | 'miss'> = []
+      const cache = new LayeredCache(primary.port, secondary.port, {
+        onLayerHit: (layer) => hits.push(layer),
+      })
+
+      await cache.get(testKey('missing'))
+
+      expect(hits).toEqual(['miss'])
+    })
+
+    it('secondary HIT で primary への充填が失敗しても "secondary" のまま報告する（充填失敗と観測は独立）', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      primary.failSetWith(new Error('primary set failed'))
+      secondary.seed('k', 'from-secondary')
+      const hits: Array<'primary' | 'secondary' | 'miss'> = []
+      const cache = new LayeredCache(primary.port, secondary.port, {
+        onLayerHit: (layer) => hits.push(layer),
+      })
+
+      await expect(cache.get(testKey('k'))).resolves.toBe('from-secondary')
+      expect(hits).toEqual(['secondary'])
+    })
+
+    it('コールバック未指定でも get は通常どおり動作する（省略可能）', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      primary.seed('k', 'v')
+      const cache = new LayeredCache(primary.port, secondary.port)
+
+      await expect(cache.get(testKey('k'))).resolves.toBe('v')
+    })
+
+    it('コールバックが throw しても get の結果には影響しない', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      primary.seed('k', 'v')
+      const cache = new LayeredCache(primary.port, secondary.port, {
+        onLayerHit: () => {
+          throw new Error('observer boom')
+        },
+      })
+
+      await expect(cache.get(testKey('k'))).resolves.toBe('v')
+    })
+
+    it('set / invalidate では呼ばれない（get 専用の観測）', async () => {
+      const primary = fakeCache('primary')
+      const secondary = fakeCache('secondary')
+      const hits: Array<'primary' | 'secondary' | 'miss'> = []
+      const cache = new LayeredCache(primary.port, secondary.port, {
+        onLayerHit: (layer) => hits.push(layer),
+      })
+
+      await cache.set(testKey('k'), 'v', 60)
+      await cache.invalidate(testKey('k'))
+
+      expect(hits).toEqual([])
+    })
+  })
+
   describe('既定の充填 TTL', () => {
     it('container.ts の TTL_SEARCH_SECONDS（60 秒）を超えない', () => {
       // 超えると「充填したコピーが、その値を今 secondary へ新規に書いた場合の寿命より長生きする」

@@ -290,7 +290,7 @@ done
 - `Cache-Control` ヘッダは付与してよいが、**「エッジが自動的に Worker をバイパスする」効果には依存しない**（依存すると HIT 時に `X-Cache-Status` を付与できなくなり §4.5 と矛盾するため）。ヘッダを付けても Workers Caching の tiered 化・リクエスト合体自体は副次的な効果として残るが、`SP-5` の検証手段としては当てにしない
 - `NFR-7`（request coalescing）は当初案（`infrastructure-design.md` §4）どおり **補助** に据え置く。エッジのリクエスト合体を主要な防波堤とする格上げは、L2 をエッジキャッシュに依存させないという本改訂と両立しないため撤回する。代わりに `CachingRepositoryQuery`（`src/infrastructure/platform/cached-repository-query.ts`）が **アプリ層の single-flight**（同一キー並行リクエストの in-flight `Promise` 合流）で `NFR-7` を担保する（詳細は [ADR 0005](../../adr/0005-cache-port-yagni-exception-and-ttl.md) §5）
 - 🔴 **isolate を跨ぐ共有は Cache API（`caches.default`）で採用済み**（2026-09-03・[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md)・Issue #121）。`InMemoryCache` 単独では同一キーへの連打でもヒット率が想定を大きく下回り、`infrastructure-design.md` §6.2 の観測条件 2 を満たした（**実測値の正本は [ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §1.1 の起票時点の計測**・「想定」の数値定義は同 ADR §3。いずれもここに複製しない）。`caches.default` は **新規バインディングも支払い方法の登録（`A-6`）も伴わず永続ストアでもない** ため、これは **L3 の導入ではなく L2 の実装差し替え** である（L3 は引き続き未採用）
-- 🔴 **置き換えではなく 2 段にする**: Cache API が本構成で実際に効くか（Worker 自身のゾーン外の合成 URL をキーにできるか・`*.workers.dev` での動作可否）は公式ドキュメントに記載が無かった。置き換えると no-op だった場合にヒット率が **起票時点の実測値（ADR 0016 §1.1）から 0% へ悪化しうる** が、2 段なら最悪でも現状維持で変化は片方向に限定される（ADR 0016 §2.2 / §5.4）。🔵 **この未確定 2 点は 2026-09-03 のプレビュー実測で決着した**（[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §6.1。ただし同節の **測定の限界**（`X-Cache-Status` は 2 段のどちらで HIT したかを区別しない）も併せて読むこと）
+- 🔴 **置き換えではなく 2 段にする**: Cache API が本構成で実際に効くか（Worker 自身のゾーン外の合成 URL をキーにできるか・`*.workers.dev` での動作可否）は公式ドキュメントに記載が無かった。置き換えると no-op だった場合にヒット率が **起票時点の実測値（ADR 0016 §1.1）から 0% へ悪化しうる** が、2 段なら最悪でも現状維持で変化は片方向に限定される（ADR 0016 §2.2 / §5.4）。🔵 **この未確定 2 点は 2026-09-03 のプレビュー実測で決着した**（[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §6.1（ただし §6.2 でこの限界は解消済み）。同節の **測定の限界**（`X-Cache-Status` は 2 段のどちらで HIT したかを区別しない）は 2026-09-07 の同 ADR §6.2 で層別ヘッダ（`X-Cache-Layer` / `X-Cache-Colo`）を追加し解消している）
 - 🔵 **`D-24` の撤回ではない**: Cache API は Worker のコードが明示的に呼ぶため HIT しても Worker は実行される。エッジキャッシュと違い `X-Cache-Status` の動的付与（§4.5）と両立する
 
 ⚠️ **Next.js の `fetch` Data Cache / `use cache` は当てにしない**。OpenNext で incremental cache を設定しない構成では isolate 内メモリに退化し、isolate の生存に依存する。**`SP-5`（同じ検索で API を二度叩かない）の担保は L2（アプリ内 `CachePort`）で説明する**。
@@ -312,7 +312,7 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 
 > 🔴 **§6.2 の観測条件 2（ヒット率が想定を下回る）を満たしても、直ちに L3 とは限らない**。条件 2 が要求するのは「検討して ADR を起票すること」であり、Issue #121 では検討の結果 **L2 の実装差し替え（Cache API・§4.2）** を選び、L3 は未採用のまま維持した（[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §2.3 / §3.3）。条件 2 の「想定」の数値定義も同 ADR §3 が正本で、ここには複製しない（§0.2）。
 >
-> 🔴 **観測条件 2 は 2 段構成の導入後も、まだ解消していない（現在進行）。** ADR 0016 §6.1 のプレビュー実測でヒット率は改善したが、同 ADR §3.1 の判定式では依然として想定値を下回っており、条件 2 は **充足状態のまま** である（「ADR を起票する」という要求は満たしたが、条件そのものが解けたわけではない）。**残差の切り分けは Issue #875 で追跡中**。
+> 🔴 **観測条件 2 は 2026-09-07（ADR 0016 §6.2）の再実測で解消した。** ADR 0016 §6.1 時点（2026-09-03）のプレビュー実測ではヒット率が改善しつつも同 ADR §3.1 の判定式の想定値（75%）を下回り「充足状態のまま」だったが、Issue #875 で層別ヘッダ（`X-Cache-Layer` / `X-Cache-Colo`）を追加して単一コロケーション条件下で再実測したところ 3 本とも 92% となり、想定値を満たした（同 ADR §6.2）。**残差（コロケーション分散時に §6.1 の水準へ戻りうる性質）は同 ADR §6.2 の考察として記録済みで、Issue #875 は完了している**。
 
 ---
 
@@ -328,6 +328,7 @@ Cache Port は **維持する**（撤廃しない）。ただし実装は `open-
 |---|---|---|
 | **主** | `GET /api/search` の応答ヘッダ `X-Cache-Status: HIT` / `MISS`（Route Handler が付与） | 🟢 **事業者非依存**。`/api/search?q=...` を直接開く（画面の検索操作とは別操作）ことで誰でも確認でき、E2E テストからも assert できる（`SD-2`）。**画面の SSR 応答には乗らない**（上記改訂理由による制約。画面の検索フォーム操作だけでは DevTools の Network タブにも `/api/search` は現れない） |
 | 副 | レスポンスヘッダ `X-GitHub-RateLimit-Remaining`（GitHub の応答から転記） | 2 回目に値が変わらないことで裏を取る。`INF-1` に抵触しない（利用者ではなく **アプリの GitHub App installation token** の残量・`D-20`） |
+| 補助 | 応答ヘッダ `X-Cache-Layer`（`primary` / `secondary` / `miss`）・`X-Cache-Colo`（Cloudflare のコロケーションコード） | `X-Cache-Status` が区別しない「2 段のどちらで HIT したか」「どのコロケーションで処理されたか」を可視化する層別ヘッダ。[ADR 0016](../../adr/0016-cloudflare-cache-api-for-cross-isolate-cache.md) §6.2（Issue #875）で追加。主経路の `X-Cache-Status` を置き換えるものではない |
 | 補助 | `wrangler tail --format json` のライブストリーム | ⚠️ `invocation_logs: false` でも tail が拾えるかは **未確認**（§12 の 9）。主経路にしない |
 
 ### 4.6. `GET /api/search` のエラー応答の契約（`SP-9`）

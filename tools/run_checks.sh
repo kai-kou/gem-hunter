@@ -760,6 +760,17 @@ else
   skip_check "本番乖離検知 self-test (check_prod_drift.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# LP 公開乖離検知（Issue #996）: main の site/ と gh-pages ブランチのルートの tree ハッシュ突合。
+# check_prod_drift.py と違い Cloudflare API 認証を要さず、セッションが日常的に使う
+# `git fetch origin` の経路だけで完結するため、本判定・self-test とも配線する（区分 (a)）。
+# fetch 失敗（オフライン・権限不足等）は exit 2（判定不能）で fail-closed に倒れる。
+if [ -f "$REPO_ROOT/tools/check_lp_publish_drift.py" ]; then
+  run_check "LP 公開乖離検知 (check_lp_publish_drift.py)" python3 tools/check_lp_publish_drift.py
+  run_check "LP 公開乖離検知 self-test (check_lp_publish_drift.py --self-test)" python3 tools/check_lp_publish_drift.py --self-test
+else
+  skip_check "LP 公開乖離検知 (check_lp_publish_drift.py)" "スクリプトが見つかりません"
+fi
+
 # Cloudflare コスト閾値チェック（Issue #247）も「--self-test だけ」を配線する。本判定
 # （`--gate-daily` / 引数なし実行）は Cloudflare REST API（`GET /accounts/{id}/billable-usage`・
 # 必要権限は `Account → Billing → Read`）への実疎通に依存するため、本番乖離検知 self-test と

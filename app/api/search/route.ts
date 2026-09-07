@@ -1,9 +1,12 @@
 import type { NextRequest } from 'next/server'
 import { decodeSessionCookie, SESSION_COOKIE_NAME } from '@/src/composition/auth'
-import { searchRepositoriesWithCacheStatus } from '@/src/composition/container'
+import {
+  buildCacheObservationHeaders,
+  searchRepositoriesWithCacheStatus,
+} from '@/src/composition/container'
 import { prepareSearchKeyword } from '@/src/composition/search-guard'
 import { DomainError, type ErrorKind, RateLimitExceededError } from '@/src/domain/errors'
-import { parseSearchParams, SEARCH_PARAM_KEYS } from '@/src/ui/url/search-params'
+import { parseSearchParams, rawKeywordOf } from '@/src/ui/url/search-params'
 
 /**
  * SP-5: `X-Cache-Status`（`HIT` | `MISS`）を観測できる検索エンドポイント。
@@ -38,22 +41,12 @@ export async function GET(request: NextRequest) {
   const { page } = parseSearchParams(rawParams)
 
   try {
-    // 値オブジェクトへの変換は境界（ここ）で行う（domain-model.md §4 / ARCH-R2）。
-    // 画面（page.tsx）は空キーワードを「idle 状態」として黙って許すが、JSON API に
-    // idle 相当の応答は無いため、ここでは throw する `searchKeyword` を使って
-    // DomainValidationError に倒し、下の catch で `kind: 'validation'` として返す。
-    //
-    // 🔴 keyword は `parseSearchParams` が返す既に正規化済みの文字列（`trySearchKeyword` が
-    // 不正値を `''` へ倒した後の値）ではなく、`rawParams` の生の値をそのまま `searchKeyword`
-    // に渡す。`parseSearchParams` の出力を経由すると、たとえば 256 文字超のキーワードが
-    // 「空文字列」に潰され、`DomainValidationError` のメッセージが「検索キーワードを
-    // 入力してください」（空欄用）にすり替わってしまう（本来は「256 文字以内で」の方）。
-    // これは `parseSearchParams` が「不正値は例外を投げず既定値へ倒す」設計（画面の idle
-    // 表示用）のためで、API のエラーメッセージ精度とは要件が異なる。よってキー名の契約
-    // （`SEARCH_PARAM_KEYS` 経由で `parseSearchParams` に一本化）は共有しつつ、キーワードの
-    // 生値だけは `rawParams` から直接取り出す（page.tsx にはこの精度要件がないため
-    // `parseSearchParams` の page 解決はそのまま利用する）。
-    const rawKeyword = rawParams[SEARCH_PARAM_KEYS.keyword] ?? ''
+    // 値オブジェクトへの変換は境界（ここ）で行う（domain-model.md §4 / ARCH-R2）。画面
+    // （page.tsx）と異なり throw する `searchKeyword` を使い DomainValidationError に倒す
+    // （下の catch で `kind: 'validation'`）。`parseSearchParams` 経由の正規化済み文字列
+    // （不正値が `''` へ倒れ済み）ではなく `rawKeywordOf()` の生値を渡す（256 文字超などの
+    // エラーメッセージ精度のため。既定値フォールバックの意味論は同関数の JSDoc を参照）。
+    const rawKeyword = rawKeywordOf(rawParams)
     // 「変換 → Issue #122 の自リクエスト間引き（RateLimitPort）」の順序自体が仕様（不正な
     // 入力・400 で弾く分では枠を消費せず、GitHub API を実際に叩く前に間引く）で、この画面
     // （page.tsx）と重複していたため `prepareSearchKeyword`（composition root）へ集約した。
@@ -69,18 +62,20 @@ export async function GET(request: NextRequest) {
     const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
     const session = sessionCookie ? await decodeSessionCookie(sessionCookie) : null
 
-    const { search, getCacheStatus } = searchRepositoriesWithCacheStatus(session?.accessToken)
+    const { search, getCacheStatus, getCacheLayer } = searchRepositoriesWithCacheStatus(
+      session?.accessToken,
+    )
     const result = await search({ keyword, page })
 
-    // getCacheStatus() が undefined になるのは `CachingRepositoryQuery` が
-    // `onCacheStatus` を一度も呼ばずに正常終了した場合のみで、現行実装では起き得ない
-    // （HIT/MISS のいずれかを必ず呼ぶ）。型上は undefined を許すため、観測できなかった
-    // ケースを安全側（「キャッシュ未確認」）に倒し `MISS` として報告する。
-    const cacheStatus = getCacheStatus() ?? 'MISS'
-
-    return Response.json(result, {
-      headers: { 'X-Cache-Status': cacheStatus },
+    // Issue #875: `X-Cache-Status`（後方互換で HIT/MISS のまま）・`X-Cache-Layer`（段の内訳）・
+    // `X-Cache-Colo`（コロケーション）の組み立ては composition root へ委ねる
+    // （`app/` に判断を持たせない・`application-architecture.md` §1.2）。
+    const headers = await buildCacheObservationHeaders({
+      cacheStatus: getCacheStatus(),
+      cacheLayer: getCacheLayer(),
     })
+
+    return Response.json(result, { headers })
   } catch (error) {
     if (error instanceof DomainError) {
       return errorResponse(error)
