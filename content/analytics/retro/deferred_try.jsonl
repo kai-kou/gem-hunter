@@ -490,3 +490,9 @@
 {"date": "2026-09-08 JST", "title": "capture_lp_screenshots.mjs の派生生成（全 srcsetWidths 分）と冪等性を self-test で検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-08 JST", "title": "Layer 1 の機械的な軽微指摘（整形・型）は親が自己修正して fan-out を 1 段減らす基準を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-08 JST", "title": "並行委譲中の Stop フック差し戻しに非ブロッキング応答マーカーを導入する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-08 JST", "title": "新設した共通モジュールの接続漏れを機械検査する（委譲プロンプト項目 0 に逆方向の確認を足す）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 1050}
+{"date": "2026-09-08 JST", "title": "字句解析ツールのトークン境界（文字列リテラル内のコメント記号）を初版チェックリストに入れる", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 590}
+{"date": "2026-09-08 JST", "title": "run_checks.sh を変更対象別に絞り、app/ src/ site/ 非変更時は E2E と Lighthouse を SKIP にする", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-08 JST", "title": "PR 本文の run_checks 証跡表の貼り直しを機械化する（実行時点コミット行のみの差し替え）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 1048}
+{"date": "2026-09-08 JST", "title": "見送りログに再発回数フィールドを足し、同じ Try が何度見送られたかを可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-08 JST", "title": "検査ツールの除外ディレクトリ集合を共通モジュールへ 1 本化する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1086}
