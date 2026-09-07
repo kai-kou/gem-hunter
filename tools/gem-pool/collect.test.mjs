@@ -18,6 +18,13 @@ import {
   collectRegistry,
 } from './collect.mjs'
 import { REGISTRIES, registryFileSlug } from './registries.mjs'
+import {
+  badJsonResponse,
+  errorResponse,
+  makeFetchImpl,
+  makeSleepImpl,
+  okResponse,
+} from './test-http-stubs.mjs'
 
 /** 投影関数のスタブ: 生レコードをそのまま通す（null を返さない） */
 const passThrough = (raw) => raw
@@ -27,14 +34,13 @@ function makeRawPage(prefix, n) {
   return Array.from({ length: n }, (_, i) => ({ name: `${prefix}-${i}` }))
 }
 
-/** 成功レスポンス（Response 互換の最小スタブ） */
-function okResponse(body, headers = {}) {
-  return { ok: true, status: 200, headers: new Headers(headers), json: async () => body }
-}
-
 /**
  * `per_page` の要求値によらず最大 `cap` 件しか返さないサーバのスタブ
  * （Ecosyste.ms が per_page を 1000 で頭打ちにする実測挙動を再現する）。
+ *
+ * 🔴 collect.mjs 固有（クエリパラメータ `page` / `per_page` を解釈してページを組み立てる）
+ * のため共有モジュールへは切り出さない（github-stars.mjs は URL がページングしない単発
+ * リクエストなので、この形のスタブを必要としない）。
  *
  * @param {number} cap 1 ページの上限件数
  * @param {number} total 全件数（これを超えたページは残りだけ返す）
@@ -52,41 +58,6 @@ function makeCappedFetchImpl(cap, total) {
     return okResponse(makeRawPage(`p${page}`, count))
   })
   return { fetchImpl, calls }
-}
-
-/** エラーレスポンス（Response 互換の最小スタブ） */
-function errorResponse(status, headers = {}) {
-  return {
-    ok: false,
-    status,
-    headers: new Headers(headers),
-    json: async () => ({ error: `HTTP ${status}` }),
-  }
-}
-
-/**
- * ページ列（1 ページ目から順の配列）を返す fetch スタブを作る。
- * 要素が Error なら reject、Response 互換オブジェクトならそのまま解決する。
- */
-function makeFetchImpl(pages) {
-  const calls = []
-  const fetchImpl = vi.fn(async (url, init) => {
-    calls.push({ url: String(url), init })
-    const next = pages[calls.length - 1]
-    if (next === undefined) throw new Error(`想定外の追加リクエスト: ${url}`)
-    if (next instanceof Error) throw next
-    return next
-  })
-  return { fetchImpl, calls }
-}
-
-/** sleepImpl のスタブ（待機せず待機ミリ秒だけ記録する） */
-function makeSleepImpl() {
-  const waited = []
-  const sleepImpl = vi.fn(async (ms) => {
-    waited.push(ms)
-  })
-  return { sleepImpl, waited }
 }
 
 describe('registries.mjs', () => {
@@ -336,6 +307,52 @@ describe('collectRegistry', () => {
     expect(calls).toHaveLength(2)
     expect(waited).toEqual([1000])
     expect(result.records).toHaveLength(1)
+  })
+
+  it('2xx だが本文が不正 JSON のときもリトライする（withRetry の shouldRetry 例外・#950 Layer 1）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      badJsonResponse('Unexpected token < in JSON at position 0'),
+      okResponse(makeRawPage('p1', 1)),
+    ])
+    const { sleepImpl, waited } = makeSleepImpl()
+
+    const result = await collectRegistry({
+      registry: 'hex.pm',
+      quota: 1,
+      perPage: 10,
+      fetchImpl,
+      project: passThrough,
+      sleepImpl,
+    })
+
+    expect(calls).toHaveLength(2) // 初回 + リトライ 1 回（1 回で諦めない）
+    expect(waited).toEqual([1000])
+    expect(result.records).toHaveLength(1)
+  })
+
+  it('不正 JSON がリトライ上限まで続いたら attempts 付きの例外になる（#950 Layer 1）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      badJsonResponse('bad json'),
+      badJsonResponse('bad json'),
+      badJsonResponse('bad json'),
+    ])
+    const { sleepImpl, waited } = makeSleepImpl()
+
+    const err = await collectRegistry({
+      registry: 'crates.io',
+      quota: 10,
+      perPage: 10,
+      fetchImpl,
+      project: passThrough,
+      maxRetries: 2,
+      sleepImpl,
+    }).catch((e) => e)
+
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toMatch(/bad json/)
+    expect(err.attempts).toBe(3) // undefined に化けない（旧実装と同じく数値が付く）
+    expect(calls).toHaveLength(3)
+    expect(waited).toEqual([1000, 2000])
   })
 
   it('リトライ上限を超えたら例外を投げる（maxRetries 回までリトライ）', async () => {

@@ -96,14 +96,20 @@ from pathlib import Path
 from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cloudflare_api import CF_PAGE_SIZE, should_fetch_next_page  # noqa: E402
+import daily_gate  # noqa: E402
+from cloudflare_api import (  # noqa: E402
+    CF_PAGE_SIZE,
+    CloudflareApiError as ApiError,
+    fetch_all_pages,
+    http_json,
+)
 from mask_secrets import mask_text  # noqa: E402
 
-# `_http_json`（HTTPError + 非 JSON ボディのマスク処理を含む）は `trigger_workers_build.py` の
-# 実装をそのまま使う。同じ処理を書き写すと `cloudflare_api.py` 新設（#476）で解消したはずの
-# 「同一ロジックの独立したコピー」を再生産することになるため、本 PR では複製せず再利用する。
-# 公開名化（`cloudflare_api.py` への移設）とリダイレクト非追跡の共通化は Issue #940。
-from trigger_workers_build import ApiError, _http_json  # noqa: E402
+# `http_json`（HTTPError + 非 JSON ボディのマスク処理を含む）とページングループ本体
+# （`fetch_all_pages`）は `cloudflare_api.py` の公開ヘルパーをそのまま使う（Issue #940）。
+# 以前は `trigger_workers_build._http_json` をアンダースコア始まりの私的名で import しており、
+# 読み取り専用の本監視器が `subprocess` / `wrangler_config` / `workers_build_diagnostics` を
+# 抱えるデプロイ CLI へ import 時依存する問題があった（同 Issue で解消）。
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JST = timezone(timedelta(hours=9))
@@ -176,23 +182,25 @@ def current_month_jst(now: datetime | None = None) -> str:
 
 
 def today_jst() -> str:
-    return datetime.now(JST).strftime("%Y-%m-%d")
+    return daily_gate.today_jst()
 
 
 # ──────────────────────────────────────────────
-# 日次ゲート（commit_cost_telemetry.py と同じ流儀）
+# 日次ゲート（共有実体は `tools/daily_gate.py`・Issue #940）
 # ──────────────────────────────────────────────
+#
+# `project_dir` / `marker_path` / `already_ran_today` / `stamp_today` の骨格
+# （「JST 当日 1 回」に収束させるマーカーファイルゲート）は `commit_cost_telemetry.py` と
+# 独立コピーだった。共通部分は `daily_gate.py` へ 1 本化し、本ファイル固有の追加ロジック
+# （判定結果そのもののキャッシュ・超過日は stamp しない分岐）だけをここに残す。
 
 
 def project_dir() -> Path:
-    # フォールバックは `tools/commit_cost_telemetry.py` の同名関数と **同じ** `os.getcwd()` にする
-    # （片方だけ `REPO_ROOT` だと 2 つのマーカーが別ディレクトリに書かれる・PR #937 レビュー）。
-    # 共通モジュールへの 1 本化は Issue #940。
-    return Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    return daily_gate.project_dir()
 
 
 def marker_path() -> Path:
-    return project_dir() / MARKER_REL
+    return daily_gate.marker_path(MARKER_REL)
 
 
 def result_path() -> Path:
@@ -200,10 +208,7 @@ def result_path() -> Path:
 
 
 def already_ran_today() -> bool:
-    try:
-        return marker_path().read_text(encoding="utf-8").strip() == today_jst()
-    except OSError:
-        return False
+    return daily_gate.already_ran_today(marker_path())
 
 
 def load_cached_result() -> tuple[dict[str, Any], int] | None:
@@ -231,20 +236,22 @@ def stamp_today(payload: dict[str, Any], exit_code: int) -> None:
     """マーカーは **判定できた後** に打つ（失敗日は同日中に再試行できる・#243 と同じ設計）。
 
     🔴 **超過（exit 1）だった日は stamp しない**（当日中に再通知できなくなるため・PR #937 レビュー）。
+    結果 JSON（`result_path()`）を先に書いてから `daily_gate.stamp_marker()` でマーカーを書く
+    （結果が書けていないのにマーカーだけ立つと `load_cached_result()` が読めず実判定へ落ちる
+    だけなので安全側だが、順序は「読み手が期待する形」に揃えておく）。
     """
     if exit_code != 0:
         return
-    today = today_jst()
-    marker = marker_path()
+    today = daily_gate.today_jst()
     try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
+        result_path().parent.mkdir(parents=True, exist_ok=True)
         result_path().write_text(
             json.dumps({"date": today, "exit_code": exit_code, "payload": payload}, ensure_ascii=False),
             encoding="utf-8",
         )
-        marker.write_text(today + "\n", encoding="utf-8")
     except OSError:
-        pass
+        return
+    daily_gate.stamp_marker(marker_path())
 
 
 # ──────────────────────────────────────────────
@@ -561,9 +568,9 @@ def default_opener(request: Any, timeout: int = 30) -> Any:
 
 
 class _StatusCapturingOpener:
-    """`_http_json` が握り潰す HTTP ステータスを記録するラッパ。
+    """`http_json` が握り潰す HTTP ステータスを記録するラッパ。
 
-    `_http_json` は 4xx でも JSON ボディを返せた場合は dict を返すためステータスが失われる。
+    `http_json` は 4xx でも JSON ボディを返せた場合は dict を返すためステータスが失われる。
     「コード一致 AND HTTP 401/403」の判定と、「非 JSON ボディの 401/403 を `auth_missing` へ昇格」
     のどちらにもステータスが要るので、ここで捕まえる。
     """
@@ -590,22 +597,23 @@ def fetch_billable_usage(
 ) -> list[dict[str, Any]]:
     """`GET /accounts/{id}/billable-usage` を全ページ取得する。
 
-    ページングの継続判定は `cloudflare_api.should_fetch_next_page()` を再利用する
-    （同じロジックを再実装しない・#476）。ただし同関数は `result_info.total_count` が無い応答で
-    **無条件に打ち切る** ため（`workers/scripts` で実測済み）、本ツールでは
-    「`result_info` 無し **かつ** 満杯ページ」を **打ち切りの見逃し** として `ApiError` に倒す。
+    ページングループ本体は `cloudflare_api.fetch_all_pages()` に委譲する（#476 は継続判定の述語
+    〈`should_fetch_next_page`〉だけを共通化しており、ループ本体は 3 系統に独立コピーのまま
+    残っていた・Issue #940）。ただし `should_fetch_next_page()` は `result_info.total_count` が
+    無い応答で **無条件に打ち切る** ため（`workers/scripts` で実測済み）、本ツールでは
+    `page_fetcher` 側で「`result_info` 無し **かつ** 満杯ページ」を **打ち切りの見逃し** として
+    `ApiError` に倒す（fetch_all_pages に渡す前の検証）。
     """
     capturing = _StatusCapturingOpener(opener if opener is not None else default_opener)
-    page = 1
-    items: list[dict[str, Any]] = []
     quoted_account = urllib.parse.quote(account_id, safe="")
-    while True:
+
+    def page_fetcher(page: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         url = (
             f"{CF_API_BASE}/accounts/{quoted_account}/{BILLABLE_USAGE_PATH}"
             f"?per_page={CF_PAGE_SIZE}&page={page}"
         )
         try:
-            payload = _http_json(url, {"Authorization": f"Bearer {token}"}, opener=capturing)
+            payload = http_json(url, {"Authorization": f"Bearer {token}"}, opener=capturing)
         except ApiError as error:
             # 非 JSON ボディの 401/403（エッジが HTML を返す等）も権限不足として扱う。
             # ここで昇格させないと `auth_missing: false` に落ち、A-6 の切り分けができない。
@@ -622,7 +630,6 @@ def fetch_billable_usage(
         page_items = normalize_result(payload.get("result"))
         if page_items is None:
             raise ApiError("billable-usage の応答に日次レコードの配列が含まれていません")
-        items.extend(page_items)
 
         result_info = payload.get("result_info")
         if not isinstance(result_info, dict):
@@ -633,10 +640,9 @@ def fetch_billable_usage(
                 f"（{len(page_items)} 件 = per_page 上限）でした。取得漏れがあるかを判定できないため"
                 "判定不能として扱います（過少集計のまま「閾値内」と報告しない）"
             )
-        if not should_fetch_next_page(result_info, len(items), len(page_items)):
-            break
-        page += 1
-    return items
+        return page_items, result_info
+
+    return fetch_all_pages(page_fetcher)
 
 
 # ──────────────────────────────────────────────
@@ -911,7 +917,7 @@ class _RaisingOpener:
 
 
 class _BoomOpener:
-    """想定外の例外（`_http_json` が捕捉しない型）を送出する fake opener。"""
+    """想定外の例外（`http_json` が捕捉しない型）を送出する fake opener。"""
 
     def __init__(self) -> None:
         self.calls: list[str] = []

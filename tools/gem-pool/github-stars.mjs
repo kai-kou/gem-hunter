@@ -18,7 +18,12 @@
  * 以降の候補は一切リクエストせず即座にスキップへ回す**。GitHub の primary rate limit は
  * `x-ratelimit-remaining: 0` で明示され、リセットまで待っても数十分単位になりうるため、
  * 残り候補 1 件ずつにリトライを試みるのは時間の無駄かつ相手サーバへの負荷になる。
+ *
+ * リトライ骨格・`retryAfterMs` ヘッダ解釈・`USER_AGENT` は `http-retry.mjs`（Issue #950）に
+ * 切り出し済み。この層に残るのは GitHub 固有の判定（404 / 401 / primary rate limit の
+ * 即時失敗・secondary rate limit の `retry-after` 尊重）だけ。
  */
+import { USER_AGENT, retryAfterMs, withRetry } from './http-retry.mjs'
 
 /** GitHub REST API のベース URL（テストでは差し替えない・`fetchImpl` 側で完結させる）。 */
 export const GITHUB_API_ORIGIN = 'https://api.github.com'
@@ -29,15 +34,8 @@ export const DEFAULT_MAX_RETRIES = 2
 /** 指数バックオフの基準待機時間（ミリ秒）。 */
 const BACKOFF_BASE_MS = 500
 
-/** GitHub API に送る User-Agent（GitHub は必須ヘッダとして要求する）。 */
-export const USER_AGENT = 'gem-hunter/0.1 (+https://github.com/kai-kou/gem-hunter)'
-
-/**
- * 既定の待機実装（テストでは `sleepImpl` で差し替える）。
- * @param {number} ms
- * @returns {Promise<void>}
- */
-const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+// GitHub API に送る User-Agent（GitHub は必須ヘッダとして要求する。`http-retry.mjs` の値を再輸出）
+export { USER_AGENT }
 
 /**
  * `owner/repo` 形式を分解する。スラッシュがちょうど 1 つでない、どちらかが空文字のときは
@@ -60,14 +58,8 @@ function buildRepoUrl(owner, repo) {
   return `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
 }
 
-/** `retry-after` ヘッダ（秒）を待機ミリ秒へ変換する。解釈できなければ null。 */
-function retryAfterMs(res) {
-  const raw = res?.headers?.get?.('retry-after')
-  if (raw == null) return null
-  const seconds = Number(raw)
-  if (!Number.isFinite(seconds) || seconds < 0) return null
-  return Math.round(seconds * 1000)
-}
+/** テストでは `sleepImpl` を必ず注入するため、実待機はここでしか使わない（`withRetry` の既定と同じ実装）。 */
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * primary rate limit を使い切ったレスポンスかどうか（`x-ratelimit-remaining: 0`）。
@@ -75,10 +67,6 @@ function retryAfterMs(res) {
  */
 function isRateLimitExhausted(res) {
   return res?.headers?.get?.('x-ratelimit-remaining') === '0'
-}
-
-function backoffMs(attempt) {
-  return BACKOFF_BASE_MS * 2 ** attempt
 }
 
 /**
@@ -127,60 +115,74 @@ export async function fetchRepoStars({
     headers.authorization = `Bearer ${token}`
   }
 
-  let attempts = 0
-  let lastMessage = '原因不明'
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    attempts++
-    let waitMs = backoffMs(attempt)
-    let rateLimited = false
-    let notFound = false
-    let authError = false
-    try {
-      const res = await fetchImpl(url, { headers })
-      if (res?.ok) {
-        const body = await res.json()
-        const stars = body?.stargazers_count
-        if (Number.isFinite(stars) && stars >= 0) {
-          return { stars, attempts }
+  try {
+    const { value, attempts } = await withRetry({
+      url,
+      fetchImpl,
+      headers,
+      maxRetries,
+      sleepImpl,
+      backoffBaseMs: BACKOFF_BASE_MS,
+      shouldRetry: async (res) => {
+        if (res?.ok) {
+          const body = await res.json()
+          const stars = body?.stargazers_count
+          if (Number.isFinite(stars) && stars >= 0) {
+            return { ok: true, value: stars }
+          }
+          return {
+            retryable: true,
+            message: `レスポンスに stargazers_count が含まれていません（${repositoryFullName}）`,
+          }
         }
-        lastMessage = `レスポンスに stargazers_count が含まれていません（${repositoryFullName}）`
-      } else if (res?.status === 404) {
-        lastMessage = `リポジトリが見つかりません（${repositoryFullName}）`
-        notFound = true
-      } else if (res?.status === 401) {
-        // トークン不正・失効は恒久的な設定誤りで、リトライしても結果は変わらない（404 と同様に即座に失敗）。
-        lastMessage = `GitHub API の認証に失敗しました（401・トークン不正の可能性・${repositoryFullName}）`
-        authError = true
-      } else if (res?.status === 403 || res?.status === 429) {
-        if (isRateLimitExhausted(res)) {
-          lastMessage = `GitHub API のレート制限に達しました（${repositoryFullName}）`
-          rateLimited = true
-        } else {
-          lastMessage = `HTTP ${res.status}（secondary rate limit の可能性・${repositoryFullName}）`
-          waitMs = retryAfterMs(res) ?? waitMs
+        if (res?.status === 404) {
+          return {
+            retryable: false,
+            message: `リポジトリが見つかりません（${repositoryFullName}）`,
+            // `terminal` は withRetry を経由した呼び出し元（下の catch）が「即時失敗」と
+            // 「リトライ上限到達」を区別するための内部マーカー（呼び出し元でメッセージの
+            // 二重ラップを避けるためだけに使う。tests が参照する契約ではない）。
+            extra: { rateLimited: false, authError: false, terminal: true },
+          }
         }
-      } else {
-        lastMessage = `HTTP ${res?.status ?? '不明'}（${repositoryFullName}）`
-      }
-    } catch (err) {
-      lastMessage = err instanceof Error ? err.message : String(err)
+        if (res?.status === 401) {
+          // トークン不正・失効は恒久的な設定誤りで、リトライしても結果は変わらない（404 と同様に即座に失敗）。
+          return {
+            retryable: false,
+            message: `GitHub API の認証に失敗しました（401・トークン不正の可能性・${repositoryFullName}）`,
+            extra: { rateLimited: false, authError: true, terminal: true },
+          }
+        }
+        if (res?.status === 403 || res?.status === 429) {
+          if (isRateLimitExhausted(res)) {
+            return {
+              retryable: false,
+              message: `GitHub API のレート制限に達しました（${repositoryFullName}）`,
+              extra: { rateLimited: true, authError: false, terminal: true },
+            }
+          }
+          return {
+            retryable: true,
+            message: `HTTP ${res.status}（secondary rate limit の可能性・${repositoryFullName}）`,
+            waitMs: retryAfterMs(res) ?? undefined,
+          }
+        }
+        return {
+          retryable: true,
+          message: `HTTP ${res?.status ?? '不明'}（${repositoryFullName}）`,
+        }
+      },
+    })
+    return { stars: value, attempts }
+  } catch (err) {
+    if (err.terminal) {
+      delete err.terminal
+      throw err
     }
-
-    if (notFound || rateLimited || authError) {
-      const error = new Error(lastMessage)
-      error.attempts = attempts
-      error.rateLimited = rateLimited
-      error.authError = authError
-      throw error
-    }
-    // 最後の試行で失敗したときは待たずに抜ける
-    if (attempt < maxRetries) await sleepImpl(waitMs)
+    const error = new Error(`star 数の取得に失敗しました（${repositoryFullName}）: ${err.message}`)
+    error.attempts = err.attempts
+    throw error
   }
-
-  const error = new Error(`star 数の取得に失敗しました（${repositoryFullName}）: ${lastMessage}`)
-  error.attempts = attempts
-  throw error
 }
 
 /**

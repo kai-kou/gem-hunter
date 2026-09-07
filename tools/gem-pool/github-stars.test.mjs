@@ -3,7 +3,7 @@
  *
  * 🔴 ネットワークを叩かない: `fetchImpl` と `sleepImpl` は必ずスタブで注入する。
  */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_MAX_RETRIES,
@@ -12,42 +12,13 @@ import {
   parseRepositoryFullName,
   refreshStars,
 } from './github-stars.mjs'
-
-/** 成功レスポンス（Response 互換の最小スタブ） */
-function okResponse(body, headers = {}) {
-  return { ok: true, status: 200, headers: new Headers(headers), json: async () => body }
-}
-
-/** エラーレスポンス（Response 互換の最小スタブ） */
-function errorResponse(status, headers = {}) {
-  return {
-    ok: false,
-    status,
-    headers: new Headers(headers),
-    json: async () => ({ message: `HTTP ${status}` }),
-  }
-}
-
-/** レスポンス列（1 リクエスト目から順の配列）を返す fetch スタブを作る。 */
-function makeFetchImpl(responses) {
-  const calls = []
-  const fetchImpl = vi.fn(async (url, init) => {
-    calls.push({ url: String(url), init })
-    const next = responses[calls.length - 1]
-    if (next === undefined) throw new Error(`想定外の追加リクエスト: ${url}`)
-    if (next instanceof Error) throw next
-    return next
-  })
-  return { fetchImpl, calls }
-}
-
-function makeSleepImpl() {
-  const waited = []
-  const sleepImpl = vi.fn(async (ms) => {
-    waited.push(ms)
-  })
-  return { sleepImpl, waited }
-}
+import {
+  badJsonResponse,
+  errorResponse,
+  makeFetchImpl,
+  makeSleepImpl,
+  okResponse,
+} from './test-http-stubs.mjs'
 
 describe('parseRepositoryFullName', () => {
   it('owner/repo を分解する', () => {
@@ -217,6 +188,47 @@ describe('fetchRepoStars', () => {
     expect(result).toEqual({ stars: 7, attempts: 2 })
     expect(calls).toHaveLength(2)
     expect(sleep.waited).toEqual([2000])
+  })
+
+  it('2xx だが本文が不正 JSON のときもリトライする（withRetry の shouldRetry 例外・#950 Layer 1）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      badJsonResponse('Unexpected token < in JSON at position 0'),
+      okResponse({ stargazers_count: 7 }),
+    ])
+    const sleep = makeSleepImpl()
+
+    const result = await fetchRepoStars({
+      repositoryFullName: 'a/b',
+      fetchImpl,
+      sleepImpl: sleep.sleepImpl,
+      maxRetries: 2,
+    })
+
+    expect(result.stars).toBe(7)
+    expect(calls).toHaveLength(2) // 初回 + リトライ 1 回（1 回で諦めない）
+    expect(sleep.waited).toEqual([500])
+  })
+
+  it('不正 JSON がリトライ上限まで続いたら attempts 付きの例外になる（#950 Layer 1）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      badJsonResponse('bad json'),
+      badJsonResponse('bad json'),
+      badJsonResponse('bad json'),
+    ])
+    const sleep = makeSleepImpl()
+
+    const err = await fetchRepoStars({
+      repositoryFullName: 'a/b',
+      fetchImpl,
+      sleepImpl: sleep.sleepImpl,
+      maxRetries: 2,
+    }).catch((e) => e)
+
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toMatch(/bad json/)
+    expect(err.attempts).toBe(3) // undefined に化けない（旧実装と同じく数値が付く）
+    expect(calls).toHaveLength(3)
+    expect(sleep.waited).toEqual([500, 1000])
   })
 
   it('5xx は指数バックオフでリトライ回数まで試し、尽きたら失敗する', async () => {

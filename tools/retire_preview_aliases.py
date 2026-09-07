@@ -47,7 +47,7 @@ import urllib.request
 from typing import Any, Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cloudflare_api import CF_PAGE_SIZE, should_fetch_next_page  # noqa: E402
+from cloudflare_api import CF_PAGE_SIZE, fetch_all_pages  # noqa: E402
 from mask_secrets import REDACTED, mask_text  # noqa: E402
 from repo_slug import resolve_repo_slug  # noqa: E402
 from wrangler_config import parse_worker_name  # noqa: E402
@@ -198,15 +198,13 @@ def fetch_versions(account_id: str, token: str, worker: str) -> list[dict[str, A
     """Cloudflare API から version 一覧を取得する（`result_info.total_count` を見て全ページ取得）。
 
     100 件（1 ページの上限）を超えると古い alias から順に見落とすため（WARNING・PR #235）、
-    `should_fetch_next_page()` の判定に従ってページングする。
+    ページングループ本体は `cloudflare_api.fetch_all_pages()` に委譲する（Issue #940）。
     """
-    per_page = CF_PAGE_SIZE
-    page = 1
-    items: list[dict[str, Any]] = []
-    while True:
+
+    def page_fetcher(page: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         url = (
             f"{CF_API_BASE}/accounts/{account_id}/workers/scripts/{worker}/versions"
-            f"?per_page={per_page}&page={page}"
+            f"?per_page={CF_PAGE_SIZE}&page={page}"
         )
         try:
             payload = _http_json(url, {"Authorization": f"Bearer {token}"})
@@ -216,11 +214,9 @@ def fetch_versions(account_id: str, token: str, worker: str) -> list[dict[str, A
             raise Precondition(f"Cloudflare API がエラーを返しました: {payload.get('errors')}")
         result = payload.get("result")
         page_items = result.get("items", []) if isinstance(result, dict) else (result or [])
-        items.extend(page_items)
-        if not should_fetch_next_page(payload.get("result_info") or {}, len(items), len(page_items)):
-            break
-        page += 1
-    return items
+        return page_items, payload.get("result_info") or {}
+
+    return fetch_all_pages(page_fetcher)
 
 
 def fetch_pr_states(

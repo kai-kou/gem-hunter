@@ -61,6 +61,7 @@ gem-hunter は Cloudflare Workers Builds で `main` への push ごとに自動�
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
 import io
 import json
@@ -70,13 +71,18 @@ import sys
 import tempfile
 import time
 import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cloudflare_api import CF_PAGE_SIZE, should_fetch_next_page  # noqa: E402
+from cloudflare_api import (  # noqa: E402
+    CF_PAGE_SIZE,
+    CloudflareApiError,
+    fetch_all_pages,
+)
+from cloudflare_api import http_json as _cloudflare_http_json  # noqa: E402
+from cloudflare_api import http_json as _http_json  # noqa: E402
 from mask_secrets import mask_text  # noqa: E402
 from wrangler_config import parse_worker_name  # noqa: E402
 from workers_build_diagnostics import (  # noqa: E402
@@ -97,8 +103,10 @@ CF_API_BASE = "https://api.cloudflare.com/client/v4"
 _EXIT_CODES = {"proceed": 0, "waiting": 1, "error": 2}
 
 
-class ApiError(Exception):
-    """外部 API 呼び出しの失敗（fail-closed で exit 2 に写像する）。"""
+# `ApiError` は `cloudflare_api.CloudflareApiError` の再エクスポート（Issue #940）。
+# 実体は移設済みで、ここでは既存コード（本ファイル内・`check_prod_drift.py` 等）の
+# `except ApiError` / `isinstance(..., ApiError)` を壊さないための別名として残す。
+ApiError = CloudflareApiError
 
 
 class TriggerNotConfiguredApiError(TriggerNotConfiguredError, ApiError):
@@ -308,54 +316,27 @@ def run_gate_check(repo_root: Path) -> int:
     return result.returncode
 
 
-def _http_json(
-    url: str,
-    headers: dict[str, str],
-    *,
-    method: str = "GET",
-    payload: dict[str, Any] | None = None,
-    opener: Callable[..., Any] = urllib.request.urlopen,
-) -> dict[str, Any]:
-    """`opener` は既定で `urllib.request.urlopen`。self-test では差し替えて、ネットワーク非依存に
-    異常系（2xx + 不正 JSON・`HTTPError` + 非 JSON ボディ）を再現する
-    （Layer 1 セルフレビュー WARNING-3・PR #460）。
-    """
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with opener(request, timeout=30) as response:  # noqa: S310
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        body = error.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(body)
-        except ValueError:
-            parsed = None
-        if isinstance(parsed, dict):
-            # Cloudflare API は 4xx でも success:false の JSON ボディを返すことが多い
-            # （呼び出し側で success を見て ApiError に変換する）。
-            return parsed
-        raise ApiError(mask_text(f"HTTP {error.code}: {body[:300]}")) from error
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as error:
-        raise ApiError(mask_text(f"{type(error).__name__}: {error}")) from error
+# `_http_json` は `cloudflare_api.http_json` の再エクスポート（モジュール先頭の import・Issue #940）。
+# 実体・docstring は移設先（`cloudflare_api.py`）を参照。
 
 
 def fetch_worker_scripts(account_id: str, token: str) -> list[dict[str, Any]]:
-    """`GET .../workers/scripts` の全ページを回収する（WARNING-4・21 件以上あるアカウント対応）。"""
-    per_page = CF_PAGE_SIZE
-    page = 1
-    items: list[dict[str, Any]] = []
-    while True:
-        url = f"{CF_API_BASE}/accounts/{account_id}/workers/scripts?per_page={per_page}&page={page}"
+    """`GET .../workers/scripts` の全ページを回収する（WARNING-4・21 件以上あるアカウント対応）。
+
+    ページングループ本体は `cloudflare_api.fetch_all_pages()` に委譲する（Issue #940）。
+    このエンドポイント固有の `success` 判定・失敗時のメッセージ組み立てだけを
+    `page_fetcher` に残す。
+    """
+
+    def page_fetcher(page: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        url = f"{CF_API_BASE}/accounts/{account_id}/workers/scripts?per_page={CF_PAGE_SIZE}&page={page}"
         payload = _http_json(url, {"Authorization": f"Bearer {token}"})
         if not payload.get("success"):
             raise ApiError(mask_text(f"workers/scripts の取得に失敗しました: {payload.get('errors')}"))
         page_items = payload.get("result") or []
-        items.extend(page_items)
-        if not should_fetch_next_page(payload.get("result_info") or {}, len(items), len(page_items)):
-            break
-        page += 1
-    return items
+        return page_items, payload.get("result_info") or {}
+
+    return fetch_all_pages(page_fetcher)
 
 
 def fetch_build_triggers(account_id: str, token: str, worker_tag: str) -> list[dict[str, Any]]:
@@ -952,6 +933,79 @@ def _self_test_emit_resolve_failure_wiring() -> list[str]:
     return failures
 
 
+def _self_test_apierror_reexport() -> list[str]:
+    """`ApiError` / `_http_json` が `cloudflare_api` の実体をそのまま指す再エクスポートで
+    あることを固定する（Issue #940）。別クラス・別関数へ差し替える変異（`ApiError = Exception`
+    等）は他の self-test では検知できない（`isinstance` 判定が緩んでも大半のケースは通ってしまう
+    ため）ので、恒等性そのものを assert する。
+    """
+    failures: list[str] = []
+    if ApiError is not CloudflareApiError:
+        failures.append(
+            "ApiError が cloudflare_api.CloudflareApiError の再エクスポートになっていない"
+            f"（ApiError={ApiError!r}）"
+        )
+    if _http_json is not _cloudflare_http_json:
+        failures.append(
+            "_http_json が cloudflare_api.http_json の再エクスポートになっていない"
+            f"（_http_json={_http_json!r}）"
+        )
+    return failures
+
+
+def _self_test_fetch_worker_scripts_paging() -> list[str]:
+    """`fetch_worker_scripts` が `cloudflare_api.fetch_all_pages` を実際に経由し、複数ページを
+    結合していることを（ネットワーク非依存に）確認する。fetch_all_pages への委譲を
+    `page_fetcher` のスタブへ差し替えず、`_http_json` を差し替える形で実行することで、
+    `_http_json` 再エクスポート・`fetch_all_pages` 共通化の 2 対策が同じデータフローで
+    干渉していないことも同時に固定する（#725）。
+    """
+    failures: list[str] = []
+    pages = [
+        {
+            "success": True,
+            "result": [{"id": "gem-hunter", "tag": "tag-a"}],
+            "result_info": {"page": 1, "per_page": 1, "count": 1, "total_count": 2},
+        },
+        {
+            "success": True,
+            "result": [{"id": "other-worker", "tag": "tag-b"}],
+            "result_info": {"page": 2, "per_page": 1, "count": 1, "total_count": 2},
+        },
+    ]
+    calls: list[str] = []
+
+    def fake_opener(request: Any, timeout: int = 30) -> _FakeHttpResponse:  # noqa: ARG001
+        calls.append(request.full_url)
+        index = min(len(calls) - 1, len(pages) - 1)
+        return _FakeHttpResponse(json.dumps(pages[index]).encode("utf-8"))
+
+    original_http_json = globals()["_http_json"]
+
+    def patched_http_json(url: str, headers: dict[str, str], **kwargs: Any) -> Any:
+        return original_http_json(url, headers, opener=fake_opener)
+
+    with _patch_module_attr("_http_json", patched_http_json):
+        got = fetch_worker_scripts("acc", "tok")
+
+    if len(calls) != 2:
+        failures.append(f"fetch_worker_scripts: 2 ページ取得されるべきが {len(calls)} 回の呼び出し: {calls}")
+    if [item.get("id") for item in got] != ["gem-hunter", "other-worker"]:
+        failures.append(f"fetch_worker_scripts: 複数ページの結果が結合されていない: {got}")
+    return failures
+
+
+@contextlib.contextmanager
+def _patch_module_attr(name: str, value: Any):
+    """モジュールグローバルを一時的に差し替える（`check_cloudflare_cost.py` の `_patched` と同型）。"""
+    original = globals()[name]
+    globals()[name] = value
+    try:
+        yield
+    finally:
+        globals()[name] = original
+
+
 def run_self_test() -> int:
     groups = [
         ("Worker 名読み取りの例外 wrap", _self_test_read_worker_name_wraps_error),
@@ -968,6 +1022,8 @@ def run_self_test() -> int:
         ("ビルド完了待ち（wait_for_build）", _self_test_wait_for_build),
         ("エラー JSON の trigger 未構成フラグ", _self_test_emit_error_trigger_flag),
         ("例外種別 → JSON フラグの配線", _self_test_emit_resolve_failure_wiring),
+        ("ApiError / _http_json の再エクスポート恒等性（#940）", _self_test_apierror_reexport),
+        ("fetch_worker_scripts のページング委譲（fetch_all_pages 経由）", _self_test_fetch_worker_scripts_paging),
     ]
     failed_groups = 0
     total_failures = 0

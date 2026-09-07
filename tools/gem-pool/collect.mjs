@@ -13,13 +13,18 @@
  * - 生 JSON をため込まない（1 ページ 100MB 級になる実測がある。ページごとに投影して push する）
  * - `console.log` を出さない（進捗は `onPage` / `onRegistryDone` コールバックで通知する）
  * - 複数レジストリは **逐次**（Ecosyste.ms への同時接続を増やさない）
+ *
+ * リトライ骨格・`retryAfterMs` ヘッダ解釈・`USER_AGENT` は `http-retry.mjs`（Issue #950）に
+ * 切り出し済み。この層に残るのは Ecosyste.ms 固有の判定（429 の `retry-after` 尊重・
+ * `content-length` 上限）だけ。
  */
+import { USER_AGENT, retryAfterMs, withRetry } from './http-retry.mjs'
 
 /** Ecosyste.ms の registries API のベース URL */
 export const API_BASE = 'https://packages.ecosyste.ms/api/v1/registries'
 
-/** polite pool（連絡先付き UA）で 15,000 req/時。匿名は 5,000 req/時 */
-export const USER_AGENT = 'gem-hunter/0.1 (+https://github.com/kai-kou/gem-hunter)'
+// polite pool（連絡先付き UA）で 15,000 req/時。匿名は 5,000 req/時（`USER_AGENT` は `http-retry.mjs` の値を再輸出）
+export { USER_AGENT }
 
 /** 一覧 API は per_page=1000 が通る（実測・2026-08-22） */
 export const DEFAULT_PER_PAGE = 1000
@@ -45,18 +50,11 @@ export const MAX_PER_PAGE = 1000
  */
 export const MAX_RESPONSE_BYTES = 256 * 1024 * 1024
 
-/** 既定のリトライ回数（初回試行を含まない） */
+/** 既定のリトライ回数（初回試行を含まない）。`http-retry.mjs` の既定値（3）と同じ。 */
 const DEFAULT_MAX_RETRIES = 3
 
-/** 指数バックオフの基準待機時間（ミリ秒） */
+/** 指数バックオフの基準待機時間（ミリ秒）。`http-retry.mjs` の既定値（1000）と同じ。 */
 const BACKOFF_BASE_MS = 1000
-
-/**
- * 既定の待機実装（テストでは `sleepImpl` で差し替える）。
- * @param {number} ms
- * @returns {Promise<void>}
- */
-const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * 1 ページぶんのリクエスト URL を組み立てる（この層の内部実装）。
@@ -76,19 +74,6 @@ function buildPageUrl(registry, page, perPage) {
   url.searchParams.set('per_page', String(perPage))
   url.searchParams.set('page', String(page))
   return url.toString()
-}
-
-/**
- * `retry-after` ヘッダ（秒）を待機ミリ秒へ変換する。解釈できなければ null。
- * @param {{ headers?: { get?: (name: string) => string|null } }} res
- * @returns {number|null}
- */
-function retryAfterMs(res) {
-  const raw = res?.headers?.get?.('retry-after')
-  if (raw == null) return null
-  const seconds = Number(raw)
-  if (!Number.isFinite(seconds) || seconds < 0) return null
-  return Math.round(seconds * 1000)
 }
 
 /**
@@ -124,57 +109,55 @@ function clampPerPage(perPage, onWarn) {
   return MAX_PER_PAGE
 }
 
-/**
- * 指数バックオフの待機ミリ秒（`1000 * 2 ** attempt`）。
- * @param {number} attempt 0 始まりの試行回数
- * @returns {number}
- */
-function backoffMs(attempt) {
-  return BACKOFF_BASE_MS * 2 ** attempt
-}
+/** テストでは `sleepImpl` を必ず注入するため、実待機はここでしか使わない（`withRetry` の既定と同じ実装）。 */
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * 1 ページを取得する（HTTP エラー・fetch 例外を `maxRetries` 回までリトライする）。
  * 429 は `retry-after`（秒）を尊重し、無ければ指数バックオフへフォールバックする。
  * `content-length` が `MAX_RESPONSE_BYTES` を超えるページは本文を読まずに失敗扱いにする。
  *
+ * 骨格（ループ・待機・fetch 例外時の無条件リトライ）は `http-retry.mjs` の `withRetry` へ委譲し、
+ * ここには Ecosyste.ms 固有の判定（429 の `retry-after` 尊重・`content-length` 上限）だけを残す。
+ *
  * @returns {Promise<{payload: unknown, attempts: number}>} attempts はリトライを含む実リクエスト数
  */
 async function fetchPageWithRetry({ url, fetchImpl, maxRetries, sleepImpl }) {
-  let attempts = 0
-  let lastMessage = '原因不明'
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    attempts++
-    let waitMs = backoffMs(attempt)
-    try {
-      const res = await fetchImpl(url, {
-        headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
-      })
-      if (res?.ok) {
-        const bytes = contentLengthBytes(res)
-        // content-length が無いときは判定しない（ストリーム読みへの作り替えはスコープ外）
-        if (bytes !== null && bytes > MAX_RESPONSE_BYTES) {
-          lastMessage = `レスポンスが大きすぎます（content-length=${bytes} > ${MAX_RESPONSE_BYTES}）`
-        } else {
-          return { payload: await res.json(), attempts }
+  try {
+    const { value, attempts } = await withRetry({
+      url,
+      fetchImpl,
+      headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
+      maxRetries,
+      sleepImpl,
+      backoffBaseMs: BACKOFF_BASE_MS,
+      shouldRetry: async (res) => {
+        if (res?.ok) {
+          const bytes = contentLengthBytes(res)
+          // content-length が無いときは判定しない（ストリーム読みへの作り替えはスコープ外）
+          if (bytes !== null && bytes > MAX_RESPONSE_BYTES) {
+            return {
+              retryable: true,
+              message: `レスポンスが大きすぎます（content-length=${bytes} > ${MAX_RESPONSE_BYTES}）`,
+            }
+          }
+          return { ok: true, value: await res.json() }
         }
-      } else {
-        lastMessage = `HTTP ${res?.status ?? '不明'}`
-        if (res?.status === 429) {
-          waitMs = retryAfterMs(res) ?? waitMs
+        const message = `HTTP ${res?.status ?? '不明'}`
+        // 429 は retry-after（秒）を尊重し、無ければ withRetry の既定バックオフへフォールバックする
+        return {
+          retryable: true,
+          message,
+          waitMs: res?.status === 429 ? (retryAfterMs(res) ?? undefined) : undefined,
         }
-      }
-    } catch (err) {
-      lastMessage = err instanceof Error ? err.message : String(err)
-    }
-    // 最後の試行で失敗したときは待たずに抜ける
-    if (attempt < maxRetries) await sleepImpl(waitMs)
+      },
+    })
+    return { payload: value, attempts }
+  } catch (err) {
+    const error = new Error(`ページ取得に失敗しました（${url}）: ${err.message}`)
+    error.attempts = err.attempts
+    throw error
   }
-
-  const error = new Error(`ページ取得に失敗しました（${url}）: ${lastMessage}`)
-  error.attempts = attempts
-  throw error
 }
 
 /**

@@ -50,7 +50,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # calc_daily_cost と定数・換算を共有（DRY）
@@ -64,7 +63,8 @@ except Exception:  # pragma: no cover - フォールバック（import 失敗時
     )
     USD_TO_JPY = 150
 
-JST = timezone(timedelta(hours=9))
+import daily_gate  # noqa: E402
+
 MONTHLY_REL_DIR = "content/analytics/cost_monthly"
 MARKER_REL = "content/pipeline-state/.cost_telemetry_push_date"
 COST_LOG_REL = "content/pipeline-state/cost_log.jsonl"
@@ -102,7 +102,7 @@ def _run(cmd: list, timeout: int = 60, cwd: str | None = None,
 
 
 def project_dir() -> Path:
-    return Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    return daily_gate.project_dir()
 
 
 # ──────────────────────────────────────────────────────────
@@ -409,25 +409,15 @@ def compute_changes() -> dict:
 # ──────────────────────────────────────────────────────────
 
 def marker_path() -> Path:
-    return project_dir() / MARKER_REL
+    return daily_gate.marker_path(MARKER_REL)
 
 
 def already_ran_today() -> bool:
-    today = datetime.now(JST).strftime("%Y-%m-%d")
-    try:
-        return marker_path().read_text(encoding="utf-8").strip() == today
-    except OSError:
-        return False
+    return daily_gate.already_ran_today(marker_path())
 
 
 def stamp_today() -> None:
-    today = datetime.now(JST).strftime("%Y-%m-%d")
-    p = marker_path()
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(today + "\n", encoding="utf-8")
-    except OSError:
-        pass
+    daily_gate.stamp_marker(marker_path())
 
 
 # ──────────────────────────────────────────────────────────
