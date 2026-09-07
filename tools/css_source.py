@@ -47,7 +47,18 @@ CSS の文字列は **エスケープされていない改行を含めない**�
 
 コメントの中身を「実宣言」として読み取ってしまう事故（例: `/* 旧値は --sidebar-ring: ... だった */`
 がコメント外の実値を後勝ちで上書きする）を防ぐため、CSS を正規表現で走査するツールは
-**パースの入口で必ずここを通す**。
+**パースの入口でここを通す**。
+
+## 現在ここを通しているツール（実態・宣言だけ先に置かない）
+
+- `tools/check_contrast.py`（`preserve_lines=False` / `blank_strings=False`）
+- `tools/check_css_variable_cycles.py`（`preserve_lines=True` / `blank_strings=True`）
+
+🔴 **未接続のツールが 2 本残っている**（`tools/check_ui_dimensions.py` の `css_var_raw` と
+`tools/check_prose_tokens.py` の `PROSE_DECL_RE`）。どちらも同じ `app/globals.css` を正規表現で
+走査しており、前者はコメント内の旧値を実値として読む fail-open、後者はコメント内の例示を
+実値として読む誤検知が実測されている。接続は **Issue #1084** へ切り出した（本モジュールの
+コメント処理を強化しても、この 2 本は追随しない状態が続く点に注意）。
 
 ## 対応しない構文
 
