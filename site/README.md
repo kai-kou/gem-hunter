@@ -42,6 +42,18 @@ git push origin <ステップ1で出力された SHA>:refs/heads/gh-pages
 ブロックされた場合は `mcp__github__push_files` で `gh-pages` を更新する。
 🔴 **迂回のためにブランチ名を変えない**（`L-130` の迂回禁止に触れる）。
 
+### 🔴 同期漏れを機械検知する `tools/check_lp_publish_drift.py`
+
+`main` の `site/` tree hash と `gh-pages` ブランチのルート tree hash を比較し、乖離があれば非ゼロ終了する。
+`tools/run_checks.sh` の **本判定**（self-test だけでなくブロッキングゲート）として配線済みのため、
+`site/` を変更した PR をマージした直後に `gh-pages` への同期を先送りすると、**それ以降に作られる
+`site/` と無関係な全 PR** の `bash tools/run_checks.sh`（PR 作成必須の層 2 証跡）がこの新ゲートで
+FAIL する（`pr-review-flow-summary.md` 参照）。
+
+- FAIL 時は出力の `main_site_tree` / `gh_pages_tree`（`--json` で構造化取得可）を見て、両者が一致するまで
+  上記の 2 ステップ手順で `gh-pages` を同期すれば解消する
+- 同期済みなら `main_site_tree == gh_pages_tree` で PASS する
+
 ## 構成
 
 | パス | 役割 |

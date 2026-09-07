@@ -3,6 +3,7 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_REFILL_TTL_SECONDS } from '../infrastructure/platform/layered-cache'
+import { repositoryCacheKey } from '../infrastructure/platform/cache-key'
 import { fakeCacheStorage } from '../infrastructure/platform/workers-cache.test-fake'
 import {
   TTL_DETAIL_SECONDS,
@@ -623,6 +624,75 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
     })
   })
 
+  /**
+   * PR #1059 Layer 1 セルフレビュー指摘 #1（🔴 CRITICAL）: `makeObservedCache()` が
+   * リクエストごとに `new WorkersCache(storage)` していたため、`WorkersCache` の
+   * `warnedOperations`（isolate ごと 1 回だけ警告する dedup Set）が毎回リセットされ、
+   * `warnOnce` の効果が失われていた。`searchRepositoriesWithCacheStatus()`（`/api/search` の
+   * 通常経路が使う）は常に `onCacheLayerHit` を渡すため、Cache API が失敗し続ける本番状況で
+   * 検索リクエストごとに `console.warn` が再発火する（ログ氾濫の再導入）欠陥だった。
+   */
+  describe('makeObservedCache が secondary（WorkersCache）を isolate 内で共有する（PR #1059 指摘 #1）', () => {
+    it('Cache API の match が失敗し続けても console.warn は 1 回だけ（複数回の観測付き呼び出しをまたいで dedup が効く）', async () => {
+      stubGithubAppEnvEmpty()
+      const fake = fakeCacheStorage()
+      fake.failMatchWith(new Error('cache API 障害（テスト用）'))
+      ;(globalThis as CachesGlobal).caches = { default: fake.storage }
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        vi.resetModules()
+        const container = await import('./container')
+        countUpstreamSearchCalls()
+
+        // 観測付き経路（onCacheLayerHit を渡す＝ makeObservedCache() 経由）を複数回呼ぶ。
+        // それぞれが新しい LayeredCache ラッパーを作るが、secondary の実体
+        // （WorkersCache）を共有していれば warnedOperations の dedup が効き続け、
+        // console.warn の [cache] 系警告は 1 回だけになる。
+        await container
+          .searchRepositoriesWithCacheStatus()
+          .search({ keyword: 'container-warnonce-1' })
+        await container
+          .searchRepositoriesWithCacheStatus()
+          .search({ keyword: 'container-warnonce-2' })
+        await container
+          .searchRepositoriesWithCacheStatus()
+          .search({ keyword: 'container-warnonce-3' })
+
+        const cacheWarnCalls = warn.mock.calls.filter((args) => String(args[0]).includes('[cache]'))
+        expect(cacheWarnCalls).toHaveLength(1)
+      } finally {
+        warn.mockRestore()
+      }
+    })
+  })
+
+  /**
+   * PR #1059 Layer 1 セルフレビュー指摘 #2（🟡 WARNING）: `makeObservedCache()` の
+   * Cache API 不可フォールバック分岐が `onLayerHit` 呼び出しを try/catch していなかった。
+   * `LayeredCache.reportLayerHit()` は「観測コールバックの例外は get の結果に影響させない」
+   * 契約を持つが、フォールバック分岐（`LayeredCache` を経由しない単層構成）だけこの契約を
+   * 満たさず、`onCacheLayerHit` が例外を投げると `get()` がそのまま throw していた。
+   * `CachingRepositoryQuery.readThrough()` は観測コールバックの失敗を想定した try/catch を
+   * 持たないため、観測用コードの失敗が `search()` 全体の失敗（reject）に化ける欠陥だった。
+   */
+  describe('makeObservedCache のフォールバック分岐（Cache API 不可）の onLayerHit 例外保護（PR #1059 指摘 #2）', () => {
+    it('onLayerHit が throw しても get() は正常値を返す（LayeredCache.reportLayerHit と同じ不変条件をフォールバック分岐でも満たす）', async () => {
+      stubGithubAppEnvEmpty()
+      delete (globalThis as CachesGlobal).caches
+      vi.resetModules()
+      const container = await import('./container')
+      const key = repositoryCacheKey('octostub', 'onlayerhit-throw-check')
+      const throwingObserver = (): void => {
+        throw new Error('observer が壊れている（テスト用）')
+      }
+      const cache = container.makeObservedCache(throwingObserver)
+
+      await cache.set(key, { probe: 'ok' }, 60)
+
+      await expect(cache.get(key)).resolves.toEqual({ probe: 'ok' })
+    })
+  })
+
   it('LayeredCache の充填 TTL は検索 TTL（TTL_SEARCH_SECONDS）を超えない', () => {
     // 🔴 `container.ts` が `refillTtlSeconds: TTL_SEARCH_SECONDS` を明示注入している前提の
     //    上限ガード（PR #874 レビュー F6 / F10）。既定値が検索 TTL より長くなると、充填した
@@ -641,7 +711,10 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
  */
 describe('buildCacheObservationHeaders（Issue #875 追補: app/ の薄さ対応 + 実機欠陥修正）', () => {
   it('cacheStatus / cacheLayer をそのまま X-Cache-Status / X-Cache-Layer へ載せる', async () => {
-    const headers = await buildCacheObservationHeaders({ cacheStatus: 'HIT', cacheLayer: 'primary' })
+    const headers = await buildCacheObservationHeaders({
+      cacheStatus: 'HIT',
+      cacheLayer: 'primary',
+    })
 
     expect(headers.get('X-Cache-Status')).toBe('HIT')
     expect(headers.get('X-Cache-Layer')).toBe('primary')

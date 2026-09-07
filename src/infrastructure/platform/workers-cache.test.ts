@@ -445,4 +445,3 @@ describe('workersCacheStorage', () => {
     }
   })
 })
-

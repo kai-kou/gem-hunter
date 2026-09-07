@@ -37,10 +37,23 @@ LP は「デプロイ」という別の概念を経由せず git オブジェク
 日時の扱い: `docs/rules/datetime-rules.md` の SSOT に従い、表示・記録用の `checked_at` は JST。
 git の内部比較（tree ハッシュ文字列比較）はタイムゾーンに依存しない。
 
+【`--ref` の契約（#1059 で明文化）】
+  `--ref` は「origin 上のブランチ名」だけを受け付ける（タグ・SHA・`HEAD~1` 等の任意 ref は不可）。
+  受け付ける形式は次の 2 つ:
+    - `origin/<branch>`（ショートハンド。既定値 `origin/main` はこの形式）
+    - `<branch>`（裸のブランチ名。`origin/` プレフィックスなし）
+  内部ではまずブランチ名を取り出し（`origin/` プレフィックスを剥がすだけ）、
+  ① fetch の refspec（`+<branch>:refs/remotes/origin/<branch>`）と
+  ② tree 解決の ref（`refs/remotes/origin/<branch>`）の **両方に同じブランチ名を使う**。
+  ②は `gh-pages` 側（`GH_PAGES_REMOTE_REF = refs/remotes/origin/gh-pages`）と同じ完全修飾形にし、
+  ローカルに `refs/heads/origin/main` のような同名ブランチが存在しても `git rev-parse` の
+  ref 曖昧性解決（ローカル優先）に引きずられないようにする。
+
 使い方:
     python3 tools/check_lp_publish_drift.py
     python3 tools/check_lp_publish_drift.py --json
     python3 tools/check_lp_publish_drift.py --ref origin/main   # main 側の比較対象 ref（既定値）
+    python3 tools/check_lp_publish_drift.py --ref release-2024  # 裸のブランチ名も可
     python3 tools/check_lp_publish_drift.py --self-test         # ネットワーク不要のユニットテスト
 """
 
@@ -63,6 +76,7 @@ JST = timezone(timedelta(hours=9))
 SITE_SUBPATH = "site"
 GH_PAGES_REMOTE_REF = "refs/remotes/origin/gh-pages"
 MAIN_REMOTE_REF_NAME = "main"
+ORIGIN_SHORTHAND_PREFIX = "origin/"
 
 # 既存モジュール確認（agent-team-summary.md #474 項目0）:
 # - tools/repo_slug.py — GitHub REST を呼ばないため不使用（該当なし）
@@ -116,6 +130,35 @@ def run_git(args: list[str], *, runner: GitRunner = _default_runner, timeout: in
         err = (result.stderr or result.stdout or "").strip()
         return False, mask_text(err) or f"コマンド実行失敗（exit {result.returncode}）: {' '.join(cmd)}"
     return True, result.stdout
+
+
+# ──────────────────────────────────────────────
+# `--ref` 正規化（純関数）: `origin/<branch>` ショートハンドと裸のブランチ名の両方を
+# 「fetch の refspec」と「完全修飾された rev-parse 用 ref」の両方へ一貫して反映させる（#1059 指摘1/2）。
+# ──────────────────────────────────────────────
+
+
+def branch_name_from_ref(ref: str) -> str:
+    """`--ref` の値からブランチ名を取り出す。
+
+    契約: `--ref` は「origin 上のブランチ名」のみを受け付ける（タグ・SHA・`HEAD~1` 等は不可）。
+    `origin/` プレフィックスがあれば剥がし、無ければ裸のブランチ名としてそのまま返す。
+    タグ・SHA 等が渡された場合はブランチ名として扱われ、後続の fetch / rev-parse が失敗して
+    exit 2（判定不能・fail-closed）へ倒れる（本関数はここでは検証しない）。
+    """
+    if ref.startswith(ORIGIN_SHORTHAND_PREFIX):
+        return ref[len(ORIGIN_SHORTHAND_PREFIX):]
+    return ref
+
+
+def qualified_remote_ref(branch_name: str) -> str:
+    """ブランチ名から `gh-pages` 側と同じ完全修飾形（`refs/remotes/origin/<branch>`）を作る。
+
+    短縮形 `origin/<branch>` のまま `git rev-parse` に渡すと、ローカルに `refs/heads/origin/<branch>`
+    のような同名ブランチが存在する場合に ref 曖昧性解決でローカル側が優先されうる（#1059 指摘2）。
+    完全修飾すれば `refs/remotes/...` の名前空間が確定するため曖昧性が生じない。
+    """
+    return f"refs/remotes/origin/{branch_name}"
 
 
 # ──────────────────────────────────────────────
@@ -309,23 +352,153 @@ def _self_test_fetch_refs_failure() -> list[str]:
     return failures
 
 
-def _self_test_resolve_main_site_tree() -> list[str]:
+def _self_test_branch_name_from_ref() -> list[str]:
+    """`--ref` の値からブランチ名を取り出す純関数の症状バリアント（#1059 指摘1/2 の前提）。"""
+    failures = []
+    cases = [
+        ("origin/main", "main"),
+        ("main", "main"),  # 裸のブランチ名（origin/ プレフィックスなし）
+        ("origin/release-2024", "release-2024"),
+        ("release-2024", "release-2024"),
+        ("-e/main", "-e/main"),  # `-` で始まる値: origin/ で始まらないのでそのまま裸のブランチ名扱い
+        ("origin/", ""),  # 空ブランチ名（_run_cli 側でガードする対象）
+    ]
+    for ref, expected in cases:
+        got = branch_name_from_ref(ref)
+        if got != expected:
+            failures.append(f"branch_name_from_ref({ref!r}) = {got!r}（期待 {expected!r}）")
+    return failures
+
+
+def _self_test_qualified_remote_ref() -> list[str]:
+    failures = []
+    got = qualified_remote_ref("main")
+    if got != "refs/remotes/origin/main":
+        failures.append(f"qualified_remote_ref('main') = {got!r}（期待 'refs/remotes/origin/main'）")
+    # gh-pages 側の定数と同じ形になっていることも確認する（#1059 指摘2: 両側の対称性）。
+    got_gh = qualified_remote_ref("gh-pages")
+    if got_gh != GH_PAGES_REMOTE_REF:
+        failures.append(
+            f"qualified_remote_ref('gh-pages') = {got_gh!r} が GH_PAGES_REMOTE_REF={GH_PAGES_REMOTE_REF!r} と不一致"
+        )
+    return failures
+
+
+def _self_test_ref_argument_propagates_to_fetch() -> list[str]:
+    """指摘1（#1059）: --ref に非既定値（origin/<branch> 形式）を渡すと fetch の refspec に反映される。
+
+    fake runner の argv を検証する（#710 必須項目）。
+    """
     failures = []
     fake = FakeGitRunner()
-    fake.register(("git", "rev-parse", "origin/main:site"), 0, stdout=f"{TREE_A}\n")
-    sha, err = resolve_main_site_tree("origin/main", runner=fake)
+    fake.register(("git", "fetch", "origin"), 0)
+    fake.register(("git", "rev-parse", "refs/remotes/origin/release-2024:site"), 0, stdout=f"{TREE_A}\n")
+    fake.register(("git", "rev-parse", "refs/remotes/origin/gh-pages^{tree}"), 0, stdout=f"{TREE_A}\n")
+    code = _run_cli(["--json", "--ref", "origin/release-2024"], runner=fake)
+    if code != 0:
+        failures.append(f"--ref origin/release-2024 指定時に exit {code}（期待 0）: calls={fake.calls!r}")
+    fetch_calls = [c for c in fake.calls if c[:3] == ["git", "fetch", "origin"]]
+    if not fetch_calls:
+        failures.append("fetch が呼ばれていない")
+    else:
+        fetch_argv = fetch_calls[0]
+        if "+release-2024:refs/remotes/origin/release-2024" not in fetch_argv:
+            failures.append(f"--ref の値が fetch の refspec に反映されていない: {fetch_argv!r}")
+        # 従来の固定 refspec（main 固定）が紛れ込んでいないことも確認する（旧バグの再発防止）。
+        if "+main:refs/remotes/origin/main" in fetch_argv:
+            failures.append(f"--ref を無視して main 固定の refspec が使われている: {fetch_argv!r}")
+    return failures
+
+
+def _self_test_ref_argument_bare_branch_name() -> list[str]:
+    """症状バリアント: --ref に origin/ プレフィックス無しの裸のブランチ名を渡した場合。"""
+    failures = []
+    fake = FakeGitRunner()
+    fake.register(("git", "fetch", "origin"), 0)
+    fake.register(("git", "rev-parse", "refs/remotes/origin/release-2024:site"), 0, stdout=f"{TREE_A}\n")
+    fake.register(("git", "rev-parse", "refs/remotes/origin/gh-pages^{tree}"), 0, stdout=f"{TREE_A}\n")
+    code = _run_cli(["--json", "--ref", "release-2024"], runner=fake)
+    if code != 0:
+        failures.append(f"--ref release-2024（裸のブランチ名）指定時に exit {code}（期待 0）: calls={fake.calls!r}")
+    fetch_calls = [c for c in fake.calls if c[:3] == ["git", "fetch", "origin"]]
+    if not fetch_calls or "+release-2024:refs/remotes/origin/release-2024" not in fetch_calls[0]:
+        failures.append(f"裸のブランチ名が fetch refspec に反映されていない: {fetch_calls!r}")
+    return failures
+
+
+def _self_test_ref_argument_nonexistent_ref_fails_closed() -> list[str]:
+    """症状バリアント: 存在しない ref を指定 → fetch 自体は成功しうるが main 側 tree 解決が失敗し exit 2。"""
+    failures = []
+    fake = FakeGitRunner()
+    fake.register(("git", "fetch", "origin"), 0)
+    fake.register(
+        ("git", "rev-parse", "refs/remotes/origin/no-such-branch:site"), 128,
+        stderr="fatal: ambiguous argument 'refs/remotes/origin/no-such-branch:site': unknown revision",
+    )
+    code = _run_cli(["--json", "--ref", "no-such-branch"], runner=fake)
+    if code != 2:
+        failures.append(f"存在しない --ref を指定したのに exit {code}（期待 2・fail-closed）")
+    return failures
+
+
+def _self_test_ref_argument_empty_branch_name_fails_closed() -> list[str]:
+    """境界値: --ref origin/ （ブランチ名が空）は fetch すら呼ばず即座に exit 2 で倒す。"""
+    failures = []
+    fake = FakeGitRunner()
+    code = _run_cli(["--json", "--ref", "origin/"], runner=fake)
+    if code != 2:
+        failures.append(f"--ref origin/（空ブランチ名）で exit {code}（期待 2・fail-closed）")
+    if fake.calls:
+        failures.append(f"空ブランチ名なのに git コマンドが呼ばれている: {fake.calls!r}")
+    return failures
+
+
+def _self_test_main_side_ref_is_fully_qualified() -> list[str]:
+    """指摘2（#1059）: main 側 tree 解決に短縮形 origin/<branch> を使わず、gh-pages 側と同様に
+    refs/remotes/origin/<branch> で完全修飾していることを、実際の呼び出し argv から検証する
+    （ref 曖昧性解決によるローカルブランチ優先の再発防止）。
+    """
+    failures = []
+    fake = FakeGitRunner()
+    fake.register(("git", "fetch", "origin"), 0)
+    fake.register(("git", "rev-parse", "refs/remotes/origin/main:site"), 0, stdout=f"{TREE_A}\n")
+    fake.register(("git", "rev-parse", "refs/remotes/origin/gh-pages^{tree}"), 0, stdout=f"{TREE_A}\n")
+    code = _run_cli(["--json"], runner=fake)
+    if code != 0:
+        failures.append(f"完全修飾 ref での解決に失敗: exit {code} calls={fake.calls!r}")
+    rev_parse_calls = [c for c in fake.calls if c[:2] == ["git", "rev-parse"]]
+    for c in rev_parse_calls:
+        arg = c[2] if len(c) > 2 else ""
+        if arg.startswith("origin/"):
+            failures.append(f"main 側 tree 解決が短縮形の ref を使っている（ref 曖昧性のリスク）: {arg!r}")
+    return failures
+
+
+def _self_test_resolve_main_site_tree() -> list[str]:
+    """main 側 tree 解決は完全修飾 ref（refs/remotes/origin/main）で呼ぶ契約（#1059 指摘2）。"""
+    failures = []
+    fake = FakeGitRunner()
+    fake.register(("git", "rev-parse", "refs/remotes/origin/main:site"), 0, stdout=f"{TREE_A}\n")
+    sha, err = resolve_main_site_tree("refs/remotes/origin/main", runner=fake)
     if err is not None or sha != TREE_A:
         failures.append(f"main site tree の正常解決に失敗: sha={sha!r} err={err!r}")
 
     # 症状バリアント: site/ パスが main 上に存在しない（削除・リネーム）→ 判定不能へ倒す
     fake2 = FakeGitRunner()
     fake2.register(
-        ("git", "rev-parse", "origin/main:site"), 128,
+        ("git", "rev-parse", "refs/remotes/origin/main:site"), 128,
         stderr="fatal: path 'site' does not exist in 'origin/main'",
     )
-    sha2, err2 = resolve_main_site_tree("origin/main", runner=fake2)
+    sha2, err2 = resolve_main_site_tree("refs/remotes/origin/main", runner=fake2)
     if sha2 is not None or not err2:
         failures.append(f"main 上に site/ が無いケースを判定不能にしていない: sha={sha2!r} err={err2!r}")
+
+    # 指摘3（#1059）: returncode 0 だが stdout が空（rev-parse が異常終了せず空文字を返す退行）。
+    fake3 = FakeGitRunner()
+    fake3.register(("git", "rev-parse", "refs/remotes/origin/main:site"), 0, stdout="\n")
+    sha3, err3 = resolve_main_site_tree("refs/remotes/origin/main", runner=fake3)
+    if sha3 is not None or not err3:
+        failures.append(f"main 側 stdout 空文字ケースを判定不能にしていない: sha={sha3!r} err={err3!r}")
     return failures
 
 
@@ -346,15 +519,25 @@ def _self_test_resolve_gh_pages_tree() -> list[str]:
     sha2, err2 = resolve_gh_pages_tree(runner=fake2)
     if sha2 is not None or not err2:
         failures.append(f"gh-pages ブランチ不在ケースを判定不能にしていない: sha={sha2!r} err={err2!r}")
+
+    # 指摘3（#1059）: returncode 0 だが stdout が空（rev-parse が異常終了せず空文字を返す退行）。
+    fake3 = FakeGitRunner()
+    fake3.register(("git", "rev-parse", "refs/remotes/origin/gh-pages^{tree}"), 0, stdout="")
+    sha3, err3 = resolve_gh_pages_tree(runner=fake3)
+    if sha3 is not None or not err3:
+        failures.append(f"gh-pages 側 stdout 空文字ケースを判定不能にしていない: sha={sha3!r} err={err3!r}")
     return failures
 
 
 def _self_test_main_entrypoint_no_drift() -> list[str]:
-    """本番の主コードパス（変異対象）: CLI エントリポイント main() から exit code までを実際に貫通させる。"""
+    """本番の主コードパス（変異対象）: CLI エントリポイント main() から exit code までを実際に貫通させる。
+
+    main 側 rev-parse は完全修飾形（refs/remotes/origin/main:site）で呼ぶ契約（#1059 指摘2）。
+    """
     failures = []
     fake = FakeGitRunner()
     fake.register(("git", "fetch", "origin"), 0)
-    fake.register(("git", "rev-parse", "origin/main:site"), 0, stdout=f"{TREE_A}\n")
+    fake.register(("git", "rev-parse", "refs/remotes/origin/main:site"), 0, stdout=f"{TREE_A}\n")
     fake.register(("git", "rev-parse", "refs/remotes/origin/gh-pages^{tree}"), 0, stdout=f"{TREE_A}\n")
     code = _run_cli(["--json"], runner=fake)
     if code != 0:
@@ -366,7 +549,7 @@ def _self_test_main_entrypoint_drift() -> list[str]:
     failures = []
     fake = FakeGitRunner()
     fake.register(("git", "fetch", "origin"), 0)
-    fake.register(("git", "rev-parse", "origin/main:site"), 0, stdout=f"{TREE_A}\n")
+    fake.register(("git", "rev-parse", "refs/remotes/origin/main:site"), 0, stdout=f"{TREE_A}\n")
     fake.register(("git", "rev-parse", "refs/remotes/origin/gh-pages^{tree}"), 0, stdout=f"{TREE_B}\n")
     code = _run_cli(["--json"], runner=fake)
     if code != 1:
@@ -387,7 +570,7 @@ def _self_test_main_entrypoint_unreachable_gh_pages() -> list[str]:
     fake = FakeGitRunner()
     fake.register(("git", "fetch", "origin"), 128, stderr="fatal: could not read Username")
     # early return が抜け落ちても後続が完走してしまうように、あえて有効な応答を登録しておく。
-    fake.register(("git", "rev-parse", "origin/main:site"), 0, stdout=f"{TREE_A}\n")
+    fake.register(("git", "rev-parse", "refs/remotes/origin/main:site"), 0, stdout=f"{TREE_A}\n")
     fake.register(("git", "rev-parse", "refs/remotes/origin/gh-pages^{tree}"), 0, stdout=f"{TREE_A}\n")
     code = _run_cli(["--json"], runner=fake)
     if code != 2:
@@ -404,11 +587,18 @@ def run_self_test() -> int:
         ("判定不能 → exit 2（fail-closed）", _self_test_indeterminate_exit_code),
         ("fetch 成功時の argv 検証（#710）", _self_test_fetch_refs_success),
         ("gh-pages 取得不能（fetch 失敗）", _self_test_fetch_refs_failure),
-        ("main 側 site/ tree 解決（正常 + パス不在）", _self_test_resolve_main_site_tree),
-        ("gh-pages 側 tree 解決（正常 + ブランチ不在）", _self_test_resolve_gh_pages_tree),
+        ("--ref 正規化（origin/ 有無・- 始まり・空ブランチ名）", _self_test_branch_name_from_ref),
+        ("完全修飾 ref 生成（gh-pages 側との対称性）", _self_test_qualified_remote_ref),
+        ("main 側 site/ tree 解決（正常 + パス不在 + stdout 空）", _self_test_resolve_main_site_tree),
+        ("gh-pages 側 tree 解決（正常 + ブランチ不在 + stdout 空）", _self_test_resolve_gh_pages_tree),
         ("main() 経由 乖離なし（本番の主コードパス）", _self_test_main_entrypoint_no_drift),
         ("main() 経由 乖離あり（本番の主コードパス）", _self_test_main_entrypoint_drift),
         ("main() 経由 gh-pages 取得不能（本番の主コードパス）", _self_test_main_entrypoint_unreachable_gh_pages),
+        ("--ref の値が fetch refspec に反映される（#1059 指摘1）", _self_test_ref_argument_propagates_to_fetch),
+        ("--ref に裸のブランチ名を渡した場合", _self_test_ref_argument_bare_branch_name),
+        ("--ref に存在しないブランチ名を渡した場合 → exit 2", _self_test_ref_argument_nonexistent_ref_fails_closed),
+        ("--ref origin/（空ブランチ名） → fetch すら呼ばず exit 2", _self_test_ref_argument_empty_branch_name_fails_closed),
+        ("main 側 tree 解決が完全修飾 ref を使う（#1059 指摘2）", _self_test_main_side_ref_is_fully_qualified),
     ]
     failed_groups = 0
     total_failures = 0
@@ -454,7 +644,9 @@ def _run_cli(argv: list[str], *, runner: GitRunner = _default_runner) -> int:
     parser.add_argument("--json", action="store_true", help="機械可読な JSON で出力する")
     parser.add_argument(
         "--ref", default="origin/main",
-        help="main 側の比較対象 ref（既定: origin/main）。site/ ディレクトリを含む ref を指定する。",
+        help="main 側の比較対象ブランチ（既定: origin/main）。`origin/<branch>` 形式または裸の"
+             "ブランチ名 `<branch>` を受け付ける（fetch の refspec 構築のためブランチ名限定。"
+             "タグ・SHA・HEAD~1 等の任意 ref は不可）。",
     )
     parser.add_argument("--self-test", action="store_true", help="ネットワーク不要のユニットテストを実行")
     args = parser.parse_args(argv)
@@ -462,12 +654,20 @@ def _run_cli(argv: list[str], *, runner: GitRunner = _default_runner) -> int:
     if args.self_test:
         return run_self_test()
 
-    ok, ferr = fetch_refs(runner=runner)
+    branch_name = branch_name_from_ref(args.ref)
+    if not branch_name:
+        _emit_error(f"--ref の値からブランチ名を解決できませんでした（{args.ref!r}）", args.json)
+        return 2
+    qualified_ref = qualified_remote_ref(branch_name)
+
+    # 指摘1（#1059）: --ref の値を fetch の refspec にも反映する（従来は main_ref_name 固定で無視されていた）。
+    ok, ferr = fetch_refs(main_ref_name=branch_name, runner=runner)
     if not ok:
         _emit_error(f"main / gh-pages の取得に失敗しました（{ferr}）", args.json)
         return 2
 
-    main_tree, merr = resolve_main_site_tree(args.ref, runner=runner)
+    # 指摘2（#1059）: main 側も gh-pages 側と同じ完全修飾形（refs/remotes/origin/<branch>）で解決する。
+    main_tree, merr = resolve_main_site_tree(qualified_ref, runner=runner)
     if merr is not None:
         _emit_error(merr, args.json)
         return 2
@@ -479,6 +679,7 @@ def _run_cli(argv: list[str], *, runner: GitRunner = _default_runner) -> int:
 
     result = decide(main_tree, gh_pages_tree)
     result["ref"] = args.ref
+    result["resolved_ref"] = qualified_ref
     result["checked_at"] = now_jst_str()
 
     if args.json:

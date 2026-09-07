@@ -132,7 +132,9 @@ describe('GET /api/search — X-Cache-Layer / X-Cache-Colo（Issue #875）', () 
   it('Workers 実行環境の外（本テスト環境）では X-Cache-Colo を付けずに正常応答する', async () => {
     searchMock.mockResolvedValue(makeSearchResult())
 
-    const res = await GET(new NextRequest('http://localhost/api/search?q=cache-colo-unavailable-check'))
+    const res = await GET(
+      new NextRequest('http://localhost/api/search?q=cache-colo-unavailable-check'),
+    )
 
     expect(res.status).toBe(200)
     expect(res.headers.get('X-Cache-Colo')).toBeNull()

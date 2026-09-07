@@ -9,6 +9,7 @@ import { CachingRepositoryQuery } from '../infrastructure/platform/cached-reposi
 import { InMemoryCache } from '../infrastructure/platform/cache'
 import type { CacheLayerHit } from '../infrastructure/platform/layered-cache'
 import { LayeredCache } from '../infrastructure/platform/layered-cache'
+import type { WorkersCacheStorage } from '../infrastructure/platform/workers-cache'
 import { WorkersCache, workersCacheStorage } from '../infrastructure/platform/workers-cache'
 import { SystemClock } from '../infrastructure/system-clock'
 import { StaticGemDigest } from '../infrastructure/platform/static-gem-digest'
@@ -119,6 +120,54 @@ let resolvedCache: CachePort | undefined
  */
 let warnedCacheFallback = false
 
+/**
+ * `WorkersCache`（Cache API secondary の実装）の isolate 内・単一インスタンス
+ * （PR #1059 Layer 1 セルフレビュー指摘 #1）。
+ *
+ * 🔴 **なぜ `resolveCache()` とは別に持つのか**: `makeObservedCache()` はリクエストごとに
+ * 新しい `LayeredCache` ラッパーを組み立てる（`onLayerHit` の混線防止・下の JSDoc 参照）。
+ * ラッパーを毎回新規生成しても、**secondary の実体（`WorkersCache`）まで毎回 `new` すると
+ * `warnedOperations`（isolate ごと 1 回だけ警告する dedup `Set`・`workers-cache.ts`）が
+ * 呼び出しのたびにリセットされる**。Cache API の `put` / `match` / `delete` が本番で
+ * 失敗し続ける状態になると、`searchRepositoriesWithCacheStatus()` を経由する全リクエスト
+ * （`/api/search` の通常経路）で `console.warn` が毎回発火し、ログ氾濫が再導入される。
+ * `resolveCache()` の `resolvedCache`（`LayeredCache` 全体）とは別に、secondary の実体だけを
+ * ここで共有し、両方の解決経路（`resolveCache()` / `makeObservedCache()`）から同じ
+ * `WorkersCache` インスタンスを参照させることで dedup を保つ。
+ *
+ * 🔴 **成功したときだけメモ化する**（`resolveCache()` の「負のメモ化を作らない」方針と同じ）。
+ */
+let resolvedWorkersCache: WorkersCache | undefined
+
+function resolveWorkersCache(storage: WorkersCacheStorage): WorkersCache {
+  if (!resolvedWorkersCache) {
+    resolvedWorkersCache = new WorkersCache(storage)
+  }
+  return resolvedWorkersCache
+}
+
+/**
+ * `onLayerHit` 呼び出しを例外から保護する共通ヘルパー（PR #1059 Layer 1 セルフレビュー指摘 #2）。
+ *
+ * 🔴 **`LayeredCache.reportLayerHit()` と同じ不変条件をフォールバック分岐でも満たす**:
+ * `LayeredCache` は「観測コールバックの例外は `get` の結果に影響させない」ことを自身の
+ * `reportLayerHit()` で保護・テストしているが、`makeObservedCache()` の Cache API 不可
+ * フォールバック分岐（`LayeredCache` を経由しない単層構成）はこの保護を持たず、
+ * `onCacheLayerHit` が例外を投げると `get()` がそのまま throw していた。
+ * `CachingRepositoryQuery.readThrough()` は観測コールバックの失敗を想定した try/catch を
+ * 持たないため、観測用コードの失敗が `search()` 全体の失敗（reject）に化ける。
+ */
+function reportLayerHitSafely(
+  onLayerHit: (layer: CacheLayerHit) => void,
+  layer: CacheLayerHit,
+): void {
+  try {
+    onLayerHit(layer)
+  } catch {
+    // 観測コールバックの失敗は無視する（get の戻り値・副作用に影響させない・LayeredCache と同じ流儀）。
+  }
+}
+
 function resolveCache(): CachePort {
   if (resolvedCache) {
     return resolvedCache
@@ -126,7 +175,7 @@ function resolveCache(): CachePort {
   const storage = workersCacheStorage()
   if (storage) {
     // 🔴 **成功したときだけメモ化する**（下の JSDoc の「負のメモ化」を作らない）。
-    resolvedCache = new LayeredCache(inMemoryCache, new WorkersCache(storage), {
+    resolvedCache = new LayeredCache(inMemoryCache, resolveWorkersCache(storage), {
       // 🔴 充填 TTL を composition root から明示注入する（`layered-cache.ts` の
       //    `DEFAULT_REFILL_TTL_SECONDS` は「合わせる先」を JSDoc で宣言しているだけで、
       //    別ファイルの独立定数なので黙って乖離しうる）。
@@ -171,10 +220,22 @@ const sharedCache: CachePort = {
  * 🔴 **primary（`inMemoryCache`）/ secondary の実ストアは共有のまま**: 新規生成するのは
  * `LayeredCache` という薄いラッパーオブジェクトだけで、値の実体（isolate 内メモリの
  * `Map` 本体・Cloudflare Cache API のバインディング先）は変わらない。したがって
- * データの二重管理・不整合は生じない（`WorkersCache` 自身も `warnedOperations` の
- * dedup Set 以外は無状態）。
+ * データの二重管理・不整合は生じない。
+ *
+ * 🔴 **secondary（`WorkersCache`）は `resolveWorkersCache()` で共有する**（PR #1059 指摘 #1）:
+ * 「ラッパーだけ新規生成」で済むのは `WorkersCache` 自身も無状態、という前提だったが、
+ * 実際には `warnedOperations`（isolate ごと 1 回だけ警告する dedup `Set`）という状態を持つ。
+ * ここで毎回 `new WorkersCache(storage)` していると、この呼び出し（＝検索リクエストごと）に
+ * dedup がリセットされ、Cache API が失敗し続ける状況で `console.warn` のログ氾濫が再発する。
+ * `resolveWorkersCache()` から同じインスタンスを取ることで、`resolveCache()` 経由の通常系と
+ * dedup 状態を共有し続ける。
+ *
+ * 🔴 **export しているのは `container.test.ts` がフォールバック分岐の `onLayerHit` 例外保護
+ * （`reportLayerHitSafely`）を直接検証するため**（`TTL_SEARCH_SECONDS` と同じ理由。
+ * `onCacheLayerHit` を例外送出させるコールバックは公開ユースケース関数からは注入できない）。
+ * アプリコードからは本ファイル内でしか使わない。
  */
-function makeObservedCache(onLayerHit: (layer: CacheLayerHit) => void): CachePort {
+export function makeObservedCache(onLayerHit: (layer: CacheLayerHit) => void): CachePort {
   const storage = workersCacheStorage()
   if (!storage) {
     // Cache API 不可: `resolveCache()` 経由でフォールバック警告（`warnedCacheFallback`）の
@@ -184,14 +245,16 @@ function makeObservedCache(onLayerHit: (layer: CacheLayerHit) => void): CachePor
     return {
       async get<T>(key: CacheKey): Promise<T | null> {
         const value = await fallback.get<T>(key)
-        onLayerHit(value !== null ? 'primary' : 'miss')
+        // 🔴 観測コールバックの例外で get() の結果（検索本体の可用性）を壊さない
+        //    （`LayeredCache.reportLayerHit()` と同じ不変条件・PR #1059 指摘 #2）。
+        reportLayerHitSafely(onLayerHit, value !== null ? 'primary' : 'miss')
         return value
       },
       set: (key, value, ttlSeconds) => fallback.set(key, value, ttlSeconds),
       invalidate: (key) => fallback.invalidate(key),
     }
   }
-  return new LayeredCache(inMemoryCache, new WorkersCache(storage), {
+  return new LayeredCache(inMemoryCache, resolveWorkersCache(storage), {
     refillTtlSeconds: TTL_SEARCH_SECONDS,
     onLayerHit,
   })
