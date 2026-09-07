@@ -133,6 +133,16 @@ def explanatory_text(text: str, *, include_strings: bool = True, on_failure: str
 
     on_failure="raise"（既定・fail-closed）: トークナイズ失敗時は `TokenizeFailure` を送出する。
     on_failure="none"（fail-open）: `None` を返す。
+
+    🔴 **f-string の扱いには実行系バージョン依存の既知の差異がある**（PEP 701・Python 3.12+）。
+    3.11 以前は `f"hello {name}"` 全体が単一の `STRING` トークンなので、式部分（`{name}`）ごと
+    抽出される。3.12 以降は `FSTRING_START` / `FSTRING_MIDDLE` / `FSTRING_END` へ分解されるため、
+    本関数は **リテラル部分（`FSTRING_MIDDLE`）だけ** を抽出し、式部分（`NAME` / `OP` 等）は
+    抽出しない。式部分はコードそのものであって「説明文」ではないので後者の挙動が意図した形だが、
+    3.11 との完全一致にはならない（3.11 では式部分も混ざる）。この差異が判定結果を変えうるのは
+    「説明文が f-string の中にしか無い」ファイルに限られる。`FSTRING_MIDDLE` を拾わずにいると
+    3.12 で説明文が丸ごと落ちて `check_module_contract_drift.py` が fail-closed（exit 2）へ倒れる
+    ため、`getattr` による存在チェック付きで対象に含めている。
     """
     _check_on_failure(on_failure)
     try:
@@ -144,6 +154,11 @@ def explanatory_text(text: str, *, include_strings: bool = True, on_failure: str
     types = {tokenize.COMMENT}
     if include_strings:
         types.add(tokenize.STRING)
+        # PEP 701（Python 3.12+）: f-string のリテラル部分は STRING ではなく FSTRING_MIDDLE。
+        # 3.11 以前には存在しないトークン種別なので getattr で存在を確認してから足す。
+        fstring_middle = getattr(tokenize, "FSTRING_MIDDLE", None)
+        if fstring_middle is not None:
+            types.add(fstring_middle)
     return "\n".join(tok.string for tok in tokens if tok.type in types)
 
 
@@ -268,14 +283,38 @@ def _run_self_test() -> int:
             f"got={mixed_explanatory!r}"
         )
 
-    # ---------------- PEP 701 相当（f-string の内側に説明対象があっても壊れない） ----------------
-    # Python 3.12+ では f-string の中身が FSTRING_START/MIDDLE/END に分解されうる。
-    # 本モジュールはそれを COMMENT/STRING として扱わない（f-string の式部分はコードそのもの
-    # であり「説明文」ではないため、含めないのが正しい）。少なくとも壊れず・混入しないことを
-    # 確認する。
+    # ---------------- PEP 701（f-string を含むソースでの COMMENT / STRING 抽出） ----------------
+    # Python 3.12+ では f-string の中身が FSTRING_START/MIDDLE/END に分解される。
+    # (a) COMMENT 抽出は f-string の有無に影響されない（両バージョン共通の期待値）。
     fstring_src = 'name = "x"\ny = f"hello {name}"  # a comment\n'
     fstring_comments = comment_texts(fstring_src)
     check("comment_texts/fstring_input_still_extracts_trailing_comment", fstring_comments, ["# a comment"])
+
+    # (b) 🔴 リスクのある経路は explanatory_text(include_strings=True) 側である（COMMENT ではなく
+    # STRING / FSTRING_* の区別が効くのはこちら）。バージョンで期待値が変わるので分岐して固定する。
+    # ここを COMMENT だけのケースで済ませると「PEP 701 対応済み」の見た目だけが付く（PR #1064
+    # の Layer 1 セルフレビュー指摘）。
+    fstring_explanatory = explanatory_text(fstring_src)
+    if fstring_explanatory is None:
+        failures.append("explanatory_text/fstring: None が返った（トークナイズ失敗）")
+    else:
+        # どちらのバージョンでも「リテラル部分」と「コメント」は必ず抽出される。
+        for needle, label in (("hello", "リテラル部分"), ("# a comment", "コメント")):
+            if needle not in fstring_explanatory:
+                failures.append(
+                    f"explanatory_text/fstring_contains_{label}: {needle!r} が抽出されない "
+                    f"（got={fstring_explanatory!r}・python={sys.version_info[:2]}）"
+                )
+        # 式部分（{name}）の扱いだけがバージョンで変わる。3.11 以前は単一 STRING なので混ざり、
+        # 3.12 以降は FSTRING_MIDDLE だけを拾うので混ざらない。
+        expr_included = "{name}" in fstring_explanatory
+        want_expr_included = sys.version_info < (3, 12)
+        if expr_included != want_expr_included:
+            failures.append(
+                "explanatory_text/fstring_expression_part: "
+                f"want_included={want_expr_included}, got_included={expr_included} "
+                f"（got={fstring_explanatory!r}・python={sys.version_info[:2]}）"
+            )
 
     if failures:
         print("❌ py_source --self-test FAILED")

@@ -113,6 +113,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from md_fence import fence_flags  # noqa: E402  （tools/ 直下の共有ヘルパー）
+import py_source  # noqa: E402 — Python 字句解析の正本（#1007）
 import wiring_marker  # noqa: E402 — シェルコメント除去・マーカー走査の共通ロジック（#933）
 
 # `check_*.py` グロブに載らないが死蔵を機械保証したいスクリプトの明示リスト。
@@ -306,9 +307,12 @@ def python_statements(content: str) -> list[Statement] | None:
     や `add_argument(help="python3 tools/check_y.py")`、self-test のフィクスチャ文字列が
     実行指標を成立させると、配線を外しても永久に wired になってしまうため。
     """
+    # 字句解析そのものは `py_source.py_tokens()` が正本（同じ `tokenize.generate_tokens` 呼び出しを
+    # 各ツールが独自に持つと、片方だけ直って残りにバグが残る・#1007 / #612）。ここで欲しいのは
+    # 位置情報つきのトークン列なので、抽出ヘルパー（`comment_texts` 等）ではなく py_tokens を使う。
     try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(content).readline))
-    except Exception:
+        tokens = py_source.py_tokens(content)
+    except py_source.TokenizeFailure:
         return None
 
     statements: list[Statement] = []
