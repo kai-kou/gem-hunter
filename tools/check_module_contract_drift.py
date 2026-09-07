@@ -89,7 +89,6 @@ drift は「説明文が壊れた」ことの証明ではなく、「説明文�
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import re
 import subprocess
@@ -100,6 +99,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 import git_diff_utils
+import py_source  # Python の COMMENT/STRING 抽出（tokenize）はここへ委譲する（#1007）
 
 # subprocess.run 互換 callable（テスト用に差し替える）
 Runner = Callable[..., "subprocess.CompletedProcess[str]"]
@@ -278,10 +278,17 @@ def normalize_path(path: str, *, root: Path, cwd: Path | None = None) -> str:
 
 
 def _py_tokens(path: Path, text: str) -> list[tokenize.TokenInfo]:
-    """`.py` をトークナイズする。失敗したら合格へ丸めず `UndecidableError`（exit 2）へ倒す。"""
+    """`.py` をトークナイズする。失敗したら合格へ丸めず `UndecidableError`（exit 2）へ倒す。
+
+    🔴 字句解析そのもの（`tokenize.generate_tokens` の呼び出しと例外処理）は
+    `tools/py_source.py`（`py_tokens`）へ委譲する（Issue #1007）。本関数は
+    `py_source.TokenizeFailure` を本ファイルの fail-closed 契約（`UndecidableError`・
+    `path` を含むメッセージ）へ変換する薄いラッパーであり、`explanatory_only_lines()` が
+    位置情報つきの生トークン列を必要とするために残す。
+    """
     try:
-        return list(tokenize.generate_tokens(io.StringIO(text).readline))
-    except (tokenize.TokenError, SyntaxError, IndentationError, ValueError) as exc:
+        return py_source.py_tokens(text)
+    except py_source.TokenizeFailure as exc:
         raise UndecidableError(
             f"{path}: Python として解析できないため説明文を取り出せません（{exc}）"
         ) from exc
@@ -297,15 +304,17 @@ def explanatory_text(path: Path, text: str) -> str:
     文字列リテラルだけを見る。
 
     `.py` 以外（Markdown 等）は全文が説明文なのでそのまま返す。`.py` がトークナイズできない
-    ときは合格へ丸めず `UndecidableError`（exit 2）へ倒す。
+    ときは合格へ丸めず `UndecidableError`（exit 2）へ倒す（`py_source.explanatory_text` を
+    `on_failure="raise"` で呼び、本ファイルの fail-closed 契約へ変換する・Issue #1007）。
     """
     if path.suffix != ".py":
         return text
-    return "\n".join(
-        tok.string
-        for tok in _py_tokens(path, text)
-        if tok.type in (tokenize.COMMENT, tokenize.STRING)
-    )
+    try:
+        return py_source.explanatory_text(text, include_strings=True, on_failure="raise")
+    except py_source.TokenizeFailure as exc:
+        raise UndecidableError(
+            f"{path}: Python として解析できないため説明文を取り出せません（{exc}）"
+        ) from exc
 
 
 def explanatory_only_lines(path: Path, text: str) -> frozenset[str]:
@@ -360,11 +369,13 @@ def marker_reason(path: Path, text: str) -> tuple[str | None, bool]:
     `.py` 以外は行単位で走査する。
     """
     if path.suffix == ".py":
-        try:
-            texts = [
-                tok.string for tok in _py_tokens(path, text) if tok.type == tokenize.COMMENT
-            ]
-        except UndecidableError:
+        # ここは意図的に fail-open（`on_failure="none"`）で呼ぶ: トークナイズ失敗時は
+        # 「コメント抽出できなかった」= マーカーが見つからないのと同じ結果になり、呼び出し元の
+        # `check_index_freshness()` は drift ありとして報告する（マーカー不在は fail-closed の
+        # 方向へ働くため、ここで例外を伝播させて `_py_tokens` 経由の `UndecidableError` にする
+        # 必要はない・Issue #1007）。
+        texts = py_source.comment_texts(text, on_failure="none")
+        if texts is None:
             return None, False
     else:
         texts = text.splitlines()
@@ -971,6 +982,19 @@ def run_self_test() -> int:  # noqa: C901
     check("コードと同居する末尾コメント行は実装層", "x = 1  # 末尾コメント" not in only, str(only))
     check("文字列を代入する行は実装層", 'y = "splitlines"' not in only, str(only))
     check(".py 以外は層を判定しない（空集合）", explanatory_only_lines(Path("a.md"), layered) == frozenset())
+
+    # `_py_tokens` 自体の fail-closed 契約を直接検証する（Issue #1007）。
+    # `explanatory_only_lines()` 経由だけでは「例外を送出して except で frozenset() を返す」のと
+    # 「例外を送出せず空リストを返す」が偶然どちらも空集合に帰着し、区別できない
+    # （変異テストで実際に踏んだ死角: `_py_tokens` の except 節を握り潰す変異を入れても
+    # `explanatory_only_lines` 経由のテストは変化しなかった）。ここでは `_py_tokens` を直接
+    # 呼び、必ず `UndecidableError` が送出されることを確認する。
+    _py_tokens_raised = False
+    try:
+        _py_tokens(Path("m.py"), "def broken(:\n    pass\n")
+    except UndecidableError:
+        _py_tokens_raised = True
+    check("_py_tokens は構文が壊れた入力で UndecidableError を送出する", _py_tokens_raised)
 
     # ------------------------------------------------------------------ 1.7 承認マーカー
     print("1.7 承認マーカー `# contract-drift-ok:` の抽出")

@@ -39,15 +39,14 @@
 
 from __future__ import annotations
 
-import io
 import re
 import sys
-import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import py_source  # noqa: E402 — Python の COMMENT 抽出（tokenize）はここへ委譲する（#1007）
 import ts_source  # noqa: E402 — JS/TS のコメント抽出はここへ委譲する（#612 / #992）
 
 
@@ -151,18 +150,12 @@ def python_comment_texts(content: str) -> list[str] | None:
     docstring / 文字列リテラルの中身（マーカー書式を説明する地の文など）はコメントトークン
     ではないため含まれない。構文エラー・NUL バイト混入等でトークナイズ自体が失敗した場合は
     クラッシュせず `None` を返す（呼び出し側は安全側＝「マーカーなし」として扱う）。
+
+    🔴 字句解析そのもの（`tokenize.generate_tokens` の呼び出しと例外処理）は
+    `tools/py_source.py`（`comment_texts`）へ委譲する（Issue #1007）。本モジュールは
+    fail-open（`on_failure="none"`）を選ぶだけで、字句解析の実装は持たない。
     """
-    try:
-        return [
-            tok.string
-            for tok in tokenize.generate_tokens(io.StringIO(content).readline)
-            if tok.type == tokenize.COMMENT
-        ]
-    except Exception:
-        # tokenize は SyntaxError / IndentationError / tokenize.TokenError / ValueError など
-        # 様々な例外を送出しうる。本モジュールは配線漏れ検出の下請けであり構文検証ではない
-        # ため、どんな理由であれクラッシュしてはならない。
-        return None
+    return py_source.comment_texts(content, on_failure="none")
 
 
 def comment_texts_for_lang(content: str, lang: str) -> list[str] | None:

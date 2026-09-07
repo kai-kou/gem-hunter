@@ -887,9 +887,15 @@ def _self_test() -> int:
             # 本ファイルは wiring_marker（#933）を import するため、実プロセス実行には
             # 実物を同梱する必要がある（ts_source.py はフェイクで代替するが、
             # wiring_marker.py 自体の判定ロジックは変異検出対象にしたいので実物を使う）。
+            # wiring_marker.py は py_source（#1007）を import するため、こちらも同梱しないと
+            # サブプロセス内で ImportError になり CC の「違反なし」ケースが常に失敗する。
             shutil.copy(
                 Path(__file__).resolve().parent / "wiring_marker.py",
                 tmp_tools / "wiring_marker.py",
+            )
+            shutil.copy(
+                Path(__file__).resolve().parent / "py_source.py",
+                tmp_tools / "py_source.py",
             )
             (tmp_tools / "ts_source.py").write_text(_fake_ts_source_src, encoding="utf-8")
             (tmp_tools / "run_checks.sh").write_text(run_checks_content, encoding="utf-8")
@@ -914,10 +920,12 @@ def _self_test() -> int:
 
     rc_main_clean = _run_main_subprocess(
         {"gate.mjs": "if (process.argv.includes('--self-test')) { selfTest() }\n"},
-        # 実物の wiring_marker.py（`--self-test` 実装済み）も同梱するため、こちらも配線して
-        # おかないと「wiring_marker.py 自身の配線漏れ」で汚染され exit 1 になってしまう。
+        # 実物の wiring_marker.py（`--self-test` 実装済み）と py_source.py（同・#1007）も
+        # 同梱するため、こちらも配線しておかないと「自身の配線漏れ」で汚染され exit 1 に
+        # なってしまう。
         'run_check "gate" node tools/gate.mjs --self-test\n'
-        'run_check "wiring_marker" python3 tools/wiring_marker.py --self-test\n',
+        'run_check "wiring_marker" python3 tools/wiring_marker.py --self-test\n'
+        'run_check "py_source" python3 tools/py_source.py --self-test\n',
     )
     check("CC: main() 実プロセス実行（違反なし）は exit 0（#686 本番経路の実測）", rc_main_clean == 0)
 

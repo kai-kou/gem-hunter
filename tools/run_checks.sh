@@ -1016,6 +1016,16 @@ else
   skip_check "配線検査共通ヘルパー self-test (wiring_marker.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# Python の COMMENT / STRING 抽出（tokenize）の共有ヘルパー self-test（Issue #1007）。
+# wiring_marker.py（fail-open）・check_module_contract_drift.py（fail-closed）が共有する
+# tokenize 呼び出しの唯一の実装。ネットワーク・実データ非依存で数秒以内に完走する
+# （ts_source.py / md_fence.py / wiring_marker.py と同型の配線）。
+if [ -f "$REPO_ROOT/tools/py_source.py" ]; then
+  run_check "Python 字句解析ヘルパー self-test (py_source.py --self-test)" python3 tools/py_source.py --self-test
+else
+  skip_check "Python 字句解析ヘルパー self-test (py_source.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # --- サマリー表 ---
 echo ""
 echo "===================== run_checks サマリー ====================="
