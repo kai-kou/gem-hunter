@@ -66,6 +66,7 @@
 | SSR (`generateMetadata`) | サーバー側で確定した値（例: タイトル） | クライアント側の hydration 後処理（`SetDocumentTitle` 等）が SSR の値を上書きする経路 | `SP-10`: `generateMetadata` で設定したタイトルをクライアント側処理が hydration 後に上書き |
 | `check_architecture_boundaries.py` | import 方向のみ | 「正本を自称する表」（`application-architecture.md` §2 ポート一覧・`domain-model.md` §2.1 等）に実装側の要素（新規ポート・新規ドメイン語）が追記されているか | `SP-19`: `GemIndexPort.search()` 追加漏れ・`GemPoolEntry` 等の新規ドメイン語が `domain-model.md` に未反映のまま `npm run check` 全 PASS（#450 に機械検査の起票あり） |
 | 単体テスト（`cloudflareColo()`） | `getCloudflareContext()` を丸ごとモックした戻り値 | `cf` オブジェクトの実際の形状変更（`cf.colo` の欠落・型変更）。`X-Cache-Colo` が本番で静かに欠落しうる。E2E 追加は未実施（Issue #875・別 Issue へ切り出し方針） | ADR 0016 §6.2: `cf-ray` を着信リクエストから取れると誤って実装していたが、単体テストは自分で組み立てた `cf-ray` 値を渡していたため緑のままこの欠陥を通しており、実機に投げるまで検出できなかった |
+| `tools/check_css_variable_cycles.py` | CSS カスタムプロパティの宣言グラフ（直接自己参照・循環参照） | **未定義参照**（`var(--x)` の `--x` がどこにも定義されていない typo）。`next/font` が実行時注入する変数（`--font-geist-sans` 等）と区別できず allowlist の出所を確定できないため意図的にスコープ外（#1012） | #858: `--font-sans: var(--font-sans);` が Tailwind v4 に無効値として黙って捨てられ、アプリ全体が UA 既定フォントで描画されていた（エラーが出ないため目視でも CI でも検出できなかった） |
 
 > **運用**: 新しいスプリントで検査層のすり抜けに気づいたら、この表に 1 行追記する（レトロスペクティブの Try Issue 化とは別に、カタログ自体を更新する）。
 
