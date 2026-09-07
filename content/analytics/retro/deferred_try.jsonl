@@ -443,3 +443,10 @@
 {"date": "2026-09-07 JST", "title": "testing-strategy.md に「vi.mock で自作モジュールを差し替えない」の具体例と DI 置換パターンを載せる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "変異テストで生存した変異の追跡リストをテンプレート化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "run_checks.sh の E2E と Lighthouse を並列実行する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 851}
+{"date": "2026-09-07 JST", "title": "並行委譲の開始前後を mutation_guard.sh で自動保護し、Stop フックの WIP 自動コミットが中間状態を取り込むのを構造的に止める", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-07 JST", "title": "新規作成した .ts / .tsx の prettier 未整形を PR 作成前に検知する（run_checks の Format 段まで判明しない）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 1026}
+{"date": "2026-09-07 JST", "title": "check_ui_dimensions.py の未登録呼び出しサイト検知を Warning から fail-closed へ格上げする", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 843}
+{"date": "2026-09-07 JST", "title": "run_checks.sh の exit 4（ロック競合）時に前プロセスの経過時間・待機目安を出力する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 851}
+{"date": "2026-09-07 JST", "title": "ADR 0005 の ETag 実測結果に「絶対的証明ではなく複数サンプルでの傾向確認」という信頼度レベルを明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "e2e/header-control-tier.spec.ts に隣接コントロール同士の bounding box 距離アサーションを足す", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "GitHub REST の応答ヘッダ観測ユースケース（ETag / x-ratelimit-*）への対応方針を ADR 化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
