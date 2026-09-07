@@ -59,8 +59,12 @@ Stop hook 配線）の責務で、本スクリプトは読み取り専用の検�
 （self-test が `triage_notification` を実際に import して固定する）。
 
 【トークンと最小権限】
-`CLOUDFLARE_BILLING_API_TOKEN`（`Account -> Billing -> Read` だけを持つ専用トークン）があれば
-それを使い、無ければ従来の `CLOUDFLARE_API_TOKEN`（デプロイ権限を持つ）へフォールバックする。
+既定は既存の `CLOUDFLARE_API_TOKEN`（デプロイ権限を持つ）に `Account -> Billing -> Read` を
+追加する運用（飼い主決定・Issue #1068）。トークンが増えると運用者（人間）が管理対象を失念する
+リスクが、専用トークンによる最小権限の利得を上回ると判断したため、専用トークンの新規発行は
+必須ではない任意の分離オプションという位置づけにとどめる。実装は `CLOUDFLARE_BILLING_API_TOKEN`
+（`Account -> Billing -> Read` だけを持つ専用トークン）があればそれを優先し、無ければ
+`CLOUDFLARE_API_TOKEN` へフォールバックする（`resolve_token()` の挙動は変更していない）。
 リダイレクト応答で `Authorization` ヘッダが別ホストへ再送されるのを防ぐため、既定 opener は
 **リダイレクトを追跡しない**（`_NoRedirectHandler`）。
 
