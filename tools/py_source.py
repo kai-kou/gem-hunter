@@ -5,7 +5,7 @@
 ## なぜ必要か
 
 `tokenize` で Python の COMMENT / STRING トークンを抜き出す処理が、次の 3 ファイルに
-**独立に実装** されていた（`tools/ts_source.py` / `tools/md_fence.py`（#612 / PR #772）が
+**独立に実装** されていた（`tools/ts_source.py`（#612 / PR #619）・`tools/md_fence.py`（PR #772）が
 「同じ字句解析を各ツールが独自実装した結果、同じ欠陥が複数箇所に生まれた」として共有化した
 前例と正面から矛盾していた）:
 

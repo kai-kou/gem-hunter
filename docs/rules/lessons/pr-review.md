@@ -635,7 +635,8 @@ git fetch origin <branch> -q && git rev-parse FETCH_HEAD   # リモート head �
 
 | 回 | Issue | 集約したもの | 残った重複 |
 |---|---|---|---|
-| 1 | #612 / PR #772 | JS/TS の字句解析 → `ts_source.py` / Markdown フェンス → `md_fence.py` | — |
+| 1 | #612 / PR #619 | JS/TS の字句解析 → `ts_source.py` | — |
+| （参考） | #395 / #478 / #281 / PR #772 | Markdown フェンス判定 → `md_fence.py`（#612 とは別件の Try 消化。同型の集約という点だけが共通） | — |
 | 2 | #1007 / PR #1064 | Python の `tokenize.generate_tokens` → `py_source.py` | `check_tool_wiring.py` の `python_statements()` が独自呼び出しを保持（Layer 1 が検出） |
 | 3 | 同上（同じ PR 内） | 上記を委譲して解消 | **f-string トークン種別の判定**（`_STRING_TOKEN_TYPES`）が `check_tool_wiring.py` に残存 → #1065 として切り出し |
 
