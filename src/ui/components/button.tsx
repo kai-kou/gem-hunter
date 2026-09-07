@@ -27,19 +27,28 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        // 🔴 `h-*`（固定高さ）ではなく `min-h-*`（最小高さ）にする（Issue #831）: 通常の
-        // 1 行ラベルでは自然な内容高さがトークン値を下回るため見た目は従来と同一になるが、
-        // 呼び出し側が `whitespace-normal` でラベルの折り返しを許容した場合（例:
-        // `gem-list-link.tsx`）に、折り返した 2 行目が固定高さで垂直方向にクリップされず
-        // ボックスが自然に伸びる。`h-*` のままだと `size` variant を経由しない限り高さを
-        // 変えられない（`ui-ux-guidelines.md` の呼び出し側 `h-*` 直書き禁止）ため、
+        // 🔴 `default` のみ `h-*`（固定高さ）ではなく `min-h-*`（最小高さ）にする（Issue #831）:
+        // 通常の 1 行ラベルでは自然な内容高さがトークン値を下回るため見た目は従来と同一になるが、
+        // 呼び出し側が `whitespace-normal` でラベルの折り返しを許容した場合（`GemListLink` が
+        // `size: 'default'` で使う唯一の呼び出し元）に、折り返した 2 行目が固定高さで垂直方向に
+        // クリップされずボックスが自然に伸びる。`h-*` のままだと `size` variant を経由しない限り
+        // 高さを変えられない（`ui-ux-guidelines.md` の呼び出し側 `h-*` 直書き禁止）ため、
         // 折り返しを許容するコントロールの受け皿がここにしかない。
+        //
+        // 🔴 **`xs` / `sm` / `lg` / `xl` は `h-*`（固定高さ）のまま維持する**（Layer 1 セルフレビュー
+        // 指摘・PR #1074・#831 のスコープは `GemListLink`＝`default` のみ）。`min-h-*` へ広げると、
+        // 単一行ラベルの通常ボタンでも `align-items` 未指定（既定 `stretch`）の flex 行に置かれた
+        // ときに、兄弟要素の高さに合わせて意図せず伸びてしまう（`min-height` は伸長を許すが
+        // 固定 `height` は許さないため）。実測（`error-notice.tsx` の `size="lg"` ログイン導線が
+        // `size="xl"` の再試行導線と同じ `flex flex-wrap gap-3` 行に並ぶケース）: `h-*` なら
+        // 40px（設計どおり）、`min-h-*` に広げると 44px へ意図せず伸び、xl（主導線）と lg（副導線）
+        // の視覚的階層が消える。`search-form.tsx`（`xl` 単独）は影響なし（44px のまま）。
         default:
           'min-h-(--size-control-md) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
-        xs: "min-h-(--size-control-xs) gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "min-h-(--size-control-sm) gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: 'min-h-(--size-control-lg) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
-        xl: 'min-h-(--size-control-xl) gap-2 px-4 text-base has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3',
+        xs: "h-(--size-control-xs) gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-(--size-control-sm) gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: 'h-(--size-control-lg) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
+        xl: 'h-(--size-control-xl) gap-2 px-4 text-base has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3',
         icon: 'size-(--size-control-md)',
         'icon-xs':
           "size-(--size-control-xs) rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",

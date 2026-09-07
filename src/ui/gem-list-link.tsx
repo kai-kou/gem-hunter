@@ -33,6 +33,12 @@ import { buttonVariants } from './components/button'
  * `size` variant は固定高さでなく最小高さ（`min-h-*`）にしてある（同 Issue）。
  * `buttonVariants()` の戻り値は cva の内部 `clsx` 連結でしかなく重複クラスを解決しないため、
  * `cn()`（`twMerge`）を通して `whitespace-nowrap` を確実に上書きする。
+ *
+ * 🔴 `w-full` は `sm:`（640px）未満だけに限定する（Layer 1 セルフレビュー指摘・PR #1074）。
+ * 無条件の `w-full` は `<main>`（`max-w-3xl` = 768px）まで導線を強制的に全幅化し、広い
+ * viewport ではコンパクトな ghost リンクだったものが横長バーになる視覚回帰を起こす。
+ * 320px での折り返し・はみ出し対策が要るのは狭い viewport だけなので、`sm:w-auto` で
+ * 元の shrink-to-fit（コンテンツ幅）へ戻す。
  */
 export function GemListLink({ href, label }: { href: string; label: string }) {
   return (
@@ -40,7 +46,7 @@ export function GemListLink({ href, label }: { href: string; label: string }) {
       href={href}
       className={cn(
         buttonVariants({ variant: 'ghost', size: 'default' }),
-        'w-full gap-1.5 whitespace-normal',
+        'w-full gap-1.5 whitespace-normal sm:w-auto',
       )}
     >
       <Gem aria-hidden="true" className="size-4 shrink-0" />

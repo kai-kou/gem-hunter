@@ -20,6 +20,10 @@ JSDoc に書く」と定めるが、これを検査する機械的な手段が�
      ことになる fail-open が実測された（primitive 引数を取るメソッドは何らかの `@param` を
      書くのが自然なため、この一致条件があるだけで item2 は事実上ほぼ常に PASS していた）。
      `@param` 単体は不採用にし、値域を表す具体キーワードの有無で判定する。
+     🔴 **PR #1074 是正**: 上記の「本文行」は JSDoc **全文**ではなく、対象引数に対応する
+     `@param <name>` の説明範囲（またはタグを使わない本文＝preamble）に限定する。旧実装は
+     JSDoc 全文への部分一致だったため、`@returns` や `@throws`、無関係な別の `@param` の
+     説明に値域っぽい語が出現しただけで item2 が PASS する fail-open が実測された。
   3. **JSDoc が存在すれば常に**、JSDoc に異常時の振る舞いの記述がある（`@throws`、
      「フォールバック」「例外」「fail-open」のいずれかを含む本文行、「例外を投げ」
      「例外を送出」「エラーを投げ」「エラーを送出」のいずれかのフレーズ、または
@@ -133,6 +137,7 @@ class MethodInfo:
     line: int  # 1-indexed（メソッドシグネチャ開始行）
     jsdoc_text: str | None  # None なら JSDoc なし
     has_primitive_param: bool
+    primitive_param_names: tuple[str, ...]  # item2 の @param 名対応付けに使う（PR #1074 是正）
     suppressed: bool  # contract-ok マーカーの有無
 
 
@@ -222,8 +227,42 @@ def _param_types(param_list_text: str) -> list[str]:
     return types
 
 
+_SIMPLE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
+
+
+def _param_names_and_types(param_list_text: str) -> list[tuple[str, str]]:
+    """パラメータリストの生テキストから `(パラメータ名, 型注釈)` のペア一覧を返す。
+
+    🔴 **PR #1074 是正（item2 の @param 名対応付けに使う）**: `_param_types` は型だけを返すため
+    「値域キーワードがどの @param に対応するか」を判定できない。分割代入パターン
+    （`{ headers }: T`）のように単純な識別子でない名前は空文字列にする（呼び出し側は
+    名前が空のものをどの `@param` とも対応させない＝安全側）。
+    """
+    pairs: list[tuple[str, str]] = []
+    for raw_param in _split_top_level(param_list_text):
+        no_default = _split_top_level(raw_param, sep="=")[0] if "=" in raw_param else raw_param
+        no_default = no_default.strip()
+        if ":" not in no_default:
+            name_candidate = no_default.rstrip("?").strip()
+            name = name_candidate if _SIMPLE_IDENTIFIER_RE.match(name_candidate) else ""
+            pairs.append((name, ""))
+            continue
+        name_part, _, type_text = no_default.partition(":")
+        name_candidate = name_part.strip().rstrip("?").strip()
+        name = name_candidate if _SIMPLE_IDENTIFIER_RE.match(name_candidate) else ""
+        pairs.append((name, type_text.strip()))
+    return pairs
+
+
+def _primitive_param_names(param_list_text: str) -> tuple[str, ...]:
+    """primitive 型を持つパラメータの名前一覧を返す（名前が単純識別子でないものは含まない）。"""
+    return tuple(
+        name for name, t in _param_names_and_types(param_list_text) if name and t in PRIMITIVE_TYPES
+    )
+
+
 def _has_primitive_param(param_list_text: str) -> bool:
-    return any(t in PRIMITIVE_TYPES for t in _param_types(param_list_text))
+    return bool(_primitive_param_names(param_list_text))
 
 
 def _has_any_param(param_list_text: str) -> bool:
@@ -264,8 +303,59 @@ def _find_jsdoc(raw_lines: list[str], method_line: int, body_start_line: int) ->
     return "\n".join(raw_lines[start_line - 1 : end_line])
 
 
-def _contains_item2_keyword(jsdoc_text: str) -> bool:
-    return any(kw in jsdoc_text for kw in ITEM2_KEYWORDS)
+# item2 を「対象引数に対応する @param の説明範囲」に限定するためのタグ分割（PR #1074 是正）。
+# 🔴 **CRITICAL 是正の背景**: 旧実装は `kw in jsdoc_text` で JSDoc **全文**（`@returns` /
+# `@throws` / 無関係な別の `@param` の説明を含む）を対象にしていたため、値域キーワードが
+# 対象引数の説明とは無関係な箇所に出現しただけで item2 が PASS する fail-open があった
+# （実測: `@returns` に「有効な範囲の…」とだけ書かれた `FooPort.foo` が誤って PASS した）。
+_JSDOC_TAG_RE = re.compile(r"@(\w+)")
+_JSDOC_PARAM_NAME_RE = re.compile(r"@param\s*(?:\{[^}]*\}\s*)?(\[?[A-Za-z_$][\w$]*\]?)")
+
+
+def _jsdoc_sections(jsdoc_text: str) -> tuple[str, list[tuple[str, str]]]:
+    """JSDoc 本文を `(preamble, [(タグ名, セクション本文), ...])` に分割する。
+
+    `@` タグが 1 つも無ければ `(jsdoc_text 全体, [])` を返す（`@param` を使わず本文に
+    値域を書くスタイル・既存 self-test ケース 34/35 を引き続き通すための経路）。
+    各タグのセクション本文は、そのタグの開始位置から次の `@タグ` の直前まで（末尾のタグは
+    JSDoc 終端まで）。継続行（インデントされた次行）は自然にこのセクションへ含まれる。
+    """
+    tag_matches = list(_JSDOC_TAG_RE.finditer(jsdoc_text))
+    if not tag_matches:
+        return jsdoc_text, []
+    preamble = jsdoc_text[: tag_matches[0].start()]
+    sections: list[tuple[str, str]] = []
+    for idx, tm in enumerate(tag_matches):
+        start = tm.start()
+        end = tag_matches[idx + 1].start() if idx + 1 < len(tag_matches) else len(jsdoc_text)
+        sections.append((tm.group(1), jsdoc_text[start:end]))
+    return preamble, sections
+
+
+def _contains_item2_keyword(jsdoc_text: str, primitive_param_names: tuple[str, ...]) -> bool:
+    """item2（値域の記述）を、対象引数に対応する `@param` の説明範囲に限定して判定する。
+
+    判定対象:
+      - `@` タグの外側にある本文（preamble。`@param` を使わないスタイルの経路）。
+      - `primitive_param_names` のいずれかと名前が一致する `@param` セクションの本文。
+    `@returns` / `@throws` / 名前が一致しない別の `@param` のセクションは対象外
+    （PR #1074 是正・fail-open の再発防止）。
+    """
+    preamble, sections = _jsdoc_sections(jsdoc_text)
+    if any(kw in preamble for kw in ITEM2_KEYWORDS):
+        return True
+    for tag_name, section_text in sections:
+        if tag_name != "param":
+            continue
+        name_m = _JSDOC_PARAM_NAME_RE.match(section_text)
+        if not name_m:
+            continue
+        raw_name = name_m.group(1).strip("[]")
+        if raw_name not in primitive_param_names:
+            continue
+        if any(kw in section_text for kw in ITEM2_KEYWORDS):
+            return True
+    return False
 
 
 def _contains_item3_keyword(jsdoc_text: str) -> bool:
@@ -363,6 +453,7 @@ def extract_methods(source: str) -> list[MethodInfo]:
                             "end_line": end_line,
                             "jsdoc_text": jsdoc_text,
                             "has_primitive_param": _has_primitive_param(param_list_text),
+                            "primitive_param_names": _primitive_param_names(param_list_text),
                             "sig_raw": sig_raw,
                         }
                     )
@@ -403,6 +494,7 @@ def extract_methods(source: str) -> list[MethodInfo]:
                 line=start_line,
                 jsdoc_text=jsdoc_text,
                 has_primitive_param=e["has_primitive_param"],
+                primitive_param_names=e["primitive_param_names"],
                 suppressed=suppressed,
             )
         )
@@ -419,7 +511,9 @@ def check_methods(methods: list[MethodInfo]) -> list[str]:
             continue
         if meth.suppressed:
             continue
-        if meth.has_primitive_param and not _contains_item2_keyword(meth.jsdoc_text):
+        if meth.has_primitive_param and not _contains_item2_keyword(
+            meth.jsdoc_text, meth.primitive_param_names
+        ):
             violations.append(
                 f"{meth.line}: {label}: primitive 型引数を取るが値域の記述が JSDoc に無い"
                 "（item 2・『値域』『正の有限数』『空でない』等のキーワードが本文に必要。"
@@ -1146,6 +1240,82 @@ export interface EchoPort {
     check_violations(
         "35. #1071: @paramタグ無しでも本文キーワードがあれば違反0（統合維持）",
         src_no_param_tag_but_keyword,
+        0,
+    )
+
+    # --- 36〜39. PR #1074 Layer 1 セルフレビュー是正（CRITICAL・fail-open）:
+    #     item2 を JSDoc 全文への部分一致にすると、値域キーワードが対象引数の説明と無関係な
+    #     箇所（@returns・@throws・別の @param）に出現しただけで PASS してしまう。
+
+    # 36. 実測された fail-open の再現そのもの: @returns にのみ値域っぽい語がある。
+    src_item2_leak_via_returns = """
+export interface FooPort {
+  /**
+   * @param value 何かの値。
+   * @returns 有効な範囲のキャッシュTTLに基づいて処理する（valueとは無関係）。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  foo(value: string): Promise<string>
+}
+"""
+    check_violations(
+        "36. #1074: @returnsのみに値域キーワード→item2は満たさない(item2違反1件)",
+        src_item2_leak_via_returns,
+        1,
+    )
+
+    # 37. バリアント: @throws にのみ値域っぽい語がある。
+    src_item2_leak_via_throws = """
+export interface FooBarPort {
+  /**
+   * @param value 何かの値。
+   * @throws {RangeError} 有効な範囲外の値を渡すと例外を送出する。
+   */
+  foo(value: string): Promise<string>
+}
+"""
+    check_violations(
+        "37. #1074バリアント: @throwsのみに値域キーワード→item2は満たさない(item2違反1件)",
+        src_item2_leak_via_throws,
+        1,
+    )
+
+    # 38. バリアント: 無関係な別の @param（実引数に存在しない名前）にのみ値域っぽい語がある。
+    src_item2_leak_via_unrelated_param = """
+export interface BazPort {
+  /**
+   * @param value 何かの値。
+   * @param label 空でないラベル文字列（実際には存在しないパラメータ）。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  baz(value: string): Promise<string>
+}
+"""
+    check_violations(
+        "38. #1074バリアント: 無関係な別の@paramのみに値域キーワード→item2は満たさない"
+        "(item2違反1件)",
+        src_item2_leak_via_unrelated_param,
+        1,
+    )
+
+    # 39. 陽性対照: 複数 primitive 引数のうち、対応する @param 自身に値域キーワードがあれば
+    #     正しく item2 を満たす（厳格化のしすぎで正当な記述まで弾いていないことの確認）。
+    src_item2_correct_param_among_many = """
+export interface QuxPort {
+  /**
+   * @param value 空でない文字列。
+   * @param label 何かのラベル。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  qux(value: string, label: string): Promise<void>
+}
+"""
+    check_violations(
+        "39. #1074陽性対照: 複数paramのうち対応する@param自身に値域キーワード→違反0",
+        src_item2_correct_param_among_many,
         0,
     )
 

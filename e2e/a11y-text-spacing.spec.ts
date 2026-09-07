@@ -200,6 +200,14 @@ test.describe('WCAG 2.2 SC 1.4.12 Text Spacing', () => {
    * `document.scrollingElement` 全体を見る `expectNoHorizontalScroll` は非決定的な再現に
    * 頼っていたため、ここでは **当該要素そのもの**の `getBoundingClientRect().right` を直接測る。
    * これにより、フルスイート実行という間接的な条件を経由せず、単体実行でも決定的に検証できる。
+   *
+   * 🔴 水平方向（`right`）だけでなく垂直方向のクリップも検証する（Layer 1 セルフレビュー指摘・
+   * PR #1074）: 本テストはこれまで `right <= viewportWidth` しか見ておらず、`button.tsx` の
+   * `size` variant が `min-h-*`（Issue #831）ではなく固定高さ `h-*` へ退行してラベルの
+   * 2 行目がクリップされても、`right` の判定も `toBeVisible()` も通り抜けてしまう
+   * （クリップされても要素自体は「表示」されている）。ラベル `<span>` の `scrollHeight`
+   * （折り返し後の実コンテンツ高さ）が `clientHeight`（見えている高さ）を超えていないことを
+   * 直接測り、垂直クリップを検知する。
    */
   test('「この検索語の Gem 候補を一覧で見る」導線は Text Spacing 上書き後も画面幅からはみ出さない', async ({
     page,
@@ -224,6 +232,29 @@ test.describe('WCAG 2.2 SC 1.4.12 Text Spacing', () => {
     ).toBeLessThanOrEqual(box.viewportWidth + 1)
 
     await expectNoHorizontalScroll(page, '検索結果一覧（導線のみ再検証・Text Spacing 上書き後）')
+
+    // 導線コンテナ（`<a>`）自身の高さが、折り返したラベルの実コンテンツ高さを下回っていないかを
+    // 直接測る。`button.tsx` の `size` variant が `min-h-*` から固定高さ `h-*` へ退行すると、
+    // ラベルは折り返して 2 行分の高さを必要とするのに導線コンテナは 1 行分の固定高さのまま
+    // 変わらない（`overflow: visible` のため `toBeVisible()` は通り、`scrollHeight` /
+    // `clientHeight` の差にも現れない＝クリップの一般的な検出方法が効かない）。実測
+    // （`min-h-*` = 44px ≥ ラベル 42px / `h-*` に退行させると 32px < ラベル 42px）で
+    // 両者を明確に判別できることを確認済み。
+    const heights = await gemListLink.evaluate((el) => {
+      const label = el.querySelector('span')
+      return {
+        linkHeight: el.getBoundingClientRect().height,
+        labelHeight: label ? label.getBoundingClientRect().height : null,
+      }
+    })
+    expect(
+      heights.labelHeight,
+      'この検索語の Gem 候補を一覧で見る: ラベル <span> が見つからない',
+    ).not.toBeNull()
+    expect(
+      heights.linkHeight,
+      `この検索語の Gem 候補を一覧で見る: 導線コンテナの高さ（${heights.linkHeight}px）がラベルの実コンテンツ高さ（${heights.labelHeight}px）を下回っている（折り返した 2 行目が垂直方向に収まっていない）`,
+    ).toBeGreaterThanOrEqual((heights.labelHeight as number) - 1)
   })
 
   test('README（表・コードブロックを含む長文コンテンツ）に Text Spacing 上書きを適用しても横スクロールが発生せず、見出し・本文が見え続ける', async ({
