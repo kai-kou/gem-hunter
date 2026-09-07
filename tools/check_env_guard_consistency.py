@@ -51,6 +51,42 @@ DENY_ENV_PATTERN = re.compile(r"^(?:Read|Write|Edit)\((?:\*\*/)?(\.env[^)]*)\)$"
 ENV_MENTION_PATTERN = re.compile(r"\.env")
 
 
+# `hook_env_guard_verdict` の期待値表（Issue #1031）。
+# self-test の入力バリアント検証と、変異テストの「壊すと落ちる」判定の両方から使う。
+# True = ブロック対象 / False = 対象外。
+VERDICT_EXPECTATIONS: list[tuple[str, bool]] = [
+    # 本物の .env（大文字小文字のバリアント込み・#1031-2）
+    (".env", True),
+    (".env.local", True),
+    (".env.stg", True),
+    (".env.qa", True),
+    ("path/to/.env", True),
+    ("./.env", True),
+    (".ENV", True),
+    (".Env.Local", True),
+    (".eNv.PRODUCTION", True),
+    ("path/to/.ENV", True),
+    # ひな形を騙る名前（旧 `.env.example.*` ワイルドカードの穴・#1031-1）
+    (".env.example.secret", True),
+    (".env.example.prod-actual", True),
+    (".ENV.EXAMPLE.SECRET", True),
+    (".env.example.j", True),
+    (".env.example.jpn", True),
+    (".env.example.ja.local", True),
+    # ひな形（固定 4 種 + 2 文字ロケール変種のみ）
+    (".env.example", False),
+    (".env.sample", False),
+    (".env.template", False),
+    (".env.dist", False),
+    (".env.example.ja", False),
+    (".ENV.EXAMPLE", False),
+    # 境界の外側（`.env` で始まるが本物の env ファイルではない名前・#750）
+    (".environment", False),
+    (".env-notes.md", False),
+    ("environment.ts", False),
+]
+
+
 def default_bash_runner(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=10)
 
@@ -89,6 +125,16 @@ def template_names(lib_path: Path, runner=default_bash_runner) -> list[str] | No
         return None
     names = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
     return names or None
+
+
+def verdict_mismatches(lib_path: Path, runner=default_bash_runner) -> list[str]:
+    """VERDICT_EXPECTATIONS を lib_path に対して実行し、期待と異なるものを返す。"""
+    mismatches: list[str] = []
+    for path, expect_block in VERDICT_EXPECTATIONS:
+        got = hook_verdict(path, lib_path, runner=runner)
+        if got is not expect_block:
+            mismatches.append(f"'{path}': got={got} want={expect_block}")
+    return mismatches
 
 
 def load_deny_names(settings_path: Path) -> tuple[list[str], list[str]] | None:
@@ -311,19 +357,13 @@ def self_test() -> int:
     #     共有ライブラリをそれだけ「ブロックしない」よう変異させた一時コピーで検証する。
     if LIB_PATH.is_file() and ".env.production" in real_deny:
         original4b = LIB_PATH.read_text(encoding="utf-8")
-        target4b = (
-            ".env.example|.env.sample|.env.template|.env.dist|.env.example.*) return 1 ;;\n"
-            "    .env|.env.*) return 0 ;;"
-        )
+        target4b = "    .env|.env.*) return 0 ;;"
         if target4b not in original4b:
             failures.append("変異テスト4bの事前条件不成立: 置換対象の文字列が源文に見つからない")
         else:
             mutated4b = original4b.replace(
                 target4b,
-                target4b.replace(
-                    "    .env|.env.*) return 0 ;;",
-                    "    .env.production) return 1 ;;\n    .env|.env.*) return 0 ;;",
-                ),
+                "    .env.production) return 1 ;;\n    .env|.env.*) return 0 ;;",
             )
             if mutated4b == original4b:
                 failures.append("変異テスト4bの事後条件不成立: 置換しても内容が変わらなかった")
@@ -350,18 +390,13 @@ def self_test() -> int:
     else:
         failures.append("変異テスト4bの前提不成立: LIB_PATH 不在、または実データに .env.production が無い")
 
-    # --- 5) 入力バリアントの展開 ---
-    for pattern, expect_block in [
-        (".env.*.local", True),
-        (".env.stg", True),
-        (".env.qa", True),
-        ("path/to/.env", True),
-        ("./.env", True),
-        (".env.example.ja", False),
-    ]:
-        v = hook_verdict(instantiate(pattern), LIB_PATH, runner=recording_runner)
-        if v is not expect_block:
-            failures.append(f"入力バリアント '{pattern}' の判定が期待と異なる: got={v} want={expect_block}")
+    # --- 5) 入力バリアントの展開（期待値表 VERDICT_EXPECTATIONS が SSOT・#1031） ---
+    for mismatch in verdict_mismatches(LIB_PATH, runner=recording_runner):
+        failures.append(f"入力バリアントの判定が期待と異なる: {mismatch}")
+    # glob を含む deny パターン由来の具体化パスも 1 件は通す（instantiate() の経路確認）
+    v_glob = hook_verdict(instantiate(".env.*.local"), LIB_PATH, runner=recording_runner)
+    if v_glob is not True:
+        failures.append(f"deny の glob パターン '.env.*.local' の具体化が block にならない: got={v_glob}")
 
     # --- 6) 正当なドキュメント編集を誤ってブロックしないこと（#495 系の負ケース） ---
     for doc_path in ["docs/rules/env-vars.md", "README.md", "src/infrastructure/github/oauth.ts"]:
@@ -376,14 +411,14 @@ def self_test() -> int:
     #     Stop フックの WIP 自動コミットが本番の .env ガードを壊れた状態のまま拾う事故を防ぐ）。
     if LIB_PATH.is_file():
         original = LIB_PATH.read_text(encoding="utf-8")
-        target = ".env.example|.env.sample|.env.template|.env.dist|.env.example.*) return 1 ;;"
+        target = "    .env.example|.env.sample|.env.template|.env.dist) return 1 ;;"
         # 事前条件: 置換対象の文字列が源文に存在するか
         if target not in original:
             failures.append("変異テスト7の事前条件不成立: 置換対象の文字列が源文に見つからない")
         else:
             mutated = original.replace(
                 target,
-                ".env.example|.env.sample|.env.template|.env.dist|.env.example.*) return 0 ;;",
+                "    .env.example|.env.sample|.env.template|.env.dist) return 0 ;;",
             )
             # 事後条件: 置換で内容が変わったか
             if mutated == original:
@@ -444,14 +479,14 @@ def self_test() -> int:
     #        出たときに検出できるか（検査対象自身から ground truth を取る自己言及の解消） ---
     if LIB_PATH.is_file():
         original9 = LIB_PATH.read_text(encoding="utf-8")
-        verdict_target9 = ".env.example|.env.sample|.env.template|.env.dist|.env.example.*) return 1 ;;"
+        verdict_target9 = "    .env.example|.env.sample|.env.template|.env.dist) return 1 ;;"
         tmpl_target9 = ".env.example\n.env.sample\n.env.template\n.env.dist\nEOF"
         if verdict_target9 not in original9 or tmpl_target9 not in original9:
             failures.append("変異テスト9の事前条件不成立: 置換対象の文字列が源文に見つからない")
         else:
             mutated9 = original9.replace(
                 verdict_target9,
-                ".env.example|.env.sample|.env.template|.env.dist|.env.example.*|.env.internal) return 1 ;;",
+                "    .env.example|.env.sample|.env.template|.env.dist|.env.internal) return 1 ;;",
             ).replace(
                 tmpl_target9,
                 ".env.example\n.env.sample\n.env.template\n.env.dist\n.env.internal\nEOF",
@@ -541,6 +576,85 @@ def self_test() -> int:
                 f"main() 経由でひな形名を deny に渡しても exit code が 1 にならなかった: "
                 f"code={proc13.returncode} stdout={proc13.stdout!r} stderr={proc13.stderr!r}"
             )
+
+    # --- 14) 変異テスト（#1031-2）: 小文字正規化を外すと期待値表が FAIL することを実測 ---
+    if LIB_PATH.is_file():
+        original14 = LIB_PATH.read_text(encoding="utf-8")
+        target14 = """  _heg_base=$(printf '%s' "$_heg_base" | tr '[:upper:]' '[:lower:]')\n"""
+        if target14 not in original14:
+            failures.append("変異テスト14の事前条件不成立: 小文字正規化の行が源文に見つからない")
+        else:
+            mutated14 = original14.replace(target14, "")
+            if mutated14 == original14:
+                failures.append("変異テスト14の事後条件不成立: 置換しても内容が変わらなかった")
+            else:
+                with tempfile.TemporaryDirectory() as td14:
+                    mutated_lib14 = Path(td14) / "env_allowlist.sh"
+                    mutated_lib14.write_text(mutated14, encoding="utf-8")
+                    v14 = hook_verdict(".ENV", mutated_lib14, runner=recording_runner)
+                    mism14 = verdict_mismatches(mutated_lib14, runner=recording_runner)
+                    if v14 is not False:
+                        failures.append(f"変異テスト14の前提不成立: 変異版でも '.ENV' がブロックされた（verdict={v14}）")
+                    elif not any("'.ENV'" in m for m in mism14):
+                        failures.append(f"小文字正規化を外しても期待値表が検出しなかった: {mism14}")
+    else:
+        failures.append("変異テスト14の対象 env_allowlist.sh が見つからない")
+
+    # --- 15) 変異テスト（#1031-1）: ひな形の限定パターンを旧ワイルドカードへ戻すと FAIL するか ---
+    if LIB_PATH.is_file():
+        original15 = LIB_PATH.read_text(encoding="utf-8")
+        target15 = "    .env.example.[a-z][a-z]) return 1 ;;"
+        if target15 not in original15:
+            failures.append("変異テスト15の事前条件不成立: ロケール限定パターンが源文に見つからない")
+        else:
+            mutated15 = original15.replace(target15, "    .env.example.*) return 1 ;;")
+            if mutated15 == original15:
+                failures.append("変異テスト15の事後条件不成立: 置換しても内容が変わらなかった")
+            else:
+                with tempfile.TemporaryDirectory() as td15:
+                    mutated_lib15 = Path(td15) / "env_allowlist.sh"
+                    mutated_lib15.write_text(mutated15, encoding="utf-8")
+                    v15 = hook_verdict(".env.example.secret", mutated_lib15, runner=recording_runner)
+                    mism15 = verdict_mismatches(mutated_lib15, runner=recording_runner)
+                    if v15 is not False:
+                        failures.append(
+                            f"変異テスト15の前提不成立: 旧ワイルドカードでも '.env.example.secret' がブロックされた（verdict={v15}）"
+                        )
+                    elif not any(".env.example.secret" in m for m in mism15):
+                        failures.append(f"ひな形ワイルドカードへの退行を期待値表が検出しなかった: {mism15}")
+    else:
+        failures.append("変異テスト15の対象 env_allowlist.sh が見つからない")
+
+    # --- 16) 負ケース: ひな形定義を「片方だけ」更新した状態（要素間の関係が不正・#896 相当）---
+    #     hook_env_guard_template_names にだけ `.env.internal` を足し、verdict 側は
+    #     従来どおりブロックしたままにする（両方更新する 9) とは別の分岐を突く）。
+    if LIB_PATH.is_file():
+        original16 = LIB_PATH.read_text(encoding="utf-8")
+        tmpl_target16 = ".env.example\n.env.sample\n.env.template\n.env.dist\nEOF"
+        if tmpl_target16 not in original16:
+            failures.append("負ケース16の事前条件不成立: ひな形一覧が源文に見つからない")
+        else:
+            mutated16 = original16.replace(
+                tmpl_target16,
+                ".env.example\n.env.sample\n.env.template\n.env.dist\n.env.internal\nEOF",
+            )
+            if mutated16 == original16:
+                failures.append("負ケース16の事後条件不成立: 置換しても内容が変わらなかった")
+            else:
+                with tempfile.TemporaryDirectory() as td16:
+                    mutated_lib16 = Path(td16) / "env_allowlist.sh"
+                    mutated_lib16.write_text(mutated16, encoding="utf-8")
+                    code16, viol16 = check_consistency(
+                        real_deny or [".env"], mutated_lib16, runner=recording_runner
+                    )
+                    if code16 != 1:
+                        failures.append(f"ひな形一覧の片側更新が違反として検出されなかった: code={code16}")
+                    elif not any(".env.internal" in v and "ブロック対象になっている" in v for v in viol16):
+                        failures.append(
+                            f"片側更新（一覧だけ追加・verdict は未追随）の矛盾が violations に出ていない: {viol16}"
+                        )
+    else:
+        failures.append("負ケース16の対象 env_allowlist.sh が見つからない")
 
     # 指摘1の最終確認: ここまでの全シナリオを通じて本番の共有フック実体が
     # 一切変更されていないことを実測する（一時ファイル化が漏れなく効いていることの保証）。

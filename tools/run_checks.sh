@@ -312,6 +312,15 @@ else
   skip_check "配色コントラスト検査 (check_contrast.py)" "スクリプトが見つかりません"
 fi
 
+# 4.62. CSS 変数の自己参照・循環参照検査（Issue #1012・#858 の fail-open 再発防止）
+#       CSS 変数の解決失敗は例外にならず値が消えるだけなので、目視でも CI でも気づけない。
+if [ -f "$REPO_ROOT/tools/check_css_variable_cycles.py" ]; then
+  run_check "CSS 変数循環検査 (check_css_variable_cycles.py)" python3 tools/check_css_variable_cycles.py
+  run_check "CSS 変数循環検査 self-test (check_css_variable_cycles.py --self-test)" python3 tools/check_css_variable_cycles.py --self-test
+else
+  skip_check "CSS 変数循環検査 (check_css_variable_cycles.py)" "スクリプトが見つかりません"
+fi
+
 # 4.65. --tw-prose-* リテラル色混入検査（Issue #339・書式トークンの gray スケールへの
 #       静かなフォールバックを検知する）。まだ --tw-prose-* が 1 つも無くても PASS を返す設計
 #       （typography プラグイン導入前でも run_checks.sh を壊さない）。
@@ -952,6 +961,16 @@ if [ -f "$REPO_ROOT/tools/check_env_guard_consistency.py" ]; then
   run_check "env ガード定義一貫性検査 self-test (check_env_guard_consistency.py --self-test)" python3 tools/check_env_guard_consistency.py --self-test
 else
   skip_check "env ガード定義一貫性検査 (check_env_guard_consistency.py)" "スクリプトが見つかりません"
+fi
+
+# env allowlist の判定そのものの self-test（Issue #1031）。上の一貫性検査は「定義同士の
+# 矛盾」を見るのに対し、こちらは hook_env_guard_verdict の判定結果（block/allow）を
+# 表駆動で固定する（大文字小文字の正規化・ひな形のロケール変種限定が退行しないこと）。
+if [ -f "$REPO_ROOT/.claude/hooks/lib/env_allowlist.sh" ]; then
+  run_check "env allowlist 判定 self-test (lib/env_allowlist.sh --self-test)" \
+    bash .claude/hooks/lib/env_allowlist.sh --self-test
+else
+  skip_check "env allowlist 判定 self-test (lib/env_allowlist.sh --self-test)" "共有ライブラリが見つかりません"
 fi
 
 # Cloudflare Workers 破壊的操作ガード self-test（Issue #613 / #615・本番 Worker 誤削除の再発防止）。
