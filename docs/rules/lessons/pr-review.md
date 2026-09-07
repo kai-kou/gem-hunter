@@ -566,12 +566,24 @@ git fetch origin <branch> -q && git rev-parse FETCH_HEAD   # リモート head �
 
 **判定基準**: 「その SHA は実測値か、それとも短縮形か／目視で伸ばした値か？」
 
-🔁 **再発 2 回目（2026-09-07・PR #1059）**: `git rev-parse --short=7 HEAD` の出力 `54f918c` から
-フル SHA を組み立てた値（`54f918cf81c8b8e8b0e0b8f9b6b04e6c1d4cbb1f`）を渡して同じ 409 を踏んだ。
-実測値は `54f918cf81c882cd49a2abb31dbf9edaa2d5857d` で **先頭 8 文字までしか一致していない**。
-本エントリを読んでいても、`--short` 出力を手元に持っている状況では「伸ばせば足りる」と錯覚する。
-🔴 **`--short` の出力を `expectedHeadSha` の材料にしない**（用途が違う。表示用と API 引数用を混ぜない）。
-根治策の検討は Issue #972。
+🔁 **再発 2 回目・3 回目（2026-09-07・同一セッション内）**:
+
+| 回 | 発生箇所 | 渡した値 | 実測値 | エラー |
+|---|---|---|---|---|
+| 2 | PR #1059 の `merge_pull_request(expectedHeadSha=...)` | `54f918cf81c8b8e8b0e0b8f9b6b04e6c1d4cbb1f` | `54f918cf81c882cd49a2abb31dbf9edaa2d5857d` | `409 Head branch was modified` |
+| 3 | PR #1063 の `pull_request_review_write(commitID=...)` | `933229e0b5e3d5f7c6ac0a4c1e6d0e5f8b9a2c3d` | `933229ebc43a93f82c0af6e1365f1471a749f792` | `The commitOID is not part of the pull request` |
+
+いずれも `git rev-parse --short=7 HEAD` の出力を手元に持った状態で桁を伸ばした値であり、**先頭 8 文字までしか
+一致していない**。🔴 **3 回目は、本エントリへ 2 回目の再発を書き足した直後に踏んだ**。しかも対象は
+`expectedHeadSha` ではなく **`commitID`**（別の API 引数）で、エラー文言も 409 とは異なるため
+同一の欠陥クラスだと気づきにくかった。
+
+**この 3 回目が示すこと**: 「ルールを読めば防げる」類の欠陥ではない（書いた本人が書いた直後に踏んでいる）。
+機械的なバリデーション層が要る。根治策の検討は Issue #972。
+
+🔴 **射程は `expectedHeadSha` に限らない**。GitHub API へ **commit SHA を渡す全ての引数**（`commitID` /
+`expectedHeadSha` / `sha` / `ref` 等）が対象で、`--short` の出力を材料にしない（表示用と API 引数用を混ぜない）。
+渡す直前に `git rev-parse HEAD`（または `git rev-parse FETCH_HEAD`）の生出力を取る。
 
 ---
 
