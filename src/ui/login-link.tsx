@@ -31,9 +31,12 @@ type LoginLinkProps = {
  * 必須「高さとフォントサイズは cva の size variant 経由でのみ指定する」・PR #141 レビュー指摘）。
  */
 export function LoginLink({ isLoggedIn, labels }: LoginLinkProps) {
-  // 高さ tier は現状維持を追認（根拠と例外登録: tools/check_ui_dimensions.py・Issue #829 /
-  // 引き上げの是非: Issue #842）。
-  const className = buttonVariants({ variant: 'ghost', size: 'sm' })
+  // 高さ tier は md（`--size-control-md` = 32px）に引き上げ済み（Issue #842）。
+  // `site-header.tsx` で隣接する `LocaleSwitcher`（tier md・text-sm 14px）と揃える。
+  // 旧 sm tier（28px・text-[0.8rem]=12.8px）は §2.3 の 5 段階タイポスケール（12/14/16/20/24px）に
+  // 存在しない中間値で描画されており、「意図的な情報設計上の格下げ」として書き直すには根拠が
+  // 立たなかった（sm 自体がスケール逸脱であり、隣接差はその副産物）。Issue #829 の追認は本 Issue で撤回する。
+  const className = buttonVariants({ variant: 'ghost', size: 'default' })
 
   if (isLoggedIn) {
     return (

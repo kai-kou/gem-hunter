@@ -381,3 +381,20 @@ export async function readDigestPackageNames(page: Page): Promise<string[]> {
   }
   return names
 }
+
+/** `measureControlTier` の返り値。cva の size variant tier を実効値で比較するための最小の 2 値。 */
+export type ControlTierMeasurement = { height: string; fontSize: string }
+
+/**
+ * 要素の実効 `height` / `font-size`（`getComputedStyle`）をまとめて計測する（Issue #842）。
+ * cva の size variant（`--size-control-*` / `text-*`）が意図どおり効いているかを、クラス名の
+ * 有無ではなく計算後の値で検証する用途（`e2e/header-control-tier.spec.ts`）。
+ * `measureFocusIndicator` と同じ「宣言値ではなく実効値を読む」方針だが、対象が単純な
+ * height/font-size の 2 値のみのため独立した薄いヘルパーとして置く（`searchFor` と同じ方針）。
+ */
+export async function measureControlTier(locator: Locator): Promise<ControlTierMeasurement> {
+  return locator.evaluate((el) => {
+    const cs = getComputedStyle(el)
+    return { height: cs.height, fontSize: cs.fontSize }
+  })
+}
