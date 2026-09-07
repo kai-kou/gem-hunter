@@ -102,21 +102,25 @@ fi
 #     （ただし読み取り元がフラグ値や第2引数以降に来やすい cp/install/tar/rsync/scp は例外。下記参照）
 
 # 判定対象のファイル名トークンを列挙する（コマンド直後の第1引数 + リダイレクト先 + 下記の多引数コマンド）
+# 引数 $1: 走査対象のコマンド文字列（省略時は $COMMAND・生の値）。
+# 呼び出し側 _sfa_candidate_tokens_all が「生のコマンド」と「クォート・バックスラッシュを除去した
+# 正規化コマンド」の両方でこの関数を呼び、候補トークンを合算する（Issue #1083）。
 _sfa_candidate_tokens() {
+  local _sfa_src="${1:-$COMMAND}"
   # curl はここに含めない: _sfa_multi_cmds（下記）の「呼び出しブロック全体から非フラグ位置引数を
   # 全て候補にする」抽出が、ここでの「フラグ後の第1トークンのみ」抽出を常に包含する強い上位互換
   # のため、二重登録は正規化前（@ 剥がし未適用）の重複トークンを生むだけで検知漏れの防止には
   # ならない（#417 Layer 1 レビューで指摘）。
   _sfa_cmds='cat|less|head|tail|more|source|cp|mv|install|base64|xxd|od|strings|tar|rsync|scp|sftp'
-  printf '%s\n' "$COMMAND" \
+  printf '%s\n' "$_sfa_src" \
     | grep -oE "(^|[[:space:];|&(\`{])(${_sfa_cmds})([[:space:]]+-[^[:space:];|&]+)*[[:space:]]+['\"]?[^[:space:];|&'\")]+" \
     | sed -E "s/.*[[:space:]]['\"]?//" || true
-  printf '%s\n' "$COMMAND" \
+  printf '%s\n' "$_sfa_src" \
     | grep -oE "<[[:space:]]*['\"]?[^[:space:];|&'\")]+" \
     | sed -E "s/^<[[:space:]]*['\"]?//" || true
   # dot source（`. file`）: コマンド位置（行頭 or 区切り直後）の `.` のみを対象にする。
   # `find . -name x` のように **引数位置** の `.` は直前が素の空白なので一致しない
-  printf '%s\n' "$COMMAND" \
+  printf '%s\n' "$_sfa_src" \
     | grep -oE "(^|[;|&(\`{][[:space:]]*)\.[[:space:]]+['\"]?[^[:space:];|&'\")-][^[:space:];|&'\")]*" \
     | sed -E "s/.*[[:space:]]['\"]?//" || true
   # 読み取り元・アーカイブ対象が「値を取るフラグの値」や「第2引数以降」に来やすいコマンドは
@@ -126,7 +130,7 @@ _sfa_candidate_tokens() {
   # 値を取るフラグの値そのもの（上記の `600`）や書き込み先も一緒に候補へ混じるが、
   # 実在の機密名パターンに一致しない限り誤検知は起きないため許容する。
   _sfa_multi_cmds='cp|install|tar|rsync|scp'
-  printf '%s\n' "$COMMAND" \
+  printf '%s\n' "$_sfa_src" \
     | grep -oE "(^|[[:space:];|&(\`{])(${_sfa_multi_cmds})[[:space:]]+[^;|&\`)]*" \
     | sed -E "s/^[[:space:];|&(\`{]?(${_sfa_multi_cmds})[[:space:]]+//" \
     | _sfa_tokenize_block || true
@@ -141,7 +145,7 @@ _sfa_candidate_tokens() {
   # これで `grep -rn "id_rsa" docs/`（パターンが機密名）は従来どおり誤ブロックせず、
   # `grep secret .env`（ファイルが機密）は捕捉できる。
   _sfa_search_cmds='grep|egrep|fgrep|rg|ag|ack'
-  printf '%s\n' "$COMMAND" \
+  printf '%s\n' "$_sfa_src" \
     | grep -oE "(^|[[:space:];|&(\`{])(${_sfa_search_cmds})[[:space:]]+[^;|&\`)]*" \
     | sed -E "s/^[[:space:];|&(\`{]?(${_sfa_search_cmds})[[:space:]]+//" \
     | _sfa_tokenize_block \
@@ -182,7 +186,7 @@ _sfa_candidate_tokens() {
   # スキームのため除外対象に含めない**（`curl file:///home/user/.ssh/id_rsa` を除外すると
   # 秘密鍵の内容が読み出され漏洩する。安全側に倒すため「除外してよいスキーム」を明示的な
   # ネットワーク系スキームの許可リストにし、未知のスキームは既定で候補に残す）。
-  printf '%s\n' "$COMMAND" \
+  printf '%s\n' "$_sfa_src" \
     | grep -oE "(^|[[:space:];|&(\`{])curl[[:space:]]+[^;|&\`)]*" \
     | sed -E "s/^[[:space:];|&(\`{]?curl[[:space:]]+//" \
     | sed -E 's/(^|[[:space:]])(-[A-Za-z]*o|--output|--output-dir)=[^[:space:]]+/ /g; s/(^|[[:space:]])(-[A-Za-z]*o|--output|--output-dir)[[:space:]]+[^[:space:]]+/ /g' \
@@ -197,6 +201,47 @@ _sfa_tokenize_block() {
     | sed -E "s/^['\"]//;s/^@//;s/['\")]\$//"
 }
 
+# クォート・バックスラッシュを除去した正規化コマンド文字列を作る（Issue #1083）。
+# `_sfa_candidate_tokens` の抽出パターンはクォート文字（`'` `"`）を「トークンの終端」として
+# 扱うため、判定対象の語の途中にクォートが挟まると語が分断されて判定をすり抜ける
+# （例: `cat .en"v"` → 生トークンは `.env` にならず `.en` で切れる）。バックスラッシュも同様
+# （`\.env` はシェル上 `.env` と等価だが、素の文字列比較では別語になる）。
+# これらの文字を単純に取り除くと、シェルが実際に行う「隣接するクォート/非クォート断片の結合」を
+# 近似できる（`.e"n"v` → `.env` / `\.env` → `.env`）。除去した正規化コピーに同じ抽出パターンを
+# 再適用し、生トークンと正規化トークンの **両方** を判定対象にする（どちらか一方でも一致すれば
+# ブロック＝fail-closed。正規化はあくまで「候補の追加」であり、既存の生トークン判定を置き換えない）。
+_sfa_dequote_command() {
+  printf '%s' "$COMMAND" | sed -e 's/\\//g' -e 's/"//g' -e "s/'//g"
+}
+
+# コマンド置換（`$(...)` ・ `` ` ` ``）の中身だけを対象に `.env` リテラル出現を検知する
+# fail-closed の第2判定（Issue #1083）。コマンド置換は静的に実行結果を展開できないため、
+# `_sfa_candidate_tokens`（トークン化ベース）では `cat $(echo .env)` のような呼び出しを
+# 原理的に捕捉できない。
+#
+# 🔴 対象を置換の中身だけに絞る理由: コマンド文字列全体を対象にすると
+#    `git commit -m 'update .env handling docs'` のような「.env について言及しているだけの
+#    引用テキスト」まで誤ブロックする（#495 の誤発火の再発）。置換の中身（実際にファイル名の
+#    一部として展開されうる箇所）だけに絞ることで、通常のコミットメッセージ・ドキュメント編集は
+#    通しつつ、置換経由の `.env` 展開だけを fail-closed で塞ぐ。
+# ⚠️ ネストした `$(...)` には対応しない（1階層のみ）。fail-closed 網としては目的に対し十分であり、
+#    ネスト対応は複雑さの割に本 Issue の再現ケースでは不要（#1083 のスコープ外）。
+_sfa_substitution_env_tokens() {
+  {
+    printf '%s\n' "$COMMAND" | grep -oE '\$\([^()]*\)' | sed -E 's/^\$\(//; s/\)$//'
+    printf '%s\n' "$COMMAND" | grep -oE '`[^`]*`' | sed -E 's/^`//; s/`$//'
+  } | grep -oE '(^|[^A-Za-z0-9_])\.env(\.[A-Za-z0-9_.-]+)?' \
+    | sed -E 's/^[^.]//' || true
+}
+
+# 判定対象トークンの合算窓口（Issue #1083）。生コマンド・正規化コマンド・コマンド置換の中身の
+# 3系統から候補を集める。呼び出し側（_sfa_env_access / _sensitive_file_access）は本関数だけを使う。
+_sfa_candidate_tokens_all() {
+  _sfa_candidate_tokens "$COMMAND"
+  _sfa_candidate_tokens "$(_sfa_dequote_command)"
+  _sfa_substitution_env_tokens
+}
+
 # .env（本物のみ。.env.example 等のテンプレートは通す）
 # 判定の実体は lib/env_allowlist.sh の hook_env_guard_verdict（SSOT・Issue #493）。
 # pre-file-tool-env-guard.sh の _env_guard_verdict と同じ関数を source して使うことで、
@@ -209,7 +254,7 @@ _sfa_env_access() {
       _sfa_hit=0; break
     fi
   done <<EOF
-$(_sfa_candidate_tokens)
+$(_sfa_candidate_tokens_all)
 EOF
   return $_sfa_hit
 }
@@ -252,7 +297,7 @@ _sensitive_file_access() {
       _sfa_hit=0; break
     fi
   done <<EOF
-$(_sfa_candidate_tokens)
+$(_sfa_candidate_tokens_all)
 EOF
   return $_sfa_hit
 }

@@ -53,12 +53,11 @@ CSS の文字列は **エスケープされていない改行を含めない**�
 
 - `tools/check_contrast.py`（`preserve_lines=False` / `blank_strings=False`）
 - `tools/check_css_variable_cycles.py`（`preserve_lines=True` / `blank_strings=True`）
-
-🔴 **未接続のツールが 2 本残っている**（`tools/check_ui_dimensions.py` の `css_var_raw` と
-`tools/check_prose_tokens.py` の `PROSE_DECL_RE`）。どちらも同じ `app/globals.css` を正規表現で
-走査しており、前者はコメント内の旧値を実値として読む fail-open、後者はコメント内の例示を
-実値として読む誤検知が実測されている。接続は **Issue #1084** へ切り出した（本モジュールの
-コメント処理を強化しても、この 2 本は追随しない状態が続く点に注意）。
+- `tools/check_ui_dimensions.py`（`css_var_raw`・`preserve_lines=True` / `blank_strings=False`）
+  — Issue #1084 で接続。行番号つきで報告する経路があるため改行を保つ。
+- `tools/check_prose_tokens.py`（`PROSE_DECL_RE` の走査対象・`preserve_lines=False` /
+  `blank_strings=False`）— Issue #1084 で接続。`check_contrast.py` と同じ扱い（行番号は
+  目安表示のみで厳密一致を要求しない）。
 
 ## 対応しない構文
 
