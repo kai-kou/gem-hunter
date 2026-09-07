@@ -117,7 +117,20 @@ ls docs/adr/[0-9]*.md | wc -l   # → 15（index.html の「ADR 15 本」と一�
 
 ### アクセシビリティの実測（LP を対象に axe を流す）
 
-`npm run check` の Lighthouse ゲートは **アプリ本体だけ** が対象で LP を見ない。LP は下記で実測する。
+`npm run check` の Lighthouse ゲートは **アプリ本体だけ** が対象で LP を見ない。
+
+🔵 **本節の手順はスクリプト化済み**（`tools/check_site_a11y.mjs`・Issue #997 / #996）。
+`.github/workflows/quality-checks.yml`（層 1・CI）には含まれておらず、**PR 作成前チェック（層 2）
+としてセッションが `npm run check`（= `bash tools/run_checks.sh`）を実行するたびに走る**（層 1 / 層 2
+の分担は `docs/rules/pr-review-flow-summary.md`「PR 作成時の必須事項」を参照。違反があれば非ゼロ終了する）。
+単発で走らせたいだけなら次のコマンドで足りる。
+
+```bash
+node tools/check_site_a11y.mjs             # PAGES（index.html・404.html）× 4 構成（light/1280・dark/1280・light/390・light/320）を実測
+node tools/check_site_a11y.mjs --self-test # 検査ロジック自体の自己テスト
+```
+
+下記は同スクリプトが機械化した元の人手手順（デバッグ時に個別の構成だけ確認したい場合の参考）。
 
 ```bash
 python3 -m http.server 8098 --directory site &   # 別プロセスで配信
@@ -140,8 +153,7 @@ await browser.close()
 EOF
 ```
 
-**全構成で `violations = 0` であること**（`site/` は `npm run check` の a11y ゲートに載っていないため、
-このコマンドが唯一の検証手段）。
+**全構成で `violations = 0` であること**。
 
 ## スクリーンショットの更新
 
@@ -159,6 +171,10 @@ node tools/capture_lp_screenshots.mjs
   🔴 **本番直叩きは共有 API レート枠を消費する副作用があるため、乱用しない**
 - 🔴 `LP_SHOT_FETCH_VIA_CURL=1`（既定 off）は **直接 HTTPS が通らないサンドボックスでの回避策**
   （恒久のベストプラクティスではない）。on にすると全リクエストを `curl` 経由で取得して差し替える
+- `SHOTS` の各エントリに `srcsetWidths` を持たせると、撮影のたびにその幅の `-Nw.webp` 派生も
+  自動生成される（Issue #998）。撮影を伴わずに派生だけを作り直したい場合は
+  `node tools/capture_lp_screenshots.mjs --derivatives-only`（アプリ未起動でも実行できる。
+  撮影済みの最新 webp を読み込み、`srcsetWidths` の派生だけを再生成する）
 - 🔴 **撮影スクリプトは `SHOTS` 全件を撮り直す** ため、1 枚だけ更新したいときも `shot-digest.webp`
   （「今日の Gem」＝日替わりで中身が変わるカード）まで巻き込んで撮り直してしまう。
   `shot-digest` を撮り直した場合は、**`index.html` の `tile-datum` の数値（1 位 / 2 位のパッケージ名・
