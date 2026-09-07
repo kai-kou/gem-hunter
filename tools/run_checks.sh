@@ -588,8 +588,9 @@ else
   skip_check "OpenNext アセット鮮度チェック self-test (ensure_open_next_assets.mjs --self-test)" "スクリプトが見つかりません"
 fi
 
-# Cloudflare API 共通ヘルパー self-test（Issue #476）。
-# trigger_workers_build.py / retire_preview_aliases.py が共有するページング継続判定の実体。
+# Cloudflare API 共通ヘルパー self-test（Issue #476 / #940）。
+# trigger_workers_build.py / retire_preview_aliases.py / check_cloudflare_cost.py が共有する
+# ページング継続判定・HTTP JSON 取得（http_json / CloudflareApiError）・ページングループ本体の実体。
 if [ -f "$REPO_ROOT/tools/cloudflare_api.py" ]; then
   run_check "Cloudflare API ヘルパー self-test (cloudflare_api.py --self-test)" python3 tools/cloudflare_api.py --self-test
 else

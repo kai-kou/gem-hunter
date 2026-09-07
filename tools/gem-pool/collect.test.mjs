@@ -18,7 +18,13 @@ import {
   collectRegistry,
 } from './collect.mjs'
 import { REGISTRIES, registryFileSlug } from './registries.mjs'
-import { errorResponse, makeFetchImpl, makeSleepImpl, okResponse } from './test-http-stubs.mjs'
+import {
+  badJsonResponse,
+  errorResponse,
+  makeFetchImpl,
+  makeSleepImpl,
+  okResponse,
+} from './test-http-stubs.mjs'
 
 /** 投影関数のスタブ: 生レコードをそのまま通す（null を返さない） */
 const passThrough = (raw) => raw
@@ -301,6 +307,52 @@ describe('collectRegistry', () => {
     expect(calls).toHaveLength(2)
     expect(waited).toEqual([1000])
     expect(result.records).toHaveLength(1)
+  })
+
+  it('2xx だが本文が不正 JSON のときもリトライする（withRetry の shouldRetry 例外・#950 Layer 1）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      badJsonResponse('Unexpected token < in JSON at position 0'),
+      okResponse(makeRawPage('p1', 1)),
+    ])
+    const { sleepImpl, waited } = makeSleepImpl()
+
+    const result = await collectRegistry({
+      registry: 'hex.pm',
+      quota: 1,
+      perPage: 10,
+      fetchImpl,
+      project: passThrough,
+      sleepImpl,
+    })
+
+    expect(calls).toHaveLength(2) // 初回 + リトライ 1 回（1 回で諦めない）
+    expect(waited).toEqual([1000])
+    expect(result.records).toHaveLength(1)
+  })
+
+  it('不正 JSON がリトライ上限まで続いたら attempts 付きの例外になる（#950 Layer 1）', async () => {
+    const { fetchImpl, calls } = makeFetchImpl([
+      badJsonResponse('bad json'),
+      badJsonResponse('bad json'),
+      badJsonResponse('bad json'),
+    ])
+    const { sleepImpl, waited } = makeSleepImpl()
+
+    const err = await collectRegistry({
+      registry: 'crates.io',
+      quota: 10,
+      perPage: 10,
+      fetchImpl,
+      project: passThrough,
+      maxRetries: 2,
+      sleepImpl,
+    }).catch((e) => e)
+
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toMatch(/bad json/)
+    expect(err.attempts).toBe(3) // undefined に化けない（旧実装と同じく数値が付く）
+    expect(calls).toHaveLength(3)
+    expect(waited).toEqual([1000, 2000])
   })
 
   it('リトライ上限を超えたら例外を投げる（maxRetries 回までリトライ）', async () => {

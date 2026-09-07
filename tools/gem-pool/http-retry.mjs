@@ -75,7 +75,9 @@ function backoffMs(attempt, backoffBaseMs) {
  * API ごとの判定差は `shouldRetry` コールバックに閉じ込める。`fetchImpl` が例外を投げた場合
  * （ネットワークエラー等）は `shouldRetry` を呼ばず **常にリトライ対象** として扱う
  * （`collect.mjs` / `github-stars.mjs` とも fetch 例外は無条件リトライだったため、この骨格に
- * 共通判定として引き上げてよい・両ファイルの元実装と同じ挙動）。
+ * 共通判定として引き上げてよい・両ファイルの元実装と同じ挙動）。**`shouldRetry` 自身が投げた
+ * 例外も同じ扱いにする**（両 API とも `await res.json()` を `shouldRetry` の中で呼ぶため、
+ * 共通化前は fetch と同じ try/catch に入っていた・Issue #950 Layer 1 セルフレビュー）。
  *
  * @param {Object} args
  * @param {string} args.url
@@ -92,7 +94,9 @@ function backoffMs(attempt, backoffBaseMs) {
  * @returns {Promise<{value:*, attempts:number}>} `attempts` はリトライを含む実リクエスト数
  * @throws {Error & {attempts:number, [key:string]:*}}
  *   リトライ上限まで失敗した場合、または `shouldRetry` が `retryable:false` を返した場合
- *   （後者は `extra` のプロパティを Error にコピーする）
+ *   （後者は `extra` のプロパティを Error にコピーする）。
+ *   `shouldRetry` 自身が例外を投げた場合（`res.json()` のパース失敗等）は **リトライ対象**
+ *   として扱い、上限まで再試行してからこの Error を投げる（即時失敗にはしない）。
  */
 export async function withRetry({
   url,
@@ -120,17 +124,21 @@ export async function withRetry({
     attempts++
     let waitMs = backoffMs(attempt, backoffBaseMs)
 
-    let res
+    let outcome
     try {
-      res = await fetchImpl(url, { headers })
+      const res = await fetchImpl(url, { headers })
+      // 🔴 `shouldRetry` の呼び出しも同じ try に含める（Layer 1 セルフレビュー CRITICAL）。
+      // `shouldRetry` は API ごとに `await res.json()` を呼ぶため、2xx でも本文が不正 JSON なら
+      // ここで reject する。共通化前の両実装は fetch と `res.json()` を同一の per-attempt
+      // try/catch で囲んでおり、この失敗は「リトライ対象」だった。外に出すと初回失敗で即諦め、
+      // 実質リトライ回数が 1 に減る（かつ Error に `attempts` が付かない）退行になる。
+      outcome = await shouldRetry(res)
     } catch (err) {
-      // fetch 例外は shouldRetry を経由せず常にリトライ対象（両 API の元実装と同じ挙動）
+      // fetch 例外・`shouldRetry` 内の例外はいずれも常にリトライ対象（両 API の元実装と同じ挙動）
       lastMessage = err instanceof Error ? err.message : String(err)
       if (attempt < maxRetries) await sleepImpl(waitMs)
       continue
     }
-
-    const outcome = await shouldRetry(res)
 
     if (outcome?.ok) {
       return { value: outcome.value, attempts }

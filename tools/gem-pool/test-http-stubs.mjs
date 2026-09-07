@@ -31,6 +31,26 @@ export function errorResponse(status, headers = {}) {
 }
 
 /**
+ * 2xx だが本文が不正 JSON のレスポンス（`json()` が reject する Response 互換スタブ）。
+ * 実運用ではプロキシによる本文切断・HTML エラーページの混入で起きる。共通化前の両実装は
+ * `res.json()` を fetch と同じ per-attempt try/catch に入れており、この失敗は **リトライ対象**
+ * だった（Issue #950 Layer 1 セルフレビュー CRITICAL の回帰ケース）。
+ *
+ * @param {string} [message] `json()` が reject する Error のメッセージ
+ * @param {Record<string,string>} [headers]
+ */
+export function badJsonResponse(message = 'Unexpected token in JSON', headers = {}) {
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers(headers),
+    json: async () => {
+      throw new Error(message)
+    },
+  }
+}
+
+/**
  * レスポンス列（1 リクエスト目から順の配列）を返す fetch スタブを作る。
  * 要素が `Error` インスタンスなら reject、Response 互換オブジェクトならそのまま解決する。
  * 用意した件数を超えて呼ばれたら例外を投げる（想定外の追加リクエストをテストで検知するため）。
