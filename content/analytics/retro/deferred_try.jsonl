@@ -482,3 +482,11 @@
 {"date":"2026-09-07 JST","title":"check_port_contracts.py の self-test ラベルに Issue 番号のプレフィックスを付けて意図を stdout に出す","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-07 JST","title":"_range_contains_span() と _pos_in_spans() の役割分担をモジュールレベルの docstring で説明する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-07 JST","title":"UI コンポーネント変更を含む改善消化 PR でもプレビュー URL を取得して実機で目視確認する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date": "2026-09-08 JST", "title": "REQUIRE_SRCSET_BASENAMES と srcsetWidths の言語をまたぐ二重管理を共有モジュール化する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 1046}
+{"date": "2026-09-08 JST", "title": "run_checks.sh の段階実行（証跡として認められる実行粒度の stage 化）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-08 JST", "title": "レトロ役の「〜が無い」型の主張に検索コマンドとヒット件数の添付を必須化する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 847}
+{"date": "2026-09-08 JST", "title": "改善 Issue 選定の全件スキャン（299 件 / 3 ページ）コストを日次計測へ寄せる", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 854}
+{"date": "2026-09-08 JST", "title": "site/README.md に書いた設計値の導出根拠（CSS 実値）と実装の一致を機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 299}
+{"date": "2026-09-08 JST", "title": "capture_lp_screenshots.mjs の派生生成（全 srcsetWidths 分）と冪等性を self-test で検証する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-08 JST", "title": "Layer 1 の機械的な軽微指摘（整形・型）は親が自己修正して fan-out を 1 段減らす基準を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-08 JST", "title": "並行委譲中の Stop フック差し戻しに非ブロッキング応答マーカーを導入する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
