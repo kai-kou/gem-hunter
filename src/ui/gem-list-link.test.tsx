@@ -27,7 +27,10 @@ describe('GemListLink', () => {
 
     const link = screen.getByRole('link', { name: 'Gem 一覧' })
     expect(link.className).toContain('hover:bg-muted')
-    expect(link.className).toContain('h-(--size-control-md)')
+    // 🔴 部分文字列一致（`toContain`）だと `min-h-(--size-control-md)` にも一致してしまい、
+    // 固定高さ `h-*` への退行を検知できない（`'min-h-(--size-control-md)'.includes('h-(--size-control-md)')`
+    // が `true` になる・Layer 1 セルフレビュー指摘・PR #1074）。語境界込みで判定する。
+    expect(link.className).toMatch(/(?:^|\s)min-h-\(--size-control-md\)(?:\s|$)/)
   })
 
   it('アイコンは装飾として描画され、アクセシブルネームは label のみになる', () => {

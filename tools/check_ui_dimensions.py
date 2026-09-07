@@ -127,7 +127,12 @@ TEXT_SCALE_PX = {
     "6xl": 60.0, "7xl": 72.0, "8xl": 96.0, "9xl": 128.0,
 }
 
-RAW_H_SIZE_TOKEN_RE = re.compile(r"^(?:h|size)-(?:\d|\[)")
+# 🔴 **PR #1074 是正（CRITICAL・fail-open）**: PR #1074 が `min-h-(--size-control-*)` を正規の
+# 記法として新たに導入したが、旧実装は先頭一致が `h-` / `size-` のみで `min-h-` を想定して
+# おらず、`min-h-11` / `min-h-[52px]` のような生値が検知をすり抜けていた（実測済み）。
+# `min-` プレフィックス付きの `h-` / `size-` 名前空間も同じ判定に含める（`min-h-(--size-
+# control-*)` のようなトークン参照は、`(` が続くため引き続き非一致＝許可のまま）。
+RAW_H_SIZE_TOKEN_RE = re.compile(r"^(?:min-)?(?:h|size)-(?:\d|\[)")
 BARE_TEXT_TOKEN_RE = re.compile(
     r"^text-(" + "|".join(re.escape(k) for k in TEXT_SCALE_PX) + r")$"
 )
@@ -295,6 +300,22 @@ def _pos_in_spans(spans: list[tuple[int, int, int]], pos: int) -> bool:
     return any(body_start <= pos < body_end for _, body_start, body_end in spans)
 
 
+def _range_contains_span(spans: list[tuple[int, int, int]], start: int, end: int) -> bool:
+    """`[start, end)` の範囲の **内側に** 呼び出しサイトスパンの本体が含まれるかどうかを返す。
+
+    🔴 **PR #1074 是正（CRITICAL・fail-open）**: `className={cn(buttonVariants({...}), '...')}`
+    のような形では、`buttonVariants(...)` の呼び出しサイトスパンが `className={...}` の
+    **内側にネストする**（`cn()` が両者を橋渡しする）。`_pos_in_spans` は「`className` という
+    語の開始位置がスパンの内側にあるか」しか見ておらず、この形では `className` の位置は
+    常に `buttonVariants(...)` スパンより **手前**（外側）にあるため常に False になり、
+    `className={...}` 式全体の検査が丸ごとスキップされていた（実測: `cn(buttonVariants({...}),
+    'w-full ... h-8 text-sm')` を検査してもエラー・Warning とも 0 件だった）。本関数は逆方向
+    （スパンが範囲の内側に含まれるか）も見ることで、この「外側が className 式・内側に
+    コンポーネント呼び出しが nest する」形を呼び出しサイトとして認識できるようにする。
+    """
+    return any(start <= body_start and body_end <= end for _, body_start, body_end in spans)
+
+
 # --------------------------------------------------------------------------- 検査 4: 呼び出しサイトの className 上書き禁止
 
 CLASSNAME_LITERAL_RE = re.compile(r'className\s*=\s*"([^"]*)"')
@@ -428,10 +449,17 @@ def check_call_site_classname(
                 )
 
     for m in CLASSNAME_EXPR_START_RE.finditer(code):
-        if not _pos_in_spans(spans, m.start()):
-            continue
         brace_start = m.end() - 1
         close = find_matching_brace(code, brace_start)
+        # 🔴 **PR #1074 是正（CRITICAL・fail-open）**: `className={cn(buttonVariants({...}),
+        # '...')}` のように、呼び出しサイトスパン（`buttonVariants(...)` の引数範囲）が
+        # `className={...}` 式の **内側にネストする** 形も呼び出しサイトとして認識する
+        # （`_pos_in_spans` だけでは `className` 自身の位置がスパン外＝常に False になる）。
+        if not (
+            _pos_in_spans(spans, m.start())
+            or _range_contains_span(spans, brace_start, close)
+        ):
+            continue
         expr = code[brace_start + 1 : close]
         expr_errors, has_dynamic = _scan_classname_expr(rel, expr, brace_start + 1, code)
         errors.extend(expr_errors)
@@ -866,6 +894,42 @@ _case(
 )
 
 _case(
+    "検査1（PR #1074是正）: min-h-(--size-control-md) はトークン参照として許可",
+    lambda f: f.__setitem__(
+        "src/ui/components/button.tsx",
+        f["src/ui/components/button.tsx"].replace(
+            "default: 'h-(--size-control-md) gap-1.5 px-2.5',",
+            "default: 'min-h-(--size-control-md) gap-1.5 px-2.5',",
+        ),
+    ),
+    0, 0,
+)
+
+_case(
+    "検査1（PR #1074是正・fail-open再現）: min-h-11（生の数値）は検知する",
+    lambda f: f.__setitem__(
+        "src/ui/components/button.tsx",
+        f["src/ui/components/button.tsx"].replace(
+            "default: 'h-(--size-control-md) gap-1.5 px-2.5',",
+            "default: 'min-h-11 gap-1.5 px-2.5',",
+        ),
+    ),
+    1, 0,
+)
+
+_case(
+    "検査1（PR #1074是正・fail-open再現）: min-h-[52px]（任意値）は検知する",
+    lambda f: f.__setitem__(
+        "src/ui/components/button.tsx",
+        f["src/ui/components/button.tsx"].replace(
+            "xl: 'h-(--size-control-xl) gap-2 px-4 text-base',",
+            "xl: 'min-h-[52px] gap-2 px-4 text-base',",
+        ),
+    ),
+    1, 0,
+)
+
+_case(
     "検査2: input.tsx に無プレフィックスの text-sm",
     lambda f: f.__setitem__(
         "src/ui/components/input.tsx",
@@ -1222,6 +1286,48 @@ _case(
 )
 
 # --- 検査4/5: 関数呼び出し形式（`buttonVariants({...})`）の呼び出しサイト対応（Issue #83）----
+
+# --- PR #1074 是正（CRITICAL 3・fail-open）: `className={cn(componentFn(...), '...')}` の
+#     ように、コンポーネント呼び出し（`buttonVariants(...)`）が `cn()` 経由で `className={...}`
+#     の内側に nest する形。`CALL_SITE_REQUIREMENTS` に既存登録済みの `gem-list-link.tsx`
+#     （実ファイルの正確な文言には依存しない最小フィクスチャ・並行編集中のため）を使う。
+
+_GEM_LIST_LINK_CLEAN = (
+    "import { cn } from '@/src/shared/cn'\n"
+    "import { buttonVariants } from './components/button'\n"
+    "export function GemListLink({ href, label }) {\n"
+    "  return (\n"
+    "    <a\n"
+    "      href={href}\n"
+    "      className={cn(\n"
+    "        buttonVariants({ variant: 'ghost', size: 'default' }),\n"
+    "        'gap-1.5 whitespace-normal',\n"
+    "      )}\n"
+    "    >\n"
+    "      {label}\n"
+    "    </a>\n"
+    "  )\n"
+    "}\n"
+)
+
+_case(
+    "検査4（PR #1074是正）: cn(buttonVariants(...), '...') 形の呼び出しサイトも検査対象になる"
+    "（サイズ影響クラスが無ければ違反0・静的解決不能の警告のみ）",
+    lambda f: f.__setitem__("src/ui/gem-list-link.tsx", _GEM_LIST_LINK_CLEAN),
+    0, 1,
+)
+
+_case(
+    "検査4（PR #1074是正・fail-open再現）: cn(buttonVariants(...), '...') 内の第2引数リテラルに"
+    "h-8/text-sm を混ぜると検知する（旧実装はエラー0・Warning0でサイレントに素通りしていた）",
+    lambda f: f.__setitem__(
+        "src/ui/gem-list-link.tsx",
+        _GEM_LIST_LINK_CLEAN.replace(
+            "'gap-1.5 whitespace-normal',", "'gap-1.5 whitespace-normal h-8 text-sm',"
+        ),
+    ),
+    2, 1,
+)
 
 _case(
     "検査5: pagination.tsx（buttonVariants 関数呼び出し形式）の size を tier 不足（xs）に変える",
