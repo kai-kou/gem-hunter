@@ -31,7 +31,7 @@
   『gh 失敗（...）・REST も失敗（...）』を返す」という、各呼び出し元で文字通り重複していた
   "GET フォールバックの後半部分" を集約したもの（完了条件の中核）。
 
-## 集約しなかったもの（意図的・github_rest.py #602 と同じ判断基準）
+## 集約しなかったもの（意図的・判定基準は `docs/rules/http-client-consolidation-rules.md`）
 
 - **gh の JSON 応答パース・フィールドマッピング**: `gh issue list --json number,title,state` の
   出力をどう解釈するかは呼び出し元ごとのビジネスロジックであり、API フォールバックの型ではない。

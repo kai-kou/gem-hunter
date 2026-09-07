@@ -51,6 +51,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_slug import resolve_repo_slug  # noqa: E402
 import github_api  # noqa: E402
+from github_rest import exclude_pull_requests  # noqa: E402
 
 # 優先順: bootstrap 済みプレースホルダ解決値（最優先・下流リポジトリの既定動作）→
 # 未解決の場合のみ PROJECT_REPO → GITHUB_REPOSITORY → git remote の URL 解析 →
@@ -136,6 +137,10 @@ def _fetch_via_api(label, state):
     ページネーションの継続判定（`max_pages` 上限を持たず空バッチで打ち切り）はファイル固有の
     既存挙動としてそのまま踏襲する（`github_rest.paginate_json_array` へは寄せない設計判断は
     `tools/github_api.py` docstring「集約しなかったもの」参照）。
+    PR 除外だけは `github_rest.exclude_pull_requests()` に寄せてある（Issue #825・
+    判定基準は `docs/rules/http-client-consolidation-rules.md` 参照。ページネーションと違い
+    継続判定ロジックを持たない純粋フィルタなので、打ち切り条件・エラー時の向きが関係せず
+    移行コストがゼロに近い）。
     """
     token = github_api.resolve_token()
     if not token:
@@ -158,9 +163,7 @@ def _fetch_via_api(label, state):
         batch = json.loads(out)  # 元実装通り不正 JSON は無捕捉のまま例外伝播させる
         if not batch:
             break
-        for it in batch:
-            if "pull_request" in it:
-                continue  # PR を除外
+        for it in exclude_pull_requests(batch):  # Issue #825: github_rest.py へ集約
             issues.append({
                 "number": it["number"],
                 "title": it["title"],
@@ -955,6 +958,25 @@ def _self_test_retro_try_exclusion_end_to_end():
             failures.append(f"③ REST フォールバック経路で retro-try が除外されない: rows={nums}")
         check_argv("③", "type:improvement")
         check_excluded_notice("③", err, 1)
+
+        # ③-b REST フォールバック経路で PR（`pull_request` キー持ち）が除外される
+        #      （Issue #825: github_rest.exclude_pull_requests() への集約の回帰防止）
+        captured.clear()
+        subprocess.run = make_fake_gh(exc=FileNotFoundError())
+        pr_shaped = _rest_issue(502, "PR: 何か", ["type:improvement"])
+        pr_shaped["pull_request"] = {"url": "https://example.com/pulls/502"}
+        calls = install_rest([
+            [
+                _rest_issue(501, "improvement: c", ["type:improvement"]),
+                pr_shaped,
+            ],
+            [],
+        ])
+        out, code, err = run_main(["--json"])
+        nums = rows_of(out, "③-b")
+        if nums is not None and nums != [501]:
+            failures.append(f"③-b REST フォールバック経路で PR が除外されない: rows={nums}")
+        check_argv("③-b", "type:improvement")
     finally:
         subprocess.run = orig_run
         sys.argv = orig_argv
