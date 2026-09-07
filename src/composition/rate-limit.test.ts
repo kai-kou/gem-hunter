@@ -14,6 +14,11 @@ vi.mock('../infrastructure/platform/cloudflare-bindings', () => ({
   rateLimiterBinding: (...args: unknown[]) => rateLimiterBinding(...args),
 }))
 
+const reportRateLimitDisabled = vi.fn()
+vi.mock('./rate-limit-diagnostics', () => ({
+  reportRateLimitDisabled: (...args: unknown[]) => reportRateLimitDisabled(...args),
+}))
+
 const consume = vi.fn()
 const WorkersRateLimit = vi.fn().mockImplementation(function (this: { consume: typeof consume }) {
   this.consume = consume
@@ -32,8 +37,10 @@ const IP = '203.0.113.1'
 const SALT = 'test-salt'
 const BINDING = { limit: vi.fn() }
 
-// 警告の有無そのものが検証対象（Issue #442 のセルフレビュー指摘）なので、
-// 素通し系のテストが「実は無音でなかった」ことを見逃さないよう常に spy を挟む。
+// 🔴 フェイルオープンした事実が **必ず記録される**（Issue #192）ことと、有効な環境では
+// 1 件も記録されないことの両方が検証対象なので、素通し系・正常系ともに毎回検証する。
+// 間引き（同一理由の抑制）の責務は `rate-limit-diagnostics.ts` 側にあり、本ファイルは
+// 「どの分岐がどの理由コードを報告するか」という配線だけを固定する。
 const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
 afterEach(() => {
@@ -61,7 +68,7 @@ const ENFORCE_CASES: EnforceCase[] = [
 ]
 
 describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
-  it('IP が取れないなら素通り（binding も取りに行かない・無音）', async () => {
+  it('IP が取れないなら素通りし、理由 no-client-ip を記録する（binding も取りに行かない）', async () => {
     clientIpOf.mockReturnValue(null)
     vi.stubEnv('RATE_LIMIT_SALT', SALT)
 
@@ -69,10 +76,10 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
 
     expect(rateLimiterBinding).not.toHaveBeenCalled()
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(reportRateLimitDisabled).toHaveBeenCalledWith('no-client-ip')
   })
 
-  it('binding 未提供なら素通り（無音）', async () => {
+  it('binding 未提供なら素通りし、理由 no-binding を記録する（Issue #192）', async () => {
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', SALT)
     rateLimiterBinding.mockResolvedValue(undefined)
@@ -80,7 +87,7 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
     await expect(enforce(HEADERS)).resolves.toBeUndefined()
 
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(reportRateLimitDisabled).toHaveBeenCalledWith('no-binding')
   })
 
   // 旧テスト「RATE_LIMIT_SALT 未設定なら素通り（binding も取りに行かない）」の後継。
@@ -88,8 +95,9 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
   // 固定していたが、その順序では **Workers 上で salt だけ落ちた設定不備** が
   // 「binding 未提供のローカル実行」と区別できず、両経路が無音で全面無効化される。
   // 判定順を binding → salt に入れ替えたため、本ケースが固定する意図も
-  // 「取得コストを払わないこと」から「binding 無しの環境は依然として完全に無音であること」へ変わった。
-  it('binding 未提供なら RATE_LIMIT_SALT 未設定でも完全に無音（ローカル実行を汚さない）', async () => {
+  // 「取得コストを払わないこと」から「binding 無しの環境は no-binding として切り分けられること」
+  // へ変わった（Issue #192: salt の設定不備と実行環境の違いを取り違えない）。
+  it('binding 未提供のときは salt 未設定でも理由は no-binding 1 件だけ（実行環境と設定不備を混同しない）', async () => {
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', '')
     rateLimiterBinding.mockResolvedValue(undefined)
@@ -97,10 +105,11 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
     await expect(enforce(HEADERS)).resolves.toBeUndefined()
 
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(reportRateLimitDisabled).toHaveBeenCalledTimes(1)
+    expect(reportRateLimitDisabled).toHaveBeenCalledWith('no-binding')
   })
 
-  it('binding があるのに RATE_LIMIT_SALT 未設定なら素通りしつつ警告を出す', async () => {
+  it('binding があるのに RATE_LIMIT_SALT 未設定なら素通りし、理由 no-salt を記録する', async () => {
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', '')
     rateLimiterBinding.mockResolvedValue(BINDING)
@@ -108,15 +117,15 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
     await expect(enforce(HEADERS)).resolves.toBeUndefined()
 
     expect(consume).not.toHaveBeenCalled()
-    expect(warnSpy).toHaveBeenCalledTimes(1)
-    const [warned] = warnSpy.mock.calls[0] as [string]
-    expect(warned).toContain('RATE_LIMIT_SALT')
-    // 秘密情報（salt 本体・接続元 IP）を警告に載せない。
-    expect(warned).not.toContain(SALT)
-    expect(warned).not.toContain(IP)
+    expect(reportRateLimitDisabled).toHaveBeenCalledTimes(1)
+    expect(reportRateLimitDisabled).toHaveBeenCalledWith('no-salt')
+    // 秘密情報（salt 本体・接続元 IP）を診断へ渡さない（渡すのは理由コードだけ）。
+    const args = reportRateLimitDisabled.mock.calls.flat()
+    expect(args).not.toContain(SALT)
+    expect(args).not.toContain(IP)
   })
 
-  it('allowed: true なら素通り', async () => {
+  it('allowed: true なら素通りし、診断も警告も一切出さない（完了条件 3）', async () => {
     clientIpOf.mockReturnValue(IP)
     vi.stubEnv('RATE_LIMIT_SALT', SALT)
     rateLimiterBinding.mockResolvedValue(BINDING)
@@ -125,6 +134,7 @@ describe.each(ENFORCE_CASES)('%s', (_name, enforce, expectedPrefix) => {
 
     await expect(enforce(HEADERS)).resolves.toBeUndefined()
 
+    expect(reportRateLimitDisabled).not.toHaveBeenCalled()
     expect(warnSpy).not.toHaveBeenCalled()
   })
 

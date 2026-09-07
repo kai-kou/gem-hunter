@@ -1,4 +1,5 @@
 import { RateLimitExceededError } from '../domain/errors'
+import { reportRateLimitDisabled } from './rate-limit-diagnostics'
 import { rateLimiterBinding } from '../infrastructure/platform/cloudflare-bindings'
 import { clientIpOf, hashRateLimitKey } from '../infrastructure/platform/rate-limit-key'
 import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from '../infrastructure/platform/rate-limit'
@@ -14,15 +15,20 @@ import { RATE_LIMIT_PERIOD_SECONDS, WorkersRateLimit } from '../infrastructure/p
 /**
  * 経路をまたいで共通の間引き処理。呼び出し側は Cloudflare Rate Limiting のキー接頭辞だけを渡す。
  *
- * 判定できない事情（接続元不明・binding 未提供・salt 未設定）があれば **フェイルオープン**（黙って通す）。
+ * 判定できない事情（接続元不明・binding 未提供・salt 未設定）があれば **フェイルオープン**（通す）。
  * これは「握り潰し」ではなく、設定不備や実行環境の違いでサービス全体を止めないための意図的な設計判断。
+ *
+ * 🔴 **ただし無音では通さない**（Issue #192）。フェイルオープンした理由は
+ * `reportRateLimitDisabled`（`./rate-limit-diagnostics`）で 1 行記録する。ログ量が
+ * リクエスト数に比例しないよう **理由ごとに間引く**（同モジュールの JSDoc が設計の正本）。
+ * 有効な環境（3 条件をすべて抜けた経路）では 1 行も出さない。
  *
  * 🔴 **判定順は「IP → binding → salt」**（Issue #442 のセルフレビュー指摘）。salt を先に見て
  * 早期 return すると、**Workers 上で salt だけが欠けた状態**（`wrangler secret` の付け替え・
  * Workers Builds 移行〈`D-31`〉・別環境への再デプロイで引き継がれなかった場合）が
  * 「binding 未提供のローカル実行」と区別できず、`search:` と `gems:` の両方が同時に、
- * 例外も警告も無く無効化される。binding を先に取ることで「Workers 上で動いているのに salt が無い」
- * という異常だけを切り分けて警告できる（下記 3.）。
+ * 例外も理由の区別も無く無効化される。binding を先に取ることで「Workers 上で動いているのに
+ * salt が無い」という異常を `no-salt` として切り分けられる（下記 3.）。
  *
  * @param keyPrefix Cloudflare Rate Limiting のキー接頭辞（`search:` / `gems:`）。
  *   接頭辞が違えばカウンタも別枠になるため、経路ごとに独立した枠を割り当てる手段になる。
@@ -32,6 +38,7 @@ async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<vo
   //    そもそも誰を制限すべきか判定できないため間引かない。
   const ip = clientIpOf(headers)
   if (ip === null) {
+    reportRateLimitDisabled('no-client-ip')
     return
   }
 
@@ -45,6 +52,7 @@ async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<vo
   //    無くす価値のほうが大きい。
   const binding = await rateLimiterBinding()
   if (!binding) {
+    reportRateLimitDisabled('no-binding')
     return
   }
 
@@ -52,14 +60,12 @@ async function enforceRateLimit(headers: Headers, keyPrefix: string): Promise<vo
   //    cloudflare-infrastructure.md §9.1 の HMAC 化要件に反し、かといって salt なしで
   //    固定文字列をキーにすると全利用者が 1 つのキーを共有して過剰に制限し合う。
   //    どちらも避けるため、この環境（salt 未設定）では間引かない。
-  //    🔴 ただし **binding があるのに salt が無い = Workers 上での設定不備** なので、
-  //    ここだけは黙って通さず警告を残す（無音のまま全経路が無効化され、CPU 課金が
-  //    跳ねるまで誰も気づかない状態を防ぐ）。binding 未提供のローカル実行は 2. で
-  //    既に return しているため、テスト出力やローカル開発は従来どおり完全に無音のまま。
+  //    🔴 **binding があるのに salt が無い = Workers 上での設定不備** であり、
+  //    無音のまま全経路が無効化され CPU 課金が跳ねるまで誰も気づかない状態になる。
+  //    理由コード `no-salt` を記録して切り分けられるようにする（Issue #192）。
   const salt = process.env.RATE_LIMIT_SALT
   if (!salt) {
-    // 秘密情報（salt 本体・キー・IP）は載せない。設定不備の事実だけを伝える。
-    warn('RATE_LIMIT_SALT 未設定のため間引きを無効化しています')
+    reportRateLimitDisabled('no-salt')
     return
   }
 
@@ -120,15 +126,4 @@ export async function enforceGemListRateLimit(headers: Headers): Promise<void> {
  */
 export async function enforceDetailRateLimit(headers: Headers): Promise<void> {
   await enforceRateLimit(headers, 'detail:')
-}
-
-/**
- * 警告ログ。`[AssetReader]` / `[StaticGemIndex]` と同じく、モジュール名の接頭辞を付けた
- * `console.warn` に寄せる（本プロジェクトの既存の流儀）。
- *
- * 🔵 発生ごとに出す（1 プロセス 1 回に間引かない）。設定不備が続いている間は
- * 出続けたほうが検知しやすく、そもそも正常な環境では 1 度も出ない。
- */
-function warn(message: string): void {
-  console.warn(`[rate-limit] ${message}`)
 }

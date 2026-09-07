@@ -226,6 +226,32 @@ flowchart TB
 2. `RATE_LIMIT_SALT` が未設定（§7.2.1 / `env-vars.md`）
 3. binding が未提供（ローカル `npm test` / `next dev` 等の Workers 実行環境の外）
 
+#### 無効化を外から確認する（Issue #192）
+
+🔴 **フェイルオープンは正しい設計だが、そのままだと「実は効いていない」状態を無音にする。** 実際 PR #184 のプレビューがこの状態で、URL は 200 を返し E2E も緑のまま、実機へ 90 リクエスト投げて「1 件も 429 が出ない」と分かるまで誰も気づかなかった（#187）。そこで **無効化した事実を必ずログへ残す**。
+
+| 項目 | 内容 |
+|---|---|
+| 実装 | `src/composition/rate-limit-diagnostics.ts`（`RATE_LIMIT_DISABLED_MARKER` が固定マーカーの正本） |
+| 出力形 | `[rate-limit] disabled reason=<code> — <説明>`（`code` は `no-client-ip` / `no-binding` / `no-salt`） |
+| 間引き | **理由ごとに 10 分に 1 回まで**（`RATE_LIMIT_WARN_INTERVAL_MS`）。ログ量がリクエスト数に比例しない |
+| 有効な環境 | 1 行も出ない（余計なログを増やさない） |
+| 秘密情報 | salt 本体・接続元 IP は **載せない**（理由コードだけ） |
+
+**確認手順**（`wrangler tail` は Workers Logs を読むだけで、レスポンスへ内部構成を出さない — ヘッダで常時公開する案を採らない理由は `prd.md` §7）:
+
+```bash
+npx wrangler tail --format=pretty            # 本番
+# 別ターミナル: 対象環境の URL へ 1 リクエスト投げ、10 分以上観測する
+curl -sS -o /dev/null "https://<対象>/ja?q=rate-limit-probe"
+```
+
+- `[rate-limit] disabled reason=...` が出る → **その環境ではレート制限が効いていない**（`reason=no-salt` なら §7.2.1 の `wrangler versions secret put RATE_LIMIT_SALT`、`reason=no-binding` なら `wrangler.jsonc` の `ratelimits` 宣言を確認する）
+- 観測窓（間引き間隔）を超えても 1 行も出ない → 有効
+- 🔵 **間引き間隔より短い観測では判定できない**（暖まった isolate では抑制されている可能性がある）。必ず間隔以上待つ
+
+⚠️ **静的な配線し忘れ**（表と実コードの乖離・binding 宣言の欠落）は `python3 tools/check_rate_limit_wiring.py` が別途 CI で止める。本節の手順は **その環境の実行時に本当に効いているか** を見るもので、両者は補完関係にある。
+
 ---
 
 ## 4. キャッシュ（`D-18` / `D-24`）
