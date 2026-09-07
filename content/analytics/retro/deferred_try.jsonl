@@ -437,3 +437,9 @@
 {"date": "2026-09-07 JST", "title": "Layer 1 の観点別 cost-benefit（検出数・重複率・実行時間）を可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "mutation_guard マーカーの適用範囲を実装スプリント全体へ拡張する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "PR 本文の bare dotfile 説明を「bare dotfile 用 alternation のみ小文字限定」に正確化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "並列委譲中の Stop フック WIP 自動コミット抑止（mutation_guard のスコープ拡張）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 536}
+{"date": "2026-09-07 JST", "title": "検査ツール初版の fail-open（外部コマンド失敗を「対象なし」に丸める）を横断検査する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 1009}
+{"date": "2026-09-07 JST", "title": "run_checks.sh のフル実行を変更対象別に絞る（1 PR で 2 回の再実行）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 851}
+{"date": "2026-09-07 JST", "title": "testing-strategy.md に「vi.mock で自作モジュールを差し替えない」の具体例と DI 置換パターンを載せる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "変異テストで生存した変異の追跡リストをテンプレート化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "run_checks.sh の E2E と Lighthouse を並列実行する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 851}
