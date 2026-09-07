@@ -59,6 +59,8 @@ ls src/domain/ports/
 
 **fail-open にするか fail-closed にするかは必ずどちらかへ決めて書く**（未定義のまま実装すると、実装ごとに別々の答えになる）。決めたら実装側にその振る舞いを固定するテストを置く。
 
+この規律は `tools/check_port_contracts.py` が機械検査する（`run_checks.sh` に配線済み）。レビュー済みの正当な例外は `// contract-ok` で抑止できる。値域の機械検査は primitive 型引数（`string` / `number` / `boolean` 等）を取るメソッドにのみ課す。値オブジェクトを受け取るメソッドの値域は、その値オブジェクトのスマートコンストラクタが保証する責務とする。
+
 ## 2. 毎回守る 7 つ（`ARCH-1`〜`ARCH-7`）
 
 > 🔴 **ID の接頭辞に注意**: `A-1`〜`A-6` は **ユーザー確認の既約境界外リスト**（`user-confirmation-minimization.md` §1）が予約済みの ID である。

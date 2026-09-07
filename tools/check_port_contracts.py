@@ -16,7 +16,14 @@ JSDoc に書く」と定めるが、これを検査する機械的な手段が�
      JSDoc に値域の記述がある（`@param` 行、または「値域」「正の有限数」「空でない」「有効な」
      「範囲」のいずれかを含む本文行）。
   3. **JSDoc が存在すれば常に**、JSDoc に異常時の振る舞いの記述がある（`@throws`、
-     または「throw」「fail-open」「フォールバック」「投げ」「例外」「送出」のいずれかを含む本文行）。
+     「フォールバック」「例外」「fail-open」のいずれかを含む本文行、「例外を投げ」
+     「例外を送出」「エラーを投げ」「エラーを送出」のいずれかのフレーズ、または
+     語境界つきの「throw」（`throw away` のような無関係な熟語は除く）を含む本文行）。
+     🔴 **PR #1070 是正**: 旧実装は「投げ」「送出」「throw」を **語境界なしの部分一致** で
+     採用しており、`ask()` の「質問を投げかける」・`send()` の「リクエストを送出する」・
+     英語 doc の "do not throw away user data" のように **異常時の振る舞いと無関係な文** が
+     item3 を満たしたことになる fail-open が実測された。「例外」「エラー」を伴わない裸の
+     「投げ」「送出」、および `throw away` を拾う裸の「throw」は採用しない。
 
 🔴 **「substantial」ゲート（1 行 JSDoc は item2/3 を免除する）は廃止した（Issue #800 の
 運用で fail-open と判明・再設計）**: 1 行 `/** ...する。 */` を「値域・異常時の振る舞いを
@@ -30,7 +37,14 @@ JSDoc に書く」と定めるが、これを検査する機械的な手段が�
 
 抑止コメント: `// contract-ok`（メソッドのシグネチャ行、その前後の行、または JSDoc 本文中）が
 あれば item 2 / item 3 の検査をそのメソッドに限り抑止する（item 1 = JSDoc の存在は抑止しない・
-`tools/check_datetime_tz.py` の `# tz-ok` と同じ作法）。
+`tools/check_datetime_tz.py` の `# tz-ok` と同じ作法）。🔴 **PR #1070 是正**: 「前後の行」は
+**他のメソッドのシグネチャ・スパンに属する行を含まない**（旧実装は隣接メソッドのマーカーが
+漏れて誤抑止する fail-open があった。抽出済みメソッドのスパンと突き合わせて弾く）。
+
+検査対象の構文は TS のメソッドショートハンド（`foo(x: number): void`）と、プロパティ関数型
+（`foo: (x: number) => void`）の両方をカバーする（🔴 **PR #1070 是正**: 旧実装はメソッド
+ショートハンドにしか一致せず、プロパティ関数型で宣言されたメソッドが検査対象から丸ごと
+消えていた＝新規ポートをこの構文で追加すると検査が無効化される穴だった）。
 
 終了コード:
   0 = 違反なし（対象ファイルが 1 件以上あり、実際に検査した）
@@ -62,17 +76,31 @@ CONTRACT_OK_MARKER = "contract-ok"
 ITEM2_KEYWORDS = ("@param", "値域", "正の有限数", "空でない", "有効な", "範囲")
 
 # item 3（異常時の振る舞い）: @throws、または以下のキーワード（ASCII は大文字小文字を無視）。
-# 🔴 「送出」を追加（#800 fail-open 是正）: 「例外を送出する」は「例外を投げる」と同義の
-# 日本語技術用語（Java/TypeScript の JSDoc・エラーハンドリング文書で実際に使われる言い回し）。
-# 既存の「投げ」「例外」だけでは「エラーを送出する」のように動詞が「投げる」でも「例外」でも
-# ない実在の表現形を拾えない取りこぼしがあるため追加する（広げすぎ防止のため、この 1 語のみ）。
-ITEM3_KEYWORDS_JP = ("@throws", "フォールバック", "投げ", "例外", "送出")
-ITEM3_KEYWORDS_EN_CI = ("throw", "fail-open")
+# 🔴 **PR #1070 是正**: 「投げ」「送出」を裸の部分一致キーワードとして採用しない（「質問を
+# 投げかける」「リクエストを送出する」のように異常時の振る舞いと無関係な文でも item3 を
+# 満たしたことになる fail-open が実測された）。代わりに「例外」「エラー」を主語に伴う
+# フレーズ（`_ITEM3_PHRASE_RE`）としてのみ採用する。「例外」自体は単独キーワードとして残す
+# （「例外にせず null を返す」等、動詞が「投げる」「送出する」以外の表現形もあるため）。
+ITEM3_KEYWORDS_JP = ("@throws", "フォールバック", "例外", "fail-open")
+# 🔴 **PR #1070 是正**: 「例外を投げ」「例外を送出」「エラーを投げ」「エラーを送出」の
+# フレーズ一致（「例外」「エラー」を伴わない裸の「投げ」「送出」は不採用）。
+_ITEM3_PHRASE_RE = re.compile(r"(?:例外|エラー)を(?:投げ|送出)")
+# 🔴 **PR #1070 是正**: 裸の "throw" 部分一致は "throw away"（無関係な熟語）を拾ってしまう
+# ため、語境界つき・"throw away" を除外する正規表現に置き換える（大文字小文字は無視）。
+_ITEM3_THROW_EN_RE = re.compile(r"\bthrow\b(?!\s+away)")
 
 PRIMITIVE_TYPES = {"string", "number", "boolean", "bigint"}
 
 IFACE_RE = re.compile(r"export\s+interface\s+(\w+Port)\b[^{]*\{")
+# メソッドショートハンド構文: `foo(x: number): void` / `readonly foo(): void`
 METHOD_RE = re.compile(r"^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*\??\s*(?:<[^>]*>)?\s*\(")
+# 🔴 **PR #1070 是正（CRITICAL 3）**: プロパティ関数型構文
+# `foo: (x: number) => void` / `readonly foo?: (x: number) => void` も検査対象に含める
+# （TS ではどちらの構文も合法かつ一般的で、METHOD_RE だけでは新規ポートをこの構文で
+# 追加すると検査が丸ごと無効化される穴になっていた）。
+PROPERTY_METHOD_RE = re.compile(
+    r"^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*\??\s*:\s*(?:<[^>]*>\s*)?\("
+)
 
 # 括弧の対応で使う開閉文字（<> は比較演算子との曖昧さがあるため意図的に数えない）。
 _OPEN_CHARS = "({["
@@ -98,25 +126,67 @@ class MethodInfo:
     suppressed: bool  # contract-ok マーカーの有無
 
 
-def _net_delta(line: str) -> int:
-    return sum(1 for c in line if c in _OPEN_CHARS) - sum(1 for c in line if c in _CLOSE_CHARS)
+def _net_delta(line: str, quote: str | None = None) -> tuple[int, str | None]:
+    """`(){}[]` の深さ変化を返す（文字列・テンプレートリテラルの中身は数えない・W2 是正）。
+
+    🔴 **PR #1070 是正（WARNING 2）**: 旧実装は生テキストをそのまま数えており、
+    `readonly kind: '{' | '}'` のような文字列リテラル型に含まれる `{` `}` を実際の
+    ネスト構造の開閉と誤認していた（後続メソッドの取りこぼし＝fail-open、あるいは
+    誤検出＝fail-closed のいずれにも転びうる）。`quote` は直前の行から継続している
+    クォート種別（呼び出し元がループで引き回す）。戻り値は `(net_delta, 行末時点のクォート状態)`。
+    """
+    delta = 0
+    i, n = 0, len(line)
+    while i < n:
+        ch = line[i]
+        if quote:
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+            i += 1
+            continue
+        if ch in _OPEN_CHARS:
+            delta += 1
+        elif ch in _CLOSE_CHARS:
+            delta -= 1
+        i += 1
+    return delta, quote
 
 
 def _split_top_level(text: str, sep: str = ",") -> list[str]:
-    """`(){}[]` の深さを無視しないトップレベル区切りで分割する（`<>` は数えない・呼び出し元と同じ理由）。"""
+    """`(){}[]` に加え `<>` の深さも数えないトップレベル区切りで分割する。
+
+    🔴 **PR #1070 是正（WARNING 1）**: 呼び出し元（メソッド境界の走査）が意図的に `<>` を
+    数えない設計（比較演算子との曖昧さ）とは別の関心事。ここは「既に括弧の対応で切り出し
+    済みのパラメータリスト文字列」を対象にパラメータ境界（トップレベルのカンマ）を探すだけ
+    なので、`Record<string, unknown>` のようなジェネリック型引数のカンマを誤ってパラメータの
+    区切りとして扱わないよう `<` `>` も深さに含める。アロー関数の `=>` に含まれる `>` は
+    ジェネリックの閉じではないため、直前の文字が `=` のときは深さを減らさない。
+    """
     parts: list[str] = []
     depth = 0
     current: list[str] = []
+    prev_ch = ""
     for ch in text:
-        if ch in _OPEN_CHARS:
+        if ch in _OPEN_CHARS or ch == "<":
             depth += 1
         elif ch in _CLOSE_CHARS:
             depth = max(0, depth - 1)
+        elif ch == ">":
+            if prev_ch != "=":
+                depth = max(0, depth - 1)
         if ch == sep and depth == 0:
             parts.append("".join(current))
             current = []
         else:
             current.append(ch)
+        prev_ch = ch
     tail = "".join(current)
     if tail.strip():
         parts.append(tail)
@@ -191,8 +261,9 @@ def _contains_item2_keyword(jsdoc_text: str) -> bool:
 def _contains_item3_keyword(jsdoc_text: str) -> bool:
     if any(kw in jsdoc_text for kw in ITEM3_KEYWORDS_JP):
         return True
-    lowered = jsdoc_text.lower()
-    return any(kw in lowered for kw in ITEM3_KEYWORDS_EN_CI)
+    if _ITEM3_PHRASE_RE.search(jsdoc_text):
+        return True
+    return bool(_ITEM3_THROW_EN_RE.search(jsdoc_text.lower()))
 
 
 def extract_methods(source: str) -> list[MethodInfo]:
@@ -205,6 +276,19 @@ def extract_methods(source: str) -> list[MethodInfo]:
       - ネストしたオブジェクト型の中のメソッド様シグネチャ（例:
         `foo(opts: { bar(): void }): void` のように行が分かれるケース）を、深さ 0 のときだけ
         メソッドとして扱うことで誤って独立メソッド扱いしない（境界の外側の負ケース）。
+      - メソッドショートハンド（`foo(): void`）とプロパティ関数型（`foo: () => void`）の
+        両方を検査対象とする（PR #1070 CRITICAL 3 是正）。
+      - 括弧・波括弧・角括弧の深さは文字列・テンプレートリテラルの中身を数えない
+        （PR #1070 WARNING 2 是正）。
+
+    2 フェーズで抽出する（PR #1070 CRITICAL 1 是正）:
+      Phase 1: 各メソッドの位置（開始行・終了行）とシグネチャ・JSDoc を収集する
+               （`// contract-ok` の抑止判定はまだ行わない）。
+      Phase 2: 収集済みの全メソッドのスパン一覧と突き合わせ、「メソッド開始行の直前 1 行」
+               「終了行の直後 1 行」が **他のメソッドのスパンに属していない場合に限り**
+               neighbor として抑止マーカーを探す。旧実装は無条件に neighbor 扱いしており、
+               隣接するメソッドに書かれた `// contract-ok` が自分の抑止に漏れる fail-open が
+               実測された（例: `b()` と `c() // contract-ok` が隣接すると `b()` まで抑止される）。
     """
     stripped = strip_comments(source)
     raw_lines = source.splitlines()
@@ -213,7 +297,8 @@ def extract_methods(source: str) -> list[MethodInfo]:
         # strip_comments は行数を保存する契約（ts_source.py docstring）。崩れたら判定不能。
         raise ScanError("strip_comments の行数がソースと一致しない（内部矛盾）")
 
-    methods: list[MethodInfo] = []
+    # --- Phase 1: 位置・シグネチャ・JSDoc の収集（抑止判定は後回し） ---
+    raw_entries: list[dict] = []
     for m in IFACE_RE.finditer(stripped):
         iface_name = m.group(1)
         brace_open_idx = m.end() - 1
@@ -226,53 +311,91 @@ def extract_methods(source: str) -> list[MethodInfo]:
             continue
 
         depth = 0
+        quote_state: str | None = None
         i = body_start_line
         while i <= body_end_line:
             line = stripped_lines[i - 1]
             if depth == 0:
-                mm = METHOD_RE.match(line)
+                mm = METHOD_RE.match(line) or PROPERTY_METHOD_RE.match(line)
                 if mm:
                     method_name = mm.group(1)
                     start_line = i
                     # メソッドシグネチャの終端（括弧の対応が閉じる行）まで消費する。
-                    span_depth = _net_delta(line)
+                    span_depth, quote_state = _net_delta(line, quote_state)
                     end_line = start_line
                     while span_depth > 0 and end_line < body_end_line:
                         end_line += 1
-                        span_depth += _net_delta(stripped_lines[end_line - 1])
+                        d, quote_state = _net_delta(stripped_lines[end_line - 1], quote_state)
+                        span_depth += d
                     sig_stripped = "\n".join(stripped_lines[start_line - 1 : end_line])
                     open_paren = sig_stripped.find("(")
                     if open_paren != -1:
                         close_paren = find_matching_paren(sig_stripped, open_paren)
+                        if close_paren == -1:
+                            # PR #1070 CRITICAL 4 是正: 「見つからない」を「末尾から 1 文字
+                            # 除いた範囲」という別の意味に化けさせず、fail-closed で判定不能に倒す。
+                            raise ScanError(
+                                f"{iface_name}.{method_name}()（{start_line} 行目）: "
+                                "パラメータリストの閉じ括弧が見つからない（構文解析失敗）"
+                            )
                         param_list_text = sig_stripped[open_paren + 1 : close_paren]
                     else:
                         param_list_text = ""
 
                     jsdoc_text = _find_jsdoc(raw_lines, start_line, body_start_line)
                     sig_raw = "\n".join(raw_lines[start_line - 1 : end_line])
-                    neighbor_lines = []
-                    if start_line - 1 >= 1:
-                        neighbor_lines.append(raw_lines[start_line - 2])
-                    if end_line + 1 <= len(raw_lines):
-                        neighbor_lines.append(raw_lines[end_line])
-                    suppressed = _contains_marker(sig_raw, CONTRACT_OK_MARKER) or any(
-                        CONTRACT_OK_MARKER in nl for nl in neighbor_lines
-                    ) or (jsdoc_text is not None and CONTRACT_OK_MARKER in jsdoc_text)
 
-                    methods.append(
-                        MethodInfo(
-                            interface_name=iface_name,
-                            method_name=method_name,
-                            line=start_line,
-                            jsdoc_text=jsdoc_text,
-                            has_primitive_param=_has_primitive_param(param_list_text),
-                            suppressed=suppressed,
-                        )
+                    raw_entries.append(
+                        {
+                            "interface_name": iface_name,
+                            "method_name": method_name,
+                            "start_line": start_line,
+                            "end_line": end_line,
+                            "jsdoc_text": jsdoc_text,
+                            "has_primitive_param": _has_primitive_param(param_list_text),
+                            "sig_raw": sig_raw,
+                        }
                     )
                     i = end_line + 1
                     continue
-            depth += _net_delta(line)
+            d, quote_state = _net_delta(line, quote_state)
+            depth += d
             i += 1
+
+    # --- Phase 2: 他メソッドのスパンを避けた neighbor 判定で抑止マーカーを確定する ---
+    spans = [(e["start_line"], e["end_line"]) for e in raw_entries]
+
+    def _line_in_other_span(line_no: int, self_idx: int) -> bool:
+        return any(
+            idx != self_idx and s <= line_no <= e for idx, (s, e) in enumerate(spans)
+        )
+
+    methods: list[MethodInfo] = []
+    for idx, e in enumerate(raw_entries):
+        start_line = e["start_line"]
+        end_line = e["end_line"]
+        jsdoc_text = e["jsdoc_text"]
+        neighbor_lines: list[str] = []
+        before_ln = start_line - 1
+        after_ln = end_line + 1
+        if before_ln >= 1 and not _line_in_other_span(before_ln, idx):
+            neighbor_lines.append(raw_lines[before_ln - 1])
+        if after_ln <= len(raw_lines) and not _line_in_other_span(after_ln, idx):
+            neighbor_lines.append(raw_lines[after_ln - 1])
+        suppressed = _contains_marker(e["sig_raw"], CONTRACT_OK_MARKER) or any(
+            CONTRACT_OK_MARKER in nl for nl in neighbor_lines
+        ) or (jsdoc_text is not None and CONTRACT_OK_MARKER in jsdoc_text)
+
+        methods.append(
+            MethodInfo(
+                interface_name=e["interface_name"],
+                method_name=e["method_name"],
+                line=start_line,
+                jsdoc_text=jsdoc_text,
+                has_primitive_param=e["has_primitive_param"],
+                suppressed=suppressed,
+            )
+        )
     return methods
 
 
@@ -300,7 +423,10 @@ def check_methods(methods: list[MethodInfo]) -> list[str]:
 
 
 def _port_files() -> list[Path]:
-    return sorted(REPO_ROOT.glob(PORTS_GLOB))
+    # 🔴 **PR #1070 是正（WARNING 3）**: `PORTS_GLOB` は `*.test.ts` も拾ってしまう
+    # （実測: `cache-port.test.ts` が走査対象に含まれていた）。テストファイル内のモック用
+    # `export interface FakeXPort` を検査対象外にする（無関係な CI 失敗を防ぐ）。
+    return sorted(p for p in REPO_ROOT.glob(PORTS_GLOB) if not p.name.endswith(".test.ts"))
 
 
 def scan_file(path: Path) -> list[str]:
@@ -659,6 +785,268 @@ export interface SamplePort {
                 f"- 17. 実ファイル（{PORTS_GLOB}）で違反/解析不能を検出（本来は現在の main で"
                 f"緑のはず）: violations={real_violations} parse_errors={real_parse_errors}"
             )
+
+    # --- 17b. W3 是正: `.test.ts` が _port_files() の走査対象に含まれない ---
+    #         （本リポジトリには実在の `src/domain/ports/cache-port.test.ts` があり、
+    #         除外できていなければ本ケースが実データで検出する）。
+    if any(p.name.endswith(".test.ts") for p in real_files):
+        failures.append(
+            "- 17b. W3: `.test.ts` が _port_files() の走査対象から除外されていない"
+            f"（{[p.name for p in real_files if p.name.endswith('.test.ts')]}）"
+        )
+
+    # --- 18. CRITICAL 1 是正: `// contract-ok` の neighbor 判定は他メソッドのスパンへ漏れない ---
+    # 18a: 実測の再現入力（c の行末マーカーが b の後続 neighbor へ漏れて b まで抑止されていた）。
+    src_neighbor_leak = """
+export interface SamplePort {
+  /** 何かする。 */
+  b(y: number): void
+  c(z: number): void // contract-ok: c だけ意図的に省略
+}
+"""
+    check_violations(
+        "18a. CRITICAL1: cのマーカーがbへ漏れない→合計3"
+        "(b:item2+item3違反2 + c:JSDocなしitem1違反1)",
+        src_neighbor_leak,
+        3,
+    )
+
+    # 18b: 逆方向（b の行末マーカーが c の before-neighbor へ漏れる）。
+    #      c はインライン JSDoc を自分の行に持つ（item1 で早期 continue させず item2/3 を検証するため）。
+    src_neighbor_leak_reverse = """
+export interface SamplePort {
+  b(y: number): void // contract-ok: b だけ意図的に省略
+  /** 何かする。 */ c(z: number): void
+}
+"""
+    check_violations(
+        "18b. CRITICAL1(逆方向): bのマーカーがcのbeforeへ漏れない→合計3"
+        "(b:item1違反1 + c:item2/3違反2)",
+        src_neighbor_leak_reverse,
+        3,
+    )
+
+    # 18c: U1 陽性対照。隣接メソッドが無いときは after-neighbor の抑止が引き続き機能する
+    #      （neighbor 判定そのものを壊す変異では本ケースが FAIL する）。
+    src_own_after_neighbor = """
+export interface SamplePort {
+  /**
+   * サンプルを消費する。
+   *
+   * @param key 判定単位の識別子（正の有限数のみ許可）。
+   */
+  consume(key: number): void
+  // contract-ok: レビュー済み・異常時の振る舞いは自明なため省略
+}
+"""
+    check_violations(
+        "18c. U1陽性対照: 隣接メソッドが無いafter-neighborの抑止は機能する→違反0",
+        src_own_after_neighbor,
+        0,
+    )
+
+    # --- 19〜21. CRITICAL 2 是正: item3 キーワードの部分一致誤爆（実測の 3 例） ---
+    src_ask_false_positive = """
+export interface SamplePort {
+  /**
+   * ユーザーに質問を投げかける。
+   *
+   * @param question 投げかける質問文（空でない文字列）。
+   */
+  ask(question: string): Promise<string>
+}
+"""
+    check_violations(
+        "19. CRITICAL2: 『投げ』の部分一致は不採用(ask)→item3違反1", src_ask_false_positive, 1
+    )
+
+    src_send_false_positive = """
+export interface SamplePort {
+  /**
+   * リクエストを送出する。
+   *
+   * @param url 送信先 URL（有効な URL 文字列）。
+   */
+  send(url: string): Promise<void>
+}
+"""
+    check_violations(
+        "20. CRITICAL2: 『送出』の部分一致は不採用(send)→item3違反1", src_send_false_positive, 1
+    )
+
+    src_cleanup_en_false_positive = """
+export interface SamplePort {
+  /**
+   * Remove temp files; do not throw away user data during cleanup.
+   *
+   * @param dir Directory to clean (non-empty absolute path).
+   */
+  cleanup(dir: string): Promise<void>
+}
+"""
+    check_violations(
+        "21. CRITICAL2: 『throw away』はthrowの部分一致で拾わない(cleanup)→item3違反1",
+        src_cleanup_en_false_positive,
+        1,
+    )
+
+    # --- 22. CRITICAL 2 陽性対照: 『例外を投げ』『エラーを送出』はフレーズとして採用する ---
+    src_phrase_positive = """
+export interface SamplePort {
+  /**
+   * 何かする。
+   *
+   * @param id 対象の識別子（空でない文字列）。
+   * 異常時はエラーを送出する。
+   */
+  doThing(id: string): void
+}
+"""
+    check_violations(
+        "22. CRITICAL2陽性対照: 『エラーを送出』はフレーズとして採用する→違反0",
+        src_phrase_positive,
+        0,
+    )
+
+    # --- 23. CRITICAL 3 是正: プロパティ関数型構文もメソッドとして抽出する ---
+    src_property_arrow = """
+export interface SamplePort {
+  doThing: (x: number) => void
+}
+"""
+    check_extract("23a. CRITICAL3: プロパティ関数型構文もメソッドとして抽出する", src_property_arrow, 1)
+    check_violations(
+        "23b. 同上: JSDocなし・値域/異常時記述も皆無→item1違反1件のみ検出", src_property_arrow, 1
+    )
+
+    src_property_arrow_documented = """
+export interface SamplePort {
+  /**
+   * 何かする。
+   *
+   * @param x 対象の数値（正の有限数）。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  doThing: (x: number) => void
+}
+"""
+    check_violations(
+        "23c. プロパティ関数型でも契約が揃っていれば違反0", src_property_arrow_documented, 0
+    )
+
+    # --- 24. CRITICAL 4 是正: パラメータリストの閉じ括弧が見つからない場合は ScanError ---
+    src_broken_paren = """
+export interface SamplePort {
+  broken(x: number
+}
+"""
+    try:
+        extract_methods(src_broken_paren)
+        failures.append(
+            "- 24. CRITICAL4: 閉じ括弧未検出でも ScanError が送出されない（fail-closed 違反）"
+        )
+    except ScanError:
+        pass
+
+    with tempfile.TemporaryDirectory() as tmp_dir2:
+        broken_paren_file = Path(tmp_dir2) / "broken.ts"
+        broken_paren_file.write_text(src_broken_paren, encoding="utf-8")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = _run([broken_paren_file], Path(tmp_dir2))
+        if code != 1:
+            failures.append(
+                f"- 24b. CRITICAL4: 閉じ括弧未検出ファイルはexit1(parse_failures)expected, got {code}"
+            )
+        combined2 = out.getvalue() + err.getvalue()
+        if "解析不能" not in combined2:
+            failures.append(f"- 24c. CRITICAL4: 出力に『解析不能』が含まれない: {combined2!r}")
+
+    # --- 25. WARNING 1 是正: `_split_top_level` はジェネリクスのカンマを分割しない ---
+    #     （直接 `_split_top_level` を検証する。`_param_types` はデフォルト値分割の際に
+    #     `=` を素朴な部分一致で検出するため、`=>` を含むアロー関数型パラメータを混ぜると
+    #     本 W1 修正とは別の既存欠陥（デフォルト値分割）を踏んでしまい、W1 の検証にならない）。
+    generic_split = _split_top_level("opts: Record<string, unknown>, id: string")
+    if generic_split != ["opts: Record<string, unknown>", " id: string"]:
+        failures.append(f"- 25. WARNING1: ジェネリクスを含むトップレベル分割が誤り: {generic_split!r}")
+
+    generic_types = _param_types("opts: Record<string, unknown>, id: string")
+    if generic_types != ["Record<string, unknown>", "string"]:
+        failures.append(f"- 25c. WARNING1: ジェネリクスを含むパラメータ分割が誤り: {generic_types!r}")
+
+    # --- 26. U3: ネスト型注釈を含む複数パラメータの分割（既存 {} 深さ機構の回帰ガード） ---
+    nested_types = _param_types("a: string, opts: { page: number }")
+    if nested_types != ["string", "{ page: number }"]:
+        failures.append(f"- 26. U3: ネスト型注釈を含む複数パラメータの分割が誤り: {nested_types!r}")
+
+    # --- 27. WARNING 2 是正: 文字列リテラル型内の `{` を深さに数えない ---
+    src_string_literal_brace = """
+export interface SamplePort {
+  readonly opener: '{'
+  /**
+   * 何かする。
+   *
+   * @param id 対象の識別子（空でない文字列）。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+  consume(id: string): void
+}
+"""
+    check_extract(
+        "27a. WARNING2: 文字列リテラル内の『{』を深さに数えない→consumeを検出する",
+        src_string_literal_brace,
+        1,
+    )
+    check_violations("27b. 同上→違反0", src_string_literal_brace, 0)
+
+    # --- 29. U2: JSDoc とシグネチャの間に空行があっても JSDoc を紐付ける ---
+    src_blank_line_jsdoc_gap = """
+export interface SamplePort {
+  /**
+   * サンプルを消費する。
+   *
+   * @param key 判定単位の識別子（正の有限数のみ許可）。
+   *
+   * 🔴 異常時の振る舞い: throw する。
+   */
+
+  consume(key: number): Promise<void>
+}
+"""
+    check_violations(
+        "29. U2: JSDocとシグネチャの間に空行があってもJSDocを紐付ける→違反0",
+        src_blank_line_jsdoc_gap,
+        0,
+    )
+
+    # --- 30. 干渉検証: CRITICAL1（neighbor のスパン除外）と CRITICAL2（item3 フレーズ化）が
+    #         同じ入力・同じ変数（raw_entries / spans / jsdoc_text）を通っても互いの効果を
+    #         打ち消していないことを確認する。ask() は「投げかける」という語を含む JSDoc を
+    #         持つが自分の行の contract-ok で抑止され、隣接する doThing() は ask の抑止マーカーを
+    #         neighbor 経由で継承せず、かつ『何かする。』という JSDoc だけでは item3 を満たさない
+    #         （CRITICAL2 のキーワード厳格化が効いている）ことを同時に検証する。
+    src_interference_check = """
+export interface SamplePort {
+  /**
+   * 質問を投げかける。
+   *
+   * @param question 質問文（空でない文字列）。
+   */
+  ask(question: string): Promise<string> // contract-ok: ask は意図的に契約省略
+  /**
+   * 何かする。
+   */
+  doThing(x: number): void
+}
+"""
+    check_violations(
+        "30. 干渉検証: CRITICAL1のneighbor除外とCRITICAL2のキーワード厳格化は共存する"
+        "→合計2(askは抑止/doThingはitem2+item3)",
+        src_interference_check,
+        2,
+    )
 
     if failures:
         print("FAIL: check_port_contracts self-test", file=sys.stderr)
