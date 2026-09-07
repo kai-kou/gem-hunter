@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -73,13 +74,22 @@ VERDICT_EXPECTATIONS: list[tuple[str, bool]] = [
     (".env.example.j", True),
     (".env.example.jpn", True),
     (".env.example.ja.local", True),
-    # ひな形（固定 4 種 + 2 文字ロケール変種のみ）
+    # ロケール変種の例外は削除済み（レビュー指摘 1）。`.env.example.[a-z][a-z]` は
+    # 「2 文字の言語コード」のつもりで任意の小文字 2 文字 676 通りを通す fail-open だった。
+    (".env.example.ja", True),
+    (".env.example.en", True),
+    (".env.example.ci", True),
+    (".env.example.qa", True),
+    (".env.example.pr", True),
+    # 大文字表記でひな形を騙る名前（ひな形は元表記の完全一致のみ・レビュー指摘 2 の設計）
+    (".ENV.EXAMPLE", True),
+    (".Env.Example", True),
+    (".Env.Example.Ja", True),
+    # ひな形（固定 4 種の完全一致のみ）
     (".env.example", False),
     (".env.sample", False),
     (".env.template", False),
     (".env.dist", False),
-    (".env.example.ja", False),
-    (".ENV.EXAMPLE", False),
     # 境界の外側（`.env` で始まるが本物の env ファイルではない名前・#750）
     (".environment", False),
     (".env-notes.md", False),
@@ -98,7 +108,10 @@ def hook_verdict(path: str, lib_path: Path, runner=default_bash_runner) -> bool 
     """
     if not lib_path.is_file():
         return None
-    script = f'source "{lib_path}"; hook_env_guard_verdict "$1"'
+    # パスはシェル文字列へ直接補間せず `shlex.quote` で引用する（レビュー指摘 4）。
+    # `TMPDIR` 等に `"` / `$(` を含むパスが来ると `bash -c` の文字列内で展開され、
+    # コマンド注入になる（判定対象パス自体は `$1` 渡しなので元から安全）。
+    script = f'source {shlex.quote(str(lib_path))}; hook_env_guard_verdict "$1"'
     try:
         proc = runner(["bash", "-c", script, "bash", path])
     except (OSError, subprocess.SubprocessError):
@@ -116,7 +129,7 @@ def template_names(lib_path: Path, runner=default_bash_runner) -> list[str] | No
     """
     if not lib_path.is_file():
         return None
-    script = f'source "{lib_path}"; hook_env_guard_template_names'
+    script = f'source {shlex.quote(str(lib_path))}; hook_env_guard_template_names'
     try:
         proc = runner(["bash", "-c", script, "bash"])
     except (OSError, subprocess.SubprocessError):
@@ -580,11 +593,11 @@ def self_test() -> int:
     # --- 14) 変異テスト（#1031-2）: 小文字正規化を外すと期待値表が FAIL することを実測 ---
     if LIB_PATH.is_file():
         original14 = LIB_PATH.read_text(encoding="utf-8")
-        target14 = """  _heg_base=$(printf '%s' "$_heg_base" | tr '[:upper:]' '[:lower:]')\n"""
+        target14 = """  _heg_lower=$(printf '%s' "$_heg_base" | tr '[:upper:]' '[:lower:]')\n"""
         if target14 not in original14:
             failures.append("変異テスト14の事前条件不成立: 小文字正規化の行が源文に見つからない")
         else:
-            mutated14 = original14.replace(target14, "")
+            mutated14 = original14.replace(target14, '  _heg_lower="$_heg_base"\n')
             if mutated14 == original14:
                 failures.append("変異テスト14の事後条件不成立: 置換しても内容が変わらなかった")
             else:
@@ -600,28 +613,58 @@ def self_test() -> int:
     else:
         failures.append("変異テスト14の対象 env_allowlist.sh が見つからない")
 
-    # --- 15) 変異テスト（#1031-1）: ひな形の限定パターンを旧ワイルドカードへ戻すと FAIL するか ---
+    # --- 15) 変異テスト（#1031-1 / レビュー指摘 1）: ひな形分岐を緩めると FAIL するか ---
+    #     3 種の退行を個別に実測する:
+    #       15a: 旧ワイルドカード `.env.example*` への退行（任意の名前を通す）
+    #       15b: 削除したロケール変種 `.env.example.[a-z][a-z]` の再導入（`.ci` / `.qa` を通す）
+    #       15c: ひな形判定を小文字正規化後の値で行う（`.ENV.EXAMPLE` を通す・指摘 2 の設計）
+    TEMPLATE_BRANCH = "    .env.example|.env.sample|.env.template|.env.dist) return 1 ;;"
+    TEMPLATE_CASE_HEAD = '  case "$_heg_base" in'
+    mutations15: list[tuple[str, str, str, str]] = [
+        (
+            "15a（旧ワイルドカードへの退行）",
+            TEMPLATE_BRANCH,
+            "    .env.example*|.env.sample|.env.template|.env.dist) return 1 ;;",
+            ".env.example.secret",
+        ),
+        (
+            "15b（削除したロケール変種の再導入）",
+            TEMPLATE_BRANCH,
+            TEMPLATE_BRANCH + "\n    .env.example.[a-z][a-z]) return 1 ;;",
+            ".env.example.ci",
+        ),
+        (
+            "15c（ひな形判定を小文字正規化後の値で行う）",
+            TEMPLATE_CASE_HEAD,
+            '  case "$_heg_lower" in',
+            ".ENV.EXAMPLE",
+        ),
+    ]
     if LIB_PATH.is_file():
         original15 = LIB_PATH.read_text(encoding="utf-8")
-        target15 = "    .env.example.[a-z][a-z]) return 1 ;;"
-        if target15 not in original15:
-            failures.append("変異テスト15の事前条件不成立: ロケール限定パターンが源文に見つからない")
-        else:
-            mutated15 = original15.replace(target15, "    .env.example.*) return 1 ;;")
+        for label15, src15, dst15, leaked15 in mutations15:
+            # 事前条件: 置換対象の文字列が源文に存在するか
+            if src15 not in original15:
+                failures.append(f"変異テスト{label15}の事前条件不成立: 置換対象の文字列が源文に見つからない")
+                continue
+            mutated15 = original15.replace(src15, dst15)
+            # 事後条件: 置換で内容が変わったか
             if mutated15 == original15:
-                failures.append("変異テスト15の事後条件不成立: 置換しても内容が変わらなかった")
-            else:
-                with tempfile.TemporaryDirectory() as td15:
-                    mutated_lib15 = Path(td15) / "env_allowlist.sh"
-                    mutated_lib15.write_text(mutated15, encoding="utf-8")
-                    v15 = hook_verdict(".env.example.secret", mutated_lib15, runner=recording_runner)
-                    mism15 = verdict_mismatches(mutated_lib15, runner=recording_runner)
-                    if v15 is not False:
-                        failures.append(
-                            f"変異テスト15の前提不成立: 旧ワイルドカードでも '.env.example.secret' がブロックされた（verdict={v15}）"
-                        )
-                    elif not any(".env.example.secret" in m for m in mism15):
-                        failures.append(f"ひな形ワイルドカードへの退行を期待値表が検出しなかった: {mism15}")
+                failures.append(f"変異テスト{label15}の事後条件不成立: 置換しても内容が変わらなかった")
+                continue
+            with tempfile.TemporaryDirectory() as td15:
+                mutated_lib15 = Path(td15) / "env_allowlist.sh"
+                mutated_lib15.write_text(mutated15, encoding="utf-8")
+                v15 = hook_verdict(leaked15, mutated_lib15, runner=recording_runner)
+                mism15 = verdict_mismatches(mutated_lib15, runner=recording_runner)
+                if v15 is not False:
+                    failures.append(
+                        f"変異テスト{label15}の前提不成立: 変異版でも '{leaked15}' がブロックされた（verdict={v15}）"
+                    )
+                elif not any(f"'{leaked15}'" in m for m in mism15):
+                    failures.append(
+                        f"変異テスト{label15}（'{leaked15}' が素通し）を期待値表が検出しなかった: {mism15}"
+                    )
     else:
         failures.append("変異テスト15の対象 env_allowlist.sh が見つからない")
 
@@ -655,6 +698,33 @@ def self_test() -> int:
                         )
     else:
         failures.append("負ケース16の対象 env_allowlist.sh が見つからない")
+
+    # --- 17) レビュー指摘 4: lib_path をシェル文字列へ直接補間しないこと（コマンド注入の回帰）---
+    #     `TMPDIR` が `/tmp/a"$(touch /tmp/pwned)"/` のような値でも、`bash -c` の文字列内で
+    #     展開されず、かつ正しく source できることを実測する。
+    with tempfile.TemporaryDirectory() as td17:
+        # 注入が起きたときの痕跡は cwd 相対で作らせる（ディレクトリ名に `/` を入れられないため）。
+        # そのため本テスト専用に cwd=td17 の runner を使う。
+        def cwd_runner(args: list[str]) -> subprocess.CompletedProcess:
+            calls.append(list(args))
+            return subprocess.run(args, capture_output=True, text=True, timeout=10, cwd=td17)
+
+        canary = Path(td17) / "canary.txt"
+        hostile_dir = Path(td17) / 'a"$(touch canary.txt)"b'
+        hostile_dir.mkdir()
+        hostile_lib = hostile_dir / "env_allowlist.sh"
+        hostile_lib.write_text(LIB_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        v17 = hook_verdict(".env", hostile_lib, runner=cwd_runner)
+        t17 = template_names(hostile_lib, runner=cwd_runner)
+        if canary.exists():
+            failures.append(
+                "lib_path に埋め込んだコマンド置換が実行された"
+                "（shlex.quote によるシェル引用の回帰・レビュー指摘 4）"
+            )
+        if v17 is not True:
+            failures.append(f"引用が必要なパスの共有ライブラリを source できなかった: verdict={v17}")
+        if t17 != APPROVED_TEMPLATE_NAMES:
+            failures.append(f"引用が必要なパスからひな形一覧を取得できなかった: {t17}")
 
     # 指摘1の最終確認: ここまでの全シナリオを通じて本番の共有フック実体が
     # 一切変更されていないことを実測する（一時ファイル化が漏れなく効いていることの保証）。
