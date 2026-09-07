@@ -103,7 +103,7 @@ Issue #170 の完了条件 2（「ETag 経路で 304 を受けたとき、レー
 
 **未確認だった事実への回答**: `x-ratelimit-*` ヘッダは **304 応答にも付与される**（`x-ratelimit-limit` / `x-ratelimit-remaining` / `x-ratelimit-reset` / `x-ratelimit-used` / `x-ratelimit-resource` の全て）。したがって実装側からレート枠消費の有無を観測する手段はある。
 
-**実測結果（生ヘッダ抜粋・2026-09-07 11:1x JST）**:
+**実測結果（生ヘッダ抜粋・2026-09-07 JST）**: 実行時刻は同日 **11:15 JST 以降**（直前に行った別試行の応答が `Date: Mon, 07 Sep 2026 02:15:28 GMT` = 11:15:28 JST）。連続試行 A・B の応答は `grep -iE "^HTTP|ratelimit|^Etag"` で絞り込んで保存したため `date:` ヘッダが残っておらず、**分単位の正確な実行時刻は記録していない**（推測で補わない）。
 
 | 試行 | リクエスト | ステータス | `x-ratelimit-remaining` | `x-ratelimit-used` | `x-ratelimit-reset` | `etag` |
 |---|---|---|---|---|---|---|
