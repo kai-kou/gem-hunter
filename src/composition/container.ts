@@ -1,11 +1,13 @@
-import type { CachePort } from '../domain/ports/cache-port'
+import type { CacheKey, CachePort } from '../domain/ports/cache-port'
 import type { ClockPort } from '../domain/ports/clock-port'
 import type { GemIndex } from '../domain/model/gem-index'
 import type { TokenProvider } from '../infrastructure/github/github-repository-query'
 import { GithubRepositoryQuery } from '../infrastructure/github/github-repository-query'
 import { makeInstallationTokenProvider } from '../infrastructure/github/installation-token'
+import { cloudflareColo } from '../infrastructure/platform/cloudflare-bindings'
 import { CachingRepositoryQuery } from '../infrastructure/platform/cached-repository-query'
 import { InMemoryCache } from '../infrastructure/platform/cache'
+import type { CacheLayerHit } from '../infrastructure/platform/layered-cache'
 import { LayeredCache } from '../infrastructure/platform/layered-cache'
 import { WorkersCache, workersCacheStorage } from '../infrastructure/platform/workers-cache'
 import { SystemClock } from '../infrastructure/system-clock'
@@ -155,6 +157,47 @@ const sharedCache: CachePort = {
 }
 
 /**
+ * `onLayerHit` 付きの `CachePort` をリクエストごとに新規生成する（Issue #875:
+ * 2 段のどちらで HIT したかの観測）。
+ *
+ * 🔴 **`resolveCache()` が返す単一メモ化インスタンスへコールバックを固定登録しない**:
+ * `resolvedCache`（`LayeredCache`）は isolate 生存期間ぶん使い回す単一インスタンスで、
+ * Workers は同一 isolate 内で複数リクエストを並行処理しうる。コンストラクタ渡しの
+ * コールバックを 1 つに固定すると、並行リクエスト間で観測結果が混線する
+ * （後発のコールバック登録が先発の分の結果を横取りする、あるいは逆に上書きされる）。
+ * 呼び出しごとに新しい `LayeredCache` を組み立てれば、`onLayerHit` は
+ * その呼び出しに閉じたローカル変数へのクロージャで済み、混線しない。
+ *
+ * 🔴 **primary（`inMemoryCache`）/ secondary の実ストアは共有のまま**: 新規生成するのは
+ * `LayeredCache` という薄いラッパーオブジェクトだけで、値の実体（isolate 内メモリの
+ * `Map` 本体・Cloudflare Cache API のバインディング先）は変わらない。したがって
+ * データの二重管理・不整合は生じない（`WorkersCache` 自身も `warnedOperations` の
+ * dedup Set 以外は無状態）。
+ */
+function makeObservedCache(onLayerHit: (layer: CacheLayerHit) => void): CachePort {
+  const storage = workersCacheStorage()
+  if (!storage) {
+    // Cache API 不可: `resolveCache()` 経由でフォールバック警告（`warnedCacheFallback`）の
+    // dedup ロジックを再利用する。単層構成なので HIT はすべて「primary（isolate 内メモリ）」、
+    // MISS は「miss」として報告する（secondary という段自体が存在しない）。
+    const fallback = resolveCache()
+    return {
+      async get<T>(key: CacheKey): Promise<T | null> {
+        const value = await fallback.get<T>(key)
+        onLayerHit(value !== null ? 'primary' : 'miss')
+        return value
+      },
+      set: (key, value, ttlSeconds) => fallback.set(key, value, ttlSeconds),
+      invalidate: (key) => fallback.invalidate(key),
+    }
+  }
+  return new LayeredCache(inMemoryCache, new WorkersCache(storage), {
+    refillTtlSeconds: TTL_SEARCH_SECONDS,
+    onLayerHit,
+  })
+}
+
+/**
  * 日次ダイジェスト（`getDailyDigestUseCase`）が読む候補プールの単一インスタンス
  * （モジュールスコープ）。`StaticGemDigest` は読み取り専用・状態を持たない実装
  * （`static-gem-digest.ts`）なので `sharedCache` のような可変状態の共有ではなく、
@@ -189,19 +232,31 @@ function makeTokenProvider(clock: ClockPort, accessToken?: string | null): Token
 function makeCachingRepositoryQuery(
   deps: {
     onCacheStatus?: (status: 'HIT' | 'MISS') => void
+    /**
+     * 段の内訳（primary/secondary/miss）の観測（Issue #875）。`onCacheStatus` とは
+     * **独立した別チャネル**（既存の `'HIT' | 'MISS'` 消費側を壊さないための意図的な設計）。
+     * 渡された場合のみ `sharedCache` の代わりに `makeObservedCache()` を使う
+     * （渡さない呼び出し元は従来どおり `sharedCache` のまま・後方互換）。
+     */
+    onCacheLayerHit?: (layer: CacheLayerHit) => void
     accessToken?: string | null
   } = {},
 ) {
   const clock = new SystemClock()
+  const cache: CachePort = deps.onCacheLayerHit
+    ? makeObservedCache(deps.onCacheLayerHit)
+    : sharedCache
   return new CachingRepositoryQuery({
     inner: new GithubRepositoryQuery({
       token: makeTokenProvider(clock, deps.accessToken),
       // 🔴 Issue #170: findDetail / findReadme の ETag 保存も同じ sharedCache を使う
       //    （名前空間は cache-key.ts で本文 TTL キャッシュと分離済み・互いを上書きしない）。
       //    PR #926 レビュー指摘 #1: cache / etagTtlSeconds は複合 optional `etag` へ統合済み。
+      //    🔴 段の内訳観測時も ETag 保存は `sharedCache` のまま（観測対象は検索本文キャッシュ
+      //    のみ・ETag の段内訳は本 Issue のスコープ外）。
       etag: { cache: sharedCache, ttlSeconds: TTL_DETAIL_ETAG_SECONDS },
     }),
-    cache: sharedCache,
+    cache,
     ttlSeconds: { search: TTL_SEARCH_SECONDS, detail: TTL_DETAIL_SECONDS },
     onCacheStatus: deps.onCacheStatus,
   })
@@ -240,18 +295,62 @@ export function getRepositoryReadmeUseCase(accessToken?: string | null): GetRepo
 export function searchRepositoriesWithCacheStatus(accessToken?: string | null): {
   search: SearchRepositories
   getCacheStatus: () => 'HIT' | 'MISS' | undefined
+  /** どちらの段で応答したか（Issue #875）。`getCacheStatus()` とは独立した観測結果。 */
+  getCacheLayer: () => CacheLayerHit | undefined
 } {
   let status: 'HIT' | 'MISS' | undefined
+  let layer: CacheLayerHit | undefined
   const repos = makeCachingRepositoryQuery({
     accessToken,
     onCacheStatus: (s) => {
       status = s
     },
+    onCacheLayerHit: (l) => {
+      layer = l
+    },
   })
   return {
     search: makeSearchRepositories({ repos }),
     getCacheStatus: () => status,
+    getCacheLayer: () => layer,
   }
+}
+
+/**
+ * `X-Cache-Status` / `X-Cache-Layer` / `X-Cache-Colo`（Issue #875）の組み立て。
+ *
+ * 🔴 **`app/api/search/route.ts`（Frameworks & Drivers 層）に判断を持たせない**
+ * （`application-architecture.md` §1.2: Route Handler は composition root から取った結果を
+ * そのまま渡すだけ）。「観測できなかったときどう倒すか」「コロケーションが取れないとき
+ * ヘッダを付けるかどうか」はいずれも **判断** なので、ここ（composition root）に置く。
+ * `route.ts` は `getCacheStatus()` / `getCacheLayer()` を渡すだけにする。
+ *
+ * 🔴 **コロケーションは `cloudflareColo()`（`getCloudflareContext().cf.colo`）から取る**
+ * （プレビュー実機で判明した修正・`cloudflare-bindings.ts` の JSDoc 参照）。当初は着信
+ * リクエストの `cf-ray` ヘッダをパースしていたが、`cf-ray` は Cloudflare が **レスポンスへ**
+ * 付与するヘッダで着信リクエストヘッダとしては読めず、実機で常に取得失敗していた
+ * （単体テストは自分で作った `cf-ray` を渡していたため緑のまま検出できなかった）。
+ */
+export async function buildCacheObservationHeaders(opts: {
+  cacheStatus: 'HIT' | 'MISS' | undefined
+  cacheLayer: CacheLayerHit | undefined
+}): Promise<Headers> {
+  // opts.cacheStatus / opts.cacheLayer が undefined になるのは `CachingRepositoryQuery` が
+  // `onCacheStatus` / `onLayerHit` を一度も呼ばずに正常終了した場合のみで、現行実装では
+  // 起き得ない（HIT/MISS・primary/secondary/miss のいずれかを必ず呼ぶ）。型上は undefined を
+  // 許すため、観測できなかったケースを安全側（「キャッシュ未確認」）に倒す。
+  const headers = new Headers({
+    'X-Cache-Status': opts.cacheStatus ?? 'MISS',
+    'X-Cache-Layer': opts.cacheLayer ?? 'miss',
+  })
+  // エニーキャストによるコロケーション分散が HIT 率の残差要因かを切り分けるため併記する。
+  // 取れない（Workers 実行環境の外・`cf` 未提供）ときは付けない（無音の欠損可・
+  // `cloudflareColo()` 自身が例外を投げずフェイルオープンする）。
+  const colo = await cloudflareColo()
+  if (colo) {
+    headers.set('X-Cache-Colo', colo)
+  }
+  return headers
 }
 
 /**

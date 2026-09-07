@@ -31,3 +31,30 @@ export async function rateLimiterBinding(): Promise<RateLimiterBinding | undefin
     return undefined
   }
 }
+
+/**
+ * リクエストが処理された Cloudflare のコロケーションコード（例: `SJC` / `NRT`）。
+ *
+ * 🔴 **なぜ `cf-ray` ヘッダをパースしないのか（Issue #875 の実機欠陥・修正）**: 当初は着信
+ * リクエストの `cf-ray` ヘッダから抽出する実装だったが、プレビュー実機（`pr-1059`）で
+ * `request.headers.get('cf-ray')` が常時 `null` だった。`cf-ray` は Cloudflare が **レスポンスへ**
+ * 付与するヘッダであり、Worker への着信リクエストヘッダとしては読めない（実測で判明）。
+ * `getCloudflareContext().cf.colo` が着信リクエストの `cf` プロパティ経由でコロケーションコード
+ * そのものを持つため、こちらを正とする（`rateLimiterBinding()` と同じ取得パターンを踏襲）。
+ *
+ * `getCloudflareContext()` は Workers 実行環境の外（`npm test` / `next dev` で
+ * `initOpenNextCloudflareForDev` 未実施等）や `cf` 未提供の環境では例外を投げる、または
+ * `cf` が無い場合があるため、try/catch で `undefined` に倒す（フェイルオープン・
+ * 呼び出し側はヘッダを付けないだけでリクエストを壊さない）。
+ */
+export async function cloudflareColo(): Promise<string | undefined> {
+  try {
+    const { getCloudflareContext } = await import('@opennextjs/cloudflare')
+    // `IncomingRequestCfProperties`（`@cloudflare/workers-types`）に依存せず、
+    // `EnvWithRateLimiter` と同じ流儀で必要な最小限の shape だけを自前定義する。
+    const context = await getCloudflareContext<{ colo?: string }>({ async: true })
+    return context?.cf?.colo
+  } catch {
+    return undefined
+  }
+}

@@ -7,11 +7,24 @@ import { fakeCacheStorage } from '../infrastructure/platform/workers-cache.test-
 import {
   TTL_DETAIL_SECONDS,
   TTL_SEARCH_SECONDS,
+  buildCacheObservationHeaders,
   getRepositoryDetailUseCase,
   lookupGemIndexes,
   searchRepositoriesUseCase,
   searchRepositoriesWithCacheStatus,
 } from './container'
+
+/**
+ * Issue #875 の実機欠陥修正: コロケーションコードの取得元を `cf-ray` ヘッダのパースから
+ * `getCloudflareContext().cf.colo` へ切り替えた（`cloudflare-bindings.ts` の JSDoc 参照）。
+ * `buildCacheObservationHeaders` のテストではこの取得関数をモックする（実際の取得可否の
+ * 検証は `cloudflare-bindings.test.ts` が担当）。既定は「取れない」（他の describe が
+ * 意図せず colo ヘッダの有無へ依存しないようにするための無害な既定値）。
+ */
+const cloudflareColoMock = vi.fn().mockResolvedValue(undefined)
+vi.mock('../infrastructure/platform/cloudflare-bindings', () => ({
+  cloudflareColo: (...args: unknown[]) => cloudflareColoMock(...args),
+}))
 
 /**
  * SP-8: レート枠切替（`accessToken` を渡すと installation token ではなくユーザーの
@@ -514,10 +527,149 @@ describe('sharedCache の実装選択（Cache API の有無・Issue #121）', ()
     }
   })
 
+  describe('getCacheLayer（Issue #875: 2 段の内訳の観測）', () => {
+    it('1 段目（isolate 内メモリ）で HIT したら "primary"、それ以外の観測（getCacheStatus）と食い違わない', async () => {
+      stubGithubAppEnvEmpty()
+      const fake = fakeCacheStorage()
+      ;(globalThis as CachesGlobal).caches = { default: fake.storage }
+      vi.resetModules()
+      const container = await import('./container')
+      countUpstreamSearchCalls()
+      const keyword = 'container-cache-layer-primary'
+
+      await container.searchRepositoriesWithCacheStatus().search({ keyword })
+      const second = container.searchRepositoriesWithCacheStatus()
+      await second.search({ keyword })
+
+      // 🔴 干渉検証（#725）: getCacheStatus（既存チャネル）と getCacheLayer（新チャネル）が
+      // 同じ get() 呼び出しから独立に正しく観測できることを同時に確認する。
+      expect(second.getCacheStatus()).toBe('HIT')
+      expect(second.getCacheLayer()).toBe('primary')
+    })
+
+    it('1 段目 MISS + 2 段目（Cache API）HIT なら "secondary"', async () => {
+      stubGithubAppEnvEmpty()
+      const fake = fakeCacheStorage()
+      ;(globalThis as CachesGlobal).caches = { default: fake.storage }
+      const keyword = 'container-cache-layer-secondary'
+
+      vi.resetModules()
+      const containerA = await import('./container')
+      const upstream = countUpstreamSearchCalls()
+      await containerA.searchRepositoriesUseCase()({ keyword })
+      expect(upstream.count).toBe(1)
+
+      // 別 isolate 相当（isolate 内メモリは空・Cache API のエントリだけ残っている）。
+      vi.resetModules()
+      const containerB = await import('./container')
+      const cached = containerB.searchRepositoriesWithCacheStatus()
+      await cached.search({ keyword })
+
+      expect(cached.getCacheStatus()).toBe('HIT')
+      expect(cached.getCacheLayer()).toBe('secondary')
+    })
+
+    it('両方 MISS なら "miss"', async () => {
+      stubGithubAppEnvEmpty()
+      const fake = fakeCacheStorage()
+      ;(globalThis as CachesGlobal).caches = { default: fake.storage }
+      vi.resetModules()
+      const container = await import('./container')
+      countUpstreamSearchCalls()
+      const keyword = 'container-cache-layer-miss'
+
+      const first = container.searchRepositoriesWithCacheStatus()
+      await first.search({ keyword })
+
+      expect(first.getCacheStatus()).toBe('MISS')
+      expect(first.getCacheLayer()).toBe('miss')
+    })
+
+    it('Cache API が無い環境（単層フォールバック）でも HIT を "primary"、MISS を "miss" として報告する', async () => {
+      stubGithubAppEnvEmpty()
+      delete (globalThis as CachesGlobal).caches
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        vi.resetModules()
+        const container = await import('./container')
+        countUpstreamSearchCalls()
+        const keyword = 'container-cache-layer-fallback'
+
+        const first = container.searchRepositoriesWithCacheStatus()
+        await first.search({ keyword })
+        const second = container.searchRepositoriesWithCacheStatus()
+        await second.search({ keyword })
+
+        expect(first.getCacheLayer()).toBe('miss')
+        expect(second.getCacheLayer()).toBe('primary')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('観測していない呼び出し（searchRepositoriesUseCase 経由）には影響しない（既存動作を壊さない）', async () => {
+      stubGithubAppEnvEmpty()
+      const fake = fakeCacheStorage()
+      ;(globalThis as CachesGlobal).caches = { default: fake.storage }
+      vi.resetModules()
+      const container = await import('./container')
+      const upstream = countUpstreamSearchCalls()
+      const keyword = 'container-cache-layer-unobserved'
+
+      const result = await container.searchRepositoriesUseCase()({ keyword })
+
+      expect(upstream.count).toBe(1)
+      expect(result.items).toHaveLength(1)
+    })
+  })
+
   it('LayeredCache の充填 TTL は検索 TTL（TTL_SEARCH_SECONDS）を超えない', () => {
     // 🔴 `container.ts` が `refillTtlSeconds: TTL_SEARCH_SECONDS` を明示注入している前提の
     //    上限ガード（PR #874 レビュー F6 / F10）。既定値が検索 TTL より長くなると、充填した
     //    primary のコピーが「今 secondary へ新規に書いた場合の寿命」を超えて生き残る。
     expect(DEFAULT_REFILL_TTL_SECONDS).toBeLessThanOrEqual(TTL_SEARCH_SECONDS)
+  })
+})
+
+/**
+ * Issue #875 追補: `app/api/search/route.ts`（Frameworks & Drivers 層）から観測ヘッダの
+ * 組み立てロジックを composition root（本ファイル）へ寄せる（`ARCH-3` / `app/` 薄さ検査対応・
+ * `check_architecture_boundaries.py` / `check_app_thinness.py --strict`）。
+ * `route.ts` は `getCacheStatus()` / `getCacheLayer()` / `cf-ray` の生値を渡すだけにし、
+ * 「undefined のときどう倒すか」「コロケーションが取れないときヘッダを付けるか」の判断は
+ * ここに置く。
+ */
+describe('buildCacheObservationHeaders（Issue #875 追補: app/ の薄さ対応 + 実機欠陥修正）', () => {
+  it('cacheStatus / cacheLayer をそのまま X-Cache-Status / X-Cache-Layer へ載せる', async () => {
+    const headers = await buildCacheObservationHeaders({ cacheStatus: 'HIT', cacheLayer: 'primary' })
+
+    expect(headers.get('X-Cache-Status')).toBe('HIT')
+    expect(headers.get('X-Cache-Layer')).toBe('primary')
+  })
+
+  it('cacheStatus / cacheLayer が undefined のときは安全側（MISS / miss）へ倒す', async () => {
+    const headers = await buildCacheObservationHeaders({
+      cacheStatus: undefined,
+      cacheLayer: undefined,
+    })
+
+    expect(headers.get('X-Cache-Status')).toBe('MISS')
+    expect(headers.get('X-Cache-Layer')).toBe('miss')
+  })
+
+  it('cloudflareColo が取れるときは X-Cache-Colo を付ける', async () => {
+    cloudflareColoMock.mockResolvedValueOnce('SJC')
+
+    const headers = await buildCacheObservationHeaders({ cacheStatus: 'MISS', cacheLayer: 'miss' })
+
+    expect(headers.get('X-Cache-Colo')).toBe('SJC')
+  })
+
+  it('cloudflareColo が取れない（undefined を返す）ときは X-Cache-Colo を付けない', async () => {
+    cloudflareColoMock.mockResolvedValueOnce(undefined)
+
+    const headers = await buildCacheObservationHeaders({ cacheStatus: 'MISS', cacheLayer: 'miss' })
+
+    expect(headers.get('X-Cache-Colo')).toBeNull()
   })
 })

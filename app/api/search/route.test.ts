@@ -92,6 +92,54 @@ describe('GET /api/search — X-Cache-Status', () => {
 })
 
 /**
+ * Issue #875: 2 段キャッシュ（primary=isolate 内メモリ・secondary=Cloudflare Cache API）の
+ * どちらで応答したかを `X-Cache-Layer` で、着信リクエストのコロケーションを `X-Cache-Colo`
+ * （`cf-ray` ヘッダから抽出）で観測できるようにする。
+ *
+ * 🔴 Vitest 実行環境には Cache API（`globalThis.caches`）が無いため、本ファイルの
+ * `GithubRepositoryQuery` モックと同じ isolate 内で完結する範囲では常に primary（1 段目）で
+ * HIT する（`container.ts` の LayeredCache/フォールバック配線自体は `container.test.ts` が
+ * 別途検証済み）。ここでは「新規キーワードは miss、2 回目以降は primary」という、この
+ * 実行環境で実際に起きる遷移を固定する。
+ */
+describe('GET /api/search — X-Cache-Layer / X-Cache-Colo（Issue #875）', () => {
+  it('新規キーワードの初回は X-Cache-Layer=miss、2 回目は X-Cache-Layer=primary を報告する', async () => {
+    searchMock.mockResolvedValue(makeSearchResult({ totalCount: 3 }))
+
+    const first = await GET(new NextRequest('http://localhost/api/search?q=cache-layer-check'))
+    expect(first.headers.get('X-Cache-Layer')).toBe('miss')
+    // 🔴 干渉検証（#725）: 同じ get() 呼び出しから X-Cache-Status と X-Cache-Layer の
+    // 両方が独立に正しく出ることを同時に確認する。
+    expect(first.headers.get('X-Cache-Status')).toBe('MISS')
+
+    const second = await GET(new NextRequest('http://localhost/api/search?q=cache-layer-check'))
+    expect(second.headers.get('X-Cache-Layer')).toBe('primary')
+    expect(second.headers.get('X-Cache-Status')).toBe('HIT')
+  })
+
+  /**
+   * 🔴 **実機欠陥の修正（Issue #875）**: 当初 `X-Cache-Colo` は着信リクエストの `cf-ray`
+   * ヘッダをパースしていたが、`cf-ray` は Cloudflare が **レスポンスへ** 付与するヘッダで
+   * 着信リクエストヘッダとしては読めず、プレビュー実機で常に取得失敗していた
+   * （旧テストは自分で `cf-ray` ヘッダを作って渡していたため緑のまま検出できなかった）。
+   * コロケーションの取得元は `getCloudflareContext().cf.colo` へ切り替え済み
+   * （`cloudflareColo()`・`container.ts` / `cloudflare-bindings.ts`）。取得可否そのものの
+   * テストは `container.test.ts`（モック経由）と `cloudflare-bindings.test.ts` が持つ。
+   * ここでは **モックしない実際の呼び出し経路**（`GET()` → composition root → 実 SDK）を
+   * 通し、Workers 実行環境の外（本テスト環境）では例外が伝播せず、ヘッダを付けずに
+   * 正常応答することだけを固定する（「単体テストだけ緑」の再発防止）。
+   */
+  it('Workers 実行環境の外（本テスト環境）では X-Cache-Colo を付けずに正常応答する', async () => {
+    searchMock.mockResolvedValue(makeSearchResult())
+
+    const res = await GET(new NextRequest('http://localhost/api/search?q=cache-colo-unavailable-check'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('X-Cache-Colo')).toBeNull()
+  })
+})
+
+/**
  * エラー応答の共通検証（Issue #107 の再発防止）。載せてよいのは `ErrorKind` と再試行情報だけで、
  * 開発者向けの `message` / `error` を含めないことを **全エラーケースで** 固定する。
  */

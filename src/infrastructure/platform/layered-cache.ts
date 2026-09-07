@@ -41,32 +41,40 @@ export const DEFAULT_REFILL_TTL_SECONDS = 60
  *   片方の層にだけ書かれる非対称も作らない）
  * - `invalidate` は片方が throw してももう片方を実行し、自身は throw しない（冪等）
  */
+/** `get` がどちらの段で応答したか（Issue #875: 2 段の内訳の観測）。 */
+export type CacheLayerHit = 'primary' | 'secondary' | 'miss'
+
 export class LayeredCache implements CachePort {
   private readonly refillTtlSeconds: number
+  private readonly onLayerHit: ((layer: CacheLayerHit) => void) | undefined
 
   constructor(
     private readonly primary: CachePort,
     private readonly secondary: CachePort,
-    options: { refillTtlSeconds?: number } = {},
+    options: { refillTtlSeconds?: number; onLayerHit?: (layer: CacheLayerHit) => void } = {},
   ) {
     const refillTtlSeconds = options.refillTtlSeconds ?? DEFAULT_REFILL_TTL_SECONDS
     // 充填は `get` の中で行うため、ここで弾かないと「毎回 RangeError が握り潰されて
     // 充填だけ静かに効かない」状態になる（生成時に落とす）。
     assertPositiveTtlSeconds(refillTtlSeconds, 'refillTtlSeconds')
     this.refillTtlSeconds = refillTtlSeconds
+    this.onLayerHit = options.onLayerHit
   }
 
   async get<T>(key: CacheKey): Promise<T | null> {
     const fromPrimary = await this.tryGet<T>(this.primary, key)
     if (fromPrimary !== null) {
       // primary HIT。secondary は引かない（isolate 跨ぎの往復を省く）。
+      this.reportLayerHit('primary')
       return fromPrimary
     }
 
     const fromSecondary = await this.tryGet<T>(this.secondary, key)
     if (fromSecondary === null) {
+      this.reportLayerHit('miss')
       return null
     }
+    this.reportLayerHit('secondary')
 
     try {
       // 同じ isolate の次のリクエストが secondary に触らずに済むよう充填する。
@@ -76,6 +84,20 @@ export class LayeredCache implements CachePort {
       // 充填失敗は取得結果に影響させない（次回また secondary を引くだけ）。
     }
     return fromSecondary
+  }
+
+  /**
+   * どちらの段で応答したかを観測用コールバックへ伝える（Issue #875）。
+   *
+   * 🔴 **観測は `get` の結果に影響させない**: コールバックが throw しても握り潰す
+   * （呼び出し側の実装ミスでキャッシュ本体の可用性を落とさない・他の `try/catch` と同じ流儀）。
+   */
+  private reportLayerHit(layer: CacheLayerHit): void {
+    try {
+      this.onLayerHit?.(layer)
+    } catch {
+      // 観測コールバックの失敗は無視する（get の戻り値・副作用に影響させない）。
+    }
   }
 
   async set<T>(key: CacheKey, value: T, ttlSeconds: number): Promise<void> {
