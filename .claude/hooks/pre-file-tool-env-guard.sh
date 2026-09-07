@@ -34,25 +34,33 @@ _env_guard_verdict() {
 
 if [ "${1:-}" = "--self-test" ]; then
   _egv_fail=0
+  _egv_block=0
+  _egv_allow=0
   # ブロックされるべきパス
+  # `.env.example.ja` / `.env.example.ci` は **ブロック側**（レビュー指摘 1）。旧実装の
+  # `.env.example.[a-z][a-z]` は「2 文字の言語コード」のつもりで任意の小文字 2 文字 676 通りを
+  # 通していたため削除した。`.ENV.EXAMPLE` もブロック側（ひな形は元表記の完全一致のみ・指摘 2）。
   for p in .env .env.local .env.production .env.prod .env.ci .env.qa \
-           /home/user/gem-hunter/.env.staging config/.env.docker ~/.env.secret; do
+           /home/user/gem-hunter/.env.staging config/.env.docker ~/.env.secret \
+           .env.example.ja .env.example.ci .ENV.EXAMPLE; do
+    _egv_block=$((_egv_block + 1))
     if ! _env_guard_verdict "$p"; then
       echo "[env-guard][self-test] FAIL: ブロックされるべきパスが通過した: $p" >&2
       _egv_fail=1
     fi
   done
   # 通過すべきパス
-  for p in .env.example .env.sample .env.template .env.dist .env.example.ja \
+  for p in .env.example .env.sample .env.template .env.dist \
            README.md src/infrastructure/github/oauth.ts docs/rules/env-vars.md \
            environment.ts .environment; do
+    _egv_allow=$((_egv_allow + 1))
     if _env_guard_verdict "$p"; then
       echo "[env-guard][self-test] FAIL: 通過すべきパスがブロックされた: $p" >&2
       _egv_fail=1
     fi
   done
   if [ "$_egv_fail" -eq 0 ]; then
-    echo "[env-guard][self-test] OK（ブロック 9 件 / 通過 10 件）"
+    echo "[env-guard][self-test] OK（ブロック ${_egv_block} 件 / 通過 ${_egv_allow} 件）"
     exit 0
   fi
   exit 1
