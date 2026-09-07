@@ -332,15 +332,21 @@ else
   skip_check "LP 静的検査 (check_site.py)" "スクリプトが見つかりません"
 fi
 
-# 4.66. ランディングページ（site/）の axe-core a11y 検査（Issue #997）
+# 4.66. ランディングページ（site/）の axe-core a11y 検査（Issue #997 / #996）
 #       check_site.py は静的検査のみで axe を流さない。アプリ本体の Lighthouse ゲート（3.6）も
 #       LP を対象にしないため、LP の a11y 劣化はこの検査だけが検知する（site/README.md
-#       「アクセシビリティの実測」の人手手順のスクリプト化。4 構成 = light/dark × 1280/390/320px
-#       のうち README が列挙する組み合わせに一致させる：light/1280・dark/1280・light/390・light/320）。
-#       実測（2026-09-07・ローカル）: 本判定 約6秒（静的サーバー起動 + Chromium 4 起動）・
-#       self-test 約4秒（Chromium 5 起動: PASS 1 + GATE_FAIL 3 バリアント + INFRA_FAIL 1）。
+#       「アクセシビリティの実測」の人手手順のスクリプト化。走査対象は PAGES（index.html・404.html。
+#       正本は tools/check_site.py の PAGES で、起動のたびに一致検証する）× 4 構成（light/dark ×
+#       1280/390/320px のうち README が列挙する組み合わせ：light/1280・dark/1280・light/390・
+#       light/320）の直積＝計 8 件）。
+#       実測（2026-09-07・ローカル）: 本判定 約8秒（静的サーバー起動 + Chromium 起動 1 回・
+#       同一ブラウザ内で 8 件をコンテキスト分離して処理。「Chromium 4 起動」ではない）・
+#       self-test 約10秒（本体の検証に加え、CLI エントリポイント（else 分岐）を実プロセスとして
+#       2 回子プロセス起動する統合テストを含む）。
 #       E2E（既定 600 秒）・Lighthouse（既定 180 秒）より大幅に軽いが、CI 環境差・Chromium 起動の
-#       揺らぎを見込み Lighthouse の既定値の 1/3（60 秒）を既定にする（実測の約10倍の余裕）。
+#       揺らぎを見込み Lighthouse の既定値の 1/3（60 秒）を既定にする（実測の約6〜7倍の余裕。
+#       PAGES 追加前の 4 構成のみ実装から件数が倍増したため、余裕は約10倍→約6〜7倍に縮んでいるが
+#       60 秒のままで十分な余裕がある）。
 SITE_A11Y_TIMEOUT_SEC="${RUN_CHECKS_SITE_A11Y_TIMEOUT:-60}"
 if [ -f "$REPO_ROOT/tools/check_site_a11y.mjs" ]; then
   if [ "$HAS_NODE_PROJECT" -eq 0 ]; then

@@ -15,7 +15,10 @@
  * 食い違っていれば非ゼロ終了する（撮り直し後の属性更新漏れ = CLS の原因を機械で止める）。
  *
  * srcset 派生（Issue #998）: `SHOTS` の各エントリに `srcsetWidths` を持たせると、その幅の
- * `${name}-${width}w.webp` も追加生成する（例: shot-search.webp に加えて shot-search-800w.webp）。
+ * `${name}-${width}w.webp` も追加生成する（例: shot-search.webp に加えて shot-search-800w.webp、
+ * shot-digest.webp / shot-gems.webp に加えて各 -550w.webp）。shot-mobile.webp は対象外
+ * （表示先 .phone の実効幅は最大 228px で、現行 640px 幅がすでに ~2.8x 相当をカバーしており
+ * 追加派生の転送削減効果が薄いため・`tools/check_site.py` の `REQUIRE_SRCSET_BASENAMES` 冒頭コメント参照）。
  * 撮影実寸から縮小するので、site/index.html 側の <img srcset> に書く幅記述子とここで生成する
  * ファイル名の対応は 1:1 になる。
  *
@@ -90,6 +93,10 @@ const SHOTS = [
     path: '/ja',
     viewport: { width: 1280, height: 1500 },
     width: 1100,
+    // bento タイル（.tile-figure）の表示幅は最大でも ~667px（--maxw:1120px 到達後の span-2 幅）
+    // で頭打ちになる一方、モバイル 1 カラム時は ~232〜302px まで縮む（Issue #998）。
+    // 半分の 550w を追加し、site/index.html 側で srcset + sizes を使って出し分ける。
+    srcsetWidths: [550],
     clipFrom: () => {
       const heading = Array.from(document.querySelectorAll('h2')).find((h) =>
         h.textContent.includes('今日の Gem'),
@@ -121,6 +128,8 @@ const SHOTS = [
     path: '/ja/gems?q=react',
     viewport: { width: 1280, height: 820 },
     width: 1100,
+    // shot-digest と同じ理由・同じ半幅（Issue #998）。
+    srcsetWidths: [550],
     clipFrom: () => {
       const heading = document.getElementById('gems-heading')
       const items = document.querySelectorAll('li[data-repository-full-name]')

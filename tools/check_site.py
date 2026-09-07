@@ -47,14 +47,28 @@ VOID_TAGS = {
     "link", "meta", "param", "source", "track", "wbr",
 }
 
-# srcset が必須の画像（basename ベース）。Issue #998: shot-search.webp は 1600px 固定配信だと
-# 390px ビューポートにも同じ 1600px が届くため、800w 派生を srcset + sizes で出し分ける。
+# srcset が必須の画像（basename ベース）。Issue #998: PC 解像度で撮った画像をモバイル幅にも
+# そのまま配信していた 3 画像（shot-search / shot-digest / shot-gems）を対象にする。
+# shot-mobile.webp は対象外（理由は main() 呼び出し元のコメントではなく、Issue #998 の
+# 完了条件チェックで実測して判断: 表示先 .phone の実効幅は最大 228px(padding込み) で、
+# 現行ファイルは 640px 幅 = 約 2.8x 相当をすでにカバーしており、追加の派生を作っても
+# 転送削減効果が薄い一方、それ以上縮小すると 3x 相当の画質を割り込むリスクがある）。
 # 将来ここへ追加された画像は同じ規約に従う（新規の <img> でも自動的に検査対象へ入る）。
-REQUIRE_SRCSET_BASENAMES = {"shot-search.webp"}
+REQUIRE_SRCSET_BASENAMES = {"shot-search.webp", "shot-digest.webp", "shot-gems.webp"}
 # srcset の各候補は `URL 幅w` の形式のみ許可する（density descriptor `x` は本サイトでは未使用）。
 SRCSET_CANDIDATE_RE = re.compile(r"^(\S+)\s+(\d+)w$")
-# sizes の値に含まれる固定 px 値をすべて拾う（vw / calc() の中に混じっていてもよい）。
-SIZES_PX_RE = re.compile(r"(\d+)px")
+
+# sizes の値をパースする際に横断する代表ビューポート幅（CSS px）。フルカバレッジではなく、
+# 「メディア条件の閾値」と「割り当てサイズ値」を混同しないための実測点として使う
+# （Issue #998 CRITICAL 2）。モバイル最小級 / モバイル標準 / デスクトップ小 / デスクトップ大。
+SIZES_REPRESENTATIVE_VIEWPORTS = (320, 390, 1280, 1920)
+# sizes の 1 候補（カンマ区切りの 1 要素）は `(メディア条件)? サイズ値` の形。
+SIZES_ENTRY_RE = re.compile(r"^\(([^)]*)\)\s*(.+)$")
+# メディア条件内の `min-width: Npx` / `max-width: Npx` を抽出する（本 LP は単純な単一条件のみ使用）。
+SIZES_MEDIA_COND_RE = re.compile(r"(min-width|max-width)\s*:\s*(\d+)px")
+_SIZES_PX_VALUE_RE = re.compile(r"^(\d+)px$")
+_SIZES_VW_VALUE_RE = re.compile(r"^(\d+)vw$")
+_SIZES_CALC_VW_PX_RE = re.compile(r"^calc\(\s*(\d+)vw\s*([+-])\s*(\d+)px\s*\)$")
 
 
 def png_size(data: bytes) -> tuple[int, int] | None:
@@ -208,6 +222,109 @@ def check_page(page: str, errors: list[str]) -> PageParser:
     return parser
 
 
+def _media_condition_matches(condition: str, viewport: int) -> bool | None:
+    """sizes の候補に付くメディア条件（例: "min-width: 1120px"）が指定ビューポートで真かどうか。
+
+    本 LP は `min-width` / `max-width` の単純な数値条件のみを使う（複数条件が `and` で
+    連結されていれば全条件が真のときだけ真とする）。条件から px 形式の判定材料を
+    1 つも取り出せない場合は「解釈できない」ことを示す None を返す（呼び出し側が
+    fail-closed へ倒す・Issue #998 CRITICAL 2）。
+    """
+    matches = SIZES_MEDIA_COND_RE.findall(condition)
+    if not matches:
+        return None
+    ok = True
+    for kind, value_str in matches:
+        value = int(value_str)
+        if kind == "min-width" and viewport < value:
+            ok = False
+        if kind == "max-width" and viewport > value:
+            ok = False
+    return ok
+
+
+def _eval_sizes_value(value: str, viewport: int) -> int | None:
+    """sizes の 1 候補の「サイズ値」部分（メディア条件を除いた側）を指定ビューポートで px 換算する。
+
+    対応する記法は `Npx`（固定）/ `Nvw`（ビューポート比）/ `calc(Nvw ± Mpx)`（本 LP の実使用形）
+    の 3 つ。それ以外（%・他の calc 式・env() 等）は未対応として None を返す（判定不能を
+    「要求なし」と誤読しない・fail-closed）。
+    """
+    value = value.strip()
+    match = _SIZES_PX_VALUE_RE.match(value)
+    if match:
+        return int(match.group(1))
+    match = _SIZES_VW_VALUE_RE.match(value)
+    if match:
+        return round(int(match.group(1)) / 100 * viewport)
+    match = _SIZES_CALC_VW_PX_RE.match(value)
+    if match:
+        vw_part = int(match.group(1)) / 100 * viewport
+        sign = 1 if match.group(2) == "+" else -1
+        px_part = int(match.group(3))
+        return round(vw_part + sign * px_part)
+    return None
+
+
+def _sizes_required_px(sizes_value: str) -> tuple[int | None, bool]:
+    """sizes 属性値から「実際にどの幅が要求されうるか」の最大値を計算する（Issue #998 CRITICAL 2）。
+
+    旧実装（`SIZES_PX_RE = re.compile(r"(\\d+)px")`）は sizes 文字列全体から px リテラルを
+    無差別に拾っており、次の 2 つの見逃し方をしていた:
+      - vw / calc() だけの sizes（px リテラルが 1 つも無い）→ required_px が空になり、
+        カバレッジ判定そのものが丸ごとスキップされていた（`sizes="100vw"` 等）
+      - メディア条件の閾値（`(min-width: 1400px)` の 1400）と実際の割り当てサイズ値
+        （その後に続く `1080px` の 1080）を区別できず、大きい方を拾って
+        「デスクトップでは実際より大きい幅が要る」と過大／過小に誤判定していた
+
+    本実装はカンマ区切りの各候補を `(メディア条件)? サイズ値` にパースし、代表ビューポート
+    （SIZES_REPRESENTATIVE_VIEWPORTS）ごとに CSS の sizes 評価順序（先頭から見て最初に
+    真になった条件、条件なしは常に真＝フォールバック）で「そのビューポートで選ばれる候補」を
+    決定してから、そのサイズ値だけを _eval_sizes_value() で px 換算する。メディア条件の
+    閾値自体は px 換算の対象に渡らないため、閾値をサイズ値と取り違える経路が構造的に無い。
+
+    戻り値: (代表ビューポートを横断した必要 px の最大値 or None, 判定不能フラグ)。
+    メディア条件・サイズ値のどちらか一方でも解釈できない箇所があれば判定不能（True）とし、
+    呼び出し側は「要求なし」ではなく fail-closed のエラーとして扱う。
+    """
+    entries: list[tuple[str | None, str]] = []
+    for raw in sizes_value.split(","):
+        entry = raw.strip()
+        if not entry:
+            continue
+        match = SIZES_ENTRY_RE.match(entry)
+        if match:
+            entries.append((match.group(1), match.group(2).strip()))
+        else:
+            entries.append((None, entry))
+    if not entries:
+        return None, True
+
+    required: int | None = None
+    for viewport in SIZES_REPRESENTATIVE_VIEWPORTS:
+        chosen_value: str | None = None
+        for condition, value in entries:
+            if condition is None:
+                chosen_value = value
+                break
+            matched = _media_condition_matches(condition, viewport)
+            if matched is None:
+                return None, True
+            if matched:
+                chosen_value = value
+                break
+        if chosen_value is None:
+            # 条件付き候補しか無く、どのビューポートでも一致せずフォールバックも無い
+            # （sizes の書き方として異例）。安全側で最後の候補を使う。
+            chosen_value = entries[-1][1]
+        px = _eval_sizes_value(chosen_value, viewport)
+        if px is None:
+            return None, True
+        if required is None or px > required:
+            required = px
+    return required, False
+
+
 # check_img_srcset() が「REQUIRE_SRCSET_BASENAMES に載る画像を実際に見た」basename を溜める。
 # main() が全ページ処理後に空集合差分を取り、「対象の <img> ごと消えて検査が 0 件のまま
 # 素通りする」（check-tool-design-rules.md §2 の fail-open）を検知する。
@@ -229,10 +346,16 @@ def check_img_srcset(
       - 派生ファイルの不在を検査していない → 各候補の実在をチェック
       - 記述子の幅（800w）のパース失敗・実ファイルとの食い違いを握り潰す
         → int() 変換に失敗する形は正規表現の時点で弾かれ、変換できても実寸と突き合わせる
-      - 同じ幅記述子が重複している（各候補は妥当だが集合として無効・#896）→ エラー
+      - 同じ幅記述子が重複している（各候補は妥当だが集合として無効・#896）→ エラー。
+        ただし重複エラーを出した回は「有効な候補が実質 1 件」エラーへ二重計上しない
+        （valid_candidate_count は重複判定の前に加算するため・#998 WARNING 4）
       - 候補が実質 1 件しかない（srcset を名乗る意味が無い・#896）→ エラー
       - srcset があるのに sizes が無い（仕様上必須の組み合わせ）→ エラー
-      - sizes が要求する固定 px 幅を、どの候補もカバーできていない → エラー
+      - sizes が要求する px 幅を、どの候補もカバーできていない → エラー。
+        sizes の px 抽出はメディア条件と vw / calc() を区別して評価する
+        （_sizes_required_px()・#998 CRITICAL 2。旧実装は sizes 文字列全体から
+        px リテラルを無差別に拾い、vw / calc() だけの sizes を素通りさせたり
+        メディア条件の閾値をサイズ値と取り違えたりしていた）
       - **対象の <img> がページから消えると検査対象 0 件のまま合格する経路**
         → REQUIRED_SRCSET_SEEN に記録し、main() が全ページ走査後に必須集合との差分を確認する
     """
@@ -261,6 +384,9 @@ def check_img_srcset(
             errors.append(f'{page}:{line} <img src="{src}"> は srcset があるのに sizes が無い')
 
         widths_seen: dict[int, str] = {}
+        # 重複でも個別には妥当な候補として数える（#998 WARNING 4: 重複エラーを出した回に
+        # 「候補が実質 1 件」エラーを二重計上しないため、unique 幅の件数とは別に持つ）。
+        valid_candidate_count = 0
         for raw in srcset.split(","):
             token = raw.strip()
             if not token:
@@ -287,6 +413,7 @@ def check_img_srcset(
                     f" 実寸幅は {actual[0]}px"
                 )
                 continue
+            valid_candidate_count += 1
             if width_str in widths_seen:
                 errors.append(
                     f"{page}:{line} srcset に幅記述子 {width_str}w が重複している"
@@ -296,16 +423,20 @@ def check_img_srcset(
             widths_seen[width_str] = url
 
         candidate_widths = list(widths_seen)
-        if candidate_widths and len(candidate_widths) < 2:
+        if valid_candidate_count and valid_candidate_count < 2:
             errors.append(
-                f"{page}:{line} srcset の有効な候補が {len(candidate_widths)} 件しかない"
+                f"{page}:{line} srcset の有効な候補が {valid_candidate_count} 件しかない"
                 "（複数候補が無いと出し分けの意味が無い）"
             )
 
         if candidate_widths and sizes_value.strip():
-            required_px = [int(m) for m in SIZES_PX_RE.findall(sizes_value)]
-            if required_px:
-                max_required = max(required_px)
+            max_required, unparseable = _sizes_required_px(sizes_value)
+            if unparseable:
+                errors.append(
+                    f'{page}:{line} <img src="{src}"> の sizes "{sizes_value}" を解釈できない'
+                    "箇所がある（px / vw / calc(Nvw ± Mpx) 以外の記法は未対応・判定不能）"
+                )
+            elif max_required is not None:
                 max_candidate = max(candidate_widths)
                 if max_candidate < max_required:
                     errors.append(
@@ -391,7 +522,7 @@ def check_footer_readme_link(
 
 
 def self_test() -> int:
-    global SITE_DIR, PAGES
+    global SITE_DIR, PAGES, REQUIRE_SRCSET_BASENAMES
     failures: list[str] = []
     # 実際に検証したケース数。手書き定数にはしない — 各検証点を必ずこのヘルパー経由で
     # 通すことで、ケースを足し引きすれば件数が構造的に追従する（数え漏れが起きない）。
@@ -467,6 +598,13 @@ def self_test() -> int:
     required_basename = sorted(REQUIRE_SRCSET_BASENAMES)[0]
     required_stem = required_basename.rsplit(".", 1)[0]
     required_derivative = f"{required_stem}-800w.webp"
+    # 以降の wiring 検証（main() 経由）は「必須集合との突き合わせ」という機構そのものを
+    # 検証する目的で、特定の basename 1 件だけを対象に置く。REQUIRE_SRCSET_BASENAMES の
+    # 実際の登録件数（本番は 3 件）に依存させると、対象を増減させるたびに無関係なこの
+    # テストが壊れる（実測: #998 CRITICAL 1 で 1→3 件に増やした際、他 2 件が「消えた」と
+    # 誤検知して赤くなった）。
+    original_require_srcset_basenames = REQUIRE_SRCSET_BASENAMES
+    REQUIRE_SRCSET_BASENAMES = {required_basename}
 
     # check_img_srcset() の自己テスト（Issue #998）。check_page() 経由で呼ぶ
     # （check_img_srcset を直接叩くだけでは check_page() 側の呼び出し 1 行が消えても
@@ -578,7 +716,68 @@ def self_test() -> int:
                     f' ./assets/img/{required_basename} 1600w" sizes="{base_sizes}"',
                     0,
                 ),
+                # #998 CRITICAL 3: srcset を一切持たない通常の <img>（必須集合の対象外）は
+                # 素通りしてよい負ケース。check_img_srcset() の `if srcset is None: continue`
+                # を通る唯一のケースで、これが無いと変異（`if False: continue`）で
+                # AttributeError クラッシュしても self-test 全体は緑のままになる。
+                (
+                    "srcset を持たない通常の <img>（負ケース・#998 CRITICAL 3）",
+                    'src="./assets/img/w1600.png" width="1600" height="1000"',
+                    0,
+                ),
+                # #998 CRITICAL 2 その 1: sizes が vw のみ（px リテラルが無い）でも
+                # 旧実装（SIZES_PX_RE）はカバレッジ判定を丸ごとスキップしていた（fail-open）。
+                (
+                    "sizes が 100vw（px リテラル無し）でも必要幅を計算する",
+                    'src="./assets/img/w800.png" width="800" height="500"'
+                    ' srcset="./assets/img/w400.png 400w, ./assets/img/w800.png 800w"'
+                    ' sizes="100vw"',
+                    1,
+                ),
+                # #998 CRITICAL 2 その 2: メディア条件の閾値（1400）と割り当てサイズ値（300 / 900）を
+                # 混同しない。2 つの分岐にわざと異なるサイズ値を与える（両分岐が同じ値だと
+                # 「条件を無視して常に先頭分岐を選ぶ」変異を偶然素通りさせてしまうため）。
+                # 正しい実装では 1400px 未満（代表ビューポート 320/390/1280 の 3 点）は
+                # フォールバックの 900px が採用され、候補最大 800w では不足＝1 件が正しい。
+                (
+                    "sizes のメディア条件の閾値をサイズ値と取り違えない",
+                    'src="./assets/img/w800.png" width="800" height="500"'
+                    ' srcset="./assets/img/w400.png 400w, ./assets/img/w800.png 800w"'
+                    ' sizes="(min-width: 1400px) 300px, 900px"',
+                    1,
+                ),
+                # #998 CRITICAL 2 その 3: calc() の減算オフセットのみの sizes。旧実装は
+                # "calc(100vw - 40px)" から "40px" だけを拾い required=40 という明らかな
+                # 過小評価で合格させていた（実際は大画面で ~1880px 相当を要求する）。
+                (
+                    "sizes が calc(Nvw - Mpx) のみでも実効幅を計算する",
+                    'src="./assets/img/w1600.png" width="1600" height="1000"'
+                    ' srcset="./assets/img/w800.png 800w, ./assets/img/w1600.png 1600w"'
+                    ' sizes="calc(100vw - 40px)"',
+                    1,
+                ),
+                # #998 WARNING 4: ちょうど 2 候補で両方が同じ幅記述子のとき、「重複」エラーと
+                # 「有効な候補が実質 1 件」エラーが二重に出ないことを確認する回帰ケース。
+                (
+                    "同一幅記述子ちょうど 2 候補（二重エラーの回帰・#998 WARNING 4）",
+                    # sizes は候補の最大幅 800px ちょうどに合わせ、カバレッジ判定側の違反を
+                    # 誘発しないようにする（この回帰ケースの主眼は「重複」検出の二重計上）。
+                    'src="./assets/img/w1600.png" width="1600" height="1000"'
+                    ' srcset="./assets/img/dup-a.png 800w, ./assets/img/dup-b.png 800w"'
+                    ' sizes="800px"',
+                    1,
+                ),
             ]
+            # #998 CRITICAL 2 の 2 ケース（① 100vw / ③ calc(Nvw-Mpx)）は「違反件数が期待どおり」
+            # だけでは変異を見逃す（実測: vw 評価を潰す変異でも、コード側が正しい
+            # 「px を要求しているが〜」ではなく「解釈できない」エラーへフォールバックし、
+            # 件数だけは偶然 1 件のまま一致してしまった）。件数に加えてメッセージ文言も
+            # 検証し、意図した理由で違反しているかを区別する。
+            sizes_message_must_contain = {
+                "sizes が 100vw（px リテラル無し）でも必要幅を計算する": "px を要求しているが",
+                "sizes のメディア条件の閾値をサイズ値と取り違えない": "900px を要求しているが",
+                "sizes が calc(Nvw - Mpx) のみでも実効幅を計算する": "px を要求しているが",
+            }
             for label, img_attrs, expected in srcset_cases:
                 (SITE_DIR / "index.html").write_text(
                     f"<html><body><img {img_attrs}></body></html>", encoding="utf-8"
@@ -590,6 +789,13 @@ def self_test() -> int:
                     f"check_img_srcset（{label}）: 違反 {len(found)} 件（期待 {expected} 件）"
                     f"（内訳: {found}）",
                 )
+                must_contain = sizes_message_must_contain.get(label)
+                if must_contain is not None:
+                    assert_check(
+                        any(must_contain in message for message in found),
+                        f"check_img_srcset（{label}）: 文言 '{must_contain}' を含む違反が無い"
+                        f"（『解釈できない』への誤フォールバック等を疑う。内訳: {found}）",
+                    )
     finally:
         SITE_DIR, PAGES = original_site_dir_srcset, original_pages_srcset
 
@@ -695,6 +901,7 @@ def self_test() -> int:
                 )
     finally:
         SITE_DIR, PAGES = original_site_dir, original_pages
+        REQUIRE_SRCSET_BASENAMES = original_require_srcset_basenames
 
     for image in sorted((SITE_DIR / "assets/img").glob("*")):
         assert_check(
