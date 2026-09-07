@@ -455,3 +455,12 @@
 {"date": "2026-09-07 JST", "title": "新規共有モジュール（daily_gate.py / http-retry.mjs）を check_module_contract_drift.py の CONTRACT_INDEX へ登録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "Python / Node.js の HTTP リトライ・待機単位・例外型の設計非対称を統一ドキュメント化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "共通ヘルパー（cloudflare_api / daily_gate）から CLI への逆参照が無いことを機械検査する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "expectedHeadSha に短縮 SHA から組み立てた捏造値を渡して 409 を踏む欠陥の根治", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "#972"}
+{"date": "2026-09-07 JST", "title": "run_checks.sh を変更対象別に絞り、証跡鮮度要件下でのフル実行回数を減らす", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "#851"}
+{"date": "2026-09-07 JST", "title": "委譲実装の整形（prettier）漏れを親の統合コミット直前に機械検査する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "#1057"}
+{"date": "2026-09-07 JST", "title": "ドリフト検知系 2 ツール（check_prod_drift / check_lp_publish_drift）の git 実行層を共通モジュール化する", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "#1046"}
+{"date": "2026-09-07 JST", "title": "ポート契約（例外の不変条件）の JSDoc 機械検査を composition root のラッパーまで広げる", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": "#800"}
+{"date": "2026-09-07 JST", "title": "E2E・プレビュー実機実測を PR マージ判定と同じフェーズで実行する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#851"}
+{"date": "2026-09-07 JST", "title": "並列委譲の全区間で WIP 自動コミットを抑止する（mutation_guard の TTL は委譲役の begin 区間しか守らない）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#536"}
+{"date": "2026-09-07 JST", "title": "cloudflareColo() と rateLimiterBinding() の getCloudflareContext 骨格を共通抽象へ寄せる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "rev-parse の stdout 空チェックを純関数へ抽象化する（resolve_main_site_tree / resolve_gh_pages_tree の重複）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#1046"}
