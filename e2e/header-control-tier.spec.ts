@@ -37,9 +37,7 @@ test.describe('Issue #842: ヘッダーの LoginLink が LocaleSwitcher と同�
     const loginTier = await measureControlTier(loginLink)
 
     // 固定値（設計値）での検証: 相対比較だけだと tier をまとめて失っても偶然一致しうる。
-    expect(loginTier.height, `ログイン導線の高さ（実測 ${loginTier.height}）`).toBe(
-      EXPECTED_HEIGHT,
-    )
+    expect(loginTier.height, `ログイン導線の高さ（実測 ${loginTier.height}）`).toBe(EXPECTED_HEIGHT)
     expect(loginTier.fontSize, `ログイン導線のフォントサイズ（実測 ${loginTier.fontSize}）`).toBe(
       EXPECTED_FONT_SIZE,
     )
@@ -52,9 +50,7 @@ test.describe('Issue #842: ヘッダーの LoginLink が LocaleSwitcher と同�
     ).toBe(EXPECTED_FONT_SIZE)
 
     // 相対比較（tier が LocaleSwitcher と揃っていること自体の直接検証）。
-    expect(loginTier.height, 'ログイン導線と LocaleSwitcher の高さが不一致').toBe(
-      localeTier.height,
-    )
+    expect(loginTier.height, 'ログイン導線と LocaleSwitcher の高さが不一致').toBe(localeTier.height)
     expect(loginTier.fontSize, 'ログイン導線と LocaleSwitcher のフォントサイズが不一致').toBe(
       localeTier.fontSize,
     )
@@ -90,9 +86,8 @@ test.describe('Issue #842: ヘッダーの LoginLink が LocaleSwitcher と同�
     expect(logoutTier.height, 'ログアウトボタンと LocaleSwitcher の高さが不一致').toBe(
       localeTier.height,
     )
-    expect(
-      logoutTier.fontSize,
-      'ログアウトボタンと LocaleSwitcher のフォントサイズが不一致',
-    ).toBe(localeTier.fontSize)
+    expect(logoutTier.fontSize, 'ログアウトボタンと LocaleSwitcher のフォントサイズが不一致').toBe(
+      localeTier.fontSize,
+    )
   })
 })
