@@ -108,6 +108,7 @@ gem-hunter
 `improvement-lane-map.md`（改善 Issue / 振り返り / 監査・衛生の 3 レーン責務境界 SSOT・#147）/
 `intent-gate-rules.md`（挙動変更前の spec/test/code 権威解決・fable-method 反映）/
 `check-tool-design-rules.md`（**検査ツールを新設・改修するときに必読**。終了コードの標準・対象 0 件は fail-closed・外部コマンドの終了コード解釈・#709）/
+`http-client-consolidation-rules.md`（**`tools/github_rest.py` / `tools/github_api.py` 等の共通 HTTP クライアントモジュールを新設・改修するとき、または新しいツールで GitHub REST / gh CLI 呼び出しを書く前に必読**・#825）/
 `pr-review-flow.md` / `claude-code-optimization.md` / `claude-code-spec-sync.md`（Claude Code 仕様変更追随レーン・同名スキルが Read）/ `token-optimization-rules.md` /
 `github-mcp-fallback-patterns.md` / `native-fallback-rules.md`（Web 未提供機能の claude -p フォールバック標準形）/ `slack-notification-rules.md` /
 `security-posture-controls.md` / `sandbox-rules.md` / `env-vars.md` ほか。

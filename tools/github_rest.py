@@ -5,6 +5,10 @@
 `per_page=100` でページネーションし、`"pull_request" in item` で PR を除外する」パターンのうち、
 **実装が本当に同型と確認できたもの** だけを集約する。
 
+🔴 **集約可否の判定基準（SSOT）は `docs/rules/http-client-consolidation-rules.md`**。
+以下の各項目に書かれている理由は、その基準を個別の実装へ当てはめた結果であり、
+基準そのものはここへコピーしない（Issue #825）。
+
 ## 集約したもの
 
 - `http_get()`: urllib.request で GET するだけの最小 GET
@@ -21,7 +25,9 @@
     （挙動を変えない集約のため、呼び出し元ごとの既存方針をそのまま選べるようにしてある。
     fail-open が安全側とは限らない点は呼び出し元の docstring に既に注記されている）。
 - `exclude_pull_requests()`: `/issues` エンドポイント応答から `pull_request` キーを持つ要素
-  （PR）を除外する。
+  （PR）を除外する。`tools/triage_improvements.py` の `_fetch_via_api` もこの関数を呼ぶ
+  （Issue #825。ページネーション自体は同ファイルの while ループを踏襲したまま・
+  `tools/github_api.py` docstring「集約しなかったもの」参照）。
 
 ## 集約しなかったもの（同型に見えて実は違う・Issue #602 対応方針1）
 
