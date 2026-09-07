@@ -475,3 +475,10 @@
 {"date": "2026-09-07 JST", "title": "_split_top_level / _net_delta（クォート追跡付き）の ts_source.py 昇格基準を決める", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "check_port_contracts.py の self-test 比率（53.6%）を別モジュールへ分離する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 736}
 {"date": "2026-09-07 JST", "title": "http-client-consolidation-rules.md の参照経路を強制する（圧縮後の参照断絶を防ぐ）", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date":"2026-09-07 JST","title":"run_checks.sh 証跡の段階的実行と快速パス設計（変更対象別サブセット + tree hash 併記）","q1":"YES","q2":"NO","defer_reason":"high_commented","related_issue":851}
+{"date":"2026-09-07 JST","title":"並行委譲中の mutation_guard マーカー管理（参照カウント式 or 用途別マーカー）","q1":"YES","q2":"NO","defer_reason":"high_commented","related_issue":536}
+{"date":"2026-09-07 JST","title":"_JSDOC_PARAM_NAME_RE の非マッチ経路（continue 分岐）に self-test が到達していない","q1":"NO","q2":"NO","defer_reason":"medium_commented","related_issue":590}
+{"date":"2026-09-07 JST","title":"_range_contains_span() の多重ネスト（cn(foo(), cn(bar(), x))）への耐性を変異テストで確認する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-07 JST","title":"check_port_contracts.py の self-test ラベルに Issue 番号のプレフィックスを付けて意図を stdout に出す","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-07 JST","title":"_range_contains_span() と _pos_in_spans() の役割分担をモジュールレベルの docstring で説明する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-07 JST","title":"UI コンポーネント変更を含む改善消化 PR でもプレビュー URL を取得して実機で目視確認する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
