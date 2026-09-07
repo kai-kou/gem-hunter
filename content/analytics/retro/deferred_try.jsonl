@@ -464,3 +464,11 @@
 {"date": "2026-09-07 JST", "title": "並列委譲の全区間で WIP 自動コミットを抑止する（mutation_guard の TTL は委譲役の begin 区間しか守らない）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#536"}
 {"date": "2026-09-07 JST", "title": "cloudflareColo() と rateLimiterBinding() の getCloudflareContext 骨格を共通抽象へ寄せる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-07 JST", "title": "rev-parse の stdout 空チェックを純関数へ抽象化する（resolve_main_site_tree / resolve_gh_pages_tree の重複）", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#1046"}
+{"date": "2026-09-07 JST", "title": "flaky-tests.md #978 の原因列に「300ms 遅延窓がいつ始まりいつ終わるか」を図解する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "check_tool_wiring.py の self-test に py_tokens 委譲失敗が None 返却へ繋がることの明示検証を足す", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": "#1001"}
+{"date": "2026-09-07 JST", "title": "CONTRACT_INDEX へ共有モジュール 4 件（py_source / ts_source / md_fence / wiring_marker）を登録する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "consume-hold の保留コメントに再評価猶予期限（この判定はいつまで有効か）を明記する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "priority 変更直後に層 2 実行が矛盾する結論を出したとき、同一 firing 内で巻き戻さず次 firing で確認する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "デプロイゲートが待機中であることを Step 5 着手前に可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "fan-out 委譲先の報告に、親が直前に下した優先度・対象判定との矛盾を 1 行で明記させる", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-07 JST", "title": "1 firing 内の「決定 → 実測 → 矛盾検知 → 決定の巻き戻し」ループを健全性指標として監視する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
