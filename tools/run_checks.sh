@@ -596,6 +596,14 @@ else
   skip_check "Cloudflare API ヘルパー self-test (cloudflare_api.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 日次マーカーゲート共通ヘルパー self-test（Issue #940）。
+# check_cloudflare_cost.py / commit_cost_telemetry.py が共有する「今日もう走ったか」判定の実体。
+if [ -f "$REPO_ROOT/tools/daily_gate.py" ]; then
+  run_check "日次マーカーゲート self-test (daily_gate.py --self-test)" python3 tools/daily_gate.py --self-test
+else
+  skip_check "日次マーカーゲート self-test (daily_gate.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # wrangler.jsonc 共有パーサ self-test（Layer 1 セルフレビュー WARNING-6・PR #460）。
 # trigger_workers_build.py / retire_preview_aliases.py が共有する Worker 名パースの実体。
 if [ -f "$REPO_ROOT/tools/wrangler_config.py" ]; then
