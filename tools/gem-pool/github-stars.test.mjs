@@ -3,7 +3,7 @@
  *
  * 🔴 ネットワークを叩かない: `fetchImpl` と `sleepImpl` は必ずスタブで注入する。
  */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_MAX_RETRIES,
@@ -12,42 +12,7 @@ import {
   parseRepositoryFullName,
   refreshStars,
 } from './github-stars.mjs'
-
-/** 成功レスポンス（Response 互換の最小スタブ） */
-function okResponse(body, headers = {}) {
-  return { ok: true, status: 200, headers: new Headers(headers), json: async () => body }
-}
-
-/** エラーレスポンス（Response 互換の最小スタブ） */
-function errorResponse(status, headers = {}) {
-  return {
-    ok: false,
-    status,
-    headers: new Headers(headers),
-    json: async () => ({ message: `HTTP ${status}` }),
-  }
-}
-
-/** レスポンス列（1 リクエスト目から順の配列）を返す fetch スタブを作る。 */
-function makeFetchImpl(responses) {
-  const calls = []
-  const fetchImpl = vi.fn(async (url, init) => {
-    calls.push({ url: String(url), init })
-    const next = responses[calls.length - 1]
-    if (next === undefined) throw new Error(`想定外の追加リクエスト: ${url}`)
-    if (next instanceof Error) throw next
-    return next
-  })
-  return { fetchImpl, calls }
-}
-
-function makeSleepImpl() {
-  const waited = []
-  const sleepImpl = vi.fn(async (ms) => {
-    waited.push(ms)
-  })
-  return { sleepImpl, waited }
-}
+import { errorResponse, makeFetchImpl, makeSleepImpl, okResponse } from './test-http-stubs.mjs'
 
 describe('parseRepositoryFullName', () => {
   it('owner/repo を分解する', () => {
