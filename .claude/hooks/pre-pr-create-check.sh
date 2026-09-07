@@ -371,6 +371,46 @@ ${_cef_output}"
 fi
 unset _repo_root_47
 
+# 4.9. ID 採番衝突の検査（Lv3・ブロッキング・Issue #256）
+# 決定 ID（D-n）・要件 ID（NFR-n 等）・スプリント（SP-n）・教訓（L-n）・ADR 番号は、
+# 別セッションが main へ先に確保していても **同じ行を触らない追記** になるため git が自動マージし、
+# 層 4（マージコンフリクト）に引っかからない（PR #254 / PR #414 の実例）。PR 作成直前に
+# origin/main を取り込み直して「両側で独立に採番された ID」を検出する。
+#   exit 0 = 衝突なし / exit 1 = 衝突あり（ブロック） / exit 2 = 判定不能（非ブロック・警告）
+# 🔴 exit code の取り違えに注意（docs/rules/check-tool-design-rules.md）: timeout 由来の 124 や
+# コマンド不在由来の 127 を「衝突あり（exit 1）」と誤読しない。ブロックするのは exit 1 のときだけ。
+reserved_ids_warning=""
+_repo_root_49=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+if [ ! -f "$_repo_root_49/tools/check_reserved_ids.py" ]; then
+  reserved_ids_warning="[pre-pr-create-check] tools/check_reserved_ids.py が見つかりません（ID 採番衝突の検知が実質未実行です）。"
+elif ! command -v python3 >/dev/null 2>&1; then
+  reserved_ids_warning="[pre-pr-create-check] python3 が見つかりません（ID 採番衝突の検知が実質未実行です）。"
+else
+  _cri_exit=0
+  if command -v timeout >/dev/null 2>&1; then
+    _cri_output=$(timeout 60 python3 "$_repo_root_49/tools/check_reserved_ids.py" 2>&1) || _cri_exit=$?
+  else
+    _cri_output=$(python3 "$_repo_root_49/tools/check_reserved_ids.py" 2>&1) || _cri_exit=$?
+  fi
+  if [ "$_cri_exit" -eq 1 ]; then
+    hook_block "[pre-pr-create-check] PR 作成をブロックしました。ID の採番が origin/main と衝突しています（Issue #256）。
+
+${_cri_output}
+
+別セッションが main へ先に同じ ID を確保しています。次の手順で解消してください。
+1. \`git fetch origin +main:refs/remotes/origin/main\` して最新の main を取り込む
+2. 上に出た「次の空き番号」へ採番し直す（ID は本文だけでなく参照側も書き換える）
+3. \`python3 tools/check_reserved_ids.py\` が exit 0 になることを確認してから PR 作成を再実行する"
+  elif [ "$_cri_exit" -ne 0 ]; then
+    # exit 2（判定不能: fetch 失敗・merge-base 解決不可 等）・timeout（124）はブロックしない
+    # （判定器・ネットワーク側の事情で PR 作成そのものを止めない・4.7 節と同じ扱い）。
+    reserved_ids_warning="[pre-pr-create-check] check_reserved_ids.py が exit ${_cri_exit} で終了しました（ID 採番衝突の検知が実質未実行です）。原因を確認してください。
+${_cri_output}"
+  fi
+  unset _cri_exit _cri_output
+fi
+unset _repo_root_49
+
 # 4.8. 自動保全コミットの件名ガード（base#483・Lv3・ブロッキング）
 #
 # squash マージのタイトルは、ブランチが単一コミットのとき **そのコミットの件名をそのまま継承する**。
@@ -529,6 +569,10 @@ fi
 if [ -n "$evidence_table_warning" ]; then
   _ctx="${_ctx}
 ${evidence_table_warning}"
+fi
+if [ -n "$reserved_ids_warning" ]; then
+  _ctx="${_ctx}
+${reserved_ids_warning}"
 fi
 jq -n --arg ctx "$_ctx" '{
   "systemMessage": "[pre-pr-create-check] Layer 0 機械ゲート通過（Layer 1 リマインダーと Warning は Claude のコンテキストに注入済み）。",
