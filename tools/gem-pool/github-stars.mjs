@@ -167,7 +167,10 @@ export async function fetchRepoStars({
             waitMs: retryAfterMs(res) ?? undefined,
           }
         }
-        return { retryable: true, message: `HTTP ${res?.status ?? '不明'}（${repositoryFullName}）` }
+        return {
+          retryable: true,
+          message: `HTTP ${res?.status ?? '不明'}（${repositoryFullName}）`,
+        }
       },
     })
     return { stars: value, attempts }

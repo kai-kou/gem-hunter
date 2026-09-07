@@ -105,7 +105,9 @@ export async function withRetry({
   onNonRetryable,
 }) {
   if (typeof shouldRetry !== 'function') {
-    throw new TypeError('shouldRetry には判定関数を指定してください（依存性注入・API ごとの差の注入点）')
+    throw new TypeError(
+      'shouldRetry には判定関数を指定してください（依存性注入・API ごとの差の注入点）',
+    )
   }
   if (typeof fetchImpl !== 'function') {
     throw new TypeError('fetchImpl が利用できません（テストではスタブを渡してください）')
