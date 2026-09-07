@@ -288,6 +288,14 @@ else
   skip_check "依存規則 (check_architecture_boundaries.py)" "スクリプトが見つかりません"
 fi
 
+# 4.4. ポート契約検査（JSDoc の値域・異常時の振る舞い記述・Issue #800・architecture-rules.md §1.6）
+if [ -f "$REPO_ROOT/tools/check_port_contracts.py" ]; then
+  run_check "ポート契約検査 (check_port_contracts.py)" python3 tools/check_port_contracts.py
+  run_check "ポート契約検査 self-test (check_port_contracts.py --self-test)" python3 tools/check_port_contracts.py --self-test
+else
+  skip_check "ポート契約検査 (check_port_contracts.py)" "スクリプトが見つかりません"
+fi
+
 # 4.5. UI 寸法検査（コントロールサイズ・フォントサイズのトークン化ゲート）
 if [ -f "$REPO_ROOT/tools/check_ui_dimensions.py" ]; then
   run_check "UI 寸法検査 (check_ui_dimensions.py)" python3 tools/check_ui_dimensions.py
