@@ -496,3 +496,10 @@
 {"date": "2026-09-08 JST", "title": "PR 本文の run_checks 証跡表の貼り直しを機械化する（実行時点コミット行のみの差し替え）", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 1048}
 {"date": "2026-09-08 JST", "title": "見送りログに再発回数フィールドを足し、同じ Try が何度見送られたかを可視化する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
 {"date": "2026-09-08 JST", "title": "検査ツールの除外ディレクトリ集合を共通モジュールへ 1 本化する", "q1": "NO", "q2": "NO", "defer_reason": "medium_commented", "related_issue": 1086}
+{"date":"2026-09-08 JST","title":"並行消化スプリントの全 Issue 判定待機制約を緩和する検討（sp 合計 80% 等）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-08 JST","title":"Grep/Glob の path パラメータが glob パターンを expansion するケースの検証","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-08 JST","title":"CSS 行番号精度（preserve_lines=False）を architecture-rules へ明示化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-08 JST","title":"jq パース失敗シナリオをより多角的にカバー（NUL バイト・深いネスト等）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-08 JST","title":"#896 要素間関係性検証パターンをスピンオフツール化・テンプレート化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-08 JST","title":"test_sensitive_file_guard.sh の開きクォート保護セクションを見出しで明確に区別する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-08 JST","title":"Quote・Backslash・Substitution の相互作用変異テスト（#725 応用）","q1":"YES","q2":"YES","defer_reason":"high_commented","related_issue":1091}
