@@ -430,13 +430,13 @@ AIレビュー指摘を全て解消したら、ユーザー確認なしで自動
 
 ```bash
 # GitHub MCP ツールでマージ
-mcp__github__merge_pull_request(owner="kai-kou", repo="gem-hunter", pull_number=N, merge_method="squash")
+mcp__github__merge_pull_request(owner="kai-kou", repo="gem-hunter", pullNumber=N, merge_method="squash")
 ```
 
-🔴 **`expectedHeadSha`（楽観ロック引数）を渡す場合は、短縮 SHA から組み立てない**（L-113・#972 で
-3 回連続再発した実害）。渡すフル SHA は `mcp__github__pull_request_read(method="get", pullNumber=N)`
-の `head.sha` を直前に実測して **そのまま** 使う（`git rev-parse --short` の出力や、別コミットの
-SHA と混ぜて 40 桁へ補完しない）。実測せず渡すくらいなら `expectedHeadSha` 自体を省略する。
+🔴 **GitHub API へ渡す SHA 系引数（`expectedHeadSha` / `commitID` / `sha` / `ref` 等）は、短縮 SHA
+から組み立てない**（L-113・詳細と再発履歴は `docs/rules/lessons/pr-review.md` L-160）。渡す直前に
+`git rev-parse HEAD`（または `pull_request_read(method="get")` の `head.sha`）を実測して **そのまま**
+使う。実測せず渡すくらいなら引数自体を省略する。
 
 マージ後の完了報告（アウトカムを必ず含める）:
 ```bash
@@ -678,7 +678,7 @@ AIレビュー指摘への対応が収束しない場合に備え、以下の上
 - サーキットブレーカー: 修正サイクル 2回で STOP
 
 ## マージ後ステップ
-1. `mcp__github__merge_pull_request(owner="OWNER", repo="REPO", pull_number=PR_NUMBER, merge_method="squash")` で自動マージ
+1. `mcp__github__merge_pull_request(owner="OWNER", repo="REPO", pullNumber=PR_NUMBER, merge_method="squash")` で自動マージ
 2. `slack_notify.py pr --pr-title "[完了] {タイトル}" --outcome "{アウトカム1文}" ...` で完了報告（アウトカム必須・L-052）
 3. Issue クローズ + 次 Phase Issue 作成
 4. `retrospective` スキル実行

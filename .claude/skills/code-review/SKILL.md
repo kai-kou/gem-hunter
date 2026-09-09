@@ -197,6 +197,8 @@ mcp__github__pull_request_review_write(method="create", owner, repo, pullNumber=
 ```
 
 `event` を渡すと即 submit されコメントを積めない。`commitID` は force push 後の取り違えを防ぐため必ず指定する。
+🔴 **`{head.sha}` は短縮 SHA から組み立てない**（`docs/rules/lessons/pr-review.md` L-160・過去に
+`commitID` 引数でも 409 系エラーで再発済み）。Step 0 で取得した `head.sha` の実測値をそのまま使う。
 
 **3. 指摘ごとにインラインコメントを積む（CONFIRMED / PLAUSIBLE とも全件）**
 
