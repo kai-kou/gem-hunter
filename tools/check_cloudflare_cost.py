@@ -9,7 +9,8 @@ Billable Usage API の監視閾値に用いる」** と定めたが、実装が�
 
 【2 軸判定（Issue #247 対応方針）】
   ① 月内累計が `--threshold-usd`（既定 10.0 = `D-19` の撤退ライン）を超えたか
-  ② 直近日が **その前日** と比べて `--surge-ratio`（既定 3.0）倍以上に急増したか
+  ② **集計済みの直近日**（対策 D・下記）が **その前日** と比べて `--surge-ratio`（既定 3.0）倍以上に
+     急増したか
 日次ポーリングは最大 24 時間の検知ラグがあるため、月末に一発で閾値へ到達するパターンを ② で拾う。
 ①・② は **どちらも独立に評価する**（片方が真でも他方の評価を飛ばさない・#725 の干渉検証対象）。
 
@@ -17,6 +18,12 @@ Billable Usage API の監視閾値に用いる」** と定めたが、実装が�
 製品別内訳で **1 日に複数行** が返りうるため、レコード配列の末尾 2 要素を比べると内訳 1 行同士を
 比較して真の急増を取りこぼす（fail-open）。`date -> sum(usd)` へ畳んでから直近 2 日を比べ、
 **暦日として隣接していなければ倍率を出さない**（欠測日をまたいだ「前日比」を名乗らない）。
+
+🔴 **対策 D（Issue #939「訂正」コメント・2026-09-09 実測）**: 応答の **最終日（実行日当日）は
+集計途中で件数・金額が過少になる**（翌日に再取得すると同じ日が満額の件数へ増える実測あり）。
+過少な最終日を急増判定の基準にすると急増を見逃す（fail-open）ため、**日次集計後の末尾 1 日は
+急増判定（②）の対象から除外する**（`evaluate()` 内 `surge_daily = daily[:-1]`）。
+月内累計（①）には最終日も含める（過少側なので閾値超過の誤検知にはならない）。
 
 【フェイルセーフ（fail-closed）】
 現行の `CLOUDFLARE_API_TOKEN` には Billing 系 Read 権限が無く、課金系エンドポイントは
@@ -27,17 +34,29 @@ Billable Usage API の監視閾値に用いる」** と定めたが、実装が�
   - 取得できたレコードが 0 件（同 §2「対象 0 件は fail-closed」）
   - **対象月のレコードが 0 件**（API が UTC 基準で前月分しか返さない等。$0.00 と読んで緑にしない）
   - **1 件でも解釈できないレコードがあった**（部分的な取りこぼしは過少集計＝fail-open になる）
-  - 1 レコード内に **値の異なる金額キーが 2 つ以上**（どちらが USD か決められない）
-  - `result_info` が無いまま **満杯ページ**（`CF_PAGE_SIZE` 件）で打ち切られた（見えない残りがある）
+  - **`BillingCurrency` が `USD` 以外のレコードが 1 件でもあった**（金額を USD 前提で合算しているため）
+  - **`BillingPeriodStart` の値がレコード間で食い違っていた**（対策 C の起点日を一意に決められない）
+  - **対策 C: 請求期間開始日（`BillingPeriodStart`）から取得できた最終レコード日までの間に、
+    日付が 1 日でも欠けていた**（取得漏れの疑い。旧 `result_info` + `CF_PAGE_SIZE` 判定の置き換え・
+    Issue #939「訂正」コメント。ページングは実測で完全に無効〈`result_info` は常に `null`〉で、
+    請求期間の全レコードが 1 回の応答で返るため、件数上限ではなく日付連続性で取得漏れを検知する）
+  - **対策 E: 取得できた最終レコード日が「今日」から見て古すぎた**（Issue #1101 CRITICAL。対策 C は
+    `period_start` 〜最終日の **内部** の欠落しか見ないため、応答が末尾で丸ごと打ち切られたケースを
+    検知できない。`stale_final_date()` が別途担う。既知の限界〈同一日内の一部レコード欠落は
+    対策 C・E のいずれも検出しない〉は `missing_dates()` / `fetch_billable_usage()` の docstring 参照）
   - **想定外の例外**（`main()` を包括的に捕捉する。Python 既定の exit 1 ＝「閾値超過」に化けさせない）
 
-【応答形式について（未検証・重要）】
-本アカウントは Billing Read 権限が未付与のため、`GET /accounts/{id}/billable-usage` の実応答を
-**実測できていない**（CP-2 の観点で、記憶に基づく決め打ちのパースはしない）。そのため
-`extract_records()` は「日付らしいキー」「金額らしいキー」の候補集合から拾う。金額キーは
-**USD が明示されたキーだけ**（`amount` / `cost` のような単位不明キーは採用しない・使用量を金額と
-読み違えると誤報にも見逃しにもなる）。採用したキー名は `--json` の `amount_keys` に出すので、
-権限付与後の実測（フォローアップ Issue #939）で候補を 1 つへ絞ること。
+【応答形式について（実測確定・Issue #939・2026-09-08/09 JST）】
+`GET /accounts/{id}/billable-usage` は Billing Read 権限を付与したトークンで疎通確認済み。実測で
+確定したキーへ固定し、候補集合による推測は行わない（CP-2）:
+  - 結果配列: トップレベルの `result`（常にリスト。`result_info` は常に `null`）
+  - 日付: `ChargePeriodStart`（日次の課金期間開始・1 日 1 値）
+  - 金額: `BilledCost`（FOCUS 仕様で「実際に請求される額」。`EffectiveCost` 等の割引前後・契約価格の
+    フィールドは撤退ライン判定に使わない）
+  - 通貨: `BillingCurrency`（`USD` であることを全レコードで検証する・対策 B）
+  - 請求期間開始日: `BillingPeriodStart`（全レコードで同一値・対策 C の起点）
+ページングは実測で完全に無効（`per_page` / `page` は無視され、請求期間の全レコードが 1 回で返る）。
+`from` / `to` は請求サイクルの anchor day（毎月 28 日）を含む範囲でしか効かないため使わない。
 
 【終了コード】
   0 = 閾値内（正常）。月内累計が閾値以下で、前日比の急増も検知しなかった
@@ -123,6 +142,11 @@ BILLABLE_USAGE_PATH = "billable-usage"
 DEFAULT_THRESHOLD_USD = 10.0  # D-19 の撤退ライン（月額 $10）
 DEFAULT_SURGE_RATIO = 3.0
 
+# 最終レコード日の新鮮さ判定の許容ラグ（対策 E・Issue #1101 CRITICAL）。実測では当日分は
+# 翌日にならないと満額で確定しない（＝取得日の前日が最終日であるのが正常）ため、ラグ 1 日を
+# 許容しないと毎日誤検知する。安全マージンを 1 日足して「2 日を超えたら stale」にする。
+FRESHNESS_MAX_LAG_DAYS = 2
+
 # 急増判定の下限。$0.00 -> $0.02 のような微小な立ち上がりで A-6 通知を撃たないための床。
 # これが無いと月初 1 日目や前日 0 円の日に毎回 surge が真になり、通知が信用されなくなる。
 SURGE_MIN_ABS_USD = 1.0
@@ -132,14 +156,14 @@ MARKER_REL = "content/pipeline-state/.cloudflare_cost_check_date"
 # 判定結果をマーカーの隣へ保存し、スキップ時はそれを再現する（PR #937 レビュー WARNING）。
 RESULT_REL = "content/pipeline-state/.cloudflare_cost_check_result.json"
 
-# 応答形式が未実測（docstring 参照）のため候補で拾う。実測できたら 1 つに絞ること（#939）。
-DATE_KEYS = ("date", "day", "usage_date", "period_start", "occurred_at")
-# 🔴 単位が USD だと **明示されているキーだけ** を採用する。`amount` / `cost` は使用量・割引後
-# クレジット等が入りうるため候補から外した（PR #937 レビュー WARNING: $1,250,000 の誤報と
-# $0.00 の見逃しがどちらも起こりうる）。
-AMOUNT_KEYS = ("billable_usd", "amount_usd", "cost_usd", "total_usd")
-# `result` が配列でなくオブジェクトで返る場合に、日次配列が入りうるキー。
-RESULT_LIST_KEYS = ("daily", "usage", "billable_usage", "items", "records")
+# 実測確定キー（Issue #939・2026-09-08/09 JST 実測。docstring「応答形式について」参照）。
+# 候補集合による推測はやめ、FOCUS 仕様の実応答で確認できた単一キーへ固定する（対策 A）。
+DATE_KEY = "ChargePeriodStart"
+AMOUNT_KEY = "BilledCost"
+CURRENCY_KEY = "BillingCurrency"
+EXPECTED_CURRENCY = "USD"
+# 対策 C（日付連続性検証）の起点。全レコードで同一値であることを extract_records() が検証する。
+PERIOD_START_KEY = "BillingPeriodStart"
 
 _DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 # Cloudflare のアカウント ID は 32 桁の小文字 16 進数。URL へ埋め込む前に形式検証する
@@ -290,21 +314,15 @@ def is_auth_error(payload: dict[str, Any], *, http_status: int | None = None) ->
 
 
 def normalize_result(result: Any) -> list[dict[str, Any]] | None:
-    """`result` を日次レコードの配列へ正規化する。解釈できなければ `None`（→ 判定不能）。"""
+    """`result` を日次レコードの配列へ正規化する。解釈できなければ `None`（→ 判定不能）。
+
+    🔴 対策 A（Issue #939 実測）: `result` は実測で常にトップレベルの配列（`result_info` は常に
+    `null`）。旧実装は `result` がオブジェクトで返る場合の候補キー（`RESULT_LIST_KEYS`）から
+    日次配列を推測していたが、実測で確定したため候補集合による推測をやめる。リスト以外は
+    解釈できないとして `None`（→ 判定不能）を返す。
+    """
     if isinstance(result, list):
         return [item for item in result if isinstance(item, dict)]
-    if isinstance(result, dict):
-        for key in RESULT_LIST_KEYS:
-            value = result.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-    return None
-
-
-def _pick(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
-    for key in keys:
-        if key in record and record[key] is not None:
-            return record[key]
     return None
 
 
@@ -326,43 +344,33 @@ def coerce_usd(value: Any) -> float | None:
     return usd
 
 
-def pick_amount(record: dict[str, Any]) -> tuple[str | None, float | None, bool]:
-    """金額キーを 1 つ選ぶ。Returns `(key, usd, ambiguous)`。
-
-    1 レコード内に **値の異なる候補キーが 2 つ以上** あればどちらが USD か決められないため
-    `ambiguous=True` を返す（→ 判定不能・exit 2）。値が一致していれば先頭候補を採用する。
-    """
-    found = [(key, record[key]) for key in AMOUNT_KEYS if key in record and record[key] is not None]
-    if not found:
-        return None, None, False
-    coerced = [coerce_usd(raw) for _, raw in found]
-    distinct: list[float | None] = []
-    for value in coerced:
-        if value not in distinct:
-            distinct.append(value)
-    if len(distinct) > 1:
-        return found[0][0], None, True
-    return found[0][0], coerced[0], False
-
-
 def extract_records(
     items: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], str | None, dict[str, Any]]:
     """生レコードから `{"date": "YYYY-MM-DD", "usd": float}` の列を作る（純関数）。
 
-    Returns `(records, error_reason, stats)`。
+    Returns `(records, error_reason, stats)`。`stats` は少なくとも `dropped_records` /
+    `bad_currency_records` / `amount_keys` を含み、成功時のみ `period_start`（対策 C の起点日）
+    を追加で含む。
 
     🔴 **1 件でも解釈できないレコードがあれば error を返す**（PR #937 レビュー CRITICAL）。
-    「1 件でも解釈できれば成功」だと、一部の行だけ別キー・`null`・`NaN`・負値で返るだけで
+    「1 件でも解釈できれば成功」だと、一部の行だけキー欠落・`null`・`NaN`・負値で返るだけで
     累計が撤退ライン以下に見え続ける（過少集計＝fail-open）。
+
+    🔴 **対策 B（Issue #939）**: `BillingCurrency` が `EXPECTED_CURRENCY`（`USD`）以外のレコードが
+    1 件でもあれば fail-closed にする。金額は USD 前提で合算しているため、他通貨が混ざると
+    閾値判定そのものが無意味になる（`dropped`＝解釈不能とは別カテゴリで数える）。
+
+    🔴 **対策 C の前提**: `BillingPeriodStart`（対策 C の日付連続性検証の起点）は実測上
+    全レコードで同一値。値が複数割れていたら起点を一意に決められないため fail-closed にする。
     """
     records: list[dict[str, Any]] = []
-    amount_keys: set[str] = set()
     dropped = 0
-    ambiguous = 0
+    bad_currency = 0
+    period_starts: set[str] = set()
 
     for item in items:
-        raw_date = _pick(item, DATE_KEYS)
+        raw_date = item.get(DATE_KEY)
         if not isinstance(raw_date, str):
             dropped += 1
             continue
@@ -370,33 +378,49 @@ def extract_records(
         if not matched:
             dropped += 1
             continue
-        key, usd, is_ambiguous = pick_amount(item)
-        if is_ambiguous:
-            ambiguous += 1
-            continue
-        if key is None or usd is None:
+        usd = coerce_usd(item.get(AMOUNT_KEY))
+        if usd is None:
             dropped += 1
             continue
-        amount_keys.add(key)
+        currency = item.get(CURRENCY_KEY)
+        if not isinstance(currency, str) or currency.strip() != EXPECTED_CURRENCY:
+            bad_currency += 1
+            continue
+        raw_period_start = item.get(PERIOD_START_KEY)
+        period_start_matched = (
+            _DATE_RE.match(raw_period_start.strip())
+            if isinstance(raw_period_start, str)
+            else None
+        )
+        if period_start_matched is None:
+            dropped += 1
+            continue
+        period_starts.add("-".join(period_start_matched.groups()))
         records.append({"date": "-".join(matched.groups()), "usd": usd})
 
-    stats = {
+    stats: dict[str, Any] = {
         "dropped_records": dropped,
-        "ambiguous_records": ambiguous,
-        "amount_keys": sorted(amount_keys),
+        "bad_currency_records": bad_currency,
+        "amount_keys": [AMOUNT_KEY] if records else [],
     }
 
-    if ambiguous:
+    # 🔴 対策 F（Issue #1101 指摘 5）: bad_currency を dropped より先に return すると、両方が
+    # 同時に発生したとき重大な方（大量の解釈不能 = 応答スキーマの破壊的変更）が隠れる。
+    # 両方が非ゼロのときは 1 つのメッセージへ両方の件数を含める（順序に意味を持たせない）。
+    if bad_currency or dropped:
+        parts: list[str] = []
+        if dropped:
+            parts.append(
+                f"解釈できないレコードが {dropped} 件（解釈できたのは {len(records)} 件）"
+            )
+        if bad_currency:
+            parts.append(
+                f"{CURRENCY_KEY} が {EXPECTED_CURRENCY} 以外のレコードが {bad_currency} 件"
+            )
         return [], (
-            f"金額キーが曖昧なレコードが {ambiguous} 件あります"
-            f"（1 レコード内に値の異なる候補キーが 2 つ以上。候補: {', '.join(AMOUNT_KEYS)}）。"
-            "どちらが USD か決められないため判定できません"
-        ), stats
-    if dropped:
-        return [], (
-            f"billable-usage の応答に解釈できないレコードが {dropped} 件ありました"
-            f"（解釈できたのは {len(records)} 件）。過少集計のまま「閾値内」と報告しないため"
-            "判定不能として扱います（応答形式・金額キーを確認してください）"
+            "、".join(parts)
+            + "。過少集計のまま「閾値内」と報告しないため判定不能として扱います"
+            "（応答形式・通貨を確認してください）"
         ), stats
     if not records:
         return [], (
@@ -404,9 +428,75 @@ def extract_records(
             "（応答形式の変更、または対象期間にデータが無い可能性があります。"
             "対象の選択が意図どおりか確認してください）"
         ), stats
+    if len(period_starts) > 1:
+        return [], (
+            f"{PERIOD_START_KEY} の値がレコード間で一致しません（{sorted(period_starts)}）。"
+            "対策 C の日付連続性検証の起点を一意に決められないため判定不能として扱います"
+        ), stats
 
     records.sort(key=lambda r: r["date"])
+    stats["period_start"] = next(iter(period_starts))
     return records, None, stats
+
+
+def missing_dates(period_start: str, dates: list[str]) -> list[str]:
+    """`period_start` から `dates` の最終日まで、抜けている暦日を返す（空なら連続・純関数）。
+
+    🔴 **対策 C（Issue #939「訂正」コメント）**: 旧 `result_info` + `CF_PAGE_SIZE` による打ち切り
+    判定を置き換える。ページングは実測で完全に無効（`result_info` は常に `null`）で、請求期間の
+    全レコードが 1 回の応答で返るため、件数上限ではなく「請求期間開始日から取得できた最終日まで、
+    暦日が 1 日も欠けていないか」を検証する（欠落があれば取得漏れの疑いとして fail-closed）。
+
+    🔴 **既知の限界（Issue #1101 指摘 2・3）**: これは `period_start` 〜 `max(dates)` の **内部**
+    にある欠落しか検出しない。応答が **末尾（直近日側）で丸ごと打ち切られた**ケース（見えない
+    残りがある）は検出できない — その検知は呼び出し側で `stale_final_date()`（対策 E・最終日の
+    新鮮さ検証）が別途担う。さらにこれは **日単位** の欠落検知であり、同一日内の一部レコード
+    （製品別内訳の一部）だけが欠落するケース（日付自体は生存する）も検出しない。件数
+    ヒューリスティックによる検知は誤検知リスクが高く実装を見送っている（YAGNI）。
+    """
+    if not dates:
+        return []
+    try:
+        start = date_cls.fromisoformat(period_start)
+    except (TypeError, ValueError):
+        return [str(period_start)]
+    last = date_cls.fromisoformat(max(dates))
+    if start > last:
+        return [period_start]
+    present = set(dates)
+    missing: list[str] = []
+    day = start
+    while day <= last:
+        iso = day.isoformat()
+        if iso not in present:
+            missing.append(iso)
+        day += timedelta(days=1)
+    return missing
+
+
+def stale_final_date(period_start: str, last_date: str, today: str) -> bool:
+    """取得できた最終レコード日が古すぎる（応答が末尾で丸ごと打ち切られた疑い）かを判定する（純関数）。
+
+    🔴 **対策 E（Issue #1101 CRITICAL）**: `missing_dates()` は `period_start` 〜 `max(dates)` の
+    **内部** の欠落しか見ないため、応答がそもそも直近日側で丸ごと打ち切られた（見えない残りがある）
+    ケースを検知できない。以下の **AND** を満たすときだけ stale と判定する（`or` にすると請求期間が
+    始まった直後にデータが薄いだけの正常系まで誤検知する）:
+      - `today` と `last_date` の差が `FRESHNESS_MAX_LAG_DAYS` を超える
+      - `today` と `period_start` の差も `FRESHNESS_MAX_LAG_DAYS` を超える
+        （＝請求期間が始まって十分経過している。anchor day の 1〜2 日後はデータ自体が薄いのが
+        正常なので、そこで誤検知しない）
+    日付を解釈できない場合は安全側（stale=True）に倒す（呼び出し元では通常ここに来る前に
+    `missing_dates()` の検証を通過しているため実運用では起こらない想定の防御）。
+    """
+    try:
+        today_d = date_cls.fromisoformat(today)
+        last_d = date_cls.fromisoformat(last_date)
+        start_d = date_cls.fromisoformat(period_start)
+    except (TypeError, ValueError):
+        return True
+    lag_from_last = (today_d - last_d).days
+    lag_from_start = (today_d - start_d).days
+    return lag_from_last > FRESHNESS_MAX_LAG_DAYS and lag_from_start > FRESHNESS_MAX_LAG_DAYS
 
 
 def aggregate_daily(records: list[dict[str, Any]]) -> list[tuple[str, float]]:
@@ -457,8 +547,12 @@ def evaluate(
     # ② 前日比。月境界をまたぐ比較を成立させるため、**月フィルタ前の全レコード** を日次集計する
     #    （月初 1 日目に「前日が無い」として毎月 1 回検知不能になるのを避ける）。
     daily = aggregate_daily(records)
-    latest_date, latest_day_usd = daily[-1] if daily else (None, None)
-    prev_date, prev_day_usd = daily[-2] if len(daily) >= 2 else (None, None)
+    # 🔴 対策 D（Issue #939「訂正」コメント）: 集計済みの末尾 1 日（実行日当日）は集計途中で
+    # 過少になる実測があるため、急増判定（②）の比較対象から除外する。①の月内累計 `billable_usd`
+    # は `monthly`（除外前の `records`）から計算済みなので、この除外の影響を受けない。
+    surge_daily = daily[:-1]
+    latest_date, latest_day_usd = surge_daily[-1] if surge_daily else (None, None)
+    prev_date, prev_day_usd = surge_daily[-2] if len(surge_daily) >= 2 else (None, None)
 
     ratio: float | None = None
     surge_detected = False
@@ -598,14 +692,21 @@ def fetch_billable_usage(
     *,
     opener: Callable[..., Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """`GET /accounts/{id}/billable-usage` を全ページ取得する。
+    """`GET /accounts/{id}/billable-usage` を取得する。
 
     ページングループ本体は `cloudflare_api.fetch_all_pages()` に委譲する（#476 は継続判定の述語
     〈`should_fetch_next_page`〉だけを共通化しており、ループ本体は 3 系統に独立コピーのまま
-    残っていた・Issue #940）。ただし `should_fetch_next_page()` は `result_info.total_count` が
-    無い応答で **無条件に打ち切る** ため（`workers/scripts` で実測済み）、本ツールでは
-    `page_fetcher` 側で「`result_info` 無し **かつ** 満杯ページ」を **打ち切りの見逃し** として
-    `ApiError` に倒す（fetch_all_pages に渡す前の検証）。
+    残っていた・Issue #940）。billable-usage は実測（Issue #939・2026-09-09 JST）でページングが
+    完全に無効（`result_info` は常に `null`）で、請求期間の全レコードが 1 回の応答で返るため、
+    `should_fetch_next_page()` は `total_count` 欠落を検知して 1 ページ目で打ち切る（fail-safe。
+    将来 Cloudflare が `result_info.total_count` 付きの応答へ変えた場合は自然に複数ページを追う）。
+    🔴 **旧実装が持っていた「`result_info` 無し + 満杯ページ→打ち切りの見逃し」判定はここでは行わない**
+    （125 件が API の固定上限という当初の解釈が誤りだったため・訂正コメント参照）。取得漏れの検知は
+    `missing_dates()`（対策 C・日付連続性検証）と `stale_final_date()`（対策 E・最終日の新鮮さ検証。
+    `missing_dates()` が見ない「末尾が丸ごと打ち切られた」ケースを担う）が `run_check()` 側で行う。
+    🔴 **既知の限界（Issue #1101 指摘 3）**: いずれも **日単位** の欠落検知であり、同一日内の一部
+    レコード（製品別内訳の一部）だけが欠落するケースは検出しない（誤検知リスクの高い件数
+    ヒューリスティックによる検知は見送っている）。
     """
     capturing = _StatusCapturingOpener(opener if opener is not None else default_opener)
     quoted_account = urllib.parse.quote(account_id, safe="")
@@ -637,12 +738,6 @@ def fetch_billable_usage(
         result_info = payload.get("result_info")
         if not isinstance(result_info, dict):
             result_info = {}
-        if result_info.get("total_count") is None and len(page_items) >= CF_PAGE_SIZE:
-            raise ApiError(
-                f"billable-usage の応答に result_info がなく、page={page} が満杯"
-                f"（{len(page_items)} 件 = per_page 上限）でした。取得漏れがあるかを判定できないため"
-                "判定不能として扱います（過少集計のまま「閾値内」と報告しない）"
-            )
         return page_items, result_info
 
     return fetch_all_pages(page_fetcher)
@@ -667,6 +762,7 @@ def empty_payload() -> dict[str, Any]:
         "surge_ratio": None,
         "surge_detected": None,
         "dropped_records": 0,
+        "bad_currency_records": 0,
         "amount_keys": [],
         "skipped": False,
         "checked_at": now_jst_str(),
@@ -679,11 +775,13 @@ def build_payload(
     result: dict[str, Any],
     *,
     dropped_records: int = 0,
+    bad_currency_records: int = 0,
     amount_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     payload = empty_payload()
     payload.update(result)
     payload["dropped_records"] = dropped_records
+    payload["bad_currency_records"] = bad_currency_records
     payload["amount_keys"] = list(amount_keys or [])
     payload["error"] = None
     payload["auth_missing"] = False
@@ -696,6 +794,7 @@ def emit_error(
     *,
     auth_missing: bool = False,
     dropped_records: int = 0,
+    bad_currency_records: int = 0,
     amount_keys: list[str] | None = None,
 ) -> None:
     message = mask_text(message) or message
@@ -704,6 +803,7 @@ def emit_error(
         payload["error"] = message
         payload["auth_missing"] = auth_missing
         payload["dropped_records"] = dropped_records
+        payload["bad_currency_records"] = bad_currency_records
         payload["amount_keys"] = list(amount_keys or [])
         print(json.dumps(payload, ensure_ascii=False))
     else:
@@ -792,6 +892,42 @@ def run_check(args: argparse.Namespace, opener: Callable[..., Any]) -> int:
             rerr,
             args.json,
             dropped_records=stats["dropped_records"],
+            bad_currency_records=stats["bad_currency_records"],
+            amount_keys=stats["amount_keys"],
+        )
+        return 2
+
+    # 🔴 対策 C（Issue #939「訂正」コメント）: 請求期間開始日から取得できた最終レコード日まで、
+    # 暦日が 1 日も欠けていないかを検証する（旧 result_info + CF_PAGE_SIZE 判定の置き換え）。
+    period_start = stats["period_start"]
+    all_dates = [r["date"] for r in records]
+    gaps = missing_dates(period_start, all_dates)
+    if gaps:
+        shown = ", ".join(gaps[:10]) + ("…" if len(gaps) > 10 else "")
+        emit_error(
+            f"請求期間開始日 {period_start} から取得できた最終レコード日までの間に、"
+            f"日付が {len(gaps)} 日欠けています（{shown}）。取得漏れの可能性があるため"
+            "判定不能として扱います",
+            args.json,
+            dropped_records=stats["dropped_records"],
+            bad_currency_records=stats["bad_currency_records"],
+            amount_keys=stats["amount_keys"],
+        )
+        return 2
+
+    # 🔴 対策 E（Issue #1101 CRITICAL）: 対策 C は period_start 〜 最終日の内部しか見ないため、
+    # 応答が末尾（直近日側）で丸ごと打ち切られたケースを検知できない。最終レコード日が
+    # 「今日」から見て古すぎないかを別途検証する（stale_final_date() の docstring 参照）。
+    last_date = max(all_dates)
+    today = today_jst()
+    if stale_final_date(period_start, last_date, today):
+        emit_error(
+            f"取得できた最終レコード日 {last_date} が今日 {today}（JST）から"
+            f"{FRESHNESS_MAX_LAG_DAYS} 日を超えて経過しています。応答が末尾で丸ごと打ち切られた"
+            "疑いがあるため判定不能として扱います",
+            args.json,
+            dropped_records=stats["dropped_records"],
+            bad_currency_records=stats["bad_currency_records"],
             amount_keys=stats["amount_keys"],
         )
         return 2
@@ -805,6 +941,7 @@ def run_check(args: argparse.Namespace, opener: Callable[..., Any]) -> int:
             "「月内累計 $0.00 で閾値内」と報告しないため判定不能として扱います",
             args.json,
             dropped_records=stats["dropped_records"],
+            bad_currency_records=stats["bad_currency_records"],
             amount_keys=stats["amount_keys"],
         )
         return 2
@@ -812,6 +949,7 @@ def run_check(args: argparse.Namespace, opener: Callable[..., Any]) -> int:
     payload = build_payload(
         result,
         dropped_records=stats["dropped_records"],
+        bad_currency_records=stats["bad_currency_records"],
         amount_keys=stats["amount_keys"],
     )
     emit_payload(payload, args.json, dry_run=args.dry_run)
@@ -936,6 +1074,45 @@ def _ok_page(items: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
     return page
 
 
+def _raw_item(
+    date: str,
+    usd: Any,
+    *,
+    currency: str = EXPECTED_CURRENCY,
+    period_start: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """FOCUS 仕様の実応答形式（対策 A・Issue #939）に準拠した生アイテムを 1 件組み立てる。
+
+    `period_start` 省略時は `date` 自身を起点にする（単発レコードなら継続性検証が自明に通る）。
+    複数日にまたがるフィクスチャを組むときは `_raw_items()` を使う。
+    """
+    item: dict[str, Any] = {
+        DATE_KEY: date,
+        AMOUNT_KEY: usd,
+        CURRENCY_KEY: currency,
+        PERIOD_START_KEY: period_start if period_start is not None else date,
+    }
+    item.update(extra)
+    return item
+
+
+def _raw_items(
+    rows: list[tuple[str, Any]],
+    *,
+    period_start: str | None = None,
+    currency: str = EXPECTED_CURRENCY,
+) -> list[dict[str, Any]]:
+    """`(date, usd)` の列から FOCUS 形式の生アイテム列を組み立てる。
+
+    `period_start` 省略時は `rows` の最小日付を使う（＝渡した日が全て連続していれば対策 C の
+    継続性検証がそのまま通る最小のフィクスチャになる。意図的に日付を欠かせば対策 C の検証に落ちる）。
+    """
+    dates = [d for d, _ in rows]
+    start = period_start if period_start is not None else min(dates)
+    return [_raw_item(d, usd, currency=currency, period_start=start) for d, usd in rows]
+
+
 @contextlib.contextmanager
 def _env(**values: str | None):
     saved = {k: os.environ.get(k) for k in values}
@@ -986,10 +1163,14 @@ def _run_main(
     return code, buffer.getvalue()
 
 
-def _prev_month_last_day() -> str:
-    """「対象月ではない日付」を実行日に依存せず作る（前月末）。"""
-    first = datetime.now(JST).date().replace(day=1)
-    return (first - timedelta(days=1)).strftime("%Y-%m-%d")
+def _recent(n_days_ago: int) -> str:
+    """実行時点の JST 今日から `n_days_ago` 日前の日付（ISO 文字列）。
+
+    🔴 対策 E（最終レコード日の新鮮さ検証・Issue #1101）を満たすフィクスチャに使う。固定の
+    月初日付（例: 月の 1 日）だと、テスト実行日によっては「今日」から `FRESHNESS_MAX_LAG_DAYS`
+    を超えて離れ、意図しない stale 判定に落ちてしまうため、実行時点からの相対日付で組み立てる。
+    """
+    return (date_cls.fromisoformat(today_jst()) - timedelta(days=n_days_ago)).isoformat()
 
 
 # ── グループ 1: 閾値判定（① 単体） ──────────────────
@@ -1037,22 +1218,37 @@ def _self_test_threshold() -> list[str]:
 
 
 def _self_test_surge() -> list[str]:
+    """🔴 対策 D（Issue #939「訂正」コメント）: `evaluate()` は日次集計後の **末尾 1 日を常に
+    急増判定から除外する**。そのため以下の各ケースは「比較させたい 2 日」に加えて、除外される
+    ダミーの最終日を 1 日足した 3 日分のフィクスチャで組む（除外前提を各ケースで固定する）。
+    末尾日そのものを検証する専用ケースは本関数の末尾にまとめてある。
+    """
     failures: list[str] = []
 
-    # int / float 混在（実応答の型ゆれ）
+    # int / float 混在（実応答の型ゆれ）。09-12 は除外されるダミーの最終日。
     surge = evaluate(
-        [{"date": "2026-09-10", "usd": 1}, {"date": "2026-09-11", "usd": 6.0}],
+        [
+            {"date": "2026-09-10", "usd": 1},
+            {"date": "2026-09-11", "usd": 6.0},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if not surge["surge_detected"]:
         failures.append(f"1 -> 6（6 倍）は急増のはず: {surge}")
     if surge["surge_ratio"] != 6.0:
         failures.append(f"surge_ratio が 6.0 でない: {surge['surge_ratio']}")
+    if surge["latest_date"] != "2026-09-11":
+        failures.append(f"最終日 09-12 が除外されず latest_date に混入している: {surge}")
     if exit_code_for(surge) != 1:
         failures.append("急増検知は（閾値内でも）exit 1 を期待")
 
     calm = evaluate(
-        [{"date": "2026-09-10", "usd": 2.0}, {"date": "2026-09-11", "usd": 3.0}],
+        [
+            {"date": "2026-09-10", "usd": 2.0},
+            {"date": "2026-09-11", "usd": 3.0},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if calm["surge_detected"]:
@@ -1064,6 +1260,7 @@ def _self_test_surge() -> list[str]:
             {"date": "2026-09-10", "usd": 9.5},
             {"date": "2026-09-10", "usd": 0.5},
             {"date": "2026-09-11", "usd": 30.0},
+            {"date": "2026-09-12", "usd": 0.0},
         ],
         "2026-09", 1000.0, 3.0,
     )
@@ -1074,7 +1271,8 @@ def _self_test_surge() -> list[str]:
     if not per_product["surge_detected"]:
         failures.append(f"日次集計後 10 -> 30（3 倍）は急増のはず: {per_product}")
 
-    # 内訳行の並び順で「急増を取りこぼす」旧実装（records[-1] / [-2]）を落とす回帰
+    # 内訳行の並び順で「急増を取りこぼす」旧実装（records[-1] / [-2]）を落とす回帰。
+    # 09-11 が唯一の日 = 対策 D で除外される最終日そのものになるため、比較対象がそもそも無い。
     same_day_only = evaluate(
         [{"date": "2026-09-11", "usd": 9.5}, {"date": "2026-09-11", "usd": 0.5}],
         "2026-09", 1000.0, 3.0,
@@ -1083,20 +1281,30 @@ def _self_test_surge() -> list[str]:
         failures.append(f"同一日の内訳 2 行だけで前日比を出してはいけない: {same_day_only}")
     if same_day_only["prev_date"] is not None:
         failures.append(f"前日が存在しないのに prev_date が入っている: {same_day_only['prev_date']}")
+    if same_day_only["latest_date"] is not None:
+        failures.append(f"唯一の日が最終日として除外されず latest_date に残っている: {same_day_only}")
 
-    # 欠測日をまたぐ比較は「前日比」ではない（倍率を出さない）
+    # 欠測日をまたぐ比較は「前日比」ではない（倍率を出さない）。09-04 が除外される最終日。
     gap = evaluate(
-        [{"date": "2026-09-01", "usd": 1.0}, {"date": "2026-09-03", "usd": 30.0}],
+        [
+            {"date": "2026-09-01", "usd": 1.0},
+            {"date": "2026-09-03", "usd": 30.0},
+            {"date": "2026-09-04", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if gap["surge_ratio"] is not None or gap["surge_detected"]:
         failures.append(f"暦日が隣接しない比較で急増を断定してはいけない: {gap}")
     if gap["prev_date"] != "2026-09-01" or gap["latest_date"] != "2026-09-03":
-        failures.append(f"比較対象の日付が記録されていない: {gap}")
+        failures.append(f"比較対象の日付が記録されていない（除外後の 09-03 になっているべき）: {gap}")
 
     # 前日 0 円（ゼロ除算）: 倍率は算出不能（null）だが、床を超える立ち上がりは急増とみなす
     from_zero = evaluate(
-        [{"date": "2026-09-10", "usd": 0.0}, {"date": "2026-09-11", "usd": 5.0}],
+        [
+            {"date": "2026-09-10", "usd": 0.0},
+            {"date": "2026-09-11", "usd": 5.0},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if from_zero["surge_ratio"] is not None:
@@ -1106,7 +1314,11 @@ def _self_test_surge() -> list[str]:
 
     # 前日が負値（クレジット・返金調整）: 急増判定そのものを行わない（3 分岐の 3 つ目）
     from_negative = evaluate(
-        [{"date": "2026-09-10", "usd": -5.0}, {"date": "2026-09-11", "usd": 9.0}],
+        [
+            {"date": "2026-09-10", "usd": -5.0},
+            {"date": "2026-09-11", "usd": 9.0},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if from_negative["surge_ratio"] is not None or from_negative["surge_detected"]:
@@ -1114,7 +1326,11 @@ def _self_test_surge() -> list[str]:
 
     # 微小な立ち上がりは床（SURGE_MIN_ABS_USD）で抑止する（通知の誤爆防止）
     tiny = evaluate(
-        [{"date": "2026-09-10", "usd": 0.0}, {"date": "2026-09-11", "usd": 0.02}],
+        [
+            {"date": "2026-09-10", "usd": 0.0},
+            {"date": "2026-09-11", "usd": 0.02},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if tiny["surge_detected"]:
@@ -1122,7 +1338,11 @@ def _self_test_surge() -> list[str]:
 
     # 倍率は満たすが絶対額が床未満（$0.20 -> $0.80 の 4 倍）→ 急増としない
     tiny_ratio = evaluate(
-        [{"date": "2026-09-10", "usd": 0.2}, {"date": "2026-09-11", "usd": 0.8}],
+        [
+            {"date": "2026-09-10", "usd": 0.2},
+            {"date": "2026-09-11", "usd": 0.8},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if tiny_ratio["surge_detected"]:
@@ -1130,7 +1350,11 @@ def _self_test_surge() -> list[str]:
 
     # 月境界をまたぐ前日比（月初 1 日目でも判定できる・8/31 -> 9/1 は隣接）
     boundary = evaluate(
-        [{"date": "2026-08-31", "usd": 1.0}, {"date": "2026-09-01", "usd": 9.0}],
+        [
+            {"date": "2026-08-31", "usd": 1.0},
+            {"date": "2026-09-01", "usd": 9.0},
+            {"date": "2026-09-02", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if not boundary["surge_detected"]:
@@ -1138,12 +1362,15 @@ def _self_test_surge() -> list[str]:
     if boundary["prev_day_usd"] != 1.0:
         failures.append(f"前日が前月のレコードから取れていない: {boundary['prev_day_usd']}")
 
-    # 前日データが無い（レコード 1 件）→ 倍率も検知も出せないが、閾値評価は生きている
+    # 前日データが無い（レコード 1 件 = 最終日のみ）→ 倍率も検知も出せないが、閾値評価は生きている
     single = evaluate([{"date": "2026-09-01", "usd": 50.0}], "2026-09", 10.0, 3.0)
     if single["surge_ratio"] is not None or single["surge_detected"]:
         failures.append(f"1 件だけで急増を断定してはいけない: {single}")
     if not single["exceeded"]:
         failures.append("前日が無くても閾値超過の評価は行う")
+    # 🔴 指摘 6（NIT）: 対策 D で唯一の日（=最終日）が除外され latest_date は None になるはず
+    if single["latest_date"] is not None:
+        failures.append(f"レコード 1 件（最終日のみ）は対策 D で除外され latest_date が None のはず: {single}")
 
     # aggregate_daily 単体（日次集計そのものの回帰）
     daily = aggregate_daily([
@@ -1153,6 +1380,33 @@ def _self_test_surge() -> list[str]:
     ])
     if daily != [("2026-09-01", 5.0), ("2026-09-02", 1.0)]:
         failures.append(f"日次集計の結果が想定外: {daily}")
+
+    # ── 対策 D 専用ケース: 最終日そのものの除外を直接固定する ──────────────
+    # 最終日（09-12）に極端な値（$999）を置いても、急増判定にも latest_date にも使われない。
+    # ただし①の月内累計には含める（過少側になる想定なので閾値超過の誤検知にはならない・訂正コメント）。
+    excludes_last = evaluate(
+        [
+            {"date": "2026-09-10", "usd": 1.0},
+            {"date": "2026-09-11", "usd": 1.0},
+            {"date": "2026-09-12", "usd": 999.0},
+        ],
+        "2026-09", 2000.0, 3.0,
+    )
+    if excludes_last["latest_date"] != "2026-09-11":
+        failures.append(f"最終日が急増判定の latest_date から除外されていない: {excludes_last}")
+    if excludes_last["surge_detected"]:
+        failures.append(f"最終日の突出値が急増判定に使われている（除外漏れ）: {excludes_last}")
+    if excludes_last["billable_usd"] != 1001.0:
+        failures.append(f"最終日は月内累計には含めるべき: {excludes_last['billable_usd']}")
+
+    # データが最終日 1 日分のみ（＝完全な日が 1 つも無い）→ 急増は評価不能（latest_date も None）
+    only_last = evaluate([{"date": "2026-09-12", "usd": 999.0}], "2026-09", 1000.0, 3.0)
+    if (
+        only_last["latest_date"] is not None
+        or only_last["surge_ratio"] is not None
+        or only_last["surge_detected"]
+    ):
+        failures.append(f"最終日のみのデータで急増を評価してしまっている: {only_last}")
     return failures
 
 
@@ -1171,9 +1425,14 @@ def _self_test_interference() -> list[str]:
     if exit_code_for(only_threshold) != 1:
         failures.append("閾値超過のみでも exit 1")
 
-    # B: 閾値内でも急増は検知される（閾値内で早期 return していない）
+    # B: 閾値内でも急増は検知される（閾値内で早期 return していない）。
+    #    09-12 は対策 D で除外される最終日ダミー。
     only_surge = evaluate(
-        [{"date": "2026-09-10", "usd": 1.0}, {"date": "2026-09-11", "usd": 5.0}],
+        [
+            {"date": "2026-09-10", "usd": 1.0},
+            {"date": "2026-09-11", "usd": 5.0},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 1000.0, 3.0,
     )
     if not (only_surge["surge_detected"] and not only_surge["exceeded"]):
@@ -1183,7 +1442,11 @@ def _self_test_interference() -> list[str]:
 
     # C: 両方真のときも両フィールドが立つ（片方が他方を上書きしていない）
     both = evaluate(
-        [{"date": "2026-09-10", "usd": 2.0}, {"date": "2026-09-11", "usd": 20.0}],
+        [
+            {"date": "2026-09-10", "usd": 2.0},
+            {"date": "2026-09-11", "usd": 20.0},
+            {"date": "2026-09-12", "usd": 0.0},
+        ],
         "2026-09", 10.0, 3.0,
     )
     if not (both["exceeded"] and both["surge_detected"]):
@@ -1195,9 +1458,11 @@ def _self_test_interference() -> list[str]:
 
     # E: 「部分解釈失敗 -> exit 2」が「対象月 0 件 -> exit 2」を隠していない。
     #    全件解釈できる（dropped=0）が対象月に 1 件も無い入力で、**対象月由来のメッセージ** が出る。
-    other_month = _prev_month_last_day()
-    opener_other = _RecordingOpener([_ok_page([{"date": other_month, "billable_usd": 1.0}])])
-    code, out = _run_main(["--json"], opener_other)
+    #    current_month_jst() を実在しない月へ差し替えて対象月フィルタだけを検証する（レコードの
+    #    日付は _recent(1) で実行日から見て新鮮に保ち、対策 E の新鮮さ検証に吸われないようにする）。
+    with _patched("current_month_jst", lambda now=None: "2099-01"):
+        opener_other = _RecordingOpener([_ok_page([_raw_item(_recent(1), 1.0)])])
+        code, out = _run_main(["--json"], opener_other)
     payload = json.loads(out or "{}")
     if code != 2:
         failures.append(f"対象月 0 件は main() 経由でも exit 2 のはずが {code}")
@@ -1206,11 +1471,12 @@ def _self_test_interference() -> list[str]:
     if "対象月" not in (payload.get("error") or ""):
         failures.append(f"対象月 0 件のメッセージが出ていない（別の fail-closed に吸われている）: {payload.get('error')}")
 
-    # F: 逆向き。解釈失敗が混ざる入力では **解釈失敗のメッセージ** が出る（対象月判定に吸われない）
+    # F: 逆向き。解釈失敗が混ざる入力では **解釈失敗のメッセージ** が出る（対象月判定に吸われない）。
+    #    2 件目は ChargePeriodStart / BilledCost を欠いた不正レコード。
     month = current_month_jst()
     opener_mixed = _RecordingOpener([_ok_page([
-        {"date": f"{month}-01", "billable_usd": 4.0},
-        {"date": f"{month}-02", "unknown_key": 900.0},
+        _raw_item(f"{month}-01", 4.0, period_start=f"{month}-01"),
+        {"unknown_key": 900.0},
     ])])
     code, out = _run_main(["--json"], opener_mixed)
     payload = json.loads(out or "{}")
@@ -1222,20 +1488,25 @@ def _self_test_interference() -> list[str]:
         failures.append(f"解釈失敗のメッセージが出ていない: {payload.get('error')}")
 
     # G: 「負値・非有限値を解釈不能として弾く」が正常系の累計を壊していない
-    records, err, stats = extract_records([
-        {"date": "2026-09-01", "billable_usd": 4.0},
-        {"date": "2026-09-01", "billable_usd": 0.0},
-        {"date": "2026-09-02", "billable_usd": 3.0},
-    ])
+    records, err, stats = extract_records(_raw_items([
+        ("2026-09-01", 4.0),
+        ("2026-09-01", 0.0),
+        ("2026-09-02", 3.0),
+    ]))
     if err is not None or stats["dropped_records"] != 0:
         failures.append(f"$0.00 を含む正常系を弾いてしまっている: {err} / {stats}")
     result = evaluate(records, "2026-09", 10.0, 3.0)
     if result is None or result["billable_usd"] != 7.0:
         failures.append(f"正常系の累計が壊れている: {result}")
 
-    # H: 日次集計（②のため）が月内累計（①）の粒度を壊していない
+    # H: 日次集計（②のため）が月内累計（①）の粒度を壊していない。09-02 は対策 D で除外される
+    #    最終日ダミー（無ければ唯一の日である 09-01 が除外され latest_day_usd が None になる）。
     same_day = evaluate(
-        [{"date": "2026-09-01", "usd": 2.0}, {"date": "2026-09-01", "usd": 3.0}],
+        [
+            {"date": "2026-09-01", "usd": 2.0},
+            {"date": "2026-09-01", "usd": 3.0},
+            {"date": "2026-09-02", "usd": 0.0},
+        ],
         "2026-09", 10.0, 3.0,
     )
     if same_day["billable_usd"] != 5.0:
@@ -1249,11 +1520,13 @@ def _self_test_interference() -> list[str]:
 
 
 def _self_test_extract_records() -> list[str]:
+    """応答パース（対策 A: 固定キー抽出・対策 B: 通貨検証・対策 C の前提〈period_start 一意性〉）。"""
     failures: list[str] = []
 
+    # 正常系（実応答形式）: 日付・金額・通貨・請求期間開始のすべてが FOCUS 仕様の実測キー
     records, err, stats = extract_records([
-        {"date": "2026-09-02", "billable_usd": "3.5"},
-        {"date": "2026-09-01", "billable_usd": 1},
+        _raw_item("2026-09-02", "3.5", period_start="2026-09-01"),
+        _raw_item("2026-09-01", 1, period_start="2026-09-01"),
     ])
     if err is not None:
         failures.append(f"正常系でエラーになった: {err}")
@@ -1261,28 +1534,33 @@ def _self_test_extract_records() -> list[str]:
         failures.append(f"日付昇順にソートされていない: {records}")
     elif records[1]["usd"] != 3.5:
         failures.append(f"文字列金額を float に変換できていない: {records}")
-    if stats["amount_keys"] != ["billable_usd"]:
-        failures.append(f"採用した金額キーが記録されていない: {stats['amount_keys']}")
+    if stats.get("amount_keys") != [AMOUNT_KEY]:
+        failures.append(f"採用した金額キーが固定値になっていない: {stats.get('amount_keys')}")
+    if stats.get("period_start") != "2026-09-01":
+        failures.append(f"period_start が stats に記録されていない: {stats.get('period_start')}")
 
     _, err_empty, _ = extract_records([])
     if err_empty is None:
         failures.append("対象 0 件は fail-closed（エラーを返す）")
 
-    _, err_missing, stats_missing = extract_records([{"date": "2026-09-01"}, {"billable_usd": 1.0}])
+    _, err_missing, stats_missing = extract_records([
+        {DATE_KEY: "2026-09-01"},  # BilledCost / BillingCurrency / BillingPeriodStart が無い
+        {AMOUNT_KEY: 1.0},  # ChargePeriodStart が無い
+    ])
     if err_missing is None:
         failures.append("必須フィールド欠落のみのレコード群はエラーにする")
     if stats_missing["dropped_records"] != 2:
         failures.append(f"dropped_records の計数が想定外: {stats_missing['dropped_records']}")
 
-    _, err_bad_date, _ = extract_records([{"date": "not-a-date", "billable_usd": 1.0}])
+    _, err_bad_date, _ = extract_records([_raw_item("not-a-date", 1.0)])
     if err_bad_date is None:
         failures.append("日付として解釈できないレコードのみならエラーにする")
 
-    # 🔴 部分的な解釈失敗（3 件中 1 件だけ金額キー不明）は過少集計になるので fail-closed
+    # 🔴 部分的な解釈失敗（3 件中 1 件だけ必須キー欠落）は過少集計になるので fail-closed
     partial, err_partial, stats_partial = extract_records([
-        {"date": "2026-09-01", "billable_usd": 4.0},
-        {"date": "2026-09-02", "billable_usd": 4.0},
-        {"date": "2026-09-03", "unknown_key": 900.0},
+        _raw_item("2026-09-01", 4.0, period_start="2026-09-01"),
+        _raw_item("2026-09-02", 4.0, period_start="2026-09-01"),
+        {"unknown_key": 900.0},
     ])
     if err_partial is None:
         failures.append("1 件でも解釈できないレコードがあれば判定不能にする（過少集計の fail-open 防止）")
@@ -1292,52 +1570,152 @@ def _self_test_extract_records() -> list[str]:
         failures.append(f"解釈できなかった件数が 1 でない: {stats_partial['dropped_records']}")
 
     # 金額の値域・型（bool / null / NaN / Infinity / 負値）は解釈不能として扱う
-    for label, item in [
-        ("bool", {"date": "2026-09-01", "billable_usd": True}),
-        ("NaN", {"date": "2026-09-01", "billable_usd": float("nan")}),
-        ("Infinity", {"date": "2026-09-01", "billable_usd": float("inf")}),
-        ("負値", {"date": "2026-09-01", "billable_usd": -1000.0}),
-        ("数値でない文字列", {"date": "2026-09-01", "billable_usd": "N/A"}),
-        ("配列", {"date": "2026-09-01", "billable_usd": [1.0]}),
+    for label, usd_value in [
+        ("bool", True),
+        ("NaN", float("nan")),
+        ("Infinity", float("inf")),
+        ("負値", -1000.0),
+        ("数値でない文字列", "N/A"),
+        ("配列", [1.0]),
+        ("null", None),
     ]:
+        item = _raw_item("2026-09-01", usd_value)
+        if usd_value is None:
+            item[AMOUNT_KEY] = None
         _, err_value, stats_value = extract_records([item])
         if err_value is None or stats_value["dropped_records"] != 1:
             failures.append(f"金額が {label} のレコードを解釈不能として扱えていない: {stats_value}")
 
-    # `null` は候補キーとして採用されない（キー自体が無いのと同じ扱い）
-    _, err_null, stats_null = extract_records([{"date": "2026-09-01", "billable_usd": None}])
-    if err_null is None or stats_null["dropped_records"] != 1:
-        failures.append(f"金額が null のレコードを解釈不能として扱えていない: {stats_null}")
-
-    # 単位不明キー（amount / cost）は採用しない = 解釈不能（使用量を金額と読み違えない）
-    _, err_ambiguous_unit, _ = extract_records([{"date": "2026-09-01", "amount": 1250000}])
-    if err_ambiguous_unit is None:
-        failures.append("単位不明キー `amount` を金額として採用してしまっている")
-    if "amount" in AMOUNT_KEYS or "cost" in AMOUNT_KEYS:
-        failures.append("AMOUNT_KEYS に単位不明キーが残っている")
-
-    # 値の異なる候補キーが 2 つ -> 曖昧として判定不能
-    _, err_conflict, stats_conflict = extract_records([
-        {"date": "2026-09-01", "amount_usd": 1.0, "total_usd": 2.0}
+    # 🔴 対策 B: BillingCurrency が USD 以外なら 1 件でも fail-closed する
+    _, err_currency, stats_currency = extract_records([
+        _raw_item("2026-09-01", 4.0, currency="USD", period_start="2026-09-01"),
+        _raw_item("2026-09-02", 4.0, currency="EUR", period_start="2026-09-01"),
     ])
-    if err_conflict is None or "曖昧" not in err_conflict:
-        failures.append(f"値の異なる金額キーの併存を曖昧として扱えていない: {err_conflict}")
-    if stats_conflict["ambiguous_records"] != 1:
-        failures.append(f"ambiguous_records の計数が想定外: {stats_conflict}")
+    if err_currency is None:
+        failures.append("USD 以外の通貨が混ざっているのに判定不能にしていない")
+    if stats_currency.get("bad_currency_records") != 1:
+        failures.append(f"bad_currency_records の計数が想定外: {stats_currency}")
 
-    # 値が一致していれば曖昧ではない（先頭候補を採用する）
-    same_value, err_same, stats_same = extract_records([
-        {"date": "2026-09-01", "amount_usd": 2.0, "total_usd": 2.0}
+    # 通貨キー自体が欠落 / null も「USD ではない」として同じ扱いにする
+    item_no_currency = _raw_item("2026-09-01", 4.0)
+    del item_no_currency[CURRENCY_KEY]
+    _, err_no_currency, stats_no_currency = extract_records([item_no_currency])
+    if err_no_currency is None or stats_no_currency.get("bad_currency_records") != 1:
+        failures.append(f"BillingCurrency 欠落を USD 以外として扱えていない: {stats_no_currency}")
+
+    # 全件 USD なら通貨は問題にならない（誤検知しない）
+    _, err_all_usd, stats_all_usd = extract_records(
+        _raw_items([("2026-09-01", 1.0), ("2026-09-02", 2.0)])
+    )
+    if err_all_usd is not None or stats_all_usd.get("bad_currency_records") != 0:
+        failures.append(f"全件 USD なのに通貨エラーにしている: {err_all_usd} / {stats_all_usd}")
+
+    # 🔴 対策 C の前提: BillingPeriodStart がレコード間で食い違っていたら一意に決められず fail-closed
+    _, err_split_start, _ = extract_records([
+        _raw_item("2026-09-01", 1.0, period_start="2026-09-01"),
+        _raw_item("2026-09-02", 2.0, period_start="2026-08-28"),
     ])
-    if err_same is not None or not same_value:
-        failures.append(f"値が一致する併存キーを曖昧扱いしている: {err_same}")
-    elif stats_same["amount_keys"] != ["amount_usd"]:
-        failures.append(f"先頭候補が採用されていない: {stats_same['amount_keys']}")
+    if err_split_start is None or "一致しません" not in err_split_start:
+        failures.append(f"BillingPeriodStart の不一致を判定不能にしていない: {err_split_start}")
 
-    if normalize_result({"daily": [{"date": "2026-09-01"}]}) is None:
-        failures.append("result がオブジェクトでも日次配列を取り出せるべき")
+    # BillingPeriodStart が解釈できない値（欠落・不正日付）ならそのレコードは dropped
+    item_bad_start = _raw_item("2026-09-01", 1.0, period_start="not-a-date")
+    _, err_bad_start, stats_bad_start = extract_records([item_bad_start])
+    if err_bad_start is None or stats_bad_start["dropped_records"] != 1:
+        failures.append(f"不正な BillingPeriodStart を dropped として扱えていない: {stats_bad_start}")
+
+    # 🔴 対策 F（Issue #1101 指摘 5・WARNING）: bad_currency と dropped が同時発生したとき、
+    # より重大な方（大量の解釈不能 = 応答スキーマの破壊的変更）がメッセージに埋もれてはいけない。
+    both_records, err_both, stats_both = extract_records([
+        _raw_item("2026-09-01", 4.0, currency="USD", period_start="2026-09-01"),
+        _raw_item("2026-09-02", 4.0, currency="EUR", period_start="2026-09-01"),  # bad_currency
+        {"unknown_key": 900.0},  # dropped
+    ])
+    if err_both is None:
+        failures.append("通貨不一致と解釈失敗が同時発生しているのに判定不能にしていない")
+    if both_records:
+        failures.append("通貨不一致と解釈失敗の同時発生でレコードを返している（部分結果で判定させない）")
+    if stats_both.get("dropped_records") != 1 or stats_both.get("bad_currency_records") != 1:
+        failures.append(f"通貨不一致と解釈失敗の同時発生で件数の計数が想定外: {stats_both}")
+    if "解釈できない" not in (err_both or "") or CURRENCY_KEY not in (err_both or ""):
+        failures.append(
+            f"重大な方（解釈失敗）のメッセージが通貨エラーに隠れている（両方を含めるべき）: {err_both!r}"
+        )
+    if "1 件" not in (err_both or ""):
+        failures.append(f"件数がメッセージに含まれていない: {err_both!r}")
+
+    # 🔴 対策 A: `result` は実測でトップレベルの配列のみ。オブジェクト形は推測しない（旧 RESULT_LIST_KEYS 廃止）
+    if normalize_result([{"a": 1}]) != [{"a": 1}]:
+        failures.append("result がリストのときに正しく通していない")
+    if normalize_result({"daily": [{"date": "2026-09-01"}]}) is not None:
+        failures.append("result がオブジェクトのとき None を返すべき（候補キー推測を廃止した）")
     if normalize_result("nope") is not None:
         failures.append("result が想定外の型なら None（判定不能へ倒す）")
+
+    # ── missing_dates()（対策 C）単体 ──────────────────
+    if missing_dates("2026-09-01", []) != []:
+        failures.append("dates が空なら missing は空（判定は extract_records 側の 0 件検知に任せる）")
+    if missing_dates("2026-09-01", ["2026-09-01", "2026-09-02", "2026-09-03"]) != []:
+        failures.append("連続した日付は欠落なしと判定すべき")
+    gap_dates = missing_dates("2026-09-01", ["2026-09-01", "2026-09-03"])
+    if gap_dates != ["2026-09-02"]:
+        failures.append(f"09-02 の欠落を検出できていない: {gap_dates}")
+    multi_gap = missing_dates("2026-09-01", ["2026-09-01", "2026-09-05"])
+    if multi_gap != ["2026-09-02", "2026-09-03", "2026-09-04"]:
+        failures.append(f"複数日の欠落を全て検出できていない: {multi_gap}")
+    if missing_dates("2026-09-05", ["2026-09-05"]) != []:
+        failures.append("起点日 1 日だけのデータは欠落なしと判定すべき")
+    if missing_dates("not-a-date", ["2026-09-01"]) != ["not-a-date"]:
+        failures.append("period_start 自体が不正日付なら欠落として扱うべき")
+    return failures
+
+
+def _self_test_literal_fixture() -> list[str]:
+    """定数値そのもののドリフトを検知する（Issue #1101 指摘 1・CRITICAL / 指摘 4・WARNING）。
+
+    `_raw_item()` / `_raw_items()` はシンボル参照（`DATE_KEY` 等）でフィクスチャを組み立てるため、
+    定数値そのものが誤った値へ書き換わっても常に整合し、self-test は検知できない
+    （実測: `AMOUNT_KEY` を `"EffectiveCost"` に変異させても他の全グループが PASS した）。
+    ここでは実測確定した FOCUS 仕様のキー名を **リテラル文字列でハードコード** し、
+    DATE_KEY / AMOUNT_KEY / PERIOD_START_KEY / CURRENCY_KEY のいずれか 1 つでもドリフトしたら
+    このケースだけで落ちるようにする（ヘルパーを一切使わない）。
+    """
+    failures: list[str] = []
+
+    # 実測仕様のキー名を直書き（ヘルパー非使用）。4 定数のいずれかがドリフトすれば
+    # item.get(<変異後のキー>) がこの dict 上で見つからず dropped/bad_currency へ落ちる。
+    literal_item = {
+        "ChargePeriodStart": "2026-09-01",
+        "BilledCost": 4.5,
+        "BillingCurrency": "USD",
+        "BillingPeriodStart": "2026-09-01",
+    }
+    records, err, stats = extract_records([literal_item])
+    if err is not None:
+        failures.append(
+            f"実測キーのリテラル dict を解釈できない（DATE_KEY/AMOUNT_KEY/PERIOD_START_KEY/"
+            f"CURRENCY_KEY のいずれかがドリフトしている疑い）: {err}"
+        )
+    elif records != [{"date": "2026-09-01", "usd": 4.5}]:
+        failures.append(f"リテラル dict からの抽出結果が想定外: {records}")
+    if stats.get("dropped_records") or stats.get("bad_currency_records"):
+        failures.append(f"リテラル dict の正常系で dropped/bad_currency が立っている: {stats}")
+
+    # EXPECTED_CURRENCY 自体のドリフトを直接固定する（指摘 4・推奨コード）。
+    if EXPECTED_CURRENCY != "USD":
+        failures.append(f"EXPECTED_CURRENCY が実測仕様（USD）からドリフトしている: {EXPECTED_CURRENCY!r}")
+
+    # 通貨だけがリテラルで不一致（対策 B が定数ドリフトなしに生きているかも同時に固定する）。
+    literal_bad_currency = {
+        "ChargePeriodStart": "2026-09-01",
+        "BilledCost": 4.5,
+        "BillingCurrency": "EUR",
+        "BillingPeriodStart": "2026-09-01",
+    }
+    _, err_bad, stats_bad = extract_records([literal_bad_currency])
+    if err_bad is None or stats_bad.get("bad_currency_records") != 1:
+        failures.append(f"リテラル dict で通貨不一致が検知できない: {stats_bad}")
+
     return failures
 
 
@@ -1382,7 +1760,8 @@ def _self_test_main_paths() -> list[str]:
     month = current_month_jst()
 
     # 正常系（閾値内 -> exit 0）。fake は URL を記録し、main() から実際に呼ばれたことを assert する。
-    opener_ok = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 0.5}])])
+    # 対策 E（新鮮さ検証）を満たすため、日付は実行時点からの相対日付（_recent）で組み立てる。
+    opener_ok = _RecordingOpener([_ok_page([_raw_item(_recent(1), 0.5)])])
     code, out = _run_main(["--json"], opener_ok)
     if code != 0:
         failures.append(f"閾値内なのに main() が exit {code}")
@@ -1417,13 +1796,15 @@ def _self_test_main_paths() -> list[str]:
         )
     if payload.get("billable_usd") != 0.5 or payload.get("exceeded") is not False:
         failures.append(f"正常系の --json の値が想定外: {payload}")
-    if payload.get("amount_keys") != ["billable_usd"]:
+    if payload.get("amount_keys") != [AMOUNT_KEY]:
         failures.append(f"採用した金額キーが --json に出ていない: {payload.get('amount_keys')}")
     if payload.get("skipped") is not False or payload.get("dropped_records") != 0:
         failures.append(f"skipped / dropped_records の既定値が想定外: {payload}")
+    if payload.get("bad_currency_records") != 0:
+        failures.append(f"bad_currency_records の既定値が 0 でない: {payload.get('bad_currency_records')}")
 
     # 閾値超過 -> exit 1（main() 経由）。値そのものも固定する（payload.update({}) の変異を落とす）
-    opener_over = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 99.0}])])
+    opener_over = _RecordingOpener([_ok_page([_raw_item(_recent(1), 99.0)])])
     code, out = _run_main(["--json"], opener_over)
     payload = json.loads(out or "{}")
     if code != 1:
@@ -1437,16 +1818,19 @@ def _self_test_main_paths() -> list[str]:
     if payload.get("month") != month:
         failures.append(f"--json の month が JST 当月でない: {payload.get('month')}")
 
-    opener_over_text = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 99.0}])])
+    opener_over_text = _RecordingOpener([_ok_page([_raw_item(_recent(1), 99.0)])])
     code, out = _run_main([], opener_over_text)
     if code != 1 or "課金" not in out:
         failures.append(f"超過時の 1 行に A-6 判定用の文言が無い: exit={code} out={out!r}")
 
-    # 🔴 --surge-ratio の配線（閾値と入れ替わっていれば exceeded/surge の組み合わせが変わる）
-    surge_records = [
-        {"date": f"{month}-10", "billable_usd": 1.0},
-        {"date": f"{month}-11", "billable_usd": 6.0},
-    ]
+    # 🔴 --surge-ratio の配線（閾値と入れ替わっていれば exceeded/surge の組み合わせが変わる）。
+    # 対策 D で末尾日は急増判定から除外されるため、比較させたい 2 日 + 除外されるダミーの
+    # 最終日 1 日の 3 日分で組む（`_self_test_surge()` と同じ構え）。
+    surge_records = _raw_items([
+        (_recent(3), 1.0),
+        (_recent(2), 6.0),
+        (_recent(1), 0.0),
+    ])
     opener_ratio_low = _RecordingOpener([_ok_page(surge_records)])
     code, out = _run_main(["--json", "--threshold-usd", "1000", "--surge-ratio", "2"], opener_ratio_low)
     payload = json.loads(out or "{}")
@@ -1466,12 +1850,17 @@ def _self_test_main_paths() -> list[str]:
         failures.append(f"--surge-ratio 100 で surge_detected が立っている: {payload}")
 
     # 🔴 判定に使う月は `current_month_jst()` の戻り値であることを固定する
-    #    （UTC 基準へのインライン変異は、この差し替えが効かなくなるので必ず落ちる）
-    with _patched("current_month_jst", lambda now=None: "2026-03"):
-        opener_month = _RecordingOpener([_ok_page([
-            {"date": "2026-02-28", "billable_usd": 99.0},
-            {"date": "2026-03-01", "billable_usd": 1.0},
-        ])])
+    #    （UTC 基準へのインライン変異は、この差し替えが効かなくなるので必ず落ちる）。
+    #    レコードの日付は固定の暦日（月境界をまたぐ検証が目的）なので、対策 E の新鮮さ検証も
+    #    `today_jst()` を同じ固定世界（最終日の翌日）へ差し替えて満たす。
+    with (
+        _patched("current_month_jst", lambda now=None: "2026-03"),
+        _patched("today_jst", lambda: "2026-03-02"),
+    ):
+        opener_month = _RecordingOpener([_ok_page(_raw_items([
+            ("2026-02-28", 99.0),
+            ("2026-03-01", 1.0),
+        ]))])
         code, out = _run_main(["--json"], opener_month)
         payload = json.loads(out or "{}")
     if payload.get("month") != "2026-03":
@@ -1482,13 +1871,13 @@ def _self_test_main_paths() -> list[str]:
         failures.append(f"当月 $1.00 は閾値内のはずが exit {code}")
 
     # --dry-run でも判定内容は出るが、終了コードは同じ（副作用のみ抑止）
-    opener_dry = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 99.0}])])
+    opener_dry = _RecordingOpener([_ok_page([_raw_item(_recent(1), 99.0)])])
     code, out = _run_main(["--dry-run"], opener_dry)
     if code != 1 or "dry-run" not in out:
         failures.append(f"--dry-run の挙動が想定外: exit={code} out={out!r}")
 
     # 専用トークン（最小権限）が優先される
-    opener_billing = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 0.1}])])
+    opener_billing = _RecordingOpener([_ok_page([_raw_item(_recent(1), 0.1)])])
     _run_main([], opener_billing, billing_token="tok-billing")
     if not opener_billing.calls:
         failures.append("専用トークン経路で API が呼ばれていない")
@@ -1498,7 +1887,7 @@ def _self_test_main_paths() -> list[str]:
         )
 
     # 認証情報の欠落 -> exit 2 + auth_missing
-    opener_unused = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 1.0}])])
+    opener_unused = _RecordingOpener([_ok_page([_raw_item(f"{month}-01", 1.0)])])
     code, out = _run_main(["--json"], opener_unused, creds=False)
     if code != 2:
         failures.append(f"認証情報欠落は exit 2 のはずが {code}")
@@ -1508,13 +1897,13 @@ def _self_test_main_paths() -> list[str]:
         failures.append(f"認証情報欠落で auth_missing=true になっていない: {out!r}")
 
     # アカウント ID の形式検証（URL へ埋め込む前に落とす）
-    opener_badid = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 1.0}])])
+    opener_badid = _RecordingOpener([_ok_page([_raw_item(f"{month}-01", 1.0)])])
     code, out = _run_main(["--json"], opener_badid, account_id="acct-test")
     if code != 2:
         failures.append(f"不正な account_id は exit 2 のはずが {code}")
     if opener_badid.calls:
         failures.append("不正な account_id なのに API を叩いている")
-    opener_newline = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 1.0}])])
+    opener_newline = _RecordingOpener([_ok_page([_raw_item(f"{month}-01", 1.0)])])
     code, _ = _run_main(["--json"], opener_newline, account_id=_TEST_ACCOUNT_ID + "\nX")
     if code != 2 or opener_newline.calls:
         failures.append("改行混入の account_id を弾けていない")
@@ -1568,7 +1957,7 @@ def _self_test_main_paths() -> list[str]:
         failures.append("無関係な API 失敗で auth_missing を立てている")
 
     # トップレベルが JSON 配列 -> exit 2（AttributeError で exit 1 に化けない）
-    opener_array = _RecordingOpener([[{"date": f"{month}-01", "billable_usd": 1.0}]])
+    opener_array = _RecordingOpener([[_raw_item(f"{month}-01", 1.0)]])
     code, out = _run_main(["--json"], opener_array)
     if code != 2:
         failures.append(f"トップレベル配列は exit 2 のはずが {code}")
@@ -1599,14 +1988,18 @@ def _self_test_main_paths() -> list[str]:
     if code != 2:
         failures.append(f"必須フィールド欠落は exit 2 のはずが {code}")
 
-    # ページング: result_info に従って 2 ページ目を取りに行く（should_fetch_next_page の再利用）
+    # ページング: result_info に従って 2 ページ目を取りに行く（should_fetch_next_page の再利用）。
+    # 実測（Issue #939）ではページングは常に無効だが、将来 Cloudflare が total_count 付きの応答へ
+    # 変えた場合に備えて防御的にループ制御は残している（docstring 参照）。両ページとも同じ
+    # BillingPeriodStart を持たせないと対策 C の一意性検証で fail-closed になる。日付は対策 E の
+    # 新鮮さ検証を満たすため実行時点からの相対日付（2 日前・1 日前で連続）にする。
     opener_paged = _RecordingOpener([
         _ok_page(
-            [{"date": f"{month}-01", "billable_usd": 1.0}],
+            [_raw_item(_recent(2), 1.0, period_start=_recent(2))],
             result_info={"page": 1, "per_page": 1, "count": 1, "total_count": 2},
         ),
         _ok_page(
-            [{"date": f"{month}-02", "billable_usd": 1.0}],
+            [_raw_item(_recent(1), 1.0, period_start=_recent(2))],
             result_info={"page": 2, "per_page": 1, "count": 1, "total_count": 2},
         ),
     ])
@@ -1616,20 +2009,60 @@ def _self_test_main_paths() -> list[str]:
     elif "page=2" not in opener_paged.calls[1]["url"]:
         failures.append(f"2 ページ目の URL が想定外: {opener_paged.calls[1]['url']}")
 
-    # 🔴 result_info 無し + 満杯ページ -> 打ち切りの見逃しとして exit 2
-    full_page = [{"date": f"{month}-01", "billable_usd": 0.01} for _ in range(CF_PAGE_SIZE)]
-    opener_truncated = _RecordingOpener([_ok_page(full_page)])
-    code, out = _run_main(["--json"], opener_truncated)
-    if code != 2:
-        failures.append(f"result_info 無し + 満杯ページは exit 2 のはずが {code}")
-    if "result_info" not in (json.loads(out or "{}").get("error") or ""):
-        failures.append(f"打ち切り見逃しのメッセージが出ていない: {out!r}")
+    # ── 対策 C: 日付連続性検証（旧 result_info + CF_PAGE_SIZE 判定の置き換え） ──────
+    # 🔴 ④ 正常系: 日付が連続し全件 USD なら、件数が多くても（実測の 100〜139 件相当）
+    # 請求期間の全レコードが集計され exit 0 / 1 のいずれかを返す（判定不能に落ちない）。
+    # 15 日分は月をまたぐと `evaluate()` の月フィルタで一部が落ちて billable_usd が想定外になる
+    # ため、`current_month_jst()` / `today_jst()` を固定の synthetic な世界へ差し替えて組む
+    # （最終日 06-15 の翌日を「今日」にして対策 E の新鮮さ検証も満たす）。
+    with (
+        _patched("current_month_jst", lambda now=None: "2026-06"),
+        _patched("today_jst", lambda: "2026-06-16"),
+    ):
+        many_days = _raw_items([(f"2026-06-{d:02d}", 1.0) for d in range(1, 16)])
+        opener_many = _RecordingOpener([_ok_page(many_days)])
+        code, out = _run_main(["--json", "--threshold-usd", "1000"], opener_many)
+    payload = json.loads(out or "{}")
+    if code not in (0, 1):
+        failures.append(f"日付連続・全 USD の正常系が exit {code}（0 か 1 を期待）")
+    if payload.get("billable_usd") != 15.0:
+        failures.append(f"連続 15 日分が全件集計されていない: {payload.get('billable_usd')}")
 
-    # 対照: result_info 無しでも満杯でなければ通常判定（過剰な fail-closed になっていない）
-    opener_partial_page = _RecordingOpener([_ok_page(full_page[:-1])])
-    code, _ = _run_main(["--threshold-usd", "1000"], opener_partial_page)
-    if code != 0:
-        failures.append(f"result_info 無し + 満杯でないページは通常判定のはずが exit {code}")
+    # 🔴 ① 日付が 1 日でも欠けたら fail-closed（対策 C）。06-05 を欠かす。最終日 06-07 の翌日を
+    # 「今日」にして対策 E（新鮮さ）を満たしたうえで対策 C（連続性）の欠落だけを検証する。
+    with (
+        _patched("current_month_jst", lambda now=None: "2026-06"),
+        _patched("today_jst", lambda: "2026-06-08"),
+    ):
+        gapped_days = _raw_items(
+            [(f"2026-06-{d:02d}", 1.0) for d in range(1, 8) if d != 5]
+        )
+        opener_gap = _RecordingOpener([_ok_page(gapped_days)])
+        code, out = _run_main(["--json"], opener_gap)
+    if code != 2:
+        failures.append(f"日付欠落があるのに main() が exit {code}（2 を期待）")
+    if "欠けて" not in (json.loads(out or "{}").get("error") or ""):
+        failures.append(f"日付欠落のメッセージが main() 経由で出ていない: {out!r}")
+
+    # 🔴 ② BillingCurrency が USD 以外のレコードが混ざったら main() 経由でも fail-closed（対策 B）
+    # 日付は対策 E の新鮮さ検証を満たすため実行時点からの相対日付（2 日前・1 日前で連続）にする。
+    mixed_currency = [
+        _raw_item(_recent(2), 1.0, period_start=_recent(2)),
+        _raw_item(_recent(1), 1.0, currency="EUR", period_start=_recent(2)),
+    ]
+    opener_currency = _RecordingOpener([_ok_page(mixed_currency)])
+    code, out = _run_main(["--json"], opener_currency)
+    payload_currency = json.loads(out or "{}")
+    if code != 2:
+        failures.append(f"USD 以外の通貨が混ざっているのに main() が exit {code}（2 を期待）")
+    if payload_currency.get("auth_missing") is not False:
+        failures.append("通貨不一致を権限不足と混同している")
+    # 🔴 指摘 6（NIT）: bad_currency_records が --json に配線されていること
+    if payload_currency.get("bad_currency_records") != 1:
+        failures.append(
+            f"bad_currency_records が --json に配線されていない: "
+            f"{payload_currency.get('bad_currency_records')}"
+        )
 
     return failures
 
@@ -1655,7 +2088,7 @@ def _self_test_gate_daily() -> list[str]:
                 failures.append("判定不能の日に stamp している（再試行できなくなる）")
 
             # 🔴 超過（exit 1）の日も stamp しない（当日中に再通知できるように）
-            opener_over = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 99.0}])])
+            opener_over = _RecordingOpener([_ok_page([_raw_item(_recent(1), 99.0)])])
             code, _ = _run_main(["--gate-daily"], opener_over)
             if code != 1:
                 failures.append(f"超過なのに exit {code}")
@@ -1663,7 +2096,7 @@ def _self_test_gate_daily() -> list[str]:
                 failures.append("超過した日に stamp している（当日中に再通知できなくなる）")
 
             # 成功（閾値内）したら stamp する
-            opener_ok = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 0.1}])])
+            opener_ok = _RecordingOpener([_ok_page([_raw_item(_recent(1), 0.1)])])
             code, _ = _run_main(["--gate-daily"], opener_ok)
             if code != 0 or not marker_path().exists():
                 failures.append(f"成功後に stamp されていない: exit={code}")
@@ -1673,7 +2106,7 @@ def _self_test_gate_daily() -> list[str]:
                 failures.append("stamp 直後に already_ran_today() が False")
 
             # 2 回目は API を叩かずスキップし、記録した判定を再現する（--json は空にしない）
-            opener_second = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 99.0}])])
+            opener_second = _RecordingOpener([_ok_page([_raw_item(_recent(1), 99.0)])])
             code, out = _run_main(["--gate-daily", "--json"], opener_second)
             if code != 0 or opener_second.calls:
                 failures.append(f"同日 2 回目がスキップされていない: exit={code} calls={len(opener_second.calls)}")
@@ -1695,7 +2128,7 @@ def _self_test_gate_daily() -> list[str]:
                 "payload": {**empty_payload(), "month": month, "billable_usd": 42.0,
                             "threshold_usd": 10.0, "exceeded": True, "surge_detected": False},
             }, ensure_ascii=False), encoding="utf-8")
-            opener_skip = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 0.1}])])
+            opener_skip = _RecordingOpener([_ok_page([_raw_item(_recent(1), 0.1)])])
             code, out = _run_main(["--gate-daily"], opener_skip)
             if code != 1:
                 failures.append(f"記録した exit 1 を再現できていない: exit={code}")
@@ -1706,7 +2139,7 @@ def _self_test_gate_daily() -> list[str]:
 
             # マーカーはあるが記録が壊れている -> スキップせず実判定へ進む（0 に丸めない）
             result_path().unlink()
-            opener_recover = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 0.2}])])
+            opener_recover = _RecordingOpener([_ok_page([_raw_item(_recent(1), 0.2)])])
             code, _ = _run_main(["--gate-daily"], opener_recover)
             if not opener_recover.calls:
                 failures.append("記録が無いのにスキップしている（評価していないのに 0 を返す）")
@@ -1716,7 +2149,7 @@ def _self_test_gate_daily() -> list[str]:
             # --dry-run は stamp しない
             marker_path().unlink(missing_ok=True)
             result_path().unlink(missing_ok=True)
-            opener_dry = _RecordingOpener([_ok_page([{"date": f"{month}-01", "billable_usd": 0.1}])])
+            opener_dry = _RecordingOpener([_ok_page([_raw_item(_recent(1), 0.1)])])
             _run_main(["--gate-daily", "--dry-run"], opener_dry)
             if marker_path().exists() or result_path().exists():
                 failures.append("--dry-run で副作用（stamp）が起きている")
@@ -1825,18 +2258,112 @@ def _self_test_redirect_safety() -> list[str]:
     return failures
 
 
+# ── グループ 10: 最終レコード日の新鮮さ検証（対策 E・Issue #1101 CRITICAL） ──────────────────
+
+
+def _self_test_freshness() -> list[str]:
+    """`missing_dates()`（対策 C）は内部の欠落しか見ないため、応答が末尾で丸ごと打ち切られた
+    ケースを検知できない（Issue #1101 指摘 2）。`stale_final_date()`（対策 E）を検証する。
+    """
+    failures: list[str] = []
+    today = today_jst()
+    today_d = date_cls.fromisoformat(today)
+
+    def days_ago(n: int) -> str:
+        return (today_d - timedelta(days=n)).isoformat()
+
+    # 通常運用: 最終日が昨日（実測どおり当日分は翌日確定）→ stale ではない
+    if stale_final_date(days_ago(10), days_ago(1), today):
+        failures.append("最終日が昨日なのに stale 判定している（通常運用での誤検知）")
+
+    # 請求期間開始直後（anchor 2 日後）: 最終日 = 開始日 = 今日から 2 日 → stale ではない
+    # （anchor day 直後はデータが薄いのが正常。ここで誤検知してはならない）
+    if stale_final_date(days_ago(2), days_ago(2), today):
+        failures.append("請求期間開始直後（2 日以内）のデータ過少を stale として誤検知している")
+
+    # 末尾が丸ごと打ち切られた: 請求期間開始から十分経過（10 日前）していて、最終日が 5 日前で
+    # 止まっている（本来もっと新しいレコードがあるはずなのに見えない）
+    if not stale_final_date(days_ago(10), days_ago(5), today):
+        failures.append(
+            "末尾が丸ごと欠けている（最終日 5 日前・請求期間 10 日前開始）のに stale を検知できていない"
+        )
+
+    # 境界値: ちょうど 2 日は stale にしない（`>` で比較する。`>=` への変異を検出する）
+    if stale_final_date(days_ago(5), days_ago(2), today):
+        failures.append("最終日がちょうど 2 日前は stale にしない（> 2 で比較する）")
+    # 3 日は超過として stale
+    if not stale_final_date(days_ago(5), days_ago(3), today):
+        failures.append("最終日が 3 日前（閾値超過）なのに stale を検知できていない")
+
+    # 🔴 AND であることの固定（`or` への変異を検出）: 片方だけ超過なら stale にしない
+    if stale_final_date(days_ago(1), days_ago(5), today):
+        failures.append(
+            "請求期間開始が新しい（1 日前）のに最終日の古さだけで stale にしている"
+            "（AND ではなく OR になっている疑い）"
+        )
+    if stale_final_date(days_ago(5), days_ago(1), today):
+        failures.append(
+            "最終日が新しい（1 日前）のに請求期間の古さだけで stale にしている（AND 違反）"
+        )
+
+    # 日付を解釈できない入力は安全側（stale=True）に倒す
+    if not stale_final_date("not-a-date", days_ago(1), today):
+        failures.append("period_start が不正日付なのに stale=False（fail-open）になっている")
+
+    # ── main() 経由: 末尾打ち切りは exit 2 ──────────────────
+    period_start_old = days_ago(10)
+    stale_records = _raw_items(
+        [(days_ago(n), 1.0) for n in range(10, 4, -1)],  # 10 日前〜5 日前まで連続（gap ゼロ）
+        period_start=period_start_old,
+    )
+    opener_stale = _RecordingOpener([_ok_page(stale_records)])
+    code, out = _run_main(["--json"], opener_stale)
+    payload = json.loads(out or "{}")
+    if code != 2:
+        failures.append(f"末尾打ち切り（最終日 5 日前）は exit 2 のはずが main() 経由で {code}")
+    if "古すぎ" not in (payload.get("error") or "") and "打ち切" not in (payload.get("error") or ""):
+        failures.append(f"末尾打ち切りのメッセージが main() 経由で出ていない: {payload.get('error')}")
+
+    # ── main() 経由: 通常運用（最終日が昨日）は新鮮さ検証で弾かれない ──────────────
+    # 🔴 干渉検証（#725）: 対策 D（evaluate() 内で末尾 1 日を急増判定から除外）が、対策 E の
+    # 新鮮さ検証が見る「今日から見た最終日」を巻き込んでいないかを main() 経由で確認する
+    # （対策 E は records の生データを見る一方、対策 D は evaluate() 内部の daily 集計だけに
+    # 閉じており、互いのデータフローは交差しない）。
+    fresh_records = _raw_items(
+        [(days_ago(n), 1.0) for n in range(3, 0, -1)],  # 3, 2, 1 日前（最終日=昨日）
+        period_start=days_ago(3),
+    )
+    opener_fresh = _RecordingOpener([_ok_page(fresh_records)])
+    code, out = _run_main(["--json", "--threshold-usd", "1000"], opener_fresh)
+    payload = json.loads(out or "{}")
+    if code not in (0, 1):
+        failures.append(f"通常運用（最終日が昨日）が新鮮さ検証で誤って exit {code} にされている")
+    # 対策 E の新鮮さ判定は「今日から見た最終日」= 昨日（days_ago(1)）を見て通過させる一方、
+    # 対策 D（evaluate() 内の急増判定）は依然としてその最終日（昨日）を除外するため、
+    # `latest_date`（急増比較に使った日）は昨日の 1 つ前（days_ago(2)）のままになる。
+    # 対策 E が対策 D の除外対象を消していない（互いのデータフローが交差していない）ことの固定。
+    if payload.get("latest_date") != days_ago(2):
+        failures.append(
+            f"対策 E 通過後も対策 D（最終日除外）は生きているはずが latest_date が想定外: "
+            f"{payload.get('latest_date')}（期待値 {days_ago(2)}）"
+        )
+    return failures
+
+
 def run_self_test() -> int:
     groups = [
         ("① 閾値超過の判定（対象月 0 件は判定不能）", _self_test_threshold),
-        ("② 前日比の急増（日次集計・欠測日・型ゆれ・値域）", _self_test_surge),
+        ("② 前日比の急増（日次集計・欠測日・型ゆれ・値域・対策 D の最終日除外）", _self_test_surge),
         ("複数の fail-closed の干渉検証（#725）", _self_test_interference),
-        ("応答パース（部分失敗・値域・金額キーの曖昧性）", _self_test_extract_records),
+        ("応答パース（対策 A 固定キー・対策 B 通貨検証・対策 C missing_dates）", _self_test_extract_records),
+        ("定数値のドリフト検知（リテラル dict・#1101 指摘 1/4）", _self_test_literal_fixture),
         ("権限不足の判別（A-6 の切り分け・誤爆の回帰）", _self_test_auth_detection),
         ("main() を通した終了コード経路 + fake の URL / トークン検証", _self_test_main_paths),
         ("--gate-daily の日次収束・記録の再現・stamp のタイミング", _self_test_gate_daily),
         ("超過通知 1 行の A-6 分類（triage_notification 実呼び出し）", _self_test_alert_line),
         ("請求月の決定が JST 基準であること", _self_test_month_jst),
         ("リダイレクト時のトークン再送防止", _self_test_redirect_safety),
+        ("最終レコード日の新鮮さ検証（対策 E・#1101 指摘 2）", _self_test_freshness),
     ]
     failed_groups = 0
     total = 0
