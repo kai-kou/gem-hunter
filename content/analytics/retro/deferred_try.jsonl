@@ -503,3 +503,11 @@
 {"date":"2026-09-08 JST","title":"#896 要素間関係性検証パターンをスピンオフツール化・テンプレート化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-08 JST","title":"test_sensitive_file_guard.sh の開きクォート保護セクションを見出しで明確に区別する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-08 JST","title":"Quote・Backslash・Substitution の相互作用変異テスト（#725 応用）","q1":"YES","q2":"YES","defer_reason":"high_commented","related_issue":1091}
+{"date":"2026-09-09 JST","title":"Hot層「指示分量」の機械検査化（Issue指示のバイト数目安との照合）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"Layer1指摘の統合精度強化（複数観点合致を自動フラグ化）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"Post-Layer1の修正完全性自動検証ツール","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"token-optimization-rules.md増減ログの差分列と本文記載の一致検査","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"Layer1 CRITICAL判定根拠のインラインコメントへの明記義務化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"lessons-core.md症状索引にL-160（expectedHeadSha/commitID 409エラー）の行を追加","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"retro-try対応で初版が既存教訓より狭い射程を選んだ場合、その判断根拠を記録する規律","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"retro-try Issue作成時にbotが関連lessons候補を自動コメントで提示する仕組み","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
