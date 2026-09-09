@@ -206,6 +206,8 @@ if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
   _use_awk_fallback_45=1
   if [ -f "$_evidence_tool_45" ] && command -v python3 >/dev/null 2>&1; then
     _ev_exit_45=0
+    # timeout 20s: check-tool-design-rules.md §8 のローカル検証既定値（10s）から逸脱。
+    # 表全文の3列構造・既知チェック名突合まで行うため既定値では PR 本文が大きいときに不足しうる（#1051）
     if command -v timeout >/dev/null 2>&1; then
       _ev_out_45=$(printf '%s' "$pr_body" | timeout 20 python3 "$_evidence_tool_45" --body-file - 2>&1) || _ev_exit_45=$?
     else
@@ -463,6 +465,8 @@ elif ! command -v python3 >/dev/null 2>&1; then
   reserved_ids_warning="[pre-pr-create-check] python3 が見つかりません（ID 採番衝突の検知が実質未実行です）。"
 else
   _cri_exit=0
+  # timeout 60s: check-tool-design-rules.md §8 のネットワーク I/O 既定値（45s）はツール内部の
+  # GIT_TIMEOUT_SECONDS が担保済み。外側の 60s はプロセス起動・出力整形分の余裕（#1051）
   if command -v timeout >/dev/null 2>&1; then
     _cri_output=$(timeout 60 python3 "$_repo_root_49/tools/check_reserved_ids.py" 2>&1) || _cri_exit=$?
   else
