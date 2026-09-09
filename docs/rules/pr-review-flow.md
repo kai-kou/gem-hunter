@@ -433,6 +433,11 @@ AIレビュー指摘を全て解消したら、ユーザー確認なしで自動
 mcp__github__merge_pull_request(owner="kai-kou", repo="gem-hunter", pull_number=N, merge_method="squash")
 ```
 
+🔴 **`expectedHeadSha`（楽観ロック引数）を渡す場合は、短縮 SHA から組み立てない**（L-113・#972 で
+3 回連続再発した実害）。渡すフル SHA は `mcp__github__pull_request_read(method="get", pullNumber=N)`
+の `head.sha` を直前に実測して **そのまま** 使う（`git rev-parse --short` の出力や、別コミットの
+SHA と混ぜて 40 桁へ補完しない）。実測せず渡すくらいなら `expectedHeadSha` 自体を省略する。
+
 マージ後の完了報告（アウトカムを必ず含める）:
 ```bash
 python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" pr \
