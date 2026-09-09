@@ -111,7 +111,12 @@ _sfa_candidate_tokens() {
   # 全て候補にする」抽出が、ここでの「フラグ後の第1トークンのみ」抽出を常に包含する強い上位互換
   # のため、二重登録は正規化前（@ 剥がし未適用）の重複トークンを生むだけで検知漏れの防止には
   # ならない（#417 Layer 1 レビューで指摘）。
-  _sfa_cmds='cat|less|head|tail|more|source|cp|mv|install|base64|xxd|od|strings|tar|rsync|scp|sftp'
+  # `ln`（#1089）: `ln -s <target> <linkname>` は `-s` がフラグとして読み飛ばされ、既存の
+  # 「コマンド直後の第1非フラグ引数」抽出パターンで <target>（読み取り対象）がそのまま拾える。
+  # リンク先（第2引数・書き込み方向）が機密パスを指すケースは対象外とする: 本ガードの目的は
+  # 「機密ファイルの内容が Claude の文脈へ漏洩すること」の防止であり、書き込み先の防止は
+  # 元々対象外（`curl -o` の扱い・#419 と同じ設計思想）。理由はコメントに残す（完了条件）。
+  _sfa_cmds='cat|less|head|tail|more|source|cp|mv|install|base64|xxd|od|strings|tar|rsync|scp|sftp|ln'
   printf '%s\n' "$_sfa_src" \
     | grep -oE "(^|[[:space:];|&(\`{])(${_sfa_cmds})([[:space:]]+-[^[:space:];|&]+)*[[:space:]]+['\"]?[^[:space:];|&'\")]+" \
     | sed -E "s/.*[[:space:]]['\"]?//" || true
@@ -222,37 +227,59 @@ _sfa_tokenize_block() {
 # バックスラッシュは新しいコマンド位置を作らない（`\cat` は上記文字クラスに一致しない）ため
 # 従来どおり全除去してよい。
 _sfa_dequote_command() {
-  printf '%s' "$COMMAND" \
+  printf '%s' "${1:-$COMMAND}" \
     | sed -e 's/\\//g' \
     | sed -E ':a; s/([^[:space:];|&(`{])["'"'"']/\1/; ta'
 }
 
-# コマンド置換（`$(...)` ・ `` ` ` ``）の中身だけを対象に `.env` リテラル出現を検知する
-# fail-closed の第2判定（Issue #1083）。コマンド置換は静的に実行結果を展開できないため、
-# `_sfa_candidate_tokens`（トークン化ベース）では `cat $(echo .env)` のような呼び出しを
-# 原理的に捕捉できない。
-#
-# 🔴 対象を置換の中身だけに絞る理由: コマンド文字列全体を対象にすると
-#    `git commit -m 'update .env handling docs'` のような「.env について言及しているだけの
-#    引用テキスト」まで誤ブロックする（#495 の誤発火の再発）。置換の中身（実際にファイル名の
-#    一部として展開されうる箇所）だけに絞ることで、通常のコミットメッセージ・ドキュメント編集は
-#    通しつつ、置換経由の `.env` 展開だけを fail-closed で塞ぐ。
-# ⚠️ ネストした `$(...)` には対応しない（1階層のみ）。fail-closed 網としては目的に対し十分であり、
-#    ネスト対応は複雑さの割に本 Issue の再現ケースでは不要（#1083 のスコープ外）。
-_sfa_substitution_env_tokens() {
-  {
-    printf '%s\n' "$COMMAND" | grep -oE '\$\([^()]*\)' | sed -E 's/^\$\(//; s/\)$//'
-    printf '%s\n' "$COMMAND" | grep -oE '`[^`]*`' | sed -E 's/^`//; s/`$//'
-  } | grep -oE '(^|[^A-Za-z0-9_])\.env(\.[A-Za-z0-9_.-]+)?' \
-    | sed -E 's/^[^.]//' || true
+# コマンド置換（`$(...)` ・ `` ` ` ``）ブロック**全体**を中立プレースホルダ `X` へ畳み込む
+# （Issue #1091・穴1）。`_sfa_candidate_tokens` の抽出パターンは終端文字クラスに `)` を含むため、
+# `cat $(pwd)/<機密ファイル>` のように機密ファイルが置換ブロックの**外側**にあるケースでは
+# `$(pwd` でトークンが切れて `/<機密ファイル>` に到達できない。置換ブロックの中身を静的に
+# 実行せず短い中立文字列へ置き換えてから通常のトークン抽出にかければ、`)` による打ち切りが
+# 起きなくなる（`cat $(pwd)/<機密ファイル>` → `cat X/<機密ファイル>`）。
+# ⚠️ ネストした `$(...)` には対応しない（1階層のみ・`_sfa_substitution_blocks` と同じ制約）。
+_sfa_flatten_substitutions() {
+  printf '%s' "${1:-$COMMAND}" \
+    | sed -E 's/\$\([^()]*\)/X/g; s/`[^`]*`/X/g'
 }
 
-# 判定対象トークンの合算窓口（Issue #1083）。生コマンド・正規化コマンド・コマンド置換の中身の
-# 3系統から候補を集める。呼び出し側（_sfa_env_access / _sensitive_file_access）は本関数だけを使う。
+# コマンド置換（`$(...)` ・ `` ` ` ``）の中身だけを 1 階層分抽出する（Issue #1083 / #1091）。
+# 対象を置換の中身だけに絞る理由: コマンド文字列全体を対象にすると
+# `git commit -m 'update .env handling docs'` のような「.env について言及しているだけの
+# 引用テキスト」まで誤ブロックする（#495 の誤発火の再発）。置換の中身（実際にファイル名の
+# 一部として展開されうる箇所）だけに絞ることで、通常のコミットメッセージ・ドキュメント編集は
+# 通しつつ、置換経由の展開だけを fail-closed で塞ぐ。
+_sfa_substitution_blocks() {
+  printf '%s\n' "$COMMAND" | grep -oE '\$\([^()]*\)' | sed -E 's/^\$\(//; s/\)$//'
+  printf '%s\n' "$COMMAND" | grep -oE '`[^`]*`' | sed -E 's/^`//; s/`$//'
+}
+
+# コマンド置換の中身から候補トークンを抽出する（Issue #1091・穴2/穴3）。
+# 旧実装（`_sfa_substitution_env_tokens`）は置換の中身を生の文字列のまま `.env` リテラルで
+# grep しており、① 中身側のクォート分断（`echo .en"v"`）に対して正規化が未適用（穴2）、
+# ② `.env` 以外の機密ファイル（`echo ~/.ssh/id_rsa` 等）を構造上検知できない（穴3）という
+# 2つの欠陥があった。本関数は置換ブロックごとに ①`_sfa_dequote_command` で正規化してから
+# ②`_sfa_tokenize_block` で空白分割・フラグ除外・クォート/@ 剥がしを行い、生の単語トークンを
+# そのまま返す。`.env` 限定ではなく合流先の `_sfa_candidate_tokens_all` が両方の判定
+# （`_sfa_env_access` / `_sensitive_file_access`）に渡すため、判定パターンの拡張はここでは
+# 行わず候補トークンの提供に徹する。
+_sfa_substitution_inner_tokens() {
+  _sfa_substitution_blocks | while IFS= read -r _sfa_block; do
+    [ -n "$_sfa_block" ] || continue
+    printf '%s' "$(_sfa_dequote_command "$_sfa_block")" | _sfa_tokenize_block
+  done
+}
+
+# 判定対象トークンの合算窓口（Issue #1083 / #1091）。生コマンド・正規化コマンド・置換ブロックを
+# 中立プレースホルダへ畳んだ生コマンド／正規化コマンド・置換の中身のトークン、の
+# 5系統から候補を集める。呼び出し側（_sfa_env_access / _sensitive_file_access）は本関数だけを使う。
 _sfa_candidate_tokens_all() {
   _sfa_candidate_tokens "$COMMAND"
   _sfa_candidate_tokens "$(_sfa_dequote_command)"
-  _sfa_substitution_env_tokens
+  _sfa_candidate_tokens "$(_sfa_flatten_substitutions "$COMMAND")"
+  _sfa_candidate_tokens "$(_sfa_flatten_substitutions "$(_sfa_dequote_command)")"
+  _sfa_substitution_inner_tokens
 }
 
 # .env（本物のみ。.env.example 等のテンプレートは通す）
