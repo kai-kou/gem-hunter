@@ -511,3 +511,8 @@
 {"date":"2026-09-09 JST","title":"lessons-core.md症状索引にL-160（expectedHeadSha/commitID 409エラー）の行を追加","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-09 JST","title":"retro-try対応で初版が既存教訓より狭い射程を選んだ場合、その判断根拠を記録する規律","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-09 JST","title":"retro-try Issue作成時にbotが関連lessons候補を自動コメントで提示する仕組み","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"検査ツール・フックの timeout 秒数の実測根拠を記録する仕組みを作る","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"retro-try-handler スキルで複数Issue処理時、着手前にファインダーへ受入基準を配布する事前チェックリストを強化する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"code-review スキルの Spec 忠実性ファインダーに、対象 Issue の本文だけでなくコメント履歴も読ませる","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"retro-try-handler の PR バンドル判定（ファイル非重複）を着手前に機械検査する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-09 JST","title":"Layer 1 セルフレビューで REJECTED と判定した指摘の反証根拠を蓄積し、ファインダーの精度改善に使う","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
