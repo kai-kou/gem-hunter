@@ -185,6 +185,7 @@ modules:
       - claude-code-spec-sync
     tools:
       - check_claude_code_updates.py
+      - probe_permission_prompts.sh # auto モードの権限プロンプトを実測するプローブ（spec-sync SKILL Step 0 が起動・base#558）
 
   # ── ネイティブ優先フォールバック（CLI/Web リリースギャップ対応）──
   native-fallback:

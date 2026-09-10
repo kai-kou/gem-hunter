@@ -1731,11 +1731,6 @@ def self_test_errors(files: list[str]) -> list[str]:
         for companion in companions:
             if companion in targets:
                 continue
-            # 下流リポジトリには存在しない companion（ベース専用ツール）を登録したまま
-            # 起動すると、ファイル不在で恒久的に失敗するゲートになる。実体があるものだけ
-            # 対象に加える（配布先で使わないツールは削除するだけで無効化できる）。
-            if not Path(companion).is_file():
-                continue
             if _is_allowed(Path(companion).resolve()):
                 targets.append(companion)
 

@@ -63,6 +63,20 @@ DEST_VALUE_FLAGS = {
 }
 # 実コマンドの前に置かれ、読み飛ばしてよいラッパー
 COMMAND_WRAPPERS = {"sudo", "env", "nice", "ionice", "command", "exec", "builtin", "time", "timeout"}
+# ラッパーが「値を別トークンで取る」フラグ。値を読み飛ばさないと値をコマンド名と誤認する
+WRAPPER_VALUE_FLAGS = {
+    "sudo": ("-u", "--user", "-g", "--group", "-p", "--prompt", "-C", "--close-from",
+             "-D", "--chdir", "-h", "--host", "-R", "--chroot", "-U", "--other-user",
+             "-r", "--role", "-t", "--type"),
+    "env": ("-u", "--unset", "-C", "--chdir", "-S", "--split-string"),
+    "nice": ("-n", "--adjustment"),
+    "ionice": ("-c", "--class", "-n", "--classdata", "-p", "--pid"),
+    "timeout": ("-s", "--signal", "-k", "--kill-after"),
+}
+# 本モジュールが「コマンド名として解釈できる」名前の集合（誤認からの寄せ直しに使う）
+_KNOWN_COMMANDS = (
+    WRITE_ALL_ARGS | WRITE_LAST_ARG | set(DEST_VALUE_FLAGS) | {"dd", "sed", "cat", "echo", "printf"}
+)
 # セグメント区切りとして扱うトークン（`&>` はリダイレクトなので含めない）
 SEGMENT_SEPARATORS = {";", "&", "&&", "|", "||"}
 # リダイレクト演算子（`>` `>>` `2>` `&>` `>|` `1>>` 等）
@@ -160,6 +174,11 @@ def _tokenize_line(line: str) -> list[str]:
     """
     lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    # shlex の既定はワードの途中の `#` でもコメント開始と解釈し、以降を丸ごと捨てる。
+    # bash はワード途中の `#` をコメントにしないため、`echo a#b > x && rm -rf /tmp/y` の
+    # 後半セグメントごと解析対象から消え、書き込み判定が素通りする（fail-open）。
+    # 本ガードにコメント除去は不要なので無効化する（`#` をトークンとして拾っても安全側に倒れるだけ）。
+    lexer.commenters = ""
     try:
         return list(lexer)
     except ValueError:
@@ -167,10 +186,34 @@ def _tokenize_line(line: str) -> list[str]:
         return []
 
 
+def _join_continuations(command: str) -> str:
+    """バックスラッシュ行継続を 1 論理行へ畳む。
+
+    行境界をコマンド境界として扱うため、`rm -rf \\` + 改行 + `/tmp/x` のように 1 コマンドが
+    物理行をまたぐと、コマンド名と書き込み先が別セグメントに分かれて判定が素通りする
+    （fail-open）。畳んでからセグメント分割する。行末バックスラッシュが偶数個（`\\\\` で
+    エスケープされたリテラル）のときは継続ではないので畳まない。
+    """
+    lines = command.split("\n")
+    out: list[str] = []
+    pending = ""
+    for line in lines:
+        candidate = pending + line
+        trailing = len(candidate) - len(candidate.rstrip("\\"))
+        if trailing % 2 == 1:
+            pending = candidate[:-1] + " "
+            continue
+        out.append(candidate)
+        pending = ""
+    if pending:
+        out.append(pending)
+    return "\n".join(out)
+
+
 def _segments(command: str) -> list[list[str]]:
     """コマンド文字列を「1 コマンド = 1 トークン列」のセグメントへ分ける（行またぎも区切る）。"""
     result: list[list[str]] = []
-    for line in command.split("\n"):
+    for line in _join_continuations(command).split("\n"):
         current: list[str] = []
         for token in _tokenize_line(line):
             if token in SEGMENT_SEPARATORS:
@@ -230,7 +273,13 @@ def _session_tmp_ok(path: str, session_id: str) -> bool:
 
 
 def _command_index(tokens: list[str]) -> int | None:
-    """先頭の環境変数代入とラッパー（sudo / env / timeout 等）を読み飛ばしてコマンド名の位置を返す。"""
+    """先頭の環境変数代入とラッパー（sudo / env / timeout 等）を読み飛ばしてコマンド名の位置を返す。
+
+    ラッパーのフラグは「値を取るもの」（`sudo -u root` / `timeout --signal KILL`）があり、
+    値を読み飛ばさないと値トークンをコマンド名と誤認して以降の解析が丸ごと落ちる
+    （`sudo -u root rm -rf /tmp/x` が素通りする fail-open）。値付きフラグの表は網羅できないため、
+    表で拾えなかった場合の保険として **後方の既知コマンドへ寄せ直す** 再走査を持つ。
+    """
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -238,13 +287,32 @@ def _command_index(tokens: list[str]) -> int | None:
             index += 1
             continue
         if os.path.basename(token) in COMMAND_WRAPPERS:
+            wrapper = os.path.basename(token)
             index += 1
             # ラッパーのフラグと数値引数（`timeout 300 cmd` の 300）を読み飛ばす
             while index < len(tokens) and (tokens[index].startswith("-") or tokens[index].isdigit()):
+                flag = tokens[index]
                 index += 1
+                # `-u root` のように値を別トークンで取るフラグは値まで読み飛ばす
+                # （`--signal=KILL` のような `=` 同梱形はフラグ 1 トークンで完結する）
+                if (
+                    "=" not in flag
+                    and flag in WRAPPER_VALUE_FLAGS.get(wrapper, ())
+                    and index < len(tokens)
+                    and not tokens[index].startswith("-")
+                ):
+                    index += 1
             continue
-        return index
-    return None
+        break
+    if index >= len(tokens):
+        return None
+    if os.path.basename(tokens[index]) not in _KNOWN_COMMANDS:
+        # 値付きフラグの表に無いラッパー引数をコマンド名と誤認した可能性がある。
+        # 後方に既知の書き込み系コマンドがあれば、そこへ寄せ直す（fail-closed 側に倒す）。
+        for later in range(index + 1, len(tokens)):
+            if os.path.basename(tokens[later]) in _KNOWN_COMMANDS:
+                return later
+    return index
 
 
 def _strip_redirection_args(tokens: list[str]) -> list[str]:
@@ -307,7 +375,13 @@ def _write_targets(tokens: list[str]) -> list[str]:
 
     if name == "dd":
         targets.extend(a[len("of="):] for a in args if a.startswith("of="))
-    elif name == "sed" and any(a.startswith("-i") and not a.startswith("--") for a in args):
+    elif name == "sed" and any(
+        (a.startswith("-i") and not a.startswith("--"))
+        # GNU sed の長形式（`--in-place` / `--in-place=.bak`）も in-place 書き換えである
+        or a == "--in-place"
+        or a.startswith("--in-place=")
+        for a in args
+    ):
         # `sed -i 's/a/b/' file...` — 最初の非フラグ引数はスクリプト、残りが書き換え対象
         targets.extend(operands[1:])
     elif name in WRITE_ALL_ARGS:

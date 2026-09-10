@@ -65,6 +65,20 @@ run_case BLOCK "未終端 heredoc の後続行は解析対象に戻す（fail-cl
 intro
 rm -rf /tmp/demo-out'
 
+# 以下 5 件は本リポジトリの Layer 1 セルフレビュー（PR #1115）が実測した fail-open の回帰ケース。
+# いずれも「後半セグメント／論理行／コマンド名／in-place フラグ」の取りこぼしで判定が素通りしていた。
+run_case BLOCK "ワード途中の # をコメント扱いして後半セグメントを落とさない" \
+  'echo hi#tag > ./notes.md && rm -rf /tmp/demo-out'
+run_case BLOCK "バックスラッシュ行継続をまたいでコマンドと宛先を結びつける" \
+  'rm -rf \
+/tmp/demo-out'
+run_case BLOCK "値付きラッパーフラグ（sudo -u）の値をコマンド名と誤認しない" \
+  'sudo -u root rm -rf /tmp/demo-out'
+run_case BLOCK "sed の長形式 in-place（--in-place・値なし）を検出する" \
+  'sed --in-place "s/a/b/" /etc/demo.conf'
+run_case BLOCK "sed の長形式 in-place（--in-place=SUFFIX）を検出する" \
+  'sed --in-place=.bak "s/a/b/" /etc/demo.conf'
+
 echo "[test] 通すべきケース"
 run_case ALLOW "自セッションの scratchpad への書き込み" \
   "mkdir -p /tmp/claude-0/demo/$TEST_SESSION/scratchpad && echo hi > /tmp/claude-0/demo/$TEST_SESSION/scratchpad/a.txt"

@@ -284,7 +284,7 @@ python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" pipeline \
 
 ## 禁止事項
 
-- Try アイテムを **どの行き先にも記録せず**「次回気をつける」で済ませない（GitHub Issue 化 / lessons 直記載 / 見送りログ
+- Try アイテムを **どの行き先にも記録せず**「次回気をつける」で済ませない（新規 Issue 化 / reopen / 既存 Issue へのコメント追記 / 見送りログ
   `content/analytics/retro/deferred_try.jsonl` への追記のいずれにも乗せずに Try を捨てるのは違反。上記 WIP 制御の起票上限・
   WIP 上限で Issue 化を見送った Try は、完了報告の「見送り Try」に記録するだけでなく **見送りログへの追記まで完了して**
   初めて処理完了とみなす）
