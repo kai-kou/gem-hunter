@@ -523,3 +523,12 @@
 {"date":"2026-09-10 JST","title":"機密ファイルガードの穴番号とテストケースの同期索引化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-10 JST","title":"_sfa_candidate_tokens_all の5系統コメントを詳細化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-10 JST","title":"_sfa_dequote_command 等ヘルパー関数の単体テスト環境整備","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date": "2026-09-10 JST", "title": "ベース版全面採用で下流固有の決定が消える構造を、採用直前のスキャンで機械検出する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 683}
+{"date": "2026-09-10 JST", "title": "apply-to-repo.sh の --dry-run に「.base-latest になる見込み件数と、下流の決定ログを含むファイル」を出す", "q1": "YES", "q2": "NO", "defer_reason": "high_commented", "related_issue": 683}
+{"date": "2026-09-10 JST", "title": "ベース配布物の検査ツール・ガードに負ケース / 変異テストを必須化し、下流適用時に確認する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 868}
+{"date": "2026-09-10 JST", "title": "ベース管理下ファイルを「下流で直す / 上流提案 / 分離 / 削除」に振り分ける判断軸を明文化する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 887}
+{"date": "2026-09-10 JST", "title": "3 方向マージで流入するベース由来の素 #N 参照を PR 作成前ゲートで検出する", "q1": "YES", "q2": "YES", "defer_reason": "high_commented", "related_issue": 888}
+{"date": "2026-09-10 JST", "title": "PR 作成後の追加コミットで run_checks 証跡を自動で貼り直す", "q1": "YES", "q2": "NO", "defer_reason": "over_quota", "related_issue": null}
+{"date": "2026-09-10 JST", "title": "modules.yaml の登録漏れ（tools/ の実体に対応エントリが無い）を検出するチェッカーを追加する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-10 JST", "title": "apply-base スキル内で委譲前に check_agent_scope_overlap.py を自動実行し、重複時は中止する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
+{"date": "2026-09-10 JST", "title": "WIP 制御の数値（起票上限 / WIP 上限 / TTL / reopen 窓）の再掲箇所を洗い出し参照へ統一する", "q1": "NO", "q2": "NO", "defer_reason": "medium", "related_issue": null}
