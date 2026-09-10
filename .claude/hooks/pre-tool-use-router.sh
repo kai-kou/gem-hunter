@@ -126,10 +126,13 @@ _sfa_candidate_tokens() {
   # 読み取り元・アーカイブ対象が「値を取るフラグの値」や「第2引数以降」に来やすいコマンドは
   # 第1非フラグ引数だけでは取りこぼす（例: `install -m 600 ~/.ssh/id_rsa /tmp/x` の値は `600`、
   # `tar czf out.tgz ~/.ssh` / `cp -r src ~/.ssh` の機密パスは第2引数・#395）。
-  # 対象をこの5コマンドに絞り、呼び出しブロック全体から非フラグ位置引数を全て候補にする。
+  # 対象をこの6コマンドに絞り、呼び出しブロック全体から非フラグ位置引数を全て候補にする。
   # 値を取るフラグの値そのもの（上記の `600`）や書き込み先も一緒に候補へ混じるが、
   # 実在の機密名パターンに一致しない限り誤検知は起きないため許容する。
-  _sfa_multi_cmds='cp|install|tar|rsync|scp'
+  # `ln`（シンボリックリンク作成）は cp/mv と同じ「読み取り元が機密なら BLOCK」対象に加え、
+  # リンク先（第2引数）が機密ディレクトリを指すケース（`ln -s /tmp/x ~/.ssh/authorized_keys`）も
+  # 同じ「全引数候補化」の仕組みでそのまま拾える（Issue #1089）。
+  _sfa_multi_cmds='cp|install|tar|rsync|scp|ln'
   printf '%s\n' "$_sfa_src" \
     | grep -oE "(^|[[:space:];|&(\`{])(${_sfa_multi_cmds})[[:space:]]+[^;|&\`)]*" \
     | sed -E "s/^[[:space:];|&(\`{]?(${_sfa_multi_cmds})[[:space:]]+//" \
@@ -227,8 +230,20 @@ _sfa_dequote_command() {
     | sed -E ':a; s/([^[:space:];|&(`{])["'"'"']/\1/; ta'
 }
 
-# コマンド置換（`$(...)` ・ `` ` ` ``）の中身だけを対象に `.env` リテラル出現を検知する
-# fail-closed の第2判定（Issue #1083）。コマンド置換は静的に実行結果を展開できないため、
+# コマンド置換ブロック（`$(...)` ・ `` ` ` ``）全体を中立プレースホルダへ畳んだフラット化コマンドを
+# 作る（穴1・Issue #1091）。`_sfa_candidate_tokens` の抽出パターンは終端文字クラスに `)` を含むため、
+# `cat $(pwd)/<対象>` のようなコマンドはトークンが `$(pwd` で切れ、置換の**外側**にある対象へ
+# 到達できない（`_sfa_substitution_tokens` は置換の**中身**しか見ないため同じく捕捉できない）。
+# 置換ブロック全体を中立文字 `X` へ畳めば、外側のパスがそのまま候補抽出の対象になる
+# （`cat $(pwd)/<対象>` → `cat X/<対象>`）。ネストした `$(...)` は非貪欲マッチのため内側の
+# 括弧までで畳まれるが、fail-closed 網としては目的に対し十分（#1083 のスコープ外のまま）。
+_sfa_flatten_substitutions() {
+  printf '%s' "$COMMAND" \
+    | sed -E 's/\$\([^()]*\)/X/g; s/`[^`]*`/X/g'
+}
+
+# コマンド置換（`$(...)` ・ `` ` ` ``）の中身をトークン化して候補に追加する fail-closed の
+# 第2判定（Issue #1083 / #1091）。コマンド置換は静的に実行結果を展開できないため、
 # `_sfa_candidate_tokens`（トークン化ベース）では `cat $(echo .env)` のような呼び出しを
 # 原理的に捕捉できない。
 #
@@ -236,23 +251,38 @@ _sfa_dequote_command() {
 #    `git commit -m 'update .env handling docs'` のような「.env について言及しているだけの
 #    引用テキスト」まで誤ブロックする（#495 の誤発火の再発）。置換の中身（実際にファイル名の
 #    一部として展開されうる箇所）だけに絞ることで、通常のコミットメッセージ・ドキュメント編集は
-#    通しつつ、置換経由の `.env` 展開だけを fail-closed で塞ぐ。
+#    通しつつ、置換経由の展開だけを fail-closed で塞ぐ。
 # ⚠️ ネストした `$(...)` には対応しない（1階層のみ）。fail-closed 網としては目的に対し十分であり、
-#    ネスト対応は複雑さの割に本 Issue の再現ケースでは不要（#1083 のスコープ外）。
-_sfa_substitution_env_tokens() {
+#    ネスト対応は複雑さの割に再現ケースでは不要（#1083 のスコープ外のまま）。
+#
+# Issue #1091 で `.env` リテラル限定から汎用トークン抽出へ拡張した:
+#   - 穴2（置換の中身のクォート分断）: 中身にも `_sfa_dequote_command` と同じ正規化
+#     （語中クォート・バックスラッシュ除去）を適用してから判定する
+#   - 穴3（`.env` 以外の機密ファイル）: `.env` リテラル一致でなく中身を丸ごとトークン化して
+#     候補に出す。呼び出し元（_sfa_env_access / _sensitive_file_access）がそれぞれ自分の
+#     パターンで判定するため、本関数はどちらにも中立な候補集合を返せばよい
+_sfa_substitution_tokens() {
   {
     printf '%s\n' "$COMMAND" | grep -oE '\$\([^()]*\)' | sed -E 's/^\$\(//; s/\)$//'
     printf '%s\n' "$COMMAND" | grep -oE '`[^`]*`' | sed -E 's/^`//; s/`$//'
-  } | grep -oE '(^|[^A-Za-z0-9_])\.env(\.[A-Za-z0-9_.-]+)?' \
-    | sed -E 's/^[^.]//' || true
+  } | while IFS= read -r _sfa_sub; do
+    [ -n "$_sfa_sub" ] || continue
+    printf '%s' "$_sfa_sub" \
+      | sed -e 's/\\//g' \
+      | sed -E ':a; s/([^[:space:];|&(`{])["'"'"']/\1/; ta' \
+      | _sfa_tokenize_block
+  done || true
 }
 
-# 判定対象トークンの合算窓口（Issue #1083）。生コマンド・正規化コマンド・コマンド置換の中身の
-# 3系統から候補を集める。呼び出し側（_sfa_env_access / _sensitive_file_access）は本関数だけを使う。
+# 判定対象トークンの合算窓口（Issue #1083 / #1091）。生コマンド・正規化コマンド・フラット化コマンド・
+# コマンド置換の中身の4系統から候補を集める。呼び出し側（_sfa_env_access / _sensitive_file_access）は
+# 本関数だけを使う（射程: 生コマンド全体への語境界パターン + 置換の中身のトークンであり、
+# 「.env のみ」ではなく _sfa_env_access / _sensitive_file_access 双方の機密パターンに対して中立）。
 _sfa_candidate_tokens_all() {
   _sfa_candidate_tokens "$COMMAND"
   _sfa_candidate_tokens "$(_sfa_dequote_command)"
-  _sfa_substitution_env_tokens
+  _sfa_candidate_tokens "$(_sfa_flatten_substitutions)"
+  _sfa_substitution_tokens
 }
 
 # .env（本物のみ。.env.example 等のテンプレートは通す）
