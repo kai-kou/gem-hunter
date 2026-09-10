@@ -232,16 +232,70 @@ _sfa_dequote_command() {
     | sed -E ':a; s/([^[:space:];|&(`{])["'"'"']/\1/; ta'
 }
 
-# コマンド置換（`$(...)` ・ `` ` ` ``）ブロック**全体**を中立プレースホルダ `X` へ畳み込む
+# コマンド置換（`$(...)` ・ `` ` ` ``）ブロック**全体**を中立プレースホルダ `~` へ畳み込む
 # （Issue #1091・穴1）。`_sfa_candidate_tokens` の抽出パターンは終端文字クラスに `)` を含むため、
 # `cat $(pwd)/<機密ファイル>` のように機密ファイルが置換ブロックの**外側**にあるケースでは
 # `$(pwd` でトークンが切れて `/<機密ファイル>` に到達できない。置換ブロックの中身を静的に
 # 実行せず短い中立文字列へ置き換えてから通常のトークン抽出にかければ、`)` による打ち切りが
-# 起きなくなる（`cat $(pwd)/<機密ファイル>` → `cat X/<機密ファイル>`）。
-# ⚠️ ネストした `$(...)` には対応しない（1階層のみ・`_sfa_substitution_blocks` と同じ制約）。
+# 起きなくなる（`cat $(pwd)/<機密ファイル>` → `cat ~/<機密ファイル>`）。
+# 🔴 **プレースホルダは `X` ではなく `~` を使う**（Layer 1 セルフレビュー CRITICAL 指摘の是正・
+#    実機再現）: `_sensitive_file_access` の「秘密ディレクトリそのもの」判定は
+#    `^([~.]?/)?\.(ssh|aws|gnupg)(/|$)` のように **先頭アンカー**（`~` または `/` で始まる）を
+#    要求する。`docs/.ssh/README.md` のようなプロジェクト内の同名ディレクトリを誤ブロックしない
+#    ための意図的な設計であり、`X/.ssh` のようにプレースホルダが `~`/`/` 以外だとこのアンカーが
+#    成立せず、`cp -r $(pwd)/.ssh /tmp` が fail-open した。置換の中身は静的に解決できず絶対パスの
+#    可能性を排除できないため、fail-closed 側に倒して「絶対パス相当」として扱う `~` を使う。
+# 🔴 **ネストした `$(...)`（例: `$(echo $(pwd))`）は変化が無くなるまで最大5回繰り返し適用して
+#    解消する**（Layer 1 セルフレビュー CRITICAL 指摘・実機再現: `cat $(echo $(pwd))/.ssh/id_rsa`
+#    が 1 回適用だと `cat $(echo ~)/.ssh/id_rsa` のまま外側の `$(` が残り、`_sfa_candidate_tokens`
+#    が `$(echo` で打ち切られて機密ファイルを検知できなかった＝fail-open）。5 回で足りない深いネストは
+#    実運用でまず出現しないため、`_sfa_flatten_incomplete` が残骸検知で fail-closed に倒す。
 _sfa_flatten_substitutions() {
-  printf '%s' "${1:-$COMMAND}" \
-    | sed -E 's/\$\([^()]*\)/X/g; s/`[^`]*`/X/g'
+  _sfa_flat_src="${1:-$COMMAND}"
+  _sfa_flat_i=0
+  while [ "$_sfa_flat_i" -lt 5 ]; do
+    _sfa_flat_next=$(printf '%s' "$_sfa_flat_src" | sed -E 's/\$\([^()]*\)/~/g; s/`[^`]*`/~/g')
+    [ "$_sfa_flat_next" = "$_sfa_flat_src" ] && break
+    _sfa_flat_src="$_sfa_flat_next"
+    _sfa_flat_i=$((_sfa_flat_i + 1))
+  done
+  printf '%s' "$_sfa_flat_src"
+}
+
+# `_sfa_flatten_substitutions` が完全に畳み込めなかった残骸（未解決の `$(` / `` ` ``）が
+# 残っていないかを検査する（Layer 1 セルフレビュー CRITICAL 指摘の是正）。クォート文字列内に
+# リテラル `)` を含む置換（例: `$(echo "x)")`）は `[^()]*` がクォート規則を認識しないため
+# 境界を誤判定し、繰り返し適用でも解消しない未閉じの `$(` が残ることがある。この残骸が
+# 残ったまま通常判定に進むと、置換の外側にある機密ファイルが検知範囲外へ抜ける（fail-open）。
+# 残骸を検出したら `_sfa_flatten_incomplete` が真を返し、呼び出し側は fail-closed でブロックする。
+_sfa_flatten_incomplete() {
+  _sfa_fi_flat=$(_sfa_flatten_substitutions "$COMMAND")
+  case "$_sfa_fi_flat" in
+    *'$('*) return 0 ;;
+    *'`'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# クォート文字列内にリテラル `)` を含む置換（例: `$(echo "x)")`）は、`_sfa_flatten_incomplete`
+# の残骸検知だけでは検知できない場合がある（Layer 1 セルフレビュー CRITICAL 指摘の是正・実機再現）。
+# `[^()]*` はクォート内の `)` で境界を誤って早期に閉じるため、抽出された置換ブロックの中身に
+# 開いたままのクォート（`"` / `'` の出現数が奇数）が残る。これを検出したら、境界誤判定が
+# 起きている強いシグナルとして fail-closed でブロックする。
+_sfa_quote_imbalance() {
+  _sfa_qi_hit=1
+  while IFS= read -r _sfa_qi_block; do
+    [ -n "$_sfa_qi_block" ] || continue
+    _sfa_qi_dq=$(printf '%s' "$_sfa_qi_block" | tr -cd '"' | wc -c)
+    _sfa_qi_sq=$(printf '%s' "$_sfa_qi_block" | tr -cd "'" | wc -c)
+    if [ $((_sfa_qi_dq % 2)) -ne 0 ] || [ $((_sfa_qi_sq % 2)) -ne 0 ]; then
+      _sfa_qi_hit=0
+      break
+    fi
+  done <<EOF
+$(_sfa_substitution_blocks)
+EOF
+  return $_sfa_qi_hit
 }
 
 # コマンド置換（`$(...)` ・ `` ` ` ``）の中身だけを 1 階層分抽出する（Issue #1083 / #1091）。
@@ -341,6 +395,14 @@ $(_sfa_candidate_tokens_all)
 EOF
   return $_sfa_hit
 }
+
+# コマンド置換の構造が複雑すぎて安全に畳み込めない場合は fail-closed でブロックする
+# （Layer 1 セルフレビュー CRITICAL 指摘の是正・実機再現: ネストした `$(...)` やクォート内に
+# リテラル `)` を含む置換で、機密ファイルが置換ブロックの外側にあるケースを検知できなかった）。
+if _sfa_flatten_incomplete || _sfa_quote_imbalance; then
+  hook_block "BLOCK: コマンド置換の構造が複雑で安全性を検証できません（ネストした \$(...) またはクォート内に ) を含む置換の可能性）。
+単純な形に書き直すか、置換結果を変数に代入してから使ってください。"
+fi
 
 # .env ファイルへのアクセスをブロック
 if _sfa_env_access; then

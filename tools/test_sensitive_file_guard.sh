@@ -116,6 +116,27 @@ run block 'cat $(echo .en"v")'
 run block 'cat $(echo ~/.ssh/id_rsa)'
 run block 'head $(echo ~/.aws/credentials)'
 
+# Layer 1 セルフレビュー CRITICAL 指摘の是正（実機再現）: ネストした $(...) は
+# _sfa_flatten_substitutions の1回適用だけでは外側の $( が残り機密ファイルを検知できなかった
+# （繰り返し適用で解消・#1091 追加修正）。クォート内にリテラル ) を含む置換
+# （$(echo "x)") 型）は [^()]* が境界を誤判定し flatten 後も残骸が残らないため、
+# 置換ブロック内のクォート不均衡（奇数個）を別途検出して fail-closed でブロックする。
+echo "== BLOCK 期待（ネスト置換・クォート内)による境界誤判定・#1091 追加修正） =="
+run block 'cat $(echo $(pwd))/.ssh/id_rsa'
+run block 'cat $(echo "x)")/.ssh/id_rsa'
+run block 'cat $(dirname $(pwd))/.ssh/id_rsa'
+run block 'cp $(dirname $(pwd))/.ssh/id_rsa /tmp/x'
+run block 'source $(dirname $(pwd))/.ssh/id_rsa'
+
+# Layer 1 セルフレビュー CRITICAL 指摘の是正（実機再現）: 秘密ディレクトリそのものの判定
+# （_sensitive_file_access の "^([~.]?/)?\.(ssh|aws|gnupg)(/|$)" 等）は先頭アンカー（~ または /
+# で始まる）を要求する。プレースホルダに中立文字 X を使うと `X/.ssh` は ~/ でも / でも始まらず
+# アンカーが成立せず、置換経由で秘密ディレクトリそのものを渡すケースが素通りしていた。
+# プレースホルダを ~ にすることでアンカーを保ったまま fail-closed 側へ倒す。
+echo "== BLOCK 期待（置換経由の秘密ディレクトリそのもの・#1091 追加修正） =="
+run block 'cp -r $(pwd)/.ssh /tmp'
+run block 'cp -r $(echo ~)/.ssh /tmp'
+
 echo "== BLOCK 期待（ln -s によるシンボリックリンク経由・#1089） =="
 # `cat` / `cp` / `mv` は BLOCK されるのに `ln -s` だけ _sfa_cmds に含まれず素通りしていた
 run block 'ln -s ~/.ssh/id_rsa notes.txt'
