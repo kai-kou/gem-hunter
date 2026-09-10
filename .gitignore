@@ -74,3 +74,17 @@ worker-configuration.d.ts
 
 # TypeScript のインクリメンタルビルド情報（ビルドのたびに変わる生成物・#213 / #82）
 tsconfig.tsbuildinfo
+
+# apply-base（scripts/apply-to-repo.sh）が毎回生成する適用アーティファクト。
+# `*.base` はプロジェクト固有ファイルの雛形、`*.pre-base.bak` は settings.json の退避で、
+# どちらも適用のたびに作り直されるためコミット対象にしない。
+# ⚠️ `*.base-latest`（3 方向マージ未解決の要確認ファイル）は **意図的に ignore しない**。
+# 取り込んで削除するまで git status に見えている必要がある（apply-base SKILL §3.0）。
+*.base
+*.pre-base.bak
+
+# ベース専用ツール（本リポジトリでは適用対象外・apply のたびに再配置される）。
+# check_distribution_boundary.py はベースリポジトリ自身の配布境界
+# （SYNC_PATHS / PUBLISH_PATHS / .claude-plugin/marketplace.json）を検査するもので、
+# 本リポジトリは配布元ではなく `scripts/publish-snapshot.sh` を持たないため常に FAIL する。
+tools/check_distribution_boundary.py

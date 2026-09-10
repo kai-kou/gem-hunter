@@ -1029,12 +1029,15 @@ else
   skip_check "PR 確認観測マーカー e2e (test_pr_confirm_marker.sh)" "スクリプトが見つかりません"
 fi
 
-# 再帰 grep の除外オプション正規化（base#543 / L-154）の self-test。
-if [ -f "$REPO_ROOT/tools/test_grep_exclude_normalize.sh" ]; then
-  run_check_timeout "grep 除外オプション正規化 self-test (test_grep_exclude_normalize.sh)" 60 \
-    bash tools/test_grep_exclude_normalize.sh
+# 作業領域外への Bash 書き込みガード（base#578）の self-test。
+# 旧「再帰 grep の除外オプション正規化」self-test はここにあったが、対策そのものが
+# Claude Code v2.1.259 限定のリグレッション向けで v2.1.260 の revert により不要と実測され、
+# ベース側で撤去された（L-154 の訂正）。同じ枠に後継のガードを配線する。
+if [ -f "$REPO_ROOT/tools/test_workspace_write_guard.sh" ]; then
+  run_check_timeout "作業領域外書き込みガード self-test (test_workspace_write_guard.sh)" 120 \
+    bash tools/test_workspace_write_guard.sh
 else
-  skip_check "grep 除外オプション正規化 self-test (test_grep_exclude_normalize.sh)" "スクリプトが見つかりません"
+  skip_check "作業領域外書き込みガード self-test (test_workspace_write_guard.sh)" "スクリプトが見つかりません"
 fi
 
 # 安全なプロセス掃除ヘルパー self-test（Issue #490 / L-139）。

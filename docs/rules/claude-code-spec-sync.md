@@ -22,6 +22,8 @@ Opus 4.8 の effort デフォルト変更）。なお **新モデル世代のリ
   ↓
 tools/check_claude_code_updates.py --create-issue   ← 検知（LLM 非依存・軽量）
   ├─ 新バージョンなし（exit 10）→ 何もしない
+  ├─ 新バージョンあり（exit 0）→ 分類とは独立に tools/probe_permission_prompts.sh を実行（権限プローブ・実挙動の実測）
+  │    exit 1 → [CC-Sync][破壊的変更] 権限プローブ検知 Issue を追加起票（Step 1 へ）/ exit 2 → 判定不能を Issue に明記
   ├─ 破壊的変更を検知 → [CC-Sync][破壊的変更] Issue 起票 + "BREAKING_DETECTED" 出力
   │    → 同セッションが claude-code-spec-sync スキル Step 1 を即実行（即対応レーン）
   │       影響調査（横断 Grep）→ 公式裏取り → 最小差分修正 → PR → L1 レビュー → マージ
@@ -45,8 +47,34 @@ tools/check_claude_code_updates.py --create-issue   ← 検知（LLM 非依存�
 
 - 機械分類は取りこぼし側に倒す（誤って「その他」に落ちた破壊的変更は、障害として顕在化した時点で
   L-077 プロトコル + 本レーンのキーワード辞書更新で回収する）
+- **キーワード辞書で拾えない挙動変化は権限プローブが補完する**（`tools/probe_permission_prompts.sh`・新バージョン検知時に
+  分類結果に関わらず実行）。v2.1.260 の "Reverted the 2.1.259 change applying Read() deny rules to Bash arguments" 行は
+  どの辞書にも一致せず「その他」に落ちて影響なしと記録された（base#558）。辞書の追加はいたちごっこになるため、
+  権限・deny・Bash 引数の領域は実測で検知する
+- **役割分担（base#561・棚卸し結果）**: 「辞書でしか拾えない領域」と「実測プローブで補完できる領域」を切り分ける。
+  - 実測プローブで補完できる領域（権限・deny・Bash 引数など、`tools/probe_permission_prompts.sh` が実行して
+    挙動を直接観測できるもの）は、辞書の同義語を無限に追加し続けない。プローブの検知結果を正とする。
+  - 辞書でしか拾えない領域（プローブが存在しない仕様変更全般。UI 文言・設定キー名の変更・非権限系の
+    挙動変更等）は、**revert 系の同義語をまとめて先取りする** ことで取りこぼしを減らす。
+    `breaking_keywords` に "revert" だけでなく `rolled back` / `restored the previous` /
+    `restored the prior` / `undid the` を追加済み（v2.1.260 の "Reverted ..." 行を教訓に、動詞の
+    言い換えパターンを一括収録）。**動詞原形（"undo" / "roll back" / "rolling back"）は追加しない**
+    （undo/redo・rollback は UI 機能の一般名詞でもあり、「Added an undo button」「Added the ability to
+    roll back recent edits」のような新機能紹介文と衝突して誤検知率が上がるため、過去形・受動態の
+    フレーズ限定にとどめる。レビューで実際に "roll back" が誤検知することを確認済み）。
+  - **「その他」に分類された行も、辞書には未一致でも `project_area_hints` に一致すれば
+    `others_hinted` として保持し、起票される Issue 本文に「⚠️ 要精読」セクションで注記する**
+    （`tools/check_claude_code_updates.py` の `others_hinted`。起票されない「その他のみ」バージョンでも
+    stderr へ警告ログを残す）。分類（起票するかどうか）には使わない＝取りこぼし側に倒す方針は変えず、
+    見落としを **後から発見できる形で残す** ことが目的（以前は `others_count` の数だけが残り、
+    どの行が見落とされたか追跡できなかった）。同一バージョンが breaking と feature の両方を持つ場合は
+    `others_hinted` を breaking Issue 側にのみ掲載し、feature Issue 側は参照だけ残す（両方に丸ごと
+    重複掲載すると二重にトリアージすることになるため）。
 - 例外: 「Fixed ...」で始まる行はバグ修正のため、明示的に "breaking" を含まない限り「その他」へ
   デモートする（"no longer" / "removed" を本文に含むだけの修正行の誤検知が多いため・2026-07-17 実測）
+- 🔴 **記録の「N件」＝ツールが breaking 判定した件数**（CHANGELOG 全行の精読ではない）。v2.1.257 で
+  「3件を横断確認済み」と記録しながら `breaking_keywords` 不一致の関連変更 4 件が欠落し矛盾指摘された（base#548）。
+  記録時は「N 件」の意味を明示し、関連する Fixed/Added 行が別途見つかった場合はそちらへの参照を添える
 - 🔴 **クラウドセッションでの既知化漏れ（実例: v2.1.225・#457）**: `gh`/REST が両方不可な環境では
   `--create-issue` の起票が失敗し、当該バージョンの dedup キーが state から自動的に取り消される
   （次回リトライ用の設計）。エージェントが `mcp__github__*` で Issue 対応を out-of-band に完遂しても

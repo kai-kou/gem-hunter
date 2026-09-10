@@ -71,15 +71,11 @@ gh issue list -R kai-kou/gem-hunter \
   ])'
 ```
 
-### doc-only Issue の月曜スキップルール
+### doc-only Issue の扱い
 
-`urgency:doc-only` のみが対象の場合、**月曜日のみ処理** する（火〜日はスキップ）。理由: `doc-only` は説明文修正のみで品質・プロセスに影響しないため、毎日処理する必要はなく月曜のまとめ処理で効率化する。
-
-```bash
-day_of_week=$(TZ=Asia/Tokyo LC_ALL=C date '+%A')
-# 月曜以外は urgency:doc-only のみの Issue をソート後の結果から除外する
-# 月曜は urgency:doc-only を含む全 Issue を対象にする
-```
+`urgency:doc-only` は曜日で絞らず毎日候補に含める（旧「月曜のみ処理」は「6/7 日は候補外・月曜も最下位競争で敗退」の
+二重スタベーションを生んでいたため廃止・base#563）。段位 99 の最下位は維持し、選ばれた場合は同一カテゴリ `small` として
+D のバンドル PR にまとめる。深い在庫で選ばれ続けない doc-only は SKILL.md Step 1.5 の TTL が退出させる。
 
 ### 1-B: 更新系 Issue（プロジェクト定義の更新ラベル）
 
@@ -146,6 +142,11 @@ mcp__github__add_issue_comment(owner, repo, issue_number={N}, body="""
 mcp__github__issue_write(method="update", issue_number={N}, labels=[現在の全ラベル + "done_type:D-plan"])
 ```
 
+**再選出スキップ（base#563）**: Step 1 のソート結果に `done_type:D-plan` 付きの Issue が含まれる場合、その Issue の
+最新コメントが本スキルの「実装計画」コメントであり、それ以降にコメント・ラベル変更がなければ **当該セッションでは
+選出しない**（同じ計画を再投稿して `updated_at` を更新し続けると Step 1.5 の TTL が永久に発火しないため）。
+新情報（人手コメント・再発検知コメント・priority 変更）が付いた large は通常どおり選出対象に戻す。
+
 ### C-5: tool-update カテゴリ（Claude Code / Anthropic SDK 新機能）
 
 Issue の「参照」セクションの URL を WebFetch/WebSearch で取得してから対応する。
@@ -190,26 +191,14 @@ API Deprecated（破壊的変更）         → 全ルールファイルを grep
 | 同一カテゴリ           | `doc` + `doc`、`skill` + `skill` など（カテゴリをまたぐ場合は別 PR）。**例外**: クラウド実行環境から単一の固定作業ブランチが指定されている場合（複数ブランチを切り替えられない）は、カテゴリをまたいでも 1 PR にまとめてよい。コミットはカテゴリ別に分離し、PR 本文に「単一固定ブランチ制約のためカテゴリ横断バンドル」と明記する（#666） |
 | 推定工数               | 全て `small`（`medium` 以上が1件でもあれば個別 PR）                                                                                                                                                                                                                                                                                       |
 | ファイル競合なし       | 同一ファイルを複数 Issue が変更する場合は個別 PR                                                                                                                                                                                                                                                                                          |
-| Issue 数               | 2〜3件（1件は個別 PR、4件以上はカテゴリを分割して 2PR）                                                                                                                                                                                                                                                                                   |
+| Issue 数               | 2〜5件（1件は個別 PR、6件以上はカテゴリを分割して 2PR。PR レビュー往復は 1 本あたり固定費のため、上限拡大は処理上限の引き上げより費用対効果が高い・base#563）                                                                                                                                                                             |
 | 変更ファイルの散らばり | **カテゴリ数 4 以上 かつ 変更ファイル数 8 以上** になる見込みなら分割する（数え方・閾値の根拠は下記「散らばりの数え方と閾値」）。🔴 **カテゴリ数だけでは分割しない**（実測の反証あり・#701）                                                                                                                                              |
 
 ### 散らばりの数え方と閾値（#701）
 
-**散らばり（scatter）= 変更ファイルが属するトップレベル・カテゴリの数**。カテゴリは以下で数える（同一カテゴリ内の複数ファイルは 1 と数える）。
+**散らばり（scatter）= 変更ファイルが属するトップレベル・カテゴリの数**。同一カテゴリ内の複数ファイルは 1 と数える。
 
-🔴 **数え方の正本は `tools/count_change_scatter.py` の `categorize()`**。下表はその出力ラベルの early reference であり、食い違ったらスクリプトが正しい（同じ数え方を 2 か所に書くと解釈がぶれるため・#701）。
-
-| カテゴリ（出力ラベル）        | 例                                          |
-| ----------------------------- | ------------------------------------------- |
-| `.claude/hooks/`              | `.claude/hooks/pre-git-push-check.sh`       |
-| `.claude/skills/`             | `.claude/skills/code-review/SKILL.md`       |
-| `.claude/`（直下ファイル）    | `.claude/settings.json`                     |
-| `docs/rules/`                 | `docs/rules/sprint-development-rules.md`    |
-| `docs/`（`docs/rules/` 以外） | `docs/04_development/testing-strategy.md`   |
-| `tools/`                      | `tools/check_prod_drift.py`                 |
-| `app-code`（`app/` + `src/`） | `app/page.tsx` / `src/domain/repository.ts` |
-| `.github/`                    | `.github/workflows/quality-checks.yml`      |
-| `<root>`（リポジトリ直下）    | `playwright.workers.config.ts`              |
+🔴 **数え方の正本は `tools/count_change_scatter.py` の `categorize()`**（同じ数え方を 2 か所に書くと解釈がぶれるため、カテゴリの一覧を本ファイルへ書き写さない・#701）。
 
 ```bash
 # カテゴリ数と変更ファイル数を数える（バンドル判定の直前に実行する）
@@ -219,7 +208,7 @@ python3 tools/count_change_scatter.py --json     # file_count / category_count /
 
 🔴 **数え方をシェルのワンライナーで書き直さない**（`app/` と `src/` を 1 と数えるか 2 と数えるか等でぶれ、同じ差分に対して判定が割れる）。AND 条件の判定に要る **カテゴリ数とファイル数の両方** を上記スクリプトが同時に出力する。
 
-**閾値**: 予定している変更が **カテゴリ数 4 以上 かつ 変更ファイル数 8 以上** になる見込みなら、Issue 数が 2〜3 件でもバンドルせず分割する。
+**閾値**: 予定している変更が **カテゴリ数 4 以上 かつ 変更ファイル数 8 以上** になる見込みなら、Issue 数が上限内でもバンドルせず分割する。
 
 🔴 **カテゴリ数の単独閾値は設けない**。実測（下表）で 5 カテゴリに散った PR #670 は 1 サイクルで収束しており、「散らばりが大きいだけ」では往復コストは増えていない。往復が 2 サイクルに伸びたのは **散らばりとファイル数の両方が大きい** PR #697 だけである。片方だけを見て分割すると、安全に束ねられる PR まで刻んでレビュー回数が増える。
 
@@ -229,8 +218,6 @@ python3 tools/count_change_scatter.py --json     # file_count / category_count /
 | #674 | 5        | 6              | 3          | 4 件         | 1            |
 | #697 | 4        | 12             | 4          | 7 件         | **2**        |
 | #723 | 2        | 5              | 3          | 7 件         | 1            |
-
-> 表の #674（5 件）・#697（4 件）は「Issue 数 2〜3 件」条件の **例外下の実測**（単一固定ブランチ制約・#666）であり、Issue 数条件を緩める前例ではない。
 
 **閾値を超えたときの行動**: 原則はカテゴリを分けて 2 PR にする。ただし上表「同一カテゴリ」欄の例外（クラウド実行環境から単一の固定作業ブランチが指定されており複数ブランチを切り替えられない・#666）が効いている場合は PR を分けられないため、**そのセッションで束ねる Issue 件数を減らし、残りを次回 firing へ送る**（`done_type` は付けず `status:waiting-claude` のまま残す）。判断と実測値（カテゴリ数・ファイル数）は PR 本文に 1 行で記録する。
 
@@ -377,3 +364,31 @@ gh issue list -R kai-kou/gem-hunter \
 gh issue list -R kai-kou/gem-hunter \
   --label "type:retro-try" --search "[Retro][{pipeline}]" --limit 1000
 ```
+
+---
+
+## H. Step 1.5: TTL 自動クローズの判定式・テンプレート
+
+判定（全て AND。数値の SSOT は `docs/rules/retrospective-rules.md`「WIP 制御」）:
+
+```
+labels ∋ "status:waiting-claude"
+labels ∌ "urgency:blocker"
+now_utc − updated_at > 30 日        # 内部計算のため UTC 基準（datetime-rules.md の機械処理用 UTC 例外）
+```
+
+候補を `updated_at` 昇順（古い順）に並べ、先頭 **5 件** だけ処理する（残りは次回）。1 件ごとに:
+
+```
+mcp__github__issue_write(method="update", owner, repo, issue_number={N}, state="closed", state_reason="not_planned")
+mcp__github__add_issue_comment(owner, repo, issue_number={N}, body="""
+## TTL クローズ（not_planned）
+30 日間更新がないため、振り返りレーンの TTL 出口（retro-try-handler Step 1.5）でクローズしました。
+- 最終更新: {updated_at を JST で表記}
+- 同じ問題が再発した場合は、次回のレトロスペクティブ（retrospective reference.md F）が本 Issue を検出して reopen します
+""")
+```
+
+- `issue_write` が失敗したら当該 Issue はスキップして次へ進む（リトライは 1 回まで。失敗は Step 6 の完了サマリーに列挙する）
+- クローズ結果は Step 6 の完了サマリーに「TTL クローズ: #N, #M（最終更新 N 日前）」として記録する（サイレントに閉じない）
+- `state_reason` を `completed` にしない（`completed` は実装済みの意味で、消化率〔workflow-health-check 5-a〕を汚す）
