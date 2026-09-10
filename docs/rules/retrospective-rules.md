@@ -282,6 +282,13 @@ python3 "${CLAUDE_PROJECT_DIR}/tools/slack_notify.py" pipeline \
 `tools/check_deferred_try_jsonl.py` が機械検査する（`npm run check` に配線済み・フィールド定義・値域はツール側が正本
 なのでここに書き写さない。手順は `retrospective/SKILL.md` Step 3-1 が持つ）。
 
+🔴 **`*_commented` の `defer_reason` は「Step 3-B で `type:retro-try` の既存 Issue へ追記した」場合にだけ使う。**
+Step 3-A の重複チェックは `labels=["type:retro-try"]` でスコープした 2 リストに対して行うため、**改善レーンの Issue
+（`type:improvement` のみ等）へリンクしても Step 3-B ではない**。次回のレトロが Step 3-0 でそのリストを取り直しても
+ヒットしないので、`*_commented`（= 追記して完了）として記録すると「既存 Issue に集約済み」という誤った状態になる。
+この場合は見送りとして `over_quota` / `medium` を使い、`related_issue` は **参考リンク** として残す（PR 本文か
+Issue コメントに「Step 3-A の重複ヒットではなく手動リンク」と明記する）。
+
 ## 禁止事項
 
 - Try アイテムを **どの行き先にも記録せず**「次回気をつける」で済ませない（新規 Issue 化 / reopen / 既存 Issue へのコメント追記 / 見送りログ
