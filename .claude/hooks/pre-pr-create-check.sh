@@ -502,8 +502,16 @@ unset _repo_root_49
 # Error 検出時のみブロック。チェッカー自体の異常（python 不在等・exit>1）ではブロックしない。
 # サブディレクトリから gh pr create が実行されてもスキップされないようリポジトリルートで実行する
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+# 同梱ツール本体の探索先は repo_root（git 操作対象＝消費先プロジェクト）ではなく
+# CLAUDE_PLUGIN_ROOT（プラグイン配布時にハーネスが設定・実測確認済み）を優先する。
+# 分離しないと、tools/ を持たない第三者プロジェクトでこのゲートがサイレントに無効化される（base#539）。
+# 値は絶対パス形式のときのみ採用する（空文字・相対パス等の想定外値は repo_root へフォールバック）。
+scripts_root="$repo_root"
+case "${CLAUDE_PLUGIN_ROOT:-}" in
+  /*) scripts_root="$CLAUDE_PLUGIN_ROOT" ;;
+esac
 check_output=""
-if [ -f "$repo_root/tools/self_review_check.py" ]; then
+if [ -f "$scripts_root/tools/self_review_check.py" ]; then
   cd "$repo_root" || exit 0
   check_exit=0
   # PR 本文を取れるのは MCP 経路だけ（上部の have_pr_body 参照）。Bash 経路で空文字列を
@@ -514,10 +522,10 @@ if [ -f "$repo_root/tools/self_review_check.py" ]; then
     _srx_args=(--pr-body-stdin)
   fi
   if command -v timeout >/dev/null 2>&1; then
-    check_output=$(printf '%s' "$pr_body" | timeout 90 python3 tools/self_review_check.py ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
+    check_output=$(printf '%s' "$pr_body" | timeout 90 python3 "$scripts_root/tools/self_review_check.py" ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
   else
     # macOS 等 timeout 不在環境のフォールバック
-    check_output=$(printf '%s' "$pr_body" | python3 tools/self_review_check.py ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
+    check_output=$(printf '%s' "$pr_body" | python3 "$scripts_root/tools/self_review_check.py" ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
   fi
   unset _srx_args
   if [ "$check_exit" -eq 1 ]; then
@@ -536,6 +544,10 @@ Error を修正してから PR 作成を再実行してください（チェッ�
     check_output="${check_output}
 [pre-pr-create-check] self_review_check.py が exit ${check_exit} で異常終了しました。セルフレビュー機械チェックが実質未実行のまま PR 作成が続行されています。原因を確認してください（一時的な負荷等でなければ type:bug Issue 化を検討）。"
   fi
+else
+  # tools/ 不在時は「無害に不発」ではなく状態を明示する（安全側フォールバック・base#539）。
+  # ブロックはしない（チェッカー自体が存在しないため何を Error とすべきか判断できない）。
+  check_output="Warning: tools/self_review_check.py が見つからないため、セルフレビュー機械チェックをスキップしました（探索先: ${scripts_root}/tools/）。CJK Markdown 記法等は手動で確認してください。"
 fi
 
 # 5.5. WIP コミット残存チェック（非ブロッキング・警告のみ・Issue #94）

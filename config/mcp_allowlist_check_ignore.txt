@@ -1,0 +1,8 @@
+# check_mcp_allowlist.py の除外リスト（1 行 1 パターン・`*` ワイルドカード可）
+# ここに書くツールは「参照されているが permissions.allow に登録しない」ことを意図した決定である。
+# 乱用しない（登録し忘れとの区別が付かなくなる）。
+
+# 外部 AI レビュアー（Copilot / Gemini）へのレビュー依頼は本リポジトリでは廃止済み。
+# レビューは Layer 1 セルフレビューで完結させる（docs/rules/ai-reviewer-strategy.md）。
+# reference.md にフォールバック手順として名前が残っているだけで、無人ルーティンからは呼ばない。
+mcp__github__request_copilot_review
