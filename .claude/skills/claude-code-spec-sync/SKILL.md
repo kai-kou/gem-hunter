@@ -57,6 +57,15 @@ gh issue list --label "lane:claude-code-spec" --state open --json number,title,l
 ```
 
 - 新規検知なし かつ オープン lane Issue なし → **即終了**（担当タスクへ）
+- 🔴 **新バージョンを検知したら（exit 0）、分類結果（破壊的 / 新機能 / その他）に関わらず権限プローブを実行する**
+  （キーワード辞書では拾えない挙動変化の実測検知・L-127 訂正の再発防止。v2.1.260 の "Reverted ..." 行が
+  「その他」に落ちて影響なしと記録された見落としが起点・議論記録 `auto-mode-prompt-root-cause-20260904`）:
+  ```bash
+  bash tools/probe_permission_prompts.sh          # 0=OK / 1=検知 / 2=判定不能（サイレントに成功扱いしない）
+  ```
+  exit 1 → `[CC-Sync][破壊的変更] 権限プローブ検知 v{バージョン}` として Issue 化し Step 1 へ（恒久的なハーネス回避策は作らず、
+  公式 CHANGELOG で revert / fix 済みかを先に確認する）。exit 2 → 陽性対照不成立を Issue 本文に明記して `status:waiting-claude`
+  で残す（環境要因の切り分けが先）。所要は sonnet × 6 呼び出し程度
 - `[CC-Sync][破壊的変更]` Issue あり → **Step 1（即対応）を最優先**
 - `[CC-Sync][検証]` Issue のみ → Step 2（検証・検討）を **1スロット1件** 消化
 
@@ -75,6 +84,10 @@ gh issue list --label "lane:claude-code-spec" --state open --json number,title,l
      再分類）は「これまでのやり方がエラーになる」典型。`tools/native_capabilities.json` の `native.routes` を
      突き合わせ、`python3 tools/native_fallback.py routes --json` の ladder が現行仕様と一致するか確認する
      （不一致なら台帳の `status` を更新し、閉じた経路は削除せず経緯を残す・`native-fallback-rules.md` §2.5・L-123）
+   - Issue 本文に **「⚠️ 辞書には未一致だが影響領域ヒントに一致した『その他』の変更（要精読）」** セクションが
+     あれば、各行を確認する。辞書に追加すべき言い換えパターンがあれば `config/claude_code_spec_sync.yaml` へ
+     追記し、追加不要と判断した場合もその理由を Issue コメントに残す（`others_hinted`・base#561。ここを読み飛ばすと
+     「その他」行の見落としを後から発見できる形で残した意味が失われる）
 4. **対応**:
    - 影響あり → **最小差分で修正**（intent-gate 遵守・要求外リファクタ禁止）→ 検証
      （該当ツールの `--self-test`/`--dry-run`、フックは手動実行、settings は `claude config` 系で確認）
@@ -98,6 +111,8 @@ gh issue list --label "lane:claude-code-spec" --state open --json number,title,l
    - 公式 Docs / changelog 原文で仕様・前提条件・制約を確認
    - 本プロジェクトへの適用価値を評価 — 判断基準: **CP-5 貢献**（`docs/project-mission.md` への効果）/
      **CP-6 自律性向上**（ユーザー介入削減）/ **コスト**（トークン・時間・保守）/ **リスク**（退行・L-101 型の既知バグ）
+   - Issue 本文に「⚠️ 辞書には未一致だが影響領域ヒントに一致した『その他』の変更（要精読）」セクションが
+     あれば、Step 1 項目 3 と同じ要領で確認する（`others_hinted`・base#561）
 3. **判定**（3択）:
    - **採用** → rules/skills/hooks/settings へ反映（最小差分）+
      `docs/rules/claude-code-optimization.md` へ記録 → PR → L1 レビュー → マージ → Issue クローズ
