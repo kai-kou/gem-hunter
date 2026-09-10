@@ -3,7 +3,7 @@
 
 無人ルーティンが呼ぶ MCP ツールが `.claude/settings.json` の `permissions.allow` に無いと、そのツールは
 auto モードの classifier に回る（判定は確率的）か、auto でないモードでは承認プロンプトになる。無人セッションには
-応答者がいないため、その回の処理が止まる（下流リポジトリの動画系 MCP ツールで実発生・L-130）。
+応答者がいないため、その回の処理が止まる（下流リポジトリの動画系 MCP ツールで実発生・L-169）。
 本ツールは **PR 前に静的に** 「参照されているが allow に無い MCP ツール」を洗い出す。
 
 ## 何を見るか
@@ -24,7 +24,7 @@ auto モードの classifier に回る（判定は確率的）か、auto でな�
   （ツール名の完全一致か `mcp__<server>__*` 形式）。`#` 以降はコメント。出自プロジェクトの実例など、
   本リポジトリには存在しないサーバのツール名がドキュメントに残っているケースを除く
 
-## 射程外（過大評価しないこと・L-130）
+## 射程外（過大評価しないこと・L-169）
 
 - `_meta["anthropic/requiresUserInteraction"]` 付きの MCP ツールは **allow に書いても毎回プロンプトになる**
   （全モード共通の例外・`dontAsk` のみ deny）。この注釈は MCP サーバの `tools/list` 応答にしか現れず、
@@ -39,7 +39,9 @@ auto モードの classifier に回る（判定は確率的）か、auto でな�
     python3 tools/check_mcp_allowlist.py --json     # 機械可読（1 行 JSON）
     python3 tools/check_mcp_allowlist.py --self-test
 
-終了コード: 0 = 未登録なし / 1 = 未登録あり（非ブロッキング警告として扱う） / 2 = 入力ファイル不備
+終了コード: 0 = 未登録なし / 1 = 未登録あり / 2 = 入力ファイル不備
+  ※ 本ツールは `tools/run_checks.sh` 4.14.1 に配線済みで、exit 1 は層 2 証跡を FAIL にする
+    （未登録を「参考情報」に留めると、無人ルーティンが実際に止まるまで誰も気づかない）。
 """
 
 from __future__ import annotations
@@ -49,18 +51,24 @@ import fnmatch
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-_TOOL_RE = re.compile(r"\bmcp__([A-Za-z0-9_-]+)__([A-Za-z0-9_-]+)\b")
+# server 側を非貪欲にして「最初の `__`」を境界に固定する（Layer 1 セルフレビュー指摘）。
+# 貪欲だと `mcp__acme__resource__delete` を server="acme__resource" と誤分割し、`.mcp.json` の
+# サーバ一覧に無い名前になるため missing（要 allow 登録）ではなく unmanaged_server（情報表示のみ）へ
+# 落ちる fail-open になる。公式のルール構文は `mcp__<server>__<tool>` の 2 層で、サーバ名は
+# `.mcp.json` のキー＝最初の `__` までが正しい。
+_TOOL_RE = re.compile(r"\bmcp__([A-Za-z0-9_-]+?)__([A-Za-z0-9_-]+)\b")
 _MD_SUFFIXES = (".md",)
 
 REQUIRES_USER_INTERACTION_NOTE = (
     "注意: `_meta[\"anthropic/requiresUserInteraction\"]` 付きのツール（承認 UI に「常に許可」が出ないもの）は "
     "allow に書いても毎回プロンプトになる（全モード共通・dontAsk のみ deny）。静的には判別できないため、"
-    "allow 追加後も実測でプロンプトが消えないツールは無人ルーティンが呼ぶスキルの allowed-tools / コネクタから外すこと（L-130）。"
+    "allow 追加後も実測でプロンプトが消えないツールは無人ルーティンが呼ぶスキルの allowed-tools / コネクタから外すこと（L-169）。"
 )
 
 
@@ -228,6 +236,23 @@ def _self_test() -> int:
         failures += 1
         print("  NG サーバ名 glob `mcp__*` を一致扱いしている")
 
+    # server / tool の境界は「最初の `__`」（ツール名側に `__` を含む入力での分割・Layer 1 指摘）
+    boundary_cases = [
+        ("mcp__github__list_issues", ("github", "list_issues")),
+        ("mcp__acme__resource__delete", ("acme", "resource__delete")),
+        ("mcp__Claude_Code_Remote__list_triggers", ("Claude_Code_Remote", "list_triggers")),
+    ]
+    for tool, expect_groups in boundary_cases:
+        mo = _TOOL_RE.fullmatch(tool)
+        actual_groups = mo.groups() if mo else None
+        if actual_groups != expect_groups:
+            failures += 1
+            print(f"  NG _TOOL_RE({tool}) 期待={expect_groups} 実際={actual_groups}")
+    # 分割がずれると allow ルール `mcp__acme__*` に一致しなくなる（誤分割の実害を直接見る負ケース）
+    if not allow_matches("mcp__acme__resource__delete", ["mcp__acme__*"]):
+        failures += 1
+        print("  NG ツール名に `__` を含むツールが `mcp__<server>__*` に一致しない（server 誤分割）")
+
     # ファイル走査 → 突合の end-to-end
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -263,6 +288,36 @@ def _self_test() -> int:
             print("  NG settings 不在で例外にならない")
         except ValueError:
             pass
+
+        # CLI の入口（main()）から終了コードまでを実プロセスで通す（Layer 1 指摘・#710 / base#686）。
+        # run_check() を直呼びするだけでは `return 1 if result["missing"] else 0` を `return 0` へ
+        # 潰す変異を検知できず、run_checks.sh が永久に PASS を返す fail-open になる。
+        cli_base = [sys.executable, str(Path(__file__).resolve()),
+                    "--scan-dirs", str(root / "skills"),
+                    "--mcp-config", str(root / ".mcp.json"),
+                    "--ignore", str(root / "ignore.txt")]
+        proc = subprocess.run(cli_base + ["--settings", str(root / "settings.json")],
+                              capture_output=True, text=True)
+        if proc.returncode != 1:
+            failures += 1
+            print(f"  NG main() 未登録ありの終了コード 期待=1 実際={proc.returncode}")
+        if "mcp__github__issue_write" not in proc.stdout:
+            failures += 1
+            print("  NG main() の出力に未登録ツール名が出ていない")
+        # 未登録ゼロの settings なら exit 0（両方向を見ないと「常に 1」への変異も見逃す）
+        (root / "settings_full.json").write_text(
+            json.dumps({"permissions": {"allow": ["mcp__github", "mcp__youtube"]}}), encoding="utf-8")
+        proc_ok = subprocess.run(cli_base + ["--settings", str(root / "settings_full.json")],
+                                 capture_output=True, text=True)
+        if proc_ok.returncode != 0:
+            failures += 1
+            print(f"  NG main() 未登録なしの終了コード 期待=0 実際={proc_ok.returncode}")
+        # 入力不備は exit 2（ブロックではなく判定不能として区別する）
+        proc_bad = subprocess.run(cli_base + ["--settings", str(root / "nope.json")],
+                                  capture_output=True, text=True)
+        if proc_bad.returncode != 2:
+            failures += 1
+            print(f"  NG main() 入力不備の終了コード 期待=2 実際={proc_bad.returncode}")
     print(f"[check_mcp_allowlist --self-test] {'PASS' if failures == 0 else 'FAIL'}（失敗 {failures} 件）")
     return 1 if failures else 0
 

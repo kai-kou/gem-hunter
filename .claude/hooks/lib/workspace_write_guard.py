@@ -28,7 +28,12 @@
     保護パスについても同じで、`python3 -c` / `node -e` / `perl -i` / `awk -i inplace` 経由は素通りする
     （2 つの独立実装で確認済み）。塞いだのは sed / cp / mv / ln / tee / リダイレクトの直書きであって根絶ではない
   - 解決できない変数（外部 env 由来）を含むパスは判定不能として素通りさせる（誤ブロックを避ける。
-    同一コマンド内の `NAME=value` 代入は解決する）
+    同一コマンド内の `NAME=value` 代入と、値がこのフック側で確定している `$PWD` / `$HOME` は解決する。
+    `$OLDPWD` は追跡していないため判定不能のまま）
+  - `git` サブコマンド自体は対象外にしているため、**作業ツリーの内容を書き換える git 経路**
+    （`git checkout <ref> -- <path>` / `git restore` / `git apply` / `git am`）は保護パス配下でも素通りする
+    （Layer 1 セルフレビューで実測。`git config` / `git update-index` / `git worktree` を誤ブロック
+    しないための一括除外の副作用で、対象サブコマンドの選別は別途設計が要る・Issue #1121）
   - 目的は「無人セッションの停止防止」であって権限の代替ではない。`permissions.deny` の保護とは独立
 
 トグル: `CLAUDE_BASE_DISABLE_WORKSPACE_WRITE_GUARD=1` で無効化する。セッションの環境変数としても、
@@ -95,6 +100,11 @@ _HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _ASSIGNMENT = re.compile(r"(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=([^\s;&|)]+)")
 # 未解決の変数参照
 _UNRESOLVED_VAR = re.compile(r"\$\{?[A-Za-z_(]")
+# 値がこのフック側で既に確定しているシェル変数（Layer 1 セルフレビュー指摘・下流拡張）。
+# `$PWD` は payload の cwd、`$HOME` は expanduser("~") と等値であり「解決不能な外部変数」ではない。
+# 一律に _UNRESOLVED_VAR で素通りさせると `sed -i ... $PWD/.claude/hooks/x.sh` が fail-open になる。
+# `$OLDPWD` は追跡していないため意図的に含めない（判定不能のまま素通り＝誤断定より安全側）。
+_KNOWN_VAR = re.compile(r"\$\{(PWD|HOME)\}|\$(PWD|HOME)\b")
 # 脱出ハッチの環境変数名（セッション env / コマンド先頭の前置き代入のどちらでも効く）
 _TOGGLE_NAME = "CLAUDE_BASE_DISABLE_WORKSPACE_WRITE_GUARD"
 
@@ -274,12 +284,34 @@ def _segments(command: str) -> list[list[str]]:
     return result
 
 
-def _resolve(path: str, cwd: str | None, home: str) -> str | None:
+def _expand_known_vars(path: str, cwd: str | None, home: str) -> str:
+    """`$PWD` / `$HOME`（`${...}` 形式を含む）を、このフックが既に知っている値へ展開する。
+
+    `cwd` が None（`cd -` 等で追跡できない）のときは `$PWD` を展開しない。展開しなければ
+    `_UNRESOLVED_VAR` が拾って判定不能（素通り）になり、誤った場所へ解決するより安全側に倒れる。
+    """
+    def sub(m: "re.Match[str]") -> str:
+        name = m.group(1) or m.group(2)
+        if name == "HOME":
+            return home
+        return cwd if cwd is not None else m.group(0)
+
+    return _KNOWN_VAR.sub(sub, path)
+
+
+def _resolve(path: str, cwd: str | None, home: str, follow_symlink: bool = True) -> str | None:
     """パス様トークンを絶対パスへ正規化する。解決できないものは None を返す。
 
-    シンボリックリンクも解決する（作業ディレクトリ内のリンクが外部を指すケースを取りこぼさない）。
+    既定ではシンボリックリンクも解決する（作業ディレクトリ内のリンクが外部を指すケースを
+    取りこぼさない）。`follow_symlink=False` は **末端の名前そのものを書き換える操作**
+    （`ln -sf <src> <既存 symlink 名>` のリンク張り替え）用で、親ディレクトリまでを realpath で
+    解決し、末端は辿らない。既存 symlink を辿ると `.claude/rules/x.md` が `docs/rules/x.md` へ
+    解決されて保護判定に一度も入らない fail-open になる（Layer 1 セルフレビュー指摘）。
     """
-    if not path or _UNRESOLVED_VAR.search(path):
+    if not path:
+        return None
+    path = _expand_known_vars(path, cwd, home)
+    if _UNRESOLVED_VAR.search(path):
         return None
     if path.startswith("~"):
         path = home + path[1:]
@@ -287,6 +319,9 @@ def _resolve(path: str, cwd: str | None, home: str) -> str | None:
         if cwd is None:
             return None  # `cd` 先が解決できないセグメント。判定不能として素通りさせる
         path = os.path.join(cwd, path)
+    if not follow_symlink:
+        parent = os.path.realpath(os.path.dirname(path))
+        return os.path.join(parent, os.path.basename(path))
     return os.path.realpath(path)
 
 
@@ -441,10 +476,30 @@ def _write_targets(tokens: list[str]) -> list[str]:
     return targets
 
 
+def _repo_root(cwd: str) -> str:
+    """`cwd` を含むリポジトリのルートを返す（見つからなければ `cwd` 自身）。
+
+    保護判定のアンカーを cwd ではなくリポジトリルートにするために使う（Layer 1 セルフレビュー指摘）。
+    cwd をアンカーにすると、**セッションが一度 `cd .claude/hooks` した後**（Bash ツールの cwd は
+    ターンをまたいで保たれる）、以降の相対パス書き込みが `.claude` セグメントを含まなくなり、
+    保護判定にも `is_safe()`（cwd 内は無条件に安全）にも掛からず素通りする fail-open になる。
+    `.git` はディレクトリ（worktree ではファイル）なのでどちらも受ける。
+    """
+    path = os.path.realpath(cwd)
+    while True:
+        if os.path.exists(os.path.join(path, ".git")):
+            return path
+        parent = os.path.dirname(path)
+        if parent == path:
+            return os.path.realpath(cwd)  # リポジトリ外（self-test の仮想 cwd 等）は cwd 基準に戻す
+        path = parent
+
+
 def _repo_protected(path: str, cwd: str) -> str | None:
     """`path`（正規化済み絶対パス）が cwd 配下の `.claude/**`・`.git/**` に当たるか。
 
-    cwd からの相対パスをセグメント単位で走査し、どの深さでも `.claude` / `.git` が現れたら
+    ここでいう `cwd` は呼び出し側が渡す **アンカー**（`analyze()` は `_repo_root()` を渡す）。
+    アンカーからの相対パスをセグメント単位で走査し、どの深さでも `.claude` / `.git` が現れたら
     その名前（ログ用）を返す。`.claude/worktrees/<name>/` は読み飛ばし、その配下でさらに
     `.claude` / `.git` が現れたら再び保護する。一致しなければ None。
     """
@@ -502,9 +557,20 @@ def _repo_protected_hint(protected: str) -> str:
     )
 
 
-def _path_like(tokens: list[str]) -> list[str]:
-    """`/` か `~` で始まるトークン（パス様トークン）。読み取りも対象にする判定用。"""
-    return [t for t in tokens if t.startswith("/") or t.startswith("~")]
+def _path_like(tokens: list[str], cwd: str | None = None, home: str = "") -> list[str]:
+    """`/` か `~` で始まるトークン（パス様トークン）。読み取りも対象にする判定用。
+
+    判定は `$PWD` / `$HOME` を展開した後の形で行う（`$HOME/.claude/...` のように、展開前は
+    `$` で始まるためこの絞り込みから落ちて (1) のホーム配下チェックに一度も入らない
+    fail-open を塞ぐ・Layer 1 セルフレビュー指摘）。返すのは **元のトークン** で、
+    実際の解決は呼び出し側の `_resolve()` が同じ展開を行って担う。
+    """
+    out = []
+    for t in tokens:
+        expanded = _expand_known_vars(t, cwd, home) if home else t
+        if expanded.startswith("/") or expanded.startswith("~"):
+            out.append(t)
+    return out
 
 
 def analyze(command: str, cwd: str, home: str, session_id: str = "") -> list[str]:
@@ -513,6 +579,8 @@ def analyze(command: str, cwd: str, home: str, session_id: str = "") -> list[str
     expanded = _expand_assignments(_strip_heredocs(command))
     home_claude = os.path.realpath(os.path.join(home, ".claude"))
     cwd = os.path.realpath(cwd)
+    # 保護判定のアンカーは cwd ではなくリポジトリルート（cwd が .claude/** の内側にいても効かせる）
+    repo_root = _repo_root(cwd)
     tmpdir = os.environ.get("TMPDIR", "").strip()
     safe_bases = [cwd] + ([os.path.realpath(tmpdir)] if tmpdir else [])
     # `cd` でカレントディレクトリが変わったら以降のセグメントの基点も変える（None = 解決不能）
@@ -530,7 +598,7 @@ def analyze(command: str, cwd: str, home: str, session_id: str = "") -> list[str
             continue  # このセグメントだけ明示的に外されている（#582・#583）
 
         # (1) ホーム配下の Claude 領域への Bash アクセス（読み書き問わず）
-        for token in _path_like(tokens):
+        for token in _path_like(tokens, current_cwd, home):
             resolved = _resolve(token, current_cwd, home)
             if resolved is None:
                 continue
@@ -544,14 +612,17 @@ def analyze(command: str, cwd: str, home: str, session_id: str = "") -> list[str
         # (2) 作業ディレクトリ・セッション一時領域の外への書き込み / 削除
         # (2') cwd の内側でも、リポジトリ自身の .claude/** と .git/** への Bash 書き込みは保護する
         #      （#618・C1/C3）。is_safe() は cwd 内を無条件に True にするため、必ずその前に判定する。
+        # `ln` は「末端の名前そのもの」を置き換えるので、既存 symlink を辿らずに解決する
+        _cmd_index = _command_index(tokens)
+        _follow = not (_cmd_index is not None and os.path.basename(tokens[_cmd_index]) == "ln")
         for token in _write_targets(tokens):
-            resolved = _resolve(token, current_cwd, home)
+            resolved = _resolve(token, current_cwd, home, follow_symlink=_follow)
             if resolved is None:
                 continue
             in_tmp = _session_tmp_ok(resolved, session_id) or any(_under(resolved, b) for b in safe_bases[1:])
-            protected = None if in_tmp else _repo_protected(resolved, cwd)
+            protected = None if in_tmp else _repo_protected(resolved, repo_root)
             if protected is not None:
-                if _legit_rules_symlink(tokens, resolved, cwd, home):
+                if _legit_rules_symlink(tokens, resolved, repo_root, home):
                     continue
                 reasons.append(
                     f"リポジトリ内の保護パス（{protected}）への Bash 書き込み: {resolved}\n"
@@ -613,6 +684,14 @@ def _self_test() -> int:
         (True, 'echo x >> .claude/agents/reviewer.md'),
         (True, 'echo x | tee -a .claude/hooks/x.sh'),
         (True, 'cd .claude/hooks && sed -i "s/a/b/" dummy.sh'),  # cd 追従
+        # --- 値が確定しているシェル変数の展開（Layer 1 セルフレビュー指摘・fail-open 回帰） ---
+        (True, 'sed -i "s/a/b/" $PWD/.claude/hooks/pre-tool-use-router.sh'),
+        (True, 'sed -i "s/a/b/" ${PWD}/.claude/hooks/x.sh'),
+        (True, 'rm -rf $HOME/.claude/settings.json'),           # (1) ホーム配下の Claude 領域
+        (True, 'cp x.txt ${HOME}/.claude/projects/a/b.txt'),
+        (True, 'rm -rf $PWD/../outside-dir'),                    # 作業領域の外（cwd 基準で解決される）
+        (False, 'rm -rf $EXTERNAL_BASE/out'),                    # 真に解決不能な外部変数は従来どおり素通り
+        (False, 'cp x.txt $OLDPWD/.claude/hooks/x.sh'),          # 追跡していない変数は判定不能のまま
         (True, 'ln -sf ../../docs/x.md .claude/skills/foo/SKILL.md'),  # rules 以外への symlink は除外しない
         (False, 'ln -sf ../../docs/rules/x.md .claude/rules/x.md'),  # 正規手順（session-compression-rules-detail.md）
         (False, 'echo x > .claude/worktrees/wt-1/marker'),  # 公式の明示除外

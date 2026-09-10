@@ -17,9 +17,17 @@ FAIL=0
 
 # run_case <期待: BLOCK|ALLOW> <説明> <コマンド>
 run_case() {
-  local expect="$1" desc="$2" cmd="$3"
+  run_case_at "$TEST_CWD" "$@"
+}
+
+# run_case_at <cwd> <期待: BLOCK|ALLOW> <説明> <コマンド>
+# cwd を差し替えられる版。既定の TEST_CWD は実在しない仮想パスなので、実ファイルシステム上の
+# シンボリックリンク・リポジトリルート探索を通る経路（Layer 1 セルフレビューが検出した
+# fail-open 2 件）はこちらで実ディレクトリを作って検証する。
+run_case_at() {
+  local at="$1" expect="$2" desc="$3" cmd="$4"
   local payload output status actual
-  payload=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","cwd":sys.argv[1],"session_id":sys.argv[3],"tool_input":{"command":sys.argv[2]}}))' "$TEST_CWD" "$cmd" "$TEST_SESSION")
+  payload=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","cwd":sys.argv[1],"session_id":sys.argv[3],"tool_input":{"command":sys.argv[2]}}))' "$at" "$cmd" "$TEST_SESSION")
   output=$(printf '%s' "$payload" | HOME="$TEST_HOME" TMPDIR="" python3 "$GUARD" 2>&1)
   status=$?
   if [ "$status" -eq 1 ]; then actual="BLOCK"; else actual="ALLOW"; fi
@@ -167,6 +175,26 @@ if [ $? -eq 0 ] && [ -z "$tmp_out" ]; then
 else
   FAIL=$((FAIL + 1)); echo "  NG   TMPDIR 配下の .claude を誤ブロック: $tmp_out" >&2
 fi
+
+echo "[test] 実ファイルシステム上のリポジトリでの保護（Layer 1 セルフレビュー指摘の fail-open 回帰）"
+# 仮想 cwd では ① 既存 symlink の realpath 解決 ② リポジトリルート探索（.git の実在）が
+# どちらも起きないため、この 2 経路は実ディレクトリを作らないと一度も検証されない。
+REAL_REPO=$(mktemp -d)
+mkdir -p "$REAL_REPO/.git/hooks" "$REAL_REPO/.claude/rules" "$REAL_REPO/.claude/hooks" "$REAL_REPO/docs/rules"
+: > "$REAL_REPO/docs/rules/x.md"
+: > "$REAL_REPO/.claude/hooks/dummy.sh"
+ln -s ../../docs/rules/x.md "$REAL_REPO/.claude/rules/x.md"
+run_case_at "$REAL_REPO" BLOCK "既存 symlink 名への ln -sf 張り替え（末端を辿らずに判定する）" \
+  'ln -sf /etc/passwd .claude/rules/x.md'
+run_case_at "$REAL_REPO" ALLOW "正規手順の symlink 作成は実 symlink 上でも通す" \
+  'ln -sf ../../docs/rules/x.md .claude/rules/x.md'
+run_case_at "$REAL_REPO/.claude/hooks" BLOCK "cwd がリポジトリ内 .claude 配下でも相対パス書き込みを保護" \
+  'sed -i "s/a/b/" dummy.sh'
+run_case_at "$REAL_REPO/.git/hooks" BLOCK "cwd が .git 配下でもリダイレクト書き込みを保護" \
+  'echo x > pre-commit'
+run_case_at "$REAL_REPO" ALLOW "リポジトリ内の通常ファイルへの書き込みは通す（誤ブロックしない）" \
+  'echo x > docs/rules/x.md'
+rm -rf "$REAL_REPO"
 
 echo "[test] トグルによる無効化"
 toggle_out=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","cwd":sys.argv[1],"tool_input":{"command":"rm -rf /tmp/demo-out"}}))' "$TEST_CWD" \

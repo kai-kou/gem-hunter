@@ -176,7 +176,7 @@ allow/deny の評価順とレイヤー適用範囲（Bash 限定 vs 全ツール
 
 - **ハーネス**: `workspace_write_guard.py` の `_repo_protected()` が、cwd 内でも `.claude/**`（`.claude/rules`・`.claude/worktrees` を除く）と `.git/**` への Bash 書き込みを **classifier に回る前に差し戻す**。差し戻し文言は対象ごとに代替を出し分ける（`.claude` → ネイティブ Edit / Write、symlink → `bash tools/check_rules_sync.sh --fix`、`.git` → git コマンド + scratchpad）。`git` サブコマンド自体・読み取り・`ln -s ../../docs/rules/x.md .claude/rules/x.md` の正規手順は誤ブロックしない（回帰テストは `bash tools/test_workspace_write_guard.sh`）。
 - **行動規範**: `CLAUDE.md`「やってはいけないこと」に、リポジトリ内 `.claude/` `.git/` の Bash 直書き禁止と scratchpad 運用を追加。
-- **MCP（規約）**: MCP サーバを追加したら、無人ルーティンが呼ぶツールを `permissions.allow` に `mcp__<server>` / `mcp__<server>__*` / 個別名で登録する（`mcp__*` のようなサーバ名の glob は無効）。`requiresUserInteraction` 付きツールは allow では解決しないため、**無人ルーティンが呼ぶスキルの `allowed-tools` / コネクタから外す**。参照されているが allow に無いツールは `python3 tools/check_mcp_allowlist.py` で静的に洗い出せる（非ブロッキング警告。`requiresUserInteraction` の有無は静的に判別できないため「登録すれば直る」は保証しない）。
+- **MCP（規約）**: MCP サーバを追加したら、無人ルーティンが呼ぶツールを `permissions.allow` に `mcp__<server>` / `mcp__<server>__*` / 個別名で登録する（`mcp__*` のようなサーバ名の glob は無効）。`requiresUserInteraction` 付きツールは allow では解決しないため、**無人ルーティンが呼ぶスキルの `allowed-tools` / コネクタから外す**。参照されているが allow に無いツールは `python3 tools/check_mcp_allowlist.py` で静的に洗い出せる（`tools/run_checks.sh` に配線済みで、未登録があれば層 2 証跡が FAIL になる。ただし `requiresUserInteraction` の有無は静的に判別できないため「登録すれば直る」は保証しない）。
 
 **採らなかった案**: `permissions.allow` の glob 修正（無効・上記）/ ルーティンの `permission_mode` を `bypassPermissions` `dontAsk` に緩める（承認レイヤーを外す解・L-167 の不採用を維持）/ 「-p で再現しないので見送る」（上記）。
 
