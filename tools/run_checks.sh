@@ -567,6 +567,17 @@ else
   skip_check "並行安全プリアンブル再掲検査 (check_delegation_preamble.py)" "スクリプトが見つかりません"
 fi
 
+# 4.14.1. スキルが参照する MCP ツールと permissions.allow の突合（base#618・L-169）
+#        allow に無い MCP ツールは無人ルーティンで承認プロンプトになり、応答者不在のまま処理が止まる。
+#        参照側（.claude/skills / .claude/commands の Markdown）と許可側（.claude/settings.json）の
+#        ローカルファイルしか見ないためネットワーク非依存（本判定も self-test も両方配線する）。
+if [ -f "$REPO_ROOT/tools/check_mcp_allowlist.py" ]; then
+  run_check "MCP allowlist 突合 (check_mcp_allowlist.py)" python3 tools/check_mcp_allowlist.py
+  run_check "MCP allowlist 突合 self-test (check_mcp_allowlist.py --self-test)" python3 tools/check_mcp_allowlist.py --self-test
+else
+  skip_check "MCP allowlist 突合 (check_mcp_allowlist.py)" "スクリプトが見つかりません"
+fi
+
 # 4.15. 共有モジュールの内部実装 drift 検査（Issue #762）
 #        共有モジュール（tools/git_diff_utils.py 等）の内部実装を変えたのに、その実装を docstring /
 #        コメントで説明している利用側ファイルが同じ差分に無いときに警告する。説明文の腐りは公開 API が
