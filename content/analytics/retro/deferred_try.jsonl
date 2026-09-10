@@ -516,3 +516,10 @@
 {"date":"2026-09-09 JST","title":"code-review スキルの Spec 忠実性ファインダーに、対象 Issue の本文だけでなくコメント履歴も読ませる","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-09 JST","title":"retro-try-handler の PR バンドル判定（ファイル非重複）を着手前に機械検査する","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
 {"date":"2026-09-09 JST","title":"Layer 1 セルフレビューで REJECTED と判定した指摘の反証根拠を蓄積し、ファインダーの精度改善に使う","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-10 JST","title":"TaskOutput生JSONLトランスクリプトのトークン効率化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-10 JST","title":"セキュリティ検査実装の委譲プロンプト必須項目強化（攻撃パターン表・#474拡張）","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-10 JST","title":"機密ファイルガードのセキュリティ設計判断（ネスト深度上限・CRITICAL是正の根拠）をコメント/ドキュメントへ明記","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-10 JST","title":"複雑なBash処理の実装期間中スポットチェック導入","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-10 JST","title":"機密ファイルガードの穴番号とテストケースの同期索引化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-10 JST","title":"_sfa_candidate_tokens_all の5系統コメントを詳細化","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
+{"date":"2026-09-10 JST","title":"_sfa_dequote_command 等ヘルパー関数の単体テスト環境整備","q1":"NO","q2":"NO","defer_reason":"medium","related_issue":null}
