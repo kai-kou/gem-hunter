@@ -167,7 +167,7 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
 
 6-c: 常駐ルール合算サイズチェック
   └─ cat .claude/rules/*.md | wc -c で symlink 先の実体合算を集計
-  └─ token-optimization-rules.md の Hot 層予算（現行 ~65KB / ~16,300 トークン・#324 改定）と突き合わせ
+  └─ token-optimization-rules.md の Hot 層予算と突き合わせ（🔴 **基準は同ファイル「予算の増減ログ」の最新行**＝本リポジトリの実測値。ベース側の記録値をここに転記しない・`apply-base` SKILL.md §6。機械判定は `python3 tools/check_hot_budget.py`）
   └─ 予算超過 → Warning（Warm 降格 or 既存ファイルの追加圧縮を提案）
   └─ 降格提案には必ず「代替の強制レイヤ（ハーネス / スキル / ツール）が実在するか」の確認を添える
 
