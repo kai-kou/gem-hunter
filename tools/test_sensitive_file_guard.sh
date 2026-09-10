@@ -97,6 +97,36 @@ run block 'head $(echo ~/.aws/credentials)'
 # `` `...` `` 版と `$(...)` 版の非対称解消（従来はバッククォート版だけ偶然ブロックされていた）
 run block 'cat `echo .env`'
 
+# #1091 の初版に残っていた2つの穴（Layer 1 セルフレビューが実測で検出）:
+# (a) ネストした $(...) は1回の sed 非再帰置換では最内側しか畳めず、外側の $(...) が
+#     `$(echo X)` の形で残ってトークンを打ち切る → `_sfa_flatten_substitutions` を不動点まで
+#     繰り返すループに変更して解消
+# (b) 置換全体をダブルクォートで囲む一般的なイディオム（`"$(pwd)"/.env`）はフラット化後も
+#     開きクォートが残りトークンを打ち切る → フラット化 → dequote した候補源を追加して解消
+echo "== BLOCK 期待（ネストした置換・クォート囲み置換・#1091 Layer1 追加指摘） =="
+run block 'cat $(echo $(pwd))/.env'
+run block 'cp $(echo $(pwd))/.env /tmp/x'
+run block 'ln -s $(echo $(pwd))/.ssh/id_rsa /tmp/copy'
+run block 'head $(echo $(pwd))/.aws/credentials'
+run block 'cat "$(pwd)"/.env'
+run block 'head "$(echo ~/.aws/credentials)"'
+
+# #1091 の初版は置換の中身を無条件に全トークン化していたため、ファイルに触れない自然文の言及
+# （`credentials` 等の単語を含むだけのコミットメッセージ）まで語境界一致で誤 BLOCK していた
+# （Layer 1 セルフレビューが実測: `git commit -m "$(echo update credentials rotation docs)"` が
+# rc=2 へ退行）。`_sfa_substitution_tokens` を「中身の最後の非フラグトークンのみ候補化」に
+# 変更し、`echo <path>` 型の典型的な難読化パターン（機密パスは最後の引数に来る）を維持しつつ
+# 自然文の誤検知を解消した。
+echo "== ALLOW 期待（置換内の自然文言及・#1091 Layer1 追加指摘の誤検知是正） =="
+run allow 'git commit -m "$(echo update credentials rotation docs)"'
+run allow 'echo $(echo the netrc format is documented here)'
+
+# 干渉検証（#725型）: 上記3対策（不動点ループ・flatten+dequote候補源・最終トークン限定）が
+# 組み合わさって動く複合ケースでも、各対策の効果が互いを阻害せず両立することを固定する
+echo "== BLOCK 期待（ネスト+クォート囲みの複合・誤検知是正後も機密パス検知が残ることの確認） =="
+run block 'cat "$(echo $(pwd))"/.env'
+run block 'echo $(echo the credentials rotation is documented at ~/.aws/credentials)'
+
 echo "== BLOCK 期待（.env ガード） =="
 run block 'cat .env'
 run block 'cat ../.env.production'

@@ -224,10 +224,16 @@ _sfa_tokenize_block() {
 #    `['\"]?` が剥がすので従来どおりブロックされる）。
 # バックスラッシュは新しいコマンド位置を作らない（`\cat` は上記文字クラスに一致しない）ため
 # 従来どおり全除去してよい。
-_sfa_dequote_command() {
-  printf '%s' "$COMMAND" \
-    | sed -e 's/\\//g' \
+#
+# 汎用本体（stdin を受ける）。`_sfa_dequote_command`（$COMMAND 用）と `_sfa_substitution_tokens`
+# （置換の中身用）の両方から同じロジックを呼ぶことで、正規化ルールの片方だけ改修される drift を防ぐ
+# （Layer 1 レビュー指摘・簡素化観点）。
+_sfa_dequote() {
+  sed -e 's/\\//g' \
     | sed -E ':a; s/([^[:space:];|&(`{])["'"'"']/\1/; ta'
+}
+_sfa_dequote_command() {
+  printf '%s' "$COMMAND" | _sfa_dequote
 }
 
 # コマンド置換ブロック（`$(...)` ・ `` ` ` ``）全体を中立プレースホルダへ畳んだフラット化コマンドを
@@ -235,11 +241,25 @@ _sfa_dequote_command() {
 # `cat $(pwd)/<対象>` のようなコマンドはトークンが `$(pwd` で切れ、置換の**外側**にある対象へ
 # 到達できない（`_sfa_substitution_tokens` は置換の**中身**しか見ないため同じく捕捉できない）。
 # 置換ブロック全体を中立文字 `X` へ畳めば、外側のパスがそのまま候補抽出の対象になる
-# （`cat $(pwd)/<対象>` → `cat X/<対象>`）。ネストした `$(...)` は非貪欲マッチのため内側の
-# 括弧までで畳まれるが、fail-closed 網としては目的に対し十分（#1083 のスコープ外のまま）。
+# （`cat $(pwd)/<対象>` → `cat X/<対象>`）。
+#
+# 🔴 **不動点に達するまで繰り返す**（Layer 1 セキュリティレビュー指摘・実測 CRITICAL）。1 回の
+#    `sed s///g` は非再帰置換のため、ネストした置換（`$(echo $(pwd))`）では最内側の 1 階層しか
+#    畳めず、外側の `$(...)` がプレースホルダ化されずに残る（`$(echo X)`）。この残った `$(` `)` が
+#    再び `_sfa_candidate_tokens` の終端文字クラスに引っかかりトークンを打ち切るため、2 重ネストで
+#    ガード全体（.env アクセス・ln 経由も含む）が完全に迂回できた（実測: `cat $(echo $(pwd))/.env` /
+#    `ln -s $(echo $(pwd))/.ssh/id_rsa x` 等が軒並み rc=0）。反復回数の上限（10 回）は通常の
+#    ネスト深度を大きく超える安全マージンであり、無限ループ防止のための保険。
 _sfa_flatten_substitutions() {
-  printf '%s' "$COMMAND" \
-    | sed -E 's/\$\([^()]*\)/X/g; s/`[^`]*`/X/g'
+  _sfa_flat="$COMMAND"
+  _sfa_iter=0
+  while [ "$_sfa_iter" -lt 10 ]; do
+    _sfa_prev="$_sfa_flat"
+    _sfa_flat=$(printf '%s' "$_sfa_flat" | sed -E 's/\$\([^()]*\)/X/g; s/`[^`]*`/X/g')
+    [ "$_sfa_flat" = "$_sfa_prev" ] && break
+    _sfa_iter=$((_sfa_iter + 1))
+  done
+  printf '%s' "$_sfa_flat"
 }
 
 # コマンド置換（`$(...)` ・ `` ` ` ``）の中身をトークン化して候補に追加する fail-closed の
@@ -253,14 +273,23 @@ _sfa_flatten_substitutions() {
 #    一部として展開されうる箇所）だけに絞ることで、通常のコミットメッセージ・ドキュメント編集は
 #    通しつつ、置換経由の展開だけを fail-closed で塞ぐ。
 # ⚠️ ネストした `$(...)` には対応しない（1階層のみ）。fail-closed 網としては目的に対し十分であり、
-#    ネスト対応は複雑さの割に再現ケースでは不要（#1083 のスコープ外のまま）。
+#    ネスト対応は複雑さの割に再現ケースでは不要（#1083 のスコープ外のまま。外側のネストは
+#    `_sfa_flatten_substitutions` 側の不動点ループが別途カバーする）。
 #
 # Issue #1091 で `.env` リテラル限定から汎用トークン抽出へ拡張した:
-#   - 穴2（置換の中身のクォート分断）: 中身にも `_sfa_dequote_command` と同じ正規化
-#     （語中クォート・バックスラッシュ除去）を適用してから判定する
-#   - 穴3（`.env` 以外の機密ファイル）: `.env` リテラル一致でなく中身を丸ごとトークン化して
+#   - 穴2（置換の中身のクォート分断）: 中身にも `_sfa_dequote`（`_sfa_dequote_command` と共通の
+#     正規化本体）を適用してから判定する
+#   - 穴3（`.env` 以外の機密ファイル）: `.env` リテラル一致でなく中身の**最後の非フラグトークン**を
 #     候補に出す。呼び出し元（_sfa_env_access / _sensitive_file_access）がそれぞれ自分の
-#     パターンで判定するため、本関数はどちらにも中立な候補集合を返せばよい
+#     パターンで判定するため、本関数はどちらにも中立な候補を返せばよい
+#
+# 🔴 **全トークンではなく最後の1トークンだけを候補にする**（Layer 1 セキュリティレビュー指摘・
+#    実測 CRITICAL/WARNING）。中身を無条件に全トークン化すると、`$(echo update credentials
+#    rotation docs)` のような「ファイルに触れない自然文の言及」まで `credentials` 等の語境界
+#    パターンに一致し広範囲に誤 BLOCK する（実測: `git commit -m "$(echo update credentials
+#    rotation docs)"` が rc=2 へ退行）。`echo <path>` 型の典型的な難読化パターンでは機密パスが
+#    最後の引数に来る（`.env` / `~/.ssh/id_rsa` 等）ため、最後のトークンに絞ることで穴2・穴3を
+#    維持しつつ自然文の誤検知を抑える。
 _sfa_substitution_tokens() {
   {
     printf '%s\n' "$COMMAND" | grep -oE '\$\([^()]*\)' | sed -E 's/^\$\(//; s/\)$//'
@@ -268,20 +297,29 @@ _sfa_substitution_tokens() {
   } | while IFS= read -r _sfa_sub; do
     [ -n "$_sfa_sub" ] || continue
     printf '%s' "$_sfa_sub" \
-      | sed -e 's/\\//g' \
-      | sed -E ':a; s/([^[:space:];|&(`{])["'"'"']/\1/; ta' \
-      | _sfa_tokenize_block
+      | _sfa_dequote \
+      | _sfa_tokenize_block \
+      | tail -n 1
   done || true
 }
 
 # 判定対象トークンの合算窓口（Issue #1083 / #1091）。生コマンド・正規化コマンド・フラット化コマンド・
-# コマンド置換の中身の4系統から候補を集める。呼び出し側（_sfa_env_access / _sensitive_file_access）は
-# 本関数だけを使う（射程: 生コマンド全体への語境界パターン + 置換の中身のトークンであり、
-# 「.env のみ」ではなく _sfa_env_access / _sensitive_file_access 双方の機密パターンに対して中立）。
+# 正規化フラット化コマンド・コマンド置換の中身の5系統から候補を集める。呼び出し側
+# （_sfa_env_access / _sensitive_file_access）は本関数だけを使う（射程: 生コマンド全体への
+# 語境界パターン + 置換の中身のトークンであり、「.env のみ」ではなく _sfa_env_access /
+# _sensitive_file_access 双方の機密パターンに対して中立）。
+#
+# 🔴 **フラット化コマンドにも dequote を適用したバージョンを別途候補にする**（Layer 1
+#    セキュリティレビュー指摘・実測 CRITICAL）。`cat "$(pwd)"/.env` のように置換全体をクォートで
+#    囲む一般的なイディオムでは、フラット化後も開きクォートが残り（`cat "X"/.env`）、
+#    `_sfa_candidate_tokens` の終端文字クラス（`)` `"` 含む）に引っかかって `X` の直後で
+#    トークンが打ち切られる（`.env` に到達できない）。フラット化 → dequote の順で正規化した
+#    コピーも候補源に加えることで、このクォート残留を解消する。
 _sfa_candidate_tokens_all() {
   _sfa_candidate_tokens "$COMMAND"
   _sfa_candidate_tokens "$(_sfa_dequote_command)"
   _sfa_candidate_tokens "$(_sfa_flatten_substitutions)"
+  _sfa_candidate_tokens "$(_sfa_flatten_substitutions | _sfa_dequote)"
   _sfa_substitution_tokens
 }
 
