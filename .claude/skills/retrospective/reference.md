@@ -5,7 +5,6 @@
 > クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
 > ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
 
-
 > SKILL.md の各 Step が参照する詳細プロンプト・コマンド・出力テンプレートをまとめた補助ドキュメント。
 > SKILL.md を汎用 KPT 手順中心に保つため、長文テンプレートは本ファイルに分離している（プログレッシブ・ディスクロージャ）。
 > 必要な Step を実行する直前に該当セクションだけを Read する。
@@ -21,7 +20,14 @@
 
 3 役割のサブエージェントに共通で渡すプロンプトの骨格。
 
+🔴 **骨格の前に「並行安全プリアンブル」を置く**: `Agent` 起動前に `docs/rules/agent-team-summary.md` の
+「並行安全プリアンブル」節を Read し、**その節のコードブロックの中身を実テキストのまま** 下の骨格の先頭へ
+展開する（本スキルの各役は読み取り専用なので、展開した直後に `ファイルの編集も禁止する。` を 1 行足す）。
+
 ```
+{並行安全プリアンブル（agent-team-summary.md の該当コードブロックを実テキストで展開）}
+ファイルの編集も禁止する。
+
 あなたは {プロジェクト名} のワークフローの{role}です。
 直近の {pipeline} パイプライン実行（対象: {entity_id}）を振り返り、
 KPT（Keep/Problem/Try）を以下の形式で出力してください。
@@ -84,6 +90,8 @@ KPT（Keep/Problem/Try）を以下の形式で出力してください。
 
 3 役割エージェントと **同時に並列起動** し、本人視点の一言評価を収集する。レビュー役・禁止事項・参照成果物はプロジェクトで定義する。
 
+🔴 下の 2 つのプロンプトにも、A と同じく **並行安全プリアンブルの実テキスト + `ファイルの編集も禁止する。`** を先頭へ展開する。
+
 **レビュー役A（Lv1・Sonnet・例: 技術正確性レビュー役）**:
 
 ```
@@ -122,11 +130,9 @@ KPT（Keep/Problem/Try）を以下の形式で出力してください。
 
 ```json
 {
-  "keep": [
-    {"title": "Keep アイテムのタイトル", "detail": "詳細説明"}
-  ],
+  "keep": [{ "title": "Keep アイテムのタイトル", "detail": "詳細説明" }],
   "problem": [
-    {"title": "Problem アイテムのタイトル", "detail": "詳細説明", "severity": "high|medium|low"}
+    { "title": "Problem アイテムのタイトル", "detail": "詳細説明", "severity": "high|medium|low" }
   ],
   "try": [
     {
@@ -144,21 +150,21 @@ KPT（Keep/Problem/Try）を以下の形式で出力してください。
 
 **urgency フィールドの定義**:
 
-| 値 | 意味 | 例 |
-|----|------|----|
-| `blocker` | パイプラインが止まる・データが壊れる致命的問題 | SSL エラー、タイムアウト、ファイル上書き |
-| `quality` | 品質に影響するが即座には止まらない問題 | 成果物品質の低下、整合ズレ（プロジェクト定義） |
-| `process` | 効率・自動化改善（品質には直接影響しない） | ソート順改善、ドキュメント構造整理 |
-| `doc-only` | 説明・コメント・ルール文書のみの更新 | SKILL.md のわかりにくい表現を修正 |
+| 値         | 意味                                           | 例                                             |
+| ---------- | ---------------------------------------------- | ---------------------------------------------- |
+| `blocker`  | パイプラインが止まる・データが壊れる致命的問題 | SSL エラー、タイムアウト、ファイル上書き       |
+| `quality`  | 品質に影響するが即座には止まらない問題         | 成果物品質の低下、整合ズレ（プロジェクト定義） |
+| `process`  | 効率・自動化改善（品質には直接影響しない）     | ソート順改善、ドキュメント構造整理             |
+| `doc-only` | 説明・コメント・ルール文書のみの更新           | SKILL.md のわかりにくい表現を修正              |
 
 **done_type フィールドの定義**:
 
-| 値 | 意味 | 対応カテゴリ |
-|----|------|------------|
-| `A-doc` | ドキュメント更新で完結（SKILL.md / docs/rules/*.md / CLAUDE.md） | doc / skill |
-| `B-script` | スクリプト実装が必要（`tools/*.py` / `tools/*.sh`） | script |
-| `C-validate` | フック/バリデーター追加が必要（`post-tool-use-validate.sh` 等） | validate |
-| `D-plan` | 実装計画のみ（large / 依存関係あり・今すぐ実装不可） | large issue |
+| 値           | 意味                                                             | 対応カテゴリ |
+| ------------ | ---------------------------------------------------------------- | ------------ |
+| `A-doc`      | ドキュメント更新で完結（SKILL.md / docs/rules/*.md / CLAUDE.md） | doc / skill  |
+| `B-script`   | スクリプト実装が必要（`tools/*.py` / `tools/*.sh`）              | script       |
+| `C-validate` | フック/バリデーター追加が必要（`post-tool-use-validate.sh` 等）  | validate     |
+| `D-plan`     | 実装計画のみ（large / 依存関係あり・今すぐ実装不可）             | large issue  |
 
 ---
 
@@ -168,6 +174,7 @@ Issue 作成前に、`type:retro-try` ラベルの既存 Issue と突合し、�
 検索は **Step 3-0 で取得済みの 2 リスト**（`open_list` / `closed_list`）に対して行い、Try ごとに API を叩き直さない。
 
 MCP（クラウド・一次経路・Step 3-0 で各 1 回だけ実行）:
+
 ```
 open_list   = mcp__github__list_issues(owner, repo, state="OPEN",   labels=["type:retro-try"])
 closed_list = mcp__github__list_issues(owner, repo, state="CLOSED", labels=["type:retro-try"], since={90 日前の ISO 8601 UTC})
@@ -176,6 +183,7 @@ closed_list = mcp__github__list_issues(owner, repo, state="CLOSED", labels=["typ
 ```
 
 判定順:
+
 1. `open_list` に類似あり → G（既存 Issue へコメント追記）
 2. 1 で一致なし、かつ `closed_list` に類似あり → `mcp__github__issue_read(method="get", issue_number={N})` で `state_reason` を確認する
    （類似ヒット時のみの追加 1 呼び出し）:
@@ -189,6 +197,7 @@ closed_list = mcp__github__list_issues(owner, repo, state="CLOSED", labels=["typ
 90 日窓（`since`）は closed Issue の全件検索コストを避けるための境界（数値の SSOT は `docs/rules/retrospective-rules.md`「WIP 制御」）。
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 gh issue list -R kai-kou/gem-hunter \
   --label "type:retro-try" \
@@ -201,12 +210,12 @@ gh issue list -R kai-kou/gem-hunter \
 
 以下のいずれかに該当する場合、**類似 Issue あり** と判定する:
 
-| 判定条件 | 例 |
-|---------|-----|
-| タイトルに **同じツール名・ファイル名** が含まれる | プロジェクト定義のツール・スクリプト名（例: `generate_*.py`） |
-| タイトルに **同じ品質指標・フィールド名** が含まれる | プロジェクト定義の品質指標・フィールド名（例: ドメイン固有の検証フラグ） |
-| タイトルに **同じワークフロー・ステップ名** が含まれる | 各パイプライン名・ステップ名（プロジェクト定義） |
-| タイトルに **同じ問題パターン** を指している | 「〜を検証する」「〜をチェックする」といった表現が同じ対象を指している |
+| 判定条件                                               | 例                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| タイトルに **同じツール名・ファイル名** が含まれる     | プロジェクト定義のツール・スクリプト名（例: `generate_*.py`）            |
+| タイトルに **同じ品質指標・フィールド名** が含まれる   | プロジェクト定義の品質指標・フィールド名（例: ドメイン固有の検証フラグ） |
+| タイトルに **同じワークフロー・ステップ名** が含まれる | 各パイプライン名・ステップ名（プロジェクト定義）                         |
+| タイトルに **同じ問題パターン** を指している           | 「〜を検証する」「〜をチェックする」といった表現が同じ対象を指している   |
 
 > **判定の迷い時の原則**: 同じファイル・ツール・フィールドを対象とした改善提案は、たとえ観点が少し異なっても「類似」として既存 Issue にまとめる。Issue の乱立を防ぎ、関連情報を一箇所に集約することを優先する。
 
@@ -243,7 +252,8 @@ gh issue list -R kai-kou/gem-hunter \
 このコメントをもって {N} 回目の検知となります。優先度の引き上げを検討してください。
 
 ---
-*レトロスペクティブスキルによる自動追記*
+
+_レトロスペクティブスキルによる自動追記_
 ```
 
 追記後、既存 Issue の番号を「コメント追記」として記録し、Step 5 の完了報告に含める。
@@ -303,8 +313,9 @@ body: （本文テンプレートに従って生成）
 - 参考ルールファイル: {関連する docs/rules/ のファイル名}
 
 ---
-*このIssueはレトロスペクティブスキルにより自動生成されました*
-*フィルタ: `type:retro-try` ラベル（クラウド: `mcp__github__list_issues(labels=["type:retro-try"])` / ローカル: `gh issue list -R kai-kou/gem-hunter --label "type:retro-try" --state open`）*
+
+_このIssueはレトロスペクティブスキルにより自動生成されました_
+_フィルタ: `type:retro-try` ラベル（クラウド: `mcp__github__list_issues(labels=["type:retro-try"])` / ローカル: `gh issue list -R kai-kou/gem-hunter --label "type:retro-try" --state open`）_
 ```
 
 ---
@@ -337,6 +348,7 @@ git push
 **根本原因**: {なぜ発生するのかの分析}
 
 **試して失敗したアプローチ**:
+
 - 初回発見のため記録なし
 
 **対策**: {効果的だった解決策、または「要調査」}
@@ -364,6 +376,7 @@ git push
 本スキルが作成した Try Issue は、以下のフィルタで次回実行時に取得・対応する（実際の対応は `retro-try-handler` スキルが担う）。
 
 MCP（クラウド・一次経路）:
+
 ```
 # 未対応の Try Issue を一覧取得（複数ラベルは OR のため単一ラベルで取得し client-side で AND 判定）
 mcp__github__list_issues(owner, repo, state="OPEN", labels=["type:retro-try"])
@@ -378,6 +391,7 @@ mcp__github__issue_write(method="update", issue_number=N, state="closed")
 ```
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 # 未対応の Try Issue を一覧取得
 gh issue list -R kai-kou/gem-hunter \
