@@ -631,6 +631,18 @@ else
   skip_check "セルフレビュー機械チェック (self_review_check.py)" "スクリプトが見つかりません"
 fi
 
+# 6.1. AI レビュー指摘トレンド分析 self-test（base#627 反映時に判定ロジックの内蔵テストが新設された）
+if [ -f "$REPO_ROOT/tools/analyze_pr_review_comments.py" ]; then
+  run_check "AI レビュー指摘分析 self-test (analyze_pr_review_comments.py --self-test)" python3 tools/analyze_pr_review_comments.py --self-test
+else
+  skip_check "AI レビュー指摘分析 self-test (analyze_pr_review_comments.py --self-test)" "スクリプトが見つかりません"
+fi
+if [ -f "$REPO_ROOT/tools/pr_review_trends.py" ]; then
+  run_check "PR レビュー指摘トレンド self-test (pr_review_trends.py --self-test)" python3 tools/pr_review_trends.py --self-test
+else
+  skip_check "PR レビュー指摘トレンド self-test (pr_review_trends.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
 
 # OpenNext アセット鮮度チェック self-test（Issue #454 / #455 / #457）。
