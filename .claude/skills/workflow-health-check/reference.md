@@ -45,6 +45,16 @@
 4-e: retrospective 起動
   └─ 4-c（ルールファイル更新）が commit + PR + マージまで完了した場合のみ、続けて
      `retrospective` スキルを起動する（KPT 生成と Try の Issue 化。ファイル変更が無い週は起動しない）
+
+4-f: Layer 1 計測の週次集計（base#627 対策 E・GitHub API 不要）
+  └─ `python3 tools/layer1_findings_report.py --weeks 4` を実行し、指摘ゼロ PR 率・CONFIRMED / PR・観点別・
+     PR 前レビューの修正数・「同種指摘 2 回以上」候補を週次レポートの「Layer 1 計測」表に転記する
+  └─ 同種指摘候補（2 つ以上の PR で同カテゴリ）→ docs/rules/self-review-checklist.md に行を追加し、
+     機械化可能なら tools/self_review_check.py にチェックを追加（同一 PR で・L-094）。
+     その場で着手しない候補は type:improvement Issue に候補一覧と根拠（PR・path:line）を記録する
+  └─ 指摘ゼロ PR 率が目標 60% 未満（Issue base#627 §4）のまま 4 週連続 → 原因 1 行（増えている観点 / カテゴリ）を
+     週次レポートに記載し、対策 A〜D のどこを直すかを type:improvement Issue にする
+  └─ JSONL が 4 週間更新されていない → code-review Step 3-C の記録が抜けている（Warning・スキルの desync を疑う）
 ```
 
 ## Step 5: フィードバックループ健全性チェック（完全版のみ）
@@ -217,6 +227,15 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
 
 ### 検出された繰り返しパターン
 - {パターン}: {今週N回目} → {対応中 or retro-try Issue #N に記録}
+
+### Layer 1 計測（4-e・`python3 tools/layer1_findings_report.py --weeks 4` の出力を転記）
+| 指標 | 値 | 判定 |
+|------|-----|------|
+| 指摘ゼロ PR 率（直近週 / 4 週平均） | {N}% / {M}% | OK / Warning（60% 未満が 4 週連続で Warning） |
+| CONFIRMED / PR 中央値（PR 後ラウンド 1） | {N} | OK / Warning（3 超で Warning） |
+| PR 前レビュー（件 / PR 前に修正） | {N} / {M} | — |
+| 観点別 CONFIRMED（上位 3・直近週 / 前週） | {観点} {N} / {M}、{観点} {N} / {M}、{観点} {N} / {M} | OK / Warning（同じ観点が 2 週連続で増加） |
+| 同種指摘候補（カテゴリ一致 2 PR 以上・粗い束ねは 3 PR 以上） | {N} 件 | 反映済み / Issue #N |
 
 ### フィードバックループ健全性（Step 5）
 | 指標 | 値 | 判定 |

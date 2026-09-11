@@ -60,7 +60,7 @@ workflow run を作らない）により check run が生成されない。こ�
 ## Layer 2 レビュー自動起動（Issue #97・ネイティブ化 #193）
 
 PR 作成・AI レビュー依頼の直後に `discussion_review_trigger.py`（要否判定器）を呼び出す。
-差分 ≥300行 または `type:security`/`type:breaking-change` ラベル付きの PR には
+差分 ≥300行 / `type:security`・`type:breaking-change` ラベル / `high_risk` 差分（base#627）の PR には
 自動的に Layer 2 議論型レビューを追加実行する。
 
 クラウド環境（gh CLI 不可）では `mcp__github__pull_request_read` で取得した値を渡す:

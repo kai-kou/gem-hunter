@@ -8,19 +8,21 @@
 > 出自プロジェクト（動画制作）の実例**。自プロジェクトの成果物種別のチェック項目に読み替える
 > （汎用的に効くのはセクション構成と「頻出指摘を機械化して 1 枚ものに集約する」運用）。
 >
-> - **機械チェック**: `python3 tools/self_review_check.py` が一括実行する（フック `pre-pr-create-check.sh` からも自動実行）
+> - **機械チェック**: `python3 tools/self_review_check.py` が一括実行する（フック `pre-pr-create-check.sh` からも自動実行）。構文検査（`bash -n` / Python）・変更ツールの `--self-test` と対応 `tools/test_<name>.sh` の自動実行・CJK 半角スペース・危険パターンを含む（base#627 で構文検査と対応テストを追加）
+> - **PR 前フレッシュ文脈レビュー**: `self-reviewer` Step 3.5（`Skill(code-review)` の `--pre-pr` モード）。較正は `REVIEW.md`（base#627）
 > - **目視チェック**: 機械化できない項目。変更カテゴリに該当する行だけ確認すればよい
 > - 詳細な検出手順・修正候補は `.claude/skills/self-reviewer/SKILL.md`、個別パターンの経緯は プロジェクト定義の自己レビュー教訓ファイル（出自プロジェクトでは `docs/rules/self-review-learnings.md`（P-XX）等）を参照 <!-- refcheck:ignore -->
 > - 分析レポート（データの根拠）: `docs/analysis/pr-review-comments-analysis-2026-06.md` <!-- refcheck:ignore -->
 > - **運用ルール**: 新しい頻出パターン（同種指摘 2 回以上）を発見したら、本シート + `self_review_check.py`（機械化可能な場合）を **同一 PR で** 更新する（L-094 desync 防止）
 >
-> ### 分析ツールの責務境界（混同しない・Issue #2905）
+> ### 分析ツールの責務境界（混同しない・Issue base#2905）
 > | ツール | 役割 | 出力 |
 > |--------|------|------|
 > | `tools/analyze_pr_review_comments.py` | **全期間累積** スナップショット・本シート反映の判断材料（カテゴリ別件数） | `docs/analysis/pr_review_stats_*.json` |
 > | `tools/pr_review_trends.py` | **週次フローの時系列**・セルフレビューが効いているかの可視化（指摘ゼロPR率の推移を週次で Slack グラフ投稿） | `content/analytics/pr_review_trends.jsonl` |
+> | `tools/record_layer1_findings.py` → `tools/layer1_findings_report.py` | **Layer 1 / PR 前レビューの実測**（GitHub API 不要・クラウドでも成立・base#627 対策 E）。`code-review` がレビューごとに追記し、週次で指摘ゼロ PR 率・CONFIRMED / PR・同種指摘候補を集計（`workflow-health-check` 4-e） | `content/analytics/review/layer1_findings.jsonl` |
 >
-> severity / AIレビュアー判定ロジックは前者が SSOT で、後者は import 再利用する。主指標「指摘ゼロPR率」の分母は **週内マージ全PR数**（指摘ゼロPR も含む）であり、`prs_with_comments`（指摘付きPRのみ）を分母にしない（比率が下がらず無意味になるため・技術監修役指摘）。
+> severity / AI 指摘判定ロジックは前者が SSOT で、後者は import 再利用する。AI 指摘の判定は **Layer 1 セルフレビューのテンプレート本文**（`**🔴 CRITICAL** ・ **CONFIRMED**`）で行い、廃止済みの Gemini / Copilot のログイン名判定は `--legacy-reviewers` を付けたときだけ併用する（base#627 対策 E）。主指標「指摘ゼロPR率」の分母は **週内マージ全PR数**（指摘ゼロPR も含む）であり、`prs_with_comments`（指摘付きPRのみ）を分母にしない（比率が下がらず無意味になるため・技術監修役指摘）。
 
 ---
 
@@ -44,8 +46,13 @@
 | ☐ | 未コミット・未追跡・未 push がないか | 機械（フック） | フックでブロック済み |
 | ☐ | タスク外ファイルが diff に混入していないか（`git diff origin/main...HEAD --name-only`） | 目視 | `core-principles.md` CP-1（スコープ外の改善は別 Issue を立ててから着手する） |
 | ☐ | リポジトリ名・パス・コマンドの typo（gem-hunter の末尾 i 重複等） | 機械 | 実指摘あり（誤操作リスク） |
-| ☐ | 対象 Issue の Done Criteria（Issue 本文または最初のコミットメッセージのいずれかに記載）を diff が満たしているか（どちらにも未記載なら理由を1行記録してスキップ） | 目視 | self-reviewer SKILL.md Step 1 追加（verification loops 記事の spec validation 縮小採用・#297・#302） |
-| ☐ | **`Sprint Goal:` 行のある PR で `Closes` / `Fixes` / `Resolves #N` を書いていないか**（書くとマージ時点で Issue が閉じ、スプリントレビューとレトロが実施されないまま迷子になる） | **機械**（PR 本文は `self_review_check.py` の `sprint_pr_closes_detection()` が Error でブロック）+ 目視（**マージコミット本文** は機械検査の対象外。`merge_pull_request` の `commit_message` を自分で確認する） | `pr-review-watcher` SKILL.md Step 5 / Step 7（SP-15 事故の再発防止） |
+| ☐ | 対象 Issue の Done Criteria（Issue 本文または最初のコミットメッセージのいずれかに記載）を diff が満たしているか（どちらにも未記載なら理由を1行記録してスキップ） | 目視 | self-reviewer SKILL.md Step 1 追加（verification loops 記事の spec validation 縮小採用・base#297・base#302） |
+| ☐ | **PR 前フレッシュ文脈レビューを通したか**（`has_code` または `high_risk` の差分。データのみはスキップ。`self-reviewer` Step 3.5 → `Skill(code-review)` を `--pre-pr` で実行 → CONFIRMED を修正 → PR 本文に `PR 前レビュー:` 1 行） | 機械（フックが記録欠落を Warning） | base#627（直近 22 PR の指摘 121 件は修正率 79%・同一文脈チェックの死角。対照例 base#586 は PR 後 0 件） |
+| ☐ | 新規・変更したチェッカー / ガード / フックに「ロジックを外すと落ちる」否定テストがあるか（テストが緑でも、そのテストが何を検出できないかを 1 回問う） | 目視 + 機械（対応 `tools/test_<name>.sh` を自動実行） | base#627（テスト・検証欠落 16%。vacuous test の実例 base#550） |
+| ☐ | fail-open になっていないか（読めない・解析できない入力で黙ってスキップしていないか）。既存の fail-closed 方針と一貫しているか | 目視 | base#627（実例 base#577 / base#579） |
+| ☐ | ドキュメントに書いた件数・数値・手順が差分後の実測値と一致しているか（テストや項目を追加したら数字も更新する） | 目視 | base#627（ドキュメント整合 17%。実例 base#619 の回帰テスト件数） |
+| ☐ | 「議論で合意した」「完了条件は別 Issue へ送る」と書くとき、その根拠（Issue / 議論記録の該当箇所）を実際に開いて確認したか | 目視 | base#627（Spec 忠実性 9%。実例 base#619） |
+| ☐ | 許可リスト（`permissions.allow` 等）への追加は、そのコマンドで何が書き換え・読み出し可能になるかまで確認したか | 目視 | base#627（セキュリティ 21%。実例 base#547） |
 
 ## 1. 台本・コンテンツ（`content/scripts/` `content/meta/`）
 
@@ -80,11 +87,11 @@
 | ☐ | 正規表現: エスケープ漏れ・量指定子の意図（`grep -E` の要否） | 目視 | 134 件 |
 | ☐ | 条件式・境界値のロジック確認（off-by-one・否定の反転） | 目視 | 135 件 |
 | ☐ | DRY: if/else 両ブランチ重複・既存関数の再発明 | 目視 | 129 件（P-19） |
-| ☐ | 秘匿情報（トークン・Cookie・パスワード）のハードコード | **機械**（一部・`scan_dangerous_patterns.py` DP201・Warning）+ 目視 | 123 件（#56 で資格情報代入を機械化） |
-| ☐ | コマンドインジェクション・任意コード実行（`shell=True`+非定数・`eval`/`exec`・`os.system`・`pickle.load`・`yaml.load` 非 Safe） | **機械**（`scan_dangerous_patterns.py` DP101-106・Error でブロック） | #56（FAIR Layer 0 強化・動作確認 #55 で見逃し検出） |
+| ☐ | 秘匿情報（トークン・Cookie・パスワード）のハードコード | **機械**（一部・`scan_dangerous_patterns.py` DP201・Warning）+ 目視 | 123 件（base#56 で資格情報代入を機械化） |
+| ☐ | コマンドインジェクション・任意コード実行（`shell=True`+非定数・`eval`/`exec`・`os.system`・`pickle.load`・`yaml.load` 非 Safe） | **機械**（`scan_dangerous_patterns.py` DP101-106・Error でブロック） | base#56（FAIR Layer 0 強化・動作確認 base#55 で見逃し検出） |
 | ☐ | 並行セッション競合（ローカルファイル排他・TOCTOU） | 目視 | 90 件（CP-4） |
 | ☐ | ハードコード値の定数化・出所コメント | 目視 | 86 件 |
-| ☐ | 変更した `tools/`・`scripts/` の Python ファイルが `--self-test` を持つ場合、その self-test が通るか | **機械**（`self_review_check.py` の `self_test_errors()`・Error でブロック。`SELF_REVIEW_SELFTEST=warn` で非ブロック化可） | base#508 |
+| ☐ | 変更した `tools/`・`scripts/` の Python ファイルが `--self-test` を持つ場合、その self-test が通るか | **機械**（`self_review_check.py` の `self_test_errors()`・Error でブロック。`SELF_REVIEW_SELFTEST=warn` で非ブロック化可） | Issue base#508 |
 
 ## 4. ドキュメント・スキル（`docs/` `.claude/` `CLAUDE.md`）
 
@@ -95,17 +102,16 @@
 | ☐ | ドキュメントと実装（コード/SKILL.md）の乖離がないか（変更したら参照元も更新） | 目視 | 116 件（L-094） |
 | ☐ | gh コマンドは `-R kai-kou/gem-hunter` 統一（`--repo` 不可） | **機械** | CLAUDE.md 規約 |
 | ☐ | 既存 SSOT との重複定義を作っていないか（要約を置くなら SSOT 参照を併記） | 目視 | L-095 |
-| ☐ | 配布対象ドキュメント（`docs/rules/` `.claude/skills/`）の新規記述で Issue/PR 番号を **単独の論拠** にしていないか（番号は下流リポジトリでは別 Issue を誤指しする。恒久的に意味が通る説明を本文に書き、番号は出典補足に留める） | 目視 | Issue #211（下流誤リンク） |
+| ☐ | 配布対象ドキュメント（`docs/rules/` `.claude/skills/`）の新規記述で Issue/PR 番号を **単独の論拠** にしていないか（番号は下流リポジトリでは別 Issue を誤指しする。恒久的に意味が通る説明を本文に書き、番号は出典補足に留める） | 目視 | Issue base#211（下流誤リンク） |
 | ☐ | CJK 強調記法の前後半角スペース（`python3 tools/check_cjk_markdown.py --fix --changed` で自動整形） | **機械** | CLAUDE.md 規約（旧「目視」ですり抜け頻発 → 機械化） |
-| ☐ | GFM テーブルの列数不整合・**終端パイプの後ろに書いた内容の取りこぼし**（`python3 tools/check_markdown_table_columns.py --changed`。GitHub は行末パイプより後ろを黙って表示しない） | **機械** | CLAUDE.md 規約（目視では気づけない silent drop の再発防止） |
 
 ## 5. Remotion / TypeScript（`remotion/`）
 
 | ✓ | チェック項目 | 検証 | 根拠 |
 |---|------------|------|------|
-| ☐ | `Root.tsx` / `data/index.ts` への動画 ID 登録漏れ | 目視 + grep | #550 |
+| ☐ | `Root.tsx` / `data/index.ts` への動画 ID 登録漏れ | 目視 + grep | base#550 |
 | ☐ | fullscreenCueIds が lineId（数値文字列）か | 目視 + SKILL 3-7 | L-039 |
-| ☐ | title_call テーマ画像ゲート（`python3 tools/check_theme_image.py --video V{ID}`） | 機械（別ツール） | #2677 |
+| ☐ | title_call テーマ画像ゲート（`python3 tools/check_theme_image.py --video V{ID}`） | 機械（別ツール） | base#2677 |
 | ☐ | imageMap に backgrounds/ パスが混入していないか | grep | design-spec |
 
 ---
@@ -122,5 +128,5 @@
 
 1. PR マージ後、self-reviewer スキル Step F-1〜F-4（AI レビュー指摘の学習）を実行する
 2. 同種指摘が 2 回以上 → 本シートに行を追加 + 機械化可能なら `self_review_check.py` にチェックを追加（**同一 PR で**）
-3. 同種指摘が 3 回以上 → Lv3 フックへの昇格を検討（`docs/rules/harness-escalation.md`。Lv4 CI は現時点不採用・飼い主決定 #298 のため昇格先にしない）
-4. **週次定期再分析（自動スケジュール済み・Issue #2870/#2900）**: 毎週月曜の 07:00 スロット ⑤.7 で `python3 tools/analyze_pr_review_comments.py --report` を実行し、前週比デルタ（カテゴリ +10 件/週以上・新出カテゴリ・機械化済みカテゴリの増加）を確認して本シート + チェッカーを更新する。週 ~90 PR ペースのため週次でないと同種指摘が頻発する。手順詳細は プロジェクト定義のスケジューリング詳細ファイル（例: `{プロジェクト定義: hourly-routing 相当}` ⑤.7 等）、分類ルールの正本は `config/pr_review_comment_categories.json`（無い/壊れている場合のみ同ツールの `DEFAULT_CATEGORY_RULES` にフォールバック・#420）
+3. 同種指摘が 3 回以上 → Lv3 フックへの昇格を検討（`docs/rules/harness-escalation.md`。Lv4 CI は現時点不採用・飼い主決定 base#298 のため昇格先にしない）
+4. **週次定期再分析（自動スケジュール済み・Issue base#2870/base#2900）**: 毎週月曜の 07:00 スロット ⑤.7 で `python3 tools/analyze_pr_review_comments.py --report` と `python3 tools/layer1_findings_report.py --weeks 4`（Layer 1 実測・同種指摘 2 回以上の候補・base#627 対策 E）を実行し、前週比デルタ（カテゴリ +10 件/週以上・新出カテゴリ・機械化済みカテゴリの増加）を確認して本シート + チェッカーを更新する。週 ~90 PR ペースのため週次でないと同種指摘が頻発する。手順詳細は プロジェクト定義のスケジューリング詳細ファイル（例: `{プロジェクト定義: hourly-routing 相当}` ⑤.7 等）、分類ルールの正本は `config/pr_review_comment_categories.json`（無い/壊れている場合のみ同ツールの `DEFAULT_CATEGORY_RULES` にフォールバック・base#420）
