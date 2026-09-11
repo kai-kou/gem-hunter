@@ -346,10 +346,10 @@ def render_matplotlib(rows: "dict[str, dict]", out_path: Path) -> bool:
         # パネル1: 指摘ゼロ PR 率（主指標・0-100% 固定・4週移動平均）
         ax = axes[0]
         ax.plot(x, [v if v is not None else float("nan") for v in zero_rate],
-                marker="o", color="base#2e7d32", label="指摘ゼロPR率")
+                marker="o", color="#2e7d32", label="指摘ゼロPR率")
         ma = _moving_avg(zero_rate)
         ax.plot(x, [v if v is not None else float("nan") for v in ma],
-                linestyle="--", color="base#81c784", label="4週移動平均")
+                linestyle="--", color="#81c784", label="4週移動平均")
         ax.set_ylim(0, 100)
         ax.set_ylabel("指摘ゼロPR率 (%)")
         ax.set_title("① 指摘ゼロでマージされたPRの割合（右肩上がり = セルフレビューが効いている）")
@@ -358,7 +358,7 @@ def render_matplotlib(rows: "dict[str, dict]", out_path: Path) -> bool:
 
         # パネル2: PR あたり指摘数（Layer 1 が主系列。旧 Gemini / Copilot は _reviewer_series が選んだときだけ描く）
         ax = axes[1]
-        styles = {"layer1": ("o", "base#6a1b9a", "Layer 1 /PR"), "gemini": ("s", "base#1565c0", "Gemini /PR（旧）"),
+        styles = {"layer1": ("o", "#6a1b9a", "Layer 1 /PR"), "gemini": ("s", "#1565c0", "Gemini /PR（旧）"),
                   "copilot": ("^", "#ef6c00", "Copilot /PR（旧）")}
         for key, vals in series.items():
             marker, color, label = styles[key]
@@ -422,7 +422,7 @@ def render_pillow(rows: "dict[str, dict]", out_path: Path) -> bool:
             rate = r.get("zero_comment_pr_rate")
             h = int((rate or 0) * max_h)
             x = x0 + i * (bw + gap)
-            color = "#bdbdbd" if rate is None else "base#2e7d32"
+            color = "#bdbdbd" if rate is None else "#2e7d32"
             d.rectangle([x, base_y - h, x + bw, base_y], fill=color)
             pct = "-" if rate is None else f"{rate*100:.0f}%"
             d.text((x, base_y - h - 18), pct, fill="black", font=font)
