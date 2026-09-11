@@ -631,6 +631,18 @@ else
   skip_check "セルフレビュー機械チェック (self_review_check.py)" "スクリプトが見つかりません"
 fi
 
+# 6.1 Layer 1 レビュー計測ループ self-test（#627 対策 E・JSONL 記録・週次集計）
+if [ -f "$REPO_ROOT/tools/record_layer1_findings.py" ]; then
+  run_check "Layer 1 指摘記録 self-test (record_layer1_findings.py --self-test)" python3 tools/record_layer1_findings.py --self-test
+else
+  skip_check "Layer 1 指摘記録 self-test (record_layer1_findings.py --self-test)" "スクリプトが見つかりません"
+fi
+if [ -f "$REPO_ROOT/tools/layer1_findings_report.py" ]; then
+  run_check "Layer 1 指摘週次集計 self-test (layer1_findings_report.py --self-test)" python3 tools/layer1_findings_report.py --self-test
+else
+  skip_check "Layer 1 指摘週次集計 self-test (layer1_findings_report.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 7. 運用ツール self-test（ネットワーク不要・PR #235 WARNING）
 
 # OpenNext アセット鮮度チェック self-test（Issue #454 / #455 / #457）。
