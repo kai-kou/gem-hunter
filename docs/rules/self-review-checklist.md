@@ -104,6 +104,7 @@
 | ☐ | 既存 SSOT との重複定義を作っていないか（要約を置くなら SSOT 参照を併記） | 目視 | L-095 |
 | ☐ | 配布対象ドキュメント（`docs/rules/` `.claude/skills/`）の新規記述で Issue/PR 番号を **単独の論拠** にしていないか（番号は下流リポジトリでは別 Issue を誤指しする。恒久的に意味が通る説明を本文に書き、番号は出典補足に留める） | 目視 | Issue base#211（下流誤リンク） |
 | ☐ | CJK 強調記法の前後半角スペース（`python3 tools/check_cjk_markdown.py --fix --changed` で自動整形） | **機械** | CLAUDE.md 規約（旧「目視」ですり抜け頻発 → 機械化） |
+| ☐ | GFM テーブルの列数不整合・**終端パイプの後ろに書いた内容の取りこぼし**（`python3 tools/check_markdown_table_columns.py --changed`。GitHub は行末パイプより後ろを黙って表示しない） | **機械** | CLAUDE.md 規約（目視では気づけない silent drop の再発防止） |
 
 ## 5. Remotion / TypeScript（`remotion/`）
 
