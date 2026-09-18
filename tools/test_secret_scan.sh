@@ -155,6 +155,19 @@ _pf=$(jq -nc --arg t "$GH_TOKEN_FAKE" '{tool_name:"mcp__github__push_files",tool
 [ "$(router_rc "$_pf")" -eq 2 ] && report ok "mcp__github__push_files（tool_input に秘密）を exit 2 でブロックする" || report ng "push_files の秘密入り内容を exit 2 でブロックしない"
 _pf=$(jq -nc '{tool_name:"mcp__github__create_or_update_file",tool_input:{owner:"o",repo:"r",branch:"b",message:"m",path:"docs/a.md",content:"hello"}}')
 [ "$(router_rc "$_pf")" -eq 0 ] && report ok "秘密が無ければ create_or_update_file を通す（exit 0）" || report ng "秘密が無いのに create_or_update_file を通さない"
+_pf=$(jq -nc --arg t "$GH_TOKEN_FAKE" '{tool_name:"mcp__github__push_files",tool_input:{owner:"o",repo:"r",branch:"b",message:("token = " + $t),files:[{path:"a.txt",content:"clean"}]}}')
+[ "$(router_rc "$_pf")" -eq 2 ] && report ok "mcp__github__push_files（ファイル内容ではなく message フィールドに秘密）を exit 2 でブロックする（#1130 CRITICAL 修正）" || report ng "message フィールドの秘密を検査せず通した"
+
+# ── 5.1: --no-verify の曖昧でない省略形・core.hooksPath のセグメント限定（#1130 委譲修正） ──
+echo "[5.1] --no-verify の省略形検知と core.hooksPath のセグメント限定"
+expect_block 'git add -A && git commit --no-verif -m x' "git commit --no-verif（曖昧でない 9 文字の省略形）をブロックする（修正前は素通りしていた）" "--no-verif の省略形が素通りした"
+expect_block 'git commit -m x --no-verif' "--no-verif がコミットメッセージ以外の位置にあってもブロックする" "位置違いの --no-verif を通した"
+expect_block 'git commit --no-verify=true -m x' "--no-verify=… のような値付きの形も = より前で判定してブロックする（防御的）" "--no-verify=… を通した"
+expect_allow 'git commit --no-ver -m x' "--no-ver（8 文字・git 自身が --no-verbose と曖昧で拒否する長さ）は誤ってブロックしない" "git が受理しない省略形まで誤ブロックした"
+CMD_QUOTED_COMMIT='git push -m "ready to commit later" && cd '"$OTHER"' && git commit -m "real change"'
+expect_block "$CMD_QUOTED_COMMIT" "コミットメッセージ中の『commit』という語に釣られず、cd 後の実際の commit 先（別リポジトリ）の秘密を検知する（#1130 CRITICAL: target_dir のクォート誤マッチ修正）" "クォート内の語に釣られて実際の commit 先を検査せず秘密を見逃した（fail-open）"
+CMD_UNRELATED_HOOKSPATH='git -c core.hooksPath=/tmp/x status && git commit -m fix'
+expect_allow "$CMD_UNRELATED_HOOKSPATH" "commit を含まない別セグメントの -c core.hooksPath には反応せず、後続のクリーンな commit を誤ブロックしない（#1130 WARNING 修正）" "無関係なセグメントの core.hooksPath で正当な commit を誤ブロックした"
 
 # ── 6: pre-git-push-check.sh ──
 echo "[6] push 前の未 push 差分検査"

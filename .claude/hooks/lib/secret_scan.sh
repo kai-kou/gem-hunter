@@ -13,16 +13,30 @@
 #   secret_scan_join_lines <command>             → バックスラッシュ + 改行の継続行を 1 行に連結して stdout に返す
 #                                                  （grep の行単位判定を継続行で回避されないようにする）
 #   secret_scan_target_dir <command> <verb>      → `git … <verb>`（verb = commit | push）が実行されるディレクトリを
-#                                                  コマンド文字列から静的に解決して stdout に返す。同一セグメントの
-#                                                  `git -C <dir>` を最優先、無ければ **その直前までの最後の `cd <dir>`**
-#                                                  （`cd A && cd B && git commit` は B。verb より後ろの `cd` は無視）。
-#                                                  変数展開・チルダ・不在パスは解決不能として空文字を返す
-#                                                  （呼び出し側は cwd のリポジトリへフォールバック）
-#   secret_scan_commit_bypass <command>          → `git commit` の pre-commit 無効化（`--no-verify` / `-n` を含む短縮フラグ束 /
-#                                                  `-c core.hooksPath=…`）を **shlex でトークン化してから** 判定する。
+#                                                  コマンド文字列から **shlex でトークン化してから** 静的に解決して
+#                                                  stdout に返す。同一セグメントの `git -C <dir>` を最優先、無ければ
+#                                                  **その直前までの最後の `cd <dir>`**（`cd A && cd B && git commit` は
+#                                                  B。verb より後ろの `cd` は無視）。トークン化により、クォート内の
+#                                                  語（コミットメッセージ等）を verb と誤マッチしない（#1130 CRITICAL
+#                                                  修正: 旧実装はクォートを無視した sed 分割で `git push -m "ready to
+#                                                  commit later" && cd X && git commit …` のメッセージ中の "commit" を
+#                                                  誤って verb=commit にマッチさせ、実際の commit 先 X を検査しないまま
+#                                                  break していた）。変数展開・チルダ・不在パスは解決不能として空文字を
+#                                                  返す（呼び出し側は cwd のリポジトリへフォールバック）
+#   secret_scan_commit_bypass <command>          → `git commit` の pre-commit 無効化（`--no-verify` の曖昧でない省略形 /
+#                                                  `-n` を含む短縮フラグ束 / `-c core.hooksPath=…`）を **shlex でトークン化
+#                                                  してから、commit を含む同一セグメントに絞って** 判定する。
 #                                                  戻り値 0 = 無効化あり / 1 = なし / 2 = クォート不整合で解析不能。
 #                                                  正規表現でクォート内を落とす方式は `-m 'say "x' --no-verify -m 'y"'` のように
-#                                                  クォート種が交互に現れると実フラグごと消えるため使わない（#680 Layer 1 指摘）
+#                                                  クォート種が交互に現れると実フラグごと消えるため使わない（#680 Layer 1 指摘）。
+#                                                  `--no-verify` は完全一致だけでなく、git 自身が一意に解決する曖昧でない
+#                                                  省略形（実測: git 2.43.0 で最短 9 文字の `--no-veri`。8 文字の
+#                                                  `--no-ver` は `--no-verbose` と衝突し git が ambiguous option で拒否する）
+#                                                  も検知する（`--no-verif` 等の中間省略形が素通りしていた #1130 CRITICAL 修正）。
+#                                                  `-c core.hooksPath=…` の判定は commit を含むセグメントに限定する
+#                                                  （`git -c core.hooksPath=/tmp/x status && git commit -m fix` のように
+#                                                  無関係な別セグメントの `-c` へ誤反応し、正当な commit を誤ブロックして
+#                                                  いた #1130 WARNING 修正）
 #   stage_all_except_secrets <repo_root> [pathspec...]
 #                                                → `git add -A -- . [pathspec...]` した後、検知したパスを
 #                                                  アンステージする（自動保全コミット用・作業保全は維持し
@@ -58,29 +72,96 @@ secret_scan_join_lines() {
 }
 
 secret_scan_target_dir() {
-  local command="$1" verb="$2" joined segments seg last_cd="" dir="" arg
+  local command="$1" verb="$2" joined dir arg
   joined=$(secret_scan_join_lines "$command")
-  # 連結演算子・サブシェル境界で分割（pre-git-push-check.sh の scan_and_decide と同じ粒度）
-  segments=$(printf '%s\n' "$joined" | sed -E -e 's/\|\|/\n/g' -e 's/&&/\n/g' -e 's/;/\n/g' -e 's/\|/\n/g' -e 's/\(/\n/g' -e 's/\)/\n/g')
-  while IFS= read -r seg; do
-    seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-    [ -n "$seg" ] || continue
-    if [[ "$seg" =~ ^cd[[:space:]]+(-[LPe@][[:space:]]+)*([^[:space:]]+) ]]; then
-      last_cd="${BASH_REMATCH[2]}"
-      continue
-    fi
-    if printf '%s\n' "$seg" | grep -qE "^git([[:space:]]|$)" && printf '%s\n' "$seg" | grep -qE "[[:space:]]${verb}([[:space:]]|$)"; then
-      if [[ "$seg" =~ [[:space:]]-C[[:space:]]+([^[:space:]]+) ]]; then
-        dir="${BASH_REMATCH[1]}"
-      else
-        dir="$last_cd"
-      fi
-      break
-    fi
-  done <<< "$segments"
+  dir=$(SECRET_SCAN_CMD="$joined" SECRET_SCAN_VERB="$verb" python3 - <<'PY'
+import os
+import shlex
+import sys
+
+cmd = os.environ.get("SECRET_SCAN_CMD", "")
+verb = os.environ.get("SECRET_SCAN_VERB", "")
+try:
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    tokens = list(lex)
+except ValueError:
+    sys.exit(0)  # クォート不整合: 静的に解決できない（呼び出し側は cwd のリポジトリへフォールバック）
+
+# 連結演算子・サブシェル境界でセグメントに分ける（secret_scan_commit_bypass と同じ粒度）
+segments, cur = [], []
+for tok in tokens:
+    if tok in ("&&", "||", ";", "|", "(", ")", ";;", "&"):
+        if cur:
+            segments.append(cur)
+        cur = []
+    else:
+        cur.append(tok)
+if cur:
+    segments.append(cur)
+
+CD_SKIP_FLAGS = ("-L", "-P", "-e", "-@")
+# git 本体（サブコマンドより前）に付く、値を取るオプション。無いものは値なしフラグとして 1 トークンだけ読み飛ばす
+GIT_TOPLEVEL_VALUE_OPTS = ("-C", "-c", "--exec-path", "--git-dir", "--work-tree", "--namespace")
+
+
+def cd_target(args):
+    i = 0
+    while i < len(args) and args[i] in CD_SKIP_FLAGS:
+        i += 1
+    return args[i] if i < len(args) else None
+
+
+def git_subcommand(args):
+    """git のサブコマンドと `-C <dir>` の値を返す。値を取るトップレベルオプションを飛ばしてから
+    最初の非オプショントークンを取るため、クォートで囲まれた引数（コミットメッセージ等）は
+    1 トークンのまま残り、その中の語（例: "commit"）を誤ってサブコマンドと取り違えない。"""
+    c_dir = None
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        if tok == "-C":
+            if i + 1 < len(args):
+                c_dir = args[i + 1]
+            i += 2
+            continue
+        if tok.startswith("--") and "=" in tok:
+            i += 1
+            continue
+        if tok in GIT_TOPLEVEL_VALUE_OPTS:
+            i += 2
+            continue
+        if tok.startswith("-"):
+            i += 1
+            continue
+        return tok, c_dir
+    return None, c_dir
+
+
+last_cd = None
+result_dir = None
+for seg in segments:
+    if not seg:
+        continue
+    if seg[0] == "cd":
+        t = cd_target(seg[1:])
+        if t is not None:
+            last_cd = t
+        continue
+    if seg[0] != "git":
+        continue
+    subcmd, c_dir = git_subcommand(seg[1:])
+    if subcmd == verb:
+        result_dir = c_dir if c_dir is not None else last_cd
+        break
+
+if result_dir:
+    print(result_dir)
+PY
+)
   [ -n "$dir" ] || return 0
-  # 前後の引用符を除去。変数展開・チルダは静的に解決しない（誤解決のリスクが高い）
-  arg="${dir%\"}"; arg="${arg#\"}"; arg="${arg%\'}"; arg="${arg#\'}"
+  arg="$dir"
+  # 変数展開・チルダ・バッククォートは静的に解決しない（誤解決のリスクが高い。shlex が既にクォートは除去済み）
   if [[ "$arg" == *'$'* || "$arg" == '~'* || "$arg" == *'`'* ]]; then return 0; fi
   [ -d "$arg" ] || return 0
   ( cd "$arg" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null ) || true
@@ -116,6 +197,13 @@ if cur:
     segments.append(cur)
 
 SHORT_WITH_N = re.compile(r"^-[a-zA-Z]*n[a-zA-Z]*$")  # -n / -an / -nm 等（`--…` は含まない）
+# 実測（git 2.43.0・#1130）: `--no-verify` の曖昧でない最短省略形は 9 文字の `--no-veri`。
+# 8 文字の `--no-ver` は `--no-verbose` と衝突し `error: ambiguous option` で git 自身が commit を拒否する
+# （拒否されるなら pre-commit は無効化されないので検査不要）。閾値は git のオプション追加で変わりうるので、
+# 変えるときは実測し直してからコメントごと更新すること（`--no-verif` のような中間省略形は git が普通に受理し
+# pre-commit を無効化するため、完全一致だけの判定では素通りしていた）。
+NO_VERIFY_FULL = "--no-verify"
+NO_VERIFY_MIN_LEN = len("--no-veri")
 for seg in segments:
     if not seg or seg[0] != "git":
         # `env X=1 git commit …` / `command git …` 程度の前置きは剥がす
@@ -124,17 +212,21 @@ for seg in segments:
         if not seg or seg[0] != "git":
             continue
     args = seg[1:]
-    # `git -c core.hooksPath=… <subcommand>` はサブコマンドを問わず pre-commit の置き場を差し替えられる
+    if "commit" not in args:
+        continue  # 🔴 commit を含まないセグメントは -c core.hooksPath も --no-verify も判定しない（別セグメントへの誤反応防止）
+    # `git -c core.hooksPath=… commit` はサブコマンドを問わず pre-commit の置き場を差し替えられるが、
+    # 判定は「commit を含む、この 1 セグメント」に限定する（無関係な別セグメントの `-c` で誤ブロックしない）
     for i, tok in enumerate(args):
         if tok == "-c" and i + 1 < len(args) and args[i + 1].lower().startswith("core.hookspath"):
             sys.exit(0)
         if tok.lower().startswith("-ccore.hookspath"):
             sys.exit(0)
-    if "commit" not in args:
-        continue
     after = args[args.index("commit") + 1:]
     for tok in after:
-        if tok == "--no-verify" or SHORT_WITH_N.match(tok):
+        tok_head = tok.split("=", 1)[0]  # `--no-verify=…` のような形も `=` より前だけで判定する
+        if SHORT_WITH_N.match(tok_head):
+            sys.exit(0)
+        if tok_head.startswith("--") and len(tok_head) >= NO_VERIFY_MIN_LEN and NO_VERIFY_FULL.startswith(tok_head):
             sys.exit(0)
 sys.exit(1)
 PY

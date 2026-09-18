@@ -332,7 +332,15 @@ def scan_paths(paths: list[str]) -> list[Finding]:
 
 
 def scan_json(payload: object) -> list[Finding]:
-    """MCP tool_input（push_files の files[] / create_or_update_file の path+content）を検査する。"""
+    """MCP tool_input（push_files の files[] / create_or_update_file の path+content・
+    どちらも実際に送るコミットメッセージ message）を検査する。
+
+    push_files / create_or_update_file は git を通らない直接コミット経路で、本関数が
+    唯一の検査点（pre-tool-use-router.sh 冒頭のコメント参照）。message を見ないと、
+    ファイル内容の秘密は検知できてもコミットメッセージ中の秘密だけが素通りする
+    （REST フォールバック側の tools/github_push_helper.py は message を別途スキャンして
+    おり、実装が非対称だった。#1130 Layer 1 CRITICAL 指摘で判明）。
+    """
     files: list[dict] = []
     if isinstance(payload, dict):
         if isinstance(payload.get("files"), list):
@@ -350,6 +358,10 @@ def scan_json(payload: object) -> list[Finding]:
             findings.append(Finding(path, 0, rid, "（ファイル名ルール）"))
         if isinstance(content, str):
             findings.extend(scan_text(path or "<content>", content))
+    if isinstance(payload, dict):
+        message = payload.get("message")
+        if isinstance(message, str):
+            findings.extend(scan_text("<commit-message>", message))
     return findings
 
 
@@ -419,6 +431,11 @@ def _self_test() -> int:
     expect({f.rule_id for f in js} == {"github-token", "dotenv"}, "JSON（push_files 形）を検査できる")
     js2 = scan_json({"path": "k.pem", "content": "-----BEGIN " + "EC PRIVATE KEY-----"})
     expect({f.rule_id for f in js2} == {"key-file", "private-key"}, "JSON（create_or_update_file 形）を検査できる")
+    js3 = scan_json({"message": "token = '" + gh + "'", "files": [{"path": "clean.txt", "content": "ok"}]})
+    expect({f.rule_id for f in js3} == {"github-token", "generic-secret"} and all(f.path == "<commit-message>" for f in js3),
+           "push_files の message フィールド（ファイル内容ではなくコミットメッセージ）に含まれる秘密も検知する（#1130）")
+    js4 = scan_json({"path": "clean.txt", "content": "ok", "message": "note"})
+    expect(js4 == [], "message が秘密を含まない場合は誤検知しない")
     al = apply_allowlist([Finding("tests/fixtures/fake.pem", 0, "key-file", "")], ["tests/fixtures/*"])
     expect(al == [], "許可リストの glob でパスを除外できる")
 

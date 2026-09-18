@@ -77,7 +77,7 @@ COMMAND_UNQUOTED=$(printf '%s\n' "$COMMAND_JOINED" | sed -E "s/\"[^\"]*\"//g; s/
 # push 前検査も MCP 検査も通らない。内容が base64 やファイル参照でコマンド文字列に現れないため検査できず、
 # 検査済みの経路（git push / mcp__github__push_files）へ誘導してブロックする（base#678 Layer 1 指摘）。
 if printf '%s\n' "$COMMAND_JOINED" | grep -qE '(gh[[:space:]]+api|api\.github\.com)[^|;&]*/contents/' \
-   && printf '%s\n' "$COMMAND_JOINED" | grep -qiE '(-X|--request|--method|-m)[[:space:]=]*["'"'"']?(put|delete)\b|(^|[[:space:]])(-T|--upload-file|-d|--data(-binary|-raw|-urlencode)?)([[:space:]=]|$)|-f[[:space:]]+content=|--input|--field[[:space:]]+content='; then
+   && printf '%s\n' "$COMMAND_JOINED" | grep -qiE '(-X|--request|--method|-m)[[:space:]=]*["'"'"']?(put|delete)\b|(^|[[:space:]])(-T|--upload-file|-d|--data(-binary|-raw|-urlencode)?)([[:space:]=]|$)|-f[[:space:]]+content=|--input|--(raw-)?field[[:space:]]+content='; then
   hook_block "BLOCK: GitHub Contents API への直接書き込み（gh api / curl の PUT）は秘密検知ゲートを通らないため禁止しています（base#678）。
 ファイルの push は git push（未 push 差分を検査）か mcp__github__push_files / create_or_update_file（内容を検査）を使ってください。
 REST フォールバックが必要なときは python3 tools/github_push_helper.py（送信前に秘密検知を実行する）を使ってください。"

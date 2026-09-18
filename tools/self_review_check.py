@@ -2427,6 +2427,11 @@ def main(pr_body: str | None = None) -> int:
     if errors:
         print("[self-review] Error（PR 作成をブロックします）:")
         for e in errors[:20]:
+            # errors に入るのは検査結果のメッセージだけで、秘密の値そのものは含まない
+            # （秘密検知由来のメッセージは _finding_location() が位置とルール ID へ絞り込み済み）。
+            # CodeQL の py/clear-text-logging-sensitive-data は secret_scan.py のプロセス出力を
+            # 名前ベースで sensitive と推定して high を出すが、実際に出力される値は無い。
+            # codeql[py/clear-text-logging-sensitive-data]
             print(f"  - {e}")
         return 1
     print("[self-review] OK（Error なし）")

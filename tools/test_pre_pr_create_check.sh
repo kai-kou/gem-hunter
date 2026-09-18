@@ -29,6 +29,18 @@
 #      #627 Layer 1 再レビュー指摘）
 #  13. PR 本文を self_review_check.py に渡す一時ファイル（claude-prbody.*）が、フック正常終了後に
 #      残留しない（trap EXIT による削除・#628 Layer 1 テスト・検証指摘）
+#  14. gh pr create --body "..."（heredoc でも --body-file でもない単純な引用文字列形式・shlex 正常系）
+#      でも GOOD_BODY が完全抽出される（#1130 Layer 1 CONFIRMED: 従来 _extract_gh_pr_body の Bash
+#      経路テストは全て BAD_BODY 限定で、抽出が丸ごと壊れても同じ Warning 件数になり検知できなかった）
+#  15. gh pr create --body="$(cat <<'EOF' ... EOF)"（等号形式のヒアドキュメント）でも抽出される
+#  16. PR 本文がヒアドキュメント形式の引用例（本リポジトリのルール文書が例示する形そのもの）を
+#      本文中に含んでいても、実際の終端より手前で誤って打ち切られず、本文全体（Session-Id・
+#      run_checks 結果表を含む）が抽出される（#1130 Layer 1 CONFIRMED: HEREDOC_RE の非貪欲一致が
+#      入れ子の引用を終端と誤認していた）
+#  17. gh pr create --body "..." --title "..."（本文に奇数個の "含み shlex が失敗 → _lenient_extract
+#      経由）で、--title 側の引用値が本文に混入しない（#1130 Layer 1 CONFIRMED: 旧 _lenient_extract
+#      の貪欲一致は後続オプションの引用値まで本文として飲み込み、たまたま含まれる Session-Id 等の
+#      キーワードで本来の不備が「記載あり」に誤判定されていた）
 #
 # has_code / high_risk の判定対象は一時リポジトリの git 差分そのもの（tools/detect_pr_diff_type.py
 # を base コミットへ同梱して一時リポジトリ内でも実行できるようにし、フィクスチャファイルの追加で
@@ -472,6 +484,103 @@ _tmp_after=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'claude-prbody.*' 2>/dev/n
 [ "$_tmp_before" = "$_tmp_after" ] \
   && report ok "trap による一時ファイル削除が機能し、残留ファイルが増えない" \
   || report ng "一時ファイルが残留した（前: [${_tmp_before}] 後: [${_tmp_after}]）"
+teardown_repo
+
+echo "[ケース 14] gh pr create --body \"...\"（単純な引用文字列形式・shlex 正常系）でも GOOD_BODY が完全抽出される"
+setup_repo
+# オプション順序を case 4 と変え、--body の後に --title を置く（症状バリアント: オプション順序違い）
+GH_SIMPLE_CMD="gh pr create --base main --head ${BRANCH} --body \"${GOOD_BODY}\" --title \"Test PR\""
+gh_json=$(jq -n --arg cmd "$GH_SIMPLE_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "単純な文字列形式でも exit 0" \
+  || report ng "単純な文字列形式なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_n14=$(count_new_warnings "$(ctx_of "$HOOK_STDOUT")")
+[ "$_n14" -eq 0 ] \
+  && report ok "単純な文字列形式で GOOD_BODY が完全抽出され新規 Warning 0 件（従来 BAD_BODY 限定のテストでは抽出破壊を検知できなかった）" \
+  || report ng "単純な文字列形式で新規 Warning が ${_n14} 件（期待 0・additionalContext: $(ctx_of "$HOOK_STDOUT")）"
+teardown_repo
+
+echo "[ケース 15] gh pr create --body=\"\$(cat <<'EOF' ... EOF)\"（等号形式のヒアドキュメント）でも抽出される"
+setup_repo
+HEREDOC_EQ_CMD="gh pr create --title \"Test PR\" --body=\"\$(cat <<'EOF'
+${GOOD_BODY}
+EOF
+)\" --base main --head ${BRANCH}"
+gh_json=$(jq -n --arg cmd "$HEREDOC_EQ_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "--body= 形式（等号）でも exit 0" \
+  || report ng "--body= 形式なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_n15=$(count_new_warnings "$(ctx_of "$HOOK_STDOUT")")
+[ "$_n15" -eq 0 ] \
+  && report ok "--body= 形式（等号）でも heredoc 本文が完全抽出される" \
+  || report ng "--body= 形式で新規 Warning が ${_n15} 件（期待 0・additionalContext: $(ctx_of "$HOOK_STDOUT")）"
+teardown_repo
+
+echo "[ケース 16] 本文中に heredoc 引用例（入れ子の EOF / )）を含んでいても実際の終端まで抽出される"
+setup_repo
+# NESTED_EOF は本テストだけの一時デリミタ（本文と衝突しないよう固有名にする）。中身は本リポジトリの
+# ルール文書が実際に例示している形そのもの（gh pr create --body "$(cat <<'EOF' ... EOF)"）を、
+# PR 本文が「引用」しているケースを再現する（デリミタ名はあえて同じ 'EOF' にして衝突させる）。
+NESTED_EXAMPLE_TEXT=$(cat <<'NESTED_EOF'
+## 参考: PR 本文添付コマンドの例
+
+```
+gh pr create --body "$(cat <<'EOF'
+サンプル本文だよ
+EOF
+)" --base main --head some-branch
+```
+NESTED_EOF
+)
+NESTED_BODY="${NESTED_EXAMPLE_TEXT}
+
+${GOOD_BODY}"
+HEREDOC_NESTED_CMD="gh pr create --title \"Test PR\" --body \"\$(cat <<'EOF'
+${NESTED_BODY}
+EOF
+)\" --base main --head ${BRANCH}"
+gh_json=$(jq -n --arg cmd "$HEREDOC_NESTED_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "入れ子の heredoc 引用例を含む本文でも exit 0" \
+  || report ng "入れ子の heredoc 引用例を含む本文なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_ctx16=$(ctx_of "$HOOK_STDOUT")
+_n16=$(count_new_warnings "$_ctx16")
+[ "$_n16" -eq 0 ] \
+  && report ok "入れ子の引用例を実際の終端と誤認せず、本物の Session-Id・証跡（GOOD_BODY 部分）まで抽出される" \
+  || report ng "入れ子の引用例で早期打ち切りされ新規 Warning が ${_n16} 件（期待 0・additionalContext: ${_ctx16}）"
+teardown_repo
+
+echo "[ケース 17] gh pr create --body \"...\" --title \"...\"（本文に奇数個の \" → shlex 失敗 → _lenient_extract）で --title の値が本文に混入しない"
+setup_repo
+# LENIENT_BAD_BODY は Session-Id・検証証跡を欠く本文に、奇数個の " を1つ埋め込み shlex.split を
+# 意図的に失敗させる（heredoc 形式ではないので HEREDOC_RE は不一致、shlex 正常系でもないので
+# _lenient_extract に到達する）。
+LENIENT_BAD_BODY='Fixes a small "quoting edge case in the parser.'"$RUN_CHECKS_TABLE"
+# LEAK_MARKER は「後続オプションの値に Session-Id・検証証跡のキーワードが偶然含まれる」ケースを
+# 模す。旧実装（貪欲一致）だとこれが本文に混入し、LENIENT_BAD_BODY 側の不備を隠してしまう。
+LEAK_MARKER='Session-Id: leaked-marker-should-not-appear
+
+## テスト・確認内容
+
+```
+python3 tools/leak.py
+```
+
+PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'
+GH_LENIENT_CMD="gh pr create --body \"${LENIENT_BAD_BODY}\" --title \"${LEAK_MARKER}\" --base main --head ${BRANCH}"
+gh_json=$(jq -n --arg cmd "$GH_LENIENT_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "奇数個の \" を含む本文（lenient フォールバック経路）でも exit 0" \
+  || report ng "lenient フォールバック経路なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_ctx17=$(ctx_of "$HOOK_STDOUT")
+_n17=$(count_new_warnings "$_ctx17")
+[ "$_n17" -eq 2 ] \
+  && report ok "--title 側の値が本文に混入せず、LENIENT_BAD_BODY 本来の不備（Session-Id・検証証跡なし）が2件検出される（0件なら --title の値が漏れて誤って『記載あり』判定になった証拠）" \
+  || report ng "--title 側の値が本文に混入した疑い（新規 Warning ${_n17} 件・期待 2・additionalContext: ${_ctx17}）"
 teardown_repo
 
 echo
