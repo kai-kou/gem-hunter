@@ -174,6 +174,20 @@ def python_syntax_errors(files: list[str]) -> list[str]:
     return errs
 
 
+_FINDING_LOCATION_RE = re.compile(r"^(?P<loc>.*?\[[^\]\s]+\])")
+
+
+def _finding_location(line: str) -> str:
+    """secret_scan.py の出力行から位置とルール ID（`path:line: [rule-id]`）だけを取り出す。
+
+    検知した値そのもの（マスク済みでも）を PR 本文・Issue コメント・CI ログへ転記しないための絞り込み。
+    想定形に一致しない行は、値が混ざっている可能性を排除できないため位置情報ごと落とす
+    （検知したこと自体はブロックとして残るので fail-open にはならない）。
+    """
+    m = _FINDING_LOCATION_RE.match(line.strip())
+    return m.group("loc") if m else "（出力形式が想定外のため位置情報を省略）"
+
+
 def secret_scan_errors() -> list[str]:
     """PR 作成前の秘密検知（Issue base#678・Error・ブロック）。
 
@@ -195,9 +209,15 @@ def secret_scan_errors() -> list[str]:
             " python3 tools/secret_scan.py --base origin/main を手動実行して確認してください。"
         ]
     if r.returncode == 1:
+        # secret_scan.py の出力（`path:line: [rule-id] マスク済みスニペット`）は既にマスク済みだが、
+        # このメッセージは PR 本文・Issue コメント・CI ログへ転記されうるため、本リポジトリでは
+        # 位置とルール ID（`path:line: [rule-id]`）だけを残し、値のスニペットは転記しない。
+        # 中身は `python3 tools/secret_scan.py --base origin/<default>` を手元で実行して確認する。
+        # 🔴 下流固有の絞り込み（ベース側は render() 全体を転記する）。CodeQL の
+        # py/clear-text-logging-sensitive-data が本経路を high で検出したことへの対応でもある。
         return [
             "秘密の疑い（base#678・履歴から外してから PR を作る。誤検知は行末 secret-scan:ignore か"
-            f" config/secret_scan_allowlist.txt）: {line}"
+            f" config/secret_scan_allowlist.txt）: {_finding_location(line)}"
             for line in r.stdout.splitlines() if line.strip()
         ]
     if r.returncode != 0:
@@ -840,6 +860,32 @@ def hot_budget_reminder(files: list[str]) -> str | None:
 # `_self_test_<name>() -> list[str]`（失敗メッセージの列挙）をグループごとに定義し、
 # `run_self_test()` がグループ名付きで `FAIL[...]` を出す。
 # ============================================================================
+
+def _self_test_finding_location() -> list[str]:
+    """秘密検知の出力から「位置とルール ID」だけを取り出す絞り込みの検証。
+
+    値のスニペットが 1 文字でも残ると、PR 本文・Issue コメント・CI ログへ転記されてしまう。
+    """
+    failures = []
+    cases = [
+        # (secret_scan.py の出力行, 期待する絞り込み結果)
+        ("src/a.py:42: [github-token] ghp_…（40 文字）", "src/a.py:42: [github-token]"),
+        (".env: [env-file] （ファイル名ルール）", ".env: [env-file]"),
+        ("docs/日本語 パス.md:7: [private-key] ----…（31 文字）", "docs/日本語 パス.md:7: [private-key]"),
+    ]
+    for raw, want in cases:
+        got = _finding_location(raw)
+        if got != want:
+            failures.append(f"_finding_location: {raw!r} → {got!r}（期待 {want!r}）")
+    # 値そのものが絞り込み後に残らないこと（マスク済みでも転記しない）
+    leaky = "src/a.py:42: [aws-key] AKIA…（20 文字）"
+    if "AKIA" in _finding_location(leaky):
+        failures.append("_finding_location: マスク済みスニペットが絞り込み後にも残っている")
+    # 想定外の出力形式は位置情報ごと落とす（値が混ざっている可能性を排除できないため）
+    if _finding_location("想定外の出力 ghp_abcdefghijklmnop") != "（出力形式が想定外のため位置情報を省略）":
+        failures.append("_finding_location: 想定外形式の行をそのまま返してしまっている")
+    return failures
+
 
 def _self_test_glob_match() -> list[str]:
     failures = []
@@ -2013,6 +2059,7 @@ def _self_test_self_test_target_selection() -> list[str]:
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
+        ("秘密検知メッセージの位置抽出", _self_test_finding_location),
         ("glob マッチャー境界", _self_test_glob_match),
         ("テストパス判定", _self_test_is_test_path),
         ("3 層タッチ判定", _self_test_touched_layers),
