@@ -11,7 +11,7 @@
 | 症状 | 参照先 |
 |------|--------|
 | `git push` だけが 403/413/502・`gh` が 403・`E2BIG` で Bash 全停止・tool call parse error・スコープ外リポジトリへの clone が 403・OpenNext Cloudflare プレビューでのみリダイレクト / パス解決が期待どおりにならない・本番デプロイ系コマンド（`wrangler deploy` 等）が auto mode classifier にブロックされることがある（毎回ではない）・デプロイ系スクリプトが「判定不能」で終わり本番が更新されない | `docs/rules/lessons/cloud-environment.md`（L-079/L-080/L-101/L-106/L-114/L-117/L-129/L-130/L-140） |
-| サブエージェント / Agent Teams の回答が空・期待外の形式で返る・フックが偽の観測を注入する | `docs/rules/lessons/agent-delegation.md`（L-121/L-122） |
+| サブエージェント / Agent Teams の回答が空・期待外の形式で返る・フックが偽の観測を注入する・完了待ちで通知確認を繰り返す | `docs/rules/lessons/agent-delegation.md`（L-121/L-122/L-172） |
 | 委譲先の変異テスト報告と親の実測が食い違う・多層防御の 1 層だけ潰した結果の解釈に迷う・変異が源文に当たらず PASS になる | `docs/rules/lessons/agent-delegation.md`（L-143 / L-146） |
 | レビュー役サブエージェントが **実在しない出典座標**（ファイル:行番号）を引用して指摘を出す | `docs/rules/lessons/agent-delegation.md`（L-163・L-113 の委譲版） |
 | これまで `Skill` ツールで呼べていたビルトイン機能が `disable-model-invocation` で失敗する（起動経路の移動） | `docs/rules/lessons/skill-routing.md`（L-123）・`native-fallback-rules.md` §2.5 |
@@ -21,6 +21,7 @@
 | auto モードなのに Bash の `grep` 系コマンドで承認プロンプトが出る・自動モードで権限プロンプトが増えた | `docs/rules/lessons/permissions.md`（L-154） |
 | 無人ルーティンが承認プロンプトのまま停止している・作業ツリー外や `.claude/` `.git/` への書き込みがフックにブロックされた・MCP ツールの承認に「常に許可」が無い | `docs/rules/lessons/permissions.md`（L-167 / L-169） |
 | 同趣旨の Stop 差し戻しが `~/.claude/...` と `.claude/hooks/...` の両方から二重に届く | `docs/rules/lessons/cloud-environment.md`（L-155） |
+| コミット / push / PR 作成が `[secret-scan]` `[pre-git-push-check] ❌ … 秘密` でブロックされた・自動保全コミットが「秘密の疑い」でファイルを除外した | `docs/rules/lessons/session-safety.md`（L-171）・`security-posture-controls.md` §1.6 |
 | PR レビュー・CI 系 | `docs/rules/lessons/pr-review.md` / `ci-cd.md` |
 | その他カテゴリ | `docs/rules/lessons/<category>.md` |
 

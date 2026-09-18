@@ -77,6 +77,8 @@ python3 tools/check_pending_pr_reviews.py --actionable-only --json --record-appr
 
 🔴 **`--record-approx-sample` は必ず付ける**（Issue #806）: 無人実行では REST 近似判定が常用パスになるため、この firing で `analyze_pr()` が到達した PR ごとに近似使用実績を `content/analytics/pr-review/approx_samples.jsonl` へ追記し、偽陰性候補（`unresolved_threads == 0` かつ近似）の実績データを溜める。**この記録先は git 追跡対象なので、次のコミット（PR 作成時の add）に含める**。蓄積後は `python3 tools/check_pending_pr_reviews.py --summarize-approx-samples` で集計できる（gh 非依存）。
 
+**失敗時（`gh` バイナリ不在・403 等で exit code 3・stdout に `GH_UNAVAILABLE:` 行）**: `mcp__github__list_pull_requests(owner, repo, state="open")` へ直接フォールバックする（base#645）。ただし `--mine` / `--actionable-only` 相当の絞り込み（Session-Id 突合・アクティブセッション除外）は無いため、取得した PR は目視で状態を確認してから回収する。
+
 `needs_prompt` → Layer 1 セルフレビュー実行 → 指摘解消 → 即マージ / `needs_response` → 指摘対応（CI 失敗・人手コメント）/ `needs_resolve_check` → 未解決スレッド全件が返信済みで Resolve だけが残っている状態（`pr-review-watcher` の「Resolve 確認セクション」へ復帰）/ `awaiting_review` → 作成セッションが実行中（待機）。**自スコープ優先（#47）・他セッション対応中 PR への不介入（CP-4・L-109）** の判定ロジック全文は `pr-review-flow.md`「セッション復帰フロー」を参照。
 
 🔴 **② を使うのは対話セッションの復帰時**（人間の判断が伴う場面）。**無人ルーティン（`sprint-cycle-router` 決定木）では Step 2 が ① 相当（`--mine-or-automation`）だけを見る**（CP-4・L-109 の不介入）。② に出る他者の人手 PR は決定木では拾わず、Step 6 → `project-sync` Step 3.5 の Orphan PR（最終更新 24 時間超）が回収する（#898）。

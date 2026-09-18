@@ -77,12 +77,12 @@ env_persist "export GIT_TERMINAL_PROMPT=0"
 
 # --- gh CLI（クラウドでは導入しない・L-114 / Issue #342）---
 # クラウド実行環境は公式仕様として gh をプリインストールしない。apt で導入すること自体は可能だが、
-# repo スコープ REST が 403（リポジトリの API attach 不足）のため導入しても GitHub 操作はできない
-# （2026-07-26 実測・#338）。毎セッション apt を叩く時間を捨てるだけなので試行しない。
-# クラウドの GitHub 操作は mcp__github__* が一次経路（SSOT: docs/rules/github-mcp-fallback-patterns.md）。
+# 依存先の repo スコープ REST は可否が変動する経路で（07-14 許可 → 07-26 403 → 09-18 再び 200・#338 / base#692）、
+# 毎セッション apt を叩いてまで依存する価値がない。クラウドの GitHub 操作は mcp__github__* が一次経路
+# （プロキシを通らないため可否変動に影響されない・SSOT: docs/rules/github-mcp-fallback-patterns.md）。
 if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
   if command -v gh &>/dev/null && [ "$(command -v gh)" != "${_shim_dir}/gh" ]; then
-    echo "gh CLI: 実 gh を検出（クラウドでは repo スコープ操作が 403 になる想定。GitHub 操作は mcp__github__* を使う）" >&2
+    echo "gh CLI: 実 gh を検出（クラウドの repo スコープ REST は可否が変動する。GitHub 操作は mcp__github__* を使う）" >&2
   else
     echo "gh CLI: クラウドでは未導入が既定（導入しない。GitHub 操作は mcp__github__* を使う・L-114）" >&2
   fi
@@ -357,6 +357,13 @@ if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     && echo "origin/${_default_branch}: fetched (refspec)" >&2 \
     || echo "⚠ Failed to fetch origin/${_default_branch}." >&2
   unset _default_branch
+
+  # --- git pre-commit フック（秘密検知）の導入（base#678）---
+  # クローンは毎セッション使い捨てで .git/hooks/ は空のため、起動のたびに導入する（冪等）。
+  # 自動保全コミット・Bash の `git add -A && git commit` 連結を含む全コミット経路の検査点になる。
+  if [ -f "${PROJECT_DIR}/tools/install_git_hooks.sh" ]; then
+    ( cd "$PROJECT_DIR" && bash tools/install_git_hooks.sh ) 2>&1 | sed 's/^/[session-start] /' >&2 || true
+  fi
 fi
 unset _skip_cleanup
 
