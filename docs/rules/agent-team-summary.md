@@ -51,7 +51,7 @@
 - 🔴 **並行実行中は作業ツリー全体を操作する破壊的 git コマンド、および作業ツリーを移動するコマンドを禁止する**（#93 / #768）: 複数役が同時に走っている間、委譲プロンプトで作業ツリー全体を **巻き戻す系**（`git reset --hard` / `git checkout -- .` / `git clean` / `git stash` 等・1 体が巻き戻すと他役の未保存編集ごと消える）だけでなく、**移動する系**（`git checkout <branch>` / `git switch` / `gh pr checkout` 等）も禁じる。実例（#768）: Layer 1 セルフレビューのファインダー 1 体が `gh pr checkout` 相当の操作でブランチを作り `main` へ移動した結果、親セッションの作業ツリーが `main` に切り替わったまま残り、親が「修正した実装が消えている」と誤認した（未コミット変更があれば実際に失われていた）。**コミットは全役の完了後に親がまとめて行う**。⚠️ **Stop フック・PreCompact / PostCompact の WIP 自動コミットは、この規律の外側で動く**（他役が作業中かどうかを知らない）。実装をわざと壊す時間帯を作る作業（変異テスト等）を始める前に `tools/mutation_guard.sh begin` でマーカーを置き、終わったら `end` で外す（TTL 2 時間で自動失効。マーカー中は `stop-git-check.sh` のコミット要求も止まり、`session-start.sh` のクリーンアップは追跡変更をパッチへ退避する）。worktree 分離下の役が `begin` してもリポジトリ全体で共有される。詳細は L-131（`docs/rules/lessons/session-safety.md`）
 - サブエージェントは成果物全文でなく **1,000〜2,000 トークンのサマリー** を返す
 - 重要な出力（タイトル・設計案等）は Verbalized Sampling（並列候補生成 → 選択）で決める。詳細は `agent-team.md`「サブエージェントの高度な機能」
-- `run_in_background: true`: 完了時に通知が来る（`sleep` ポーリング禁止）。**push 系を委譲したら必ず `mcp__github__get_file_contents` 等で結果を検証する**（L-080）
+- `run_in_background: true`: 完了時に通知が来る。**待ち方は「ターンを終えること」で、手段を問わずポーリング禁止**（`sleep` ループ・`ReadNotifications` 連打・`TaskGet`/`/tasks` の進捗確認連打はすべて空振りする。「完了待機中」の実況も出さない・`agent-team.md` §F-8）。**push 系を委譲したら必ず `mcp__github__get_file_contents` 等で結果を検証する**（L-080）
 
 ## 🔴 並行安全プリアンブル（委譲プロンプトへ貼る実テキスト・SSOT・#816）
 

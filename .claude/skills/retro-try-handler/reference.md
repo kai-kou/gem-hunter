@@ -1,9 +1,8 @@
 # retro-try-handler スキル — 詳細テンプレート集（reference）
 
-> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウド実行環境では `gh` がプリインストールされず、
-> 導入しても repo スコープ REST が 403 になる。**本ファイル内の `gh ...` コマンドはローカル実行専用** で、
-> クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
-> ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
+> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウドでは実 gh が無く PATH 上はシムだけ。**本ファイル内の `gh ...` はローカル実行専用** で、
+> クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2）。PR の Resolve /
+> auto-merge / draft 化も **MCP にツールがある**。ラベル作成等は MCP に無いが repo REST 直叩きで到達しうる（可否は変動・同 §1）。
 
 > SKILL.md の各 Step が参照する詳細コマンド・実装手順・テンプレートをまとめた補助ドキュメント。
 > 該当 Step を実行する直前に該当セクションだけを Read する。
@@ -374,6 +373,7 @@ gh issue list -R kai-kou/gem-hunter \
 ```
 labels ∋ "status:waiting-claude"
 labels ∌ "urgency:blocker"
+title が "[Retro][ledger]" で始まらない   # 候補台帳 Issue は TTL 対象外（retrospective 側が管理）
 now_utc − updated_at > 30 日        # 内部計算のため UTC 基準（datetime-rules.md の機械処理用 UTC 例外）
 ```
 

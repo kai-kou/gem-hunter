@@ -660,7 +660,7 @@ npx wrangler versions view <VERSION_ID>   # 投入結果は Secrets 欄で確認
 
 ### 7.6. 🔴 GitHub App の秘密鍵は PKCS#8 で持つ（`D-20` の実装上の必須事項）
 
-GitHub が発行する App の秘密鍵は **PKCS#1**（`-----BEGIN RSA PRIVATE KEY-----`）だが、**Workers の Web Crypto `crypto.subtle.importKey()` は `pkcs8` しか受け付けない**（`pkcs1` という形式指定が存在しない）。変換せずに渡すと実行時に import が失敗する。
+GitHub が発行する App の秘密鍵は **PKCS#1**（`-----BEGIN RSA PRIVATE KEY-----`）だが、**Workers の Web Crypto `crypto.subtle.importKey()` は `pkcs8` しか受け付けない**（`pkcs1` という形式指定が存在しない）。変換せずに渡すと実行時に import が失敗する。  <!-- secret-scan:ignore -->
 
 ```bash
 # PKCS#1 -> PKCS#8（Worker に入れる前に一度だけ行う）

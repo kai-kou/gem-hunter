@@ -740,14 +740,14 @@ def _self_test_http_json_error_handling() -> list[str]:
             500,
             "Internal Server Error",
             None,
-            io.BytesIO(b"Authorization: Bearer sk-abcdefghijklmnop1234567890 invalid"),
+            io.BytesIO(b"Authorization: Bearer sk-abcdefghijklmnop1234567890 invalid"),  # secret-scan:ignore
         )
 
     try:
         _http_json("https://example.test/b", {}, opener=opener_http_error)
         failures.append("_http_json: HTTPError + 非 JSON ボディなのに ApiError を送出していない")
     except ApiError as error:
-        if "sk-abcdefghijklmnop1234567890" in str(error):
+        if "sk-abcdefghijklmnop1234567890" in str(error):  # secret-scan:ignore
             failures.append("_http_json: HTTPError のメッセージにトークンがマスクされず残っている")
     except Exception as error:  # noqa: BLE001
         failures.append(

@@ -196,14 +196,14 @@ def _self_test_http_json() -> list[str]:
             500,
             "Internal Server Error",
             None,
-            io.BytesIO(b"Authorization: Bearer sk-abcdefghijklmnop1234567890 invalid"),
+            io.BytesIO(b"Authorization: Bearer sk-abcdefghijklmnop1234567890 invalid"),  # secret-scan:ignore
         )
 
     try:
         http_json("https://example.test/b", {}, opener=opener_http_error)
         failures.append("http_json: HTTPError + 非 JSON ボディなのに CloudflareApiError を送出していない")
     except CloudflareApiError as error:
-        if "sk-abcdefghijklmnop1234567890" in str(error):
+        if "sk-abcdefghijklmnop1234567890" in str(error):  # secret-scan:ignore
             failures.append("http_json: HTTPError のメッセージにトークンがマスクされず残っている")
     except Exception as error:  # noqa: BLE001
         failures.append(
