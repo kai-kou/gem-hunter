@@ -194,19 +194,23 @@ PY_EOF
 }
 
 pr_body=""
-if [ "${CLAUDE_BASE_DISABLE_PR_BODY_CHECK:-0}" != "1" ]; then
-  if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
-    pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
-  elif [ "$tool_name" = "Bash" ]; then
-    # 外側 timeout（exit=124）や python3 起動失敗を `set -e` に拾わせない。抽出に失敗したら本文なし扱いで
-    # 本チェックだけをスキップし、組み立て済みの Layer 1 リマインダー等の出力は失わない
-    # （#627 Layer 1 再レビュー指摘）
-    pr_body=$(PR_BODY_BASE_DIR="$hook_cwd" _extract_gh_pr_body "$command") || pr_body=""
-  fi
-  # 巨大な PR 本文が 1 MiB を超えることは想定しない（--body-file 経路は抽出時点で既に 1 MiB に
-  # 打ち切り済み）。文字数での打ち切りは行わない（下の「本文をファイル経由で渡す」が
-  # execve(2) の上限を回避するため不要・Layer 1 指摘で判明した per-string 上限問題の対策）。
+if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
+  pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
+elif [ "$tool_name" = "Bash" ]; then
+  # 外側 timeout（exit=124）や python3 起動失敗を `set -e` に拾わせない。抽出に失敗したら本文なし扱いで
+  # 本チェックだけをスキップし、組み立て済みの Layer 1 リマインダー等の出力は失わない
+  # （#627 Layer 1 再レビュー指摘）
+  pr_body=$(PR_BODY_BASE_DIR="$hook_cwd" _extract_gh_pr_body "$command") || pr_body=""
 fi
+# 巨大な PR 本文が 1 MiB を超えることは想定しない（--body-file 経路は抽出時点で既に 1 MiB に
+# 打ち切り済み）。文字数での打ち切りは行わない（下の「本文をファイル経由で渡す」が
+# execve(2) の上限を回避するため不要・Layer 1 指摘で判明した per-string 上限問題の対策）。
+# 🔴 CLAUDE_BASE_DISABLE_PR_BODY_CHECK は self_review_check.py の PR 本文チェック（Session-Id /
+# 検証証跡 / エッジケース表・#627 対策 C/D）だけを無効化するトグルで、4.5（run_checks 証跡表）・
+# 4.6（並行安全性）・4.7（証跡鮮度）は無関係の別ゲートなので、この時点では pr_body の抽出自体を
+# 止めない（以前は抽出そのものを止めており、トグル使用時に 4.5 が「本文が空」と誤認してブロック
+# する副作用があった）。トグルの効果は self_review_check.py へ渡す本文（pr_body_file 経由）だけに
+# 限定して適用する。
 
 # PR 本文を環境変数の値としてではなく、一時ファイル経由で self_review_check.py に渡す
 # （#628 Layer 1 セキュリティ指摘）。Linux の execve(2) は単一の引数/環境変数文字列に
@@ -226,7 +230,9 @@ trap cleanup_pr_body_file EXIT
 # Layer 1 セキュリティ指摘）。143/130 は SIGTERM/SIGINT の慣例的な終了コード（128+signum）。
 trap 'cleanup_pr_body_file; exit 143' TERM
 trap 'cleanup_pr_body_file; exit 130' INT
-if [ -n "$pr_body" ]; then
+# CLAUDE_BASE_DISABLE_PR_BODY_CHECK=1 のときは self_review_check.py に本文を渡さない
+# （Session-Id / 検証証跡 / エッジケース表チェックだけを無効化する・上のコメント参照）。
+if [ -n "$pr_body" ] && [ "${CLAUDE_BASE_DISABLE_PR_BODY_CHECK:-0}" != "1" ]; then
   # 固定プレフィックスにする（下記スタール掃除が自分の生成物だけを対象にできるようにするため）。
   pr_body_file=$(mktemp "${TMPDIR:-/tmp}/claude-prbody.XXXXXX" 2>/dev/null) || pr_body_file=""
   if [ -n "$pr_body_file" ]; then

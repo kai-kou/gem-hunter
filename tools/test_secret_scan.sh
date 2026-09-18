@@ -202,6 +202,14 @@ rm -f "$WORK/repo/safe.txt" "$WORK/repo/leak.txt"
 # ── 7: 自動保全コミット（stop-slack-notify.sh）は秘密を除外して保全する ──
 echo "[7] 自動保全コミットからの除外"
 ( cd "$WORK/repo" && bash tools/install_git_hooks.sh >/dev/null 2>&1 )
+# 本リポジトリの自動保全コミット（stop-slack-notify.sh）は `git add -u`（追跡済みファイルの
+# 更新のみ）で動く（Issue #94 / L-100・新規未追跡ファイルは対象外という意図的な仕様）。
+# そのため検証対象は「追跡済みファイルへの変更」でなければならない（新規未追跡ファイルのままだと
+# -u が一切ステージせず、秘密検知ロジックを一切経由しないまま「除外できた」ように誤って PASS/FAIL
+# してしまう）。まず安全な内容で先にコミットし、その後で実テスト内容へ上書きする。
+( cd "$WORK/repo" && echo "base" > work.txt && echo "base" > leak.py && echo "base" > .env \
+    && git add -A \
+    && CLAUDE_BASE_DISABLE_SECRET_SCAN=1 git commit -q -m "baseline for stop-hook auto-commit test" )
 echo "work" > "$WORK/repo/work.txt"
 printf 'token = "%s"\n' "$GH_TOKEN_FAKE" > "$WORK/repo/leak.py"
 echo "SECRET=1" > "$WORK/repo/.env"
@@ -211,15 +219,19 @@ _before=$(commit_count)
 _snap=$(git -C "$WORK/repo" rev-parse --verify --quiet refs/claude-wip/sess-D || echo "")
 [ -n "$_snap" ] && [ "$(commit_count)" -eq "$_before" ] && report ok "猶予中のスナップショット ref が作られ HEAD は進まない" || report ng "スナップショットが作られない／HEAD が進んだ"
 if [ -n "$_snap" ]; then
-  git -C "$WORK/repo" cat-file -e "${_snap}:work.txt" 2>/dev/null && report ok "スナップショットに通常ファイルは含まれる" || report ng "スナップショットに通常ファイルが無い"
-  git -C "$WORK/repo" cat-file -e "${_snap}:leak.py" 2>/dev/null && report ng "スナップショットに秘密入りファイルが含まれた" || report ok "スナップショット（GIT_INDEX_FILE 経路）でも秘密入りファイルを除外する"
+  # leak.py / .env はベースラインコミットで既に「base」内容として存在するため、cat-file -e の
+  # 存在確認だけでは常に真になり除外の成否を判定できない（#678 マージ時の回帰・本テスト自身の
+  # 設計ミスの修正）。値まで比較し、除外できていれば「base」のまま残っているはずである。
+  [ "$(git -C "$WORK/repo" show "${_snap}:work.txt" 2>/dev/null)" = "work" ] && report ok "スナップショットに通常ファイルは含まれる" || report ng "スナップショットに通常ファイルが無い"
+  [ "$(git -C "$WORK/repo" show "${_snap}:leak.py" 2>/dev/null)" = "base" ] && report ok "スナップショット（GIT_INDEX_FILE 経路）でも秘密入りファイルを除外する" || report ng "スナップショットに秘密入りファイルが含まれた"
 fi
 ( cd "$WORK/repo" && CLAUDE_CODE_REMOTE=true CLAUDE_STOP_GIT_CHECK_BLOCKED=1 \
     bash "$STOP_HOOK" <<< '{"session_id":"sess-D","stop_hook_active":"false"}' >/dev/null 2>&1 )
 [ "$(commit_count)" -eq $((_before + 1)) ] && report ok "秘密以外の作業は自動保全コミットされた（L-100 維持）" || report ng "自動保全コミットが作られなかった（L-100 後退）"
-git -C "$WORK/repo" cat-file -e "HEAD:work.txt" 2>/dev/null && report ok "通常ファイルはコミットに含まれる" || report ng "通常ファイルがコミットに含まれない"
-git -C "$WORK/repo" cat-file -e "HEAD:leak.py" 2>/dev/null && report ng "秘密入りファイルがコミットに含まれた" || report ok "秘密入りファイル（内容ルール）はコミットに含まれない"
-git -C "$WORK/repo" cat-file -e "HEAD:.env" 2>/dev/null && report ng ".env がコミットに含まれた" || report ok ".env（ファイル名ルール）はコミットに含まれない"
+# 同上の理由（leak.py / .env はベースラインで既に存在する）で、存在確認ではなく値を見る
+[ "$(git -C "$WORK/repo" show HEAD:work.txt 2>/dev/null)" = "work" ] && report ok "通常ファイルはコミットに含まれる" || report ng "通常ファイルがコミットに含まれない"
+[ "$(git -C "$WORK/repo" show HEAD:leak.py 2>/dev/null)" = "base" ] && report ok "秘密入りファイル（内容ルール）はコミットに含まれない" || report ng "秘密入りファイルがコミットに含まれた"
+[ "$(git -C "$WORK/repo" show HEAD:.env 2>/dev/null)" = "base" ] && report ok ".env（ファイル名ルール）はコミットに含まれない" || report ng ".env がコミットに含まれた"
 [ -f "$WORK/repo/leak.py" ] && [ -f "$WORK/repo/.env" ] && report ok "除外した秘密ファイルは作業ツリーに残る（削除しない）" || report ng "除外した秘密ファイルが作業ツリーから消えた"
 teardown_tmp_repo "$WORK"
 

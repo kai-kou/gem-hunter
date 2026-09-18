@@ -273,7 +273,7 @@ printf '%s' "$REVIEW_OUT" | grep -q 'スプリントメタを PR 本文に記載
   || report ng "フォールバック・リマインドが出ない（出力: ${REVIEW_OUT}）"
 
 run_review feat/pr-body-check "SELF_REVIEW_PR_BODY=Fixes a bug."
-printf '%s' "$REVIEW_OUT" | grep -q 'PR 本文に Session-Id: が無い' \
+printf '%s' "$REVIEW_OUT" | grep -q 'PR 本文に Session-Id 行がありません' \
   && report ok "本文あり（Session-Id 欠落）を検出する" \
   || report ng "Session-Id 欠落の Warning が無い（出力: ${REVIEW_OUT}）"
 printf '%s' "$REVIEW_OUT" | grep -q '検証証跡なし' \
@@ -293,7 +293,7 @@ python3 tools/x.py
 
 PR 前レビュー: 検出 0 件'
 run_review feat/pr-body-check "SELF_REVIEW_PR_BODY=${PR_BODY_GOOD}"
-printf '%s' "$REVIEW_OUT" | grep -q 'PR 本文に Session-Id: が無い' \
+printf '%s' "$REVIEW_OUT" | grep -q 'PR 本文に Session-Id 行がありません' \
   && report ng "値を記載した Session-Id が欠落と誤判定された（出力: ${REVIEW_OUT}）" \
   || report ok "値を記載した Session-Id は欠落と判定されない"
 printf '%s' "$REVIEW_OUT" | grep -q '検証証跡なし' \

@@ -129,11 +129,9 @@ KPT（Keep/Problem/Try）を以下の形式で出力してください。
 
 ```json
 {
-  "keep": [
-    {"title": "Keep アイテムのタイトル", "detail": "詳細説明"}
-  ],
+  "keep": [{ "title": "Keep アイテムのタイトル", "detail": "詳細説明" }],
   "problem": [
-    {"title": "Problem アイテムのタイトル", "detail": "詳細説明", "severity": "high|medium|low"}
+    { "title": "Problem アイテムのタイトル", "detail": "詳細説明", "severity": "high|medium|low" }
   ],
   "try": [
     {
@@ -151,21 +149,21 @@ KPT（Keep/Problem/Try）を以下の形式で出力してください。
 
 **urgency フィールドの定義**:
 
-| 値 | 意味 | 例 |
-|----|------|----|
-| `blocker` | パイプラインが止まる・データが壊れる致命的問題 | SSL エラー、タイムアウト、ファイル上書き |
-| `quality` | 品質に影響するが即座には止まらない問題 | 成果物品質の低下、整合ズレ（プロジェクト定義） |
-| `process` | 効率・自動化改善（品質には直接影響しない） | ソート順改善、ドキュメント構造整理 |
-| `doc-only` | 説明・コメント・ルール文書のみの更新 | SKILL.md のわかりにくい表現を修正 |
+| 値         | 意味                                           | 例                                             |
+| ---------- | ---------------------------------------------- | ---------------------------------------------- |
+| `blocker`  | パイプラインが止まる・データが壊れる致命的問題 | SSL エラー、タイムアウト、ファイル上書き       |
+| `quality`  | 品質に影響するが即座には止まらない問題         | 成果物品質の低下、整合ズレ（プロジェクト定義） |
+| `process`  | 効率・自動化改善（品質には直接影響しない）     | ソート順改善、ドキュメント構造整理             |
+| `doc-only` | 説明・コメント・ルール文書のみの更新           | SKILL.md のわかりにくい表現を修正              |
 
 **done_type フィールドの定義**:
 
-| 値 | 意味 | 対応カテゴリ |
-|----|------|------------|
-| `A-doc` | ドキュメント更新で完結（SKILL.md / docs/rules/*.md / CLAUDE.md） | doc / skill |
-| `B-script` | スクリプト実装が必要（`tools/*.py` / `tools/*.sh`） | script |
-| `C-validate` | フック/バリデーター追加が必要（`post-tool-use-validate.sh` 等） | validate |
-| `D-plan` | 実装計画のみ（large / 依存関係あり・今すぐ実装不可） | large issue |
+| 値           | 意味                                                             | 対応カテゴリ |
+| ------------ | ---------------------------------------------------------------- | ------------ |
+| `A-doc`      | ドキュメント更新で完結（SKILL.md / docs/rules/*.md / CLAUDE.md） | doc / skill  |
+| `B-script`   | スクリプト実装が必要（`tools/*.py` / `tools/*.sh`）              | script       |
+| `C-validate` | フック/バリデーター追加が必要（`post-tool-use-validate.sh` 等）  | validate     |
+| `D-plan`     | 実装計画のみ（large / 依存関係あり・今すぐ実装不可）             | large issue  |
 
 ---
 
@@ -196,6 +194,7 @@ key = {pipeline}|{target}
 `closed_list` の取得（下記）は、上記の突合で **資格判定を満たした Try が最初に出た時点で 1 回だけ** 行い、同一レトロ内の以後の Try で使い回す（毎回は取得しない。1 件も満たさなければ取得しない）。
 
 MCP（クラウド・一次経路）:
+
 ```
 open_list   = mcp__github__list_issues(owner, repo, state="OPEN",   labels=["type:retro-try"])   # Step 3-0 で取得済み
 closed_list = mcp__github__list_issues(owner, repo, state="CLOSED", labels=["type:retro-try"], since={90 日前の ISO 8601 UTC})
@@ -204,6 +203,7 @@ closed_list = mcp__github__list_issues(owner, repo, state="CLOSED", labels=["typ
 ```
 
 判定順（open_list との突合）:
+
 1. `open_list` に類似あり → G（既存 Issue へコメント追記）
 2. 1 で一致なし、かつ `closed_list` に類似あり → `mcp__github__issue_read(method="get", issue_number={N})` で `state_reason` を確認する
    （類似ヒット時のみの追加 1 呼び出し）:
@@ -217,6 +217,7 @@ closed_list = mcp__github__list_issues(owner, repo, state="CLOSED", labels=["typ
 90 日窓（`since`）は closed Issue の全件検索コストを避けるための境界（数値の SSOT は `docs/rules/retrospective-rules.md`「WIP 制御」）。
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 gh issue list -R kai-kou/gem-hunter \
   --label "type:retro-try" \
@@ -229,12 +230,12 @@ gh issue list -R kai-kou/gem-hunter \
 
 以下のいずれかに該当する場合、**類似 Issue あり** と判定する:
 
-| 判定条件 | 例 |
-|---------|-----|
-| タイトルに **同じツール名・ファイル名** が含まれる | プロジェクト定義のツール・スクリプト名（例: `generate_*.py`） |
-| タイトルに **同じ品質指標・フィールド名** が含まれる | プロジェクト定義の品質指標・フィールド名（例: ドメイン固有の検証フラグ） |
-| タイトルに **同じワークフロー・ステップ名** が含まれる | 各パイプライン名・ステップ名（プロジェクト定義） |
-| タイトルに **同じ問題パターン** を指している | 「〜を検証する」「〜をチェックする」といった表現が同じ対象を指している |
+| 判定条件                                               | 例                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| タイトルに **同じツール名・ファイル名** が含まれる     | プロジェクト定義のツール・スクリプト名（例: `generate_*.py`）            |
+| タイトルに **同じ品質指標・フィールド名** が含まれる   | プロジェクト定義の品質指標・フィールド名（例: ドメイン固有の検証フラグ） |
+| タイトルに **同じワークフロー・ステップ名** が含まれる | 各パイプライン名・ステップ名（プロジェクト定義）                         |
+| タイトルに **同じ問題パターン** を指している           | 「〜を検証する」「〜をチェックする」といった表現が同じ対象を指している   |
 
 > **判定の迷い時の原則**: 同じファイル・ツール・フィールドを対象とした改善提案は、たとえ観点が少し異なっても「類似」として既存 Issue にまとめる。Issue の乱立を防ぎ、関連情報を一箇所に集約することを優先する。
 
@@ -271,7 +272,8 @@ gh issue list -R kai-kou/gem-hunter \
 このコメントをもって {N} 回目の検知となります。優先度の引き上げを検討してください。
 
 ---
-*レトロスペクティブスキルによる自動追記*
+
+_レトロスペクティブスキルによる自動追記_
 ```
 
 追記後、既存 Issue の番号を「コメント追記」として記録し、Step 5 の完了報告に含める。
@@ -334,8 +336,9 @@ body: （本文テンプレートに従って生成）
 - 起票理由: {blocker 即時 / 観測 n 回目（初回 {日付}）+ 空き枠あり}
 
 ---
-*このIssueはレトロスペクティブスキルにより自動生成されました*
-*フィルタ: `type:retro-try` ラベル（クラウド: `mcp__github__list_issues(labels=["type:retro-try"])` / ローカル: `gh issue list -R kai-kou/gem-hunter --label "type:retro-try" --state open`）*
+
+_このIssueはレトロスペクティブスキルにより自動生成されました_
+_フィルタ: `type:retro-try` ラベル（クラウド: `mcp__github__list_issues(labels=["type:retro-try"])` / ローカル: `gh issue list -R kai-kou/gem-hunter --label "type:retro-try" --state open`）_
 ```
 
 ---
@@ -368,6 +371,7 @@ git push
 **根本原因**: {なぜ発生するのかの分析}
 
 **試して失敗したアプローチ**:
+
 - 初回発見のため記録なし
 
 **対策**: {効果的だった解決策、または「要調査」}
@@ -395,6 +399,7 @@ git push
 本スキルが資格判定を満たして **昇格させた**（Issue 化・reopen した）Try のみが本フローの対象になる（台帳記録のみで留まっている Try は Issue ではないため対象外）。以下のフィルタで次回実行時に取得・対応する（実際の対応は `retro-try-handler` スキルが担う。`retro-try-handler` は台帳を読まず、オープン Issue の消化のみを行う）。
 
 MCP（クラウド・一次経路）:
+
 ```
 # 未対応の Try Issue を一覧取得（複数ラベルは OR のため単一ラベルで取得し client-side で AND 判定）
 mcp__github__list_issues(owner, repo, state="OPEN", labels=["type:retro-try"])
@@ -409,6 +414,7 @@ mcp__github__issue_write(method="update", issue_number=N, state="closed")
 ```
 
 ローカル環境（gh CLI 到達可能時）の代替:
+
 ```bash
 # 未対応の Try Issue を一覧取得
 gh issue list -R kai-kou/gem-hunter \
@@ -447,7 +453,7 @@ gh issue close {number} \
 直接編集しないこと（`retrospective` Step 3-2 が read-modify-write で更新する）。
 
 | key | count | first_seen | last_seen | urgency | last_title | issue |
-|-----|-------|-----------|-----------|---------|-----------|-------|
+| --- | ----- | ---------- | --------- | ------- | ---------- | ----- |
 ```
 
 データ行の例（**テンプレートには含めない**。記入形式の参考のみ）:
@@ -461,9 +467,20 @@ gh issue close {number} \
 ### 2. コメントテンプレート（監査ログ・1 レトロ 1 本）
 
 ```json
-[{"key": "script|fact_check_flags", "date": "2026-09-14", "pipeline": "script", "entity_id": "V001",
-  "title": "fact_check_flags の自動解消率をセルフレビューで検出する", "urgency": "quality", "done_type": "A-doc",
-  "priority": "medium", "estimated_effort": "small", "promoted_to": null}]
+[
+  {
+    "key": "script|fact_check_flags",
+    "date": "2026-09-14",
+    "pipeline": "script",
+    "entity_id": "V001",
+    "title": "fact_check_flags の自動解消率をセルフレビューで検出する",
+    "urgency": "quality",
+    "done_type": "A-doc",
+    "priority": "medium",
+    "estimated_effort": "small",
+    "promoted_to": null
+  }
+]
 ```
 
 1 レコード = 1 Try（配列に今回の全 Try を並べる）。`promoted_to` は昇格した場合のみ Issue 番号を入れる（それ以外は `null`）。

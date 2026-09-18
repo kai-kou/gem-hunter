@@ -1213,9 +1213,20 @@ def _self_test_debug_trace() -> list[str]:
 # 説明文にも当たり、非スプリント PR で常時 Warning が出る（オオカミ少年化）。判定の実体は
 # pr_meta_patterns.py に集約している（同じ誤りを各所で独立に直さないため）。
 _SPRINT_GOAL_LINE_RE = SPRINT_GOAL_LINE_RE
-_SESSION_ID_LINE_RE = meta_line_re("Session-Id")
+# `Session-Id:` の値部分だけを取り出す（プレースホルダ判定用・base#628 Layer 1 再レビュー指摘）。
+# meta_line_re() は「値の先頭が非空白か」しか見ないため、`Session-Id: {UUID}` のような
+# 未記入テンプレートの値も「記載あり」と誤判定してしまう。
+_SESSION_ID_VALUE_RE = re.compile(r"(?:^|\n)[ \t]*Session-Id:[ \t]*(\S+)")
 _TEAM_LINE_RE = meta_line_re("Team")
 _SP_LABEL_RE = re.compile(r"(?:^|[\s(\[`])sp:\d+\b")
+
+
+def _session_id_filled(pr_body: str) -> bool:
+    """`Session-Id:` が値付きで、かつプレースホルダ（`{UUID}` 等）ではないかを判定する。"""
+    m = _SESSION_ID_VALUE_RE.search(pr_body)
+    if not m:
+        return False
+    return not _EDGE_PLACEHOLDER_RE.match(m.group(1))
 
 
 def sprint_meta_warnings(pr_body: str | None) -> list[str]:
@@ -1237,7 +1248,7 @@ def sprint_meta_warnings(pr_body: str | None) -> list[str]:
         ]
 
     out: list[str] = []
-    if not _SESSION_ID_LINE_RE.search(pr_body):
+    if not _session_id_filled(pr_body):
         out.append(
             f"PR 本文に Session-Id 行がありません（--mine 所有判定の前提・session-sprint-rules.md §2）: {sid_hint}"
         )
@@ -2165,6 +2176,32 @@ def self_test_errors(files: list[str]) -> list[str]:
     return errs
 
 
+def _read_pr_body(use_stdin: bool) -> str | None:
+    """PR 本文の取得（優先順: SELF_REVIEW_PR_BODY_FILE → SELF_REVIEW_PR_BODY → --pr-body-stdin）。
+
+    - SELF_REVIEW_PR_BODY_FILE（本命・#628）: pre-pr-create-check.sh が E2BIG 回避のため
+      一時ファイル経由で本文を渡す経路。値が空・未設定・読み取り失敗のときは「本文なし」
+      として次の経路へフォールバックする（「本文はあるが Session-Id: が無い」という
+      誤判定をさせないため・pre-pr-create-check.sh 側コメント参照）。
+    - SELF_REVIEW_PR_BODY（直接値）: tools/test_self_review_check.sh が使うテスト用の
+      フォールバック経路（ファイルを介さず本文を直接渡したいとき）。
+    - --pr-body-stdin: `_self_test_sprint_pr_closes_wiring()` が main() への配線を
+      実プロセスの終了コードで検証するために使う自己配線テスト専用の入口。
+    """
+    file_path = os.environ.get("SELF_REVIEW_PR_BODY_FILE", "")
+    if file_path:
+        try:
+            return Path(file_path).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            pass
+    direct = os.environ.get("SELF_REVIEW_PR_BODY")
+    if direct is not None:
+        return direct
+    if use_stdin:
+        return sys.stdin.read()
+    return None
+
+
 def main(pr_body: str | None = None) -> int:
     if not Path(".git").exists() and sh(["git", "rev-parse", "--git-dir"]).returncode != 0:
         return 2
@@ -2363,7 +2400,7 @@ if __name__ == "__main__":
     _args = _parser.parse_args()
     if _args.self_test:
         sys.exit(run_self_test())
-    _pr_body = sys.stdin.read() if _args.pr_body_stdin else None
+    _pr_body = _read_pr_body(_args.pr_body_stdin)
     try:
         sys.exit(main(_pr_body))
     except Exception as e:

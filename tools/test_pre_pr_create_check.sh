@@ -39,13 +39,32 @@
 
 set -uo pipefail
 
+# self_review_check.py が git_diff_utils / md_fence / pr_meta_patterns を import すると
+# tools/__pycache__/*.pyc が生成される。実リポジトリは .gitignore で除外済みだが、
+# フィクスチャリポジトリ（setup_repo）には .gitignore が無いため、これが未追跡ファイルとして
+# 検出され、同一 $WORK を使い回す後続ケース（3・4 等）の「未コミット・未push」チェックを
+# 誤って発火させる。テスト実行中はバイトコードキャッシュ自体を作らせない。
+export PYTHONDONTWRITEBYTECODE=1
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOK="$REPO_ROOT/.claude/hooks/pre-pr-create-check.sh"
 DETECT_TOOL="$REPO_ROOT/tools/detect_pr_diff_type.py"
 SELF_REVIEW_TOOL="$REPO_ROOT/tools/self_review_check.py"
+# self_review_check.py の必須 import 先（tools/ 直下の兄弟モジュール）。一時リポジトリへ
+# self_review_check.py 単体だけコピーすると ModuleNotFoundError で即死する（本体は実リポジトリの
+# tools/ 直下に同居している前提のため）。git_diff_utils / md_fence / pr_meta_patterns は
+# トップレベル import（必須）、他の外部ツール（secret_scan 等）は try/except 済みの任意 import。
+SELF_REVIEW_DEPS=(
+  "$REPO_ROOT/tools/git_diff_utils.py"
+  "$REPO_ROOT/tools/md_fence.py"
+  "$REPO_ROOT/tools/pr_meta_patterns.py"
+)
 [ -f "$HOOK" ] || { echo "FATAL: フックが見つかりません: $HOOK"; exit 1; }
 [ -f "$DETECT_TOOL" ] || { echo "FATAL: detect_pr_diff_type.py が見つかりません: $DETECT_TOOL"; exit 1; }
 [ -f "$SELF_REVIEW_TOOL" ] || { echo "FATAL: self_review_check.py が見つかりません: $SELF_REVIEW_TOOL"; exit 1; }
+for _dep in "${SELF_REVIEW_DEPS[@]}"; do
+  [ -f "$_dep" ] || { echo "FATAL: self_review_check.py の依存モジュールが見つかりません: $_dep"; exit 1; }
+done
 # shellcheck source=tools/lib/test_harness.sh
 source "$REPO_ROOT/tools/lib/test_harness.sh"
 
@@ -68,6 +87,7 @@ setup_repo() {
   mkdir -p "$WORK/repo/tools"
   cp "$DETECT_TOOL" "$WORK/repo/tools/detect_pr_diff_type.py"
   cp "$SELF_REVIEW_TOOL" "$WORK/repo/tools/self_review_check.py"
+  cp "${SELF_REVIEW_DEPS[@]}" "$WORK/repo/tools/"
   echo "base" > "$WORK/repo/base.txt"
   git -C "$WORK/repo" add -A
   git -C "$WORK/repo" commit --quiet -m "base"
@@ -75,6 +95,15 @@ setup_repo() {
   git -C "$WORK/repo" fetch --quiet origin "+main:refs/remotes/origin/main" 2>/dev/null || true
 
   git -C "$WORK/repo" checkout --quiet -b "$BRANCH"
+  # self_review_check.py の PR 本文チェック（Session-Id 等・Issue base#628）は
+  # changed_files()（git_diff_utils.collect_changed_files()）が非空のときにしか発火しない
+  # （`if files:` ゲート・base#628 導入当初からの既存仕様）。extra_path 未指定のケース
+  # （has_code=false を意図したケース）でも origin/main との差分を必ず作るため、
+  # has_code/high_risk 判定に影響しない拡張子（.txt・CODE_EXTENSIONS / HIGH_RISK_PATH_PATTERN
+  # のいずれにも一致しない）のマーカーファイルを常時コミットする。
+  echo "pr-body-check fixture marker" > "$WORK/repo/pr-body-check-fixture.txt"
+  git -C "$WORK/repo" add -A
+  git -C "$WORK/repo" commit --quiet -m "test: add pr-body-check fixture marker"
   if [ -n "$extra_path" ]; then
     mkdir -p "$(dirname "$WORK/repo/$extra_path")"
     printf '%s\n' "$extra_content" > "$WORK/repo/$extra_path"
@@ -107,7 +136,7 @@ ctx_of() { # ctx_of <hook stdout>: hookSpecificOutput.additionalContext を取�
 # count_new_warnings <additionalContext>: 本チェックが追加した4項目のうち検出された件数を数える
 count_new_warnings() {
   local ctx="$1" n=0
-  printf '%s' "$ctx" | grep -q 'PR 本文に Session-Id: が無い' && n=$((n + 1))
+  printf '%s' "$ctx" | grep -q 'PR 本文に Session-Id 行がありません' && n=$((n + 1))
   printf '%s' "$ctx" | grep -q '検証証跡なし' && n=$((n + 1))
   printf '%s' "$ctx" | grep -q 'PR 前フレッシュ文脈レビューの記録が無い' && n=$((n + 1))
   printf '%s' "$ctx" | grep -q '高リスク差分（hooks / settings / permissions 等）なのにエッジケース表が無い' && n=$((n + 1))
@@ -119,6 +148,18 @@ mcp_json() { # mcp_json <body>: mcp__github__create_pull_request 呼び出しを
     '{tool_name: "mcp__github__create_pull_request", tool_input: {body: $body, head: "irrelevant", owner: "acme", repo: "widgets"}}'
 }
 
+# 4.5 節（run_checks 証跡表の貼付検査・#72/#543）は tool_name=mcp__github__create_pull_request の
+# 全呼び出しに無条件でかかる（本チェック＝Issue #627/#628 対策 C/D とは独立のゲート）。フィクスチャ
+# リポジトリには tools/check_run_checks_evidence.py を同梱しない（Python 判定器不在時の awk
+# フォールバック経路を使う）ため、貼付有無だけを見る awk 判定を満たせる最小の表を各本文に付与する
+# （4.5 の挙動そのものは変更しない・本文側を実運用と同じ形に揃えるだけ）。
+RUN_CHECKS_TABLE='
+## run_checks 結果
+
+| チェック | 結果 | 所要秒数 |
+|------|------|------|
+| fixture_check | PASS | 0.1 |'
+
 GOOD_BODY='Session-Id: sess-good-0001
 
 ## テスト・確認内容
@@ -127,9 +168,9 @@ GOOD_BODY='Session-Id: sess-good-0001
 python3 tools/x.py
 ```
 
-PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'
+PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'"$RUN_CHECKS_TABLE"
 
-BAD_BODY='Fixes a small bug in the parser.'
+BAD_BODY='Fixes a small bug in the parser.'"$RUN_CHECKS_TABLE"
 
 echo "[ケース 1] 全要素が揃った本文（has_code=true）→ 新規 Warning 0 件"
 setup_repo "feature.py" '"""Test fixture for has_code=true."""
@@ -156,7 +197,7 @@ _n2=$(count_new_warnings "$_ctx2")
 [ "$_n2" -eq 2 ] \
   && report ok "新規 Warning が2件" \
   || report ng "新規 Warning が ${_n2} 件（期待 2・additionalContext: ${_ctx2}）"
-printf '%s' "$_ctx2" | grep -q 'PR 本文に Session-Id: が無い' \
+printf '%s' "$_ctx2" | grep -q 'PR 本文に Session-Id 行がありません' \
   && report ok "Session-Id 不足を検出" || report ng "Session-Id 不足の Warning が無い"
 printf '%s' "$_ctx2" | grep -q '検証証跡なし' \
   && report ok "検証証跡なしを検出" || report ng "検証証跡なしの Warning が無い"
@@ -231,7 +272,7 @@ BULLET_BODY='Session-Id: sess-good-0002
 - [ ] `python3 tools/x.py --self-test` → PASS
 - bash tools/test_x.sh → PASS=3 FAIL=0
 
-PR 前レビュー: スキップ（データのみ差分）'
+PR 前レビュー: スキップ（データのみ差分）'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$BULLET_BODY")"
 _ctx7=$(ctx_of "$HOOK_STDOUT")
 _n7=$(count_new_warnings "$_ctx7")
@@ -246,7 +287,7 @@ PROSE_BODY='Session-Id: sess-good-0003
 - npm run build was not executed due to time
 - sh testing needed but not done yet
 
-PR 前レビュー: スキップ（データのみ差分）'
+PR 前レビュー: スキップ（データのみ差分）'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$PROSE_BODY")"
 _ctx7b=$(ctx_of "$HOOK_STDOUT")
 printf '%s' "$_ctx7b" | grep -q '検証証跡なし' \
@@ -310,7 +351,7 @@ TEMPLATE_BODY='Session-Id: {UUID}
 |------|------|---------|------|
 | {入力} | {状態} | {期待挙動} | {検証} |
 
-PR 前レビュー: 検出 N 件（🔴a 🟡b ⚪c・CONFIRMED d / PLAUSIBLE e）→ 修正 f 件・見送り g 件'
+PR 前レビュー: 検出 N 件（🔴a 🟡b ⚪c・CONFIRMED d / PLAUSIBLE e）→ 修正 f 件・見送り g 件'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$TEMPLATE_BODY")"
 _ctx10=$(ctx_of "$HOOK_STDOUT")
 _n10=$(count_new_warnings "$_ctx10")
@@ -330,7 +371,7 @@ FILLED_BODY='Session-Id: f7f07f85-ba7f-5236-81b1-c3c47b1ed177
 |------|------|---------|------|
 | 空 JSON `{}` | 初回 | 既定値で続行 | 実行済み |
 
-PR 前レビュー: 検出 2 件（🔴0 🟡1 ⚪1・CONFIRMED 1 / PLAUSIBLE 1）→ 修正 1 件・見送り 1 件'
+PR 前レビュー: 検出 2 件（🔴0 🟡1 ⚪1・CONFIRMED 1 / PLAUSIBLE 1）→ 修正 1 件・見送り 1 件'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$FILLED_BODY")"
 _ctx10b=$(ctx_of "$HOOK_STDOUT")
 _n10b=$(count_new_warnings "$_ctx10b")
@@ -363,7 +404,7 @@ PROSE_TABLE_BODY='Session-Id: f7f07f85-ba7f-5236-81b1-c3c47b1ed177
 |------|------|
 | tools/x.py | 追加 |
 
-PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'
+PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$PROSE_TABLE_BODY")"
 _ctx10e=$(ctx_of "$HOOK_STDOUT")
 printf '%s' "$_ctx10e" | grep -q '高リスク差分（hooks / settings / permissions 等）なのにエッジケース表が無い' \
