@@ -79,7 +79,7 @@
 
 - ドキュメント内のプレースホルダ（`SLACK_BOT_TOKEN=xoxb-xxxxx-xxxxx-xxxxx`）
 - マスク処理ツールの docstring（`mask_value("xoxb-abc123def456")`）
-- 鍵形式の説明文（`-----BEGIN RSA PRIVATE KEY-----` という **形式名** への言及）
+- 鍵形式の説明文（`-----BEGIN RSA PRIVATE KEY-----` という **形式名** への言及）  <!-- secret-scan:ignore -->
 - GitGuardian bot が PR #141 / #143 / #183 に残した検出通知（参照している値はテスト用ダミー。通知本文に値そのものは含まれない）
 
 > 🔵 **`main` の 50 コミットだけでは不十分** だった点に注意。`main` は squash マージのため、各 PR のスカッシュ前のコミットは `claude/*` ブランチ側にしか存在しない。46 ブランチ 368 コミットへ広げて初めて全履歴を見たことになる。

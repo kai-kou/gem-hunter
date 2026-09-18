@@ -9,6 +9,17 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/hook_block.sh
 source "$HOOK_DIR/lib/hook_block.sh"
 
+# _run_with_timeout <秒> <コマンド...>: timeout コマンドがあれば付け、無ければ（macOS 等）素で実行する。
+# self_review_check.py と detect_pr_diff_type.py の呼び出しで共用（分岐の二重実装を避ける）。
+_run_with_timeout() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
 input=$(cat)
 
 # ツール名を取得（printf を使い、バックスラッシュを含む入力でも echo のエスケープ解釈に依存しない）
@@ -33,18 +44,6 @@ elif [ "$tool_name" = "Bash" ]; then
 else
   # Bash / MCP PR 作成以外のツールは対象外
   exit 0
-fi
-
-# PR 本文（`tool_input.body`）は MCP 経路だけが構造化して持つ。Bash（`gh pr create`）経路の
-# 本文は `tool_input.command` の中（`--body` 引数・ヒアドキュメント）にあり確実には取り出せない
-# ため取得しない。ここで既定値を置かないと、Bash 経路が後段（4.6 / 5 節）の `$pr_body` 参照で
-# `set -u` の unbound variable に落ち、self_review_check.py の判定と無関係に PR 作成が
-# 常時ブロックされる（PR #742 Layer 1 レビューで実測）。
-pr_body=""
-have_pr_body=0
-if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
-  pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
-  have_pr_body=1
 fi
 
 # --- poll_pr_reviews.sh 引数バリデーション（Lv3 ハードコンストレイント・Bash 経路のみ） ---
@@ -93,7 +92,175 @@ if [ "$is_pr_create" -ne 1 ]; then exit 0; fi
 if ! git rev-parse --git-dir >/dev/null 2>&1; then exit 0; fi
 
 # pathspec は cwd 相対のため、リポジトリルートへ固定する（#243 レビュー）
+# gh pr create --body-file の相対パスは呼び出し元 cwd（hook 入力の .cwd）基準で解決する
+# （cd 後はリポジトリルート基準になり別ファイルを読んでしまう・#627 レビュー指摘）
+hook_cwd=$(printf '%s\n' "$input" | jq -r '.cwd // ""' 2>/dev/null); hook_cwd="${hook_cwd:-$PWD}"
 cd "$(git rev-parse --show-toplevel)" || exit 0
+
+# PR 本文の抽出（#628: Session-Id / 検証証跡等の検証ロジックは tools/self_review_check.py に
+# 集約済み。フックは本文の抽出と SELF_REVIEW_PR_BODY_FILE 環境変数での受け渡しだけを担う）。
+# CLAUDE_BASE_DISABLE_PR_BODY_CHECK=1 で抽出自体・本チェック全体をスキップできる
+# （命名規則は lib/workspace_write_guard.py の CLAUDE_BASE_DISABLE_WORKSPACE_WRITE_GUARD に合わせた）。
+# 🔵 従来は MCP 経路（`tool_input.body`）だけが本文を持ち、Bash（`gh pr create`）経路は
+#    確実に取り出せないとして空文字列のままにしていた（PR #742 の unbound variable 対策）。
+#    このため 4.5〜4.7 節の `$pr_body` 参照は Bash 経路では常に空になり実質未検証だった。
+#    下記の _extract_gh_pr_body（base 由来）で Bash 経路の `--body` / `--body-file` /
+#    ヒアドキュメントも抽出し、両経路で同じ検証が効くようにする。
+_extract_gh_pr_body() {
+  # 外側 timeout（10 秒）: --body-file が FIFO / デバイスファイルを指すと open / read が戻らず、フック全体
+  # （ひいては PR 作成）が無期限に止まる経路を塞ぐ（#627 Layer 2 指摘）。Python 側でも通常ファイル以外は
+  # 読まず、読む長さを 1 MiB で打ち切る（timeout 不在環境＝macOS 等でも二重に守る）。
+  _run_with_timeout 10 python3 - "$1" <<'PY_EOF'
+import os
+import re
+import shlex
+import sys
+
+# 推奨形 `--body "$(cat <<'EOF' ... EOF)"` は heredoc 本文をそのまま取り出す（shlex は heredoc を
+# 理解せず、本文中の `"` が奇数個だと ValueError で空扱いになり全チェックが無警告で素通りする）
+#
+# 🔴 終端は「行頭アンカー（re.MULTILINE の ^ / $）+ 貪欲一致」で判定する（#1130 Layer 1 CONFIRMED 指摘）。
+# 本リポジトリのルール文書（pr-review-flow-summary.md 等）は本コマンド形式そのものを例示として
+# 引用しており、PR 本文にその引用がそのまま含まれることがある。旧実装は非貪欲（.*?）だったため、
+# 本文中に引用された「入れ子の EOF / )」を実際の終端と誤認し、その後ろにある本物の Session-Id 行や
+# run_checks 結果表を切り捨てていた（抽出漏れが「本文なし」ではなく「本文の後半だけ消える」形で
+# 起きるため、既存の空文字チェックでは検知できない）。デリミタ行を `^[ \t]*<delim>[ \t]*$`
+# （水平空白のみ・行全体一致）に限定し、`.*` を貪欲にすることで、最初に出会う入れ子の例示ではなく
+# 最後（＝実際の終端）に出会う行を採用する。
+HEREDOC_RE = re.compile(
+    r"""--body(?:=|\s+)["']?\$\(\s*cat\s+<<-?\s*['"]?(\w+)['"]?\s*\n(.*)^[ \t]*\1[ \t]*$\n\s*\)""",
+    re.S | re.M,
+)
+
+
+def _lenient_extract(cmd: str) -> tuple:
+    """shlex が失敗したときのフォールバック（--body-file / -F と --body "..." を正規表現で拾う）。
+
+    🔴 --body の値は非貪欲（.*?）にし、次の ` --<longopt>` トークンの手前（または文字列末尾）で
+    区切る（#1130 Layer 1 CONFIRMED 指摘）。旧実装は貪欲（.*）だったため、`--body "..." --title "..."`
+    のように本文の後ろに別の引用付きオプションが続くと、そのオプションの値（および間の `--title "` 等の
+    文字列）まで本文に混入していた。本文が本来は不備（Session-Id / 検証証跡なし）でも、後続オプション
+    の値にそれらのキーワードが偶然含まれていれば「記載あり」と誤判定し、警告が黙って消える
+    （fail-open）。
+    """
+    m = re.search(r"(?:--body-file|-F)(?:=|\s+)(\S+)", cmd)
+    if m:
+        return None, m.group(1).strip("\"'")
+    m = re.search(r'--body(?:=|\s+)"(.*?)"(?=\s+--[A-Za-z]|\s*$)', cmd, re.S)
+    if m:
+        return m.group(1), None
+    return None, None
+
+
+def main() -> None:
+    cmd = sys.argv[1]
+    m = HEREDOC_RE.search(cmd)
+    if m:
+        sys.stdout.write(m.group(2))
+        return
+    body = None
+    body_file = None
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        body, body_file = _lenient_extract(cmd)
+        tokens = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in ("--body", "-b") and i + 1 < len(tokens):
+            body = tokens[i + 1]
+            i += 2
+            continue
+        if tok.startswith("--body="):
+            body = tok[len("--body="):]
+            i += 1
+            continue
+        if tok in ("--body-file", "-F") and i + 1 < len(tokens):
+            body_file = tokens[i + 1]
+            i += 2
+            continue
+        if tok.startswith("--body-file="):
+            body_file = tok[len("--body-file="):]
+            i += 1
+            continue
+        i += 1
+    if body is not None:
+        sys.stdout.write(body)
+        return
+    if body_file:
+        if not os.path.isabs(body_file):
+            # フックは既にリポジトリルートへ cd 済みなので、呼び出し元 cwd を基準に解決する
+            body_file = os.path.join(os.environ.get("PR_BODY_BASE_DIR") or os.getcwd(), body_file)
+        # 通常ファイル以外（FIFO / デバイス / ディレクトリ）は読まない（open がブロックする・#627 Layer 2）。
+        # 読む長さも 1 MiB で打ち切る（PR 本文は数十 KB が上限。巨大ファイルでフックを止めない）
+        if not os.path.isfile(body_file):
+            return
+        try:
+            with open(body_file, encoding="utf-8") as f:
+                sys.stdout.write(f.read(1024 * 1024))
+        except OSError:
+            return
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        pass
+PY_EOF
+}
+
+pr_body=""
+if [ "$tool_name" = "mcp__github__create_pull_request" ]; then
+  pr_body=$(printf '%s\n' "$input" | jq -r '.tool_input.body // ""')
+elif [ "$tool_name" = "Bash" ]; then
+  # 外側 timeout（exit=124）や python3 起動失敗を `set -e` に拾わせない。抽出に失敗したら本文なし扱いで
+  # 本チェックだけをスキップし、組み立て済みの Layer 1 リマインダー等の出力は失わない
+  # （#627 Layer 1 再レビュー指摘）
+  pr_body=$(PR_BODY_BASE_DIR="$hook_cwd" _extract_gh_pr_body "$command") || pr_body=""
+fi
+# 巨大な PR 本文が 1 MiB を超えることは想定しない（--body-file 経路は抽出時点で既に 1 MiB に
+# 打ち切り済み）。文字数での打ち切りは行わない（下の「本文をファイル経由で渡す」が
+# execve(2) の上限を回避するため不要・Layer 1 指摘で判明した per-string 上限問題の対策）。
+# 🔴 CLAUDE_BASE_DISABLE_PR_BODY_CHECK は self_review_check.py の PR 本文チェック（Session-Id /
+# 検証証跡 / エッジケース表・#627 対策 C/D）だけを無効化するトグルで、4.5（run_checks 証跡表）・
+# 4.6（並行安全性）・4.7（証跡鮮度）は無関係の別ゲートなので、この時点では pr_body の抽出自体を
+# 止めない（以前は抽出そのものを止めており、トグル使用時に 4.5 が「本文が空」と誤認してブロック
+# する副作用があった）。トグルの効果は self_review_check.py へ渡す本文（pr_body_file 経由）だけに
+# 限定して適用する。
+
+# PR 本文を環境変数の値としてではなく、一時ファイル経由で self_review_check.py に渡す
+# （#628 Layer 1 セキュリティ指摘）。Linux の execve(2) は単一の引数/環境変数文字列に
+# MAX_ARG_STRLEN（既定 128KiB）の上限があり、`KEY=value` の value 部分がこれを超えると
+# E2BIG で起動自体が失敗する。この失敗は既存の fail-open 分岐（exit が 1 でも 124 でもない
+# 「チェッカー異常」扱い）に落ちて Lv3 ハードコンストレイントが無警告で素通りする
+# （実機確認済み: 200,000 字の値で `Argument list too long` が発生する）。ファイルサイズは
+# execve(2) の制約を受けないため、この経路ではクラスの問題が構造的に発生しない。
+pr_body_file=""
+# `[ -n "$x" ] && rm ...` 形だと x が空のときトラップの終了状態が 1 になり、EXIT トラップの
+# 終了状態がスクリプト全体の終了コードを上書きしてしまう（`if` 形は条件不成立時に 0 を返す）。
+cleanup_pr_body_file() { if [ -n "$pr_body_file" ]; then rm -f "$pr_body_file"; fi; }
+trap cleanup_pr_body_file EXIT
+# INT/TERM は EXIT だけでは捕捉されない（デフォルトの終了動作が先に起こりうる）ため明示的に
+# trap し、掃除した上で自分で終了する（SIGKILL は捕捉不能だが、フック harness のタイムアウト
+# エスカレーションは通常 SIGTERM から始まるため、これだけでも残留の大半を防げる・
+# Layer 1 セキュリティ指摘）。143/130 は SIGTERM/SIGINT の慣例的な終了コード（128+signum）。
+trap 'cleanup_pr_body_file; exit 143' TERM
+trap 'cleanup_pr_body_file; exit 130' INT
+# CLAUDE_BASE_DISABLE_PR_BODY_CHECK=1 のときは self_review_check.py に本文を渡さない
+# （Session-Id / 検証証跡 / エッジケース表チェックだけを無効化する・上のコメント参照）。
+if [ -n "$pr_body" ] && [ "${CLAUDE_BASE_DISABLE_PR_BODY_CHECK:-0}" != "1" ]; then
+  # 固定プレフィックスにする（下記スタール掃除が自分の生成物だけを対象にできるようにするため）。
+  pr_body_file=$(mktemp "${TMPDIR:-/tmp}/claude-prbody.XXXXXX" 2>/dev/null) || pr_body_file=""
+  if [ -n "$pr_body_file" ]; then
+    printf '%s' "$pr_body" > "$pr_body_file" 2>/dev/null || { rm -f "$pr_body_file"; pr_body_file=""; }
+  fi
+fi
+# SIGKILL 等で EXIT/INT/TERM トラップが発火しなかった過去の一時ファイルが残っている場合に
+# 掃除する（残留は secrets 漏えいの残存期間を伸ばすため・Layer 1 セキュリティ指摘）。
+# 固定プレフィックス配下だけを対象にし、60 分超のものだけ削除する（実行中の他プロセスを壊さない）。
+find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'claude-prbody.*' -mmin +60 -delete 2>/dev/null || true
 
 # 月次コストテレメトリは PR 前チェックから除外する（#242・stop-git-check.sh と同一方針）。
 # 旧ブランチで追跡されたまま --flush 更新されると、WIP コミット除外と衝突して
@@ -514,20 +681,10 @@ check_output=""
 if [ -f "$scripts_root/tools/self_review_check.py" ]; then
   cd "$repo_root" || exit 0
   check_exit=0
-  # PR 本文を取れるのは MCP 経路だけ（上部の have_pr_body 参照）。Bash 経路で空文字列を
-  # `--pr-body-stdin` に流すと「本文はあるが Session-Id: が無い」と誤判定するため、
-  # 本文が無いときはフラグを付けずに従来どおり一般リマインドを出させる。
-  _srx_args=()
-  if [ "$have_pr_body" -eq 1 ]; then
-    _srx_args=(--pr-body-stdin)
-  fi
-  if command -v timeout >/dev/null 2>&1; then
-    check_output=$(printf '%s' "$pr_body" | timeout 90 python3 "$scripts_root/tools/self_review_check.py" ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
-  else
-    # macOS 等 timeout 不在環境のフォールバック
-    check_output=$(printf '%s' "$pr_body" | python3 "$scripts_root/tools/self_review_check.py" ${_srx_args[@]+"${_srx_args[@]}"} 2>&1) || check_exit=$?
-  fi
-  unset _srx_args
+  # PR 本文は一時ファイル経由で渡す（#628・E2BIG 対策。上部の pr_body_file 生成を参照）。
+  # ファイルが無い（本文が空・生成失敗）ときは環境変数を空にし、self_review_check.py 側に
+  # 「本文はあるが Session-Id: が無い」という誤判定をさせない（従来の have_pr_body 分岐と同じ意図）。
+  check_output=$(SELF_REVIEW_PR_BODY_FILE="$pr_body_file" _run_with_timeout 90 python3 "$scripts_root/tools/self_review_check.py" 2>&1) || check_exit=$?
   if [ "$check_exit" -eq 1 ]; then
     hook_block "[pre-pr-create-check] セルフレビュー機械チェックで Error を検出したため PR 作成をブロックしました。
 
@@ -577,7 +734,7 @@ unset _merge_base _wip_commits
 #   内容（Layer 1 実行指示 + self_review_check の Warning）は PreToolUse が公式サポートする
 #   hookSpecificOutput.additionalContext で注入する（ツール結果の隣に挿入される）。
 #   exit 0（Warning のみ）のとき check_output を破棄していた旧実装の配管バグもここで解消。
-_ctx="[pre-pr-create-check] Layer 0 機械ゲート通過。PR 作成後に Layer 1 セルフレビュー（FAIR・全PR必須）を必ず実行してください。自前 code-review スキル（.claude/skills/code-review/・組み込みを置換・自律起動可）を Skill(code-review) で起動して PR 差分をレビューし、指摘は全件 PR の行単位インラインコメントで記録してください（指摘ゼロでも event=COMMENT のレビューを1件投稿・#461）。これはブロックではありません（docs/rules/ai-reviewer-strategy.md）。"
+_ctx="[pre-pr-create-check] Layer 0 機械ゲート通過。PR 作成後に Layer 1 セルフレビュー（FAIR・全PR必須）を必ず実行してください。自前 code-review スキル（.claude/skills/code-review/・組み込みを置換・自律起動可）を Skill(code-review) で起動して PR 差分をレビューし、指摘は CONFIRMED を行単位インラインコメント、PLAUSIBLE と上限超の NIT はレビュー本文（サマリー）に集約してください（#627）。指摘ゼロでも event=COMMENT のレビューを1件投稿してください（#461）。これはブロックではありません（docs/rules/ai-reviewer-strategy.md）。"
 if printf '%s' "$check_output" | grep -qE 'Warning|異常終了'; then
   _ctx="${_ctx}
 セルフレビュー Warning（非ブロック・対応要否を判断すること）:

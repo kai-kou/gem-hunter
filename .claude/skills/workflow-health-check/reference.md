@@ -1,9 +1,9 @@
 # workflow-health-check 詳細リファレンス
 
-> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウド実行環境では `gh` がプリインストールされず、
-> 導入しても repo スコープ REST が 403 になる。**本ファイル内の `gh ...` コマンドはローカル実行専用** で、
+> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウドでは実 gh が無く PATH 上はシムだけ。**本ファイル内の `gh ...` コマンドはローカル実行専用** で、
 > クラウドでは `mcp__github__*` に読み替える（対応表: `docs/rules/github-mcp-fallback-patterns.md` §2。
-> ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。
+> ラベル一覧/作成・マイルストーン・release 作成・variables は MCP に等価が無く **クラウドでは実行不可**・同 §2.5）。PR の Resolve /
+> auto-merge / draft 化も **MCP にツールがある**。
 
 > `SKILL.md` は日次の軽量版（Step 1〜2）を中心に構成している。本ファイルは
 > **完全版限定の Step 3〜6・週次レポート雛形・実行コマンド例** を保持する
@@ -42,9 +42,15 @@
 4-d: 週次レポート生成
   └─ 下記「週次レポートフォーマット」の形式で Slack 通知（完全版のみ）
 
-4-e: retrospective 起動
-  └─ 4-c（ルールファイル更新）が commit + PR + マージまで完了した場合のみ、続けて
-     `retrospective` スキルを起動する（KPT 生成と Try の Issue 化。ファイル変更が無い週は起動しない）
+4-e: Layer 1 計測の週次集計（#627 対策 E・GitHub API 不要）
+  └─ `python3 tools/layer1_findings_report.py --weeks 4` を実行し、指摘ゼロ PR 率・CONFIRMED / PR・観点別・
+     PR 前レビューの修正数・「同種指摘 2 回以上」候補を週次レポートの「Layer 1 計測」表に転記する
+  └─ 同種指摘候補（2 つ以上の PR で同カテゴリ）→ docs/rules/self-review-checklist.md に行を追加し、
+     機械化可能なら tools/self_review_check.py にチェックを追加（同一 PR で・L-094）。
+     その場で着手しない候補は type:improvement Issue に候補一覧と根拠（PR・path:line）を記録する
+  └─ 指摘ゼロ PR 率が目標 60% 未満（Issue #627 §4）のまま 4 週連続 → 原因 1 行（増えている観点 / カテゴリ）を
+     週次レポートに記載し、対策 A〜D のどこを直すかを type:improvement Issue にする
+  └─ JSONL が 4 週間更新されていない → code-review Step 3-C の記録が抜けている（Warning・スキルの desync を疑う）
 ```
 
 ## Step 5: フィードバックループ健全性チェック（完全版のみ）
@@ -53,13 +59,16 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
 
 ```
 5-a: retro-try Issue 消化率チェック
-  └─ `type:retro-try` ラベルの Issue を全件取得（open + closed）
+  └─ `type:retro-try` ラベルの Issue を全件取得（open + closed）。タイトルが `[Retro][ledger]` で始まる
+     候補台帳 Issue は集計対象から除外する（台帳は「実装対象」ではなく振り返りレーンの中間状態のため）
   └─ 消化率（closed / total）を算出
   └─ 消化率 50% 未満 → Warning（Slack 通知 + 改善提案）
-  └─ オープン件数が 30 件超 → Warning（バックログ肥大化）
+  └─ 非 blocker のオープン件数（`urgency:blocker` を除く）が WIP 上限（`docs/rules/retrospective-rules.md`
+     「WIP 制御」・base#662 の PULL 転換で μ_base × W_target に再定義）を **超えた**（`>`）→ Warning（バックログ肥大化。
+     PULL 型では上限ちょうどまで埋まるのが正常な定常状態なので、`≥` にすると健全運用でも常時鳴る）
 
 5-b: 重複 Issue 自動検出・統合
-  └─ `type:retro-try` のオープン Issue を全件取得
+  └─ `type:retro-try` のオープン Issue を全件取得。台帳 Issue（`[Retro][ledger]` 接頭辞）は除外する
   └─ タイトルからキーワードを抽出し、同一テーマの Issue グループを特定
      判定基準: 同じツール名・フィールド名（プロジェクト定義）、同じファイルパス、または同じ問題パターン
   └─ 3 件以上の同テーマ Issue が存在 → メイン Issue にコメント追記 + 残りを duplicate クローズ
@@ -79,23 +88,36 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
      通知例: 「⚠️ waiting-user 重複 Issue を検出しました: {ID} {フェーズ名} が 2 件 → #{N1}, #{N2}」
   └─ 1 回の実行で通知するグループは最大 5 グループまで（サーキットブレーカー）
 
-5-d: WIP ゲート適合性チェック（report-only・アクチュエータなし・base#563）
-  └─ `type:retro-try` のオープン Issue を取得し、オープン件数 N と「直近 7 日以内に created_at がある件数」M を数える
-  └─ N ≥ 30（retrospective の WIP 上限・SSOT は docs/rules/retrospective-rules.md「WIP 制御」）かつ M > 3
-     → Warning: 「WIP ゲート（retrospective Step 3-0）が機能していない疑い。在庫 N 件のまま新規 Issue が週 M 件生成されている」
+5-d: WIP ゲート適合性チェック（report-only・アクチュエータなし・base#563 → base#662 で PULL 転換に追随）
+  └─ `type:retro-try` のオープン Issue を取得し（台帳 Issue を除外）、`urgency:blocker` を除いた
+     非 blocker オープン件数 N と「直近 7 日以内に created_at がある件数」M を数える
+  └─ N > WIP 上限（retrospective の資格判定ゲート・SSOT は docs/rules/retrospective-rules.md「WIP 制御」）
+     かつ M ≥ 1
+     → Warning: 「資格判定ゲート（retrospective Step 3）が機能していない疑い。在庫 N 件が WIP 上限を
+       超えたまま新規 Issue が週 M 件生成されている」
+     （非 blocker の昇格は「< WIP 上限」でゲートされるため、正常系では N は上限ちょうどまでしか達しない。
+      上限を超えた状態で非 blocker の新規が出るのはゲート素通りの兆候。`≥` にすると正常な満杯状態で誤警報になる）
+  └─ base#662 の PULL 転換により Try の既定は台帳記録で、Issue 化は資格判定（blocker 即時 ∨ 同一キー 30 日
+     以内 2 回以上 ∧ 空きあり）を通過した昇格分に限られる。新規 Issue が発生すること自体は正常系だが、
+     それが WIP 上限に張り付いた状態と同時に起きるのはゲートが素通りしている兆候
   └─ 生成側（retrospective）の内部状態は参照しない（レーンをまたぐ暗黙状態共有を避け、GitHub 上の Issue 集合だけから独立に検査する）
   └─ 旧「生成/消化ペース比較」は廃止（ゲート本体は retrospective 側にあり、頻度調整は下流のプロジェクト定義で決まるため
      レポートしても実行者がいなかった）。TTL 出口（retro-try-handler Step 1.5）の作動状況は 5-a の消化率に反映される
 
-5-e: retro-try グローバル沈黙検出（完全版のみ・#397）
-  └─ type:retro-try の Issue を open + closed 全件取得し、最新の created_at を求める
-  └─ 最新の生成から 30 日超（該当 Issue が 1 件も無い場合はリポジトリ初回コミットから 30 日超）
-     → Warning: 「振り返りレーンが N 日間 1 件も Try を生成していない。retrospective の起動経路を確認」
+5-e: 候補台帳の存在・重複・沈黙検出（完全版のみ・#397 → base#662 で PULL 転換に追随）
+  └─ `type:retro-try` かつタイトルが `[Retro][ledger]` で始まる OPEN Issue（候補台帳）を取得する
+  └─ 0 件 → Warning: 「候補台帳が存在しない（未移行 or 誤クローズ）。retrospective Step 3-0 の台帳作成を確認」
+  └─ 2 件以上 → Warning: 「候補台帳の重複: #N1, #N2（自動統合しない・report-only）」
+  └─ 1 件（正常系）→ 沈黙検出に進む: `type:retro-try`（台帳を除く）の open + closed 全件を取得し最新の
+     created_at を求め、**かつ** 台帳 Issue 自体の updated_at を確認する。両方が 30 日超のときだけ
+     Warning: 「振り返りレーンが N 日間 1 件も Try を観測していない。retrospective の起動経路を確認」
+     （PULL 転換後は Issue 新規ゼロが正常系なので `created_at` 単独では判定しない。台帳の
+     `updated_at` も 30 日超のときだけ「レトロ自体が動いていない」と確定できる）
   └─ 5-a（消化率）・5-c（パイプライン別カバレッジ）では検出できない状態を拾うための独立条件:
      5-a は closed/total の比率を見るため「全件 closed で新規ゼロ」は 100% と評価されて発火しない。
      5-c は「過去 7 日にパイプライン PR がマージされたのに retro Issue 0 件」というパイプライン単位・
      7 日窓の条件のため、総数のグローバルな沈黙は対象外（#394 の議論で実測確認）
-  └─ report-only（Issue の自動生成はしない。retrospective を代行実行もしない）
+  └─ report-only（Issue の自動生成・統合・クローズはしない。retrospective を代行実行もしない）
 
 5-f: スケジュールルーティン生存確認（heartbeat・完全版のみ・#397）
   └─ 前提: プロジェクトがスケジュールルーティンを使っている場合のみ実行する。ルーティンの
@@ -117,6 +139,33 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
   └─ 既知の限界: 本チェック自体もルーティン経由で実行されるため、全ルーティンが同時に停止した
      状態は自己検知できない（監視の監視は積まない・#397 で合意）。その場合は
      [Run list](https://claude.ai/code/routines) の目視が唯一の経路
+
+5-f2: 個別実行の承認待ち停止検知（Run Stall Detection・完全版のみ・base#623）
+  └─ 前提: 5-f と同じ構成記録ファイルを使う。`list_triggers` または `get_session` が使えないタスク実行モード
+     （`add_repo` が使えないスコープ限定セッション等・L-117 と同型）では本チェックのみ明示的に skip し理由を報告する
+     （5-f 自体は heartbeat のみで get_session を使わないため、5-f2 だけが影響を受ける）
+  └─ 5-f で取得済みの `list_triggers` 結果から、構成記録にある各ルーティンの
+     `last_run.{status, fired_at, finished_at, session_id}` を読む（list_triggers の再実行はしない）
+  └─ Warning 条件（いずれか 1 つでも該当したら報告）:
+     ・`finished_at` が無いまま、`fired_at` からの経過が閾値（既定 2 時間）を超える
+     ・`mcp__Claude_Code_Remote__get_session(session_id)` を実行し、`status` が `SESSION_STATUS_RUNNING` のまま
+       同じ閾値を超えて変化しない
+  └─ 誤検知除外（閾値の根拠）: 既定 2 時間は「改善 Issue 1 件の実装 → PR → マージまでを 4 時間周期内で
+     完遂する」設計のスケジュールルーティン（構成記録はプロジェクト側に置く。5-f の前提と同じ）の
+     通常所要を踏まえた値。対象ルーティンに 2 時間超で正常完了した実績が複数あるプロジェクトでは、
+     閾値をその実績時間 + 30% に調整してよい（調整値は本ファイルまたはプロジェクト側の運用メモに
+     明記する。5-f の cron 間隔ベース閾値とは別軸）
+  └─ 該当した **ルーティンごとに** `[routine-stall]` プレフィックスの Issue を起票する（複数ルーティンが
+     同時に停止していれば、その全件を対象とする。同時実行数の上限は SKILL.md のサーキットブレーカー
+     「1 回の実行で作成する Issue は最大 5 件」が兼ねる）。起票前に、そのルーティン名を含む
+     `[routine-stall]` タイトルのオープン Issue を検索し、既に存在すれば新規起票せず当該 Issue へ
+     コメントを追記する（同一ルーティンの重複起票防止）。本文にはトリガー名・停止が疑われる
+     `session_id`・`last_run` の生値・（`get_session` から取得できれば）直前に実行されたツール呼び出し名を
+     記録する（L-130 系〈無人ルーティンが承認プロンプトで停止する〉の対策材料にする）
+  └─ 🔴 自動再有効化・再起動・トリガー削除・停止セッションへの介入は禁止（report-only。5-f と同じ理由:
+     ended_reason 等が空の停止は「ユーザーが意図的に止めた」状態と機械的に区別できない）
+  └─ 報告は Slack 通知 + 起票した Issue へのコメント。承認 or 停止判断はユーザーにしかできないため
+     `user-notification-triage.md` に従い A-6 として @mention する
 
 5-g: レーンの意味的生存性チェック（完全版のみ・#420）
   └─ `python3 tools/check_lane_reachability.py --liveness` を実行する
@@ -218,16 +267,26 @@ retro-try Issue の消化率・重複状況・パイプラインカバレッジ�
 ### 検出された繰り返しパターン
 - {パターン}: {今週N回目} → {対応中 or retro-try Issue #N に記録}
 
+### Layer 1 計測（4-e・`python3 tools/layer1_findings_report.py --weeks 4` の出力を転記）
+| 指標 | 値 | 判定 |
+|------|-----|------|
+| 指摘ゼロ PR 率（直近週 / 4 週平均） | {N}% / {M}% | OK / Warning（60% 未満が 4 週連続で Warning） |
+| CONFIRMED / PR 中央値（PR 後ラウンド 1） | {N} | OK / Warning（3 超で Warning） |
+| PR 前レビュー（件 / PR 前に修正） | {N} / {M} | — |
+| 観点別 CONFIRMED（上位 3・直近週 / 前週） | {観点} {N} / {M}、{観点} {N} / {M}、{観点} {N} / {M} | OK / Warning（同じ観点が 2 週連続で増加） |
+| 同種指摘候補（カテゴリ一致 2 PR 以上・粗い束ねは 3 PR 以上） | {N} 件 | 反映済み / Issue #N |
+
 ### フィードバックループ健全性（Step 5）
 | 指標 | 値 | 判定 |
 |------|-----|------|
 | retro-try 消化率 | {closed}/{total} ({N}%) | OK / Warning |
-| オープン件数 | {N}件 | OK / Warning（30件超で Warning） |
+| オープン件数（非blocker・台帳除く） | {N}件 | OK / Warning（WIP上限〔SSOT〕超過で Warning） |
 | 重複統合 | {N}グループ統合 | — |
 | パイプラインカバレッジ | 各パイプライン:{N}（プロジェクト定義） | OK / Warning（0件で Warning） |
-| WIP ゲート適合性 | オープン{N}件 / 直近7日新規{M}件 | OK / Warning（N≥30 かつ M>3 で Warning・5-d） |
-| retro-try 最新生成からの経過 | {N}日 | OK / Warning（30日超で Warning・5-e） |
+| WIP ゲート適合性 | 非blockerオープン{N}件 / 直近7日新規{M}件 | OK / Warning（N>WIP上限〔SSOT〕かつM≥1 で Warning・5-d） |
+| 候補台帳の状態 / 最新生成からの経過 | 台帳{N}件 / 最新生成{M}日・台帳更新{K}日 | OK / Warning（台帳0件or2件以上、または両方30日超で Warning・5-e） |
 | ルーティン生存（heartbeat） | {ルーティン名}: 最終発火 {N}時間前 | OK / Warning（cron 間隔の2倍超・停止・未作成で Warning・5-f） |
+| 個別実行の承認待ち停止 | {ルーティン名}: session {ID} 停止疑い {N}時間（該当ルーティン分を列挙） | OK / Warning（閾値超過で Warning・5-f2） |
 | レーン生存性（liveness） | {レーン名}: 直近 closed {N}時間前 | OK / Warning（閾値超で Warning・5-g。終了コードは変えない） |
 
 ### 次週への改善アクション

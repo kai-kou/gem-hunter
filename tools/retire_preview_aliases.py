@@ -550,7 +550,7 @@ def self_test() -> int:
     )
     check(
         "Bearer <token> 形式を除去する",
-        mask_output("Authorization: Bearer sk-abcdefghijklmnop1234567890", secrets={}),
+        mask_output("Authorization: Bearer sk-abcdefghijklmnop1234567890", secrets={}),  # secret-scan:ignore
         "Authorization: Bearer ****",
     )
     check("空文字はそのまま返す", mask_output("", secrets={}), "")

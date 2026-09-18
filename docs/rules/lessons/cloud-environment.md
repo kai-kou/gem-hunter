@@ -16,6 +16,7 @@
 | OpenNext Cloudflare のプレビューでのみリダイレクト / パス解決が期待どおりにならない | L-129 |
 | 本番デプロイ系コマンド（`wrangler deploy` 等）が `permissions.allow` 済みでも auto mode classifier にブロックされることがある（毎回ではない） | L-130 |
 | Cloudflare API に `DELETE` で未知のサブリソース名を投げて 404 を確認しようとしたら、本番リソースが消えた | L-134 |
+| scheduled trigger セッションで `gh`（シム含む）が `FileNotFoundError`（command not found） | L-170 |
 | 同趣旨の Stop 差し戻しが `~/.claude/...` と `.claude/hooks/...` の両方から二重に届く | L-155 |
 
 ---
@@ -83,7 +84,9 @@ bash 停止中も MCP（GitHub 操作）・Write/Edit・コミットは `mcp__gi
 
 **症状**: クラウド実行環境（`CLAUDE_CODE_REMOTE=true`）で GitHub API 経路が 403 になる。
 **可否は変動する**（06-30 #121 → 07-02 拡大 #133 → 07-13 文言変化 #227 → 07-14 repo REST が許可に転換 #254
-→ **07-26 repo REST が再び 403 へ回帰 #338**）。2026-07-26 実測:
+→ 07-26 repo REST が再び 403 へ回帰 #338 → **09-18 repo REST が再び 200・CCR routes 出現 base#692**）。
+
+**2026-07-26 実測**:
 
 - ❌ **`gh` はそもそもプリインストールされていない**（公式仕様）。`apt install -y gh` で導入は可能だが、
   **導入しても repo スコープ REST が 403 なら何も解決しない**（＝ gh の導入を解決策として試さない）
@@ -94,6 +97,19 @@ bash 停止中も MCP（GitHub 操作）・Write/Edit・コミットは `mcp__gi
 - ❌ `curl`/`urllib` 直叩きは `Authorization` 有無・`Bearer proxy-injected`・実 `GH_TOKEN` とも同一 403
   - 🔴 **2026-08-31 再検証で repo スコープ REST の直叩きは 200 へ回帰した**（`/repos/{o}/{r}`・`/pulls`・`/issues`・`/actions/runs`・`/commits/{sha}/check-runs`・`/check-runs/{id}/annotations`）。ただし `code-scanning/*` は 403 のまま（プロキシではなくトークン権限不足）。**可否は 1 か月に 5 回変わっており、直叩きを一次経路にしない**（一次経路は MCP のまま）。使うのは「MCP にツールが無い読み取り」に限り、使う前にその場で HTTP コードを計測する。実測表は `github-mcp-fallback-patterns.md` §1.1（#684 / PR #729）
 - ✅ **MCP（`mcp__github__*`）と git 操作は生存**（どちらも API プロキシを通らない別系統）
+
+**2026-09-18 実測（base#692）**:
+
+- ✅ **`repos/{o}/{r}/...` の REST は read も write も到達**（`pulls` / `issues` / `labels` /
+  `milestones` / `actions/runs` が 200、存在しないリソースへの POST は 404）
+- ❌ GraphQL は 403。ただし文言が変わり **CCR routes**（`/repos/{o}/{r}/pulls/{n}/ccr/...`）を案内する
+  → review thread の一覧・Resolve、auto-merge、ready-for-review、draft 化はこの REST で代替できる
+- ❌ search 系・非 repo REST（`users/{u}` `user/repos` `notifications`）・Actions variables/secrets は **403 のまま**
+- ❌ **ref 削除だけは名指しで拒否**「Write access to this GitHub API path is not permitted through this proxy」
+
+> 🔴 **行動規範は不変**: 可否が 3 か月で 5 回変わっているため、**メインセッションは MCP 一次経路を維持する**。
+> repo REST 直叩きに依存してよいのは MCP を呼べない層（フック・`tools/*.py`）だけで、使う直前に
+> `curl -s -o /dev/null -w '%{http_code}' https://api.github.com/repos/{o}/{r}` で確認する。
 
 **根本原因**: プロキシは GitHub API リクエストを **セッションに attach されたリポジトリに限定** する
 （環境のネットワークアクセスレベルとは独立）。`access:"read"` の attach は git clone/fetch のみで
@@ -159,6 +175,43 @@ GitHub Issue/PR からの自動トリガー型タスクにも scheduled trigger 
   （読み取り可否だけで書き込み可否を推定しない）。
 - 恒久的な複数リポジトリアクセスの公式機能がリリースされたら、本エントリとクロスリポ参照系スキルの
   前提を更新する（CP-2）。
+
+---
+
+## L-170: scheduled trigger セッションでは `CLAUDE_ENV_FILE` が未設定で、gh シムの PATH 注入が persist しない（2026-09-14・base#656）
+
+**症状**: R-1（4 時間ごとの scheduled trigger）セッションで `check_pending_pr_reviews.py` を実行すると、
+`session-start.sh` が `[gh-shim] enabled` を出力したにもかかわらず、後続の Bash 呼び出しで
+`gh` が **`FileNotFoundError`（command not found）** になる（`gh api user` の 403 ではなく、
+シェルが `gh` というコマンド自体を見つけられない）。
+
+**根本原因（2026-09-14 実機確認・R-1 自身のセッションで検証）**:
+- `session-start.sh` は `.claude/bin`（gh シム）を **フック実行中のプロセス内でのみ** `PATH` に
+  `export` する。後続の Bash tool 呼び出しへ persist させる手段は `env_persist()`（`CLAUDE_ENV_FILE`
+  への追記）のみで、`CLAUDE_ENV_FILE` が未設定なら `env_persist()` は無条件で no-op になる
+  （`session-start.sh:46-51`）。
+- 実機確認: R-1 セッションでは `CLAUDE_ENV_FILE` が **未設定**（`echo ${CLAUDE_ENV_FILE:-<unset>}` →
+  `<unset>`）。つまり `.claude/bin` の PATH 注入はフック終了と同時に失われ、以後どの Bash 呼び出しでも
+  `gh`（シムを含む）が PATH 上に存在しない。
+- これは `docs/rules/github-mcp-fallback-patterns.md` §1.5 が前提としている
+  「SessionStart フックが `.claude/bin` を PATH 先頭に注入する」が **`CLAUDE_ENV_FILE` 提供時のみ
+  成立する条件付きの事実** であることを意味する。scheduled trigger セッションはその条件を満たさない。
+- **L-114（gh api user は 200・repo REST が 403）とは別の障害モード**: L-114 は「gh 実体には到達できるが
+  API 権限で弾かれる」ケース、本エントリは「gh 実体（シム含む）に **到達すらできない**」ケース。
+  両方とも「クラウドでは gh を当てにしない」という結論は同じだが、エラーメッセージの切り分け
+  （`command not found` vs `403`）を混同すると誤診断する。
+
+**対策**:
+- scheduled trigger セッションから `gh`（シム含む）に依存するスクリプト・手順を呼ぶ前提を置かない。
+  `mcp__github__*` を直接の一次経路にする（`session-start.sh` の既存方針・base#249 と同じ結論）。
+  `check_pending_pr_reviews.py` 等 gh 依存スクリプトは「失敗したらフォールバック」ではなく
+  「scheduled trigger では最初から呼ばない」設計に倒す方が無駄な subprocess 起動を避けられる。
+- `CLAUDE_ENV_FILE` に依存しない PATH persist 方式（例: `~/.bashrc` 先頭への source 行追記。
+  `session-start.sh:184-194` が GitHub リポジトリ変数（`gh_vars.py` 由来）の伝搬で既に使っている手法）
+  への一般化は、本エントリでは行わない（scheduled trigger 全体への影響範囲が広く、検証を要する
+  別スコープ。follow-up base#658 で扱う）。
+- 本エントリの実測が古くなったら（`CLAUDE_ENV_FILE` が scheduled trigger でも供給されるようになったら）
+  `github-mcp-fallback-patterns.md` §1.5 と本エントリを同一 PR で更新する（CP-2）。
 
 ---
 

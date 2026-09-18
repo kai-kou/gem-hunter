@@ -762,6 +762,20 @@ else
   skip_check "通知トリアージ分類器 self-test (triage_notification.py --self-test)" "スクリプトが見つかりません"
 fi
 
+# 秘密検知ゲート（base#678）と TypeSafe Jev クライアント（base#691）の self-test。
+# いずれもネットワーク非依存の純関数部分のみを検証する（Jev は JEV_KEY 未設定でもオフライン判定が走る）。
+if [ -f "$REPO_ROOT/tools/secret_scan.py" ]; then
+  run_check "秘密検知 self-test (secret_scan.py --self-test)" python3 tools/secret_scan.py --self-test
+else
+  skip_check "秘密検知 self-test (secret_scan.py --self-test)" "スクリプトが見つかりません"
+fi
+
+if [ -f "$REPO_ROOT/tools/jev_client.py" ]; then
+  run_check "Jev クライアント self-test (jev_client.py --self-test)" python3 tools/jev_client.py --self-test
+else
+  skip_check "Jev クライアント self-test (jev_client.py --self-test)" "スクリプトが見つかりません"
+fi
+
 # 配信シャード（public/data/gem-index/）の静的検査（SP-17・PR #416 セルフレビュー指摘）。
 # 索引整合・列定義・行の型・gemIndex 昇順・サイズ予算（D-38 の cold start CPU 予算の保険）を見る。
 # ローカルの生成物しか読まないためネットワーク非依存（本判定も self-test も両方配線する）。

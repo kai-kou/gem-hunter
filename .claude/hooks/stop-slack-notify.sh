@@ -20,6 +20,8 @@ stop_hook_active=$(echo "$input" | jq -r '.stop_hook_active // "false"' 2>/dev/n
 if ! git rev-parse --git-dir >/dev/null 2>&1; then exit 0; fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# shellcheck source=lib/secret_scan.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/secret_scan.sh"
 
 # ── 日次コスト集計（#1213・#95・#106・#242）────────────────────────────
 # 月次レポート（content/analytics/cost_monthly/YYYY-MM.json）は gitignore 対象で、
@@ -184,12 +186,13 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
         # ここだけは未追跡ファイルも拾う（`add -A`）: 本体の自動コミットが `add -u` に限定して
         # いるのは「履歴に何を載せるかを勝手に決めない」ためだが、スナップショットは履歴では
         # なく復元用の退避なので、取りこぼす方が害が大きい。
+        # 一時 index でも秘密の疑いがあるパスは除外する（base#678・スナップショットは復元で作業ツリーへ戻るため）
         #   復元: git checkout refs/claude-wip/<session_id> -- .
         if [ -n "$_session_id" ]; then
           _tmp_index=$(mktemp 2>/dev/null || echo "")
           if [ -n "$_tmp_index" ]; then
             if GIT_INDEX_FILE="$_tmp_index" git -C "$REPO_ROOT" read-tree HEAD 2>/dev/null \
-               && GIT_INDEX_FILE="$_tmp_index" git -C "$REPO_ROOT" add -A -- . ':(exclude)content/analytics/cost_monthly/' 2>/dev/null; then
+               && GIT_INDEX_FILE="$_tmp_index" stage_all_except_secrets "$REPO_ROOT" ':(exclude)content/analytics/cost_monthly/'; then
               _snap_tree=$(GIT_INDEX_FILE="$_tmp_index" git -C "$REPO_ROOT" write-tree 2>/dev/null || echo "")
               if [ -n "$_snap_tree" ]; then
                 _snap_commit=$(git -C "$REPO_ROOT" commit-tree "$_snap_tree" -p HEAD \
@@ -218,7 +221,25 @@ if [[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]]; then
         # 追跡済みファイルの更新のみを対象にし、並行サブエージェントが作った検証用一時ファイル等の
         # 未追跡ファイルを巻き込まない（未追跡は「まだ入れると決めていないもの」であり、自動コミットが
         # 勝手に決めてよい対象ではない）。追跡ファイルの保全（L-100 の本体防御）は従来どおり維持する。
+        # `stage_all_except_secrets`（base#678）は内部で `add -A` するため、この `-u` 方針とは
+        # 両立しない。lib は共通モジュールで本フックからは変更しないため、ここでは `add -u` を
+        # 維持したうえで秘密検知のフィルタリングだけを同じロジックでインラインに適用する。
         git -C "$REPO_ROOT" add -u -- . ':(exclude)content/analytics/cost_monthly/' 2>/dev/null || true
+        if [ "${CLAUDE_BASE_DISABLE_SECRET_SCAN:-0}" != "1" ]; then
+          _ss_rc=0
+          _ss_flagged=$(secret_scan_run "$REPO_ROOT" --staged --paths-only 2>/dev/null) || _ss_rc=$?
+          if [ "$_ss_rc" -eq 1 ]; then
+            while IFS= read -r _ss_p; do
+              [ -n "$_ss_p" ] || continue
+              # 追跡済みファイルは HEAD の内容に戻す（作業ツリーは触らない）
+              git -C "$REPO_ROOT" reset -q -- "$_ss_p" 2>/dev/null || true
+            done <<< "$_ss_flagged"
+            echo "[secret-scan] 秘密の疑いがあるため自動保全コミットから除外しました（作業ツリーには残っています）:" >&2
+            printf '%s\n' "$_ss_flagged" | sed 's/^/[secret-scan]   /' >&2
+            echo "[secret-scan] → 秘密なら .gitignore に追加して作業ツリーから退避、誤検知なら行末 secret-scan:ignore か config/secret_scan_allowlist.txt で許可してから自分でコミットしてください" >&2
+          fi
+          unset _ss_rc _ss_flagged _ss_p
+        fi
         # cost_monthly 以外に変更が無ければ何もコミットしない（空コミットを避ける）
         #
         # メッセージは意図的に `[wip]` プレフィックスを維持する（base#483）。差分から機械生成した件名は

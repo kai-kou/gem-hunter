@@ -6,8 +6,9 @@ effort: high
 disallowed-tools: AskUserQuestion
 ---
 
-> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウド実行環境では `gh` がプリインストールされず
-> repo スコープ REST が 403 になる。本スキルの GitHub 操作は **`mcp__github__*` が一次経路**。
+> 🔴 **GitHub 操作の経路（必読・L-114）**: クラウド実行環境では `gh` がプリインストールされず、
+> PATH 上にあるのはシムだけ（repo スコープ REST の可否は変動する・同 §1）。本スキルの GitHub 操作は
+> **`mcp__github__*` が一次経路**。
 > 以下に `gh` コマンドが出てくる箇所は、クラウドでは対応する MCP ツールへ読み替える
 > （可否マトリクスの SSOT: `docs/rules/github-mcp-fallback-patterns.md`）。
 
@@ -210,6 +211,8 @@ Issue 本文には必ず **監査プロトコルの URL と実行日**、およ�
 1. **Routine（クラウド・推奨）**: `mcp__Claude_Code_Remote__create_trigger` で
    `create_new_session_on_fire=true` の Routine を作り、プロンプトに
    「`audit-runner` スキルで監査プロトコルを実行し、議論 → 対応 → 再監査まで完遂する」と書く。
+   `permission_mode="auto"` を明示する（未指定時の継承先は API から断定できないため。
+   `bypassPermissions` / `dontAsk` は不採用・詳細は `docs/rules/lessons/permissions.md` L-129/L-130）。
    cron は **UTC 指定**（JST から 9 時間引く・`docs/rules/datetime-rules.md`）。
    推奨頻度は **月次**（プロトコルの更新頻度と、1 サイクルのコストに見合う間隔）。
 2. **既存ルーティンのスロットに追加**: プロジェクトの運用メモ（本ベースには含まれない

@@ -1119,7 +1119,7 @@ def run_self_test() -> int:  # noqa: C901
     leaky = _make_fake_runner(
         {},
         fail={("git", "fetch", "origin", "main")},
-        fail_stderr="fatal: unable to access 'https://x-access-token:SECRET_TOKEN_VALUE@github.com/o/r'",
+        fail_stderr="fatal: unable to access 'https://x-access-token:SECRET_TOKEN_VALUE@github.com/o/r'",  # secret-scan:ignore
     )
     masked = ""
     try:

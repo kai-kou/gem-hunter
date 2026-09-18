@@ -7,7 +7,12 @@ Error 検出時（exit 1）に PR 作成をブロックする「Lv3 ハードコ
 汎用ベースでは誤ブロックを避けるため保守的に、明確な事故のみを Error にする:
   - Error: マージコンフリクト痕跡（<<<<<<< / ======= / >>>>>>>）
   - Error: 巨大ファイルの新規追加（既定 5MB 超・SELF_REVIEW_MAX_MB で調整）
+  - Error: bash 構文エラー（`bash -n`。.sh / .bash 拡張子と bash / sh shebang が対象・base#627）
+  - Error: Python 構文エラー（`compile()`。変更された .py が対象・base#627）
+  - Error: 秘密の疑い（tools/secret_scan.py・base#678）
   - Warning: デバッグ痕跡（TODO/FIXME/console.log/print デバッグ等）※ブロックしない
+  - Warning: shellcheck 指摘（shellcheck 導入済み環境のみ・-S warning・base#627）
+  - Warning: ruff E9/F63/F7/F82（ruff 導入済み環境のみ・変更された .py が対象・base#627）
 
 プロジェクト固有のチェックは docs/rules/self-review-checklist.md に追記し、
 本スクリプトに検査関数を足して拡張する。
@@ -16,6 +21,7 @@ Error 検出時（exit 1）に PR 作成をブロックする「Lv3 ハードコ
 """
 from __future__ import annotations
 import argparse
+import json
 import os
 import re
 import shutil
@@ -84,6 +90,283 @@ except Exception as _e:  # noqa: BLE001
     print(f"[self-review] Warning: scan_dangerous_patterns の読み込みに失敗（危険パターン検査を無効化）: {_e}",
           file=sys.stderr)
     _scan_py = None
+
+
+# Issue base#627 対策 C（Layer 0 強化）: 決定論的に検出できる事故は LLM レビュー前に落とす。
+# bash / Python の構文エラーとテスト未実行は、レビュアーの目視を待たず機械的に確定できる。
+
+def _is_bash_shebang(first_line: str) -> bool:
+    """shebang 行が bash / sh インタプリタを指しているかを判定する。
+
+    `#!/bin/bash` `#!/bin/sh` のような直接指定と、`#!/usr/bin/env bash` のような
+    env 経由の指定の両方に対応する。末尾のフラグ（`#!/bin/bash -e`）は無視する。
+    """
+    line = first_line.strip()
+    if not line.startswith("#!"):
+        return False
+    parts = line[2:].split()
+    if not parts:
+        return False
+    interpreter = parts[-1] if Path(parts[0]).name == "env" else parts[0]
+    return Path(interpreter).name in ("bash", "sh")
+
+
+def _bash_syntax_targets(files: list[str]) -> list[str]:
+    """bash 構文検査（bash -n）と shellcheck の対象ファイル一覧を返す。
+
+    対象: .sh / .bash 拡張子のファイル、または shebang 行が bash / sh を指すファイル。
+    """
+    targets: list[str] = []
+    for f in files:
+        if Path(f).suffix in (".sh", ".bash"):
+            targets.append(f)
+            continue
+        try:
+            with open(f, "r", encoding="utf-8", errors="ignore") as fh:
+                first_line = fh.readline()
+        except Exception:
+            continue
+        if _is_bash_shebang(first_line):
+            targets.append(f)
+    return targets
+
+
+def bash_syntax_errors(files: list[str]) -> list[str]:
+    """変更された bash/sh スクリプトを `bash -n` で構文検査する（Error・base#627）。"""
+    errs: list[str] = []
+    for f in _bash_syntax_targets(files):
+        try:
+            proc = sh(["bash", "-n", f])
+        except subprocess.TimeoutExpired:
+            errs.append(f"構文エラー (bash -n) タイムアウト: {f}")
+            continue
+        except Exception as e:  # noqa: BLE001
+            errs.append(f"構文エラー (bash -n) 実行エラー: {f}: {e}")
+            continue
+        if proc.returncode != 0:
+            lines = (proc.stderr or proc.stdout or "").strip().splitlines()
+            first = lines[0] if lines else "(出力なし)"
+            errs.append(f"構文エラー (bash -n): {f}: {first}")
+    return errs
+
+
+def python_syntax_errors(files: list[str]) -> list[str]:
+    """変更された .py を `compile()` で構文検査する（Error・base#627）。
+
+    py_compile は __pycache__ に .pyc を書き込むため使わず、compile() のみで
+    検証する（バイトコードは破棄し SyntaxError の有無だけを見る）。
+    """
+    errs: list[str] = []
+    for f in files:
+        if not f.endswith(".py"):
+            continue
+        try:
+            text = Path(f).read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        try:
+            compile(text, f, "exec")
+        except SyntaxError as e:
+            lineno = e.lineno if e.lineno is not None else 0
+            errs.append(f"構文エラー (python): {f}:{lineno}: {e.msg or e}")
+        except Exception as e:  # noqa: BLE001 - NUL 文字等 compile() が投げうる他の異常も報告する
+            errs.append(f"構文エラー (python): {f}: {e}")
+    return errs
+
+
+_FINDING_LOCATION_RE = re.compile(r"^(?P<loc>.*?\[[^\]\s]+\])")
+
+
+def _finding_location(line: str) -> str:
+    """secret_scan.py の出力行から位置とルール ID（`path:line: [rule-id]`）だけを取り出す。
+
+    検知した値そのもの（マスク済みでも）を PR 本文・Issue コメント・CI ログへ転記しないための絞り込み。
+    想定形に一致しない行は、値が混ざっている可能性を排除できないため位置情報ごと落とす
+    （検知したこと自体はブロックとして残るので fail-open にはならない）。
+    """
+    m = _FINDING_LOCATION_RE.match(line.strip())
+    return m.group("loc") if m else "（出力形式が想定外のため位置情報を省略）"
+
+
+def secret_scan_errors() -> list[str]:
+    """PR 作成前の秘密検知（Issue base#678・Error・ブロック）。
+
+    origin/<default> との差分（追加行）とファイル名を tools/secret_scan.py で検査する。
+    コミット時（git pre-commit）・push 時（pre-git-push-check.sh）を素通りした経路
+    （--no-verify・フック未導入のクローン・別環境で作られたコミット）でも、マージ前に止める最後の機械ゲート。
+    CLAUDE_BASE_DISABLE_SECRET_SCAN=1 で無効化（.claude/hooks/lib/secret_scan.sh と同じ脱出ハッチ）。
+    """
+    if os.environ.get("CLAUDE_BASE_DISABLE_SECRET_SCAN") == "1":
+        return []
+    scanner = Path("tools/secret_scan.py")
+    if not scanner.is_file():
+        return []
+    try:
+        r = sh([sys.executable, str(scanner), "--base", f"origin/{default_branch()}"], timeout=30)
+    except subprocess.TimeoutExpired:
+        return [
+            "秘密検知（secret_scan.py --base）が 30 秒以内に完了しませんでした。"
+            " python3 tools/secret_scan.py --base origin/main を手動実行して確認してください。"
+        ]
+    if r.returncode == 1:
+        # secret_scan.py の出力（`path:line: [rule-id] マスク済みスニペット`）は既にマスク済みだが、
+        # このメッセージは PR 本文・Issue コメント・CI ログへ転記されうるため、本リポジトリでは
+        # 位置とルール ID（`path:line: [rule-id]`）だけを残し、値のスニペットは転記しない。
+        # 中身は `python3 tools/secret_scan.py --base origin/<default>` を手元で実行して確認する。
+        # 🔴 下流固有の絞り込み（ベース側は render() 全体を転記する）。CodeQL の
+        # py/clear-text-logging-sensitive-data が本経路を high で検出したことへの対応でもある。
+        return [
+            "秘密の疑い（base#678・履歴から外してから PR を作る。誤検知は行末 secret-scan:ignore か"
+            f" config/secret_scan_allowlist.txt）: {_finding_location(line)}"
+            for line in r.stdout.splitlines() if line.strip()
+        ]
+    if r.returncode != 0:
+        # 実行エラー（origin/<default> 未 fetch 等）は「検知なし」ではない。PR 前の最後のゲートなので
+        # fail-closed にし、原因（stderr）を添えて止める（git fetch origin +main:refs/remotes/origin/main で解消する）
+        detail = (r.stderr or r.stdout).strip().splitlines()
+        return [
+            f"秘密検知（secret_scan.py --base origin/{default_branch()}）を実行できませんでした（exit={r.returncode}）。"
+            f" 基準ブランチを fetch してから再実行してください: {detail[-1] if detail else '詳細なし'}"
+        ]
+    return []
+
+
+def shellcheck_warnings(files: list[str]) -> list[str]:
+    """shellcheck 導入済みの環境でのみ、対象シェルファイルを検査する（Warning・base#627）。
+
+    未導入環境（既定）では何もしない。あくまで補助チェックのためブロックはしない。
+    """
+    if shutil.which("shellcheck") is None:
+        return []
+    targets = _bash_syntax_targets(files)
+    if not targets:
+        return []
+    try:
+        proc = sh(["shellcheck", "-S", "warning", "-f", "gcc", *targets], timeout=15)
+    except subprocess.TimeoutExpired:
+        return [f"shellcheck タイムアウト（15秒超）: {', '.join(targets[:5])}"]
+    except Exception as e:  # noqa: BLE001
+        return [f"shellcheck 実行エラー: {e}"]
+    return [f"shellcheck: {line.strip()}" for line in (proc.stdout or "").splitlines() if line.strip()]
+
+
+def ruff_syntax_warnings(files: list[str]) -> list[str]:
+    """ruff 導入済みの環境でのみ、変更 .py の構文/未定義名クラスを検査する（Warning・base#627）。
+
+    E9（構文エラー）・F63（比較/型の誤用）・F7（構文関連）・F82（未定義名）に限定する。
+    既存の SELF_REVIEW_RUFF=1 opt-in（S=bandit ルール）とは独立に、既定 ON で動く。
+    """
+    if shutil.which("ruff") is None:
+        return []
+    py_files = [f for f in files if f.endswith(".py")]
+    if not py_files:
+        return []
+    try:
+        proc = sh(
+            ["ruff", "check", "--select", "E9,F63,F7,F82", "--output-format", "concise", *py_files],
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return [f"ruff タイムアウト（15秒超）: {', '.join(py_files[:5])}"]
+    except Exception as e:  # noqa: BLE001
+        return [f"ruff 実行エラー: {e}"]
+    warns: list[str] = []
+    for line in (proc.stdout or "").splitlines():
+        s = line.strip()
+        if s and ".py:" in s and not s.lower().startswith(("found", "warning:", "error:")):
+            warns.append(f"ruff: {s}")
+    return warns
+
+
+def _resolves_under_dir(path: Path, base_dir: Path) -> bool:
+    """path の実体解決先が base_dir 配下かどうかを判定する（シンボリックリンク越境防止）。"""
+    try:
+        resolved = path.resolve()
+    except Exception:
+        return False
+    try:
+        return resolved.is_relative_to(base_dir)
+    except AttributeError:  # pragma: no cover - Python 3.8 互換フォールバック
+        try:
+            resolved.relative_to(base_dir)
+            return True
+        except ValueError:
+            return False
+
+
+def _companion_test_script_targets(files: list[str]) -> list[str]:
+    """変更ファイルに対応する tools/test_<name>.sh を収集する（Issue base#627 対策 C）。
+
+    対象スコープ: .claude/hooks/ 直下の .sh・.claude/hooks/lib/ 配下・tools/ 直下の
+    .py / .sh。拡張子を除いた stem に対して tools/test_<stem>.sh が存在すれば対象に
+    加える。テストスクリプト自身（tools/test_*.sh）が変更された場合は、stem 照合
+    （tools/test_test_<stem>.sh は通常存在しない）ではなくそれ自身を直接対象に加える。
+    同じテストが複数の変更ファイルから指されても重複排除して 1 回だけ実行する。
+    解決後の実パスが tools/ 実体配下にないもの（シンボリックリンク越境）は除外する
+    （self_test_errors() の _is_allowed と同じ方針）。
+    """
+    repo_root = Path(".").resolve()
+    tools_dir = repo_root / "tools"
+    hooks_dir = Path(".claude/hooks")
+    tools_rel = Path("tools")
+
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(candidate: str) -> None:
+        if candidate in seen:
+            return
+        cp = Path(candidate)
+        if not cp.is_file() or not _resolves_under_dir(cp, tools_dir):
+            return
+        seen.add(candidate)
+        out.append(candidate)
+
+    for f in files:
+        p = Path(f)
+        in_scope = (
+            (p.parent == hooks_dir and p.suffix == ".sh")
+            or f.startswith(".claude/hooks/lib/")
+            or (p.parent == tools_rel and p.suffix in (".py", ".sh"))
+        )
+        if not in_scope:
+            continue
+        if p.parent == tools_rel and p.suffix == ".sh" and p.name.startswith("test_"):
+            _add(f)
+            continue
+        # フック名はハイフン区切り（pre-pr-create-check.sh）、テスト名はアンダースコア区切り
+        # （test_pre_pr_create_check.sh）が慣例のため、両方の綴りで照合する
+        _add(f"tools/test_{p.stem}.sh")
+        _add(f"tools/test_{p.stem.replace('-', '_')}.sh")
+    return out
+
+
+def _run_within_budget(cmd: list[str], label: str, f: str, started: float,
+                       errs: list[str], hint: str) -> None:
+    """PR 前ゲートの実行時間予算内でコマンドを 1 つ実行し、未実行 / タイムアウト / 実行エラー / 失敗を
+    errs に整形して積む（--self-test と対応テストの共用ヘルパー。予算計算と文言を 1 箇所に集約する）。
+    """
+    elapsed = time.monotonic() - started
+    if elapsed > SELF_TEST_BUDGET_SECONDS:
+        errs.append(
+            f"{label}未実行: {f}（PR 前ゲートの実行時間予算 {SELF_TEST_BUDGET_SECONDS}秒を"
+            f"超過。ローカルで `{hint}` を確認してから再度 PR 作成してください）"
+        )
+        return
+    remaining = max(1, int(SELF_TEST_BUDGET_SECONDS - elapsed))
+    per_call_timeout = min(SELF_TEST_PER_TOOL_TIMEOUT, remaining)
+    try:
+        proc = sh(cmd, timeout=per_call_timeout)
+    except subprocess.TimeoutExpired:
+        errs.append(f"{label}タイムアウト: {f}（{per_call_timeout}秒超）")
+        return
+    except Exception as e:  # noqa: BLE001 - サブプロセス起動失敗等もフェイルオープンさせない
+        errs.append(f"{label}実行エラー: {f}: {e}")
+        return
+    if proc.returncode != 0:
+        output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        detail = output[-200:] if output else "(出力なし)"
+        errs.append(f"{label}失敗: {f}（exit={proc.returncode}）: {detail}")
 
 
 # ============================================================================
@@ -578,6 +861,32 @@ def hot_budget_reminder(files: list[str]) -> str | None:
 # `run_self_test()` がグループ名付きで `FAIL[...]` を出す。
 # ============================================================================
 
+def _self_test_finding_location() -> list[str]:
+    """秘密検知の出力から「位置とルール ID」だけを取り出す絞り込みの検証。
+
+    値のスニペットが 1 文字でも残ると、PR 本文・Issue コメント・CI ログへ転記されてしまう。
+    """
+    failures = []
+    cases = [
+        # (secret_scan.py の出力行, 期待する絞り込み結果)
+        ("src/a.py:42: [github-token] ghp_…（40 文字）", "src/a.py:42: [github-token]"),
+        (".env: [env-file] （ファイル名ルール）", ".env: [env-file]"),
+        ("docs/日本語 パス.md:7: [private-key] ----…（31 文字）", "docs/日本語 パス.md:7: [private-key]"),
+    ]
+    for raw, want in cases:
+        got = _finding_location(raw)
+        if got != want:
+            failures.append(f"_finding_location: {raw!r} → {got!r}（期待 {want!r}）")
+    # 値そのものが絞り込み後に残らないこと（マスク済みでも転記しない）
+    leaky = "src/a.py:42: [aws-key] AKIA…（20 文字）"
+    if "AKIA" in _finding_location(leaky):
+        failures.append("_finding_location: マスク済みスニペットが絞り込み後にも残っている")
+    # 想定外の出力形式は位置情報ごと落とす（値が混ざっている可能性を排除できないため）
+    if _finding_location("想定外の出力 ghp_abcdefghijklmnop") != "（出力形式が想定外のため位置情報を省略）":
+        failures.append("_finding_location: 想定外形式の行をそのまま返してしまっている")
+    return failures
+
+
 def _self_test_glob_match() -> list[str]:
     failures = []
     # ** はゼロ階層にもマッチする（意図的固定仕様。_glob_to_regex のコメント参照）
@@ -950,9 +1259,20 @@ def _self_test_debug_trace() -> list[str]:
 # 説明文にも当たり、非スプリント PR で常時 Warning が出る（オオカミ少年化）。判定の実体は
 # pr_meta_patterns.py に集約している（同じ誤りを各所で独立に直さないため）。
 _SPRINT_GOAL_LINE_RE = SPRINT_GOAL_LINE_RE
-_SESSION_ID_LINE_RE = meta_line_re("Session-Id")
+# `Session-Id:` の値部分だけを取り出す（プレースホルダ判定用・base#628 Layer 1 再レビュー指摘）。
+# meta_line_re() は「値の先頭が非空白か」しか見ないため、`Session-Id: {UUID}` のような
+# 未記入テンプレートの値も「記載あり」と誤判定してしまう。
+_SESSION_ID_VALUE_RE = re.compile(r"(?:^|\n)[ \t]*Session-Id:[ \t]*(\S+)")
 _TEAM_LINE_RE = meta_line_re("Team")
 _SP_LABEL_RE = re.compile(r"(?:^|[\s(\[`])sp:\d+\b")
+
+
+def _session_id_filled(pr_body: str) -> bool:
+    """`Session-Id:` が値付きで、かつプレースホルダ（`{UUID}` 等）ではないかを判定する。"""
+    m = _SESSION_ID_VALUE_RE.search(pr_body)
+    if not m:
+        return False
+    return not _EDGE_PLACEHOLDER_RE.match(m.group(1))
 
 
 def sprint_meta_warnings(pr_body: str | None) -> list[str]:
@@ -974,7 +1294,7 @@ def sprint_meta_warnings(pr_body: str | None) -> list[str]:
         ]
 
     out: list[str] = []
-    if not _SESSION_ID_LINE_RE.search(pr_body):
+    if not _session_id_filled(pr_body):
         out.append(
             f"PR 本文に Session-Id 行がありません（--mine 所有判定の前提・session-sprint-rules.md §2）: {sid_hint}"
         )
@@ -990,6 +1310,122 @@ def sprint_meta_warnings(pr_body: str | None) -> list[str]:
                 "（session-sprint-rules.md §2/§5）: " + " / ".join(missing)
             )
     return out
+
+
+# PR 本文チェック（Issue base#628）: 検証証跡 / PR 前レビュー記録 / エッジケース表の
+# 3 チェックを sprint_meta_warnings（Session-Id / sp:N / Team）と独立に追加する。
+# Session-Id 等は sprint_meta_warnings が既に検査済みのため重複させない。
+
+_EVIDENCE_RE = re.compile(
+    r"^\s*([-*]\s+(\[[ x]\]\s+)?)?`?(python3|bash|sh|pytest|npm|node|git|make)\s.*"
+    r"(→|->|=>|PASS|FAIL|OK|exit|passed|failed|結果|件)"
+    r"|^\s*\$\s"
+    r"|^\s*```"
+)
+_TEST_SECTION_HEADING_RE = re.compile(r"^#+\s*テスト・確認内容")
+_GENERIC_HEADING_RE = re.compile(r"^#+\s")
+_PRE_REVIEW_RE = re.compile(r"PR 前レビュー:\s*(検出 [0-9]+ 件|スキップ（.+）)")
+_EDGE_HEADING_RE = re.compile(r"^#+\s.*エッジケース")
+_EDGE_SEP_RE = re.compile(r"^\s*\|[\s:|-]*$")
+_EDGE_PLACEHOLDER_RE = re.compile(r"^\{.*\}$")
+
+
+def _extract_section(text: str, start_re: "re.Pattern[str]") -> str:
+    """start_re にマッチする見出し配下（次の見出しまで）の本文を抜き出す（awk 実装の移植）。"""
+    out: list[str] = []
+    flag = False
+    for line in text.splitlines():
+        if start_re.match(line):
+            flag = True
+            continue
+        if _GENERIC_HEADING_RE.match(line):
+            flag = False
+            continue
+        if flag:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _edge_case_row_count(pr_body: str) -> int:
+    """「エッジケース」見出し配下の表の実データ行数（プレースホルダ行・区切り行を除く）を返す。"""
+    n = 0
+    for line in _extract_section(pr_body, _EDGE_HEADING_RE).splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        if _EDGE_SEP_RE.match(line):
+            continue
+        real = False
+        for cell in line.split("|"):
+            cell = cell.strip()
+            if cell and not _EDGE_PLACEHOLDER_RE.match(cell):
+                real = True
+                break
+        if real:
+            n += 1
+    return n
+
+
+def _line_search(regex: "re.Pattern[str]", text: str) -> bool:
+    """regex が text のいずれかの行に単独でマッチするかを返す（grep -qE と同じ行単位の挙動）。
+
+    `regex.search(text)` を複数行テキストへ直接使うと、`\\s` が改行も含むため
+    無関係な後続行の文字列を同一マッチとして誤認識する
+    （bash の grep は行単位処理のため発生しない・Layer 1 正確性指摘）。
+    """
+    return any(regex.search(line) for line in text.splitlines())
+
+
+def _run_detect_pr_diff_type() -> tuple[bool, bool]:
+    """tools/detect_pr_diff_type.py を実行し (has_code, high_risk) を返す（失敗時は False, False）。
+
+    探索先は cwd（消費先プロジェクトの repo_root）ではなく、自分自身（self_review_check.py）と
+    同じディレクトリに固定する。旧 pre-pr-create-check.sh 実装は CLAUDE_PLUGIN_ROOT 優先の
+    scripts_root 基準で探索しており（#539・tools/ を持たない第三者プロジェクトでの無効化防止）、
+    cwd 相対に戻すと同じ退行が起きる（Layer 1 指摘）。
+    """
+    tool = Path(__file__).resolve().parent / "detect_pr_diff_type.py"
+    if not tool.is_file():
+        return False, False
+    try:
+        proc = sh([sys.executable, str(tool)], timeout=20)
+    except Exception:  # noqa: BLE001
+        return False, False
+    if proc.returncode != 0:
+        return False, False
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except Exception:  # noqa: BLE001
+        return False, False
+    return bool(data.get("has_code")), bool(data.get("high_risk"))
+
+
+def pr_body_extra_reminders(pr_body: str | None) -> list[str]:
+    """PR 本文の検証証跡 / PR 前レビュー記録 / エッジケース表チェック（非ブロッキング・base#628）。
+
+    PR 本文が渡されていないとき（本文未確定の PR 作成前チェック等）は何もしない
+    （sprint_meta_warnings の pr_body is None 分岐が一般リマインドを担当する）。
+    """
+    if not pr_body:
+        return []
+
+    warnings: list[str] = []
+    test_section = _extract_section(pr_body, _TEST_SECTION_HEADING_RE)
+    if not _line_search(_EVIDENCE_RE, test_section):
+        warnings.append(
+            "検証証跡なし: 「テスト・確認内容」に実行したコマンドと結果を書く（best-practices: show evidence）"
+        )
+
+    has_code, high_risk = _run_detect_pr_diff_type()
+    if (has_code or high_risk) and not _line_search(_PRE_REVIEW_RE, pr_body):
+        warnings.append(
+            "PR 前フレッシュ文脈レビューの記録が無い（未記入のテンプレートを含む・self-reviewer Step 3.5・base#627）"
+        )
+    if high_risk and _edge_case_row_count(pr_body) < 2:
+        warnings.append(
+            "高リスク差分（hooks / settings / permissions 等）なのにエッジケース表が無い"
+            "（`## エッジケース…` 見出し配下に見出し行 + データ行 1 行以上・base#627 対策 D）"
+        )
+    return warnings
 
 
 # GitHub が認識するクローズキーワード（Issue を自動クローズするトリガーキーワード）。
@@ -1623,6 +2059,7 @@ def _self_test_self_test_target_selection() -> list[str]:
 def run_self_test() -> int:
     # グループを追加したらこのリストに 1 行足すだけでよい（件数を別途手で数えない）
     groups = [
+        ("秘密検知メッセージの位置抽出", _self_test_finding_location),
         ("glob マッチャー境界", _self_test_glob_match),
         ("テストパス判定", _self_test_is_test_path),
         ("3 層タッチ判定", _self_test_touched_layers),
@@ -1672,6 +2109,12 @@ def run_self_test() -> int:
 # ここでの自制が主防衛線になる）。
 SELF_TEST_PER_TOOL_TIMEOUT = 15
 SELF_TEST_BUDGET_SECONDS = 40
+
+# 予算の起点はプロセス起動時（GATE_STARTED）。--self-test / 対応テストより前に走る lint 段
+# （bash -n / python compile / secret_scan / shellcheck / ruff）の経過も同じ時計で数えるため、
+# self-test 段の合計が外側 timeout を超えない（起点を self_test_errors() 内に置くと lint 段の
+# 経過が予算に乗らず合計が外側予算を超えうる・base#627 Layer 2 指摘）。
+GATE_STARTED = time.monotonic()
 
 # 対象判定は基本 "--self-test" 文字列の有無で機械的に拾うが（新設ツールが自動で対象へ加わる）、
 # チェッカー自身は .py に変更が無くても、監視対象の非 .py ファイル（.sh 等）が変更されたら
@@ -1734,7 +2177,7 @@ def self_test_errors(files: list[str]) -> list[str]:
             if _is_allowed(Path(companion).resolve()):
                 targets.append(companion)
 
-    started = time.monotonic()
+    started = GATE_STARTED  # 起点はプロセス起動時（lint 段の経過を含めて数える・base#627 Layer 2）
     for f in targets:
         elapsed = time.monotonic() - started
         if elapsed > SELF_TEST_BUDGET_SECONDS:
@@ -1770,7 +2213,40 @@ def self_test_errors(files: list[str]) -> list[str]:
             tail = (proc.stderr or proc.stdout or "").strip().splitlines()
             detail = tail[-1] if tail else "(出力なし)"
             errs.append(f"--self-test 失敗: {f}（exit={proc.returncode}）: {detail[:200]}")
+
+    # 対応テストスクリプト（tools/test_<name>.sh）の自動実行（Issue base#627 対策 C）。
+    # 上の --self-test ループと同じ started 基準の予算（SELF_TEST_BUDGET_SECONDS /
+    # SELF_TEST_PER_TOOL_TIMEOUT）を共有し、合計が pre-pr-create-check.sh の外側
+    # timeout を超えないようにする。
+    for f in _companion_test_script_targets(files):
+        _run_within_budget(["bash", f], "対応テスト", f, started, errs, f"bash {f}")
     return errs
+
+
+def _read_pr_body(use_stdin: bool) -> str | None:
+    """PR 本文の取得（優先順: SELF_REVIEW_PR_BODY_FILE → SELF_REVIEW_PR_BODY → --pr-body-stdin）。
+
+    - SELF_REVIEW_PR_BODY_FILE（本命・#628）: pre-pr-create-check.sh が E2BIG 回避のため
+      一時ファイル経由で本文を渡す経路。値が空・未設定・読み取り失敗のときは「本文なし」
+      として次の経路へフォールバックする（「本文はあるが Session-Id: が無い」という
+      誤判定をさせないため・pre-pr-create-check.sh 側コメント参照）。
+    - SELF_REVIEW_PR_BODY（直接値）: tools/test_self_review_check.sh が使うテスト用の
+      フォールバック経路（ファイルを介さず本文を直接渡したいとき）。
+    - --pr-body-stdin: `_self_test_sprint_pr_closes_wiring()` が main() への配線を
+      実プロセスの終了コードで検証するために使う自己配線テスト専用の入口。
+    """
+    file_path = os.environ.get("SELF_REVIEW_PR_BODY_FILE", "")
+    if file_path:
+        try:
+            return Path(file_path).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            pass
+    direct = os.environ.get("SELF_REVIEW_PR_BODY")
+    if direct is not None:
+        return direct
+    if use_stdin:
+        return sys.stdin.read()
+    return None
 
 
 def main(pr_body: str | None = None) -> int:
@@ -1830,6 +2306,17 @@ def main(pr_body: str | None = None) -> int:
                         warnings.append(entry)
             except Exception as e:  # noqa: BLE001
                 warnings.append(f"危険パターン検査でエラー: {f}: {e}")
+
+    # bash / Python 構文エラー（Error・base#627）: レビュアーの目視を待たず機械的に確定できる事故
+    errors.extend(bash_syntax_errors(files))
+    errors.extend(python_syntax_errors(files))
+
+    # 秘密検知（Error・base#678）: PR 作成前の最後の機械ゲート
+    errors.extend(secret_scan_errors())
+
+    # shellcheck / ruff（Warning・base#627・導入済み環境のみ）: 補助的な静的検査
+    warnings.extend(shellcheck_warnings(files))
+    warnings.extend(ruff_syntax_warnings(files))
 
     # --self-test を持つツールの自動実行（base#508・PR 作成前ゲート）
     # SELF_REVIEW_SELFTEST=warn で Error を非ブロック化する逃げ道を用意
@@ -1922,6 +2409,8 @@ def main(pr_body: str | None = None) -> int:
         cur = br.stdout.strip() if br.returncode == 0 else ""
         if cur not in ("", "main", "master", "HEAD"):
             warnings.extend(sprint_meta_warnings(pr_body))
+            # 検証証跡 / PR 前レビュー記録 / エッジケース表チェック（Issue base#628）
+            warnings.extend(pr_body_extra_reminders(pr_body))
             # Sprint Goal: を持つ PR 内のクローズキーワード検査（Issue #281）
             closes_error = sprint_pr_closes_detection(pr_body)
             if closes_error:
@@ -1938,6 +2427,11 @@ def main(pr_body: str | None = None) -> int:
     if errors:
         print("[self-review] Error（PR 作成をブロックします）:")
         for e in errors[:20]:
+            # errors に入るのは検査結果のメッセージだけで、秘密の値そのものは含まない
+            # （秘密検知由来のメッセージは _finding_location() が位置とルール ID へ絞り込み済み）。
+            # CodeQL の py/clear-text-logging-sensitive-data は secret_scan.py のプロセス出力を
+            # 名前ベースで sensitive と推定して high を出すが、実際に出力される値は無い。
+            # codeql[py/clear-text-logging-sensitive-data]
             print(f"  - {e}")
         return 1
     print("[self-review] OK（Error なし）")
@@ -1958,7 +2452,7 @@ if __name__ == "__main__":
     _args = _parser.parse_args()
     if _args.self_test:
         sys.exit(run_self_test())
-    _pr_body = sys.stdin.read() if _args.pr_body_stdin else None
+    _pr_body = _read_pr_body(_args.pr_body_stdin)
     try:
         sys.exit(main(_pr_body))
     except Exception as e:

@@ -27,6 +27,20 @@
 #  12. 本文抽出の外側 timeout（10 秒）が発火して exit=124 になっても、フックは `set -e` で異常終了せず
 #      exit 0 のまま Layer 1 リマインダー等の additionalContext を出力する（本文なし扱い・Warning なし・
 #      #627 Layer 1 再レビュー指摘）
+#  13. PR 本文を self_review_check.py に渡す一時ファイル（claude-prbody.*）が、フック正常終了後に
+#      残留しない（trap EXIT による削除・#628 Layer 1 テスト・検証指摘）
+#  14. gh pr create --body "..."（heredoc でも --body-file でもない単純な引用文字列形式・shlex 正常系）
+#      でも GOOD_BODY が完全抽出される（#1130 Layer 1 CONFIRMED: 従来 _extract_gh_pr_body の Bash
+#      経路テストは全て BAD_BODY 限定で、抽出が丸ごと壊れても同じ Warning 件数になり検知できなかった）
+#  15. gh pr create --body="$(cat <<'EOF' ... EOF)"（等号形式のヒアドキュメント）でも抽出される
+#  16. PR 本文がヒアドキュメント形式の引用例（本リポジトリのルール文書が例示する形そのもの）を
+#      本文中に含んでいても、実際の終端より手前で誤って打ち切られず、本文全体（Session-Id・
+#      run_checks 結果表を含む）が抽出される（#1130 Layer 1 CONFIRMED: HEREDOC_RE の非貪欲一致が
+#      入れ子の引用を終端と誤認していた）
+#  17. gh pr create --body "..." --title "..."（本文に奇数個の "含み shlex が失敗 → _lenient_extract
+#      経由）で、--title 側の引用値が本文に混入しない（#1130 Layer 1 CONFIRMED: 旧 _lenient_extract
+#      の貪欲一致は後続オプションの引用値まで本文として飲み込み、たまたま含まれる Session-Id 等の
+#      キーワードで本来の不備が「記載あり」に誤判定されていた）
 #
 # has_code / high_risk の判定対象は一時リポジトリの git 差分そのもの（tools/detect_pr_diff_type.py
 # を base コミットへ同梱して一時リポジトリ内でも実行できるようにし、フィクスチャファイルの追加で
@@ -37,46 +51,55 @@
 
 set -uo pipefail
 
+# self_review_check.py が git_diff_utils / md_fence / pr_meta_patterns を import すると
+# tools/__pycache__/*.pyc が生成される。実リポジトリは .gitignore で除外済みだが、
+# フィクスチャリポジトリ（setup_repo）には .gitignore が無いため、これが未追跡ファイルとして
+# 検出され、同一 $WORK を使い回す後続ケース（3・4 等）の「未コミット・未push」チェックを
+# 誤って発火させる。テスト実行中はバイトコードキャッシュ自体を作らせない。
+export PYTHONDONTWRITEBYTECODE=1
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOK="$REPO_ROOT/.claude/hooks/pre-pr-create-check.sh"
 DETECT_TOOL="$REPO_ROOT/tools/detect_pr_diff_type.py"
+SELF_REVIEW_TOOL="$REPO_ROOT/tools/self_review_check.py"
+# self_review_check.py の必須 import 先（tools/ 直下の兄弟モジュール）。一時リポジトリへ
+# self_review_check.py 単体だけコピーすると ModuleNotFoundError で即死する（本体は実リポジトリの
+# tools/ 直下に同居している前提のため）。git_diff_utils / md_fence / pr_meta_patterns は
+# トップレベル import（必須）、他の外部ツール（secret_scan 等）は try/except 済みの任意 import。
+SELF_REVIEW_DEPS=(
+  "$REPO_ROOT/tools/git_diff_utils.py"
+  "$REPO_ROOT/tools/md_fence.py"
+  "$REPO_ROOT/tools/pr_meta_patterns.py"
+)
 [ -f "$HOOK" ] || { echo "FATAL: フックが見つかりません: $HOOK"; exit 1; }
 [ -f "$DETECT_TOOL" ] || { echo "FATAL: detect_pr_diff_type.py が見つかりません: $DETECT_TOOL"; exit 1; }
-
-PASS=0
-FAIL=0
-report() { # report <結果 ok|ng> <説明>
-  if [ "$1" = "ok" ]; then
-    PASS=$((PASS + 1)); echo "  PASS: $2"
-  else
-    FAIL=$((FAIL + 1)); echo "  FAIL: $2"
-  fi
-}
+[ -f "$SELF_REVIEW_TOOL" ] || { echo "FATAL: self_review_check.py が見つかりません: $SELF_REVIEW_TOOL"; exit 1; }
+for _dep in "${SELF_REVIEW_DEPS[@]}"; do
+  [ -f "$_dep" ] || { echo "FATAL: self_review_check.py の依存モジュールが見つかりません: $_dep"; exit 1; }
+done
+# shellcheck source=tools/lib/test_harness.sh
+source "$REPO_ROOT/tools/lib/test_harness.sh"
 
 BRANCH="feat/test-pr-body-check"
 
 # setup_repo [extra_path] [extra_content]
 # origin（bare）+ clean・push 済みの作業ブランチを持つ一時リポジトリを作る。
-# tools/detect_pr_diff_type.py は base コミット（main・origin と共有する祖先）に同梱するため、
-# 一時リポジトリ内でも Layer 0 の has_code/high_risk 判定が実行できる（base に含めることで
-# 判定対象の diff 自体には現れない）。extra_path/extra_content を渡すと base の後に追加コミットとして
-# 作業ブランチへ push し、has_code/high_risk 判定をフィクスチャごとに作り分ける
-# （例: .py を追加すれば has_code=true、.claude/settings.json 相当パスなら high_risk=true）。
+# tools/detect_pr_diff_type.py と tools/self_review_check.py は base コミット（main・origin と
+# 共有する祖先）に同梱するため、一時リポジトリ内でも Layer 0 の has_code/high_risk 判定、および
+# PR 本文チェック（Session-Id 等・Issue #628 で self_review_check.py に集約済み）が実行できる
+# （base に含めることで判定対象の diff 自体には現れない）。extra_path/extra_content を渡すと
+# base の後に追加コミットとして作業ブランチへ push し、has_code/high_risk 判定をフィクスチャ
+# ごとに作り分ける（例: .py を追加すれば has_code=true、.claude/settings.json 相当パスなら
+# high_risk=true）。
 setup_repo() {
   local extra_path="${1:-}" extra_content="${2:-}"
   WORK=$(mktemp -d)
-  git init --quiet --initial-branch=main "$WORK/remote.git" --bare 2>/dev/null \
-    || git init --quiet --bare "$WORK/remote.git"
-  git init --quiet --initial-branch=main "$WORK/repo" 2>/dev/null || {
-    git init --quiet "$WORK/repo"
-    git -C "$WORK/repo" checkout --quiet -B main
-  }
-  git -C "$WORK/repo" config user.email test@example.com
-  git -C "$WORK/repo" config user.name test
-  git -C "$WORK/repo" remote add origin "$WORK/remote.git"
+  init_tmp_git_repo "$WORK"
 
   mkdir -p "$WORK/repo/tools"
   cp "$DETECT_TOOL" "$WORK/repo/tools/detect_pr_diff_type.py"
+  cp "$SELF_REVIEW_TOOL" "$WORK/repo/tools/self_review_check.py"
+  cp "${SELF_REVIEW_DEPS[@]}" "$WORK/repo/tools/"
   echo "base" > "$WORK/repo/base.txt"
   git -C "$WORK/repo" add -A
   git -C "$WORK/repo" commit --quiet -m "base"
@@ -84,6 +107,15 @@ setup_repo() {
   git -C "$WORK/repo" fetch --quiet origin "+main:refs/remotes/origin/main" 2>/dev/null || true
 
   git -C "$WORK/repo" checkout --quiet -b "$BRANCH"
+  # self_review_check.py の PR 本文チェック（Session-Id 等・Issue base#628）は
+  # changed_files()（git_diff_utils.collect_changed_files()）が非空のときにしか発火しない
+  # （`if files:` ゲート・base#628 導入当初からの既存仕様）。extra_path 未指定のケース
+  # （has_code=false を意図したケース）でも origin/main との差分を必ず作るため、
+  # has_code/high_risk 判定に影響しない拡張子（.txt・CODE_EXTENSIONS / HIGH_RISK_PATH_PATTERN
+  # のいずれにも一致しない）のマーカーファイルを常時コミットする。
+  echo "pr-body-check fixture marker" > "$WORK/repo/pr-body-check-fixture.txt"
+  git -C "$WORK/repo" add -A
+  git -C "$WORK/repo" commit --quiet -m "test: add pr-body-check fixture marker"
   if [ -n "$extra_path" ]; then
     mkdir -p "$(dirname "$WORK/repo/$extra_path")"
     printf '%s\n' "$extra_content" > "$WORK/repo/$extra_path"
@@ -94,7 +126,7 @@ setup_repo() {
   git -C "$WORK/repo" fetch --quiet origin "+${BRANCH}:refs/remotes/origin/${BRANCH}" 2>/dev/null || true
 }
 
-teardown_repo() { rm -rf "$WORK"; }
+teardown_repo() { teardown_tmp_repo "$WORK"; }
 
 # run_hook <stdin json>: pre-pr-create-check.sh を作業ブランチ上で起動し
 # HOOK_EXIT / HOOK_STDOUT / HOOK_STDERR に結果を残す。
@@ -116,7 +148,7 @@ ctx_of() { # ctx_of <hook stdout>: hookSpecificOutput.additionalContext を取�
 # count_new_warnings <additionalContext>: 本チェックが追加した4項目のうち検出された件数を数える
 count_new_warnings() {
   local ctx="$1" n=0
-  printf '%s' "$ctx" | grep -q 'PR 本文に Session-Id: が無い' && n=$((n + 1))
+  printf '%s' "$ctx" | grep -q 'PR 本文に Session-Id 行がありません' && n=$((n + 1))
   printf '%s' "$ctx" | grep -q '検証証跡なし' && n=$((n + 1))
   printf '%s' "$ctx" | grep -q 'PR 前フレッシュ文脈レビューの記録が無い' && n=$((n + 1))
   printf '%s' "$ctx" | grep -q '高リスク差分（hooks / settings / permissions 等）なのにエッジケース表が無い' && n=$((n + 1))
@@ -128,6 +160,18 @@ mcp_json() { # mcp_json <body>: mcp__github__create_pull_request 呼び出しを
     '{tool_name: "mcp__github__create_pull_request", tool_input: {body: $body, head: "irrelevant", owner: "acme", repo: "widgets"}}'
 }
 
+# 4.5 節（run_checks 証跡表の貼付検査・#72/#543）は tool_name=mcp__github__create_pull_request の
+# 全呼び出しに無条件でかかる（本チェック＝Issue #627/#628 対策 C/D とは独立のゲート）。フィクスチャ
+# リポジトリには tools/check_run_checks_evidence.py を同梱しない（Python 判定器不在時の awk
+# フォールバック経路を使う）ため、貼付有無だけを見る awk 判定を満たせる最小の表を各本文に付与する
+# （4.5 の挙動そのものは変更しない・本文側を実運用と同じ形に揃えるだけ）。
+RUN_CHECKS_TABLE='
+## run_checks 結果
+
+| チェック | 結果 | 所要秒数 |
+|------|------|------|
+| fixture_check | PASS | 0.1 |'
+
 GOOD_BODY='Session-Id: sess-good-0001
 
 ## テスト・確認内容
@@ -136,9 +180,9 @@ GOOD_BODY='Session-Id: sess-good-0001
 python3 tools/x.py
 ```
 
-PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'
+PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'"$RUN_CHECKS_TABLE"
 
-BAD_BODY='Fixes a small bug in the parser.'
+BAD_BODY='Fixes a small bug in the parser.'"$RUN_CHECKS_TABLE"
 
 echo "[ケース 1] 全要素が揃った本文（has_code=true）→ 新規 Warning 0 件"
 setup_repo "feature.py" '"""Test fixture for has_code=true."""
@@ -165,7 +209,7 @@ _n2=$(count_new_warnings "$_ctx2")
 [ "$_n2" -eq 2 ] \
   && report ok "新規 Warning が2件" \
   || report ng "新規 Warning が ${_n2} 件（期待 2・additionalContext: ${_ctx2}）"
-printf '%s' "$_ctx2" | grep -q 'PR 本文に Session-Id: が無い' \
+printf '%s' "$_ctx2" | grep -q 'PR 本文に Session-Id 行がありません' \
   && report ok "Session-Id 不足を検出" || report ng "Session-Id 不足の Warning が無い"
 printf '%s' "$_ctx2" | grep -q '検証証跡なし' \
   && report ok "検証証跡なしを検出" || report ng "検証証跡なしの Warning が無い"
@@ -240,7 +284,7 @@ BULLET_BODY='Session-Id: sess-good-0002
 - [ ] `python3 tools/x.py --self-test` → PASS
 - bash tools/test_x.sh → PASS=3 FAIL=0
 
-PR 前レビュー: スキップ（データのみ差分）'
+PR 前レビュー: スキップ（データのみ差分）'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$BULLET_BODY")"
 _ctx7=$(ctx_of "$HOOK_STDOUT")
 _n7=$(count_new_warnings "$_ctx7")
@@ -255,7 +299,7 @@ PROSE_BODY='Session-Id: sess-good-0003
 - npm run build was not executed due to time
 - sh testing needed but not done yet
 
-PR 前レビュー: スキップ（データのみ差分）'
+PR 前レビュー: スキップ（データのみ差分）'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$PROSE_BODY")"
 _ctx7b=$(ctx_of "$HOOK_STDOUT")
 printf '%s' "$_ctx7b" | grep -q '検証証跡なし' \
@@ -319,7 +363,7 @@ TEMPLATE_BODY='Session-Id: {UUID}
 |------|------|---------|------|
 | {入力} | {状態} | {期待挙動} | {検証} |
 
-PR 前レビュー: 検出 N 件（🔴a 🟡b ⚪c・CONFIRMED d / PLAUSIBLE e）→ 修正 f 件・見送り g 件'
+PR 前レビュー: 検出 N 件（🔴a 🟡b ⚪c・CONFIRMED d / PLAUSIBLE e）→ 修正 f 件・見送り g 件'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$TEMPLATE_BODY")"
 _ctx10=$(ctx_of "$HOOK_STDOUT")
 _n10=$(count_new_warnings "$_ctx10")
@@ -339,7 +383,7 @@ FILLED_BODY='Session-Id: f7f07f85-ba7f-5236-81b1-c3c47b1ed177
 |------|------|---------|------|
 | 空 JSON `{}` | 初回 | 既定値で続行 | 実行済み |
 
-PR 前レビュー: 検出 2 件（🔴0 🟡1 ⚪1・CONFIRMED 1 / PLAUSIBLE 1）→ 修正 1 件・見送り 1 件'
+PR 前レビュー: 検出 2 件（🔴0 🟡1 ⚪1・CONFIRMED 1 / PLAUSIBLE 1）→ 修正 1 件・見送り 1 件'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$FILLED_BODY")"
 _ctx10b=$(ctx_of "$HOOK_STDOUT")
 _n10b=$(count_new_warnings "$_ctx10b")
@@ -372,7 +416,7 @@ PROSE_TABLE_BODY='Session-Id: f7f07f85-ba7f-5236-81b1-c3c47b1ed177
 |------|------|
 | tools/x.py | 追加 |
 
-PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'
+PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'"$RUN_CHECKS_TABLE"
 run_hook "$(mcp_json "$PROSE_TABLE_BODY")"
 _ctx10e=$(ctx_of "$HOOK_STDOUT")
 printf '%s' "$_ctx10e" | grep -q '高リスク差分（hooks / settings / permissions 等）なのにエッジケース表が無い' \
@@ -431,6 +475,113 @@ EOS
 else
   report ok "timeout 未導入のためスキップ（導入済み環境で検証される）"
 fi
+
+echo "[ケース 13] PR 本文を渡す一時ファイル（claude-prbody.*）がフック終了後に残留しない（Issue #628 Layer 1 テスト・検証指摘）"
+setup_repo
+_tmp_before=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'claude-prbody.*' 2>/dev/null | sort)
+run_hook "$(mcp_json "$GOOD_BODY")"
+_tmp_after=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'claude-prbody.*' 2>/dev/null | sort)
+[ "$_tmp_before" = "$_tmp_after" ] \
+  && report ok "trap による一時ファイル削除が機能し、残留ファイルが増えない" \
+  || report ng "一時ファイルが残留した（前: [${_tmp_before}] 後: [${_tmp_after}]）"
+teardown_repo
+
+echo "[ケース 14] gh pr create --body \"...\"（単純な引用文字列形式・shlex 正常系）でも GOOD_BODY が完全抽出される"
+setup_repo
+# オプション順序を case 4 と変え、--body の後に --title を置く（症状バリアント: オプション順序違い）
+GH_SIMPLE_CMD="gh pr create --base main --head ${BRANCH} --body \"${GOOD_BODY}\" --title \"Test PR\""
+gh_json=$(jq -n --arg cmd "$GH_SIMPLE_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "単純な文字列形式でも exit 0" \
+  || report ng "単純な文字列形式なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_n14=$(count_new_warnings "$(ctx_of "$HOOK_STDOUT")")
+[ "$_n14" -eq 0 ] \
+  && report ok "単純な文字列形式で GOOD_BODY が完全抽出され新規 Warning 0 件（従来 BAD_BODY 限定のテストでは抽出破壊を検知できなかった）" \
+  || report ng "単純な文字列形式で新規 Warning が ${_n14} 件（期待 0・additionalContext: $(ctx_of "$HOOK_STDOUT")）"
+teardown_repo
+
+echo "[ケース 15] gh pr create --body=\"\$(cat <<'EOF' ... EOF)\"（等号形式のヒアドキュメント）でも抽出される"
+setup_repo
+HEREDOC_EQ_CMD="gh pr create --title \"Test PR\" --body=\"\$(cat <<'EOF'
+${GOOD_BODY}
+EOF
+)\" --base main --head ${BRANCH}"
+gh_json=$(jq -n --arg cmd "$HEREDOC_EQ_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "--body= 形式（等号）でも exit 0" \
+  || report ng "--body= 形式なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_n15=$(count_new_warnings "$(ctx_of "$HOOK_STDOUT")")
+[ "$_n15" -eq 0 ] \
+  && report ok "--body= 形式（等号）でも heredoc 本文が完全抽出される" \
+  || report ng "--body= 形式で新規 Warning が ${_n15} 件（期待 0・additionalContext: $(ctx_of "$HOOK_STDOUT")）"
+teardown_repo
+
+echo "[ケース 16] 本文中に heredoc 引用例（入れ子の EOF / )）を含んでいても実際の終端まで抽出される"
+setup_repo
+# NESTED_EOF は本テストだけの一時デリミタ（本文と衝突しないよう固有名にする）。中身は本リポジトリの
+# ルール文書が実際に例示している形そのもの（gh pr create --body "$(cat <<'EOF' ... EOF)"）を、
+# PR 本文が「引用」しているケースを再現する（デリミタ名はあえて同じ 'EOF' にして衝突させる）。
+NESTED_EXAMPLE_TEXT=$(cat <<'NESTED_EOF'
+## 参考: PR 本文添付コマンドの例
+
+```
+gh pr create --body "$(cat <<'EOF'
+サンプル本文だよ
+EOF
+)" --base main --head some-branch
+```
+NESTED_EOF
+)
+NESTED_BODY="${NESTED_EXAMPLE_TEXT}
+
+${GOOD_BODY}"
+HEREDOC_NESTED_CMD="gh pr create --title \"Test PR\" --body \"\$(cat <<'EOF'
+${NESTED_BODY}
+EOF
+)\" --base main --head ${BRANCH}"
+gh_json=$(jq -n --arg cmd "$HEREDOC_NESTED_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "入れ子の heredoc 引用例を含む本文でも exit 0" \
+  || report ng "入れ子の heredoc 引用例を含む本文なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_ctx16=$(ctx_of "$HOOK_STDOUT")
+_n16=$(count_new_warnings "$_ctx16")
+[ "$_n16" -eq 0 ] \
+  && report ok "入れ子の引用例を実際の終端と誤認せず、本物の Session-Id・証跡（GOOD_BODY 部分）まで抽出される" \
+  || report ng "入れ子の引用例で早期打ち切りされ新規 Warning が ${_n16} 件（期待 0・additionalContext: ${_ctx16}）"
+teardown_repo
+
+echo "[ケース 17] gh pr create --body \"...\" --title \"...\"（本文に奇数個の \" → shlex 失敗 → _lenient_extract）で --title の値が本文に混入しない"
+setup_repo
+# LENIENT_BAD_BODY は Session-Id・検証証跡を欠く本文に、奇数個の " を1つ埋め込み shlex.split を
+# 意図的に失敗させる（heredoc 形式ではないので HEREDOC_RE は不一致、shlex 正常系でもないので
+# _lenient_extract に到達する）。
+LENIENT_BAD_BODY='Fixes a small "quoting edge case in the parser.'"$RUN_CHECKS_TABLE"
+# LEAK_MARKER は「後続オプションの値に Session-Id・検証証跡のキーワードが偶然含まれる」ケースを
+# 模す。旧実装（貪欲一致）だとこれが本文に混入し、LENIENT_BAD_BODY 側の不備を隠してしまう。
+LEAK_MARKER='Session-Id: leaked-marker-should-not-appear
+
+## テスト・確認内容
+
+```
+python3 tools/leak.py
+```
+
+PR 前レビュー: 検出 0 件（🔴0 🟡0 ⚪0・CONFIRMED 0 / PLAUSIBLE 0）→ 修正 0 件・見送り 0 件'
+GH_LENIENT_CMD="gh pr create --body \"${LENIENT_BAD_BODY}\" --title \"${LEAK_MARKER}\" --base main --head ${BRANCH}"
+gh_json=$(jq -n --arg cmd "$GH_LENIENT_CMD" '{tool_name: "Bash", tool_input: {command: $cmd}}')
+run_hook "$gh_json"
+[ "$HOOK_EXIT" -eq 0 ] \
+  && report ok "奇数個の \" を含む本文（lenient フォールバック経路）でも exit 0" \
+  || report ng "lenient フォールバック経路なのに exit ${HOOK_EXIT}（stderr: ${HOOK_STDERR}）"
+_ctx17=$(ctx_of "$HOOK_STDOUT")
+_n17=$(count_new_warnings "$_ctx17")
+[ "$_n17" -eq 2 ] \
+  && report ok "--title 側の値が本文に混入せず、LENIENT_BAD_BODY 本来の不備（Session-Id・検証証跡なし）が2件検出される（0件なら --title の値が漏れて誤って『記載あり』判定になった証拠）" \
+  || report ng "--title 側の値が本文に混入した疑い（新規 Warning ${_n17} 件・期待 2・additionalContext: ${_ctx17}）"
+teardown_repo
 
 echo
 echo "結果: PASS=${PASS} FAIL=${FAIL}"
