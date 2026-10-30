@@ -1,27 +1,27 @@
 {
-  "date": "20260906",
+  "date": "20261030",
   "meta": {
     "source": "Ecosyste.ms",
     "sourceUrl": "https://ecosyste.ms/",
     "license": "CC BY-SA 4.0",
     "sourceLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "generatedAt": "2026-09-06T21:22:20.119Z"
+    "generatedAt": "2026-10-30T21:20:38.792Z"
   },
   "candidates": [
     {
-      "packageName": "github.com/jackc/pgpassfile",
-      "repositoryFullName": "jackc/pgpassfile",
-      "dependentCount": 9238,
+      "packageName": "doParallel",
+      "repositoryFullName": "RevolutionAnalytics/doparallel",
+      "dependentCount": 858,
       "stars": 5,
-      "gemIndex": -94.83,
-      "registry": "proxy.golang.org"
+      "gemIndex": -96.11,
+      "registry": "cran.r-project.org"
     },
     {
       "packageName": "contao/manager-plugin",
       "repositoryFullName": "contao/manager-plugin",
       "dependentCount": 1076,
       "stars": 5,
-      "gemIndex": -94.69,
+      "gemIndex": -94.72,
       "registry": "packagist.org"
     },
     {
@@ -29,7 +29,7 @@
       "repositoryFullName": "s-u/png",
       "dependentCount": 277,
       "stars": 5,
-      "gemIndex": -94.49,
+      "gemIndex": -94.64,
       "registry": "cran.r-project.org"
     },
     {
@@ -37,7 +37,7 @@
       "repositoryFullName": "ember-cli/ember-disable-prototype-extensions",
       "dependentCount": 5932,
       "stars": 6,
-      "gemIndex": -93.94,
+      "gemIndex": -93.96,
       "registry": "npmjs.org"
     },
     {
@@ -45,47 +45,47 @@
       "repositoryFullName": "RevolutionAnalytics/iterators",
       "dependentCount": 149,
       "stars": 5,
-      "gemIndex": -93.38,
+      "gemIndex": -93.52,
       "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "hyperf/framework",
-      "repositoryFullName": "hyperf/framework",
-      "dependentCount": 490,
-      "stars": 6,
-      "gemIndex": -92.64,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "silverstripe/vendor-plugin",
-      "repositoryFullName": "silverstripe/vendor-plugin",
-      "dependentCount": 479,
-      "stars": 5,
-      "gemIndex": -92.57,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "odict",
-      "repositoryFullName": "conestack/odict",
-      "dependentCount": 529,
-      "stars": 8,
-      "gemIndex": -92.29,
-      "registry": "pypi.org"
     },
     {
       "packageName": "nerves_system_linter",
       "repositoryFullName": "nerves-project/nerves_system_linter",
       "dependentCount": 45,
       "stars": 5,
-      "gemIndex": -92.2,
+      "gemIndex": -92.76,
       "registry": "hex.pm"
     },
     {
-      "packageName": "org.netbeans.api:org-openide-util",
-      "repositoryFullName": "apache/netbeans-parent",
-      "dependentCount": 1176,
+      "packageName": "silverstripe/vendor-plugin",
+      "repositoryFullName": "silverstripe/vendor-plugin",
+      "dependentCount": 479,
+      "stars": 5,
+      "gemIndex": -92.6,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "github.com/jackc/pgpassfile",
+      "repositoryFullName": "jackc/pgpassfile",
+      "dependentCount": 9238,
       "stars": 6,
-      "gemIndex": -91.83,
+      "gemIndex": -92.45,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "odict",
+      "repositoryFullName": "conestack/odict",
+      "dependentCount": 529,
+      "stars": 8,
+      "gemIndex": -92.25,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "javax.xml.bind:jaxb-api",
+      "repositoryFullName": "javaee/jaxb-spec",
+      "dependentCount": 4987,
+      "stars": 10,
+      "gemIndex": -92.08,
       "registry": "repo1.maven.org"
     },
     {
@@ -93,23 +93,15 @@
       "repositoryFullName": "derhuerst/tap-min",
       "dependentCount": 3968,
       "stars": 7,
-      "gemIndex": -91.39,
+      "gemIndex": -91.37,
       "registry": "npmjs.org"
-    },
-    {
-      "packageName": "javax.xml.bind:jaxb-api",
-      "repositoryFullName": "javaee/jaxb-spec",
-      "dependentCount": 4987,
-      "stars": 10,
-      "gemIndex": -91.19,
-      "registry": "repo1.maven.org"
     },
     {
       "packageName": "@stdlib/bench",
       "repositoryFullName": "stdlib-js/bench",
       "dependentCount": 3132,
       "stars": 5,
-      "gemIndex": -91.15,
+      "gemIndex": -91.12,
       "registry": "npmjs.org"
     },
     {
@@ -125,7 +117,7 @@
       "repositoryFullName": "gballet/go-libpcsclite",
       "dependentCount": 3102,
       "stars": 5,
-      "gemIndex": -90.41,
+      "gemIndex": -90.51,
       "registry": "proxy.golang.org"
     },
     {
@@ -133,15 +125,39 @@
       "repositoryFullName": "hyperf/command",
       "dependentCount": 283,
       "stars": 5,
-      "gemIndex": -90.31,
+      "gemIndex": -90.34,
       "registry": "packagist.org"
+    },
+    {
+      "packageName": "ember-export-application-global",
+      "repositoryFullName": "ember-cli/ember-export-application-global",
+      "dependentCount": 6498,
+      "stars": 13,
+      "gemIndex": -90.21,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "github.com/google/cel-go",
+      "repositoryFullName": "google/cel-go",
+      "dependentCount": 2825,
+      "stars": 5,
+      "gemIndex": -90.08,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "ovos-utils",
       "repositoryFullName": "OpenVoiceOS/ovos_utils",
       "dependentCount": 133,
       "stars": 6,
-      "gemIndex": -90.05,
+      "gemIndex": -90.03,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "pyasn1-modules",
+      "repositoryFullName": "pyasn1/pyasn1-modules",
+      "dependentCount": 338,
+      "stars": 9,
+      "gemIndex": -89.84,
       "registry": "pypi.org"
     },
     {
@@ -149,7 +165,7 @@
       "repositoryFullName": "debris/rustc-hex",
       "dependentCount": 152,
       "stars": 5,
-      "gemIndex": -89.87,
+      "gemIndex": -89.79,
       "registry": "crates.io"
     },
     {
@@ -157,23 +173,39 @@
       "repositoryFullName": "storybookjs/addon-knobs",
       "dependentCount": 6657,
       "stars": 14,
-      "gemIndex": -89.74,
+      "gemIndex": -89.75,
       "registry": "npmjs.org"
     },
     {
-      "packageName": "github.com/cosmos/gorocksdb",
-      "repositoryFullName": "cosmos/gorocksdb",
-      "dependentCount": 2619,
+      "packageName": "hyperf/framework",
+      "repositoryFullName": "hyperf/framework",
+      "dependentCount": 490,
       "stars": 6,
-      "gemIndex": -89.71,
+      "gemIndex": -89.69,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "magic",
+      "repositoryFullName": "RobinHankin/magic",
+      "dependentCount": 51,
+      "stars": 6,
+      "gemIndex": -89.46,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "github.com/tendermint/btcd",
+      "repositoryFullName": "tendermint/btcd",
+      "dependentCount": 2354,
+      "stars": 5,
+      "gemIndex": -89.37,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "ember-export-application-global",
-      "repositoryFullName": "ember-cli/ember-export-application-global",
-      "dependentCount": 6498,
-      "stars": 14,
-      "gemIndex": -89.66,
+      "packageName": "eslint-config-oclif",
+      "repositoryFullName": "oclif/eslint-config-oclif",
+      "dependentCount": 2902,
+      "stars": 7,
+      "gemIndex": -89.35,
       "registry": "npmjs.org"
     },
     {
@@ -181,119 +213,87 @@
       "repositoryFullName": "dotnetcore/SourceLink.Environment",
       "dependentCount": 253,
       "stars": 7,
-      "gemIndex": -89.41,
+      "gemIndex": -89.34,
       "registry": "nuget.org"
-    },
-    {
-      "packageName": "eslint-config-oclif",
-      "repositoryFullName": "oclif/eslint-config-oclif",
-      "dependentCount": 2902,
-      "stars": 7,
-      "gemIndex": -89.36,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "contao-community-alliance/composer-plugin",
-      "repositoryFullName": "contao-community-alliance/composer-plugin",
-      "dependentCount": 875,
-      "stars": 7,
-      "gemIndex": -89.26,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "github.com/tendermint/btcd",
-      "repositoryFullName": "tendermint/btcd",
-      "dependentCount": 2354,
-      "stars": 5,
-      "gemIndex": -89.26,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/munnerz/goautoneg",
-      "repositoryFullName": "munnerz/goautoneg",
-      "dependentCount": 12492,
-      "stars": 9,
-      "gemIndex": -89.16,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "@nomiclabs/hardhat-waffle",
-      "repositoryFullName": "NomicFoundation/hardhat-waffle",
-      "dependentCount": 2459,
-      "stars": 5,
-      "gemIndex": -89.12,
-      "registry": "npmjs.org"
     },
     {
       "packageName": "zope.schema",
       "repositoryFullName": "zopefoundation/zope.schema",
       "dependentCount": 173,
       "stars": 7,
-      "gemIndex": -89.12,
+      "gemIndex": -89.19,
       "registry": "pypi.org"
     },
     {
-      "packageName": "github.com/konsorten/go-windows-terminal-sequences",
-      "repositoryFullName": "konsorten/go-windows-terminal-sequences",
-      "dependentCount": 12212,
-      "stars": 8,
-      "gemIndex": -89.11,
-      "registry": "proxy.golang.org"
+      "packageName": "contao-community-alliance/composer-plugin",
+      "repositoryFullName": "contao-community-alliance/composer-plugin",
+      "dependentCount": 875,
+      "stars": 7,
+      "gemIndex": -89.16,
+      "registry": "packagist.org"
     },
     {
-      "packageName": "pyasn1-modules",
-      "repositoryFullName": "pyasn1/pyasn1-modules",
-      "dependentCount": 338,
-      "stars": 9,
-      "gemIndex": -89.11,
-      "registry": "pypi.org"
+      "packageName": "@nomiclabs/hardhat-waffle",
+      "repositoryFullName": "NomicFoundation/hardhat-waffle",
+      "dependentCount": 2459,
+      "stars": 5,
+      "gemIndex": -89.1,
+      "registry": "npmjs.org"
     },
     {
       "packageName": "tsc",
       "repositoryFullName": "basarat/tsc",
       "dependentCount": 2592,
       "stars": 6,
-      "gemIndex": -89.07,
+      "gemIndex": -89.09,
       "registry": "npmjs.org"
     },
     {
-      "packageName": "rst.linker",
-      "repositoryFullName": "jaraco/rst.linker",
-      "dependentCount": 114,
-      "stars": 5,
-      "gemIndex": -89.01,
-      "registry": "pypi.org"
+      "packageName": "github.com/konsorten/go-windows-terminal-sequences",
+      "repositoryFullName": "konsorten/go-windows-terminal-sequences",
+      "dependentCount": 12212,
+      "stars": 8,
+      "gemIndex": -89.07,
+      "registry": "proxy.golang.org"
     },
     {
-      "packageName": "nanoframework.runtime.events",
-      "repositoryFullName": "nanoframework/nanoFramework.Runtime.Events",
-      "dependentCount": 133,
-      "stars": 6,
-      "gemIndex": -88.95,
-      "registry": "nuget.org"
+      "packageName": "spatstat.random",
+      "repositoryFullName": "spatstat/spatstat.random",
+      "dependentCount": 48,
+      "stars": 5,
+      "gemIndex": -89.06,
+      "registry": "cran.r-project.org"
     },
     {
       "packageName": "pytest-astropy",
       "repositoryFullName": "astropy/pytest-astropy",
       "dependentCount": 112,
       "stars": 5,
-      "gemIndex": -88.85,
+      "gemIndex": -88.84,
       "registry": "pypi.org"
     },
     {
-      "packageName": "bitops",
-      "repositoryFullName": "mmaechler/R-bitops",
-      "dependentCount": 45,
-      "stars": 8,
-      "gemIndex": -88.58,
-      "registry": "cran.r-project.org"
+      "packageName": "github.com/lann/ps",
+      "repositoryFullName": "lann/ps",
+      "dependentCount": 1996,
+      "stars": 5,
+      "gemIndex": -88.84,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "nanoframework.runtime.events",
+      "repositoryFullName": "nanoframework/nanoFramework.Runtime.Events",
+      "dependentCount": 133,
+      "stars": 6,
+      "gemIndex": -88.76,
+      "registry": "nuget.org"
     },
     {
       "packageName": "test_cov",
       "repositoryFullName": "vitusortner/test_cov",
       "dependentCount": 46,
       "stars": 5,
-      "gemIndex": -88.55,
+      "gemIndex": -88.58,
       "registry": "pub.dev"
     },
     {
@@ -301,23 +301,7 @@
       "repositoryFullName": "inveniosoftware/pytest-invenio",
       "dependentCount": 106,
       "stars": 5,
-      "gemIndex": -88.54,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "jakarta.inject:jakarta.inject-api",
-      "repositoryFullName": "eclipse-ee4j/injection-api",
-      "dependentCount": 1209,
-      "stars": 27,
-      "gemIndex": -88.51,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "jaraco.classes",
-      "repositoryFullName": "jaraco/jaraco.classes",
-      "dependentCount": 280,
-      "stars": 11,
-      "gemIndex": -88.46,
+      "gemIndex": -88.53,
       "registry": "pypi.org"
     },
     {
@@ -325,15 +309,23 @@
       "repositoryFullName": "hashicorp/terraform-svchost",
       "dependentCount": 1851,
       "stars": 5,
-      "gemIndex": -88.4,
+      "gemIndex": -88.51,
       "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "mdurl",
+      "repositoryFullName": "executablebooks/mdurl",
+      "dependentCount": 948,
+      "stars": 15,
+      "gemIndex": -88.36,
+      "registry": "pypi.org"
     },
     {
       "packageName": "github.com/golangci/gofmt",
       "repositoryFullName": "golangci/gofmt",
       "dependentCount": 1774,
       "stars": 5,
-      "gemIndex": -88.09,
+      "gemIndex": -88.2,
       "registry": "proxy.golang.org"
     },
     {
@@ -341,15 +333,31 @@
       "repositoryFullName": "gogo/gateway",
       "dependentCount": 3105,
       "stars": 6,
-      "gemIndex": -88.07,
+      "gemIndex": -88.15,
       "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "javax.el:javax.el-api",
+      "repositoryFullName": "javaee/uel-ri",
+      "dependentCount": 1575,
+      "stars": 13,
+      "gemIndex": -88.04,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "javax.xml.ws:jaxws-api",
+      "repositoryFullName": "javaee/jax-ws-spec",
+      "dependentCount": 835,
+      "stars": 9,
+      "gemIndex": -87.9,
+      "registry": "repo1.maven.org"
     },
     {
       "packageName": "console_log_handler",
       "repositoryFullName": "MikeMitterer/dart-console_log_handler",
       "dependentCount": 35,
       "stars": 5,
-      "gemIndex": -87.76,
+      "gemIndex": -87.8,
       "registry": "pub.dev"
     },
     {
@@ -357,15 +365,47 @@
       "repositoryFullName": "dart-lang/code-transformers",
       "dependentCount": 35,
       "stars": 5,
-      "gemIndex": -87.76,
+      "gemIndex": -87.8,
       "registry": "pub.dev"
+    },
+    {
+      "packageName": "jaraco.classes",
+      "repositoryFullName": "jaraco/jaraco.classes",
+      "dependentCount": 280,
+      "stars": 11,
+      "gemIndex": -87.8,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "org.codehaus.plexus:plexus-container-default",
+      "repositoryFullName": "codehaus-plexus/plexus-containers",
+      "dependentCount": 820,
+      "stars": 9,
+      "gemIndex": -87.77,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "rst.linker",
+      "repositoryFullName": "jaraco/rst.linker",
+      "dependentCount": 114,
+      "stars": 6,
+      "gemIndex": -87.74,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "plumber",
+      "repositoryFullName": "conestack/plumber",
+      "dependentCount": 528,
+      "stars": 14,
+      "gemIndex": -87.72,
+      "registry": "pypi.org"
     },
     {
       "packageName": "github.com/tendermint/crypto",
       "repositoryFullName": "tendermint/crypto",
       "dependentCount": 2826,
       "stars": 6,
-      "gemIndex": -87.62,
+      "gemIndex": -87.7,
       "registry": "proxy.golang.org"
     },
     {
@@ -373,8 +413,16 @@
       "repositoryFullName": "shirou/w32",
       "dependentCount": 4122,
       "stars": 7,
-      "gemIndex": -87.54,
+      "gemIndex": -87.61,
       "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "seqinr",
+      "repositoryFullName": "lbbe-software/seqinr",
+      "dependentCount": 71,
+      "stars": 6,
+      "gemIndex": -87.54,
+      "registry": "cran.r-project.org"
     },
     {
       "packageName": "ember-load-initializers",
@@ -385,51 +433,27 @@
       "registry": "npmjs.org"
     },
     {
-      "packageName": "seqinr",
-      "repositoryFullName": "lbbe-software/seqinr",
-      "dependentCount": 71,
+      "packageName": "github.com/munnerz/goautoneg",
+      "repositoryFullName": "munnerz/goautoneg",
+      "dependentCount": 12492,
+      "stars": 9,
+      "gemIndex": -87.46,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/cosmos/gorocksdb",
+      "repositoryFullName": "cosmos/gorocksdb",
+      "dependentCount": 2619,
       "stars": 6,
-      "gemIndex": -87.49,
-      "registry": "cran.r-project.org"
+      "gemIndex": -87.42,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "pytest-checkdocs",
       "repositoryFullName": "jaraco/pytest-checkdocs",
       "dependentCount": 109,
       "stars": 6,
-      "gemIndex": -87.43,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "mdurl",
-      "repositoryFullName": "executablebooks/mdurl",
-      "dependentCount": 948,
-      "stars": 16,
-      "gemIndex": -87.23,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "pytest-enabler",
-      "repositoryFullName": "jaraco/pytest-enabler",
-      "dependentCount": 105,
-      "stars": 6,
-      "gemIndex": -87.23,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "nanoframework.system.collections",
-      "repositoryFullName": "nanoframework/System.Collections",
-      "dependentCount": 73,
-      "stars": 5,
-      "gemIndex": -87.21,
-      "registry": "nuget.org"
-    },
-    {
-      "packageName": "plumber",
-      "repositoryFullName": "conestack/plumber",
-      "dependentCount": 528,
-      "stars": 15,
-      "gemIndex": -87.2,
+      "gemIndex": -87.41,
       "registry": "pypi.org"
     },
     {
@@ -437,31 +461,23 @@
       "repositoryFullName": "hashicorp/vault-plugin-auth-alicloud",
       "dependentCount": 3884,
       "stars": 7,
-      "gemIndex": -87.17,
+      "gemIndex": -87.25,
       "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "pytest-enabler",
+      "repositoryFullName": "jaraco/pytest-enabler",
+      "dependentCount": 105,
+      "stars": 6,
+      "gemIndex": -87.2,
+      "registry": "pypi.org"
     },
     {
       "packageName": "github.com/hexops/gotextdiff",
       "repositoryFullName": "hexops/gotextdiff",
       "dependentCount": 1484,
-      "stars": 5,
-      "gemIndex": -87.06,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "javax.xml.ws:jaxws-api",
-      "repositoryFullName": "javaee/jax-ws-spec",
-      "dependentCount": 835,
-      "stars": 9,
-      "gemIndex": -87.02,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "github.com/jackc/pgservicefile",
-      "repositoryFullName": "jackc/pgservicefile",
-      "dependentCount": 9308,
-      "stars": 9,
-      "gemIndex": -87.01,
+      "stars": 6,
+      "gemIndex": -87.15,
       "registry": "proxy.golang.org"
     },
     {
@@ -469,7 +485,7 @@
       "repositoryFullName": "chrismalek/oktasdk-go",
       "dependentCount": 3848,
       "stars": 7,
-      "gemIndex": -87,
+      "gemIndex": -87.09,
       "registry": "proxy.golang.org"
     },
     {
@@ -477,47 +493,47 @@
       "repositoryFullName": "multiformats/go-base36",
       "dependentCount": 2380,
       "stars": 6,
-      "gemIndex": -86.96,
+      "gemIndex": -87.05,
       "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.codehaus.plexus:plexus-container-default",
-      "repositoryFullName": "codehaus-plexus/plexus-containers",
-      "dependentCount": 820,
-      "stars": 9,
-      "gemIndex": -86.88,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "danger-plugin-api",
-      "repositoryFullName": "danger/danger-plugin-api",
-      "dependentCount": 140,
-      "stars": 6,
-      "gemIndex": -86.85,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "strings",
-      "repositoryFullName": "onepub-dev/strings",
-      "dependentCount": 30,
-      "stars": 5,
-      "gemIndex": -86.85,
-      "registry": "pub.dev"
     },
     {
       "packageName": "ember-source-channel-url",
       "repositoryFullName": "rwjblue/ember-source-channel-url",
       "dependentCount": 2629,
       "stars": 10,
-      "gemIndex": -86.81,
+      "gemIndex": -86.91,
       "registry": "npmjs.org"
+    },
+    {
+      "packageName": "strings",
+      "repositoryFullName": "onepub-dev/strings",
+      "dependentCount": 30,
+      "stars": 5,
+      "gemIndex": -86.9,
+      "registry": "pub.dev"
+    },
+    {
+      "packageName": "danger-plugin-api",
+      "repositoryFullName": "danger/danger-plugin-api",
+      "dependentCount": 140,
+      "stars": 6,
+      "gemIndex": -86.88,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "nanoframework.system.collections",
+      "repositoryFullName": "nanoframework/System.Collections",
+      "dependentCount": 73,
+      "stars": 5,
+      "gemIndex": -86.86,
+      "registry": "nuget.org"
     },
     {
       "packageName": "github.com/cespare/cp",
       "repositoryFullName": "cespare/cp",
       "dependentCount": 2235,
       "stars": 6,
-      "gemIndex": -86.76,
+      "gemIndex": -86.85,
       "registry": "proxy.golang.org"
     },
     {
@@ -525,7 +541,15 @@
       "repositoryFullName": "go-toolsmith/astfmt",
       "dependentCount": 1420,
       "stars": 5,
-      "gemIndex": -86.75,
+      "gemIndex": -86.84,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/jackc/pgservicefile",
+      "repositoryFullName": "jackc/pgservicefile",
+      "dependentCount": 9308,
+      "stars": 10,
+      "gemIndex": -86.82,
       "registry": "proxy.golang.org"
     },
     {
@@ -533,63 +557,31 @@
       "repositoryFullName": "hyperf/utils",
       "dependentCount": 403,
       "stars": 7,
-      "gemIndex": -86.71,
+      "gemIndex": -86.61,
       "registry": "packagist.org"
-    },
-    {
-      "packageName": "javax.el:javax.el-api",
-      "repositoryFullName": "javaee/uel-ri",
-      "dependentCount": 1575,
-      "stars": 13,
-      "gemIndex": -86.54,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "zope.security",
-      "repositoryFullName": "zopefoundation/zope.security",
-      "dependentCount": 94,
-      "stars": 6,
-      "gemIndex": -86.43,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "github.com/multiformats/go-multiaddr-fmt",
-      "repositoryFullName": "multiformats/go-multiaddr-fmt",
-      "dependentCount": 1370,
-      "stars": 6,
-      "gemIndex": -86.41,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/niemeyer/pretty",
-      "repositoryFullName": "niemeyer/pretty",
-      "dependentCount": 7227,
-      "stars": 9,
-      "gemIndex": -86.41,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "contao/test-case",
-      "repositoryFullName": "contao/test-case",
-      "dependentCount": 234,
-      "stars": 6,
-      "gemIndex": -86.4,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "github.com/golangci/revgrep",
-      "repositoryFullName": "golangci/revgrep",
-      "dependentCount": 2000,
-      "stars": 9,
-      "gemIndex": -86.4,
-      "registry": "proxy.golang.org"
     },
     {
       "packageName": "ucminf",
       "repositoryFullName": "hdakpo/ucminf",
       "dependentCount": 34,
       "stars": 5,
-      "gemIndex": -86.32,
+      "gemIndex": -86.44,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "zope.security",
+      "repositoryFullName": "zopefoundation/zope.security",
+      "dependentCount": 94,
+      "stars": 6,
+      "gemIndex": -86.4,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "MCMCglmm",
+      "repositoryFullName": "jarrodhadfield/MCMCglmm",
+      "dependentCount": 33,
+      "stars": 7,
+      "gemIndex": -86.33,
       "registry": "cran.r-project.org"
     },
     {
@@ -597,143 +589,79 @@
       "repositoryFullName": "ramsey/rhumsaa-uuid",
       "dependentCount": 145,
       "stars": 5,
-      "gemIndex": -86.29,
+      "gemIndex": -86.33,
       "registry": "packagist.org"
     },
     {
-      "packageName": "jpeg",
-      "repositoryFullName": "s-u/jpeg",
-      "dependentCount": 115,
-      "stars": 7,
-      "gemIndex": -86.24,
-      "registry": "cran.r-project.org"
+      "packageName": "contao/test-case",
+      "repositoryFullName": "contao/test-case",
+      "dependentCount": 234,
+      "stars": 6,
+      "gemIndex": -86.32,
+      "registry": "packagist.org"
     },
     {
       "packageName": "sphinx-astropy",
       "repositoryFullName": "astropy/sphinx-astropy",
       "dependentCount": 108,
       "stars": 7,
-      "gemIndex": -86.22,
+      "gemIndex": -86.31,
       "registry": "pypi.org"
     },
     {
-      "packageName": "MCMCglmm",
-      "repositoryFullName": "jarrodhadfield/MCMCglmm",
-      "dependentCount": 33,
-      "stars": 5,
-      "gemIndex": -86.21,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "com.aliyun:tea",
-      "repositoryFullName": "aliyun/tea-java",
-      "dependentCount": 864,
-      "stars": 17,
-      "gemIndex": -86.17,
-      "registry": "repo1.maven.org"
+      "packageName": "github.com/niemeyer/pretty",
+      "repositoryFullName": "niemeyer/pretty",
+      "dependentCount": 7227,
+      "stars": 9,
+      "gemIndex": -86.22,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "Rcmdr",
       "repositoryFullName": "RCmdr-Project/rcmdr",
       "dependentCount": 52,
       "stars": 6,
-      "gemIndex": -86.03,
+      "gemIndex": -86.1,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "jpeg",
+      "repositoryFullName": "s-u/jpeg",
+      "dependentCount": 115,
+      "stars": 7,
+      "gemIndex": -86.1,
       "registry": "cran.r-project.org"
     },
     {
       "packageName": "gamlss.dist",
-      "repositoryFullName": "mstasinopoulos/GAMLSS-Distibutions",
+      "repositoryFullName": "gamlss-dev/gamlss.dist",
       "dependentCount": 51,
       "stars": 6,
-      "gemIndex": -85.97,
+      "gemIndex": -86.04,
       "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "github.com/jcmturner/gofork",
+      "repositoryFullName": "jcmturner/gofork",
+      "dependentCount": 2987,
+      "stars": 7,
+      "gemIndex": -85.91,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "napari-plugin-engine",
       "repositoryFullName": "napari/napari-plugin-engine",
       "dependentCount": 88,
       "stars": 6,
-      "gemIndex": -85.87,
+      "gemIndex": -85.85,
       "registry": "pypi.org"
-    },
-    {
-      "packageName": "github.com/cosmos/ledger-cosmos-go",
-      "repositoryFullName": "cosmos/ledger-cosmos-go",
-      "dependentCount": 4237,
-      "stars": 8,
-      "gemIndex": -85.71,
-      "registry": "proxy.golang.org"
     },
     {
       "packageName": "github.com/lestrrat-go/httpcc",
       "repositoryFullName": "lestrrat-go/httpcc",
       "dependentCount": 1244,
-      "stars": 5,
-      "gemIndex": -85.7,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/lufia/plan9stats",
-      "repositoryFullName": "lufia/plan9stats",
-      "dependentCount": 2859,
-      "stars": 10,
-      "gemIndex": -85.62,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/chavacava/garif",
-      "repositoryFullName": "chavacava/garif",
-      "dependentCount": 1745,
       "stars": 6,
-      "gemIndex": -85.59,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "spatstat.utils",
-      "repositoryFullName": "spatstat/spatstat.utils",
-      "dependentCount": 30,
-      "stars": 5,
-      "gemIndex": -85.47,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "gopkg.in/src-d/go-git-fixtures.v3",
-      "repositoryFullName": "src-d/go-git-fixtures",
-      "dependentCount": 4007,
-      "stars": 8,
-      "gemIndex": -85.39,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.easytesting:fest-assert",
-      "repositoryFullName": "alexruiz/fest-assert-1.x",
-      "dependentCount": 1211,
-      "stars": 14,
-      "gemIndex": -85.35,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "datetime",
-      "repositoryFullName": "zopefoundation/DateTime",
-      "dependentCount": 624,
-      "stars": 19,
-      "gemIndex": -85.23,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "org.apereo:spring-webflow-client-repo",
-      "repositoryFullName": "Apereo/spring-webflow-client-repo",
-      "dependentCount": 428,
-      "stars": 6,
-      "gemIndex": -85.05,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "github.com/cosmos/go-bip39",
-      "repositoryFullName": "cosmos/go-bip39",
-      "dependentCount": 5155,
-      "stars": 10,
-      "gemIndex": -85.01,
+      "gemIndex": -85.81,
       "registry": "proxy.golang.org"
     },
     {
@@ -741,55 +669,111 @@
       "repositoryFullName": "javaee/javax.xml.soap",
       "dependentCount": 551,
       "stars": 8,
-      "gemIndex": -85.01,
+      "gemIndex": -85.79,
       "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "org.apereo:spring-webflow-client-repo",
+      "repositoryFullName": "Apereo/spring-webflow-client-repo",
+      "dependentCount": 428,
+      "stars": 6,
+      "gemIndex": -85.76,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "org.easytesting:fest-assert",
+      "repositoryFullName": "alexruiz/fest-assert-1.x",
+      "dependentCount": 1211,
+      "stars": 15,
+      "gemIndex": -85.75,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "github.com/cosmos/ledger-cosmos-go",
+      "repositoryFullName": "cosmos/ledger-cosmos-go",
+      "dependentCount": 4237,
+      "stars": 9,
+      "gemIndex": -85.74,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/lufia/plan9stats",
+      "repositoryFullName": "lufia/plan9stats",
+      "dependentCount": 2859,
+      "stars": 10,
+      "gemIndex": -85.72,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/chavacava/garif",
+      "repositoryFullName": "chavacava/garif",
+      "dependentCount": 1745,
+      "stars": 6,
+      "gemIndex": -85.68,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "spatstat.utils",
+      "repositoryFullName": "spatstat/spatstat.utils",
+      "dependentCount": 30,
+      "stars": 5,
+      "gemIndex": -85.58,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "gopkg.in/src-d/go-git-fixtures.v3",
+      "repositoryFullName": "src-d/go-git-fixtures",
+      "dependentCount": 4007,
+      "stars": 8,
+      "gemIndex": -85.41,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "datetime",
+      "repositoryFullName": "zopefoundation/DateTime",
+      "dependentCount": 624,
+      "stars": 19,
+      "gemIndex": -85.22,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "ember-cli-uglify",
+      "repositoryFullName": "ember-cli/ember-cli-uglify",
+      "dependentCount": 5993,
+      "stars": 22,
+      "gemIndex": -84.98,
+      "registry": "npmjs.org"
     },
     {
       "packageName": "Test-Exception",
       "repositoryFullName": "Test-More/test-exception",
       "dependentCount": 2768,
       "stars": 5,
-      "gemIndex": -84.89,
-      "registry": "metacpan.org"
-    },
-    {
-      "packageName": "github.com/go-git/gcfg",
-      "repositoryFullName": "go-git/gcfg",
-      "dependentCount": 6924,
-      "stars": 10,
-      "gemIndex": -84.88,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "mediawiki/minus-x",
-      "repositoryFullName": "wikimedia/mediawiki-tools-minus-x",
-      "dependentCount": 182,
-      "stars": 6,
       "gemIndex": -84.87,
-      "registry": "packagist.org"
+      "registry": "metacpan.org"
     },
     {
       "packageName": "tomatophp/console-helpers",
       "repositoryFullName": "tomatophp/console-helpers",
       "dependentCount": 113,
       "stars": 5,
-      "gemIndex": -84.82,
+      "gemIndex": -84.85,
       "registry": "packagist.org"
     },
     {
-      "packageName": "install",
-      "repositoryFullName": "eugenekolo/pip-install",
-      "dependentCount": 67,
-      "stars": 7,
-      "gemIndex": -84.79,
-      "registry": "pypi.org"
+      "packageName": "mediawiki/minus-x",
+      "repositoryFullName": "wikimedia/mediawiki-tools-minus-x",
+      "dependentCount": 182,
+      "stars": 6,
+      "gemIndex": -84.8,
+      "registry": "packagist.org"
     },
     {
       "packageName": "flutter_coverage_badge",
       "repositoryFullName": "amondnet/flutter_coverage_badge",
       "dependentCount": 22,
       "stars": 5,
-      "gemIndex": -84.73,
+      "gemIndex": -84.79,
       "registry": "pub.dev"
     },
     {
@@ -797,7 +781,7 @@
       "repositoryFullName": "mvdan/lint",
       "dependentCount": 1459,
       "stars": 6,
-      "gemIndex": -84.6,
+      "gemIndex": -84.67,
       "registry": "proxy.golang.org"
     },
     {
@@ -809,84 +793,140 @@
       "registry": "npmjs.org"
     },
     {
-      "packageName": "ember-cli-uglify",
-      "repositoryFullName": "ember-cli/ember-cli-uglify",
-      "dependentCount": 5993,
-      "stars": 23,
-      "gemIndex": -84.35,
-      "registry": "npmjs.org"
-    },
-    {
       "packageName": "goftest",
       "repositoryFullName": "baddstats/goftest",
       "dependentCount": 26,
       "stars": 5,
-      "gemIndex": -84.07,
+      "gemIndex": -84.2,
       "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "de.flapdoodle.embed:de.flapdoodle.embed.memcached",
+      "repositoryFullName": "flapdoodle-oss/de.flapdoodle.embed.memcached",
+      "dependentCount": 356,
+      "stars": 6,
+      "gemIndex": -84.19,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "github.com/multiformats/go-multiaddr-fmt",
+      "repositoryFullName": "multiformats/go-multiaddr-fmt",
+      "dependentCount": 1370,
+      "stars": 6,
+      "gemIndex": -84.12,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "github.com/src-d/gcfg",
       "repositoryFullName": "src-d/gcfg",
       "dependentCount": 1338,
       "stars": 6,
-      "gemIndex": -83.92,
+      "gemIndex": -84,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "trust-dns-resolver",
-      "repositoryFullName": "bluejekyll/trust-dns",
-      "dependentCount": 240,
-      "stars": 9,
-      "gemIndex": -83.78,
-      "registry": "crates.io"
-    },
-    {
-      "packageName": "autotest-rails-pure",
-      "repositoryFullName": "grosser/autotest-rails",
-      "dependentCount": 231,
-      "stars": 11,
-      "gemIndex": -83.71,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "github.com/libp2p/go-libp2p-yamux",
-      "repositoryFullName": "libp2p/go-libp2p-yamux",
-      "dependentCount": 930,
+      "packageName": "github.com/sivchari/nosnakecase",
+      "repositoryFullName": "sivchari/nosnakecase",
+      "dependentCount": 940,
       "stars": 5,
-      "gemIndex": -83.67,
+      "gemIndex": -83.87,
       "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "toidentifier",
-      "repositoryFullName": "component/toidentifier",
-      "dependentCount": 1502,
-      "stars": 6,
-      "gemIndex": -83.56,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "rexios_lints",
-      "repositoryFullName": "Rexios80/rexios_lints",
-      "dependentCount": 42,
-      "stars": 6,
-      "gemIndex": -83.43,
-      "registry": "pub.dev"
     },
     {
       "packageName": "murmur",
       "repositoryFullName": "preciz/murmur",
       "dependentCount": 17,
       "stars": 6,
-      "gemIndex": -83.41,
+      "gemIndex": -83.86,
       "registry": "hex.pm"
     },
     {
-      "packageName": "result",
-      "repositoryFullName": "iodevs/result",
-      "dependentCount": 11,
+      "packageName": "github.com/libp2p/go-libp2p-yamux",
+      "repositoryFullName": "libp2p/go-libp2p-yamux",
+      "dependentCount": 930,
+      "stars": 5,
+      "gemIndex": -83.8,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "autotest-rails-pure",
+      "repositoryFullName": "grosser/autotest-rails",
+      "dependentCount": 231,
+      "stars": 11,
+      "gemIndex": -83.74,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "toidentifier",
+      "repositoryFullName": "component/toidentifier",
+      "dependentCount": 1502,
+      "stars": 6,
+      "gemIndex": -83.59,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "rfc3986-validator",
+      "repositoryFullName": "naimetti/rfc3986-validator",
+      "dependentCount": 58,
+      "stars": 5,
+      "gemIndex": -83.52,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "javax.transaction:javax.transaction-api",
+      "repositoryFullName": "javaee/javax.transaction",
+      "dependentCount": 564,
+      "stars": 11,
+      "gemIndex": -83.51,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "github.com/golangci/dupl",
+      "repositoryFullName": "golangci/dupl",
+      "dependentCount": 1712,
+      "stars": 8,
+      "gemIndex": -83.48,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "membrane_file_plugin",
+      "repositoryFullName": "membraneframework/membrane_file_plugin",
+      "dependentCount": 16,
+      "stars": 6,
+      "gemIndex": -83.45,
+      "registry": "hex.pm"
+    },
+    {
+      "packageName": "github.com/cosmos/go-bip39",
+      "repositoryFullName": "cosmos/go-bip39",
+      "dependentCount": 5155,
+      "stars": 10,
+      "gemIndex": -83.42,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "rexios_lints",
+      "repositoryFullName": "Rexios80/rexios_lints",
+      "dependentCount": 42,
       "stars": 6,
       "gemIndex": -83.4,
-      "registry": "hex.pm"
+      "registry": "pub.dev"
+    },
+    {
+      "packageName": "org.jboss.logging:jboss-logging-processor",
+      "repositoryFullName": "jboss-logging/jboss-logging-tools",
+      "dependentCount": 1032,
+      "stars": 19,
+      "gemIndex": -83.4,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "org.scala-sbt:test-interface",
+      "repositoryFullName": "sbt/test-interface",
+      "dependentCount": 665,
+      "stars": 14,
+      "gemIndex": -83.4,
+      "registry": "repo1.maven.org"
     },
     {
       "packageName": "ember-cli-jshint",
@@ -897,27 +937,19 @@
       "registry": "npmjs.org"
     },
     {
-      "packageName": "de.flapdoodle.embed:de.flapdoodle.embed.memcached",
-      "repositoryFullName": "flapdoodle-oss/de.flapdoodle.embed.memcached",
-      "dependentCount": 356,
-      "stars": 6,
-      "gemIndex": -83.36,
-      "registry": "repo1.maven.org"
-    },
-    {
       "packageName": "spatstat.geom",
       "repositoryFullName": "spatstat/spatstat.geom",
       "dependentCount": 126,
       "stars": 8,
-      "gemIndex": -83.28,
+      "gemIndex": -83.37,
       "registry": "cran.r-project.org"
     },
     {
-      "packageName": "org.codehaus.plexus:plexus-interpolation",
-      "repositoryFullName": "codehaus-plexus/plexus-interpolation",
-      "dependentCount": 354,
-      "stars": 6,
-      "gemIndex": -83.26,
+      "packageName": "com.aliyun:tea",
+      "repositoryFullName": "aliyun/tea-java",
+      "dependentCount": 864,
+      "stars": 17,
+      "gemIndex": -83.34,
       "registry": "repo1.maven.org"
     },
     {
@@ -925,55 +957,71 @@
       "repositoryFullName": "watir/watir-webdriver",
       "dependentCount": 149,
       "stars": 9,
-      "gemIndex": -83.17,
+      "gemIndex": -83.29,
       "registry": "rubygems.org"
     },
     {
-      "packageName": "github.com/xdg-go/stringprep",
-      "repositoryFullName": "xdg-go/stringprep",
-      "dependentCount": 6753,
-      "stars": 11,
-      "gemIndex": -83.13,
-      "registry": "proxy.golang.org"
+      "packageName": "snowflake-connector-python",
+      "repositoryFullName": "snowflakedb/drivers",
+      "dependentCount": 185,
+      "stars": 15,
+      "gemIndex": -83.28,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "com.sun.istack:istack-commons-runtime",
+      "repositoryFullName": "eclipse-ee4j/jaxb-istack-commons",
+      "dependentCount": 829,
+      "stars": 17,
+      "gemIndex": -83.2,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "javax.interceptor:javax.interceptor-api",
+      "repositoryFullName": "javaee/javax.interceptor",
+      "dependentCount": 328,
+      "stars": 6,
+      "gemIndex": -83.2,
+      "registry": "repo1.maven.org"
     },
     {
       "packageName": "standardrb",
       "repositoryFullName": "testdouble/standardrb",
       "dependentCount": 92,
       "stars": 6,
-      "gemIndex": -83.05,
+      "gemIndex": -83.09,
       "registry": "rubygems.org"
     },
     {
-      "packageName": "membrane_file_plugin",
-      "repositoryFullName": "membraneframework/membrane_file_plugin",
-      "dependentCount": 16,
-      "stars": 6,
-      "gemIndex": -83.03,
-      "registry": "hex.pm"
-    },
-    {
-      "packageName": "github.com/xdg-go/pbkdf2",
-      "repositoryFullName": "xdg-go/pbkdf2",
-      "dependentCount": 6517,
+      "packageName": "github.com/go-git/gcfg",
+      "repositoryFullName": "go-git/gcfg",
+      "dependentCount": 6924,
       "stars": 11,
-      "gemIndex": -83.01,
+      "gemIndex": -83,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "Pod-Usage",
-      "repositoryFullName": "Dual-Life/Pod-Usage",
-      "dependentCount": 760,
-      "stars": 7,
+      "packageName": "ovos-workshop",
+      "repositoryFullName": "OpenVoiceOS/OVOS-workshop",
+      "dependentCount": 62,
+      "stars": 6,
       "gemIndex": -82.96,
-      "registry": "metacpan.org"
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "io.github.vigoo:zio-aws-core_2.12",
+      "repositoryFullName": "vigoo/zio-aws",
+      "dependentCount": 321,
+      "stars": 6,
+      "gemIndex": -82.96,
+      "registry": "repo1.maven.org"
     },
     {
       "packageName": "rfc3339-validator",
       "repositoryFullName": "naimetti/rfc3339-validator",
       "dependentCount": 79,
       "stars": 8,
-      "gemIndex": -82.91,
+      "gemIndex": -82.93,
       "registry": "pypi.org"
     },
     {
@@ -981,111 +1029,47 @@
       "repositoryFullName": "testing-cabal/funcsigs",
       "dependentCount": 79,
       "stars": 8,
-      "gemIndex": -82.91,
+      "gemIndex": -82.93,
       "registry": "pypi.org"
-    },
-    {
-      "packageName": "karma-safari-launcher",
-      "repositoryFullName": "karma-runner/karma-safari-launcher",
-      "dependentCount": 3263,
-      "stars": 20,
-      "gemIndex": -82.86,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "github.com/sagikazarmark/locafero",
-      "repositoryFullName": "sagikazarmark/locafero",
-      "dependentCount": 1546,
-      "stars": 7,
-      "gemIndex": -82.83,
-      "registry": "proxy.golang.org"
     },
     {
       "packageName": "github.com/k0kubun/colorstring",
       "repositoryFullName": "k0kubun/colorstring",
       "dependentCount": 1539,
       "stars": 7,
-      "gemIndex": -82.82,
+      "gemIndex": -82.91,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "sharpziplib.netstandard",
-      "repositoryFullName": "PingmanTools/SharpZipLib",
-      "dependentCount": 58,
-      "stars": 7,
-      "gemIndex": -82.76,
-      "registry": "nuget.org"
+      "packageName": "karma-safari-launcher",
+      "repositoryFullName": "karma-runner/karma-safari-launcher",
+      "dependentCount": 3263,
+      "stars": 20,
+      "gemIndex": -82.91,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "github.com/xdg-go/stringprep",
+      "repositoryFullName": "xdg-go/stringprep",
+      "dependentCount": 6753,
+      "stars": 11,
+      "gemIndex": -82.86,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "@oclif/plugin-help",
       "repositoryFullName": "oclif/plugin-help",
       "dependentCount": 4835,
       "stars": 24,
-      "gemIndex": -82.76,
+      "gemIndex": -82.84,
       "registry": "npmjs.org"
     },
     {
-      "packageName": "org.apache.maven.plugin-testing:maven-plugin-testing-harness",
-      "repositoryFullName": "apache/maven-plugin-testing",
-      "dependentCount": 1074,
-      "stars": 17,
-      "gemIndex": -82.75,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "nanoframework.system.text",
-      "repositoryFullName": "nanoframework/System.Text",
-      "dependentCount": 71,
-      "stars": 7,
-      "gemIndex": -82.75,
-      "registry": "nuget.org"
-    },
-    {
-      "packageName": "egg-ci",
-      "repositoryFullName": "eggjs/egg-ci",
-      "dependentCount": 2286,
-      "stars": 15,
-      "gemIndex": -82.69,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "javax.transaction:javax.transaction-api",
-      "repositoryFullName": "javaee/javax.transaction",
-      "dependentCount": 564,
+      "packageName": "github.com/xdg-go/pbkdf2",
+      "repositoryFullName": "xdg-go/pbkdf2",
+      "dependentCount": 6517,
       "stars": 11,
-      "gemIndex": -82.68,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "try_from",
-      "repositoryFullName": "derekjw/try_from",
-      "dependentCount": 53,
-      "stars": 5,
-      "gemIndex": -82.67,
-      "registry": "crates.io"
-    },
-    {
-      "packageName": "spatstat.linnet",
-      "repositoryFullName": "spatstat/spatstat.linnet",
-      "dependentCount": 32,
-      "stars": 6,
-      "gemIndex": -82.66,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "github.com/farsightsec/golang-framestream",
-      "repositoryFullName": "farsightsec/golang-framestream",
-      "dependentCount": 4034,
-      "stars": 16,
-      "gemIndex": -82.62,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/jcmturner/rpc/v2",
-      "repositoryFullName": "jcmturner/rpc",
-      "dependentCount": 2103,
-      "stars": 8,
-      "gemIndex": -82.6,
+      "gemIndex": -82.75,
       "registry": "proxy.golang.org"
     },
     {
@@ -1093,39 +1077,103 @@
       "repositoryFullName": "tweekmonster/luser",
       "dependentCount": 784,
       "stars": 5,
-      "gemIndex": -82.57,
+      "gemIndex": -82.71,
       "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "egg-ci",
+      "repositoryFullName": "eggjs/egg-ci",
+      "dependentCount": 2286,
+      "stars": 15,
+      "gemIndex": -82.7,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "spatstat.linnet",
+      "repositoryFullName": "spatstat/spatstat.linnet",
+      "dependentCount": 32,
+      "stars": 6,
+      "gemIndex": -82.68,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "try_from",
+      "repositoryFullName": "derekjw/try_from",
+      "dependentCount": 53,
+      "stars": 5,
+      "gemIndex": -82.66,
+      "registry": "crates.io"
+    },
+    {
+      "packageName": "github.com/jcmturner/rpc/v2",
+      "repositoryFullName": "jcmturner/rpc",
+      "dependentCount": 2103,
+      "stars": 8,
+      "gemIndex": -82.66,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "nanoframework.system.text",
+      "repositoryFullName": "nanoframework/System.Text",
+      "dependentCount": 71,
+      "stars": 7,
+      "gemIndex": -82.64,
+      "registry": "nuget.org"
+    },
+    {
+      "packageName": "install",
+      "repositoryFullName": "eugenekolo/pip-install",
+      "dependentCount": 67,
+      "stars": 6,
+      "gemIndex": -82.53,
+      "registry": "pypi.org"
     },
     {
       "packageName": "base16",
       "repositoryFullName": "thomcc/rust-base16",
       "dependentCount": 52,
       "stars": 6,
-      "gemIndex": -82.49,
+      "gemIndex": -82.48,
       "registry": "crates.io"
+    },
+    {
+      "packageName": "github.com/farsightsec/golang-framestream",
+      "repositoryFullName": "farsightsec/golang-framestream",
+      "dependentCount": 4034,
+      "stars": 16,
+      "gemIndex": -82.41,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "sourcegraph.com/sqs/pbtypes",
+      "repositoryFullName": "sqs/pbtypes",
+      "dependentCount": 760,
+      "stars": 5,
+      "gemIndex": -82.4,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "optimx",
+      "repositoryFullName": "nashjc/optimx",
+      "dependentCount": 91,
+      "stars": 8,
+      "gemIndex": -82.36,
+      "registry": "cran.r-project.org"
     },
     {
       "packageName": "ninjify/qa",
       "repositoryFullName": "ninjify/qa",
       "dependentCount": 237,
       "stars": 8,
-      "gemIndex": -82.44,
+      "gemIndex": -82.36,
       "registry": "packagist.org"
-    },
-    {
-      "packageName": "javax.interceptor:javax.interceptor-api",
-      "repositoryFullName": "javaee/javax.interceptor",
-      "dependentCount": 328,
-      "stars": 6,
-      "gemIndex": -82.37,
-      "registry": "repo1.maven.org"
     },
     {
       "packageName": "omnipay/tests",
       "repositoryFullName": "thephpleague/omnipay-tests",
       "dependentCount": 935,
       "stars": 11,
-      "gemIndex": -82.35,
+      "gemIndex": -82.36,
       "registry": "packagist.org"
     },
     {
@@ -1133,24 +1181,32 @@
       "repositoryFullName": "OpenVoiceOS/OVOS-plugin-manager",
       "dependentCount": 124,
       "stars": 14,
-      "gemIndex": -82.31,
+      "gemIndex": -82.34,
       "registry": "pypi.org"
     },
     {
-      "packageName": "fields",
-      "repositoryFullName": "dnychka/fieldsRPackage",
-      "dependentCount": 284,
-      "stars": 16,
-      "gemIndex": -82.31,
-      "registry": "cran.r-project.org"
+      "packageName": "XML-Simple",
+      "repositoryFullName": "grantm/xml-simple",
+      "dependentCount": 523,
+      "stars": 5,
+      "gemIndex": -82.33,
+      "registry": "metacpan.org"
     },
     {
-      "packageName": "babel-helper-vue-jsx-merge-props",
-      "repositoryFullName": "vuejs/babel-helper-vue-jsx-merge-props",
-      "dependentCount": 8640,
-      "stars": 31,
+      "packageName": "github.com/regen-network/cosmos-proto",
+      "repositoryFullName": "regen-network/cosmos-proto",
+      "dependentCount": 2992,
+      "stars": 9,
+      "gemIndex": -82.31,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "org.scalameta:munit-scalacheck_2.13",
+      "repositoryFullName": "scalameta/munit-scalacheck",
+      "dependentCount": 268,
+      "stars": 5,
       "gemIndex": -82.28,
-      "registry": "npmjs.org"
+      "registry": "repo1.maven.org"
     },
     {
       "packageName": "domdf-python-tools",
@@ -1161,115 +1217,107 @@
       "registry": "pypi.org"
     },
     {
-      "packageName": "optimx",
-      "repositoryFullName": "nashjc/optimx",
-      "dependentCount": 91,
-      "stars": 8,
-      "gemIndex": -82.26,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "sourcegraph.com/sqs/pbtypes",
-      "repositoryFullName": "sqs/pbtypes",
-      "dependentCount": 760,
+      "packageName": "Dist-Zilla-Plugin-Authority",
+      "repositoryFullName": "apocalypse/perl-dist-zilla-plugin-authority",
+      "dependentCount": 517,
       "stars": 5,
       "gemIndex": -82.25,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.scala-sbt:test-interface",
-      "repositoryFullName": "sbt/test-interface",
-      "dependentCount": 665,
-      "stars": 14,
-      "gemIndex": -82.24,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "singledispatch",
-      "repositoryFullName": "jaraco/singledispatch",
-      "dependentCount": 52,
-      "stars": 5,
-      "gemIndex": -82.22,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "org.jboss.logging:jboss-logging-processor",
-      "repositoryFullName": "jboss-logging/jboss-logging-tools",
-      "dependentCount": 1032,
-      "stars": 19,
-      "gemIndex": -82.11,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "com.sun.istack:istack-commons-runtime",
-      "repositoryFullName": "eclipse-ee4j/jaxb-istack-commons",
-      "dependentCount": 829,
-      "stars": 17,
-      "gemIndex": -82.1,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "io.github.vigoo:zio-aws-core_2.12",
-      "repositoryFullName": "vigoo/zio-aws",
-      "dependentCount": 321,
-      "stars": 6,
-      "gemIndex": -82.1,
-      "registry": "repo1.maven.org"
+      "registry": "metacpan.org"
     },
     {
       "packageName": "comm",
       "repositoryFullName": "ipython/comm",
       "dependentCount": 110,
       "stars": 12,
-      "gemIndex": -82.09,
+      "gemIndex": -82.25,
       "registry": "pypi.org"
     },
     {
-      "packageName": "zf1/zend-exception",
-      "repositoryFullName": "zf1/zend-exception",
-      "dependentCount": 158,
-      "stars": 7,
-      "gemIndex": -81.99,
-      "registry": "packagist.org"
+      "packageName": "singledispatch",
+      "repositoryFullName": "jaraco/singledispatch",
+      "dependentCount": 52,
+      "stars": 5,
+      "gemIndex": -82.23,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "trust-dns-resolver",
+      "repositoryFullName": "bluejekyll/trust-dns",
+      "dependentCount": 240,
+      "stars": 10,
+      "gemIndex": -82.1,
+      "registry": "crates.io"
     },
     {
       "packageName": "github.com/alibabacloud-go/debug",
       "repositoryFullName": "alibabacloud-go/debug",
       "dependentCount": 729,
       "stars": 5,
-      "gemIndex": -81.94,
+      "gemIndex": -82.08,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "file_utils",
-      "repositoryFullName": "mezoni/file_utils",
-      "dependentCount": 29,
-      "stars": 6,
-      "gemIndex": -81.88,
-      "registry": "pub.dev"
+      "packageName": "jsonschema-specifications",
+      "repositoryFullName": "python-jsonschema/jsonschema-specifications",
+      "dependentCount": 119,
+      "stars": 13,
+      "gemIndex": -82.04,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "github.com/quic-go/qtls-go1-20",
+      "repositoryFullName": "quic-go/qtls-go1-20",
+      "dependentCount": 1841,
+      "stars": 8,
+      "gemIndex": -82.04,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "babel-helper-vue-jsx-merge-props",
+      "repositoryFullName": "vuejs/babel-helper-vue-jsx-merge-props",
+      "dependentCount": 8640,
+      "stars": 31,
+      "gemIndex": -81.99,
+      "registry": "npmjs.org"
     },
     {
       "packageName": "github.com/davidlazar/go-crypto",
       "repositoryFullName": "davidlazar/go-crypto",
       "dependentCount": 1814,
       "stars": 9,
+      "gemIndex": -81.92,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "zf1/zend-exception",
+      "repositoryFullName": "zf1/zend-exception",
+      "dependentCount": 158,
+      "stars": 7,
+      "gemIndex": -81.89,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "org.codehaus.plexus:plexus-interpolation",
+      "repositoryFullName": "codehaus-plexus/plexus-interpolation",
+      "dependentCount": 354,
+      "stars": 8,
       "gemIndex": -81.87,
-      "registry": "proxy.golang.org"
+      "registry": "repo1.maven.org"
     },
     {
-      "packageName": "github.com/multiformats/go-varint",
-      "repositoryFullName": "multiformats/go-varint",
-      "dependentCount": 2614,
-      "stars": 10,
-      "gemIndex": -81.84,
-      "registry": "proxy.golang.org"
+      "packageName": "file_utils",
+      "repositoryFullName": "mezoni/file_utils",
+      "dependentCount": 29,
+      "stars": 6,
+      "gemIndex": -81.86,
+      "registry": "pub.dev"
     },
     {
-      "packageName": "github.com/liggitt/tabwriter",
-      "repositoryFullName": "liggitt/tabwriter",
-      "dependentCount": 2610,
-      "stars": 16,
-      "gemIndex": -81.83,
+      "packageName": "github.com/stbenjam/no-sprintf-host-port",
+      "repositoryFullName": "stbenjam/no-sprintf-host-port",
+      "dependentCount": 996,
+      "stars": 6,
+      "gemIndex": -81.86,
       "registry": "proxy.golang.org"
     },
     {
@@ -1277,231 +1325,175 @@
       "repositoryFullName": "marten-seemann/qtls-go1-17",
       "dependentCount": 1794,
       "stars": 8,
-      "gemIndex": -81.8,
+      "gemIndex": -81.85,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "github.com/containerd/log",
-      "repositoryFullName": "containerd/log",
-      "dependentCount": 1785,
-      "stars": 8,
-      "gemIndex": -81.78,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.scalameta:munit-scalacheck_2.13",
-      "repositoryFullName": "scalameta/munit-scalacheck",
-      "dependentCount": 268,
-      "stars": 5,
-      "gemIndex": -81.77,
+      "packageName": "javax.servlet.jsp:javax.servlet.jsp-api",
+      "repositoryFullName": "javaee/javaee-jsp-api",
+      "dependentCount": 923,
+      "stars": 21,
+      "gemIndex": -81.83,
       "registry": "repo1.maven.org"
     },
     {
-      "packageName": "github.com/stbenjam/no-sprintf-host-port",
-      "repositoryFullName": "stbenjam/no-sprintf-host-port",
-      "dependentCount": 996,
+      "packageName": "org.jboss.spec.javax.ws.rs:jboss-jaxrs-api_2.0_spec",
+      "repositoryFullName": "jboss/jboss-jaxrs-api_spec",
+      "dependentCount": 286,
       "stars": 6,
-      "gemIndex": -81.75,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "XML-Simple",
-      "repositoryFullName": "grantm/xml-simple",
-      "dependentCount": 523,
-      "stars": 5,
-      "gemIndex": -81.71,
-      "registry": "metacpan.org"
-    },
-    {
-      "packageName": "rand_core",
-      "repositoryFullName": "rust-lang-nursery/rand",
-      "dependentCount": 1032,
-      "stars": 2072,
-      "gemIndex": -81.67,
-      "registry": "crates.io"
-    },
-    {
-      "packageName": "org.apache.maven.reporting:maven-reporting-api",
-      "repositoryFullName": "apache/maven-reporting-api",
-      "dependentCount": 310,
-      "stars": 8,
-      "gemIndex": -81.66,
+      "gemIndex": -81.73,
       "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "setono/code-quality-pack",
-      "repositoryFullName": "Setono/code-quality-pack",
-      "dependentCount": 109,
-      "stars": 7,
-      "gemIndex": -81.64,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "prodlim",
-      "repositoryFullName": "tagteam/prodlim",
-      "dependentCount": 42,
-      "stars": 7,
-      "gemIndex": -81.64,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "Dist-Zilla-Plugin-Authority",
-      "repositoryFullName": "apocalypse/perl-dist-zilla-plugin-authority",
-      "dependentCount": 517,
-      "stars": 5,
-      "gemIndex": -81.62,
-      "registry": "metacpan.org"
     },
     {
       "packageName": "@oclif/config",
       "repositoryFullName": "oclif/config",
       "dependentCount": 3911,
       "stars": 24,
-      "gemIndex": -81.58,
+      "gemIndex": -81.65,
       "registry": "npmjs.org"
     },
     {
-      "packageName": "HTTP-Tiny",
-      "repositoryFullName": "Perl-Toolchain-Gang/HTTP-Tiny",
-      "dependentCount": 504,
-      "stars": 7,
-      "gemIndex": -81.52,
-      "registry": "metacpan.org"
-    },
-    {
-      "packageName": "jsonschema-specifications",
-      "repositoryFullName": "python-jsonschema/jsonschema-specifications",
-      "dependentCount": 119,
-      "stars": 13,
-      "gemIndex": -81.39,
-      "registry": "pypi.org"
+      "packageName": "github.com/fyne-io/gl-js",
+      "repositoryFullName": "fyne-io/gl-js",
+      "dependentCount": 681,
+      "stars": 5,
+      "gemIndex": -81.56,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "gapic-common",
       "repositoryFullName": "googleapis/ruby-core-libraries",
       "dependentCount": 245,
       "stars": 14,
-      "gemIndex": -81.37,
+      "gemIndex": -81.49,
       "registry": "rubygems.org"
     },
     {
-      "packageName": "github.com/quic-go/qtls-go1-19",
-      "repositoryFullName": "quic-go/qtls-go1-19",
-      "dependentCount": 1671,
-      "stars": 10,
-      "gemIndex": -81.37,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/sivchari/nosnakecase",
-      "repositoryFullName": "sivchari/nosnakecase",
-      "dependentCount": 940,
-      "stars": 5,
-      "gemIndex": -81.37,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "jakarta.transaction:jakarta.transaction-api",
-      "repositoryFullName": "eclipse-ee4j/jta-api",
-      "dependentCount": 987,
-      "stars": 35,
-      "gemIndex": -81.35,
-      "registry": "repo1.maven.org"
+      "packageName": "prodlim",
+      "repositoryFullName": "tagteam/prodlim",
+      "dependentCount": 42,
+      "stars": 7,
+      "gemIndex": -81.49,
+      "registry": "cran.r-project.org"
     },
     {
       "packageName": "@oclif/test",
       "repositoryFullName": "oclif/test",
       "dependentCount": 3374,
       "stars": 23,
-      "gemIndex": -81.3,
+      "gemIndex": -81.39,
       "registry": "npmjs.org"
-    },
-    {
-      "packageName": "hyperf/guzzle",
-      "repositoryFullName": "hyperf/guzzle",
-      "dependentCount": 268,
-      "stars": 9,
-      "gemIndex": -81.28,
-      "registry": "packagist.org"
     },
     {
       "packageName": "node",
       "repositoryFullName": "conestack/node",
       "dependentCount": 536,
       "stars": 25,
-      "gemIndex": -81.27,
+      "gemIndex": -81.37,
       "registry": "pypi.org"
-    },
-    {
-      "packageName": "rubocop-require_tools",
-      "repositoryFullName": "milch/rubocop-require_tools",
-      "dependentCount": 452,
-      "stars": 20,
-      "gemIndex": -81.2,
-      "registry": "rubygems.org"
     },
     {
       "packageName": "base64enc",
       "repositoryFullName": "s-u/base64enc",
       "dependentCount": 159,
       "stars": 9,
-      "gemIndex": -81.17,
+      "gemIndex": -81.32,
       "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "hyperf/guzzle",
+      "repositoryFullName": "hyperf/guzzle",
+      "dependentCount": 268,
+      "stars": 9,
+      "gemIndex": -81.24,
+      "registry": "packagist.org"
     },
     {
       "packageName": "collective.checkdocs",
       "repositoryFullName": "collective/collective.checkdocs",
       "dependentCount": 79,
       "stars": 10,
-      "gemIndex": -81.12,
+      "gemIndex": -81.17,
       "registry": "pypi.org"
-    },
-    {
-      "packageName": "invenio-i18n",
-      "repositoryFullName": "inveniosoftware/invenio-i18n",
-      "dependentCount": 47,
-      "stars": 5,
-      "gemIndex": -81.08,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "assert",
-      "repositoryFullName": "redding/assert",
-      "dependentCount": 134,
-      "stars": 10,
-      "gemIndex": -81.06,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "github.com/regen-network/cosmos-proto",
-      "repositoryFullName": "regen-network/cosmos-proto",
-      "dependentCount": 2992,
-      "stars": 9,
-      "gemIndex": -81.06,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/ipfs/go-ipfs-util",
-      "repositoryFullName": "ipfs/go-ipfs-util",
-      "dependentCount": 2056,
-      "stars": 9,
-      "gemIndex": -81.05,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.apache.maven.reporting:maven-reporting-impl",
-      "repositoryFullName": "apache/maven-reporting-impl",
-      "dependentCount": 328,
-      "stars": 7,
-      "gemIndex": -81.01,
-      "registry": "repo1.maven.org"
     },
     {
       "packageName": "sphinxcontrib-jquery",
       "repositoryFullName": "sphinx-contrib/jquery",
       "dependentCount": 94,
       "stars": 12,
-      "gemIndex": -81,
+      "gemIndex": -81.16,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "org.apache.nifi:nifi-api",
+      "repositoryFullName": "apache/nifi-api",
+      "dependentCount": 330,
+      "stars": 8,
+      "gemIndex": -81.08,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "invenio-i18n",
+      "repositoryFullName": "inveniosoftware/invenio-i18n",
+      "dependentCount": 47,
+      "stars": 5,
+      "gemIndex": -81.07,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "github.com/libp2p/go-maddr-filter",
+      "repositoryFullName": "libp2p/go-maddr-filter",
+      "dependentCount": 644,
+      "stars": 5,
+      "gemIndex": -81.05,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "assert",
+      "repositoryFullName": "redding/assert",
+      "dependentCount": 134,
+      "stars": 10,
+      "gemIndex": -81.02,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "github.com/ipfs/go-ipfs-util",
+      "repositoryFullName": "ipfs/go-ipfs-util",
+      "dependentCount": 2056,
+      "stars": 9,
+      "gemIndex": -80.95,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/sagikazarmark/locafero",
+      "repositoryFullName": "sagikazarmark/locafero",
+      "dependentCount": 1546,
+      "stars": 8,
+      "gemIndex": -80.95,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "ember-maybe-import-regenerator",
+      "repositoryFullName": "machty/ember-maybe-import-regenerator",
+      "dependentCount": 2504,
+      "stars": 20,
+      "gemIndex": -80.9,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "backports.tempfile",
+      "repositoryFullName": "pjdelport/backports.tempfile",
+      "dependentCount": 46,
+      "stars": 5,
+      "gemIndex": -80.9,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "msrestazure",
+      "repositoryFullName": "Azure/msrestazure-for-python",
+      "dependentCount": 164,
+      "stars": 18,
+      "gemIndex": -80.85,
       "registry": "pypi.org"
     },
     {
@@ -1509,103 +1501,63 @@
       "repositoryFullName": "laravel-enso/helpers",
       "dependentCount": 185,
       "stars": 8,
-      "gemIndex": -80.93,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "github.com/libp2p/go-maddr-filter",
-      "repositoryFullName": "libp2p/go-maddr-filter",
-      "dependentCount": 644,
-      "stars": 5,
-      "gemIndex": -80.93,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "backports.tempfile",
-      "repositoryFullName": "pjdelport/backports.tempfile",
-      "dependentCount": 46,
-      "stars": 5,
-      "gemIndex": -80.91,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "ember-maybe-import-regenerator",
-      "repositoryFullName": "machty/ember-maybe-import-regenerator",
-      "dependentCount": 2504,
-      "stars": 20,
       "gemIndex": -80.84,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "org.jboss.spec.javax.ws.rs:jboss-jaxrs-api_2.0_spec",
-      "repositoryFullName": "jboss/jboss-jaxrs-api_spec",
-      "dependentCount": 286,
-      "stars": 6,
-      "gemIndex": -80.82,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "hyperf/db-connection",
-      "repositoryFullName": "hyperf/db-connection",
-      "dependentCount": 181,
-      "stars": 8,
-      "gemIndex": -80.79,
       "registry": "packagist.org"
     },
     {
-      "packageName": "hyperf/redis",
-      "repositoryFullName": "hyperf/redis",
-      "dependentCount": 176,
-      "stars": 8,
-      "gemIndex": -80.72,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "github.com/jackc/pgio",
-      "repositoryFullName": "jackc/pgio",
-      "dependentCount": 6771,
-      "stars": 13,
-      "gemIndex": -80.72,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/jrick/logrotate",
-      "repositoryFullName": "jrick/logrotate",
-      "dependentCount": 864,
+      "packageName": "github.com/golangci/revgrep",
+      "repositoryFullName": "golangci/revgrep",
+      "dependentCount": 2000,
       "stars": 9,
-      "gemIndex": -80.7,
+      "gemIndex": -80.82,
       "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "functional",
-      "repositoryFullName": "klutometis/R-functional",
-      "dependentCount": 18,
-      "stars": 5,
-      "gemIndex": -80.67,
-      "registry": "cran.r-project.org"
     },
     {
       "packageName": "verbb/base",
       "repositoryFullName": "verbb/verbb-base",
       "dependentCount": 75,
       "stars": 5,
-      "gemIndex": -80.67,
+      "gemIndex": -80.71,
       "registry": "packagist.org"
+    },
+    {
+      "packageName": "hyperf/db-connection",
+      "repositoryFullName": "hyperf/db-connection",
+      "dependentCount": 181,
+      "stars": 8,
+      "gemIndex": -80.7,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "functional",
+      "repositoryFullName": "klutometis/R-functional",
+      "dependentCount": 18,
+      "stars": 5,
+      "gemIndex": -80.69,
+      "registry": "cran.r-project.org"
     },
     {
       "packageName": "ember-cli-qunit",
       "repositoryFullName": "ember-cli/ember-cli-qunit",
       "dependentCount": 5406,
       "stars": 30,
-      "gemIndex": -80.65,
+      "gemIndex": -80.67,
       "registry": "npmjs.org"
+    },
+    {
+      "packageName": "hyperf/redis",
+      "repositoryFullName": "hyperf/redis",
+      "dependentCount": 176,
+      "stars": 8,
+      "gemIndex": -80.63,
+      "registry": "packagist.org"
     },
     {
       "packageName": "@ionic/prettier-config",
       "repositoryFullName": "ionic-team/prettier-config",
       "dependentCount": 1877,
       "stars": 15,
-      "gemIndex": -80.61,
+      "gemIndex": -80.62,
       "registry": "npmjs.org"
     },
     {
@@ -1613,64 +1565,96 @@
       "repositoryFullName": "dfederm/karma-jasmine-html-reporter",
       "dependentCount": 15015,
       "stars": 38,
-      "gemIndex": -80.58,
+      "gemIndex": -80.6,
       "registry": "npmjs.org"
-    },
-    {
-      "packageName": "attr",
-      "repositoryFullName": "denis-ryzhkov/attr",
-      "dependentCount": 68,
-      "stars": 10,
-      "gemIndex": -80.54,
-      "registry": "pypi.org"
     },
     {
       "packageName": "backcall",
       "repositoryFullName": "takluyver/backcall",
       "dependentCount": 172,
       "stars": 19,
-      "gemIndex": -80.53,
+      "gemIndex": -80.56,
       "registry": "pypi.org"
-    },
-    {
-      "packageName": "gem_publisher",
-      "repositoryFullName": "alphagov/gem_publisher",
-      "dependentCount": 60,
-      "stars": 4,
-      "gemIndex": -80.52,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "javax.servlet.jsp:javax.servlet.jsp-api",
-      "repositoryFullName": "javaee/javaee-jsp-api",
-      "dependentCount": 923,
-      "stars": 21,
-      "gemIndex": -80.51,
-      "registry": "repo1.maven.org"
     },
     {
       "packageName": "call-bind",
       "repositoryFullName": "ljharb/call-bind",
       "dependentCount": 1476,
       "stars": 11,
-      "gemIndex": -80.43,
+      "gemIndex": -80.5,
       "registry": "npmjs.org"
     },
     {
-      "packageName": "github.com/go-toolsmith/astequal",
-      "repositoryFullName": "go-toolsmith/astequal",
-      "dependentCount": 1424,
-      "stars": 8,
-      "gemIndex": -80.41,
-      "registry": "proxy.golang.org"
+      "packageName": "sharpziplib.netstandard",
+      "repositoryFullName": "PingmanTools/SharpZipLib",
+      "dependentCount": 58,
+      "stars": 7,
+      "gemIndex": -80.49,
+      "registry": "nuget.org"
     },
     {
       "packageName": "github.com/templexxx/cpufeat",
       "repositoryFullName": "templexxx/cpufeat",
       "dependentCount": 602,
       "stars": 5,
-      "gemIndex": -80.34,
+      "gemIndex": -80.47,
       "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/go-toolsmith/astequal",
+      "repositoryFullName": "go-toolsmith/astequal",
+      "dependentCount": 1424,
+      "stars": 8,
+      "gemIndex": -80.45,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "Dist-Zilla-Plugin-CopyFilesFromBuild",
+      "repositoryFullName": "DarwinAwardWinner/Dist-Zilla-Plugin-CopyFilesFromBuild",
+      "dependentCount": 290,
+      "stars": 5,
+      "gemIndex": -80.43,
+      "registry": "metacpan.org"
+    },
+    {
+      "packageName": "org.jvnet.staxex:stax-ex",
+      "repositoryFullName": "eclipse-ee4j/jaxb-stax-ex",
+      "dependentCount": 280,
+      "stars": 7,
+      "gemIndex": -80.4,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "github.com/shurcooL/htmlg",
+      "repositoryFullName": "shurcooL/htmlg",
+      "dependentCount": 596,
+      "stars": 6,
+      "gemIndex": -80.38,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/maratori/testableexamples",
+      "repositoryFullName": "maratori/testableexamples",
+      "dependentCount": 793,
+      "stars": 6,
+      "gemIndex": -80.36,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "@babel/plugin-proposal-private-property-in-object",
+      "repositoryFullName": "babel/babel-plugin-proposal-private-property-in-object",
+      "dependentCount": 1456,
+      "stars": 11,
+      "gemIndex": -80.35,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "result",
+      "repositoryFullName": "iodevs/result",
+      "dependentCount": 11,
+      "stars": 6,
+      "gemIndex": -80.35,
+      "registry": "hex.pm"
     },
     {
       "packageName": "base58check",
@@ -1681,435 +1665,19 @@
       "registry": "pub.dev"
     },
     {
-      "packageName": "@babel/plugin-proposal-private-property-in-object",
-      "repositoryFullName": "babel/babel-plugin-proposal-private-property-in-object",
-      "dependentCount": 1456,
-      "stars": 11,
-      "gemIndex": -80.29,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "msrestazure",
-      "repositoryFullName": "Azure/msrestazure-for-python",
-      "dependentCount": 164,
-      "stars": 19,
-      "gemIndex": -80.28,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "more-asserts",
-      "repositoryFullName": "thomcc/rust-more-asserts",
-      "dependentCount": 119,
-      "stars": 11,
-      "gemIndex": -80.27,
-      "registry": "crates.io"
-    },
-    {
-      "packageName": "plone.app.contenttypes",
-      "repositoryFullName": "plone/plone.app.contenttypes",
-      "dependentCount": 102,
-      "stars": 14,
-      "gemIndex": -80.26,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "github.com/maratori/testableexamples",
-      "repositoryFullName": "maratori/testableexamples",
-      "dependentCount": 793,
-      "stars": 6,
-      "gemIndex": -80.25,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/shurcooL/htmlg",
-      "repositoryFullName": "shurcooL/htmlg",
-      "dependentCount": 596,
-      "stars": 6,
-      "gemIndex": -80.25,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "graphlib-backport",
-      "repositoryFullName": "mariushelf/graphlib_backport",
-      "dependentCount": 49,
-      "stars": 8,
-      "gemIndex": -80.24,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "gulp-line-ending-corrector",
-      "repositoryFullName": "iShafayet/gulp-line-ending-corrector",
-      "dependentCount": 1274,
-      "stars": 8,
-      "gemIndex": -80.2,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "org.apache.nifi:nifi-api",
-      "repositoryFullName": "apache/nifi-api",
-      "dependentCount": 330,
-      "stars": 8,
-      "gemIndex": -80.17,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "libmath",
-      "repositoryFullName": "scoobadog/libmath-rs",
-      "dependentCount": 42,
-      "stars": 5,
-      "gemIndex": -80.17,
-      "registry": "crates.io"
-    },
-    {
-      "packageName": "rbenchmark",
-      "repositoryFullName": "eddelbuettel/rbenchmark",
-      "dependentCount": 35,
-      "stars": 7,
-      "gemIndex": -80.15,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "github.com/ory-am/common",
-      "repositoryFullName": "ory-am/common",
-      "dependentCount": 3555,
-      "stars": 11,
-      "gemIndex": -80.14,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "ember-cli-test-loader",
-      "repositoryFullName": "ember-cli/ember-cli-test-loader",
-      "dependentCount": 1367,
-      "stars": 10,
-      "gemIndex": -80.01,
-      "registry": "npmjs.org"
-    },
-    {
       "packageName": "membrane_common_c",
       "repositoryFullName": "membraneframework/membrane-common-c",
       "dependentCount": 22,
       "stars": 8,
-      "gemIndex": -79.95,
+      "gemIndex": -80.31,
       "registry": "hex.pm"
     },
     {
-      "packageName": "@storybook/addon-postcss",
-      "repositoryFullName": "storybookjs/addon-postcss",
-      "dependentCount": 2551,
-      "stars": 22,
-      "gemIndex": -79.93,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "github.com/nlopes/slack",
-      "repositoryFullName": "nlopes/slack",
-      "dependentCount": 4215,
-      "stars": 17,
-      "gemIndex": -79.8,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "@ionic/eslint-config",
-      "repositoryFullName": "ionic-team/eslint-config",
-      "dependentCount": 1552,
-      "stars": 13,
-      "gemIndex": -79.78,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "github.com/libp2p/go-libp2p-asn-util",
-      "repositoryFullName": "libp2p/go-libp2p-asn-util",
-      "dependentCount": 746,
-      "stars": 6,
-      "gemIndex": -79.72,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "ci_reporter_minitest",
-      "repositoryFullName": "ci-reporter/ci_reporter_minitest",
-      "dependentCount": 65,
-      "stars": 6,
-      "gemIndex": -79.71,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "pytz-deprecation-shim",
-      "repositoryFullName": "pganssle/pytz-deprecation-shim",
-      "dependentCount": 56,
-      "stars": 8,
-      "gemIndex": -79.71,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "github.com/lestrrat-go/iter",
-      "repositoryFullName": "lestrrat-go/iter",
-      "dependentCount": 1303,
-      "stars": 8,
-      "gemIndex": -79.7,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/circonus-labs/circonus-gometrics",
-      "repositoryFullName": "circonus-labs/circonus-gometrics",
-      "dependentCount": 4100,
-      "stars": 12,
-      "gemIndex": -79.69,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.glassfish.expressly:expressly",
-      "repositoryFullName": "eclipse-ee4j/expressly",
-      "dependentCount": 482,
-      "stars": 15,
-      "gemIndex": -79.66,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "github.com/tebeka/strftime",
-      "repositoryFullName": "tebeka/strftime",
-      "dependentCount": 995,
-      "stars": 9,
-      "gemIndex": -79.66,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.apache.sling:org.apache.sling.api",
-      "repositoryFullName": "apache/sling-org-apache-sling-api",
-      "dependentCount": 589,
-      "stars": 16,
-      "gemIndex": -79.62,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "syntax",
-      "repositoryFullName": "dblock/syntax",
-      "dependentCount": 97,
-      "stars": 9,
-      "gemIndex": -79.62,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "gdata",
-      "repositoryFullName": "r-gregmisc/gdata",
-      "dependentCount": 92,
-      "stars": 9,
-      "gemIndex": -79.61,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "sphinxcontrib-websupport",
-      "repositoryFullName": "sphinx-doc/sphinxcontrib-websupport",
-      "dependentCount": 73,
-      "stars": 11,
-      "gemIndex": -79.61,
-      "registry": "pypi.org"
-    },
-    {
-      "packageName": "Dist-Zilla-Plugin-CopyFilesFromBuild",
-      "repositoryFullName": "DarwinAwardWinner/Dist-Zilla-Plugin-CopyFilesFromBuild",
-      "dependentCount": 290,
-      "stars": 5,
-      "gemIndex": -79.6,
-      "registry": "metacpan.org"
-    },
-    {
-      "packageName": "pastecs",
-      "repositoryFullName": "SciViews/pastecs",
-      "dependentCount": 16,
-      "stars": 5,
-      "gemIndex": -79.59,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "pubspec_yaml",
-      "repositoryFullName": "alexei-sintotski/pubspec_yaml",
-      "dependentCount": 21,
-      "stars": 6,
-      "gemIndex": -79.56,
-      "registry": "pub.dev"
-    },
-    {
-      "packageName": "github.com/power-devops/perfstat",
-      "repositoryFullName": "power-devops/perfstat",
-      "dependentCount": 3058,
-      "stars": 11,
-      "gemIndex": -79.51,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "org.jboss.spec.javax.ejb:jboss-ejb-api_3.1_spec",
-      "repositoryFullName": "jboss/jboss-ejb-api_spec",
-      "dependentCount": 230,
-      "stars": 5,
-      "gemIndex": -79.49,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "@capacitor/docgen",
-      "repositoryFullName": "ionic-team/capacitor-docgen",
-      "dependentCount": 1509,
-      "stars": 13,
-      "gemIndex": -79.46,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "github.com/alexflint/go-scalar",
-      "repositoryFullName": "alexflint/go-scalar",
-      "dependentCount": 714,
-      "stars": 9,
-      "gemIndex": -79.42,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "flexmock",
-      "repositoryFullName": "doudou/flexmock",
-      "dependentCount": 243,
-      "stars": 16,
-      "gemIndex": -79.4,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "cp-cli",
-      "repositoryFullName": "screendriver/cp-cli",
-      "dependentCount": 2420,
-      "stars": 22,
-      "gemIndex": -79.37,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "github.com/pion/randutil",
-      "repositoryFullName": "pion/randutil",
-      "dependentCount": 950,
-      "stars": 7,
-      "gemIndex": -79.35,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/lestrrat-go/blackmagic",
-      "repositoryFullName": "lestrrat-go/blackmagic",
-      "dependentCount": 1244,
-      "stars": 8,
-      "gemIndex": -79.34,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "base_x",
-      "repositoryFullName": "litaoh/base-x",
-      "dependentCount": 12,
-      "stars": 5,
-      "gemIndex": -79.3,
-      "registry": "pub.dev"
-    },
-    {
-      "packageName": "fast_base58",
-      "repositoryFullName": "maoxs2/dart_fast_base58",
-      "dependentCount": 12,
-      "stars": 5,
-      "gemIndex": -79.3,
-      "registry": "pub.dev"
-    },
-    {
-      "packageName": "@polymer/iron-demo-helpers",
-      "repositoryFullName": "PolymerElements/iron-demo-helpers",
-      "dependentCount": 1746,
-      "stars": 16,
-      "gemIndex": -79.28,
-      "registry": "npmjs.org"
-    },
-    {
-      "packageName": "simplecov-gem-adapter",
-      "repositoryFullName": "michaeledgar/simplecov-gem-adapter",
-      "dependentCount": 55,
-      "stars": 5,
-      "gemIndex": -79.28,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "rubocop-jekyll",
-      "repositoryFullName": "jekyll/rubocop-jekyll",
-      "dependentCount": 95,
-      "stars": 9,
-      "gemIndex": -79.25,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "org.jvnet.staxex:stax-ex",
-      "repositoryFullName": "eclipse-ee4j/jaxb-stax-ex",
-      "dependentCount": 280,
-      "stars": 7,
-      "gemIndex": -79.22,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "github.com/libp2p/go-libp2p-mplex",
-      "repositoryFullName": "libp2p/go-libp2p-mplex",
-      "dependentCount": 692,
-      "stars": 6,
-      "gemIndex": -79.21,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "runjags",
-      "repositoryFullName": "ku-awdc/runjags",
-      "dependentCount": 31,
-      "stars": 7,
-      "gemIndex": -79.18,
-      "registry": "cran.r-project.org"
-    },
-    {
-      "packageName": "github.com/araddon/gou",
-      "repositoryFullName": "araddon/gou",
-      "dependentCount": 3840,
-      "stars": 13,
-      "gemIndex": -79.16,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "fof/components",
-      "repositoryFullName": "FriendsOfFlarum/components",
-      "dependentCount": 66,
-      "stars": 5,
-      "gemIndex": -79.12,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "org.apache.maven:maven-archiver",
-      "repositoryFullName": "apache/maven-archiver",
-      "dependentCount": 389,
-      "stars": 13,
-      "gemIndex": -79.12,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "neos/fusion",
-      "repositoryFullName": "neos/fusion",
-      "dependentCount": 66,
-      "stars": 5,
-      "gemIndex": -79.12,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "dm-sqlite-adapter",
-      "repositoryFullName": "datamapper/dm-sqlite-adapter",
-      "dependentCount": 140,
-      "stars": 13,
-      "gemIndex": -79.11,
-      "registry": "rubygems.org"
-    },
-    {
-      "packageName": "github.com/lusis/slack-test",
-      "repositoryFullName": "lusis/slack-test",
-      "dependentCount": 3805,
-      "stars": 12,
-      "gemIndex": -79.11,
-      "registry": "proxy.golang.org"
-    },
-    {
-      "packageName": "github.com/libp2p/go-addr-util",
-      "repositoryFullName": "libp2p/go-addr-util",
-      "dependentCount": 524,
-      "stars": 5,
-      "gemIndex": -79.07,
+      "packageName": "github.com/multiformats/go-varint",
+      "repositoryFullName": "multiformats/go-varint",
+      "dependentCount": 2614,
+      "stars": 10,
+      "gemIndex": -80.31,
       "registry": "proxy.golang.org"
     },
     {
@@ -2117,111 +1685,503 @@
       "repositoryFullName": "javaee/activation",
       "dependentCount": 632,
       "stars": 19,
-      "gemIndex": -79.05,
+      "gemIndex": -80.29,
       "registry": "repo1.maven.org"
     },
     {
-      "packageName": "airbyte-cdk",
-      "repositoryFullName": "airbytehq/airbyte-python-cdk",
-      "dependentCount": 266,
-      "stars": 25,
-      "gemIndex": -79.01,
+      "packageName": "plone.app.contenttypes",
+      "repositoryFullName": "plone/plone.app.contenttypes",
+      "dependentCount": 102,
+      "stars": 14,
+      "gemIndex": -80.29,
       "registry": "pypi.org"
+    },
+    {
+      "packageName": "gulp-line-ending-corrector",
+      "repositoryFullName": "iShafayet/gulp-line-ending-corrector",
+      "dependentCount": 1274,
+      "stars": 8,
+      "gemIndex": -80.21,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "libmath",
+      "repositoryFullName": "scoobadog/libmath-rs",
+      "dependentCount": 42,
+      "stars": 5,
+      "gemIndex": -80.2,
+      "registry": "crates.io"
+    },
+    {
+      "packageName": "ember-cli-test-loader",
+      "repositoryFullName": "ember-cli/ember-cli-test-loader",
+      "dependentCount": 1367,
+      "stars": 10,
+      "gemIndex": -80.14,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "org.jboss.spec.javax.ejb:jboss-ejb-api_3.1_spec",
+      "repositoryFullName": "jboss/jboss-ejb-api_spec",
+      "dependentCount": 230,
+      "stars": 5,
+      "gemIndex": -80.13,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "jakarta.inject:jakarta.inject-api",
+      "repositoryFullName": "eclipse-ee4j/injection-api",
+      "dependentCount": 1209,
+      "stars": 29,
+      "gemIndex": -80.12,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "org.glassfish.expressly:expressly",
+      "repositoryFullName": "eclipse-ee4j/expressly",
+      "dependentCount": 482,
+      "stars": 15,
+      "gemIndex": -80.05,
+      "registry": "repo1.maven.org"
+    },
+    {
+      "packageName": "rbenchmark",
+      "repositoryFullName": "eddelbuettel/rbenchmark",
+      "dependentCount": 35,
+      "stars": 7,
+      "gemIndex": -80,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "@storybook/addon-postcss",
+      "repositoryFullName": "storybookjs/addon-postcss",
+      "dependentCount": 2551,
+      "stars": 22,
+      "gemIndex": -79.94,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "github.com/ory-am/common",
+      "repositoryFullName": "ory-am/common",
+      "dependentCount": 3555,
+      "stars": 11,
+      "gemIndex": -79.93,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "cp-cli",
+      "repositoryFullName": "screendriver/cp-cli",
+      "dependentCount": 2420,
+      "stars": 21,
+      "gemIndex": -79.91,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "github.com/libp2p/go-libp2p-asn-util",
+      "repositoryFullName": "libp2p/go-libp2p-asn-util",
+      "dependentCount": 746,
+      "stars": 6,
+      "gemIndex": -79.85,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "attr",
+      "repositoryFullName": "denis-ryzhkov/attr",
+      "dependentCount": 68,
+      "stars": 10,
+      "gemIndex": -79.83,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "@ionic/eslint-config",
+      "repositoryFullName": "ionic-team/eslint-config",
+      "dependentCount": 1552,
+      "stars": 13,
+      "gemIndex": -79.82,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "gdata",
+      "repositoryFullName": "r-gregmisc/gdata",
+      "dependentCount": 92,
+      "stars": 9,
+      "gemIndex": -79.8,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "github.com/tebeka/strftime",
+      "repositoryFullName": "tebeka/strftime",
+      "dependentCount": 995,
+      "stars": 9,
+      "gemIndex": -79.78,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "ci_reporter_minitest",
+      "repositoryFullName": "ci-reporter/ci_reporter_minitest",
+      "dependentCount": 65,
+      "stars": 6,
+      "gemIndex": -79.76,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "github.com/lestrrat-go/iter",
+      "repositoryFullName": "lestrrat-go/iter",
+      "dependentCount": 1303,
+      "stars": 8,
+      "gemIndex": -79.75,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "syntax",
+      "repositoryFullName": "dblock/syntax",
+      "dependentCount": 97,
+      "stars": 9,
+      "gemIndex": -79.74,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "pytz-deprecation-shim",
+      "repositoryFullName": "pganssle/pytz-deprecation-shim",
+      "dependentCount": 56,
+      "stars": 8,
+      "gemIndex": -79.72,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "sphinxcontrib-websupport",
+      "repositoryFullName": "sphinx-doc/sphinxcontrib-websupport",
+      "dependentCount": 73,
+      "stars": 11,
+      "gemIndex": -79.69,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "github.com/ssor/bom",
+      "repositoryFullName": "ssor/bom",
+      "dependentCount": 549,
+      "stars": 5,
+      "gemIndex": -79.68,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "pastecs",
+      "repositoryFullName": "SciViews/pastecs",
+      "dependentCount": 16,
+      "stars": 5,
+      "gemIndex": -79.62,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "github.com/ipfs/go-ipfs-ds-help",
+      "repositoryFullName": "ipfs/go-ipfs-ds-help",
+      "dependentCount": 720,
+      "stars": 6,
+      "gemIndex": -79.6,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "pubspec_yaml",
+      "repositoryFullName": "alexei-sintotski/pubspec_yaml",
+      "dependentCount": 21,
+      "stars": 6,
+      "gemIndex": -79.57,
+      "registry": "pub.dev"
+    },
+    {
+      "packageName": "github.com/alexflint/go-scalar",
+      "repositoryFullName": "alexflint/go-scalar",
+      "dependentCount": 714,
+      "stars": 9,
+      "gemIndex": -79.52,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "flexmock",
+      "repositoryFullName": "doudou/flexmock",
+      "dependentCount": 243,
+      "stars": 16,
+      "gemIndex": -79.5,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "@capacitor/docgen",
+      "repositoryFullName": "ionic-team/capacitor-docgen",
+      "dependentCount": 1509,
+      "stars": 13,
+      "gemIndex": -79.5,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "github.com/pion/randutil",
+      "repositoryFullName": "pion/randutil",
+      "dependentCount": 950,
+      "stars": 7,
+      "gemIndex": -79.48,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/nlopes/slack",
+      "repositoryFullName": "nlopes/slack",
+      "dependentCount": 4215,
+      "stars": 17,
+      "gemIndex": -79.47,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "simplecov-gem-adapter",
+      "repositoryFullName": "michaeledgar/simplecov-gem-adapter",
+      "dependentCount": 55,
+      "stars": 5,
+      "gemIndex": -79.45,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "github.com/lestrrat-go/blackmagic",
+      "repositoryFullName": "lestrrat-go/blackmagic",
+      "dependentCount": 1244,
+      "stars": 8,
+      "gemIndex": -79.4,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "base_x",
+      "repositoryFullName": "litaoh/base-x",
+      "dependentCount": 12,
+      "stars": 5,
+      "gemIndex": -79.4,
+      "registry": "pub.dev"
+    },
+    {
+      "packageName": "fast_base58",
+      "repositoryFullName": "maoxs2/dart_fast_base58",
+      "dependentCount": 12,
+      "stars": 5,
+      "gemIndex": -79.4,
+      "registry": "pub.dev"
+    },
+    {
+      "packageName": "github.com/circonus-labs/circonus-gometrics",
+      "repositoryFullName": "circonus-labs/circonus-gometrics",
+      "dependentCount": 4100,
+      "stars": 12,
+      "gemIndex": -79.37,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "rubocop-jekyll",
+      "repositoryFullName": "jekyll/rubocop-jekyll",
+      "dependentCount": 95,
+      "stars": 9,
+      "gemIndex": -79.37,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "github.com/libp2p/go-libp2p-mplex",
+      "repositoryFullName": "libp2p/go-libp2p-mplex",
+      "dependentCount": 692,
+      "stars": 6,
+      "gemIndex": -79.33,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "setono/code-quality-pack",
+      "repositoryFullName": "Setono/code-quality-pack",
+      "dependentCount": 109,
+      "stars": 7,
+      "gemIndex": -79.31,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "github.com/power-devops/perfstat",
+      "repositoryFullName": "power-devops/perfstat",
+      "dependentCount": 3058,
+      "stars": 11,
+      "gemIndex": -79.31,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "@polymer/iron-demo-helpers",
+      "repositoryFullName": "PolymerElements/iron-demo-helpers",
+      "dependentCount": 1746,
+      "stars": 16,
+      "gemIndex": -79.29,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "github.com/libp2p/go-addr-util",
+      "repositoryFullName": "libp2p/go-addr-util",
+      "dependentCount": 524,
+      "stars": 5,
+      "gemIndex": -79.2,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "fof/components",
+      "repositoryFullName": "FriendsOfFlarum/components",
+      "dependentCount": 66,
+      "stars": 5,
+      "gemIndex": -79.16,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "neos/fusion",
+      "repositoryFullName": "neos/fusion",
+      "dependentCount": 66,
+      "stars": 5,
+      "gemIndex": -79.16,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "dm-sqlite-adapter",
+      "repositoryFullName": "datamapper/dm-sqlite-adapter",
+      "dependentCount": 140,
+      "stars": 13,
+      "gemIndex": -79.15,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "rubocop-require_tools",
+      "repositoryFullName": "milch/rubocop-require_tools",
+      "dependentCount": 452,
+      "stars": 20,
+      "gemIndex": -79.11,
+      "registry": "rubygems.org"
+    },
+    {
+      "packageName": "smol-timeout",
+      "repositoryFullName": "r3v2d0g/smol-timeout",
+      "dependentCount": 38,
+      "stars": 5,
+      "gemIndex": -79.05,
+      "registry": "crates.io"
     },
     {
       "packageName": "rollup-plugin-clear",
       "repositoryFullName": "DongShelton/rollup-plugin-clear",
       "dependentCount": 1443,
       "stars": 13,
-      "gemIndex": -78.97,
+      "gemIndex": -79.02,
       "registry": "npmjs.org"
+    },
+    {
+      "packageName": "runjags",
+      "repositoryFullName": "ku-awdc/runjags",
+      "dependentCount": 31,
+      "stars": 7,
+      "gemIndex": -78.99,
+      "registry": "cran.r-project.org"
+    },
+    {
+      "packageName": "bitops",
+      "repositoryFullName": "mmaechler/R-bitops",
+      "dependentCount": 45,
+      "stars": 8,
+      "gemIndex": -78.96,
+      "registry": "cran.r-project.org"
     },
     {
       "packageName": "ember-cli-ic-ajax",
       "repositoryFullName": "rjackson/ember-cli-ic-ajax",
       "dependentCount": 2175,
       "stars": 21,
-      "gemIndex": -78.9,
+      "gemIndex": -78.94,
       "registry": "npmjs.org"
     },
     {
-      "packageName": "substring",
-      "repositoryFullName": "Anders429/substring",
-      "dependentCount": 75,
-      "stars": 11,
-      "gemIndex": -78.85,
-      "registry": "crates.io"
+      "packageName": "github.com/araddon/gou",
+      "repositoryFullName": "araddon/gou",
+      "dependentCount": 3840,
+      "stars": 13,
+      "gemIndex": -78.84,
+      "registry": "proxy.golang.org"
     },
     {
       "packageName": "statistics",
       "repositoryFullName": "digitalemagine/py-statistics",
       "dependentCount": 57,
       "stars": 9,
-      "gemIndex": -78.83,
+      "gemIndex": -78.84,
       "registry": "pypi.org"
-    },
-    {
-      "packageName": "github.com/ipfs/bbloom",
-      "repositoryFullName": "ipfs/bbloom",
-      "dependentCount": 888,
-      "stars": 14,
-      "gemIndex": -78.83,
-      "registry": "proxy.golang.org"
     },
     {
       "packageName": "sg-std",
       "repositoryFullName": "public-awesome/core",
       "dependentCount": 37,
       "stars": 5,
-      "gemIndex": -78.8,
+      "gemIndex": -78.83,
       "registry": "crates.io"
     },
     {
-      "packageName": "github.com/apparentlymart/go-textseg/v13",
-      "repositoryFullName": "apparentlymart/go-textseg",
-      "dependentCount": 5324,
-      "stars": 14,
-      "gemIndex": -78.72,
+      "packageName": "github.com/lusis/slack-test",
+      "repositoryFullName": "lusis/slack-test",
+      "dependentCount": 3805,
+      "stars": 12,
+      "gemIndex": -78.79,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "github.com/jackc/chunkreader/v2",
-      "repositoryFullName": "jackc/chunkreader",
-      "dependentCount": 6513,
-      "stars": 15,
-      "gemIndex": -78.72,
+      "packageName": "github.com/containerd/log",
+      "repositoryFullName": "containerd/log",
+      "dependentCount": 1785,
+      "stars": 10,
+      "gemIndex": -78.76,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "org.apache.maven.shared:maven-verifier",
-      "repositoryFullName": "apache/maven-verifier",
-      "dependentCount": 245,
-      "stars": 6,
-      "gemIndex": -78.68,
-      "registry": "repo1.maven.org"
+      "packageName": "github.com/fredbi/uri",
+      "repositoryFullName": "fredbi/uri",
+      "dependentCount": 859,
+      "stars": 8,
+      "gemIndex": -78.75,
+      "registry": "proxy.golang.org"
     },
     {
-      "packageName": "org.dbunit:dbunit",
-      "repositoryFullName": "dbunit/dbunit-extension",
-      "dependentCount": 480,
-      "stars": 17,
-      "gemIndex": -78.68,
-      "registry": "repo1.maven.org"
+      "packageName": "substring",
+      "repositoryFullName": "Anders429/substring",
+      "dependentCount": 75,
+      "stars": 11,
+      "gemIndex": -78.69,
+      "registry": "crates.io"
+    },
+    {
+      "packageName": "File-Copy-Recursive",
+      "repositoryFullName": "drmuey/p5-File-Copy-Recursive",
+      "dependentCount": 183,
+      "stars": 5,
+      "gemIndex": -78.69,
+      "registry": "metacpan.org"
     },
     {
       "packageName": "minitest-rg",
       "repositoryFullName": "minitest/minitest-rg",
       "dependentCount": 515,
       "stars": 21,
-      "gemIndex": -78.64,
+      "gemIndex": -78.65,
       "registry": "rubygems.org"
     },
     {
-      "packageName": "github.com/fredbi/uri",
-      "repositoryFullName": "fredbi/uri",
-      "dependentCount": 859,
+      "packageName": "islands_engine",
+      "repositoryFullName": "RaymondLoranger/islands_engine",
+      "dependentCount": 7,
+      "stars": 5,
+      "gemIndex": -78.59,
+      "registry": "hex.pm"
+    },
+    {
+      "packageName": "github.com/sashamelentyev/interfacebloat",
+      "repositoryFullName": "sashamelentyev/interfacebloat",
+      "dependentCount": 839,
       "stars": 7,
-      "gemIndex": -78.61,
+      "gemIndex": -78.59,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/jackc/pgio",
+      "repositoryFullName": "jackc/pgio",
+      "dependentCount": 6771,
+      "stars": 15,
+      "gemIndex": -78.57,
       "registry": "proxy.golang.org"
     },
     {
@@ -2229,55 +2189,15 @@
       "repositoryFullName": "tk0miya/sphinxcontrib-details-directive",
       "dependentCount": 42,
       "stars": 6,
-      "gemIndex": -78.59,
+      "gemIndex": -78.57,
       "registry": "pypi.org"
-    },
-    {
-      "packageName": "contao-components/installer",
-      "repositoryFullName": "contao-components/installer",
-      "dependentCount": 80,
-      "stars": 6,
-      "gemIndex": -78.55,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "silverstripe/versioned",
-      "repositoryFullName": "silverstripe/silverstripe-versioned",
-      "dependentCount": 97,
-      "stars": 7,
-      "gemIndex": -78.49,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "io.vertx:vertx-codegen",
-      "repositoryFullName": "vert-x3/vertx-sockjs-service-proxy",
-      "dependentCount": 351,
-      "stars": 11,
-      "gemIndex": -78.47,
-      "registry": "repo1.maven.org"
-    },
-    {
-      "packageName": "hyperf/pool",
-      "repositoryFullName": "hyperf/pool",
-      "dependentCount": 79,
-      "stars": 6,
-      "gemIndex": -78.45,
-      "registry": "packagist.org"
-    },
-    {
-      "packageName": "github.com/jbenet/go-context",
-      "repositoryFullName": "jbenet/go-context",
-      "dependentCount": 6167,
-      "stars": 15,
-      "gemIndex": -78.45,
-      "registry": "proxy.golang.org"
     },
     {
       "packageName": "ezsystems/ezpublish-legacy-installer",
       "repositoryFullName": "ezsystems/ezpublish-legacy-installer",
       "dependentCount": 228,
       "stars": 10,
-      "gemIndex": -78.44,
+      "gemIndex": -78.51,
       "registry": "packagist.org"
     },
     {
@@ -2285,39 +2205,23 @@
       "repositoryFullName": "hyperf/http-server",
       "dependentCount": 228,
       "stars": 10,
-      "gemIndex": -78.44,
+      "gemIndex": -78.51,
       "registry": "packagist.org"
     },
     {
-      "packageName": "serde_test",
-      "repositoryFullName": "serde-rs/test",
-      "dependentCount": 449,
-      "stars": 14,
-      "gemIndex": -78.4,
-      "registry": "crates.io"
-    },
-    {
-      "packageName": "eveseat/eveapi",
-      "repositoryFullName": "eveseat/eveapi",
-      "dependentCount": 96,
-      "stars": 7,
-      "gemIndex": -78.35,
+      "packageName": "contao-components/installer",
+      "repositoryFullName": "contao-components/installer",
+      "dependentCount": 80,
+      "stars": 6,
+      "gemIndex": -78.47,
       "registry": "packagist.org"
-    },
-    {
-      "packageName": "github.com/shazow/go-diff",
-      "repositoryFullName": "shazow/go-diff",
-      "dependentCount": 1318,
-      "stars": 9,
-      "gemIndex": -78.32,
-      "registry": "proxy.golang.org"
     },
     {
       "packageName": "m4d_core",
       "repositoryFullName": "MikeMitterer/m4d_core",
       "dependentCount": 11,
       "stars": 5,
-      "gemIndex": -78.3,
+      "gemIndex": -78.41,
       "registry": "pub.dev"
     },
     {
@@ -2325,47 +2229,87 @@
       "repositoryFullName": "bitsydarel/flutter-code-style",
       "dependentCount": 11,
       "stars": 5,
-      "gemIndex": -78.3,
+      "gemIndex": -78.41,
       "registry": "pub.dev"
+    },
+    {
+      "packageName": "com.sun.xml.fastinfoset:FastInfoset",
+      "repositoryFullName": "eclipse-ee4j/jaxb-fi",
+      "dependentCount": 334,
+      "stars": 12,
+      "gemIndex": -78.41,
+      "registry": "repo1.maven.org"
     },
     {
       "packageName": "purple_lints",
       "repositoryFullName": "purplenoodlesoop/purple_lints",
       "dependentCount": 11,
       "stars": 5,
-      "gemIndex": -78.3,
+      "gemIndex": -78.41,
       "registry": "pub.dev"
     },
     {
-      "packageName": "github.com/hashicorp/vault-plugin-secrets-gcpkms",
-      "repositoryFullName": "hashicorp/vault-plugin-secrets-gcpkms",
-      "dependentCount": 3869,
-      "stars": 13,
-      "gemIndex": -78.23,
+      "packageName": "github.com/jackc/chunkreader/v2",
+      "repositoryFullName": "jackc/chunkreader",
+      "dependentCount": 6513,
+      "stars": 15,
+      "gemIndex": -78.4,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "github.com/lestrrat-go/option",
-      "repositoryFullName": "lestrrat-go/option",
-      "dependentCount": 1305,
-      "stars": 9,
-      "gemIndex": -78.23,
+      "packageName": "github.com/apparentlymart/go-textseg/v13",
+      "repositoryFullName": "apparentlymart/go-textseg",
+      "dependentCount": 5324,
+      "stars": 14,
+      "gemIndex": -78.39,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "coz",
-      "repositoryFullName": "coz-labo/coz",
-      "dependentCount": 1012,
+      "packageName": "silverstripe/versioned",
+      "repositoryFullName": "silverstripe/silverstripe-versioned",
+      "dependentCount": 97,
+      "stars": 7,
+      "gemIndex": -78.39,
+      "registry": "packagist.org"
+    },
+    {
+      "packageName": "hyperf/pool",
+      "repositoryFullName": "hyperf/pool",
+      "dependentCount": 79,
       "stars": 6,
-      "gemIndex": -78.19,
-      "registry": "npmjs.org"
+      "gemIndex": -78.37,
+      "registry": "packagist.org"
     },
     {
-      "packageName": "luyadev/luya-testsuite",
-      "repositoryFullName": "luyadev/luya-testsuite",
-      "dependentCount": 62,
-      "stars": 5,
-      "gemIndex": -78.17,
+      "packageName": "github.com/quic-go/qtls-go1-19",
+      "repositoryFullName": "quic-go/qtls-go1-19",
+      "dependentCount": 1671,
+      "stars": 10,
+      "gemIndex": -78.35,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "airbyte-cdk",
+      "repositoryFullName": "airbytehq/airbyte-python-cdk",
+      "dependentCount": 266,
+      "stars": 27,
+      "gemIndex": -78.3,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "cloudi_core",
+      "repositoryFullName": "CloudI/cloudi_core",
+      "dependentCount": 39,
+      "stars": 10,
+      "gemIndex": -78.28,
+      "registry": "hex.pm"
+    },
+    {
+      "packageName": "eveseat/eveapi",
+      "repositoryFullName": "eveseat/eveapi",
+      "dependentCount": 96,
+      "stars": 7,
+      "gemIndex": -78.26,
       "registry": "packagist.org"
     },
     {
@@ -2373,39 +2317,95 @@
       "repositoryFullName": "libp2p/go-libp2p-loggables",
       "dependentCount": 612,
       "stars": 6,
-      "gemIndex": -78.16,
+      "gemIndex": -78.25,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "github.com/libp2p/go-flow-metrics",
-      "repositoryFullName": "libp2p/go-flow-metrics",
-      "dependentCount": 1567,
-      "stars": 12,
-      "gemIndex": -78.14,
+      "packageName": "coz",
+      "repositoryFullName": "coz-labo/coz",
+      "dependentCount": 1012,
+      "stars": 6,
+      "gemIndex": -78.23,
+      "registry": "npmjs.org"
+    },
+    {
+      "packageName": "serde_test",
+      "repositoryFullName": "serde-rs/test",
+      "dependentCount": 449,
+      "stars": 14,
+      "gemIndex": -78.22,
+      "registry": "crates.io"
+    },
+    {
+      "packageName": "github.com/shazow/go-diff",
+      "repositoryFullName": "shazow/go-diff",
+      "dependentCount": 1318,
+      "stars": 9,
+      "gemIndex": -78.21,
       "registry": "proxy.golang.org"
     },
     {
-      "packageName": "hoe-gemspec",
-      "repositoryFullName": "flavorjones/hoe-gemspec",
-      "dependentCount": 71,
-      "stars": 8,
-      "gemIndex": -78.11,
-      "registry": "rubygems.org"
+      "packageName": "luyadev/luya-testsuite",
+      "repositoryFullName": "luyadev/luya-testsuite",
+      "dependentCount": 62,
+      "stars": 5,
+      "gemIndex": -78.2,
+      "registry": "packagist.org"
     },
     {
-      "packageName": "package_resolver",
-      "repositoryFullName": "dart-lang/package_resolver",
-      "dependentCount": 29,
-      "stars": 7,
-      "gemIndex": -78.08,
-      "registry": "pub.dev"
+      "packageName": "Dist-Zilla-Plugin-ReadmeFromPod",
+      "repositoryFullName": "fayland/dist-zilla-plugin-readmefrompod",
+      "dependentCount": 172,
+      "stars": 5,
+      "gemIndex": -78.18,
+      "registry": "metacpan.org"
     },
     {
       "packageName": "contrib.go.opencensus.io/resource",
       "repositoryFullName": "census-ecosystem/opencensus-go-resource",
       "dependentCount": 606,
       "stars": 6,
-      "gemIndex": -78.05,
+      "gemIndex": -78.15,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "github.com/jbenet/go-context",
+      "repositoryFullName": "jbenet/go-context",
+      "dependentCount": 6167,
+      "stars": 15,
+      "gemIndex": -78.14,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "package_resolver",
+      "repositoryFullName": "dart-lang/package_resolver",
+      "dependentCount": 29,
+      "stars": 7,
+      "gemIndex": -78.13,
+      "registry": "pub.dev"
+    },
+    {
+      "packageName": "github.com/lestrrat-go/option",
+      "repositoryFullName": "lestrrat-go/option",
+      "dependentCount": 1305,
+      "stars": 9,
+      "gemIndex": -78.13,
+      "registry": "proxy.golang.org"
+    },
+    {
+      "packageName": "graphlib-backport",
+      "repositoryFullName": "mariushelf/graphlib_backport",
+      "dependentCount": 49,
+      "stars": 8,
+      "gemIndex": -78.1,
+      "registry": "pypi.org"
+    },
+    {
+      "packageName": "github.com/sagikazarmark/slog-shim",
+      "repositoryFullName": "sagikazarmark/slog-shim",
+      "dependentCount": 1615,
+      "stars": 10,
+      "gemIndex": -78.1,
       "registry": "proxy.golang.org"
     }
   ]
